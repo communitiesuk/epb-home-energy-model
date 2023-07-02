@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 csv = "1.2.2"
+itertools = "0.11.0"
 rstest = "0.17.0"
+variants-struct = "0.1.1"

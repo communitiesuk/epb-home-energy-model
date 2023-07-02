@@ -1,4 +1,4 @@
-const HOURS_IN_DAY: u32 = 24;
+pub const HOURS_IN_DAY: u32 = 24;
 
 // # Define hours that start each month (and end next month). Note there are 13
 // # values so that end of final month is handled correctly.
@@ -7,6 +7,7 @@ const MONTH_START_END_HOURS: [u32; 13] = [
     0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760,
 ];
 
+#[derive(Clone)]
 pub struct SimulationTime {
     start_time: f64,
     end_time: f64,
@@ -14,24 +15,33 @@ pub struct SimulationTime {
 }
 
 impl SimulationTime {
+    pub fn new(start_time: f64, end_time: f64, step: f64) -> Self {
+        Self {
+            start_time,
+            end_time,
+            step,
+        }
+    }
+
     fn total_steps(&self) -> i32 {
         ((self.end_time - self.start_time) / self.step).ceil() as i32
     }
 
-    fn iter(&self) -> SimulationTimeIterator {
-        SimulationTimeIterator::from(self)
+    pub(crate) fn iter(&self) -> SimulationTimeIterator {
+        SimulationTimeIterator::from((*self).clone())
     }
 }
 
-struct SimulationTimeIterator<'a> {
+#[derive(Clone)]
+pub struct SimulationTimeIterator {
     current_index: usize,
     current_time: f64,
     started: bool,
-    simulation_time: &'a SimulationTime,
+    simulation_time: SimulationTime,
 }
 
-impl<'a> SimulationTimeIterator<'a> {
-    fn from(simulation_time: &'a SimulationTime) -> Self {
+impl SimulationTimeIterator {
+    fn from(simulation_time: SimulationTime) -> Self {
         SimulationTimeIterator {
             current_index: 0,
             current_time: simulation_time.start_time,
@@ -39,39 +49,32 @@ impl<'a> SimulationTimeIterator<'a> {
             simulation_time,
         }
     }
-}
 
-struct SimulationTimeIteration {
-    pub index: usize,
-    pub time: f64,
-    pub timestep: f64,
-}
-
-impl SimulationTimeIteration {
-    pub fn current_hour(&self) -> u32 {
-        self.time.floor() as u32
+    pub fn current_index(&self) -> usize {
+        self.current_index
     }
 
-    pub fn hour_of_day(&self) -> u32 {
-        self.current_hour() % HOURS_IN_DAY
-    }
-
-    pub fn current_day(&self) -> u32 {
-        self.time as u32 / HOURS_IN_DAY
-    }
-
-    pub fn time_series_idx(&self, start_day: u32, step: f64) -> u32 {
-        ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as u32
+    pub fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
+        ((self.current_time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 
     pub fn time_series_idx_days(&self, start_day: u32, step: f64) -> u32 {
+        let current_day = self.current_time as u32 / HOURS_IN_DAY;
         // # TODO: (Potential) Decide from which hour of the day the system should be targeting next day charge level
         // # Currently 9pm
-        if self.current_hour() >= 21 {
-            ((self.current_day() + 1 - start_day) as f64 / step) as u32
+        if self.current_time.floor() >= 21.0 {
+            ((current_day + 1 - start_day) as f64 / step) as u32
         } else {
-            ((self.current_day() - start_day) as f64 / step) as u32
+            ((current_day - start_day) as f64 / step) as u32
         }
+    }
+
+    pub fn current_hour(&self) -> u32 {
+        self.current_time.floor() as u32
+    }
+
+    pub fn current_day(&self) -> u32 {
+        self.current_time as u32 / HOURS_IN_DAY
     }
 
     pub fn current_month(&self) -> Option<u32> {
@@ -93,7 +96,50 @@ impl SimulationTimeIteration {
     }
 }
 
-impl<'a> Iterator for SimulationTimeIterator<'a> {
+#[derive(Debug)]
+pub struct SimulationTimeIteration {
+    pub index: usize,
+    pub time: f64,
+    pub timestep: f64,
+}
+
+impl SimulationTimeIteration {
+    pub fn current_hour(&self) -> u32 {
+        self.time.floor() as u32
+    }
+
+    pub fn hour_of_day(&self) -> u32 {
+        self.current_hour() % HOURS_IN_DAY
+    }
+
+    pub fn current_day(&self) -> u32 {
+        self.time as u32 / HOURS_IN_DAY
+    }
+
+    pub fn current_month(&self) -> Option<u32> {
+        let current_hour = self.current_hour();
+        for (i, end_hour) in MONTH_START_END_HOURS.iter().enumerate() {
+            if current_hour < *end_hour {
+                return Some((i - 1) as u32);
+            }
+        }
+        None
+    }
+
+    pub fn current_month_start_end_hours(&self) -> (u32, u32) {
+        let month_idx = self.current_month().unwrap() as usize;
+        (
+            MONTH_START_END_HOURS[month_idx],
+            MONTH_START_END_HOURS[month_idx + 1],
+        )
+    }
+
+    pub fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
+        ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
+    }
+}
+
+impl Iterator for SimulationTimeIterator {
     type Item = SimulationTimeIteration;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -160,7 +206,9 @@ mod test {
             (744, 1416),
             (744, 1416),
         ];
-        for (i, item) in simtime.iter().enumerate() {
+        let mut simulation_time_iter = simtime.iter();
+        let mut i = 0;
+        while let Some(item) = simulation_time_iter.next() {
             assert_eq!(
                 item.index, i,
                 "current index is {0} with time {1}, but test iterator is {i}",
@@ -171,12 +219,16 @@ mod test {
             assert_eq!(item.current_hour(), hours[i]);
             assert_eq!(item.hour_of_day(), hours_of_day[i]);
             assert_eq!(item.current_day(), current_days[i]);
-            assert_eq!(item.time_series_idx(0, 1.0), hours[i]);
+            assert_eq!(
+                simulation_time_iter.time_series_idx(0, 1.0),
+                hours[i] as usize
+            );
             assert_eq!(item.current_month().unwrap(), current_months[i]);
             assert_eq!(
                 item.current_month_start_end_hours(),
                 current_month_start_end_hours[i]
             );
+            i += 1;
         }
     }
 }
