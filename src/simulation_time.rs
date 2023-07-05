@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 pub const HOURS_IN_DAY: u32 = 24;
 
 // # Define hours that start each month (and end next month). Note there are 13
@@ -7,9 +9,11 @@ const MONTH_START_END_HOURS: [u32; 13] = [
     0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760,
 ];
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct SimulationTime {
+    #[serde(rename(deserialize = "start"))]
     start_time: f64,
+    #[serde(rename(deserialize = "end"))]
     end_time: f64,
     step: f64,
 }

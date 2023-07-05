@@ -1,14 +1,16 @@
-mod external_conditions;
-mod read_weather_file;
-mod simulation_time;
+extern crate ecaas;
 
-use crate::read_weather_file::{weather_data_to_vec, ExternalConditions};
+mod read_weather_file;
+
 use clap::{Args, Parser};
+use ecaas::read_weather_file::{weather_data_to_vec, ExternalConditions};
+use ecaas::run_project;
+use std::rc::Rc;
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct SapArgs {
-    input_file: Vec<String>,
+    input_file: String,
     #[command(flatten)]
     weather_file: WeatherFileType,
     #[arg(long, short, default_value_t = false)]
@@ -60,12 +62,15 @@ fn main() {
         _ => None,
     };
 
-    match external_conditions {
-        Some(conds) => {
-            println!("{:?}", conds);
-        }
-        _ => {}
-    };
-
     println!("about to loop over the input files and run the calculation on each one!");
+
+    run_project(
+        args.input_file.as_str(),
+        external_conditions,
+        args.preprocess_only,
+        false,
+        false,
+        args.heat_balance,
+    )
+    .unwrap_or_else(|err| println!("{:?}", err))
 }

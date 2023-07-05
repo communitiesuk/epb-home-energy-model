@@ -2,15 +2,19 @@ use crate::simulation_time::{
     SimulationTime, SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY,
 };
 use itertools::Itertools;
+use serde::Deserialize;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum DaylightSavingsConfig {
+    #[serde(rename(deserialize = "applicable and taken into account"))]
     ApplicableAndTakenIntoAccount,
+    #[serde(rename(deserialize = "applicable but not taken into account"))]
     ApplicableButNotTakenIntoAccount,
+    #[serde(rename(deserialize = "not applicable"))]
     NotApplicable,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ShadingSegment {
     pub number: usize,
     pub start: i32,
@@ -18,29 +22,34 @@ pub struct ShadingSegment {
     pub objects: Option<Vec<ShadingObject>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ShadingObject {
+    #[serde(rename(deserialize = "type"))]
     object_type: ShadingObjectType,
     height: f64,
     distance: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct WindowShadingObject {
+    #[serde(rename(deserialize = "type"))]
     object_type: WindowShadingObjectType,
     depth: f64,
     distance: f64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ShadingObjectType {
     Obstacle,
     Overhang,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum WindowShadingObjectType {
     Obstacle,
+    Overhang,
     SideFinRight,
     SideFinLeft,
 }
@@ -806,6 +815,9 @@ impl ExternalConditions {
                     }
                     WindowShadingObjectType::SideFinRight => {
                         finL_D_L_ls.push((shading_object.depth, shading_object.distance));
+                    }
+                    WindowShadingObjectType::Overhang => {
+                        // do nothing
                     }
                 }
             }
