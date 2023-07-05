@@ -2,7 +2,7 @@ mod external_conditions;
 mod read_weather_file;
 mod simulation_time;
 
-use crate::external_conditions::ExternalConditions;
+use crate::read_weather_file::{weather_data_to_vec, ExternalConditions};
 use clap::{Args, Parser};
 
 #[derive(Parser, Default, Debug)]
@@ -46,12 +46,25 @@ fn main() {
         WeatherFileType {
             epw_file: Some(file),
             cibse_weather_file: None,
-        } => None,
+        } => {
+            let external_conditions_data = weather_data_to_vec(file.as_str());
+            match external_conditions_data {
+                Ok(data) => Some(data),
+                Err(_) => panic!("Could not parse the weather file!"),
+            }
+        }
         WeatherFileType {
             epw_file: None,
             cibse_weather_file: Some(file),
         } => None,
         _ => None,
+    };
+
+    match external_conditions {
+        Some(conds) => {
+            println!("{:?}", conds);
+        }
+        _ => {}
     };
 
     println!("about to loop over the input files and run the calculation on each one!");

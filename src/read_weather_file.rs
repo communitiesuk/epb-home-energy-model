@@ -9,6 +9,7 @@ const COLUMN_DNI_RAD: usize = 14; // direct beam normal irradiation in Wh/m2
 const COLUMN_DIF_RAD: usize = 15; // diffuse irradiation (horizontal plane) in Wh/m2
 const COLUMN_GROUND_REFLECT: usize = 32;
 
+#[derive(Debug)]
 pub struct ExternalConditions {
     air_temperatures: Vec<f64>,
     wind_speeds: Vec<f64>,
@@ -28,12 +29,17 @@ struct ExternalConditionDatum {
     solar_reflectivity_of_ground: f64,
 }
 
-pub fn weather_data_to_vec(file: &str) -> ExternalConditions {
+pub fn weather_data_to_vec(file: &str) -> Result<ExternalConditions, &'static str> {
     let file = match File::open(file) {
         Ok(f) => f,
-        Err(_) => panic!(),
+        Err(_) => {
+            return Err("The weather file provided did not exist!");
+        }
     };
-    let mut reader = CsvReaderBuilder::new().has_headers(false).from_reader(file);
+    let mut reader = CsvReaderBuilder::new()
+        .flexible(true)
+        .has_headers(false)
+        .from_reader(file);
 
     let mut air_temperatures = vec![];
     let mut wind_speeds = vec![];
@@ -57,7 +63,7 @@ pub fn weather_data_to_vec(file: &str) -> ExternalConditions {
         }
     }
 
-    ExternalConditions {
+    Ok(ExternalConditions {
         air_temperatures,
         wind_speeds,
         diffuse_horizontal_radiation: diff_hor_rad,
@@ -66,5 +72,5 @@ pub fn weather_data_to_vec(file: &str) -> ExternalConditions {
         latitude: latitude.unwrap(),
         longitude: longitude.unwrap(),
         direct_beam_conversion_needed: false,
-    }
+    })
 }
