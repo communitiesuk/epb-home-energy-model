@@ -470,7 +470,7 @@ pub struct OtherWaterHeatingEvents {
     other: Vec<WaterHeatingEvent>,
 }
 
-type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
+pub type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "type")]
@@ -924,6 +924,7 @@ pub struct WasteWaterHeatRecoveryDetails {
 pub type OnSiteGeneration = HashMap<String, OnSiteGenerationDetails>;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OnSiteGenerationDetails {
     #[serde(rename(deserialize = "type"))]
     generation_type: OnSiteGenerationType,
