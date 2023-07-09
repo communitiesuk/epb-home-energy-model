@@ -1,7 +1,12 @@
+pub mod core;
 mod external_conditions;
 mod input;
+mod project;
 pub mod read_weather_file;
 mod simulation_time;
+
+#[macro_use]
+extern crate is_close;
 
 use crate::input::parse_input_file;
 use crate::read_weather_file::ExternalConditions;

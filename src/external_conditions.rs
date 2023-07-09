@@ -1,3 +1,4 @@
+use crate::core::units::DAYS_IN_MONTH;
 use crate::simulation_time::{
     SimulationTime, SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY,
 };
@@ -30,7 +31,7 @@ pub struct ShadingObject {
     distance: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct WindowShadingObject {
     #[serde(rename(deserialize = "type"))]
     object_type: WindowShadingObjectType,
@@ -66,9 +67,9 @@ pub struct ExternalConditions {
     pub longitude: f64,
     pub timezone: u32,
     pub start_day: u32,
-    pub end_day: u32,
+    pub end_day: Option<u32>,
     time_series_step: f64,
-    pub january_first: u32,
+    pub january_first: Option<u32>,
     pub daylight_savings: DaylightSavingsConfig,
     pub leap_day_included: bool,
     direct_beam_conversion_needed: bool,
@@ -97,9 +98,9 @@ impl ExternalConditions {
         longitude: f64,
         timezone: u32,
         start_day: u32,
-        end_day: u32,
+        end_day: Option<u32>,
         time_series_step: f64,
-        january_first: u32,
+        january_first: Option<u32>,
         daylight_savings: DaylightSavingsConfig,
         leap_day_included: bool,
         direct_beam_conversion_needed: bool,
@@ -269,9 +270,14 @@ impl ExternalConditions {
     }
 
     pub fn air_temp(&self) -> f64 {
-        self.air_temps[self
-            .simulation_time
-            .time_series_idx(self.start_day, self.time_series_step)]
+        self.air_temp_for_timestep_idx(
+            self.simulation_time
+                .time_series_idx(self.start_day, self.time_series_step),
+        )
+    }
+
+    pub fn air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
+        self.air_temps[timestep_idx]
     }
 
     pub fn air_temp_annual(&self) -> Option<f64> {
@@ -291,9 +297,14 @@ impl ExternalConditions {
     }
 
     pub fn wind_speed(&self) -> f64 {
-        self.wind_speeds[self
-            .simulation_time
-            .time_series_idx(self.start_day, self.time_series_step)]
+        self.wind_speed_for_timestep_idx(
+            self.simulation_time
+                .time_series_idx(self.start_day, self.time_series_step),
+        )
+    }
+
+    pub fn wind_speed_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
+        self.wind_speeds[timestep_idx]
     }
 
     pub fn wind_speed_annual(&self) -> Option<f64> {
@@ -561,23 +572,24 @@ impl ExternalConditions {
         let total_irradiance = calculated_direct + calculated_diffuse;
 
         if diffuse_breakdown {
-            CalculatedDirectDiffuseTotalIrradianceWithBreakdown((
+            (
                 calculated_direct,
                 calculated_diffuse,
                 total_irradiance,
-                DiffuseBreakdown {
+                Some(DiffuseBreakdown {
                     sky: diffuse_irr_sky,
                     circumsolar: diffuse_irr_circumsolar,
                     horiz: diffuse_irr_horiz,
                     ground_refl: ground_reflection_irradiance,
-                },
-            ))
+                }),
+            )
         } else {
-            CalculatedDirectDiffuseTotalIrradianceWithoutBreakdown((
+            (
                 calculated_direct,
                 calculated_diffuse,
                 total_irradiance,
-            ))
+                None,
+            )
         }
     }
 
@@ -1039,10 +1051,7 @@ impl ExternalConditions {
     // }
 }
 
-pub enum CalculatedDirectDiffuseTotalIrradiance {
-    CalculatedDirectDiffuseTotalIrradianceWithBreakdown((f64, f64, f64, DiffuseBreakdown)),
-    CalculatedDirectDiffuseTotalIrradianceWithoutBreakdown((f64, f64, f64)),
-}
+pub type CalculatedDirectDiffuseTotalIrradiance = (f64, f64, f64, Option<DiffuseBreakdown>);
 
 pub struct DiffuseBreakdown {
     sky: f64,
@@ -1266,10 +1275,6 @@ fn init_extra_terrestrial_radiation(earth_orbit_deviation: f64) -> f64 {
 }
 
 use crate::external_conditions::BrightnessCoefficientName::{F11, F12, F13, F21, F22, F23};
-use crate::external_conditions::CalculatedDirectDiffuseTotalIrradiance::{
-    CalculatedDirectDiffuseTotalIrradianceWithBreakdown,
-    CalculatedDirectDiffuseTotalIrradianceWithoutBreakdown,
-};
 use variants_struct::VariantsStruct;
 
 #[derive(VariantsStruct)]
@@ -1528,18 +1533,18 @@ mod test {
     pub fn air_temps() -> Vec<f64> {
         let mut temps: Vec<f64> = vec![];
         let months = [
-            (air_temp_day_jan as fn() -> [f64; 24], 31),
-            (air_temp_day_feb as fn() -> [f64; 24], 28),
-            (air_temp_day_mar as fn() -> [f64; 24], 31),
-            (air_temp_day_apr as fn() -> [f64; 24], 30),
-            (air_temp_day_may as fn() -> [f64; 24], 31),
-            (air_temp_day_jun as fn() -> [f64; 24], 30),
-            (air_temp_day_jul as fn() -> [f64; 24], 31),
-            (air_temp_day_aug as fn() -> [f64; 24], 31),
-            (air_temp_day_sep as fn() -> [f64; 24], 30),
-            (air_temp_day_oct as fn() -> [f64; 24], 31),
-            (air_temp_day_nov as fn() -> [f64; 24], 30),
-            (air_temp_day_dec as fn() -> [f64; 24], 31),
+            (air_temp_day_jan as fn() -> [f64; 24], DAYS_IN_MONTH[0]),
+            (air_temp_day_feb as fn() -> [f64; 24], DAYS_IN_MONTH[1]),
+            (air_temp_day_mar as fn() -> [f64; 24], DAYS_IN_MONTH[2]),
+            (air_temp_day_apr as fn() -> [f64; 24], DAYS_IN_MONTH[3]),
+            (air_temp_day_may as fn() -> [f64; 24], DAYS_IN_MONTH[4]),
+            (air_temp_day_jun as fn() -> [f64; 24], DAYS_IN_MONTH[5]),
+            (air_temp_day_jul as fn() -> [f64; 24], DAYS_IN_MONTH[6]),
+            (air_temp_day_aug as fn() -> [f64; 24], DAYS_IN_MONTH[7]),
+            (air_temp_day_sep as fn() -> [f64; 24], DAYS_IN_MONTH[8]),
+            (air_temp_day_oct as fn() -> [f64; 24], DAYS_IN_MONTH[9]),
+            (air_temp_day_nov as fn() -> [f64; 24], DAYS_IN_MONTH[10]),
+            (air_temp_day_dec as fn() -> [f64; 24], DAYS_IN_MONTH[11]),
         ];
         for (temps_fn, month_days_count) in months {
             temps.extend_from_slice(
@@ -1548,7 +1553,7 @@ mod test {
                     .iter()
                     .cloned()
                     .cycle()
-                    .take(month_days_count * HOURS_IN_DAY as usize)
+                    .take((month_days_count * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
                     .as_slice(),
             );
@@ -1626,18 +1631,18 @@ mod test {
     pub fn wind_speeds() -> Vec<f64> {
         let mut speeds: Vec<f64> = vec![];
         let months = [
-            (wind_speed_day_jan as fn() -> [f64; 24], 31),
-            (wind_speed_day_feb as fn() -> [f64; 24], 28),
-            (wind_speed_day_mar as fn() -> [f64; 24], 31),
-            (wind_speed_day_apr as fn() -> [f64; 24], 30),
-            (wind_speed_day_may as fn() -> [f64; 24], 31),
-            (wind_speed_day_jun as fn() -> [f64; 24], 30),
-            (wind_speed_day_jul as fn() -> [f64; 24], 31),
-            (wind_speed_day_aug as fn() -> [f64; 24], 31),
-            (wind_speed_day_sep as fn() -> [f64; 24], 30),
-            (wind_speed_day_oct as fn() -> [f64; 24], 31),
-            (wind_speed_day_nov as fn() -> [f64; 24], 30),
-            (wind_speed_day_dec as fn() -> [f64; 24], 31),
+            (wind_speed_day_jan as fn() -> [f64; 24], DAYS_IN_MONTH[0]),
+            (wind_speed_day_feb as fn() -> [f64; 24], DAYS_IN_MONTH[1]),
+            (wind_speed_day_mar as fn() -> [f64; 24], DAYS_IN_MONTH[2]),
+            (wind_speed_day_apr as fn() -> [f64; 24], DAYS_IN_MONTH[3]),
+            (wind_speed_day_may as fn() -> [f64; 24], DAYS_IN_MONTH[4]),
+            (wind_speed_day_jun as fn() -> [f64; 24], DAYS_IN_MONTH[5]),
+            (wind_speed_day_jul as fn() -> [f64; 24], DAYS_IN_MONTH[6]),
+            (wind_speed_day_aug as fn() -> [f64; 24], DAYS_IN_MONTH[7]),
+            (wind_speed_day_sep as fn() -> [f64; 24], DAYS_IN_MONTH[8]),
+            (wind_speed_day_oct as fn() -> [f64; 24], DAYS_IN_MONTH[9]),
+            (wind_speed_day_nov as fn() -> [f64; 24], DAYS_IN_MONTH[10]),
+            (wind_speed_day_dec as fn() -> [f64; 24], DAYS_IN_MONTH[11]),
         ];
         for (speeds_fn, month_days_count) in months {
             speeds.extend_from_slice(
@@ -1646,7 +1651,7 @@ mod test {
                     .iter()
                     .cloned()
                     .cycle()
-                    .take(month_days_count * HOURS_IN_DAY as usize)
+                    .take((month_days_count * HOURS_IN_DAY) as usize)
                     .collect::<Vec<f64>>()
                     .as_slice(),
             );
@@ -1691,8 +1696,8 @@ mod test {
     }
 
     #[fixture]
-    pub fn end_day() -> u32 {
-        0
+    pub fn end_day() -> Option<u32> {
+        Some(0)
     }
 
     #[fixture]
@@ -1701,8 +1706,8 @@ mod test {
     }
 
     #[fixture]
-    pub fn january_first() -> u32 {
-        1
+    pub fn january_first() -> Option<u32> {
+        Some(1)
     }
 
     #[fixture]

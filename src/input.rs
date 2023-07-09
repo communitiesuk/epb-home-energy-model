@@ -25,7 +25,7 @@ pub struct Input {
     internal_gains: InternalGains,
     appliance_gains: ApplianceGains,
     cold_water_source: ColdWaterSource,
-    energy_supply: EnergySupply,
+    energy_supply: EnergySupplyInput,
     control: Control,
     hot_water_source: HotWaterSource,
     shower: Option<Shower>,
@@ -40,7 +40,7 @@ pub struct Input {
     space_cool_system: Option<SpaceCoolSystem>,
     ventilation: Option<Ventilation>,
     infiltration: Infiltration,
-    zone: Zone,
+    zone: ZoneDictionary,
     #[serde(rename(deserialize = "PartGcompliance"))]
     part_g_compliance: Option<bool>,
     number_of_bedrooms: Option<u32>,
@@ -134,7 +134,7 @@ pub enum ApplianceGainType {
 // there may be a may to map this a priori but keeping them manually in sync for now
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnergySupply {
+pub struct EnergySupplyInput {
     #[serde(alias = "mains elec", alias = "mains_elec")]
     mains_electricity: Option<EnergySupplyDetails>,
     #[serde(alias = "mains gas")]
@@ -154,7 +154,7 @@ pub struct EnergySupplyDetails {
     electric_battery: Option<ElectricBattery>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum EnergySupplyType {
     #[serde(alias = "mains elec", alias = "mains_elec")]
@@ -615,7 +615,7 @@ pub struct Infiltration {
     shelter: InfiltrationShelterType,
     build_type: InfiltrationBuildType,
     test_result: f64,
-    test_type: String, // often a measurement in pascals, but don't know what options are here
+    test_type: InfiltrationTestType,
     env_area: f64,
     volume: f64,
     sheltered_sides: u32,
@@ -633,7 +633,10 @@ pub struct Infiltration {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InfiltrationShelterType {
+    VerySheltered,
+    Sheltered,
     Normal,
+    Exposed,
 }
 
 #[derive(Debug, Deserialize)]
@@ -643,11 +646,19 @@ pub enum InfiltrationBuildType {
     Flat,
 }
 
-pub type Zone = HashMap<String, ZoneDetails>;
+#[derive(Debug, Deserialize)]
+pub enum InfiltrationTestType {
+    #[serde(rename(deserialize = "50Pa"))]
+    FiftyPascals,
+    #[serde(rename(deserialize = "4Pa"))]
+    FourPascals,
+}
+
+pub type ZoneDictionary = HashMap<String, ZoneInput>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ZoneDetails {
+pub struct ZoneInput {
     #[serde(rename(deserialize = "SpaceHeatSystem"))]
     space_heat_system: String,
     #[serde(rename(deserialize = "SpaceCoolSystem"))]
@@ -673,7 +684,7 @@ pub struct ZoneLighting {
     efficacy: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum BuildingElement {
     #[serde(rename(deserialize = "BuildingElementOpaque"))]
@@ -742,7 +753,7 @@ pub enum BuildingElement {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum MassDistributionClass {
     D,
     E,
@@ -874,7 +885,7 @@ pub enum HeatSourceWetDetails {
     },
     HIU {
         #[serde(rename(deserialize = "EnergySupply"))]
-        EnergySupply: EnergySupplyType,
+        energy_supply: EnergySupplyType,
         power_max: f64,
         #[serde(rename(deserialize = "HIU_daily_loss"))]
         hiu_daily_loss: f64,
