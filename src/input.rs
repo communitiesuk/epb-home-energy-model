@@ -235,28 +235,40 @@ pub type Schedule = Value; // TODO: possible values are too undefined and unpred
 pub type Control = HashMap<String, ControlDetails>;
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ControlDetails {
-    #[serde[rename(deserialize = "type")]]
-    control_type: ControlType,
-    start_day: u32,
-    time_series_step: f64,
-    advanced_start: Option<u32>,
-    logic_type: Option<ControlLogicType>,
-    // charge_level is mapped to a serde_json Value here for now because it is observed giving single or multiple values
-    charge_level: Option<Value>, // this may evolve to be a field in a ChargeControlDetails variant type
-    target_charge: Option<f64>, // this may evolve to be a field in a ChargeControlDetails variant type
-    time_on_daily: Option<f64>, // this looks associated with an OnOffCostMinimisingTimeControl type, so may evolve to a variant field
-    setpoint_min: Option<f64>, // this may evolve to be a field in a SetpointControlDetails variant type
-    schedule: Schedule,
-}
-
-#[derive(Debug, Deserialize)]
-pub enum ControlType {
-    OnOffTimeControl,
-    OnOffCostMinimisingTimeControl,
-    SetpointTimeControl,
-    ToUChargeControl,
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum ControlDetails {
+    OnOffTimeControl {
+        start_day: u32,
+        time_series_step: f64,
+        advanced_start: Option<u32>,
+        logic_type: Option<ControlLogicType>,
+        schedule: Schedule,
+    },
+    OnOffCostMinimisingTimeControl {
+        start_day: u32,
+        time_series_step: f64,
+        advanced_start: Option<u32>,
+        logic_type: Option<ControlLogicType>,
+        time_on_daily: Option<f64>,
+        schedule: Schedule,
+    },
+    SetpointTimeControl {
+        start_day: u32,
+        time_series_step: f64,
+        advanced_start: Option<u32>,
+        logic_type: Option<ControlLogicType>,
+        setpoint_min: Option<f64>,
+        schedule: Schedule,
+    },
+    ToUChargeControl {
+        start_day: u32,
+        time_series_step: f64,
+        advanced_start: Option<u32>,
+        logic_type: Option<ControlLogicType>,
+        charge_level: Option<Value>,
+        target_charge: Option<f64>,
+        schedule: Schedule,
+    },
 }
 
 #[derive(Debug, Deserialize)]
