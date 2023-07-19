@@ -661,7 +661,7 @@ fn calc_temperatures(
     let mut matrix_a: DMatrix<f64> = DMatrix::zeros(no_of_temps, no_of_temps);
 
     // Init vector_b with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut vector_b: DMatrix<f64> = DMatrix::zeros(1, no_of_temps);
+    let mut vector_b: DVector<f64> = DVector::zeros(no_of_temps);
 
     // One term in eqn 39 is sum from k = 1 to n of (A_elk / A_tot). Given
     // that A_tot is defined as the sum of A_elk from k = 1 to n, this term
@@ -965,7 +965,7 @@ fn calc_temperatures(
 ///   external surface, and calculate temperatures in sequence
 fn fast_solver(
     coeffs: DMatrix<f64>,
-    rhs: DMatrix<f64>,
+    rhs: DVector<f64>,
     no_of_temps: usize,
     building_elements: &Vec<NamedBuildingElement>,
     element_positions: &Vec<(usize, usize)>,
@@ -976,8 +976,8 @@ fn fast_solver(
     // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
     let mut coeffs_adj: DMatrix<f64> = DMatrix::zeros(no_of_temps, no_of_temps);
 
-    // Init vector_b with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut rhs_adj: DMatrix<f64> = DMatrix::zeros(1usize, no_of_temps);
+    // Init rhs_adj with zeroes (length = number of nodes + 1 for overall zone heat balance)
+    let mut rhs_adj: DVector<f64> = DVector::zeros(no_of_temps);
 
     // Init matrix with zeroes
     // Number of rows in matrix = number of columns
