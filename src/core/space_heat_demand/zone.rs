@@ -1091,7 +1091,7 @@ fn temp_operative(
 
 /// Close-enough port of numpy's isclose function for use here
 ///
-/// Returns a boolean array where two arrays are element-wise equal within a
+/// Returns a single booleans where two arrays are element-wise all equal within a
 /// tolerance.
 ///
 /// See [docs for numpy.isclose](https://docs.rs/is_close/latest/is_close/)
