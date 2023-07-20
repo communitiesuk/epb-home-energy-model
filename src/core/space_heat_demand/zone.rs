@@ -15,9 +15,9 @@ use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT
 use crate::external_conditions::ExternalConditions;
 use crate::input::BuildingElement;
 use crate::simulation_time::SimulationTimeIterator;
+use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 // Convective fractions
@@ -87,7 +87,7 @@ impl<'a> Zone<'a> {
     pub fn new(
         area: f64,
         volume: f64,
-        building_elements: HashMap<String, BuildingElement>,
+        building_elements: IndexMap<String, BuildingElement>,
         thermal_bridging: ThermalBridging,
         vent_elements: Vec<Box<dyn VentilationElement>>,
         vent_cool_extra: Option<WindowOpeningForCooling>,
@@ -1181,6 +1181,7 @@ mod test {
         MassDistributionClass, ZoneInput,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
+    use indexmap::IndexMap;
     use rstest::*;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
@@ -1373,7 +1374,7 @@ mod test {
         };
 
         // Put building element objects in a list that can be iterated over
-        let be_objs = HashMap::from([
+        let be_objs = IndexMap::from([
             ("be_opaque_i".to_string(), be_opaque_i),
             ("be_opaque_d".to_string(), be_opaque_d),
             ("be_ztc".to_string(), be_ztc),
@@ -1396,7 +1397,7 @@ mod test {
         };
 
         // Put thermal bridge objects in a list that can be iterated over
-        let thermal_bridging = ThermalBridging::Bridges(HashMap::from([
+        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([
             ("tb_linear_1".to_string(), tb_linear_1),
             ("tb_linear_2".to_string(), tb_linear_2),
             ("tb_point".to_string(), tb_point),

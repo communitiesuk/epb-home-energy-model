@@ -1,10 +1,10 @@
+use indexmap::IndexMap;
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 pub enum ThermalBridging {
     Number(f64),
-    Bridges(HashMap<String, ThermalBridge>),
+    Bridges(IndexMap<String, ThermalBridge>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -36,7 +36,7 @@ pub fn heat_transfer_coefficient_for_thermal_bridge(thermal_bridge: &ThermalBrid
 pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
     match input {
         Value::Object(map) => {
-            let mut bridges = HashMap::from([]);
+            let mut bridges = IndexMap::new();
             for (name, bridge_object) in map.clone().iter() {
                 bridges.insert(
                     (*name).clone(),
@@ -101,7 +101,7 @@ mod test {
                     "heat_transfer_coeff": 2.0
                 }}
             )),
-            ThermalBridging::Bridges(HashMap::from([
+            ThermalBridging::Bridges(IndexMap::from([
                 (
                     "TB1".to_string(),
                     ThermalBridge::Linear {

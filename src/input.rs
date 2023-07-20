@@ -1,5 +1,6 @@
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -673,7 +674,7 @@ pub struct ZoneInput {
     temp_setpnt_cool: Option<f64>,
     temp_setpnt_init: Option<f64>,
     #[serde(rename(deserialize = "BuildingElement"))]
-    building_elements: HashMap<String, BuildingElement>,
+    building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename(deserialize = "ThermalBridging"))]
     thermal_bridging: Value, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
 }
@@ -768,7 +769,7 @@ pub enum MassDistributionClass {
 // #[derive(Debug, Deserialize)]
 // #[serde(untagged)]
 // pub enum ThermalBridging {
-//     ThermalBridgingElements(HashMap<String, ThermalBridgingDetails>),
+//     ThermalBridgingElements(IndexMap<String, ThermalBridgingDetails>),
 //     ThermalBridgingNumber(f64),
 // }
 //
