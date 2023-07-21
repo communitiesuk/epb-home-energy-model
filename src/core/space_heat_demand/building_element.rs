@@ -8,9 +8,14 @@ use std::f64::consts::PI;
 pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
     match element {
         &BuildingElement::Opaque { area: a, .. } => a,
-        &BuildingElement::Transparent { area: a, .. } => match a {
+        &BuildingElement::Transparent {
+            area: a,
+            height,
+            width,
+            ..
+        } => match a {
             Some(a) => a,
-            None => 0.0, // just to give some nominal value
+            None => height * width, // just to give some nominal value
         },
         &BuildingElement::Ground { area: a, .. } => a,
         &BuildingElement::AdjacentZTC { area: a, .. } => a,
