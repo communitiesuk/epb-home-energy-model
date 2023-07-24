@@ -133,6 +133,7 @@ impl ExternalConditions {
                     hour % 24,
                     equations_of_time[hour.div_euclid(24) as usize],
                     time_shift,
+                    hour,
                 )
             })
             .collect::<Vec<f64>>();
@@ -212,6 +213,7 @@ impl ExternalConditions {
 
         let simtime = simulation_time.clone();
         // # Calculate circumsolar brightness coefficient, F1 for each timestep
+
         let f1_circumsolar_brightness_coefficients = simtime
             .map(|it| {
                 init_f1_circumsolar_brightness_coefficient(
@@ -564,6 +566,7 @@ impl ExternalConditions {
 
         let (diffuse_irr_total, diffuse_irr_sky, diffuse_irr_circumsolar, diffuse_irr_horiz) =
             self.diffuse_irradiance(tilt, orientation);
+
         let ground_reflection_irradiance = self.ground_reflection_irradiance(tilt);
 
         let calculated_direct = self.direct_irradiance(tilt, orientation) + diffuse_irr_circumsolar;
@@ -1142,12 +1145,18 @@ fn init_time_shift(timezone: u32, longitude: f64) -> f64 {
     timezone as f64 - longitude / 15.0
 }
 
-fn init_solar_time(hour_of_day: u32, equation_of_time: f64, time_shift: f64) -> f64 {
+fn init_solar_time(
+    hour_of_day: u32,
+    equation_of_time: f64,
+    time_shift: f64,
+    current_hour: u32,
+) -> f64 {
     // """ Calculate the solar time, tsol, as a function of the equation of time,
     // the time shift and the hour of the day """
 
     // #note we +1 here because the simulation hour of day starts at 0
     // #while the sun path standard hour of day starts at 1 (hour 0 to 1)
+
     let hour_of_day = hour_of_day + 1;
 
     hour_of_day as f64 - (equation_of_time / 60.0) - time_shift
@@ -1201,9 +1210,16 @@ fn init_solar_altitude(latitude: f64, solar_declination: f64, solar_hour_angle: 
     let solar_declination = solar_declination.to_radians();
     let solar_hour_angle = solar_hour_angle.to_radians();
 
-    (solar_declination.sin() * latitude.sin()
+    let asol = (solar_declination.sin() * latitude.sin()
         + solar_declination.cos() * latitude.cos() * solar_hour_angle.cos())
-    .to_degrees()
+    .asin()
+    .to_degrees();
+
+    if asol < 0.0001 {
+        return 0.;
+    }
+
+    asol
 }
 
 fn init_solar_zenith_angle(solar_altitude: f64) -> f64 {

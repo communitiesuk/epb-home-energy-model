@@ -325,7 +325,6 @@ pub fn shading_factors_direct_diffuse_for(
 /// Return the temperature on the other side of the building element
 pub fn temp_ext_for(
     element: &BuildingElement,
-    init_temp_ext_air: f64,
     external_conditions: &ExternalConditions,
     simulation_time: &SimulationTimeIterator,
 ) -> f64 {
@@ -361,7 +360,7 @@ pub fn temp_ext_for(
                     - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
                     / (area * u_value)
         }
-        _ => init_temp_ext_air,
+        _ => external_conditions.air_temp_for_timestep_idx(simulation_time.current_index()),
     }
 }
 

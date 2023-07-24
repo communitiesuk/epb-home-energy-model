@@ -701,8 +701,7 @@ fn calc_temperatures(
         let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions);
         let (f_sh_dir, f_sh_dif) = shading_factors_direct_diffuse_for(&eli, external_conditions);
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
-            + (h_ce + h_re)
-                * temp_ext_for(eli, temp_ext_air, external_conditions, &simulation_time)
+            + (h_ce + h_re) * temp_ext_for(eli, external_conditions, &simulation_time)
             + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
             - therm_rad_to_sky;
 
@@ -749,12 +748,11 @@ fn calc_temperatures(
         // Coeff for temperature of thermal zone
         matrix_a[(idx, passed_zone_idx)] = -h_ci;
         // RHS of heat balance eqn for this node
-        vector_b[idx] = (k_pli[i] / delta_t)
-            * temp_prev[idx]
-            * ((1.0 - F_INT_C) * gains_internal
+        vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
+            + ((1.0 - F_INT_C) * gains_internal
                 + (1.0 - F_SOL_C) * gains_solar
                 + (1.0 - f_hc_c) * gains_heat_cool)
-            / area_el_total;
+                / area_el_total;
     }
     // Zone heat balance:
     // - Construct row of matrix A for zone heat balance eqn
@@ -782,15 +780,17 @@ fn calc_temperatures(
             .enumerate()
             .map(|(eli_idx, nel)| {
                 let NamedBuildingElement { element: eli, .. } = nel;
-                h_ci_for(
-                    eli,
-                    temp_prev[passed_zone_idx],
-                    temp_prev[element_positions[eli_idx].1],
-                )
+                area_for_building_element_input(eli)
+                    * h_ci_for(
+                        eli,
+                        temp_prev[passed_zone_idx],
+                        temp_prev[element_positions[eli_idx].1],
+                    )
             })
             .sum::<f64>()
         + sum_vent_elements_h_ve
         + tb_heat_trans_coeff;
+
     // Add final sum term for LHS of eqn 38 in loop below.
     // These are coeffs for temperatures of internal surface nodes of
     // all building elements in the zone
@@ -830,7 +830,7 @@ fn calc_temperatures(
         ) * vei
             .temp_supply(simulation_time.current_index());
     }
-    vector_b[passed_zone_idx] = (c_int * delta_t) * temp_prev[passed_zone_idx]
+    vector_b[passed_zone_idx] = (c_int / delta_t) * temp_prev[passed_zone_idx]
         + sum_vent_elements_h_ve_times_temp_supply
         + tb_heat_trans_coeff * temp_ext_air
         + F_INT_C * gains_internal
@@ -994,7 +994,7 @@ fn fast_solver(
         let (idx_ext_surface, idx_int_surface) = element_positions[el_idx];
 
         // No adjusted coeffs and RHS for external surface heat balance eqn
-        coeffs_adj[(idx_ext_surface, idx_int_surface)] = coeffs[(idx_ext_surface, idx_int_surface)];
+        coeffs_adj[(idx_ext_surface, idx_ext_surface)] = coeffs[(idx_ext_surface, idx_ext_surface)];
         rhs_adj[idx_ext_surface] = rhs[idx_ext_surface];
 
         // Loop over nodes, from inside node adjacent to external surface, to internal surface
@@ -1029,9 +1029,6 @@ fn fast_solver(
     // Coeffs for temperatures other than the air temp are added in the loop above
     matrix_a[(zone_idx, zone_idx)] = coeffs[(passed_zone_idx, passed_zone_idx)];
     vector_b[zone_idx] = rhs[passed_zone_idx];
-
-    println!("{:?}", matrix_a);
-    println!("{:?}", vector_b);
 
     // Solve heat balance eqns for inside and air nodes using normal matrix solver
     // Solve matrix eqn A.X = B to calculate vector_x (temperatures)
@@ -1106,7 +1103,7 @@ pub fn isclose(a: &Vec<f64>, b: &Vec<f64>, rtol: Option<f64>, atol: Option<f64>)
     )
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NamedBuildingElement {
     pub name: String,
     pub element: BuildingElement,
@@ -1447,11 +1444,10 @@ mod test {
         )
     }
 
-    // commented out for now as zone instantiation does not resolve at the moment
-    // #[rstest]
-    // pub fn should_have_correct_volume(zone: Zone) {
-    //     assert_eq!(zone.volume(), 125.);
-    // }
+    #[rstest]
+    pub fn should_have_correct_volume(zone: Zone) {
+        assert_eq!(zone.volume(), 125.);
+    }
 
     #[rstest]
     pub fn should_replicate_numpy_isclose() {
