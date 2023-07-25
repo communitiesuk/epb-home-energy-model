@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::simulation_time::{SimulationTimeIterator, HOURS_IN_DAY};
 use itertools::Itertools;
 use serde::Deserialize;

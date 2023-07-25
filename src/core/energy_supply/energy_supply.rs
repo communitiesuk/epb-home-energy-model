@@ -1,7 +1,6 @@
 use crate::input::{ElectricBattery, EnergyDiverter, EnergySupplyType};
-use crate::simulation_time::{SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashMap;
-
 
 pub struct EnergySupply {
     fuel_type: EnergySupplyType,
@@ -205,12 +204,12 @@ mod test {
         simulation_time: SimulationTimeIterator,
     ) {
         for simtime in simulation_time {
-            energy_supply.demand_energy(
+            let _ = energy_supply.demand_energy(
                 "shower".to_string(),
                 (simtime.index as f64 + 1.0) * 50.0,
                 simtime.index,
             );
-            energy_supply.demand_energy(
+            let _ = energy_supply.demand_energy(
                 "bath".to_string(),
                 simtime.index as f64 * 20.0,
                 simtime.index,

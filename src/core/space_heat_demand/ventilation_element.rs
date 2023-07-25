@@ -10,8 +10,7 @@ use crate::core::units::{
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    BuildingElement, InfiltrationBuildType, InfiltrationShelterType,
-    InfiltrationTestType,
+    BuildingElement, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
 };
 use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashSet;
@@ -337,7 +336,7 @@ impl MechanicalVentilationHeatRecovery {
         let fan_energy_use_kwh =
             (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time.step_in_hours();
 
-        self.energy_supply.demand_energy(
+        let _ = self.energy_supply.demand_energy(
             self.energy_supply_end_user_name.clone(),
             fan_energy_use_kwh,
             timestep_index,

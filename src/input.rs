@@ -2,7 +2,7 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -307,6 +307,7 @@ pub enum HotWaterSourceDetails {
         heat_source_wet: HeatSourceWetType,
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
+        #[allow(non_snake_case)]
         separate_DHW_tests: Value, // only known value here is "M&L" so looks too early to say this is an enum
         rejected_energy_1: f64,
         fuel_energy_2: f64,
