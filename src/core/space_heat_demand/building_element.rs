@@ -1,6 +1,6 @@
 use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
-use crate::external_conditions::{CalculatedDirectDiffuseTotalIrradiance, ExternalConditions};
+use crate::external_conditions::{ExternalConditions};
 use crate::input::{BuildingElement, MassDistributionClass};
 use crate::simulation_time::SimulationTimeIterator;
 use std::f64::consts::PI;
@@ -112,9 +112,9 @@ pub fn number_of_inside_nodes(element: &BuildingElement) -> u32 {
 /// according to BS EN ISO 52016-1:2017, section 6.5.7.3
 pub fn k_pli_for(element: &BuildingElement) -> Vec<f64> {
     match element {
-        &BuildingElement::Opaque {
-            mass_distribution_class: ref dist_class,
-            ref k_m,
+        BuildingElement::Opaque {
+            mass_distribution_class: dist_class,
+            k_m,
             ..
         } => match dist_class {
             MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
@@ -130,9 +130,9 @@ pub fn k_pli_for(element: &BuildingElement) -> Vec<f64> {
             }
             MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
         },
-        &BuildingElement::AdjacentZTC {
-            mass_distribution_class: ref dist_class,
-            ref k_m,
+        BuildingElement::AdjacentZTC {
+            mass_distribution_class: dist_class,
+            k_m,
             ..
         } => match dist_class {
             MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
@@ -148,9 +148,9 @@ pub fn k_pli_for(element: &BuildingElement) -> Vec<f64> {
             }
             MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
         },
-        &BuildingElement::AdjacentZTUSimple {
-            mass_distribution_class: ref dist_class,
-            ref k_m,
+        BuildingElement::AdjacentZTUSimple {
+            mass_distribution_class: dist_class,
+            k_m,
             ..
         } => match dist_class {
             MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
@@ -166,9 +166,9 @@ pub fn k_pli_for(element: &BuildingElement) -> Vec<f64> {
             }
             MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
         },
-        &BuildingElement::Ground {
-            mass_distribution_class: ref dist_class,
-            ref k_m,
+        BuildingElement::Ground {
+            mass_distribution_class: dist_class,
+            k_m,
             ..
         } => {
             let k_gr = K_GR_FOR_GROUND;
@@ -288,7 +288,7 @@ fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
 
 fn r_si_for_pitch(pitch: f64) -> f64 {
     match pitch {
-        _ if pitch >= PITCH_LIMIT_HORIZ_CEILING && pitch <= PITCH_LIMIT_HORIZ_FLOOR => {
+        _ if (PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR).contains(&pitch) => {
             R_SI_HORIZONTAL
         }
         _ if pitch < PITCH_LIMIT_HORIZ_CEILING => R_SI_UPWARDS,
@@ -367,7 +367,7 @@ pub fn i_sol_dir_dif_for(
 
 pub fn shading_factors_direct_diffuse_for(
     element: &BuildingElement,
-    external_conditions: &ExternalConditions,
+    _external_conditions: &ExternalConditions,
 ) -> (f64, f64) {
     match element {
         BuildingElement::Opaque { .. } => {
@@ -468,7 +468,7 @@ fn heat_flow_direction_for(
     temp_int_surface: f64,
 ) -> HeatFlowDirection {
     let pitch = pitch_for(element);
-    if pitch >= PITCH_LIMIT_HORIZ_CEILING && pitch <= PITCH_LIMIT_HORIZ_FLOOR {
+    if (PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR).contains(&pitch) {
         HeatFlowDirection::Horizontal
     } else {
         let inwards_heat_flow = temp_int_air < temp_int_surface;

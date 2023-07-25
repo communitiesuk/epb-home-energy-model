@@ -7,8 +7,8 @@ use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
 };
 use crate::core::space_heat_demand::ventilation_element::{
-    temp_supply_for_window_opening, MechanicalVentilationHeatRecovery, NaturalVentilation,
-    VentilationElement, VentilationElementInfiltration, WholeHouseExtractVentilation,
+    temp_supply_for_window_opening,
+    VentilationElement,
     WindowOpeningForCooling,
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
@@ -17,7 +17,7 @@ use crate::input::BuildingElement;
 use crate::simulation_time::SimulationTimeIterator;
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
-use serde::Deserialize;
+
 use std::hash::{Hash, Hasher};
 
 // Convective fractions
@@ -100,13 +100,13 @@ impl<'a> Zone<'a> {
             ThermalBridging::Number(heat_coeff) => heat_coeff,
             ThermalBridging::Bridges(ref bridges) => bridges
                 .values()
-                .map(|bridge| heat_transfer_coefficient_for_thermal_bridge(bridge))
+                .map(heat_transfer_coefficient_for_thermal_bridge)
                 .sum::<f64>(),
         };
 
         let area_el_total = building_elements
             .values()
-            .map(|el| area_for_building_element_input(el))
+            .map(area_for_building_element_input)
             .sum::<f64>();
         let c_int = K_M_INT * area;
 
@@ -119,7 +119,7 @@ impl<'a> Zone<'a> {
         let mut named_building_elements = vec![];
         for (name, building_element) in building_elements.iter() {
             let start_idx = n;
-            n = n + number_of_building_element_nodes(&building_element);
+            n += number_of_building_element_nodes(building_element);
             let end_idx = n - 1;
             element_positions.push((start_idx as usize, end_idx as usize));
             named_building_elements.push(NamedBuildingElement {
@@ -365,8 +365,8 @@ pub fn space_heat_cool_demand(
         "ERROR: Cooling setpoint is below heating setpoint."
     );
 
-    let mut temp_setpnt_cool_vent: Option<f64> = None;
-    if let Some(window_cooling) = vent_cool_extra {
+    let temp_setpnt_cool_vent: Option<f64> = None;
+    if let Some(_window_cooling) = vent_cool_extra {
         // temp_setpnt_cool_vent =
         // Set cooling setpoint to Planck temperature to ensure no cooling demand
         let temp_setpnt_cool_vent = Some(kelvin_to_celsius(1.4e32));
@@ -423,7 +423,7 @@ pub fn space_heat_cool_demand(
     // ventilation - just use cooling instead. Otherwise, cooling demand is zero
     // and need to use interpolation to work out additional ventilation required
     // (just like calc for heat_cool_load_unrestricted below)
-    let mut h_ve_cool_extra = 0.0;
+    let h_ve_cool_extra = 0.0;
     if vent_cool_extra.is_some() && temp_operative_free > temp_setpnt_cool_vent.unwrap() {
         // Calculate node and internal air temperatures with maximum additional ventilation
         let h_ve_cool_max = vent_cool_extra.as_ref().unwrap().h_ve_max(
@@ -715,13 +715,13 @@ fn calc_temperatures(
 
         // load in k_pli, h_pli, h_ce and h_re for this element
         let (k_pli, h_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
-            k_pli_for(&eli),
-            h_pli_for(&eli),
-            h_ce_for(&eli),
-            h_re_for(&eli),
-            h_ri_for(&eli),
-            a_sol_for(&eli),
-            therm_rad_to_sky_for(&eli),
+            k_pli_for(eli),
+            h_pli_for(eli),
+            h_ce_for(eli),
+            h_re_for(eli),
+            h_ri_for(eli),
+            a_sol_for(eli),
+            therm_rad_to_sky_for(eli),
         );
 
         // Coeff for temperature of this node
@@ -730,14 +730,14 @@ fn calc_temperatures(
         matrix_a[(idx, idx + 1)] = -h_pli[i];
         // RHS of heat balance eqn for this node
         let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions);
-        let (f_sh_dir, f_sh_dif) = shading_factors_direct_diffuse_for(&eli, external_conditions);
+        let (f_sh_dir, f_sh_dif) = shading_factors_direct_diffuse_for(eli, external_conditions);
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
-            + (h_ce + h_re) * temp_ext_for(eli, external_conditions, &simulation_time)
+            + (h_ce + h_re) * temp_ext_for(eli, external_conditions, simulation_time)
             + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
             - therm_rad_to_sky;
 
         // Inside node(s), if any (eqn 40)
-        for _ in 1..(number_of_inside_nodes(&eli) + 1) {
+        for _ in 1..(number_of_inside_nodes(eli) + 1) {
             i += 1;
             idx += 1;
             // Coeff for temperature of prev node
@@ -754,11 +754,11 @@ fn calc_temperatures(
         idx += 1;
         assert_eq!(idx, element_positions[eli_idx].1);
         i += 1;
-        assert_eq!(i as u32, number_of_building_element_nodes(&eli) - 1);
+        assert_eq!(i as u32, number_of_building_element_nodes(eli) - 1);
         // Get internal convective surface heat transfer coefficient, which
         // depends on direction of heat flow, which depends in temperature of
         // zone and internal surface
-        let h_ci = h_ci_for(&eli, temp_prev[passed_zone_idx], temp_prev[idx]);
+        let h_ci = h_ci_for(eli, temp_prev[passed_zone_idx], temp_prev[idx]);
         // Coeff for temperature of prev node
         matrix_a[(idx, idx - 1)] = -h_pli[i - 1];
         // Coeff for temperature of this node
@@ -1021,7 +1021,7 @@ fn fast_solver(
     // Init vector_b with zeroes (length = number of internal surfaces + 1 for air node)
     let mut vector_b: DVector<f64> = DVector::zeros(num_rows_cols_optimised);
 
-    for (el_idx, eli) in building_elements.iter().enumerate() {
+    for (el_idx, _eli) in building_elements.iter().enumerate() {
         let (idx_ext_surface, idx_int_surface) = element_positions[el_idx];
 
         // No adjusted coeffs and RHS for external surface heat balance eqn
@@ -1069,7 +1069,7 @@ fn fast_solver(
     let vector_x = matrix_a.lu().solve(&vector_b).unwrap();
 
     // Init temperature with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut temperatures = vec![0.0; no_of_temps as usize];
+    let mut temperatures = vec![0.0; no_of_temps];
     temperatures[passed_zone_idx] = vector_x[zone_idx];
 
     // Populate node temperature results for each building element

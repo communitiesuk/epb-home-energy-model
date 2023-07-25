@@ -2,7 +2,7 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;

@@ -69,7 +69,7 @@ impl OnOffMinimisingTimeControl {
         let mut built_schedule: Vec<bool> = vec![];
         for day in 0..time_series_len_days {
             // Get part of the schedule for current day
-            let schedule_day_start = (day * timesteps_per_day) as usize;
+            let schedule_day_start = day * timesteps_per_day;
             let schedule_day_end = schedule_day_start + timesteps_per_day;
             let schedule_day = schedule[schedule_day_start..schedule_day_end].to_vec();
 
@@ -79,7 +79,7 @@ impl OnOffMinimisingTimeControl {
             let schedule_day_cost_lowest = schedule_day_cost_lowest[0..timesteps_on_daily].to_vec();
 
             // Initialise boolean schedule for day
-            let mut schedule_onoff_day = vec![false; timesteps_per_day as usize];
+            let mut schedule_onoff_day = vec![false; timesteps_per_day];
 
             assert_eq!(schedule_onoff_day.len(), schedule_day.len());
             let mut timesteps_to_be_allocated = timesteps_on_daily;
@@ -157,7 +157,7 @@ impl SetpointTimeControl {
             setpoint_min,
             setpoint_max,
             default_to_max: default_to_max.unwrap_or(false),
-            timesteps_advstart: (duration_advanced_start / timestep as f64).round() as u32,
+            timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
         })
     }
 
@@ -212,7 +212,7 @@ impl SetpointTimeControl {
                 true => Some(max),
                 false => Some(min),
             },
-            (Some(s), _, _) => {
+            (Some(_s), _, _) => {
                 if self.setpoint_max.is_some() {
                     setpnt = match self.setpoint_max < setpnt {
                         true => self.setpoint_max,

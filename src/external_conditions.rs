@@ -1,6 +1,6 @@
-use crate::core::units::DAYS_IN_MONTH;
+
 use crate::simulation_time::{
-    SimulationTime, SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY,
+    SimulationTimeIterator, HOURS_IN_DAY,
 };
 use itertools::Itertools;
 use serde::Deserialize;
@@ -112,7 +112,7 @@ impl ExternalConditions {
 
         // # Calculate earth orbit deviation for each day of year
         let earth_orbit_deviations = (0..days_in_year)
-            .map(|day| init_earth_orbit_deviation(day))
+            .map(init_earth_orbit_deviation)
             .collect::<Vec<f64>>();
 
         let extra_terrestrial_radiation = (0..days_in_year)
@@ -124,7 +124,7 @@ impl ExternalConditions {
             .collect::<Vec<f64>>();
 
         let equations_of_time = (0..days_in_year)
-            .map(|day| init_equation_of_time(day))
+            .map(init_equation_of_time)
             .collect::<Vec<f64>>();
 
         let solar_times = (0..hours_in_year)
@@ -267,7 +267,7 @@ impl ExternalConditions {
         }
     }
 
-    pub fn next(&mut self) -> () {
+    pub fn next(&mut self) {
         self.simulation_time.next();
     }
 
@@ -616,7 +616,7 @@ impl ExternalConditions {
         let test1 = orientation - self.solar_azimuth_angles[current_hour_idx];
         let test2 = tilt - self.solar_altitudes[current_hour_idx];
 
-        (-90.0 > test1 || test1 > 90.0) || (-90.0 > test2 || test2 > 90.0)
+        !(-90.0..=90.0).contains(&test1) || !(-90.0..=90.0).contains(&test2)
     }
 
     fn get_segment(&self) -> Result<ShadingSegment, &'static str> {
@@ -980,11 +980,10 @@ impl ExternalConditions {
         }
 
         // following is finding the max value of fdiff_list
-        fdiff_list
+        *fdiff_list
             .iter()
             .max_by(|a, b| a.total_cmp(b))
             .unwrap()
-            .clone()
     }
 
     // commenting out for now as uses broken method direct_shading_reduction_factor
@@ -1149,7 +1148,7 @@ fn init_solar_time(
     hour_of_day: u32,
     equation_of_time: f64,
     time_shift: f64,
-    current_hour: u32,
+    _current_hour: u32,
 ) -> f64 {
     // """ Calculate the solar time, tsol, as a function of the equation of time,
     // the time shift and the hour of the day """

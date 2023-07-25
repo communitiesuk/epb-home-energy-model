@@ -10,7 +10,7 @@ use crate::core::units::{
 };
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    BuildingElement, EnergySupplyInput, InfiltrationBuildType, InfiltrationShelterType,
+    BuildingElement, InfiltrationBuildType, InfiltrationShelterType,
     InfiltrationTestType,
 };
 use crate::simulation_time::SimulationTimeIterator;
@@ -152,7 +152,7 @@ impl VentilationElement for VentilationElementInfiltration {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,
-        throughput_factor: Option<f64>,
+        _throughput_factor: Option<f64>,
         timestep_idx: Option<usize>,
     ) -> f64 {
         P_A * C_A
@@ -328,10 +328,7 @@ impl MechanicalVentilationHeatRecovery {
         timestep_index: usize,
         throughput_factor: Option<f64>,
     ) -> f64 {
-        let throughput_factor = match throughput_factor {
-            Some(t) => t,
-            None => 1.0,
-        };
+        let throughput_factor = throughput_factor.unwrap_or(1.0);
         // Calculate energy use by fans (only fans on intake/supply side
         // contribute to internal gains - assume that this is half of the fan power)
         let q_v =
@@ -346,7 +343,7 @@ impl MechanicalVentilationHeatRecovery {
             timestep_index,
         );
 
-        return fan_energy_use_kwh / 2.0;
+        fan_energy_use_kwh / 2.0
     }
 
     pub fn efficiency(&self) -> f64 {
@@ -365,12 +362,9 @@ impl VentilationElement for MechanicalVentilationHeatRecovery {
         &self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        timestep_idx: Option<usize>,
+        _timestep_idx: Option<usize>,
     ) -> f64 {
-        let throughput_factor = match throughput_factor {
-            Some(t) => t,
-            None => 1.0,
-        };
+        let throughput_factor = throughput_factor.unwrap_or(1.0);
 
         let q_v =
             air_change_rate_to_flow_rate(self.air_change_rate, zone_volume) * throughput_factor;
@@ -411,7 +405,7 @@ impl WholeHouseExtractVentilation {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         infiltration_rate: f64,
-        mut energy_supply: EnergySupply,
+        energy_supply: EnergySupply,
         energy_supply_end_user_name: String,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTimeIterator,
@@ -453,10 +447,7 @@ impl WholeHouseExtractVentilation {
         throughput_factor: Option<f64>,
         timestep_index: usize,
     ) -> f64 {
-        let throughput_factor = match throughput_factor {
-            Some(t) => t,
-            None => 1.0,
-        };
+        let throughput_factor = throughput_factor.unwrap_or(1.0);
 
         // # Calculate energy use by fans (does not contribute to internal gains as
         // # this is extract-only ventilation)
@@ -490,10 +481,7 @@ impl VentilationElement for WholeHouseExtractVentilation {
         throughput_factor: Option<f64>,
         timestep_index: Option<usize>,
     ) -> f64 {
-        let throughput_factor = match throughput_factor {
-            Some(t) => t,
-            None => 1.0,
-        };
+        let throughput_factor = throughput_factor.unwrap_or(1.0);
 
         let infiltration_rate_adj = self.infiltration_rate
             * self
@@ -512,7 +500,7 @@ impl VentilationElement for WholeHouseExtractVentilation {
             .air_temp_for_timestep_idx(timestep_index)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+    fn h_ve_average_heat_transfer_coefficient(&self, _zone_volume: f64) -> f64 {
         todo!()
     }
 }
@@ -528,7 +516,7 @@ impl VentilationElement for NaturalVentilation {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,
-        throughput_factor: Option<f64>,
+        _throughput_factor: Option<f64>,
         timestep_idx: Option<usize>,
     ) -> f64 {
         let infiltration_rate_adj = self.infiltration_rate
@@ -548,7 +536,7 @@ impl VentilationElement for NaturalVentilation {
             .air_temp_for_timestep_idx(timestep_index)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+    fn h_ve_average_heat_transfer_coefficient(&self, _zone_volume: f64) -> f64 {
         todo!()
     }
 }
@@ -659,7 +647,7 @@ impl<'a> WindowOpeningForCooling<'a> {
             }
         }
 
-        let cross_vent = openings_opp_side.len() > 0;
+        let cross_vent = !openings_opp_side.is_empty();
 
         let mut a_b = None;
         let mut a_w = None;
@@ -762,43 +750,41 @@ impl<'a> WindowOpeningForCooling<'a> {
                             .sum::<f64>());
                 opening_height_diff = opening_mid_height_ave_upper - opening_mid_height_ave_lower;
             }
+        } else if openings_high.len() > 1 && openings_low.len() > 1 {
+            stack_vent = true;
+            let opening_area_upper = openings_high
+                .iter()
+                .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                .sum::<f64>();
+            let opening_area_lower = openings_low
+                .iter()
+                .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                .sum::<f64>();
+
+            // Calculate opening area ratio
+            opening_area_ratio = Some(opening_area_upper / opening_area_lower);
+
+            let opening_mid_height_ave_upper = openings_high
+                .iter()
+                .map(|nel| {
+                    let el = element_from_named(nel);
+                    mid_height_for(el).unwrap() * area_for_building_element_input(el)
+                })
+                .sum::<f64>()
+                / opening_area_upper;
+            let opening_mid_height_ave_lower = openings_low
+                .iter()
+                .map(|nel| {
+                    let el = element_from_named(nel);
+                    mid_height_for(el).unwrap() * area_for_building_element_input(el)
+                })
+                .sum::<f64>()
+                / opening_area_lower;
+            // Calculate opening height difference
+            opening_height_diff = opening_mid_height_ave_upper - opening_mid_height_ave_lower;
         } else {
-            if openings_high.len() > 1 && openings_low.len() > 1 {
-                stack_vent = true;
-                let opening_area_upper = openings_high
-                    .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
-                    .sum::<f64>();
-                let opening_area_lower = openings_low
-                    .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
-                    .sum::<f64>();
-
-                // Calculate opening area ratio
-                opening_area_ratio = Some(opening_area_upper / opening_area_lower);
-
-                let opening_mid_height_ave_upper = openings_high
-                    .iter()
-                    .map(|nel| {
-                        let el = element_from_named(nel);
-                        mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                    })
-                    .sum::<f64>()
-                    / opening_area_upper;
-                let opening_mid_height_ave_lower = openings_low
-                    .iter()
-                    .map(|nel| {
-                        let el = element_from_named(nel);
-                        mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                    })
-                    .sum::<f64>()
-                    / opening_area_lower;
-                // Calculate opening height difference
-                opening_height_diff = opening_mid_height_ave_upper - opening_mid_height_ave_lower;
-            } else {
-                stack_vent = false;
-                openings_for_struct = Some(openings);
-            }
+            stack_vent = false;
+            openings_for_struct = Some(openings);
         }
 
         Self {
