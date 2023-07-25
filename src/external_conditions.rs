@@ -1,7 +1,4 @@
-
-use crate::simulation_time::{
-    SimulationTimeIterator, HOURS_IN_DAY,
-};
+use crate::simulation_time::{SimulationTimeIterator, HOURS_IN_DAY};
 use itertools::Itertools;
 use serde::Deserialize;
 
@@ -980,10 +977,7 @@ impl ExternalConditions {
         }
 
         // following is finding the max value of fdiff_list
-        *fdiff_list
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap()
+        *fdiff_list.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
     }
 
     // commenting out for now as uses broken method direct_shading_reduction_factor
@@ -1470,6 +1464,7 @@ fn init_dimensionless_sky_brightness_parameter(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use rstest::*;

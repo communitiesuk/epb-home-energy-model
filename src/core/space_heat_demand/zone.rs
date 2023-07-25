@@ -7,9 +7,7 @@ use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
 };
 use crate::core::space_heat_demand::ventilation_element::{
-    temp_supply_for_window_opening,
-    VentilationElement,
-    WindowOpeningForCooling,
+    temp_supply_for_window_opening, VentilationElement, WindowOpeningForCooling,
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
@@ -1202,6 +1200,7 @@ struct HeatBalance {
 mod test {
     use super::*;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
+    use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
