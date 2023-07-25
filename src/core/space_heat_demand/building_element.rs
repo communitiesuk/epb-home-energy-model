@@ -1,9 +1,69 @@
 use crate::core::space_heat_demand::zone::NamedBuildingElement;
-use crate::core::units::average_monthly_to_annual;
+use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::{CalculatedDirectDiffuseTotalIrradiance, ExternalConditions};
 use crate::input::{BuildingElement, MassDistributionClass};
 use crate::simulation_time::SimulationTimeIterator;
 use std::f64::consts::PI;
+
+impl BuildingElement {
+    pub fn fabric_heat_loss(&self) -> f64 {
+        match *self {
+            BuildingElement::Opaque {
+                u_value,
+                r_c,
+                area,
+                pitch,
+                ..
+            } => {
+                let u_value =
+                    u_value.unwrap_or_else(|| 1. / (r_c.unwrap() + R_SE + r_si_for_pitch(pitch)));
+                area * u_value
+            }
+            BuildingElement::AdjacentZTC { .. } => 0.0, // no heat loss to thermally conditioned zones
+            BuildingElement::AdjacentZTUSimple {
+                u_value,
+                r_c,
+                area,
+                pitch,
+                ..
+            } => {
+                let u_value =
+                    u_value.unwrap_or_else(|| 1. / (r_c.unwrap() + R_SE + r_si_for_pitch(pitch)));
+                area * u_value
+            }
+            BuildingElement::Ground { u_value, area, .. } => u_value * area,
+            BuildingElement::Transparent {
+                u_value,
+                r_c,
+                pitch,
+                ..
+            } => {
+                // Effective window U-value includes assumed use of curtains/blinds, see
+                // SAP10.2 spec, paragraph 3.2
+                // TODO Confirm this is still the desired approach for SAP 11
+                let r_curtains_blinds = 0.04;
+                let u_value = u_value.unwrap_or_else(|| {
+                    1. / ((r_c.unwrap() + r_si_for_pitch(pitch) + R_SE) + r_curtains_blinds)
+                });
+                area_for_building_element_input(self) * u_value
+            }
+        }
+    }
+
+    pub fn heat_capacity(&self) -> f64 {
+        match *self {
+            BuildingElement::Opaque { area, k_m, .. } => area * (k_m / JOULES_PER_KILOJOULE as f64),
+            BuildingElement::AdjacentZTC { area, k_m, .. } => {
+                area * (k_m / JOULES_PER_KILOJOULE as f64)
+            }
+            BuildingElement::AdjacentZTUSimple { area, k_m, .. } => {
+                area * (k_m / JOULES_PER_KILOJOULE as f64)
+            }
+            BuildingElement::Ground { area, k_m, .. } => area * (k_m / JOULES_PER_KILOJOULE as f64),
+            BuildingElement::Transparent { .. } => 0.0, // Set to zero as not included in heat loss calculations
+        }
+    }
+}
 
 pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
     match element {

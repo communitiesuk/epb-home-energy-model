@@ -169,6 +169,37 @@ impl<'a> Zone<'a> {
     pub fn volume(&self) -> f64 {
         self.volume
     }
+
+    pub fn total_fabric_heat_loss(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .map(|nel| {
+                let NamedBuildingElement { element, .. } = nel;
+                element.fabric_heat_loss()
+            })
+            .sum::<f64>()
+    }
+
+    pub fn total_heat_capacity(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .map(|nel| {
+                let NamedBuildingElement { element, .. } = nel;
+                element.heat_capacity()
+            })
+            .sum::<f64>()
+    }
+
+    pub fn total_thermal_bridges(&self) -> f64 {
+        self.tb_heat_trans_coeff
+    }
+
+    pub fn total_vent_heat_loss(&self) -> f64 {
+        self.vent_elements
+            .iter()
+            .map(|vent| vent.h_ve_average_heat_transfer_coefficient(self.volume))
+            .sum::<f64>()
+    }
 }
 
 /// Initialise temperatures of heat balance nodes
@@ -1447,6 +1478,39 @@ mod test {
     #[rstest]
     pub fn should_have_correct_volume(zone: Zone) {
         assert_eq!(zone.volume(), 125.);
+    }
+
+    fn round_by_precision(src: f64, precision: f64) -> f64 {
+        (precision * src).round() / precision
+    }
+
+    #[rstest]
+    pub fn should_have_correct_total_fabric_heat_loss(zone: Zone) {
+        assert_eq!(
+            round_by_precision(zone.total_fabric_heat_loss(), 1e2),
+            round_by_precision(174.58, 1e2),
+        );
+    }
+
+    #[rstest]
+    pub fn should_have_correct_heat_capacity(zone: Zone) {
+        assert_eq!(zone.total_heat_capacity(), 2166.);
+    }
+
+    #[rstest]
+    pub fn should_have_correct_thermal_bridges(zone: Zone) {
+        assert_eq!(
+            round_by_precision(zone.total_thermal_bridges(), 1e2),
+            round_by_precision(4.3, 1e2),
+        );
+    }
+
+    #[rstest]
+    pub fn should_have_correct_total_vent_heat_loss(zone: Zone) {
+        assert_eq!(
+            round_by_precision(zone.total_vent_heat_loss(), 1e1),
+            round_by_precision(157.9, 1e1),
+        );
     }
 
     #[rstest]

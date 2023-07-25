@@ -1,3 +1,4 @@
+pub const JOULES_PER_KILOJOULE: u32 = 1000;
 pub const WATTS_PER_KILOWATT: u32 = 1000;
 pub const LITRES_PER_CUBIC_METRE: u32 = 1000;
 pub const SECONDS_PER_HOUR: u32 = 3600;

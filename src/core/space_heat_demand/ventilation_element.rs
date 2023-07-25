@@ -29,6 +29,14 @@ pub trait VentilationElement {
     ) -> f64;
 
     fn temp_supply(&self, timestep_index: usize) -> f64;
+
+    /// Calculate the heat transfer coefficient (h_ve), in W/K,
+    ///         according to ISO 52016-1:2017, Section 6.5.10.1, for a constant average windspeed
+    ///
+    /// # Arguments
+    ///
+    ///  * `zone_volume` - volume of zone, in m3
+    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64;
 }
 
 pub struct VentilationElementInfiltration {
@@ -131,20 +139,6 @@ impl VentilationElementInfiltration {
     pub fn infiltration_rate(&self) -> f64 {
         self.infiltration_rate
     }
-
-    /// Calculate the heat transfer coefficient (h_ve), in W/K,
-    ///         according to ISO 52016-1:2017, Section 6.5.10.1, for a constant average windspeed
-    ///
-    /// # Arguments
-    ///
-    ///  * `zone_volume` - volume of zone, in m3
-    pub fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
-        P_A * C_A
-            * (self.infiltration_rate() * self.external_conditions.wind_speed_annual().unwrap()
-                / 4.0
-                * zone_volume
-                / SECONDS_PER_HOUR as f64)
-    }
 }
 
 impl VentilationElement for VentilationElementInfiltration {
@@ -175,6 +169,14 @@ impl VentilationElement for VentilationElementInfiltration {
         // according to ISO 52016-1:2017, Section 6.5.10.2
         self.external_conditions
             .air_temp_for_timestep_idx(timestep_idx)
+    }
+
+    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+        P_A * C_A
+            * (self.infiltration_rate() * self.external_conditions.wind_speed_annual().unwrap()
+                / 4.0
+                * zone_volume
+                / SECONDS_PER_HOUR as f64)
     }
 }
 
@@ -320,10 +322,6 @@ impl MechanicalVentilationHeatRecovery {
         }
     }
 
-    pub fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
-        self.h_ve_heat_transfer_coefficient(zone_volume, None, None)
-    }
-
     pub fn fans(
         &mut self,
         zone_volume: f64,
@@ -391,6 +389,10 @@ impl VentilationElement for MechanicalVentilationHeatRecovery {
     fn temp_supply(&self, timestep_index: usize) -> f64 {
         self.external_conditions
             .air_temp_for_timestep_idx(timestep_index)
+    }
+
+    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+        self.h_ve_heat_transfer_coefficient(zone_volume, None, None)
     }
 }
 
@@ -509,6 +511,10 @@ impl VentilationElement for WholeHouseExtractVentilation {
         self.external_conditions
             .air_temp_for_timestep_idx(timestep_index)
     }
+
+    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+        todo!()
+    }
 }
 
 //tbc
@@ -540,6 +546,10 @@ impl VentilationElement for NaturalVentilation {
     fn temp_supply(&self, timestep_index: usize) -> f64 {
         self.external_conditions
             .air_temp_for_timestep_idx(timestep_index)
+    }
+
+    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+        todo!()
     }
 }
 
