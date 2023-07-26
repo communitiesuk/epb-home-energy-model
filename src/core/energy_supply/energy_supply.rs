@@ -1,10 +1,21 @@
-use crate::input::{ElectricBattery, EnergyDiverter, EnergySupplyType};
+use crate::input::{
+    ElectricBattery, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
+    HeatNetwork,
+};
 use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashMap;
 
+pub struct EnergySupplies {
+    pub mains_electricity: Option<EnergySupply>,
+    pub mains_gas: Option<EnergySupply>,
+    pub bulk_lpg: Option<EnergySupply>,
+    pub heat_network: Option<HeatNetwork>,
+    pub unmet_demand: EnergySupply,
+}
+
 pub struct EnergySupply {
     fuel_type: EnergySupplyType,
-    simulation_time: SimulationTimeIterator,
+    simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
     diverter: Option<EnergyDiverter>,
     demand_total: Vec<f64>,
@@ -22,29 +33,28 @@ pub struct EnergySupply {
 impl EnergySupply {
     /// Arguments:
     /// * `fuel_type` - string denoting type of fuel
-    /// * `simulation_time` - reference to SimulationTimeIterator object
+    /// * `simulation_timesteps` - the number of steps in the simulation time being used
     /// * `electric_battery` - reference to an ElectricBattery object
     pub fn new(
         fuel_type: EnergySupplyType,
-        simulation_time: SimulationTimeIterator,
+        simulation_timesteps: usize,
         electric_battery: Option<ElectricBattery>,
     ) -> Self {
-        let total_steps = &simulation_time.total_steps();
         Self {
             fuel_type,
-            simulation_time,
+            simulation_timesteps,
             electric_battery,
             diverter: None,
-            demand_total: init_demand_list(total_steps),
+            demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
-            beta_factor: init_demand_list(total_steps),
-            supply_surplus: init_demand_list(total_steps),
-            demand_not_met: init_demand_list(total_steps),
-            energy_into_battery: init_demand_list(total_steps),
-            energy_out_of_battery: init_demand_list(total_steps),
-            energy_diverted: init_demand_list(total_steps),
-            energy_generated_consumed: init_demand_list(total_steps),
+            beta_factor: init_demand_list(simulation_timesteps),
+            supply_surplus: init_demand_list(simulation_timesteps),
+            demand_not_met: init_demand_list(simulation_timesteps),
+            energy_into_battery: init_demand_list(simulation_timesteps),
+            energy_out_of_battery: init_demand_list(simulation_timesteps),
+            energy_diverted: init_demand_list(simulation_timesteps),
+            energy_generated_consumed: init_demand_list(simulation_timesteps),
         }
     }
 
@@ -83,12 +93,10 @@ impl EnergySupply {
     pub fn register_end_user_name(&mut self, end_user_name: String) {
         self.demand_by_end_user.insert(
             end_user_name.clone(),
-            init_demand_list(&self.simulation_time.total_steps()),
+            init_demand_list(self.simulation_timesteps),
         );
-        self.energy_out_by_end_user.insert(
-            end_user_name,
-            init_demand_list(&self.simulation_time.total_steps()),
-        );
+        self.energy_out_by_end_user
+            .insert(end_user_name, init_demand_list(self.simulation_timesteps));
     }
 
     pub fn demand_energy(
@@ -140,8 +148,8 @@ impl EnergySupply {
     // }
 }
 
-fn init_demand_list(timestep_count: &i32) -> Vec<f64> {
-    vec![0.0; *timestep_count as usize]
+fn init_demand_list(timestep_count: usize) -> Vec<f64> {
+    vec![0.0; timestep_count]
 }
 
 // EnergySupplyConnection is a delegating object in the Python codebase - working round implementing it
@@ -160,6 +168,40 @@ fn init_demand_list(timestep_count: &i32) -> Vec<f64> {
 //     pub fn supply_energy(&self, amount_demanded: f64) -> () {}
 // }
 
+pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
+    EnergySupplies {
+        mains_electricity: match input.mains_electricity {
+            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
+            _ => None,
+        },
+        mains_gas: match input.mains_gas {
+            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
+            _ => None,
+        },
+        bulk_lpg: match input.bulk_lpg {
+            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
+            _ => None,
+        },
+        heat_network: input.heat_network,
+        unmet_demand: EnergySupply::new(
+            EnergySupplyType::UnmetDemand,
+            simulation_timesteps,
+            Default::default(),
+        ),
+    }
+}
+
+fn supply_from_details(
+    energy_supply_details: EnergySupplyDetails,
+    simulation_timesteps: usize,
+) -> EnergySupply {
+    EnergySupply::new(
+        energy_supply_details.fuel,
+        simulation_timesteps,
+        energy_supply_details.electric_battery,
+    )
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -173,8 +215,8 @@ mod test {
     }
 
     #[fixture]
-    pub fn energy_supply(simulation_time: SimulationTimeIterator) -> EnergySupply {
-        let mut energy_supply = EnergySupply::new(MainsGas, simulation_time, None);
+    pub fn energy_supply<'a>(simulation_time: SimulationTimeIterator) -> EnergySupply {
+        let mut energy_supply = EnergySupply::new(MainsGas, simulation_time.total_steps(), None);
         energy_supply.register_end_user_name("shower".to_string());
         energy_supply.register_end_user_name("bath".to_string());
 

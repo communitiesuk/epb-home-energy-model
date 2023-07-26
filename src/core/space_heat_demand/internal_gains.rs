@@ -4,17 +4,23 @@ use crate::simulation_time::SimulationTimeIterator;
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
-/// * `simulation_time_iterator`
 /// * `start_day` - first day of time series, day of the year, 0 to 365
 /// * `time_series_step` - timestep of the time series data, in hours
-pub struct InternalGains<'a> {
+pub struct InternalGains {
     total_internal_gains: Vec<f64>,
-    simulation_time_iterator: &'a SimulationTimeIterator,
     start_day: u32,
     time_series_step: f64,
 }
 
-impl<'a> InternalGains<'a> {
+impl InternalGains {
+    pub fn new(total_internal_gains: Vec<f64>, start_day: u32, time_series_step: f64) -> Self {
+        InternalGains {
+            total_internal_gains,
+            start_day,
+            time_series_step,
+        }
+    }
+
     /// Return the total internal gain for the current timestep in W
     pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
         self.total_internal_gains[timestep_idx] * zone_area
@@ -26,7 +32,6 @@ impl<'a> InternalGains<'a> {
 /// * `connected_energy_supply` - reference to the energy supply attached to the specific appliance
 /// * `end_user_name` - name of the energy supply attached to the specific appliance
 /// * `gains_fraction` - fraction of energy supply which is counted as an internal gain
-/// * `simulation_time_iterator`
 /// * `start_day` - first day of time series, day of the year, 0 to 365
 /// * `time_series_step` - timestep of the time series data, in hours
 pub struct ApplianceGains<'a> {
@@ -34,7 +39,6 @@ pub struct ApplianceGains<'a> {
     connected_energy_supply: &'a EnergySupply,
     end_user_name: &'a str,
     gains_fraction: f64,
-    simulation_time_iterator: &'a SimulationTimeIterator,
     start_day: u32,
     time_series_step: f64,
 }
@@ -79,7 +83,6 @@ mod tests {
     ) {
         let internal_gains = InternalGains {
             total_internal_gains,
-            simulation_time_iterator: &(simulation_time_iterator.clone()),
             start_day: 0,
             time_series_step: 1.0,
         };
@@ -103,7 +106,7 @@ mod tests {
     ) {
         let energy_supply = EnergySupply::new(
             EnergySupplyType::Electricity,
-            simulation_time_iterator.clone(),
+            simulation_time_iterator.total_steps(),
             None,
         );
         let total_energy_supply = vec![32.0, 46.0, 30.0, 20.0];
@@ -113,7 +116,6 @@ mod tests {
             connected_energy_supply: &energy_supply,
             end_user_name: "lighting",
             gains_fraction: 0.5,
-            simulation_time_iterator: &simulation_time_iterator,
             start_day: 0,
             time_series_step: 1.0,
         };

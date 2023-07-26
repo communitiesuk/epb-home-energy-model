@@ -22,13 +22,13 @@ pub fn parse_input_file(file: &Path) -> Result<Input, Box<dyn Error>> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Input {
-    simulation_time: Arc<SimulationTime>,
-    external_conditions: Arc<ExternalConditionsInput>,
-    internal_gains: InternalGains,
+    pub simulation_time: Arc<SimulationTime>,
+    pub external_conditions: Arc<ExternalConditionsInput>,
+    pub internal_gains: InternalGains,
     appliance_gains: ApplianceGains,
-    cold_water_source: ColdWaterSource,
-    energy_supply: EnergySupplyInput,
-    control: Control,
+    pub cold_water_source: ColdWaterSourceInput,
+    pub energy_supply: EnergySupplyInput,
+    pub control: Control,
     hot_water_source: HotWaterSource,
     shower: Option<Shower>,
     bath: Option<Bath>,
@@ -40,8 +40,8 @@ pub struct Input {
     water_heating_events: WaterHeatingEvents,
     space_heat_system: Option<SpaceHeatSystem>,
     space_cool_system: Option<SpaceCoolSystem>,
-    ventilation: Option<Ventilation>,
-    infiltration: Infiltration,
+    pub ventilation: Option<Ventilation>,
+    pub infiltration: Infiltration,
     zone: ZoneDictionary,
     #[serde(rename(deserialize = "PartGcompliance"))]
     part_g_compliance: Option<bool>,
@@ -55,7 +55,7 @@ pub struct Input {
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
     heat_source_wet: Option<HeatSourceWet>,
     #[serde(rename(deserialize = "WWHRS"))]
-    waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
+    pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     on_site_generation: Option<OnSiteGeneration>,
     #[serde(rename(deserialize = "Window_Opening_For_Cooling"))]
     window_opening_for_cooling: Option<WindowOpeningForCooling>,
@@ -64,46 +64,46 @@ pub struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
-    air_temperatures: Option<Vec<f64>>,
-    wind_speeds: Option<Vec<f64>>,
+    pub air_temperatures: Option<Vec<f64>>,
+    pub wind_speeds: Option<Vec<f64>>,
     ground_temperatures: Option<Vec<f64>>,
-    diffuse_horizontal_radiation: Option<Vec<f64>>,
-    direct_beam_radiation: Option<Vec<f64>>,
-    solar_reflectivity_of_ground: Option<Vec<f64>>,
-    latitude: Option<f64>,
-    longitude: Option<f64>,
-    timezone: Option<u32>,
-    start_day: Option<u32>,
-    end_day: Option<u32>,
-    time_series_step: Option<f64>,
-    january_first: Option<u32>,
-    daylight_savings: Option<DaylightSavingsConfig>,
-    leap_day_included: Option<bool>,
-    direct_beam_conversion_needed: Option<bool>,
-    shading_segments: Vec<ShadingSegment>,
+    pub diffuse_horizontal_radiation: Option<Vec<f64>>,
+    pub direct_beam_radiation: Option<Vec<f64>>,
+    pub solar_reflectivity_of_ground: Option<Vec<f64>>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub timezone: Option<u32>,
+    pub start_day: Option<u32>,
+    pub end_day: Option<u32>,
+    pub time_series_step: Option<f64>,
+    pub january_first: Option<u32>,
+    pub daylight_savings: Option<DaylightSavingsConfig>,
+    pub leap_day_included: Option<bool>,
+    pub direct_beam_conversion_needed: Option<bool>,
+    pub shading_segments: Vec<ShadingSegment>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InternalGains {
     #[serde(alias = "total internal gains")]
-    total_internal_gains: Option<InternalGainsDetails>,
+    pub total_internal_gains: Option<InternalGainsDetails>,
     #[serde(alias = "metabolic gains")]
-    metabolic_gains: Option<InternalGainsDetails>,
-    other: Option<InternalGainsDetails>,
+    pub metabolic_gains: Option<InternalGainsDetails>,
+    pub other: Option<InternalGainsDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct InternalGainsDetails {
-    start_day: u32,
-    time_series_step: f64,
-    schedule: InternalGainsSchedule,
+    pub start_day: u32,
+    pub time_series_step: f64,
+    pub schedule: InternalGainsSchedule,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InternalGainsSchedule {
-    main: Value, // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
+    pub main: Value, // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
     day: Option<Vec<f64>>,
 }
 
@@ -142,22 +142,22 @@ pub enum ApplianceGainType {
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyInput {
     #[serde(alias = "mains elec", alias = "mains_elec")]
-    mains_electricity: Option<EnergySupplyDetails>,
+    pub mains_electricity: Option<EnergySupplyDetails>,
     #[serde(alias = "mains gas")]
-    mains_gas: Option<EnergySupplyDetails>,
+    pub mains_gas: Option<EnergySupplyDetails>,
     #[serde(rename(deserialize = "bulk LPG"))]
-    bulk_lpg: Option<EnergySupplyDetails>,
+    pub bulk_lpg: Option<EnergySupplyDetails>,
     #[serde(alias = "heat network")]
-    heat_network: Option<HeatNetwork>,
+    pub heat_network: Option<HeatNetwork>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyDetails {
-    fuel: EnergySupplyType,
-    diverter: Option<EnergyDiverter>,
+    pub fuel: EnergySupplyType,
+    pub diverter: Option<EnergyDiverter>,
     #[serde(rename(deserialize = "ElectricBattery"))]
-    electric_battery: Option<ElectricBattery>,
+    pub electric_battery: Option<ElectricBattery>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -180,7 +180,7 @@ pub enum EnergySupplyType {
     HeatNetwork,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub struct EnergyDiverter {
@@ -188,13 +188,22 @@ pub struct EnergyDiverter {
     heat_source: DiverterHeatSourceType,
 }
 
-#[derive(Debug, Deserialize)]
+impl Default for EnergyDiverter {
+    fn default() -> Self {
+        Self {
+            storage_tank: StorageTankType::HotWaterCylinder,
+            heat_source: DiverterHeatSourceType::Immersion,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub enum StorageTankType {
     #[serde(rename(deserialize = "hw cylinder"))]
     HotWaterCylinder,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum DiverterHeatSourceType {
     #[serde(rename(deserialize = "immersion"))]
     Immersion,
@@ -210,26 +219,26 @@ pub struct ElectricBattery {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatNetwork {
-    fuel: EnergySupplyType,
-    factor: HeatNetworkFactor,
+    pub fuel: EnergySupplyType,
+    pub factor: HeatNetworkFactor,
 }
 
 pub type HeatNetworkFactor = HashMap<String, f64>; // don't really know what these values can be yet
 
 #[derive(Debug, Deserialize)]
-pub struct ColdWaterSource {
+pub struct ColdWaterSourceInput {
     #[serde(alias = "mains water")]
-    mains_water: Option<ColdWaterSourceDetails>,
+    pub mains_water: Option<ColdWaterSourceDetails>,
     #[serde(alias = "header tank")]
-    header_tank: Option<ColdWaterSourceDetails>,
+    pub header_tank: Option<ColdWaterSourceDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColdWaterSourceDetails {
-    start_day: u32,
-    temperatures: Vec<f64>,
-    time_series_step: f64,
+    pub start_day: u32,
+    pub temperatures: Vec<f64>,
+    pub time_series_step: f64,
 }
 
 pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
@@ -257,9 +266,11 @@ pub enum ControlDetails {
     SetpointTimeControl {
         start_day: u32,
         time_series_step: f64,
-        advanced_start: Option<u32>,
+        advanced_start: Option<f64>,
         logic_type: Option<ControlLogicType>,
         setpoint_min: Option<f64>,
+        setpoint_max: Option<f64>,
+        default_to_max: Option<bool>,
         schedule: Schedule,
     },
     ToUChargeControl {
@@ -460,9 +471,9 @@ pub struct WaterHeatingEvents {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
-    start: f64,
-    duration: Option<f64>,
-    temperature: f64,
+    pub start: f64,
+    pub duration: Option<f64>,
+    pub temperature: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -614,24 +625,24 @@ pub enum MVHRLocation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Infiltration {
-    storeys_in_building: u32,
-    storey_of_dwelling: Option<u32>,
-    shelter: InfiltrationShelterType,
-    build_type: InfiltrationBuildType,
-    test_result: f64,
-    test_type: InfiltrationTestType,
-    env_area: f64,
-    volume: f64,
-    sheltered_sides: u32,
-    open_chimneys: u32,
-    open_flues: u32,
-    closed_fire: u32,
-    flues_d: u32,
-    flues_e: u32,
-    blocked_chimneys: u32,
-    extract_fans: u32,
-    passive_vents: u32,
-    gas_fires: u32,
+    pub storeys_in_building: u32,
+    pub storey_of_dwelling: Option<u32>,
+    pub shelter: InfiltrationShelterType,
+    pub build_type: InfiltrationBuildType,
+    pub test_result: f64,
+    pub test_type: InfiltrationTestType,
+    pub env_area: f64,
+    pub volume: f64,
+    pub sheltered_sides: u32,
+    pub open_chimneys: u32,
+    pub open_flues: u32,
+    pub closed_fire: u32,
+    pub flues_d: u32,
+    pub flues_e: u32,
+    pub blocked_chimneys: u32,
+    pub extract_fans: u32,
+    pub passive_vents: u32,
+    pub gas_fires: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -944,12 +955,22 @@ pub type WasteWaterHeatRecovery = HashMap<String, WasteWaterHeatRecoveryDetails>
 #[derive(Debug, Deserialize)]
 pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename(deserialize = "type"))]
-    system_type: String, // unclear what these can be yet
+    pub system_type: WwhrsType,
     #[serde(rename(deserialize = "ColdWaterSource"))]
-    cold_water_source: ColdWaterSourceType,
-    flow_rates: Vec<f64>,
-    efficiencies: Vec<f64>,
-    utilisation_factor: f64,
+    pub cold_water_source: ColdWaterSourceType,
+    pub flow_rates: Vec<f64>,
+    pub efficiencies: Vec<f64>,
+    pub utilisation_factor: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum WwhrsType {
+    #[serde(alias = "WWHRS_InstantaneousSystemA")]
+    SystemA,
+    #[serde(alias = "WWHRS_InstantaneousSystemB")]
+    SystemB,
+    #[serde(alias = "WWHRS_InstantaneousSystemC")]
+    SystemC,
 }
 
 pub type OnSiteGeneration = HashMap<String, OnSiteGenerationDetails>;

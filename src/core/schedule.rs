@@ -1,4 +1,4 @@
-use crate::input::Schedule;
+use crate::input::{Schedule, WaterHeatingEvent};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Index;
@@ -117,7 +117,8 @@ fn process_numeric_schedule_entry(
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScheduleEvent {
     start: f64,
-    duration: f64,
+    duration: Option<f64>,
+    temperature: Option<f64>,
 }
 
 impl From<Value> for ScheduleEvent {
@@ -125,7 +126,12 @@ impl From<Value> for ScheduleEvent {
         match value {
             Value::Object(event_map) => ScheduleEvent {
                 start: event_map.get("start").unwrap().as_f64().unwrap(),
-                duration: event_map.get("duration").unwrap().as_f64().unwrap(),
+                duration: event_map
+                    .get("duration")
+                    .and_then(|d| Some(d.as_f64().unwrap())),
+                temperature: event_map
+                    .get("temperature")
+                    .and_then(|t| Some(t.as_f64().unwrap())),
             },
             _ => panic!("Expected a JSON object when transforming into a schedule event"),
         }
@@ -133,32 +139,54 @@ impl From<Value> for ScheduleEvent {
 }
 
 pub fn expand_events(
-    events: Value,
+    events: Vec<Value>,
     simulation_timestep: f64,
     total_timesteps: usize,
 ) -> Vec<Option<Vec<ScheduleEvent>>> {
     let mut schedule: Vec<Option<Vec<ScheduleEvent>>> = vec![None; total_timesteps];
-    match events {
-        Value::Array(events) => {
-            for event in events {
-                let starting_timestep = (event
-                    .as_object()
-                    .unwrap()
-                    .get("start")
-                    .unwrap()
-                    .as_f64()
-                    .unwrap()
-                    / simulation_timestep)
-                    .floor() as usize;
-                match schedule.get_mut(starting_timestep).unwrap() {
-                    Some(events) => events.push(event.into()),
-                    None => {
-                        schedule[starting_timestep] = Some(vec![event.into()]);
-                    }
-                }
+    for event in events {
+        let starting_timestep = (event
+            .as_object()
+            .unwrap()
+            .get("start")
+            .unwrap()
+            .as_f64()
+            .unwrap()
+            / simulation_timestep)
+            .floor() as usize;
+        match schedule.get_mut(starting_timestep).unwrap() {
+            Some(events) => events.push(event.into()),
+            None => {
+                schedule[starting_timestep] = Some(vec![event.into()]);
             }
         }
-        _ => panic!("Events list was expected to be a list in the input."),
+    }
+
+    schedule
+}
+
+impl From<WaterHeatingEvent> for ScheduleEvent {
+    fn from(event: WaterHeatingEvent) -> Self {
+        Self {
+            start: event.start,
+            duration: event.duration,
+            temperature: Some(event.temperature),
+        }
+    }
+}
+
+pub fn expand_water_heating_events(
+    events: Vec<WaterHeatingEvent>,
+    simulation_timestep: f64,
+    total_timesteps: usize,
+) -> Vec<Option<Vec<ScheduleEvent>>> {
+    let mut schedule: Vec<Option<Vec<ScheduleEvent>>> = vec![None; total_timesteps];
+    for event in events {
+        let starting_timestep = (event.start / simulation_timestep).floor() as usize;
+        match schedule.get_mut(starting_timestep).unwrap() {
+            Some(events) => events.push(event.into()),
+            None => schedule[starting_timestep] = Some(vec![event.into()]),
+        }
     }
 
     schedule
@@ -268,12 +296,15 @@ mod test {
     }
 
     #[fixture]
-    pub fn events() -> Value {
+    pub fn events() -> Vec<Value> {
         json!([
             {"start": 2, "duration": 6},
             {"start": 2.1, "duration": 6},
             {"start": 3, "duration": 6},
         ])
+        .as_array()
+        .unwrap()
+        .clone()
     }
 
     #[fixture]
@@ -296,17 +327,20 @@ mod test {
             Some(vec![
                 ScheduleEvent {
                     start: 2.0,
-                    duration: 6.0,
+                    duration: Some(6.0),
+                    temperature: None,
                 },
                 ScheduleEvent {
                     start: 2.1,
-                    duration: 6.0,
+                    duration: Some(6.0),
+                    temperature: None,
                 },
             ]),
             None,
             Some(vec![ScheduleEvent {
                 start: 3.0,
-                duration: 6.0,
+                duration: Some(6.0),
+                temperature: None,
             }]),
             None,
             None,
@@ -316,7 +350,7 @@ mod test {
 
     #[rstest]
     pub fn should_expand_events_correctly(
-        events: Value,
+        events: Vec<Value>,
         simulation_timestep: f64,
         total_timesteps: usize,
         events_schedule: Vec<Option<Vec<ScheduleEvent>>>,
@@ -324,6 +358,72 @@ mod test {
         assert_eq!(
             expand_events(events, simulation_timestep, total_timesteps),
             events_schedule,
+            "incorrect expansion of event list to schedule"
+        );
+    }
+
+    #[fixture]
+    pub fn water_heating_events() -> Vec<WaterHeatingEvent> {
+        vec![
+            WaterHeatingEvent {
+                start: 2.0,
+                duration: Some(6.0),
+                temperature: 41.0,
+            },
+            WaterHeatingEvent {
+                start: 2.1,
+                duration: Some(6.0),
+                temperature: 42.0,
+            },
+            WaterHeatingEvent {
+                start: 3.0,
+                duration: Some(6.0),
+                temperature: 43.0,
+            },
+        ]
+    }
+
+    #[fixture]
+    pub fn water_events_schedule() -> Vec<Option<Vec<ScheduleEvent>>> {
+        vec![
+            None,
+            None,
+            None,
+            None,
+            Some(vec![
+                ScheduleEvent {
+                    start: 2.0,
+                    duration: Some(6.0),
+                    temperature: Some(41.0),
+                },
+                ScheduleEvent {
+                    start: 2.1,
+                    duration: Some(6.0),
+                    temperature: Some(42.0),
+                },
+            ]),
+            None,
+            Some(vec![ScheduleEvent {
+                start: 3.0,
+                duration: Some(6.0),
+                temperature: Some(43.0),
+            }]),
+            None,
+            None,
+            None,
+        ]
+    }
+
+    #[rstest]
+    pub fn should_expand_water_events_correctly(
+        water_heating_events: Vec<WaterHeatingEvent>,
+        simulation_timestep: f64,
+        total_timesteps: usize,
+        water_events_schedule: Vec<Option<Vec<ScheduleEvent>>>,
+    ) {
+        assert_eq!(
+            expand_water_heating_events(water_heating_events, simulation_timestep, total_timesteps),
+            water_events_schedule,
             "incorrect expansion of event list to schedule"
         );
     }

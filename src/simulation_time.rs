@@ -9,13 +9,13 @@ const MONTH_START_END_HOURS: [u32; 13] = [
     0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760,
 ];
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub struct SimulationTime {
     #[serde(rename(deserialize = "start"))]
     start_time: f64,
     #[serde(rename(deserialize = "end"))]
     end_time: f64,
-    step: f64,
+    pub step: f64,
 }
 
 impl SimulationTime {
@@ -27,8 +27,8 @@ impl SimulationTime {
         }
     }
 
-    pub fn total_steps(&self) -> i32 {
-        ((self.end_time - self.start_time) / self.step).ceil() as i32
+    pub fn total_steps(&self) -> usize {
+        ((self.end_time - self.start_time) / self.step).ceil() as usize
     }
 
     pub(crate) fn iter(&self) -> SimulationTimeIterator {
@@ -36,7 +36,7 @@ impl SimulationTime {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SimulationTimeIterator {
     current_index: usize,
     current_time: f64,
@@ -99,7 +99,7 @@ impl SimulationTimeIterator {
         )
     }
 
-    pub fn total_steps(&self) -> i32 {
+    pub fn total_steps(&self) -> usize {
         self.simulation_time.total_steps()
     }
 

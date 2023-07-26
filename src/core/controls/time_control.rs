@@ -2,6 +2,13 @@
 
 use crate::simulation_time::{SimulationTimeIteration, HOURS_IN_DAY};
 
+pub enum Control {
+    OnOffTimeControl(OnOffTimeControl),
+    ToUChargeControl(ToUChargeControl),
+    OnOffMinimisingTimeControl(OnOffMinimisingTimeControl),
+    SetpointTimeControl(SetpointTimeControl),
+}
+
 /// An object to model a time-only control with on/off (not modulating) operation
 pub struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
@@ -30,11 +37,11 @@ impl OnOffTimeControl {
 /// that can respond to signals from the grid, for example when carbon intensity is low
 pub struct ToUChargeControl {
     /// list of boolean values where true means "on" (one entry per hour)
-    schedule: Vec<bool>,
-    start_day: u32,
-    time_series_step: f64,
+    pub schedule: Vec<bool>,
+    pub start_day: u32,
+    pub time_series_step: f64,
     /// Proportion of the charge targeted for each day
-    charge_level: Vec<f64>,
+    pub charge_level: Vec<f64>,
 }
 
 impl ToUChargeControl {

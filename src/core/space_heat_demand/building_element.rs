@@ -2,7 +2,7 @@ use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BuildingElement, MassDistributionClass};
-use crate::simulation_time::SimulationTimeIterator;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use std::f64::consts::PI;
 
 impl BuildingElement {
@@ -351,6 +351,7 @@ pub fn h_re_for(element: &BuildingElement) -> f64 {
 pub fn i_sol_dir_dif_for(
     element: &BuildingElement,
     external_conditions: &ExternalConditions,
+    simulation_time: &SimulationTimeIteration,
 ) -> (f64, f64) {
     match element {
         BuildingElement::Opaque {
@@ -359,7 +360,12 @@ pub fn i_sol_dir_dif_for(
             ..
         } => {
             let (i_sol_dir, i_sol_dif, _, _) = external_conditions
-                .calculated_direct_diffuse_total_irradiance(*pitch, *orientation, false);
+                .calculated_direct_diffuse_total_irradiance(
+                    *pitch,
+                    *orientation,
+                    false,
+                    simulation_time,
+                );
 
             (i_sol_dir, i_sol_dif)
         }
@@ -388,7 +394,7 @@ pub fn shading_factors_direct_diffuse_for(
 pub fn temp_ext_for(
     element: &BuildingElement,
     external_conditions: &ExternalConditions,
-    simulation_time: &SimulationTimeIterator,
+    simulation_time: &SimulationTimeIteration,
 ) -> f64 {
     match element {
         BuildingElement::Ground {
@@ -403,7 +409,8 @@ pub fn temp_ext_for(
             let temp_ext_annual = external_conditions
                 .air_temp_annual()
                 .expect("no annual air temp available");
-            let temp_ext_month = external_conditions.air_temp_monthly();
+            let temp_ext_month = external_conditions
+                .air_temp_monthly(simulation_time.current_month_start_end_hours());
 
             let current_month = simulation_time.current_month().unwrap_or(0);
             let temp_int_month = TEMP_INT_MONTHLY_FOR_GROUND[current_month as usize];
@@ -422,7 +429,7 @@ pub fn temp_ext_for(
                     - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
                     / (area * u_value)
         }
-        _ => external_conditions.air_temp_for_timestep_idx(simulation_time.current_index()),
+        _ => external_conditions.air_temp_for_timestep_idx(simulation_time.index),
     }
 }
 
@@ -614,7 +621,7 @@ mod test {
     #[fixture]
     pub fn external_conditions(simulation_time: SimulationTimeIterator) -> ExternalConditions {
         ExternalConditions::new(
-            simulation_time,
+            &simulation_time,
             vec![0.0, 5.0, 10.0, 15.0],
             vec![],
             vec![0.0; 4],

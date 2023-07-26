@@ -11,14 +11,14 @@ const COLUMN_GROUND_REFLECT: usize = 32;
 
 #[derive(Debug)]
 pub struct ExternalConditions {
-    air_temperatures: Vec<f64>,
-    wind_speeds: Vec<f64>,
-    diffuse_horizontal_radiation: Vec<f64>,
-    direct_beam_radiation: Vec<f64>,
-    solar_reflectivity_of_ground: Vec<f64>,
-    longitude: f64,
-    latitude: f64,
-    direct_beam_conversion_needed: bool,
+    pub air_temperatures: Vec<f64>,
+    pub wind_speeds: Vec<f64>,
+    pub diffuse_horizontal_radiation: Vec<f64>,
+    pub direct_beam_radiation: Vec<f64>,
+    pub solar_reflectivity_of_ground: Vec<f64>,
+    pub longitude: f64,
+    pub latitude: f64,
+    pub direct_beam_conversion_needed: bool,
 }
 
 struct ExternalConditionDatum {

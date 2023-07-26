@@ -12,11 +12,13 @@ use crate::core::space_heat_demand::ventilation_element::{
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::BuildingElement;
-use crate::simulation_time::SimulationTimeIterator;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
+use std::borrow::Cow;
 
 use std::hash::{Hash, Hasher};
+use std::iter::Peekable;
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
@@ -62,7 +64,7 @@ pub struct Zone<'a> {
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_prev: Vec<f64>,
-    external_conditions: ExternalConditions,
+    external_conditions: Cow<'a, ExternalConditions>,
 }
 
 impl<'a> Zone<'a> {
@@ -82,18 +84,20 @@ impl<'a> Zone<'a> {
     ///                      internal temperature
     /// * `temp_ext_air_init` - external air temperature to use during initialisation, in Celsius
     /// * `temp_setpnt_init` - setpoint temperature to use during initialisation, in Celsius
+    /// * `external_conditions`
+    /// * `simulation_time`
     pub fn new(
         area: f64,
         volume: f64,
         building_elements: IndexMap<String, BuildingElement>,
         thermal_bridging: ThermalBridging,
         vent_elements: Vec<Box<dyn VentilationElement>>,
-        vent_cool_extra: Option<WindowOpeningForCooling>,
+        vent_cool_extra: Option<WindowOpeningForCooling<'a>>,
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
-        external_conditions: ExternalConditions,
-        simulation_time: SimulationTimeIterator,
-    ) -> Zone {
+        external_conditions: Cow<'a, ExternalConditions>,
+        simulation_time: &SimulationTimeIterator,
+    ) -> Zone<'a> {
         let tb_heat_trans_coeff = match thermal_bridging {
             ThermalBridging::Number(heat_coeff) => heat_coeff,
             ThermalBridging::Bridges(ref bridges) => bridges
@@ -135,7 +139,7 @@ impl<'a> Zone<'a> {
             area_el_total,
             area,
             volume,
-            &simulation_time,
+            simulation_time.clone().peekable(),
             &vent_cool_extra,
             &external_conditions,
             &named_building_elements,
@@ -192,10 +196,12 @@ impl<'a> Zone<'a> {
         self.tb_heat_trans_coeff
     }
 
-    pub fn total_vent_heat_loss(&self) -> f64 {
+    pub fn total_vent_heat_loss(&self, external_conditions: &ExternalConditions) -> f64 {
         self.vent_elements
             .iter()
-            .map(|vent| vent.h_ve_average_heat_transfer_coefficient(self.volume))
+            .map(|vent| {
+                vent.h_ve_average_heat_transfer_coefficient(self.volume, external_conditions)
+            })
             .sum::<f64>()
     }
 }
@@ -215,7 +221,7 @@ pub fn init_node_temps(
     area_el_total: f64,
     area: f64,
     volume: f64,
-    simulation_time: &SimulationTimeIterator,
+    mut simulation_time: Peekable<SimulationTimeIterator>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
     external_conditions: &ExternalConditions,
     building_elements: &Vec<NamedBuildingElement>,
@@ -225,6 +231,7 @@ pub fn init_node_temps(
     c_int: f64,
     tb_heat_trans_coeff: f64,
 ) -> Vec<f64> {
+    let simulation_time = simulation_time.peek().unwrap();
     let no_of_temps = no_of_temps as usize;
     // Set starting point for all node temperatures (elements of
     //                                               # self.__temp_prev) as average of external air temp and setpoint. This
@@ -346,7 +353,7 @@ pub fn space_heat_cool_demand(
     element_positions: &Vec<(usize, usize)>,
     vent_elements: &Vec<Box<dyn VentilationElement>>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
-    simulation_time: &SimulationTimeIterator,
+    simulation_time: &SimulationTimeIteration,
     external_conditions: &ExternalConditions,
     temp_prev: &Vec<f64>,
     no_of_temps: usize,
@@ -427,7 +434,8 @@ pub fn space_heat_cool_demand(
         let h_ve_cool_max = vent_cool_extra.as_ref().unwrap().h_ve_max(
             volume,
             temp_operative_free,
-            simulation_time.current_index(),
+            simulation_time.index,
+            external_conditions,
         );
         let temp_vector_vent_max = calc_temperatures(
             delta_t,
@@ -464,7 +472,7 @@ pub fn space_heat_cool_demand(
 
         let vent_cool_extra_temp_supply = temp_supply_for_window_opening(
             vent_cool_extra.as_ref().unwrap(),
-            simulation_time.current_index(),
+            simulation_time.index,
         );
 
         // If there is cooling potential from additional ventilation
@@ -675,7 +683,7 @@ fn calc_temperatures(
     building_elements: &Vec<NamedBuildingElement>,
     element_positions: &Vec<(usize, usize)>,
     external_conditions: &ExternalConditions,
-    simulation_time: &SimulationTimeIterator,
+    simulation_time: &SimulationTimeIteration,
     passed_zone_idx: usize,
     area_el_total: f64,
     volume: f64,
@@ -730,7 +738,7 @@ fn calc_temperatures(
         // Coeff for temperature of next node
         matrix_a[(idx, idx + 1)] = -h_pli[i];
         // RHS of heat balance eqn for this node
-        let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions);
+        let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions, simulation_time);
         let (f_sh_dir, f_sh_dif) = shading_factors_direct_diffuse_for(eli, external_conditions);
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
             + (h_ce + h_re) * temp_ext_for(eli, external_conditions, simulation_time)
@@ -803,7 +811,8 @@ fn calc_temperatures(
         sum_vent_elements_h_ve += vei.h_ve_heat_transfer_coefficient(
             volume,
             Some(throughput_factor),
-            Some(simulation_time.current_index()),
+            Some(simulation_time.index),
+            external_conditions,
         );
     }
     matrix_a[(passed_zone_idx, passed_zone_idx)] = (c_int / delta_t)
@@ -851,16 +860,17 @@ fn calc_temperatures(
                 vent_cool_extra.as_ref().expect(
                     "TODO: correct this - we are assuming there is always a window opening",
                 ),
-                simulation_time.current_index(),
+                simulation_time.index,
             );
     }
     for vei in vent_elements.iter() {
         sum_vent_elements_h_ve_times_temp_supply += vei.h_ve_heat_transfer_coefficient(
             volume,
             Some(throughput_factor),
-            Some(simulation_time.current_index()),
+            Some(simulation_time.index),
+            external_conditions,
         ) * vei
-            .temp_supply(simulation_time.current_index());
+            .temp_supply(simulation_time.index, external_conditions);
     }
     vector_b[passed_zone_idx] = (c_int / delta_t) * temp_prev[passed_zone_idx]
         + sum_vent_elements_h_ve_times_temp_supply
@@ -1224,9 +1234,12 @@ mod test {
     ];
 
     #[fixture]
-    pub fn zone<'a>() -> Zone<'a> {
-        let simulation_time = SimulationTime::new(0.0, 4.0, 1.0);
+    pub fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 4., 1.)
+    }
 
+    #[fixture]
+    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
         let air_temp_day_jan = BASE_AIR_TEMPS;
         let air_temp_day_feb = BASE_AIR_TEMPS.map(|t| t + 1.0);
         let air_temp_day_mar = BASE_AIR_TEMPS.map(|t| t + 2.0);
@@ -1305,8 +1318,8 @@ mod test {
             );
         }
 
-        let external_conditions = ExternalConditions::new(
-            simulation_time.iter(),
+        ExternalConditions::new(
+            &simulation_time.iter(),
             air_temps,
             wind_speeds,
             vec![0.0; 4],
@@ -1323,8 +1336,14 @@ mod test {
             false,
             false,
             vec![],
-        );
+        )
+    }
 
+    #[fixture]
+    pub fn zone<'a>(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) -> Zone<'a> {
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque {
             area: 20.0,
@@ -1435,6 +1454,8 @@ mod test {
             ("tb_point".to_string(), tb_point),
         ]));
 
+        let external_conditions = external_conditions.clone();
+
         // Create ventilation objects
         let ve = VentilationElementInfiltration::new(
             1,
@@ -1454,7 +1475,6 @@ mod test {
             3,
             6,
             0,
-            external_conditions.clone(),
             None,
         );
 
@@ -1463,8 +1483,6 @@ mod test {
 
         let temp_ext_air_init = 17.;
         let temp_setpnt_init = 21.;
-
-        let external_conditions = external_conditions.clone();
 
         Zone::new(
             50.,
@@ -1475,8 +1493,8 @@ mod test {
             None,
             temp_ext_air_init,
             temp_setpnt_init,
-            external_conditions,
-            simulation_time.iter(),
+            Cow::Owned(external_conditions),
+            &simulation_time.iter(),
         )
     }
 
@@ -1511,9 +1529,12 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_total_vent_heat_loss(zone: Zone) {
+    pub fn should_have_correct_total_vent_heat_loss(
+        zone: Zone,
+        external_conditions: ExternalConditions,
+    ) {
         assert_eq!(
-            round_by_precision(zone.total_vent_heat_loss(), 1e1),
+            round_by_precision(zone.total_vent_heat_loss(&external_conditions), 1e1),
             round_by_precision(157.9, 1e1),
         );
     }

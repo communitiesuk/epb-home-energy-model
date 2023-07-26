@@ -60,7 +60,7 @@ impl MaterialProperties {
 }
 
 lazy_static! {
-    static ref WATER: MaterialProperties = MaterialProperties::new(1.0, 4184.0);
+    pub static ref WATER: MaterialProperties = MaterialProperties::new(1.0, 4184.0);
 }
 
 #[cfg(test)]

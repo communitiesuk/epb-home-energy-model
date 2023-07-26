@@ -25,9 +25,10 @@ pub trait VentilationElement {
         zone_volume: f64,
         throughput_factor: Option<f64>,
         timestep_idx: Option<usize>,
+        external_conditions: &ExternalConditions,
     ) -> f64;
 
-    fn temp_supply(&self, timestep_index: usize) -> f64;
+    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64;
 
     /// Calculate the heat transfer coefficient (h_ve), in W/K,
     ///         according to ISO 52016-1:2017, Section 6.5.10.1, for a constant average windspeed
@@ -35,11 +36,14 @@ pub trait VentilationElement {
     /// # Arguments
     ///
     ///  * `zone_volume` - volume of zone, in m3
-    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64;
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        zone_volume: f64,
+        external_conditions: &ExternalConditions,
+    ) -> f64;
 }
 
 pub struct VentilationElementInfiltration {
-    external_conditions: ExternalConditions,
     volume: f64,
     infiltration_rate_from_openings: f64,
     q50_divisor: f64,
@@ -66,7 +70,6 @@ impl VentilationElementInfiltration {
     /// * `extract_fans` - number of intermittent extract fans
     /// * `passive_vents` - number of passive vents
     /// * `flueless_gas_fires` - number of flueless gas fires
-    /// * `external_conditions`
     /// * `storey_of_dwelling` - the storey in the building of the dwelling, if this is a flat
     pub fn new(
         storeys_in_building: u32,
@@ -86,7 +89,6 @@ impl VentilationElementInfiltration {
         extract_fans: u32,
         passive_vents: u32,
         flueless_gas_fires: u32,
-        external_conditions: ExternalConditions,
         storey_of_dwelling: Option<u32>,
     ) -> VentilationElementInfiltration {
         let infiltration_rate_from_openings = ((open_chimneys * INFILTRATION_RATE_CHIMNEY_OPEN)
@@ -123,7 +125,6 @@ impl VentilationElementInfiltration {
         );
 
         VentilationElementInfiltration {
-            external_conditions,
             volume,
             infiltration_rate_from_openings,
             q50_divisor,
@@ -162,27 +163,28 @@ impl VentilationElement for VentilationElementInfiltration {
         zone_volume: f64,
         _throughput_factor: Option<f64>,
         timestep_idx: Option<usize>,
+        external_conditions: &ExternalConditions,
     ) -> f64 {
         P_A * C_A
             * (self.infiltration_rate()
-                * self
-                    .external_conditions
-                    .wind_speed_for_timestep_idx(timestep_idx.unwrap())
+                * external_conditions.wind_speed_for_timestep_idx(timestep_idx.unwrap())
                 / 4.0)
             * (zone_volume / SECONDS_PER_HOUR as f64)
     }
 
-    fn temp_supply(&self, timestep_idx: usize) -> f64 {
+    fn temp_supply(&self, timestep_idx: usize, external_conditions: &ExternalConditions) -> f64 {
         // Calculate the supply temperature of the air flow element
         // according to ISO 52016-1:2017, Section 6.5.10.2
-        self.external_conditions
-            .air_temp_for_timestep_idx(timestep_idx)
+        external_conditions.air_temp_for_timestep_idx(timestep_idx)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        zone_volume: f64,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
         P_A * C_A
-            * (self.infiltration_rate() * self.external_conditions.wind_speed_annual().unwrap()
-                / 4.0
+            * (self.infiltration_rate() * external_conditions.wind_speed_annual().unwrap() / 4.0
                 * zone_volume
                 / SECONDS_PER_HOUR as f64)
     }
@@ -304,7 +306,6 @@ pub struct MechanicalVentilationHeatRecovery {
     efficiency_hr: f64,
     energy_supply: EnergySupply,
     energy_supply_end_user_name: String, // rather than using an EnergySupplyConnection object that encapsulates this
-    external_conditions: ExternalConditions,
     simulation_time: SimulationTimeIterator,
 }
 
@@ -313,19 +314,16 @@ impl MechanicalVentilationHeatRecovery {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         efficiency_hr: f64,
-        mut energy_supply: EnergySupply,
+        energy_supply: EnergySupply,
         energy_supply_end_user_name: String,
-        external_conditions: ExternalConditions,
         simulation_time: SimulationTimeIterator,
     ) -> Self {
-        energy_supply.register_end_user_name(energy_supply_end_user_name.clone());
         Self {
             air_change_rate: required_air_change_rate,
             specific_fan_power,
             efficiency_hr,
             energy_supply,
             energy_supply_end_user_name,
-            external_conditions,
             simulation_time,
         }
     }
@@ -371,6 +369,7 @@ impl VentilationElement for MechanicalVentilationHeatRecovery {
         zone_volume: f64,
         throughput_factor: Option<f64>,
         _timestep_idx: Option<usize>,
+        _external_conditions: &ExternalConditions,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
 
@@ -388,13 +387,16 @@ impl VentilationElement for MechanicalVentilationHeatRecovery {
         P_A * C_A * q_v_effective
     }
 
-    fn temp_supply(&self, timestep_index: usize) -> f64 {
-        self.external_conditions
-            .air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
+        external_conditions.air_temp_for_timestep_idx(timestep_index)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, zone_volume: f64) -> f64 {
-        self.h_ve_heat_transfer_coefficient(zone_volume, None, None)
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        zone_volume: f64,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        self.h_ve_heat_transfer_coefficient(zone_volume, None, None, external_conditions)
     }
 }
 
@@ -465,7 +467,7 @@ impl WholeHouseExtractVentilation {
         let fan_power_use_kwh =
             (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time.step_in_hours();
 
-        self.energy_supply.demand_energy(
+        let _ = self.energy_supply.demand_energy(
             self.energy_supply_end_user_name.clone(),
             fan_power_use_kwh,
             timestep_index,
@@ -488,13 +490,12 @@ impl VentilationElement for WholeHouseExtractVentilation {
         zone_volume: f64,
         throughput_factor: Option<f64>,
         timestep_index: Option<usize>,
+        external_conditions: &ExternalConditions,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
 
         let infiltration_rate_adj = self.infiltration_rate
-            * self
-                .external_conditions
-                .wind_speed_for_timestep_idx(timestep_index.unwrap())
+            * external_conditions.wind_speed_for_timestep_idx(timestep_index.unwrap())
             / 4.0;
         let ach = self.air_change_rate(infiltration_rate_adj);
         let q_v = air_change_rate_to_flow_rate(ach, zone_volume) * throughput_factor;
@@ -503,12 +504,15 @@ impl VentilationElement for WholeHouseExtractVentilation {
         P_A * C_A * q_v
     }
 
-    fn temp_supply(&self, timestep_index: usize) -> f64 {
-        self.external_conditions
-            .air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
+        external_conditions.air_temp_for_timestep_idx(timestep_index)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, _zone_volume: f64) -> f64 {
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        _zone_volume: f64,
+        _external_conditions: &ExternalConditions,
+    ) -> f64 {
         todo!()
     }
 }
@@ -520,17 +524,16 @@ pub struct NaturalVentilation {
     external_conditions: ExternalConditions,
 }
 
-impl VentilationElement for NaturalVentilation {
+impl<'a> VentilationElement for NaturalVentilation {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,
         _throughput_factor: Option<f64>,
         timestep_idx: Option<usize>,
+        external_conditions: &ExternalConditions,
     ) -> f64 {
         let infiltration_rate_adj = self.infiltration_rate
-            * self
-                .external_conditions
-                .wind_speed_for_timestep_idx(timestep_idx.unwrap())
+            * external_conditions.wind_speed_for_timestep_idx(timestep_idx.unwrap())
             / 4.0;
         let ach = self.air_change_rate(infiltration_rate_adj);
         let q_v = air_change_rate_to_flow_rate(ach, zone_volume);
@@ -539,12 +542,15 @@ impl VentilationElement for NaturalVentilation {
         P_A * C_A * q_v
     }
 
-    fn temp_supply(&self, timestep_index: usize) -> f64 {
-        self.external_conditions
-            .air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
+        external_conditions.air_temp_for_timestep_idx(timestep_index)
     }
 
-    fn h_ve_average_heat_transfer_coefficient(&self, _zone_volume: f64) -> f64 {
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        _zone_volume: f64,
+        _external_conditions: &ExternalConditions,
+    ) -> f64 {
         todo!()
     }
 }
@@ -810,13 +816,15 @@ impl<'a> WindowOpeningForCooling<'a> {
         }
     }
 
-    pub fn h_ve_max(&self, zone_volume: f64, temp_int: f64, timestep_idx: usize) -> f64 {
-        let wind_speed = self
-            .external_conditions
-            .wind_speed_for_timestep_idx(timestep_idx);
-        let temp_ext = self
-            .external_conditions
-            .air_temp_for_timestep_idx(timestep_idx);
+    pub fn h_ve_max(
+        &self,
+        zone_volume: f64,
+        temp_int: f64,
+        timestep_idx: usize,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        let wind_speed = external_conditions.wind_speed_for_timestep_idx(timestep_idx);
+        let temp_ext = external_conditions.air_temp_for_timestep_idx(timestep_idx);
         let temp_diff = (temp_int - temp_ext).abs();
         let temp_average_c = (temp_int + temp_ext) / 2.0;
         let temp_average_k = celsius_to_kelvin(temp_average_c);
@@ -876,7 +884,12 @@ impl<'a> WindowOpeningForCooling<'a> {
 
         // Calculate max h_ve achievable for window opening
         let h_ve_nat_vent = match &self.natural_ventilation {
-            Some(nv) => nv.h_ve_heat_transfer_coefficient(zone_volume, None, Some(timestep_idx)),
+            Some(nv) => nv.h_ve_heat_transfer_coefficient(
+                zone_volume,
+                None,
+                Some(timestep_idx),
+                external_conditions,
+            ),
             None => 0.0,
         };
 
@@ -920,7 +933,7 @@ mod test {
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
 
         ExternalConditions::new(
-            simulation_time_iterator,
+            &simulation_time_iterator,
             air_temps,
             wind_speeds,
             vec![0.0; 8],
@@ -941,9 +954,7 @@ mod test {
     }
 
     #[fixture]
-    pub fn infiltration_element(
-        external_conditions: ExternalConditions,
-    ) -> VentilationElementInfiltration {
+    pub fn infiltration_element() -> VentilationElementInfiltration {
         VentilationElementInfiltration::new(
             1,
             InfiltrationShelterType::Sheltered,
@@ -962,7 +973,6 @@ mod test {
             3,
             6,
             0,
-            external_conditions,
             None,
         )
     }
@@ -1027,6 +1037,7 @@ mod test {
     pub fn should_have_correct_h_ve_heat_transfer_coefficient(
         infiltration_element: VentilationElementInfiltration,
         simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
     ) {
         for simtime_step in simulation_time_iterator {
             // external_conditions.next();
@@ -1035,7 +1046,8 @@ mod test {
                     infiltration_element.h_ve_heat_transfer_coefficient(
                         75.0,
                         None,
-                        Some(simtime_step.index)
+                        Some(simtime_step.index),
+                        &external_conditions
                     ),
                     1e6
                 ),
@@ -1049,10 +1061,11 @@ mod test {
     pub fn should_have_correct_temp_supply(
         infiltration_element: VentilationElementInfiltration,
         simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
     ) {
         for simtime_step in simulation_time_iterator {
             assert_eq!(
-                infiltration_element.temp_supply(simtime_step.index),
+                infiltration_element.temp_supply(simtime_step.index, &external_conditions),
                 2.5 * simtime_step.index as f64,
                 "incorrect external temperature returned on iteration {} (1-indexed)",
                 simtime_step.index + 1
@@ -1062,17 +1075,19 @@ mod test {
 
     #[fixture]
     pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
-        EnergySupply::new(
+        let mut energy_supply = EnergySupply::new(
             EnergySupplyType::Electricity,
-            simulation_time_iterator,
+            simulation_time_iterator.total_steps(),
             None,
-        )
+        );
+        energy_supply.register_end_user_name("MVHR".to_string());
+
+        energy_supply
     }
 
     #[fixture]
-    pub fn mvhr(
-        external_conditions: ExternalConditions,
-        mut energy_supply: EnergySupply,
+    pub fn mvhr<'a>(
+        energy_supply: EnergySupply,
         simulation_time_iterator: SimulationTimeIterator,
     ) -> MechanicalVentilationHeatRecovery {
         MechanicalVentilationHeatRecovery::new(
@@ -1081,21 +1096,26 @@ mod test {
             0.66,
             energy_supply,
             "MVHR".to_string(),
-            external_conditions,
             simulation_time_iterator,
         )
     }
 
     #[rstest]
-    pub fn should_have_correct_h_ve_for_mechanical(mvhr: MechanicalVentilationHeatRecovery) {
+    pub fn should_have_correct_h_ve_for_mechanical(
+        mvhr: MechanicalVentilationHeatRecovery,
+        external_conditions: ExternalConditions,
+    ) {
         // for (i, _) in simulation_time_iterator.enumerate() {
         assert_eq!(
-            round_by_precision(mvhr.h_ve_heat_transfer_coefficient(75.0, None, None), 1e6),
+            round_by_precision(
+                mvhr.h_ve_heat_transfer_coefficient(75.0, None, None, &external_conditions),
+                1e6
+            ),
             round_by_precision(4.28975166666666, 1e6),
         );
         assert_eq!(
             round_by_precision(
-                mvhr.h_ve_heat_transfer_coefficient(75.0, Some(1.2), None),
+                mvhr.h_ve_heat_transfer_coefficient(75.0, Some(1.2), None, &external_conditions),
                 1e6
             ),
             round_by_precision(5.147701999999999, 1e6),
@@ -1123,10 +1143,11 @@ mod test {
     pub fn should_have_correct_temp_supply_for_mechanical(
         mvhr: MechanicalVentilationHeatRecovery,
         simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
     ) {
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(
-                mvhr.temp_supply(i),
+                mvhr.temp_supply(i, &external_conditions),
                 i as f64 * 2.5,
                 "incorrect supply temp returned"
             );
@@ -1136,7 +1157,7 @@ mod test {
     #[fixture]
     pub fn whole_house_extract_ventilation(
         external_conditions: ExternalConditions,
-        mut energy_supply: EnergySupply,
+        energy_supply: EnergySupply,
         simulation_time_iterator: SimulationTimeIterator,
     ) -> WholeHouseExtractVentilation {
         WholeHouseExtractVentilation::new(
@@ -1175,6 +1196,7 @@ mod test {
     pub fn should_have_correct_h_ve_for_whole_house(
         whole_house_extract_ventilation: WholeHouseExtractVentilation,
         simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
     ) {
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(
@@ -1182,7 +1204,8 @@ mod test {
                     whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
                         75.0,
                         None,
-                        Some(i)
+                        Some(i),
+                        &external_conditions
                     ),
                     1e6
                 ),
@@ -1195,7 +1218,8 @@ mod test {
                     whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
                         75.0,
                         Some(1.2),
-                        Some(i)
+                        Some(i),
+                        &external_conditions
                     ),
                     1e6
                 ),
@@ -1224,10 +1248,11 @@ mod test {
     pub fn should_have_correct_temp_supply_for_whole_house(
         whole_house_extract_ventilation: WholeHouseExtractVentilation,
         simulation_time_iterator: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
     ) {
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(
-                whole_house_extract_ventilation.temp_supply(i),
+                whole_house_extract_ventilation.temp_supply(i, &external_conditions),
                 i as f64 * 2.5,
                 "incorrect supply temp returned"
             );
