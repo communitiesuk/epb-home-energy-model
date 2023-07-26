@@ -5,7 +5,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
 };
-use crate::core::schedule::{expand_boolean_schedule, expand_numeric_schedule};
+use crate::core::schedule::{expand_boolean_schedule, expand_numeric_schedule, ScheduleEvent};
 use crate::core::space_heat_demand::internal_gains::InternalGains;
 use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -46,14 +46,16 @@ impl From<Input> for Corpus {
             cold_water_sources_from_input(input.cold_water_source, &input.simulation_time);
         let wwhrs = wwhrs_from_input(input.waste_water_heat_recovery, &cold_water_sources);
 
+        let energy_supplies = energy_supplies_from_input(
+            input.energy_supply,
+            simulation_time_iterator.clone().as_ref(),
+        );
+
         Self {
             external_conditions: external_conditions,
             infiltration: infiltration_from_input(input.infiltration),
             cold_water_sources,
-            energy_supplies: energy_supplies_from_input(
-                input.energy_supply,
-                simulation_time_iterator.clone().as_ref(),
-            ),
+            energy_supplies,
             // about to do internal gains but need to add schedule code
             internal_gains: internal_gains_from_input(input.internal_gains),
             control: control_from_input(input.control, simulation_time_iterator.clone().as_ref()),
@@ -414,4 +416,12 @@ fn get_cold_water_source_ref_for_type<'a>(
         ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water(),
         ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank(),
     }
+}
+
+pub type EventSchedule = Vec<Option<Vec<ScheduleEvent>>>;
+
+pub struct HotWaterEventSchedules {
+    pub shower: HashMap<String, EventSchedule>,
+    pub bath: HashMap<String, EventSchedule>,
+    pub other: HashMap<String, EventSchedule>,
 }

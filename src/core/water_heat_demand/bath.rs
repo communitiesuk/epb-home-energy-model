@@ -1,15 +1,15 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
 
-pub struct Bath<'a> {
+pub struct Bath {
     size_in_litres: f64,
-    cold_water_source: &'a ColdWaterSource,
+    cold_water_source: ColdWaterSource,
     flowrate: f64,
     temp_hot: f64,
 }
 
-impl<'a> Bath<'a> {
-    pub fn new(size_in_litres: f64, cold_water_source: &'a ColdWaterSource, flowrate: f64) -> Self {
+impl Bath {
+    pub fn new(size_in_litres: f64, cold_water_source: ColdWaterSource, flowrate: f64) -> Self {
         Self {
             size_in_litres,
             cold_water_source,
@@ -23,7 +23,7 @@ impl<'a> Bath<'a> {
     }
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
-        self.cold_water_source
+        &self.cold_water_source
     }
 
     pub fn get_flowrate(&self) -> f64 {
@@ -62,7 +62,7 @@ mod tests {
     pub fn should_get_correct_size() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let bath = Bath::new(100.0, &cold_water_source, 4.5);
+        let bath = Bath::new(100.0, cold_water_source, 4.5);
         assert_eq!(bath.get_size(), 100.0, "incorrect size of bath returned");
     }
 
@@ -70,10 +70,11 @@ mod tests {
     pub fn should_give_cold_water_source() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let bath = Bath::new(100.0, &cold_water_source, 4.5);
+        let expected_cold_water_source = cold_water_source.clone();
+        let bath = Bath::new(100.0, cold_water_source, 4.5);
         assert_eq!(
             bath.get_cold_water_source(),
-            &cold_water_source,
+            &expected_cold_water_source,
             "cold water source not returned"
         );
     }
@@ -82,7 +83,7 @@ mod tests {
     pub fn should_get_correct_flowrate() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let bath = Bath::new(100.0, &cold_water_source, 4.5);
+        let bath = Bath::new(100.0, cold_water_source, 4.5);
         assert_eq!(bath.get_flowrate(), 4.5, "incorrect flow rate returned");
     }
 
@@ -91,7 +92,7 @@ mod tests {
         let simulation_time = Rc::new(SimulationTime::new(0.0, 3.0, 1.0));
         let cold_water_source =
             ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time.clone(), 1.0);
-        let bath = Bath::new(100.0, &cold_water_source, 4.5);
+        let bath = Bath::new(100.0, cold_water_source, 4.5);
         let expected_demands = [76.0, 75.510, 75.0];
         for idx in 0..simulation_time.total_steps() {
             assert_eq!(

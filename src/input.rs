@@ -30,8 +30,8 @@ pub struct Input {
     pub energy_supply: EnergySupplyInput,
     pub control: Control,
     hot_water_source: HotWaterSource,
-    shower: Option<Shower>,
-    bath: Option<Bath>,
+    pub shower: Option<Shower>,
+    pub bath: Option<Bath>,
     #[serde(rename(deserialize = "Other"))]
     other_water_use: Option<OtherWaterUse>,
     #[serde(rename(deserialize = "Distribution"))]
@@ -209,14 +209,14 @@ pub enum DiverterHeatSourceType {
     Immersion,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
     capacity: f64,
     charge_discharge_efficiency: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatNetwork {
     pub fuel: EnergySupplyType,
@@ -372,13 +372,13 @@ pub enum HeatSourceControlType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
-    internal_diameter_mm: f64,
-    external_diameter_mm: f64,
-    length: f64,
-    insulation_thermal_conductivity: f64,
-    insulation_thickness_mm: f64,
-    surface_reflectivity: bool,
-    pipe_contents: WaterPipeContentsType,
+    pub internal_diameter_mm: f64,
+    pub external_diameter_mm: f64,
+    pub length: f64,
+    pub insulation_thermal_conductivity: f64,
+    pub insulation_thickness_mm: f64,
+    pub surface_reflectivity: bool,
+    pub pipe_contents: WaterPipeContentsType,
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,33 +389,33 @@ pub enum WaterPipeContentsType {
 
 #[derive(Debug, Deserialize)]
 pub struct Shower {
-    mixer: MixerShower,
+    pub mixer: MixerShower,
     #[serde(rename(deserialize = "IES"))]
-    ies: Option<InstantElectricShower>,
+    pub ies: Option<InstantElectricShower>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MixerShower {
     #[serde(rename(deserialize = "type"))]
-    shower_type: ShowerType,
-    flowrate: f64,
+    pub shower_type: ShowerType,
+    pub flowrate: f64,
     #[serde(rename(deserialize = "ColdWaterSource"))]
-    cold_water_source: ColdWaterSourceType,
+    pub cold_water_source: ColdWaterSourceType,
     #[serde(rename(deserialize = "WWHRS"))]
-    waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
+    pub waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstantElectricShower {
     #[serde(rename(deserialize = "type"))]
-    shower_type: ShowerType, // somewhat of a redundant value possibly
-    rated_power: f64,
+    pub shower_type: ShowerType, // somewhat of a redundant value possibly
+    pub rated_power: f64,
     #[serde(rename(deserialize = "ColdWaterSource"))]
-    cold_water_source: ColdWaterSourceType,
+    pub cold_water_source: ColdWaterSourceType,
     #[serde(rename(deserialize = "EnergySupply"))]
-    energy_supply: EnergySupplyType,
+    pub energy_supply: EnergySupplyType,
 }
 
 #[derive(Debug, Deserialize)]
@@ -428,36 +428,36 @@ pub enum ShowerType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bath {
-    medium: Option<BathDetails>,
+    pub medium: Option<BathDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BathDetails {
-    size: u32,
+    pub size: f64,
     #[serde(rename(deserialize = "ColdWaterSource"))]
-    cold_water_source: ColdWaterSourceType,
-    flowrate: f64,
+    pub cold_water_source: ColdWaterSourceType,
+    pub flowrate: f64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUse {
-    other: Option<OtherWaterUseDetails>,
+    pub other: Option<OtherWaterUseDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUseDetails {
-    flowrate: f64,
+    pub flowrate: f64,
     #[serde(rename(deserialize = "ColdWaterSource"))]
-    cold_water_source: ColdWaterSourceType,
+    pub cold_water_source: ColdWaterSourceType,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterDistribution {
-    internal: WaterPipework,
-    external: WaterPipework,
+    pub internal: WaterPipework,
+    pub external: WaterPipework,
 }
 
 #[derive(Debug, Deserialize)]

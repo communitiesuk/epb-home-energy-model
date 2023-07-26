@@ -1,23 +1,50 @@
-use crate::core::energy_supply::energy_supply::EnergySupply;
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyLoose};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
+use crate::corpus::ColdWaterSources;
 
-pub struct MixerShower<'a> {
+pub enum Shower {
+    MixerShower(MixerShower),
+    InstantElectricShower(InstantElectricShower),
+}
+
+impl Shower {
+    pub fn get_cold_water_source(&self) -> &ColdWaterSource {
+        match self {
+            Shower::MixerShower(s) => s.get_cold_water_source(),
+            Shower::InstantElectricShower(s) => s.get_cold_water_source(),
+        }
+    }
+
+    pub fn hot_water_demand(
+        &mut self,
+        temp_target: f64,
+        total_shower_duration: f64,
+        timestep_idx: usize,
+    ) -> f64 {
+        match self {
+            Shower::MixerShower(s) => {
+                s.hot_water_demand(temp_target, total_shower_duration, timestep_idx)
+            }
+            Shower::InstantElectricShower(s) => {
+                s.hot_water_demand(temp_target, total_shower_duration, timestep_idx)
+            }
+        }
+    }
+}
+
+pub struct MixerShower {
     flowrate: f64,
-    cold_water_source: &'a ColdWaterSource,
+    cold_water_source: ColdWaterSource,
     wwhrs: Option<Wwhrs>,
     temp_hot: f64,
 }
 
-impl<'a> MixerShower<'a> {
-    pub fn new(
-        flowrate: f64,
-        cold_water_source: &'a ColdWaterSource,
-        wwhrs: Option<Wwhrs>,
-    ) -> Self {
+impl MixerShower {
+    pub fn new(flowrate: f64, cold_water_source: ColdWaterSource, wwhrs: Option<Wwhrs>) -> Self {
         Self {
             flowrate,
             cold_water_source,
@@ -27,7 +54,7 @@ impl<'a> MixerShower<'a> {
     }
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
-        self.cold_water_source
+        &self.cold_water_source
     }
 
     pub fn get_temp_hot(&self) -> f64 {
@@ -78,19 +105,19 @@ impl<'a> MixerShower<'a> {
     }
 }
 
-pub struct InstantElectricShower<'a> {
+pub struct InstantElectricShower {
     power_in_kilowatts: f64,
-    cold_water_source: &'a ColdWaterSource,
-    electric_supply: EnergySupply,
-    supply_end_user_name: &'a str,
+    cold_water_source: ColdWaterSource,
+    electric_supply: EnergySupplyLoose,
+    supply_end_user_name: String,
 }
 
-impl<'a> InstantElectricShower<'a> {
+impl InstantElectricShower {
     pub fn new(
         power_in_kilowatts: f64,
-        cold_water_source: &'a ColdWaterSource,
-        electric_supply: EnergySupply,
-        supply_end_user_name: &'static str,
+        cold_water_source: ColdWaterSource,
+        electric_supply: EnergySupplyLoose,
+        supply_end_user_name: String,
     ) -> Self {
         Self {
             power_in_kilowatts,
@@ -101,7 +128,7 @@ impl<'a> InstantElectricShower<'a> {
     }
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
-        self.cold_water_source
+        &self.cold_water_source
     }
 
     /// Calculate electrical energy required
@@ -127,11 +154,15 @@ impl<'a> InstantElectricShower<'a> {
 
         let vol_hot_water_equiv = vol_warm_water * frac_hot_water(temp_target, temp_hot, temp_cold);
 
-        let _ = self.electric_supply.demand_energy(
-            self.supply_end_user_name.to_string(),
-            elec_demand,
-            timestep_idx,
-        );
+        // following mutates the energy supply so find an alternative for this
+        // let _ = match &self.electric_supply {
+        //     EnergySupplyLoose::EnergySupply(mut supply) => supply.demand_energy(
+        //         self.supply_end_user_name.to_string(),
+        //         elec_demand,
+        //         timestep_idx,
+        //     ),
+        //     EnergySupplyLoose::HeatNetwork(_) => Err("(ignore)"),
+        // };
 
         vol_hot_water_equiv
     }
@@ -150,7 +181,7 @@ mod tests {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
             ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
-        let mut mixer_shower = MixerShower::new(6.5, &cold_water_source, None);
+        let mut mixer_shower = MixerShower::new(6.5, cold_water_source, None);
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -171,10 +202,14 @@ mod tests {
             simulation_time.total_steps(),
             None,
         );
-        let energy_supply_name = "shower";
+        let energy_supply_name = "shower".to_string();
         energy_supply.register_end_user_name(energy_supply_name.to_string());
-        let mut instant_shower =
-            InstantElectricShower::new(50.0, &cold_water_source, energy_supply, energy_supply_name);
+        let mut instant_shower = InstantElectricShower::new(
+            50.0,
+            cold_water_source,
+            EnergySupplyLoose::EnergySupply(energy_supply),
+            energy_supply_name,
+        );
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
         for (idx, _) in simulation_time.iter().enumerate() {

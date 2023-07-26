@@ -524,7 +524,7 @@ pub struct NaturalVentilation {
     external_conditions: ExternalConditions,
 }
 
-impl<'a> VentilationElement for NaturalVentilation {
+impl VentilationElement for NaturalVentilation {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,

@@ -116,9 +116,9 @@ fn process_numeric_schedule_entry(
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScheduleEvent {
-    start: f64,
-    duration: Option<f64>,
-    temperature: Option<f64>,
+    pub start: f64,
+    pub duration: Option<f64>,
+    pub temperature: Option<f64>,
 }
 
 impl From<Value> for ScheduleEvent {

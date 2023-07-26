@@ -5,6 +5,12 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashMap;
 
+// a slightly looser definition of an energy supply that includes heat networks
+pub enum EnergySupplyLoose {
+    EnergySupply(EnergySupply),
+    HeatNetwork(HeatNetwork),
+}
+
 pub struct EnergySupplies {
     pub mains_electricity: Option<EnergySupply>,
     pub mains_gas: Option<EnergySupply>,
@@ -13,6 +19,7 @@ pub struct EnergySupplies {
     pub unmet_demand: EnergySupply,
 }
 
+#[derive(Clone)]
 pub struct EnergySupply {
     fuel_type: EnergySupplyType,
     simulation_timesteps: usize,

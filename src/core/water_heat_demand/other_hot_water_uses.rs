@@ -1,14 +1,14 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
 
-pub struct OtherHotWater<'a> {
+pub struct OtherHotWater {
     flowrate: f64,
-    cold_water_source: &'a ColdWaterSource,
+    cold_water_source: ColdWaterSource,
     temp_hot: f64,
 }
 
-impl<'a> OtherHotWater<'a> {
-    pub fn new(flowrate: f64, cold_water_source: &'a ColdWaterSource) -> Self {
+impl OtherHotWater {
+    pub fn new(flowrate: f64, cold_water_source: ColdWaterSource) -> Self {
         Self {
             flowrate,
             cold_water_source,
@@ -21,7 +21,7 @@ impl<'a> OtherHotWater<'a> {
     }
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
-        self.cold_water_source
+        &self.cold_water_source
     }
 
     pub fn get_temp_hot(&self) -> f64 {
@@ -63,7 +63,7 @@ mod tests {
     pub fn should_give_correct_flowrate() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let other_water = OtherHotWater::new(5.0, &cold_water_source);
+        let other_water = OtherHotWater::new(5.0, cold_water_source);
         assert_eq!(
             other_water.get_flowrate(),
             5.0,
@@ -75,10 +75,11 @@ mod tests {
     pub fn should_give_cold_water_source() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let other_water = OtherHotWater::new(5.0, &cold_water_source);
+        let expected_cold_water_source = cold_water_source.clone();
+        let other_water = OtherHotWater::new(5.0, cold_water_source);
         assert_eq!(
             other_water.get_cold_water_source(),
-            &cold_water_source,
+            &expected_cold_water_source,
             "cold water source not returned"
         );
     }
@@ -87,7 +88,7 @@ mod tests {
     pub fn should_calculate_correct_hot_water_demand() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 1.0);
-        let other_water = OtherHotWater::new(5.0, &cold_water_source);
+        let other_water = OtherHotWater::new(5.0, cold_water_source);
         let expected_demands = [15.2, 15.102, 15.0];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
