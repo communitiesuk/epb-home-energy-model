@@ -1,6 +1,6 @@
 use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
-use crate::external_conditions::{ExternalConditions};
+use crate::external_conditions::ExternalConditions;
 use crate::input::{BuildingElement, MassDistributionClass};
 use crate::simulation_time::SimulationTimeIterator;
 use std::f64::consts::PI;

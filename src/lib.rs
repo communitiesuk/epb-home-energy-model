@@ -10,7 +10,6 @@ extern crate is_close;
 use crate::input::parse_input_file;
 use crate::read_weather_file::ExternalConditions;
 
-
 use std::error::Error;
 use std::ffi::OsStr;
 use std::path::Path;
