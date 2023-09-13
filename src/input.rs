@@ -131,7 +131,7 @@ pub enum ApplianceGainType {
     Cooking,
 }
 
-// NB. assuming for now the fields in this struct map to the EnergySupplyType enum
+// NB. assuming for now the fields in this struct map to the FuelCode enum
 // there may be a may to map this a priori but keeping them manually in sync for now
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -149,36 +149,30 @@ pub struct EnergySupplyInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyDetails {
-    fuel: FuelType,
+    fuel: EnergySupplyType,
     diverter: Option<EnergyDiverter>,
     #[serde(rename(deserialize = "ElectricBattery"))]
     electric_battery: Option<ElectricBattery>,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum EnergySupplyType {
-    #[serde(alias = "mains elec", alias = "mains_elec")]
-    MainsElectricity,
+    #[serde(alias = "mains elec", alias = "mains_elec", alias = "electricity")]
+    Electricity,
     #[serde(alias = "mains_gas", alias = "mains gas")]
     MainsGas,
-    #[serde(alias = "bulk LPG", alias = "LPG_bulk")]
-    BulkLpg,
-    #[serde(alias = "heat network")]
-    HeatNetwork,
-}
-
-// this may turn out to be the same type as EnergySupplyType
-#[derive(Debug, Deserialize)]
-pub enum FuelType {
-    #[serde(rename(deserialize = "electricity"))]
-    Electricity,
-    #[serde(rename(deserialize = "mains_gas"))]
-    MainsGas,
-    #[serde(alias = "bulk LPG", alias = "LPG_bulk")]
-    BulkLpg,
+    #[serde(rename(deserialize = "unmet_demand"))]
+    UnmetDemand,
     #[serde(rename(deserialize = "custom"))]
     Custom,
+    #[serde(alias = "bulk LPG", alias = "LPG_bulk")]
+    LpgBulk,
+    #[serde(rename(deserialize = "LPG_bottled"))]
+    LpgBottled,
+    #[serde(rename(deserialize = "LPG_condition_11F"))]
+    LpgCondition11F,
+    #[serde(rename(deserialize = "heat network"))]
+    HeatNetwork,
 }
 
 #[derive(Debug, Deserialize)]
@@ -211,7 +205,7 @@ pub struct ElectricBattery {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatNetwork {
-    fuel: FuelType,
+    fuel: EnergySupplyType,
     factor: Value, // don't know what these values can be yet
 }
 

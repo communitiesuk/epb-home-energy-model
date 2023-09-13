@@ -1053,7 +1053,7 @@ mod test {
     #[fixture]
     pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
         EnergySupply::new(
-            EnergySupplyType::MainsElectricity,
+            EnergySupplyType::Electricity,
             simulation_time_iterator,
             None,
         )
