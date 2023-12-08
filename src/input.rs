@@ -225,7 +225,7 @@ pub struct ColdWaterSourceDetails {
     time_series_step: f64,
 }
 
-pub type Schedule = Value; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
+pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
 
 pub type Control = HashMap<String, ControlDetails>;
 
