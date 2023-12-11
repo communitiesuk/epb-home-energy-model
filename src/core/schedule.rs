@@ -60,6 +60,7 @@ fn process_boolean_schedule_entry(
         .flatten()
         .collect(),
         Value::Bool(whether) => vec![*whether],
+        Value::Null if nullable => vec![Default::default()],
         _ => panic!("Unexpected value in schedule that was sent."),
     }
 }
@@ -108,6 +109,7 @@ fn process_numeric_schedule_entry(
         .flatten()
         .collect(),
         Value::Number(number) => vec![number.as_f64().unwrap()],
+        Value::Null if nullable => vec![Default::default()],
         _ => panic!("Unexpected value in schedule that was sent."),
     }
 }
