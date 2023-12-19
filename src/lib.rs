@@ -21,6 +21,8 @@ pub fn run_project(
     _preprocess_only: bool,
     _fhs_assumptions: bool,
     _fhs_fee_assumptions: bool,
+    _fhs_notA_assumptions: bool,
+    _fhs_notB_assumptions: bool,
     _heat_balance: bool,
 ) -> Result<(), Box<dyn Error>> {
     let input_file_ext = Path::new(input_file).extension().and_then(OsStr::to_str);

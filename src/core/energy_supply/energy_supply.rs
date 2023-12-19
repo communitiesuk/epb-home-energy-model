@@ -13,6 +13,9 @@ pub struct EnergySupply {
     beta_factor: Vec<f64>,
     supply_surplus: Vec<f64>,
     demand_not_met: Vec<f64>,
+    energy_into_battery: Vec<f64>,
+    energy_out_of_battery: Vec<f64>,
+    energy_diverted: Vec<f64>,
     energy_generated_consumed: Vec<f64>,
 }
 
@@ -38,6 +41,9 @@ impl EnergySupply {
             beta_factor: init_demand_list(total_steps),
             supply_surplus: init_demand_list(total_steps),
             demand_not_met: init_demand_list(total_steps),
+            energy_into_battery: init_demand_list(total_steps),
+            energy_out_of_battery: init_demand_list(total_steps),
+            energy_diverted: init_demand_list(total_steps),
             energy_generated_consumed: init_demand_list(total_steps),
         }
     }

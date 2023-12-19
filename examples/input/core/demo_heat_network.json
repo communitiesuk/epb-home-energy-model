@@ -182,20 +182,20 @@
   "Other": {},
   "Distribution": {
     "internal": {
-      "internal_diameter": 0.025,
-      "external_diameter": 0.027,
+      "internal_diameter_mm": 25,
+      "external_diameter_mm": 27,
       "length": 8.0,
       "insulation_thermal_conductivity": 0.035,
-      "insulation_thickness": 0.038,
+      "insulation_thickness_mm": 38,
       "surface_reflectivity": false,
       "pipe_contents": "water"
     },
     "external": {
-      "internal_diameter": 0.025,
-      "external_diameter": 0.027,
+      "internal_diameter_mm": 25,
+      "external_diameter_mm": 27,
       "length": 8.0,
       "insulation_thermal_conductivity": 0.035,
-      "insulation_thickness": 0.038,
+      "insulation_thickness_mm": 38,
       "surface_reflectivity": false,
       "pipe_contents": "water"
     }
@@ -233,7 +233,8 @@
       "type": "HIU",
       "EnergySupply": "heat network",
       "power_max": 3.0,
-      "HIU_daily_loss": 0.8
+      "HIU_daily_loss": 0.8,
+      "building_level_distribution_losses": 62
     }
   },
   "SpaceHeatSystem": {
@@ -259,7 +260,7 @@
     }
   },
   "Infiltration": {
-    "storey": 1,
+    "storeys_in_building": 1,
     "shelter": "normal",
     "build_type": "house",
     "test_result": 4.0,
@@ -286,7 +287,6 @@
       "BuildingElement": {
         "wall 0": {
           "type": "BuildingElementOpaque",
-          "area": 25.0,
           "h_ci": 0.3,
           "h_ri": 0.4,
           "h_ce": 0.3,
@@ -296,10 +296,11 @@
           "k_m": 19000,
           "mass_distribution_class": "IE",
           "pitch": 90,
-          "orientation": 90,
+          "orientation360": 90,
           "base_height": 0,
           "height": 2.5,
-          "width": 10
+          "width": 10,
+          "area": 20.0
         },
         "wall 1": {
           "type": "BuildingElementOpaque",
@@ -308,7 +309,7 @@
           "k_m": 19100,
           "mass_distribution_class": "M",
           "pitch": 90,
-          "orientation": -90,
+          "orientation360": 270,
           "base_height": 0,
           "height": 2.5,
           "width": 10,
@@ -321,7 +322,7 @@
           "k_m": 19200,
           "mass_distribution_class": "E",
           "pitch": 90,
-          "orientation": 180,
+          "orientation360": 0,
           "base_height": 0,
           "height": 2.5,
           "width": 8,
@@ -334,7 +335,7 @@
           "k_m": 19300,
           "mass_distribution_class": "I",
           "pitch": 90,
-          "orientation": 0,
+          "orientation360": 180,
           "base_height": 0,
           "height": 2.5,
           "width": 6,
@@ -344,7 +345,7 @@
           "type": "BuildingElementTransparent",
           "r_c": 0.4,
           "pitch": 90,
-          "orientation": 90,
+          "orientation360": 90,
           "g_value": 0.75,
           "frame_area_fraction": 0.25,
           "base_height": 1,

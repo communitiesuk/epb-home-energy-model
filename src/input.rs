@@ -44,7 +44,11 @@ pub struct Input {
     zone: ZoneDictionary,
     #[serde(rename(deserialize = "PartGcompliance"))]
     part_g_compliance: Option<bool>,
+    #[serde(rename(deserialize = "PartO_active_cooling_required"))]
+    part_o_active_cooling_required: Option<bool>,
+    ground_floor_area: Option<f64>,
     number_of_bedrooms: Option<u32>,
+    number_of_wet_rooms: Option<u32>,
     heating_control_type: Option<HeatingControlType>,
     #[serde(rename(deserialize = "WaterHeatSchedDefault"))]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
@@ -354,11 +358,11 @@ pub enum HeatSourceControlType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
-    internal_diameter: f64,
-    external_diameter: f64,
+    internal_diameter_mm: f64,
+    external_diameter_mm: f64,
     length: f64,
     insulation_thermal_conductivity: f64,
-    insulation_thickness: f64,
+    insulation_thickness_mm: f64,
     surface_reflectivity: bool,
     pipe_contents: WaterPipeContentsType,
 }
@@ -586,12 +590,12 @@ pub enum Ventilation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VentilationDuctwork {
-    internal_diameter: f64,
-    external_diameter: f64,
+    internal_diameter_mm: f64,
+    external_diameter_mm: f64,
     length_in: f64,
     length_out: f64,
     insulation_thermal_conductivity: f64,
-    insulation_thickness: f64,
+    insulation_thickness_mm: f64,
     reflective: bool,
     #[serde(rename(deserialize = "MVHR_location"))]
     mvhr_location: MVHRLocation,
@@ -607,7 +611,8 @@ pub enum MVHRLocation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Infiltration {
-    storey: u32,
+    storeys_in_building: u32,
+    storey_of_dwelling: Option<u32>,
     shelter: InfiltrationShelterType,
     build_type: InfiltrationBuildType,
     test_result: f64,
@@ -661,6 +666,8 @@ pub struct ZoneInput {
     space_cool_system: Option<String>,
     #[serde(rename(deserialize = "SpaceHeatControl"))]
     space_heat_control: Option<String>, // don't know what the options are yet
+    #[serde(rename(deserialize = "Control_WindowOpening"))]
+    control_window_opening: Option<String>, // don't know what the options are yet
     area: f64,
     volume: f64,
     #[serde(rename(deserialize = "Lighting"))]
@@ -690,8 +697,9 @@ pub enum BuildingElement {
         r_c: Option<f64>,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
+        is_external_door: Option<bool>,
         pitch: f64,
-        orientation: f64,
+        orientation360: f64,
         base_height: f64,
         height: f64,
         width: f64,
@@ -707,7 +715,7 @@ pub enum BuildingElement {
         area: Option<f64>,
         r_c: Option<f64>,
         pitch: f64,
-        orientation: f64,
+        orientation360: f64,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
@@ -885,6 +893,7 @@ pub enum HeatSourceWetDetails {
         power_max: f64,
         #[serde(rename(deserialize = "HIU_daily_loss"))]
         hiu_daily_loss: f64,
+        building_level_distribution_losses: f64,
     },
 }
 
@@ -950,7 +959,10 @@ pub struct OnSiteGenerationDetails {
     peak_power: f64,
     ventilation_strategy: OnSiteGenerationVentilationStrategy,
     pitch: f64,
-    orientation: f64,
+    orientation360: f64,
+    base_height: f64,
+    height: f64,
+    width: f64,
     #[serde(rename(deserialize = "EnergySupply"))]
     energy_supply: EnergySupplyType,
 }
@@ -969,7 +981,7 @@ pub enum OnSiteGenerationVentilationStrategy {
 #[derive(Debug, Deserialize)]
 pub struct WindowOpeningForCooling {
     equivalent_area: f64,
-    control: String,
+    // control: String,
 }
 
 #[cfg(test)]
@@ -983,7 +995,9 @@ mod test {
         for entry in WalkDir::new("./examples/input")
             .into_iter()
             .filter_map(Result::ok)
-            .filter(|e| !e.file_type().is_dir())
+            .filter(|e| {
+                !e.file_type().is_dir() && e.file_name().to_str().unwrap().ends_with("json")
+            })
         {
             let parsed = parse_input_file(entry.path());
             assert!(

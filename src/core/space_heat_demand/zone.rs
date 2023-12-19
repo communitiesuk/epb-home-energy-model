@@ -587,6 +587,9 @@ pub fn space_heat_cool_demand(
     );
 
     // Calculate heating (positive) or cooling (negative) required to reach setpoint
+    if temp_operative_upper - temp_operative_free == 0.0 {
+        panic!("ERROR: Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.")
+    }
     let heat_cool_load_unrestricted = heat_cool_load_upper * (temp_setpnt - temp_operative_free)
         / (temp_operative_upper - temp_operative_free);
 
@@ -1330,7 +1333,8 @@ mod test {
             r_c: Some(0.25),
             k_m: 19000.,
             mass_distribution_class: MassDistributionClass::I,
-            orientation: 0.,
+            is_external_door: None,
+            orientation360: 0.,
             base_height: 0.,
             height: 2.,
             width: 10.,
@@ -1347,7 +1351,8 @@ mod test {
             r_c: Some(0.33),
             k_m: 16000.,
             mass_distribution_class: MassDistributionClass::D,
-            orientation: 0.,
+            is_external_door: None,
+            orientation360: 0.,
             base_height: 0.,
             height: 2.,
             width: 10.,
@@ -1380,7 +1385,7 @@ mod test {
         let be_transparent = BuildingElement::Transparent {
             pitch: 90.,
             r_c: Some(0.4),
-            orientation: 180.,
+            orientation360: 180.,
             g_value: 0.75,
             frame_area_fraction: 0.25,
             base_height: 1.0,
@@ -1450,6 +1455,7 @@ mod test {
             6,
             0,
             external_conditions.clone(),
+            None,
         );
 
         // Put thermal ventilation objects in a list that can be iterated over

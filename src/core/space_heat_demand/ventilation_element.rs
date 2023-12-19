@@ -50,7 +50,7 @@ pub struct VentilationElementInfiltration {
 impl VentilationElementInfiltration {
     /// # Arguments
     ///
-    /// * `storey` - for flats, storey number within building / for non-flats, total number of storeys in building
+    /// * `storeys_in_building` - total number of storeys in building
     /// * `shelter` - exposure level of the building i.e. very sheltered, sheltered, normal, or exposed
     /// * `build_type` - type of building e.g. house, flat, etc.
     /// * `pressure_test_result_ach` - result of pressure test, in ach
@@ -66,9 +66,10 @@ impl VentilationElementInfiltration {
     /// * `extract_fans` - number of intermittent extract fans
     /// * `passive_vents` - number of passive vents
     /// * `flueless_gas_fires` - number of flueless gas fires
-    /// * `external_conditions` -
+    /// * `external_conditions`
+    /// * `storey_of_dwelling` - the storey in the building of the dwelling, if this is a flat
     pub fn new(
-        storey: u32,
+        storeys_in_building: u32,
         shelter: InfiltrationShelterType,
         build_type: InfiltrationBuildType,
         pressure_test_result_ach: f64,
@@ -86,6 +87,7 @@ impl VentilationElementInfiltration {
         passive_vents: u32,
         flueless_gas_fires: u32,
         external_conditions: ExternalConditions,
+        storey_of_dwelling: Option<u32>,
     ) -> VentilationElementInfiltration {
         let infiltration_rate_from_openings = ((open_chimneys * INFILTRATION_RATE_CHIMNEY_OPEN)
             + (open_flues * INFILTRATION_RATE_FLUE_OPEN)
@@ -98,6 +100,13 @@ impl VentilationElementInfiltration {
             + (flueless_gas_fires * INFILTRATION_RATE_FIRE_GAS))
             as f64
             / volume;
+
+        let storey = match build_type {
+            InfiltrationBuildType::House => storeys_in_building,
+            InfiltrationBuildType::Flat => storey_of_dwelling.expect(
+                "The storey of the dwelling was expected to have been provided as this is a flat.",
+            ),
+        };
 
         let q50_divisor = init_divisor(build_type, storey, shelter);
 
@@ -954,6 +963,7 @@ mod test {
             6,
             0,
             external_conditions,
+            None,
         )
     }
 

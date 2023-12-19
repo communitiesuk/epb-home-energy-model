@@ -90,11 +90,11 @@
 				}
 			},
 			"primary_pipework": {
-				"internal_diameter": 0.025,
-				"external_diameter": 0.027,
+				"internal_diameter_mm": 25,
+				"external_diameter_mm": 27,
 				"length": 2.0,
 				"insulation_thermal_conductivity": 0.035,
-				"insulation_thickness": 0.038,
+				"insulation_thickness_mm": 38,
 				"surface_reflectivity": false,
 				"pipe_contents": "water"
 			}
@@ -117,20 +117,20 @@
 	"Other": {},
 	"Distribution": {
 		"internal": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		},
 		"external": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		}
@@ -296,7 +296,7 @@
 		}
 	},
 	"Infiltration": {
-		"storey": 1,
+		"storeys_in_building": 1,
 		"shelter": "normal",
 		"build_type": "house",
 		"test_result": 4.0,
@@ -328,7 +328,7 @@
 					"k_m": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
-					"orientation": 90,
+					"orientation360": 90,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 10,
@@ -341,7 +341,7 @@
 					"k_m": 19100,
 					"mass_distribution_class": "M",
 					"pitch": 90,
-					"orientation": -90,
+					"orientation360": 270,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 10,
@@ -354,7 +354,7 @@
 					"k_m": 19200,
 					"mass_distribution_class": "E",
 					"pitch": 90,
-					"orientation": 180,
+					"orientation360": 0,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 8,
@@ -367,7 +367,7 @@
 					"k_m": 19300,
 					"mass_distribution_class": "I",
 					"pitch": 90,
-					"orientation": 0,
+					"orientation360": 180,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 6,
@@ -377,7 +377,7 @@
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation": 90,
+					"orientation360": 90,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,

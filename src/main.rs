@@ -69,6 +69,8 @@ fn main() {
         args.preprocess_only,
         false,
         false,
+        false,
+        false,
         args.heat_balance,
     )
     .unwrap_or_else(|err| println!("{:?}", err))

@@ -8912,20 +8912,20 @@
 	},
 	"Distribution": {
 		"internal": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		},
 		"external": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		}
@@ -8953,11 +8953,11 @@
 		"req_ach": 0.5
 	},
 	"Window_Opening_For_Cooling": {
-		"equivalent_area": 3.0,
-		"control": "window opening"
+		"equivalent_area": 3.0
 	},
 	"Infiltration": {
-		"storey": 2,
+		"storeys_in_building": 2,
+		"storey_of_dwelling": 1,
 		"shelter": "normal",
 		"build_type": "flat",
 		"test_result": 4.0,
@@ -8978,6 +8978,7 @@
 	"Zone": {
 		"zone 1": {
 			"SpaceHeatSystem": "heating system zone 1",
+			"Control_WindowOpening": "window opening",
 			"area": 14.73,
 			"volume":35.1,
 			"temp_setpnt_heat": 21.0,
@@ -8992,7 +8993,7 @@
 					"k_m": 51000,
 					"mass_distribution_class": "I",
 					"pitch": 90,
-					"orientation":180,
+					"orientation360": 0,
 					"base_height": 10,
 					"height":6.52,
 					"width":1
@@ -9050,7 +9051,7 @@
 					"area": 3.626,
 					"r_c": 0.554,
 					"pitch": 90,
-					"orientation": 180,
+					"orientation360": 0,
 					"g_value": 0.73,
 					"frame_area_fraction":0.16,
 					"height":2.05,
@@ -9063,7 +9064,7 @@
 					"area": 1.26,
 					"r_c": 0.531,
 					"pitch": 90,
-					"orientation": 180,
+					"orientation360": 0,
 					"g_value": 0.73,
 					"frame_area_fraction":0.27,
 					"height":1.05,
@@ -9107,6 +9108,7 @@
 		},
 		"zone 2": {
 			"SpaceHeatSystem": "heating system zone 2",
+			"Control_WindowOpening": "window opening",
 			"area": 15.3,
 			"volume":36.06,
 			"temp_setpnt_heat": 21.0,
@@ -9121,7 +9123,7 @@
 					"k_m": 51000,
 					"mass_distribution_class": "I",
 					"pitch": 90,
-					"orientation":0,
+					"orientation360": 180,
 					"base_height": 10,
 					"height":2.33,
 					"width":1
@@ -9134,7 +9136,7 @@
 					"k_m": 51000,
 					"mass_distribution_class": "I",
 					"pitch": 90,
-					"orientation":0,
+					"orientation360": 180,
 					"base_height": 10,
 					"height":6.6,
 					"width":1
@@ -9272,7 +9274,7 @@
 					"area": 0.472,
 					"r_c": 0.503,
 					"pitch": 90,
-					"orientation": 0,
+					"orientation360": 180,
 					"g_value": 0.73,
 					"frame_area_fraction":0.41,
 					"height":0.75,
@@ -9285,7 +9287,7 @@
 					"area": 2.009,
 					"r_c": 0.541,
 					"pitch": 90,
-					"orientation": 0,
+					"orientation360": 180,
 					"g_value": 0.73,
 					"frame_area_fraction":0.22,
 					"height":1.13,

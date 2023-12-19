@@ -1,6 +1,9 @@
 {
 	"PartGcompliance":true,
+	"PartO_active_cooling_required":true,
+	"GroundFloorArea" : 50,
 	"NumberOfBedrooms": 2,
+	"NumberOfWetRooms": 2,
 	"HeatingControlType": "SeparateTempControl",
 	"SimulationTime": {
 		"start": 0,
@@ -89,10 +92,27 @@
 	},
 	"EnergySupply": {
 		"mains elec": {
-			"fuel": "electricity"
+			"fuel": "electricity",
+			"ElectricBattery": {
+				"capacity": 2,
+				"charge_discharge_efficiency": 0.8
+			}
 		},
 		"mains gas": {
 			"fuel": "mains_gas"
+		}
+	},
+	"OnSiteGeneration": {
+		"PV 1": {
+			"type": "PhotovoltaicSystem",
+			"peak_power": 3.5,
+			"ventilation_strategy": "moderately_ventilated",
+			"pitch": 30,
+			"orientation360": 180,
+			"base_height":10,
+			"height":1,
+			"width":1,
+			"EnergySupply": "mains elec"
 		}
 	},
 	"Control": {
@@ -103,22 +123,6 @@
 			"schedule": {
 				"main": [{"value": true, "repeat": 8760}]
 			}
-		}
-	},
-	"SpaceCoolSystem": {
-		"cooling system 1": {
-			"type": "AirConditioning",
-			"cooling_capacity": 3.0,
-			"efficiency": 4.3,
-			"frac_convective": 0.95,
-			"EnergySupply": "mains elec"
-		},
-		"cooling system 2": {
-			"type": "AirConditioning",
-			"cooling_capacity": 3.0,
-			"efficiency": 4.3,
-			"frac_convective": 0.95,
-			"EnergySupply": "mains elec"
 		}
 	},
 	"HotWaterSource": {
@@ -145,7 +149,8 @@
 		"mixer": {
 			"type": "MixerShower",
 			"flowrate": 8.0,
-			"ColdWaterSource": "header tank"
+			"ColdWaterSource": "header tank",
+			"WWHRS": "Waste Water Heat Recovery System"
 		}
 	},
 	"Bath": {
@@ -163,20 +168,20 @@
 	},
 	"Distribution": {
 		"internal": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		},
 		"external": {
-			"internal_diameter": 0.025,
-			"external_diameter": 0.027,
+			"internal_diameter_mm": 25,
+			"external_diameter_mm": 27,
 			"length": 8.0,
 			"insulation_thermal_conductivity": 0.035,
-			"insulation_thickness": 0.038,
+			"insulation_thickness_mm": 38,
 			"surface_reflectivity": false,
 			"pipe_contents": "water"
 		}
@@ -202,6 +207,16 @@
 			]
 		}
 	},
+	"WWHRS": {
+		"Waste Water Heat Recovery System": {
+			"type": "WWHRS_InstantaneousSystemA",
+			"ColdWaterSource": "header tank",
+			"flow_rates": [5, 7, 9, 11, 13],
+			"efficiencies": [63, 54.9, 48.6, 43.6, 39.6],
+			"utilisation_factor": 0.972,
+			"electrical_consumption": 0
+		}
+	},
 	"SpaceHeatSystem": {
 		"main 1": {
 			"type": "InstantElecHeater",
@@ -216,6 +231,25 @@
 			"EnergySupply": "mains elec"
 		}
 	},
+	"SpaceCoolSystem": {
+		"cooling system 1": {
+			"type": "AirConditioning",
+			"cooling_capacity": 3.0,
+			"efficiency": 4.3,
+			"frac_convective": 0.95,
+			"EnergySupply": "mains elec"
+		},
+		"cooling system 2": {
+			"type": "AirConditioning",
+			"cooling_capacity": 3.0,
+			"efficiency": 4.3,
+			"frac_convective": 0.95,
+			"EnergySupply": "mains elec"
+		}
+	},
+	"Window_Opening_For_Cooling": {
+		"equivalent_area": 3.0
+	},
 	"Ventilation": {
 		"type": "WHEV",
 		"req_ach": 0.5,
@@ -223,7 +257,7 @@
 		"EnergySupply": "mains elec"
 	},
 	"Infiltration": {
-		"storey": 1,
+		"storeys_in_building": 1,
 		"shelter": "normal",
 		"build_type": "house",
 		"test_result": 4.0,
@@ -259,7 +293,8 @@
 					"k_m": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
-					"orientation": 90,
+					"is_external_door": false,
+					"orientation360": 90,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 10,
@@ -272,7 +307,8 @@
 					"k_m": 19100,
 					"mass_distribution_class": "M",
 					"pitch": 90,
-					"orientation": -90,
+					"is_external_door": true,
+					"orientation360": 270,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 10,
@@ -285,7 +321,8 @@
 					"k_m": 19200,
 					"mass_distribution_class": "E",
 					"pitch": 90,
-					"orientation": 180,
+					"is_external_door": false,
+					"orientation360": 0,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 8,
@@ -298,7 +335,8 @@
 					"k_m": 19300,
 					"mass_distribution_class": "I",
 					"pitch": 90,
-					"orientation": 0,
+					"is_external_door": false,
+					"orientation360": 180,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 6,
@@ -308,7 +346,7 @@
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation": 90,
+					"orientation360": 90,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,
@@ -346,12 +384,14 @@
 				"TB1": {
 					"type": "ThermalBridgeLinear",
 					"linear_thermal_transmittance": 1.0,
-					"length": 3.0
+					"length": 3.0,
+					"junction_type": "R5"
 				},
 				"TB2": {
 					"type": "ThermalBridgeLinear",
 					"linear_thermal_transmittance": 0.1,
-					"length": 2.0
+					"length": 2.0,
+					"junction_type": "R5"
 				},
 				"TB3": {
 					"type": "ThermalBridgePoint",
@@ -374,13 +414,30 @@
 					"a_sol": 0.6,
 					"r_c": 0.7,
 					"k_m": 19000,
+					"is_external_door": false,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
-					"orientation": 90,
+					"orientation360": 90,
 					"base_height": 0,
 					"height": 2.5,
 					"width": 10,
 					"area": 20.0
+				},
+				"window 0":{
+					"type": "BuildingElementTransparent",
+					"r_c": 0.4,
+					"pitch": 90,
+					"orientation360": 90,
+					"g_value": 0.75,
+					"frame_area_fraction": 0.25,
+					"base_height": 1,
+					"height": 1.25,
+					"width": 4,
+					"shading": [
+						{"type": "overhang", "depth": 0.5, "distance": 0.5},
+						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					]
 				}
 			},
 			"ThermalBridging": 1.0
