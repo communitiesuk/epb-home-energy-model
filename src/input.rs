@@ -210,8 +210,10 @@ pub struct ElectricBattery {
 #[serde(deny_unknown_fields)]
 pub struct HeatNetwork {
     fuel: EnergySupplyType,
-    factor: Value, // don't know what these values can be yet
+    factor: HeatNetworkFactor,
 }
+
+pub type HeatNetworkFactor = HashMap<String, f64>; // don't really know what these values can be yet
 
 #[derive(Debug, Deserialize)]
 pub struct ColdWaterSource {
