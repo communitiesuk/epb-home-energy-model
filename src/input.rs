@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::Arc;
 
 pub fn parse_input_file(file: &Path) -> Result<Input, Box<dyn Error>> {
     let file = File::open(file)?;
@@ -21,8 +22,8 @@ pub fn parse_input_file(file: &Path) -> Result<Input, Box<dyn Error>> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Input {
-    simulation_time: SimulationTime,
-    external_conditions: ExternalConditionsInput,
+    simulation_time: Arc<SimulationTime>,
+    external_conditions: Arc<ExternalConditionsInput>,
     internal_gains: InternalGains,
     appliance_gains: ApplianceGains,
     cold_water_source: ColdWaterSource,
