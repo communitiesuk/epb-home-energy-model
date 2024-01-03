@@ -1,7 +1,7 @@
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
@@ -713,6 +713,7 @@ pub enum BuildingElement {
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
         pitch: f64,
+        #[serde(deserialize_with = "deserialize_orientation")]
         orientation360: f64,
         base_height: f64,
         height: f64,
@@ -729,6 +730,7 @@ pub enum BuildingElement {
         area: Option<f64>,
         r_c: Option<f64>,
         pitch: f64,
+        #[serde(deserialize_with = "deserialize_orientation")]
         orientation360: f64,
         g_value: f64,
         frame_area_fraction: f64,
@@ -769,6 +771,20 @@ pub enum BuildingElement {
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
     },
+}
+
+// special deserialization logic so that orientations are normalized correctly on the way in
+fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let orientation360_value: f64 = Deserialize::deserialize(deserializer)?;
+    Ok(init_orientation(orientation360_value))
+}
+
+fn init_orientation(value: f64) -> f64 {
+    // Convert orientation from 0-360 (clockwise) to -180 to +180 (anticlockwise)
+    180. - value
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
