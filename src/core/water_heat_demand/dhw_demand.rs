@@ -32,7 +32,7 @@ impl DomesticHotWaterDemand {
         other_hot_water_input: Option<OtherWaterUseInput>,
         water_distribution_input: Option<WaterDistributionInput>,
         cold_water_sources: &ColdWaterSources,
-        wwhrs: Option<Wwhrs>,
+        wwhrs: &HashMap<String, Wwhrs>,
         energy_supplies: &EnergySupplies,
         event_schedules: HotWaterEventSchedules,
     ) -> Self {
@@ -261,17 +261,22 @@ impl DomesticHotWaterDemand {
 fn mixer_shower_input_to_shower<'a>(
     input: &MixerShowerInput,
     cold_water_sources: &ColdWaterSources,
-    wwhrs: &Option<Wwhrs>,
+    wwhrs: &HashMap<String, Wwhrs>,
 ) -> Shower {
     let cold_water_source = match input.cold_water_source {
         ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
         ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
     };
+    let wwhrs_instance: Option<Wwhrs> = input.waste_water_heat_recovery.as_ref().and_then(|w| {
+        wwhrs
+            .get(&w.to_string())
+            .and_then(|system| Some(system.clone()))
+    });
 
     Shower::MixerShower(MixerShower::new(
         input.flowrate,
         cold_water_source,
-        wwhrs.clone(),
+        wwhrs_instance,
     ))
 }
 

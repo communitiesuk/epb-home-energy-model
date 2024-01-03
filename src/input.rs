@@ -29,13 +29,13 @@ pub struct Input {
     pub cold_water_source: ColdWaterSourceInput,
     pub energy_supply: EnergySupplyInput,
     pub control: Control,
-    hot_water_source: HotWaterSource,
+    pub hot_water_source: HotWaterSource,
     pub shower: Option<Shower>,
     pub bath: Option<Bath>,
     #[serde(rename(deserialize = "Other"))]
-    other_water_use: Option<OtherWaterUse>,
+    pub other_water_use: Option<OtherWaterUse>,
     #[serde(rename(deserialize = "Distribution"))]
-    water_distribution: Option<WaterDistribution>,
+    pub water_distribution: Option<WaterDistribution>,
     #[serde(rename(deserialize = "Events"))]
     pub water_heating_events: WaterHeatingEvents,
     space_heat_system: Option<SpaceHeatSystem>,
@@ -293,7 +293,7 @@ pub enum ControlLogicType {
 #[serde(deny_unknown_fields)]
 pub struct HotWaterSource {
     #[serde[rename(deserialize = "hw cylinder")]]
-    hot_water_cylinder: HotWaterSourceDetails,
+    pub hot_water_cylinder: HotWaterSourceDetails,
 }
 
 #[derive(Debug, Deserialize)]

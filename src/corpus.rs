@@ -6,19 +6,19 @@ use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
 };
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events, expand_numeric_schedule, expand_water_heating_events,
-    ScheduleEvent,
+    expand_boolean_schedule, expand_numeric_schedule, expand_water_heating_events, ScheduleEvent,
 };
 use crate::core::space_heat_demand::internal_gains::InternalGains;
 use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
-    ExternalConditionsInput, Infiltration, Input, InternalGains as InternalGainsInput,
-    InternalGainsDetails, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WwhrsType,
+    ExternalConditionsInput, HotWaterSourceDetails, Infiltration, Input,
+    InternalGains as InternalGainsInput, InternalGainsDetails, WasteWaterHeatRecovery,
+    WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WwhrsType,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
 use serde_json::Value;
@@ -34,6 +34,7 @@ pub struct Corpus {
     pub control: HashMap<String, Control>,
     pub wwhrs: HashMap<String, Wwhrs>,
     pub event_schedules: HotWaterEventSchedules,
+    pub domestic_hot_water_demand: DomesticHotWaterDemand,
 }
 
 impl From<Input> for Corpus {
@@ -56,6 +57,25 @@ impl From<Input> for Corpus {
             simulation_time_iterator.clone().as_ref(),
         );
 
+        let event_schedules = event_schedules_from_input(
+            input.water_heating_events,
+            simulation_time_iterator.as_ref(),
+        );
+
+        let domestic_hot_water_demand = DomesticHotWaterDemand::new(
+            input.shower,
+            input.bath,
+            input.other_water_use,
+            match &input.hot_water_source.hot_water_cylinder {
+                HotWaterSourceDetails::PointOfUse { .. } => None,
+                _ => input.water_distribution,
+            },
+            &cold_water_sources,
+            &wwhrs,
+            &energy_supplies,
+            event_schedules.clone(),
+        );
+
         Self {
             external_conditions: external_conditions,
             infiltration: infiltration_from_input(input.infiltration),
@@ -64,10 +84,8 @@ impl From<Input> for Corpus {
             internal_gains: internal_gains_from_input(input.internal_gains),
             control: control_from_input(input.control, simulation_time_iterator.clone().as_ref()),
             wwhrs,
-            event_schedules: event_schedules_from_input(
-                input.water_heating_events,
-                simulation_time_iterator.as_ref(),
-            ),
+            event_schedules,
+            domestic_hot_water_demand,
         }
     }
 }
@@ -428,6 +446,7 @@ fn get_cold_water_source_ref_for_type<'a>(
 
 pub type EventSchedule = Vec<Option<Vec<ScheduleEvent>>>;
 
+#[derive(Clone)]
 pub struct HotWaterEventSchedules {
     pub shower: HashMap<String, EventSchedule>,
     pub bath: HashMap<String, EventSchedule>,
