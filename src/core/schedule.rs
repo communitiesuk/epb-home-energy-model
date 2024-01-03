@@ -165,8 +165,8 @@ pub fn expand_events(
     schedule
 }
 
-impl From<WaterHeatingEvent> for ScheduleEvent {
-    fn from(event: WaterHeatingEvent) -> Self {
+impl From<&WaterHeatingEvent> for ScheduleEvent {
+    fn from(event: &WaterHeatingEvent) -> Self {
         Self {
             start: event.start,
             duration: event.duration,
@@ -176,7 +176,7 @@ impl From<WaterHeatingEvent> for ScheduleEvent {
 }
 
 pub fn expand_water_heating_events(
-    events: Vec<WaterHeatingEvent>,
+    events: Vec<&WaterHeatingEvent>,
     simulation_timestep: f64,
     total_timesteps: usize,
 ) -> Vec<Option<Vec<ScheduleEvent>>> {
@@ -422,7 +422,11 @@ mod test {
         water_events_schedule: Vec<Option<Vec<ScheduleEvent>>>,
     ) {
         assert_eq!(
-            expand_water_heating_events(water_heating_events, simulation_timestep, total_timesteps),
+            expand_water_heating_events(
+                water_heating_events.iter().collect(),
+                simulation_timestep,
+                total_timesteps
+            ),
             water_events_schedule,
             "incorrect expansion of event list to schedule"
         );

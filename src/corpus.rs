@@ -5,7 +5,10 @@ use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
 };
-use crate::core::schedule::{expand_boolean_schedule, expand_numeric_schedule, ScheduleEvent};
+use crate::core::schedule::{
+    expand_boolean_schedule, expand_events, expand_numeric_schedule, expand_water_heating_events,
+    ScheduleEvent,
+};
 use crate::core::space_heat_demand::internal_gains::InternalGains;
 use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -13,8 +16,9 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
-    ExternalConditionsInput, HeatNetwork, Infiltration, Input, InternalGains as InternalGainsInput,
-    InternalGainsDetails, Shower, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WwhrsType,
+    ExternalConditionsInput, Infiltration, Input, InternalGains as InternalGainsInput,
+    InternalGainsDetails, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WwhrsType,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
 use serde_json::Value;
@@ -29,6 +33,7 @@ pub struct Corpus {
     pub internal_gains: InternalGainsCollection,
     pub control: HashMap<String, Control>,
     pub wwhrs: HashMap<String, Wwhrs>,
+    pub event_schedules: HotWaterEventSchedules,
 }
 
 impl From<Input> for Corpus {
@@ -56,10 +61,13 @@ impl From<Input> for Corpus {
             infiltration: infiltration_from_input(input.infiltration),
             cold_water_sources,
             energy_supplies,
-            // about to do internal gains but need to add schedule code
             internal_gains: internal_gains_from_input(input.internal_gains),
             control: control_from_input(input.control, simulation_time_iterator.clone().as_ref()),
             wwhrs,
+            event_schedules: event_schedules_from_input(
+                input.water_heating_events,
+                simulation_time_iterator.as_ref(),
+            ),
         }
     }
 }
@@ -424,4 +432,61 @@ pub struct HotWaterEventSchedules {
     pub shower: HashMap<String, EventSchedule>,
     pub bath: HashMap<String, EventSchedule>,
     pub other: HashMap<String, EventSchedule>,
+}
+
+fn event_schedules_from_input(
+    events: WaterHeatingEvents,
+    simulation_time_iterator: &SimulationTimeIterator,
+) -> HotWaterEventSchedules {
+    let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
+    if let Some(shower_events) = events.shower {
+        shower_schedules.insert(
+            "ies".to_string(),
+            schedule_event_from_input(shower_events.ies.iter().collect(), simulation_time_iterator),
+        );
+        shower_schedules.insert(
+            "mixer".to_string(),
+            schedule_event_from_input(
+                shower_events.mixer.iter().collect(),
+                simulation_time_iterator,
+            ),
+        );
+    }
+
+    let mut bath_schedules: HashMap<String, EventSchedule> = Default::default();
+    if let Some(bath_events) = events.bath {
+        bath_schedules.insert(
+            "medium".to_string(),
+            schedule_event_from_input(
+                bath_events.medium.iter().collect(),
+                simulation_time_iterator,
+            ),
+        );
+    }
+
+    let mut other_schedules: HashMap<String, EventSchedule> = Default::default();
+    if let Some(other_events) = events.other {
+        other_schedules.insert(
+            "other".to_string(),
+            schedule_event_from_input(
+                other_events.other.iter().collect(),
+                simulation_time_iterator,
+            ),
+        );
+    }
+
+    HotWaterEventSchedules {
+        shower: shower_schedules,
+        bath: bath_schedules,
+        other: other_schedules,
+    }
+}
+
+fn schedule_event_from_input(
+    events_input: Vec<&WaterHeatingEvent>,
+    simulation_time_iterator: &SimulationTimeIterator,
+) -> EventSchedule {
+    let sim_timestep = simulation_time_iterator.step_in_hours();
+    let total_timesteps = simulation_time_iterator.total_steps();
+    expand_water_heating_events(events_input, sim_timestep, total_timesteps)
 }

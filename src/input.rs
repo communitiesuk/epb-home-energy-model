@@ -37,7 +37,7 @@ pub struct Input {
     #[serde(rename(deserialize = "Distribution"))]
     water_distribution: Option<WaterDistribution>,
     #[serde(rename(deserialize = "Events"))]
-    water_heating_events: WaterHeatingEvents,
+    pub water_heating_events: WaterHeatingEvents,
     space_heat_system: Option<SpaceHeatSystem>,
     space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
@@ -463,9 +463,9 @@ pub struct WaterDistribution {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct WaterHeatingEvents {
-    shower: Option<ShowerEvents>,
-    bath: Option<BathEvents>,
-    other: Option<OtherWaterHeatingEvents>,
+    pub shower: Option<ShowerEvents>,
+    pub bath: Option<BathEvents>,
+    pub other: Option<OtherWaterHeatingEvents>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -480,20 +480,20 @@ pub struct WaterHeatingEvent {
 #[serde(deny_unknown_fields)]
 pub struct ShowerEvents {
     #[serde(alias = "IES")]
-    ies: Vec<WaterHeatingEvent>,
-    mixer: Vec<WaterHeatingEvent>,
+    pub ies: Vec<WaterHeatingEvent>,
+    pub mixer: Vec<WaterHeatingEvent>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BathEvents {
-    medium: Vec<WaterHeatingEvent>,
+    pub medium: Vec<WaterHeatingEvent>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterHeatingEvents {
-    other: Vec<WaterHeatingEvent>,
+    pub other: Vec<WaterHeatingEvent>,
 }
 
 pub type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
