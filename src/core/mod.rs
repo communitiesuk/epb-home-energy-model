@@ -4,7 +4,7 @@ pub mod heating_systems;
 pub mod material_properties;
 mod pipework;
 
-mod ductwork;
+pub mod ductwork;
 pub mod schedule;
 pub mod space_heat_demand;
 pub mod units;

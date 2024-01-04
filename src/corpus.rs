@@ -1,6 +1,7 @@
 use crate::core::controls::time_control::{
     Control, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, ToUChargeControl,
 };
+use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
@@ -10,6 +11,7 @@ use crate::core::schedule::{
 };
 use crate::core::space_heat_demand::internal_gains::InternalGains;
 use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
+use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::external_conditions::ExternalConditions;
@@ -17,7 +19,7 @@ use crate::input::{
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
     ExternalConditionsInput, HotWaterSourceDetails, Infiltration, Input,
-    InternalGains as InternalGainsInput, InternalGainsDetails, WasteWaterHeatRecovery,
+    InternalGains as InternalGainsInput, InternalGainsDetails, Ventilation, WasteWaterHeatRecovery,
     WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents, WwhrsType,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
@@ -505,4 +507,20 @@ fn schedule_event_from_input(
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
     expand_water_heating_events(events_input, sim_timestep, total_timesteps)
+}
+
+fn ductwork_from_ventilation_input(ventilation: &Option<Ventilation>) -> Option<Ductwork> {
+    ventilation.as_ref().and_then(|v| match v {
+        Ventilation::MVHR { ductwork, .. } => Some(Ductwork::new(
+            ductwork.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+            ductwork.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
+            ductwork.length_in,
+            ductwork.length_out,
+            ductwork.insulation_thermal_conductivity,
+            ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
+            ductwork.reflective,
+            ductwork.mvhr_location,
+        )),
+        _ => None,
+    })
 }

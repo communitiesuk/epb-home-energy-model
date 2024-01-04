@@ -604,18 +604,18 @@ pub enum Ventilation {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VentilationDuctwork {
-    internal_diameter_mm: f64,
-    external_diameter_mm: f64,
-    length_in: f64,
-    length_out: f64,
-    insulation_thermal_conductivity: f64,
-    insulation_thickness_mm: f64,
-    reflective: bool,
+    pub internal_diameter_mm: f64,
+    pub external_diameter_mm: f64,
+    pub length_in: f64,
+    pub length_out: f64,
+    pub insulation_thermal_conductivity: f64,
+    pub insulation_thickness_mm: f64,
+    pub reflective: bool,
     #[serde(rename(deserialize = "MVHR_location"))]
-    mvhr_location: MVHRLocation,
+    pub mvhr_location: MVHRLocation,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MVHRLocation {
     Inside,
