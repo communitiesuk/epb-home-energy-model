@@ -37,6 +37,8 @@ pub struct Corpus {
     pub wwhrs: HashMap<String, Wwhrs>,
     pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
+    pub ventilation: Option<Ventilation>,
+    pub space_heating_ductwork: Option<Ductwork>,
 }
 
 impl From<Input> for Corpus {
@@ -78,6 +80,8 @@ impl From<Input> for Corpus {
             event_schedules.clone(),
         );
 
+        let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
+
         Self {
             external_conditions: external_conditions,
             infiltration: infiltration_from_input(input.infiltration),
@@ -88,6 +92,8 @@ impl From<Input> for Corpus {
             wwhrs,
             event_schedules,
             domestic_hot_water_demand,
+            ventilation: input.ventilation,
+            space_heating_ductwork,
         }
     }
 }
