@@ -355,9 +355,7 @@ pub fn i_sol_dir_dif_for(
 ) -> (f64, f64) {
     match element {
         BuildingElement::Opaque {
-            pitch,
-            orientation360: orientation,
-            ..
+            pitch, orientation, ..
         } => {
             let (i_sol_dir, i_sol_dif, _, _) = external_conditions
                 .calculated_direct_diffuse_total_irradiance(
@@ -521,10 +519,7 @@ pub fn mid_height_for(element: &BuildingElement) -> Option<f64> {
 
 pub fn orientation_for(element: &BuildingElement) -> Option<f64> {
     match element {
-        BuildingElement::Transparent {
-            orientation360: orientation,
-            ..
-        } => Some(*orientation),
+        BuildingElement::Transparent { orientation, .. } => Some(*orientation),
         _ => None,
     }
 }
@@ -652,7 +647,7 @@ mod test {
             k_m: 19000.0,
             mass_distribution_class: MassDistributionClass::I,
             is_external_door: None,
-            orientation360: 0.0,
+            orientation: 0.0,
             base_height: 0.0,
             height: 2.0,
             width: 10.0,
@@ -674,7 +669,7 @@ mod test {
             k_m: 18000.0,
             mass_distribution_class: MassDistributionClass::E,
             is_external_door: None,
-            orientation360: 180.0,
+            orientation: 180.0,
             base_height: 0.0,
             height: 2.25,
             width: 10.0,
@@ -696,7 +691,7 @@ mod test {
             k_m: 17000.0,
             mass_distribution_class: MassDistributionClass::IE,
             is_external_door: None,
-            orientation360: 90.0,
+            orientation: 90.0,
             base_height: 0.0,
             height: 2.5,
             width: 10.0,
@@ -718,7 +713,7 @@ mod test {
             k_m: 16000.0,
             mass_distribution_class: MassDistributionClass::D,
             is_external_door: None,
-            orientation360: -90.0,
+            orientation: -90.0,
             base_height: 0.0,
             height: 2.75,
             width: 10.0,
@@ -740,7 +735,7 @@ mod test {
             k_m: 15000.0,
             mass_distribution_class: MassDistributionClass::M,
             is_external_door: None,
-            orientation360: 0.0,
+            orientation: 0.0,
             base_height: 0.0,
             height: 3.0,
             width: 10.0,

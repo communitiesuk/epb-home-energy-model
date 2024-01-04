@@ -713,8 +713,9 @@ pub enum BuildingElement {
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
         pitch: f64,
+        #[serde(rename(deserialize = "orientation360"))]
         #[serde(deserialize_with = "deserialize_orientation")]
-        orientation360: f64,
+        orientation: f64,
         base_height: f64,
         height: f64,
         width: f64,
@@ -730,8 +731,9 @@ pub enum BuildingElement {
         area: Option<f64>,
         r_c: Option<f64>,
         pitch: f64,
+        #[serde(rename(deserialize = "orientation360"))]
         #[serde(deserialize_with = "deserialize_orientation")]
-        orientation360: f64,
+        orientation: f64,
         g_value: f64,
         frame_area_fraction: f64,
         base_height: f64,
