@@ -306,10 +306,9 @@ fn control_from_input(
                 ControlDetails::OnOffCostMinimisingTimeControl {
                     start_day,
                     time_series_step,
-                    advanced_start,
-                    logic_type,
                     time_on_daily,
                     schedule,
+                    ..
                 } => Control::OnOffMinimisingTimeControl(OnOffMinimisingTimeControl::new(
                     expand_numeric_schedule(schedule, false),
                     start_day,
@@ -344,11 +343,9 @@ fn control_from_input(
                 ControlDetails::ToUChargeControl {
                     start_day,
                     time_series_step,
-                    advanced_start,
-                    logic_type,
                     charge_level,
-                    target_charge,
                     schedule,
+                    ..
                 } => {
                     // Simulation manual charge control
                     // Set charge level to 1.0 (max) for each day of simulation (plus 1)
