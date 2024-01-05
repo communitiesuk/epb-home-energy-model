@@ -42,7 +42,7 @@ pub struct Input {
     space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
     pub infiltration: Infiltration,
-    zone: ZoneDictionary,
+    pub zone: ZoneDictionary,
     #[serde(rename(deserialize = "PartGcompliance"))]
     part_g_compliance: Option<bool>,
     #[serde(rename(deserialize = "PartO_active_cooling_required"))]
@@ -58,7 +58,7 @@ pub struct Input {
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     on_site_generation: Option<OnSiteGeneration>,
     #[serde(rename(deserialize = "Window_Opening_For_Cooling"))]
-    window_opening_for_cooling: Option<WindowOpeningForCooling>,
+    pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -675,24 +675,24 @@ pub type ZoneDictionary = HashMap<String, ZoneInput>;
 #[serde(deny_unknown_fields)]
 pub struct ZoneInput {
     #[serde(rename(deserialize = "SpaceHeatSystem"))]
-    space_heat_system: String,
+    pub space_heat_system: Option<String>,
     #[serde(rename(deserialize = "SpaceCoolSystem"))]
-    space_cool_system: Option<String>,
+    pub space_cool_system: Option<String>,
     #[serde(rename(deserialize = "SpaceHeatControl"))]
-    space_heat_control: Option<String>, // don't know what the options are yet
+    pub space_heat_control: Option<String>, // don't know what the options are yet
     #[serde(rename(deserialize = "Control_WindowOpening"))]
-    control_window_opening: Option<String>, // don't know what the options are yet
-    area: f64,
-    volume: f64,
+    pub control_window_opening: Option<String>, // don't know what the options are yet
+    pub area: f64,
+    pub volume: f64,
     #[serde(rename(deserialize = "Lighting"))]
-    lighting: Option<ZoneLighting>,
-    temp_setpnt_heat: Option<f64>,
-    temp_setpnt_cool: Option<f64>,
-    temp_setpnt_init: Option<f64>,
+    pub lighting: Option<ZoneLighting>,
+    pub temp_setpnt_heat: Option<f64>,
+    pub temp_setpnt_cool: Option<f64>,
+    pub temp_setpnt_init: Option<f64>,
     #[serde(rename(deserialize = "BuildingElement"))]
-    building_elements: IndexMap<String, BuildingElement>,
+    pub building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename(deserialize = "ThermalBridging"))]
-    thermal_bridging: Value, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
+    pub thermal_bridging: ThermalBridging, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
 }
 
 #[derive(Debug, Deserialize)]
@@ -798,30 +798,27 @@ pub enum MassDistributionClass {
     M,
 }
 
-// following _should_ work in theory for deserializing a Zone's ThermalBridging value which is currently
-// either a map of thermal bridging details or a single float - going to use serde_json::Value for now
-// as this ambiguity will hopefully go away of its own accord as
-// #[derive(Debug, Deserialize)]
-// #[serde(untagged)]
-// pub enum ThermalBridging {
-//     ThermalBridgingElements(IndexMap<String, ThermalBridgingDetails>),
-//     ThermalBridgingNumber(f64),
-// }
-//
-// #[derive(Debug, Deserialize)]
-// #[serde(tag = "type")]
-// pub enum ThermalBridgingDetails {
-//     #[serde(rename(deserialize = "ThermalBridgeLinear"))]
-//     Linear {
-//         linear_thermal_transmittance: f64,
-//         length: f64,
-//     },
-//     #[serde(rename(deserialize = "ThermalBridgePoint"))]
-//     Point {
-//         #[serde(alias = "heat_transfer_coeff")]
-//         heat_transfer_coefficient: f64,
-//     },
-// }
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ThermalBridging {
+    ThermalBridgingElements(IndexMap<String, ThermalBridgingDetails>),
+    ThermalBridgingNumber(f64),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum ThermalBridgingDetails {
+    #[serde(rename(deserialize = "ThermalBridgeLinear"))]
+    Linear {
+        linear_thermal_transmittance: f64,
+        length: f64,
+    },
+    #[serde(rename(deserialize = "ThermalBridgePoint"))]
+    Point {
+        #[serde(alias = "heat_transfer_coeff")]
+        heat_transfer_coefficient: f64,
+    },
+}
 
 #[derive(Debug, Deserialize)]
 pub enum HeatingControlType {
@@ -1022,7 +1019,7 @@ pub enum OnSiteGenerationVentilationStrategy {
 
 #[derive(Debug, Deserialize)]
 pub struct WindowOpeningForCooling {
-    equivalent_area: f64,
+    pub equivalent_area: f64,
     // control: String,
 }
 

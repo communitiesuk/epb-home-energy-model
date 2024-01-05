@@ -1,8 +1,8 @@
 use crate::core::controls::time_control::SetpointTimeControl;
 use crate::core::energy_supply::energy_supply::EnergySupply;
 use crate::core::space_heat_demand::building_element::{
-    area_for_building_element_input, element_from_named, mid_height_for, orientation_for,
-    projected_height_for_transparent_element,
+    area_for_building_element_input, cloned_element_from_named, element_from_named, mid_height_for,
+    orientation_for, projected_height_for_transparent_element,
 };
 use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{
@@ -14,12 +14,13 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
     air_change_rate * zone_volume / SECONDS_PER_HOUR as f64
 }
 
-pub trait VentilationElement {
+pub trait VentilationElementBehaviour {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,
@@ -43,6 +44,84 @@ pub trait VentilationElement {
     ) -> f64;
 }
 
+#[derive(Clone)]
+pub enum VentilationElement {
+    Infiltration(VentilationElementInfiltration),
+    Mvhr(MechanicalVentilationHeatRecovery),
+    Whev(WholeHouseExtractVentilation),
+    Natural(NaturalVentilation),
+}
+
+impl VentilationElementBehaviour for VentilationElement {
+    fn h_ve_heat_transfer_coefficient(
+        &self,
+        zone_volume: f64,
+        throughput_factor: Option<f64>,
+        timestep_idx: Option<usize>,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        match self {
+            VentilationElement::Infiltration(el) => el.h_ve_heat_transfer_coefficient(
+                zone_volume,
+                throughput_factor,
+                timestep_idx,
+                external_conditions,
+            ),
+            VentilationElement::Mvhr(el) => el.h_ve_heat_transfer_coefficient(
+                zone_volume,
+                throughput_factor,
+                timestep_idx,
+                external_conditions,
+            ),
+            VentilationElement::Whev(el) => el.h_ve_heat_transfer_coefficient(
+                zone_volume,
+                throughput_factor,
+                timestep_idx,
+                external_conditions,
+            ),
+            VentilationElement::Natural(el) => el.h_ve_heat_transfer_coefficient(
+                zone_volume,
+                throughput_factor,
+                timestep_idx,
+                external_conditions,
+            ),
+        }
+    }
+
+    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
+        match self {
+            VentilationElement::Infiltration(el) => {
+                el.temp_supply(timestep_index, external_conditions)
+            }
+            VentilationElement::Mvhr(el) => el.temp_supply(timestep_index, external_conditions),
+            VentilationElement::Whev(el) => el.temp_supply(timestep_index, external_conditions),
+            VentilationElement::Natural(el) => el.temp_supply(timestep_index, external_conditions),
+        }
+    }
+
+    fn h_ve_average_heat_transfer_coefficient(
+        &self,
+        zone_volume: f64,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        match self {
+            VentilationElement::Infiltration(el) => {
+                el.h_ve_average_heat_transfer_coefficient(zone_volume, external_conditions)
+            }
+            VentilationElement::Mvhr(el) => {
+                el.h_ve_average_heat_transfer_coefficient(zone_volume, external_conditions)
+            }
+            VentilationElement::Whev(el) => {
+                el.h_ve_average_heat_transfer_coefficient(zone_volume, external_conditions)
+            }
+            VentilationElement::Natural(el) => {
+                el.h_ve_average_heat_transfer_coefficient(zone_volume, external_conditions)
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct VentilationElementInfiltration {
     volume: f64,
     infiltration_rate_from_openings: f64,
@@ -150,7 +229,7 @@ impl VentilationElementInfiltration {
     }
 }
 
-impl VentilationElement for VentilationElementInfiltration {
+impl VentilationElementBehaviour for VentilationElementInfiltration {
     /// Calculate the heat transfer coefficient (h_ve), in W/K,
     ///         according to ISO 52016-1:2017, Section 6.5.10.1
     ///
@@ -300,13 +379,14 @@ fn init_infiltration(
 const P_A: f64 = 1.204; // Air density at 20 degrees C, in kg/m^3 , BS EN ISO 52016-1:2017, Section 6.3.6
 const C_A: f64 = 1006.0; // Specific heat of air at constant pressure, in J/(kg K), BS EN ISO 52016-1:2017, Section 6.3.6
 
+#[derive(Clone)]
 pub struct MechanicalVentilationHeatRecovery {
     air_change_rate: f64,
     specific_fan_power: f64,
     efficiency_hr: f64,
-    energy_supply: EnergySupply,
-    energy_supply_end_user_name: String, // rather than using an EnergySupplyConnection object that encapsulates this
-    simulation_time: SimulationTimeIterator,
+    // energy_supply: &'a mut EnergySupply,
+    // energy_supply_end_user_name: String, // rather than using an EnergySupplyConnection object that encapsulates this
+    simulation_time_step_in_hours: f64,
 }
 
 impl MechanicalVentilationHeatRecovery {
@@ -314,24 +394,24 @@ impl MechanicalVentilationHeatRecovery {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         efficiency_hr: f64,
-        energy_supply: EnergySupply,
-        energy_supply_end_user_name: String,
-        simulation_time: SimulationTimeIterator,
+        // energy_supply: &'a mut EnergySupply,
+        // energy_supply_end_user_name: String,
+        simulation_time_step_in_hours: f64,
     ) -> Self {
         Self {
             air_change_rate: required_air_change_rate,
             specific_fan_power,
             efficiency_hr,
-            energy_supply,
-            energy_supply_end_user_name,
-            simulation_time,
+            // energy_supply,
+            // energy_supply_end_user_name,
+            simulation_time_step_in_hours,
         }
     }
 
     pub fn fans(
         &mut self,
         zone_volume: f64,
-        timestep_index: usize,
+        _timestep_index: usize,
         throughput_factor: Option<f64>,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
@@ -341,13 +421,14 @@ impl MechanicalVentilationHeatRecovery {
             air_change_rate_to_flow_rate(self.air_change_rate, zone_volume) * throughput_factor;
         let fan_power_w = self.specific_fan_power * (q_v * LITRES_PER_CUBIC_METRE as f64);
         let fan_energy_use_kwh =
-            (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time.step_in_hours();
+            (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time_step_in_hours;
 
-        let _ = self.energy_supply.demand_energy(
-            self.energy_supply_end_user_name.clone(),
-            fan_energy_use_kwh,
-            timestep_index,
-        );
+        // TODO: work out how this side-effect can be better implemented
+        // let _ = self.energy_supply.demand_energy(
+        //     self.energy_supply_end_user_name.clone(),
+        //     fan_energy_use_kwh,
+        //     timestep_index,
+        // );
 
         fan_energy_use_kwh / 2.0
     }
@@ -357,7 +438,7 @@ impl MechanicalVentilationHeatRecovery {
     }
 }
 
-impl VentilationElement for MechanicalVentilationHeatRecovery {
+impl VentilationElementBehaviour for MechanicalVentilationHeatRecovery {
     /// Calculate the heat transfer coefficient (h_ve), in W/K,
     /// according to ISO 52016-1:2017, Section 6.5.10.1
     ///
@@ -400,14 +481,14 @@ impl VentilationElement for MechanicalVentilationHeatRecovery {
     }
 }
 
+#[derive(Clone)]
 pub struct WholeHouseExtractVentilation {
     air_change_rate: f64,
     specific_fan_power: f64,
     infiltration_rate: f64,
-    energy_supply: EnergySupply,
-    energy_supply_end_user_name: String,
-    external_conditions: ExternalConditions,
-    simulation_time: SimulationTimeIterator,
+    // energy_supply: &'a EnergySupply,
+    // energy_supply_end_user_name: String,
+    simulation_time_step_in_hours: f64,
 }
 
 impl WholeHouseExtractVentilation {
@@ -415,19 +496,17 @@ impl WholeHouseExtractVentilation {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         infiltration_rate: f64,
-        energy_supply: EnergySupply,
-        energy_supply_end_user_name: String,
-        external_conditions: ExternalConditions,
-        simulation_time: SimulationTimeIterator,
+        // energy_supply: &'a EnergySupply,
+        // energy_supply_end_user_name: String,
+        simulation_time_step_in_hours: f64,
     ) -> Self {
         Self {
             air_change_rate: required_air_change_rate,
             infiltration_rate,
             specific_fan_power,
-            energy_supply,
-            energy_supply_end_user_name,
-            external_conditions,
-            simulation_time,
+            // energy_supply,
+            // energy_supply_end_user_name,
+            simulation_time_step_in_hours,
         }
     }
 
@@ -465,19 +544,20 @@ impl WholeHouseExtractVentilation {
             air_change_rate_to_flow_rate(self.air_change_rate, zone_volume) * throughput_factor;
         let fan_power_w = self.specific_fan_power * (q_v * LITRES_PER_CUBIC_METRE as f64);
         let fan_power_use_kwh =
-            (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time.step_in_hours();
+            (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time_step_in_hours;
 
-        let _ = self.energy_supply.demand_energy(
-            self.energy_supply_end_user_name.clone(),
-            fan_power_use_kwh,
-            timestep_index,
-        );
+        // we need to find a better way to perform this mutation on the energy supply, or equivalent
+        // let _ = self.energy_supply.demand_energy(
+        //     self.energy_supply_end_user_name.clone(),
+        //     fan_power_use_kwh,
+        //     timestep_index,
+        // );
 
         0.0
     }
 }
 
-impl VentilationElement for WholeHouseExtractVentilation {
+impl VentilationElementBehaviour for WholeHouseExtractVentilation {
     /// Calculate the heat transfer coefficient (h_ve), in W/K,
     /// according to ISO 52016-1:2017, Section 6.5.10.1
     //
@@ -518,13 +598,13 @@ impl VentilationElement for WholeHouseExtractVentilation {
 }
 
 //tbc
+#[derive(Clone)]
 pub struct NaturalVentilation {
-    required_air_change_rate: f64,
-    infiltration_rate: f64,
-    external_conditions: ExternalConditions,
+    pub required_air_change_rate: f64,
+    pub infiltration_rate: f64,
 }
 
-impl VentilationElement for NaturalVentilation {
+impl VentilationElementBehaviour for NaturalVentilation {
     fn h_ve_heat_transfer_coefficient(
         &self,
         zone_volume: f64,
@@ -556,7 +636,14 @@ impl VentilationElement for NaturalVentilation {
 }
 
 impl NaturalVentilation {
-    fn air_change_rate(&self, infiltration_rate: f64) -> f64 {
+    pub fn new(required_air_change_rate: f64, infiltration_rate: f64) -> Self {
+        Self {
+            required_air_change_rate,
+            infiltration_rate,
+        }
+    }
+
+    pub fn air_change_rate(&self, infiltration_rate: f64) -> f64 {
         // The calculation below is based on SAP 10.2 equations, but with the curve between
         // infiltration_rate == 0 and infiltration_rate == 2 * air_change_rate_req
         // adjusted to handle values of air_change_rate_req other than 0.5.
@@ -575,11 +662,11 @@ const G: f64 = 9.81; // m/s
 const C_D: f64 = 0.62; // discharge coefficient
 const DC_P: f64 = 0.2 - (-0.25); // Difference in wind pressure coeff from CIBSE Guide A Table 4.12 for urban environment
 
-pub struct WindowOpeningForCooling<'a> {
+pub struct WindowOpeningForCooling {
     window_area_equivalent: f64,
-    external_conditions: ExternalConditions,
-    openings: Option<Vec<&'a BuildingElement>>, // actually only meaningfully contains BuildingElement::Transparent
-    control: &'a SetpointTimeControl,
+    external_conditions: Arc<ExternalConditions>,
+    openings: Option<Vec<BuildingElement>>, // actually only meaningfully contains BuildingElement::Transparent
+    control: Option<SetpointTimeControl>,
     natural_ventilation: Option<NaturalVentilation>,
     a_b: Option<f64>,
     a_w: Option<f64>,
@@ -589,7 +676,7 @@ pub struct WindowOpeningForCooling<'a> {
     stack_vent: bool,
 }
 
-impl<'a> WindowOpeningForCooling<'a> {
+impl WindowOpeningForCooling {
     /// Arguments:
     /// `window_area_equivalent` - maximum equivalent area of all openings in the relevant zone
     /// `external_conditions` - reference to ExternalConditions object
@@ -598,15 +685,15 @@ impl<'a> WindowOpeningForCooling<'a> {
     /// `natural_ventilation` - reference to NaturalVentilation object, if building is naturally ventilated
     pub fn new(
         window_area_equivalent: f64,
-        external_conditions: ExternalConditions,
-        named_openings: &'a Vec<NamedBuildingElement>,
-        control: &'a SetpointTimeControl,
+        external_conditions: Arc<ExternalConditions>,
+        named_openings: Vec<NamedBuildingElement>,
+        control: Option<SetpointTimeControl>,
         natural_ventilation: Option<NaturalVentilation>,
     ) -> Self {
         let openings = named_openings
             .iter()
-            .map(element_from_named)
-            .collect::<Vec<&BuildingElement>>();
+            .map(cloned_element_from_named)
+            .collect::<Vec<BuildingElement>>();
         // Assign equivalent areas to each window/group in proportion to actual area
         let opening_area_total = openings
             .iter()
@@ -1086,17 +1173,16 @@ mod test {
     }
 
     #[fixture]
-    pub fn mvhr<'a>(
-        energy_supply: EnergySupply,
+    pub fn mvhr(
         simulation_time_iterator: SimulationTimeIterator,
     ) -> MechanicalVentilationHeatRecovery {
         MechanicalVentilationHeatRecovery::new(
             0.5,
             2.0,
             0.66,
-            energy_supply,
-            "MVHR".to_string(),
-            simulation_time_iterator,
+            // &mut energy_supply,
+            // "MVHR".to_string(),
+            simulation_time_iterator.step_in_hours(),
         )
     }
 
@@ -1156,18 +1242,15 @@ mod test {
 
     #[fixture]
     pub fn whole_house_extract_ventilation(
-        external_conditions: ExternalConditions,
-        energy_supply: EnergySupply,
         simulation_time_iterator: SimulationTimeIterator,
     ) -> WholeHouseExtractVentilation {
         WholeHouseExtractVentilation::new(
             0.5,
             2.0,
             0.25,
-            energy_supply,
-            "WHEV".to_string(),
-            external_conditions,
-            simulation_time_iterator,
+            // &energy_supply,
+            // "WHEV".to_string(),
+            simulation_time_iterator.step_in_hours(),
         )
     }
 

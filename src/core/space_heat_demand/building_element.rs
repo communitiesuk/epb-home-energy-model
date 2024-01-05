@@ -545,6 +545,11 @@ pub fn element_from_named(named_element: &NamedBuildingElement) -> &BuildingElem
     element
 }
 
+pub fn cloned_element_from_named(named_element: &NamedBuildingElement) -> BuildingElement {
+    let NamedBuildingElement { element, .. } = named_element;
+    (*element).clone()
+}
+
 // Thermal properties of ground from BS EN ISO 13370:2017 Table 7
 // Use values for clay or silt (same as BR 443 and SAP 10)
 const THERMAL_CONDUCTIVITY_OF_GROUND: f64 = 1.5; // in W/(m.K)

@@ -7,7 +7,8 @@ use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
 };
 use crate::core::space_heat_demand::ventilation_element::{
-    temp_supply_for_window_opening, VentilationElement, WindowOpeningForCooling,
+    temp_supply_for_window_opening, VentilationElement, VentilationElementBehaviour,
+    WindowOpeningForCooling,
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
@@ -19,6 +20,7 @@ use std::borrow::Cow;
 
 use std::hash::{Hash, Hasher};
 use std::iter::Peekable;
+use std::sync::Arc;
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
@@ -29,13 +31,13 @@ const F_SOL_C: f64 = 0.1;
 // (default value from BS EN ISO 52016-1:2017, Table B.17)
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
 
-pub struct Zone<'a> {
+pub struct Zone {
     useful_area: f64,
     volume: f64,
     building_elements: Vec<NamedBuildingElement>,
     thermal_bridging: ThermalBridging,
-    vent_elements: Vec<Box<dyn VentilationElement>>,
-    vent_cool_extra: Option<WindowOpeningForCooling<'a>>,
+    vent_elements: Vec<VentilationElement>,
+    vent_cool_extra: Option<WindowOpeningForCooling>,
     tb_heat_trans_coeff: f64,
     /// total area of all building elements associated with this zone, in m2
     area_el_total: f64,
@@ -64,10 +66,9 @@ pub struct Zone<'a> {
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_prev: Vec<f64>,
-    external_conditions: Cow<'a, ExternalConditions>,
 }
 
-impl<'a> Zone<'a> {
+impl Zone {
     /// Construct a Zone object
     ///
     /// ## Arguments
@@ -91,13 +92,13 @@ impl<'a> Zone<'a> {
         volume: f64,
         building_elements: IndexMap<String, BuildingElement>,
         thermal_bridging: ThermalBridging,
-        vent_elements: Vec<Box<dyn VentilationElement>>,
-        vent_cool_extra: Option<WindowOpeningForCooling<'a>>,
+        vent_elements: Vec<VentilationElement>,
+        vent_cool_extra: Option<WindowOpeningForCooling>,
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
-        external_conditions: Cow<'a, ExternalConditions>,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time: &SimulationTimeIterator,
-    ) -> Zone<'a> {
+    ) -> Self {
         let tb_heat_trans_coeff = match thermal_bridging {
             ThermalBridging::Number(heat_coeff) => heat_coeff,
             ThermalBridging::Bridges(ref bridges) => bridges
@@ -164,7 +165,6 @@ impl<'a> Zone<'a> {
             zone_idx,
             no_of_temps,
             temp_prev,
-            external_conditions,
         }
     }
 
@@ -226,7 +226,7 @@ pub fn init_node_temps(
     external_conditions: &ExternalConditions,
     building_elements: &Vec<NamedBuildingElement>,
     element_positions: &Vec<(usize, usize)>,
-    vent_elements: &Vec<Box<dyn VentilationElement>>,
+    vent_elements: &Vec<VentilationElement>,
     passed_zone_idx: usize,
     c_int: f64,
     tb_heat_trans_coeff: f64,
@@ -351,7 +351,7 @@ pub fn space_heat_cool_demand(
     throughput_factor: Option<f64>,
     building_elements: &Vec<NamedBuildingElement>,
     element_positions: &Vec<(usize, usize)>,
-    vent_elements: &Vec<Box<dyn VentilationElement>>,
+    vent_elements: &Vec<VentilationElement>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
     simulation_time: &SimulationTimeIteration,
     external_conditions: &ExternalConditions,
@@ -689,7 +689,7 @@ fn calc_temperatures(
     volume: f64,
     c_int: f64,
     tb_heat_trans_coeff: f64,
-    vent_elements: &Vec<Box<dyn VentilationElement>>,
+    vent_elements: &Vec<VentilationElement>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
 ) -> Vec<f64> {
     let throughput_factor = throughput_factor.unwrap_or(1.0);
@@ -1239,7 +1239,7 @@ mod test {
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+    pub fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
         let air_temp_day_jan = BASE_AIR_TEMPS;
         let air_temp_day_feb = BASE_AIR_TEMPS.map(|t| t + 1.0);
         let air_temp_day_mar = BASE_AIR_TEMPS.map(|t| t + 2.0);
@@ -1318,7 +1318,7 @@ mod test {
             );
         }
 
-        ExternalConditions::new(
+        Arc::new(ExternalConditions::new(
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
@@ -1336,14 +1336,15 @@ mod test {
             false,
             false,
             vec![],
-        )
+        ))
     }
 
     #[fixture]
-    pub fn zone<'a>(
-        external_conditions: ExternalConditions,
+    pub fn zone(
+        external_conditions: Arc<ExternalConditions>,
         simulation_time: SimulationTime,
-    ) -> Zone<'a> {
+        infiltration_ventilation_element: VentilationElement,
+    ) -> Zone {
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque {
             area: 20.0,
@@ -1454,10 +1455,32 @@ mod test {
             ("tb_point".to_string(), tb_point),
         ]));
 
-        let external_conditions = external_conditions.clone();
-
         // Create ventilation objects
-        let ve = VentilationElementInfiltration::new(
+        let ve = infiltration_ventilation_element;
+
+        // Put thermal ventilation objects in a list that can be iterated over
+        let ve_objs: Vec<VentilationElement> = vec![ve];
+
+        let temp_ext_air_init = 17.;
+        let temp_setpnt_init = 21.;
+
+        Zone::new(
+            50.,
+            125.,
+            be_objs,
+            thermal_bridging,
+            ve_objs,
+            None,
+            temp_ext_air_init,
+            temp_setpnt_init,
+            external_conditions,
+            &simulation_time.iter(),
+        )
+    }
+
+    #[fixture]
+    pub fn infiltration_ventilation_element<'a>() -> VentilationElement {
+        VentilationElement::Infiltration(VentilationElementInfiltration::new(
             1,
             InfiltrationShelterType::Sheltered,
             InfiltrationBuildType::House,
@@ -1476,26 +1499,7 @@ mod test {
             6,
             0,
             None,
-        );
-
-        // Put thermal ventilation objects in a list that can be iterated over
-        let ve_objs: Vec<Box<dyn VentilationElement>> = vec![Box::new(ve)];
-
-        let temp_ext_air_init = 17.;
-        let temp_setpnt_init = 21.;
-
-        Zone::new(
-            50.,
-            125.,
-            be_objs,
-            thermal_bridging,
-            ve_objs,
-            None,
-            temp_ext_air_init,
-            temp_setpnt_init,
-            Cow::Owned(external_conditions),
-            &simulation_time.iter(),
-        )
+        ))
     }
 
     #[rstest]
@@ -1531,10 +1535,10 @@ mod test {
     #[rstest]
     pub fn should_have_correct_total_vent_heat_loss(
         zone: Zone,
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
     ) {
         assert_eq!(
-            round_by_precision(zone.total_vent_heat_loss(&external_conditions), 1e1),
+            round_by_precision(zone.total_vent_heat_loss(external_conditions.as_ref()), 1e1),
             round_by_precision(157.9, 1e1),
         );
     }

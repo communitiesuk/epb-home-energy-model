@@ -116,6 +116,7 @@ impl OnOffMinimisingTimeControl {
     }
 }
 
+#[derive(Clone)]
 pub struct SetpointTimeControl {
     /// list of float values (one entry per hour)
     schedule: Vec<Option<f64>>,
