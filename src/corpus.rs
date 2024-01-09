@@ -10,24 +10,23 @@ use crate::core::schedule::{
     expand_boolean_schedule, expand_numeric_schedule, expand_water_heating_events, ScheduleEvent,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
-use crate::core::space_heat_demand::internal_gains::InternalGains;
+use crate::core::space_heat_demand::internal_gains::{ApplianceGains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation_element::{
     MechanicalVentilationHeatRecovery, NaturalVentilation, VentilationElement,
-    VentilationElementBehaviour, VentilationElementInfiltration, WholeHouseExtractVentilation,
-    WindowOpeningForCooling,
+    VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
 };
 use crate::core::space_heat_demand::zone::{NamedBuildingElement, Zone};
 use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::external_conditions::ExternalConditions;
-use crate::input::Ventilation::NaturalVentilation as NaturalVentilationInput;
 use crate::input::{
-    BuildingElement, ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType,
-    Control as ControlInput, ControlDetails, EnergyDiverter, EnergySupplyDetails,
-    EnergySupplyInput, EnergySupplyType, ExternalConditionsInput, HotWaterSourceDetails,
-    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
+    ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
+    ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
+    ExternalConditionsInput, HotWaterSourceDetails, Infiltration, Input,
+    InternalGains as InternalGainsInput, InternalGainsDetails,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
     WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
@@ -35,8 +34,6 @@ use crate::input::{
 use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
 use indexmap::IndexMap;
 use serde_json::Value;
-use std::any::Any;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -155,12 +152,20 @@ impl TryFrom<Input> for Corpus {
             (zone.area() + acc.0, zone.volume() + acc.1)
         });
 
+        let mut internal_gains = internal_gains_from_input(input.internal_gains);
+
+        apply_appliance_gains_from_input(
+            &mut internal_gains,
+            input.appliance_gains,
+            total_floor_area,
+        );
+
         Ok(Self {
             external_conditions,
             infiltration,
             cold_water_sources,
             energy_supplies,
-            internal_gains: internal_gains_from_input(input.internal_gains),
+            internal_gains,
             controls,
             wwhrs,
             event_schedules,
@@ -344,6 +349,10 @@ fn diverter_from_energy_supply(supply: &Option<EnergySupplyDetails>) -> Option<E
 pub struct InternalGainsCollection {
     total_internal_gains: Option<InternalGains>,
     metabolic_gains: Option<InternalGains>,
+    lighting: Option<ApplianceGains>,
+    cooking: Option<ApplianceGains>,
+    cooking1: Option<ApplianceGains>,
+    cooking2: Option<ApplianceGains>,
     other: Option<InternalGains>,
 }
 
@@ -357,6 +366,10 @@ fn internal_gains_from_input(input: InternalGainsInput) -> InternalGainsCollecti
             Some(details) => Some(internal_gains_from_details(details)),
             None => None,
         },
+        lighting: None,
+        cooking: None,
+        cooking1: None,
+        cooking2: None,
         other: match input.other {
             Some(details) => Some(internal_gains_from_details(details)),
             None => None,
@@ -820,5 +833,59 @@ fn zone_from_input<'a>(
         ),
         heat_system_name,
         cool_system_name,
+    )
+}
+
+fn apply_appliance_gains_from_input(
+    internal_gains_collection: &mut InternalGainsCollection,
+    input: ApplianceGainsInput,
+    total_floor_area: f64,
+) {
+    if let Some(details) = input.lighting {
+        internal_gains_collection.lighting = Some(appliance_gains_from_single_input(
+            details,
+            "lighting".to_string(),
+            total_floor_area,
+        ));
+    }
+    if let Some(details) = input.cooking {
+        internal_gains_collection.cooking = Some(appliance_gains_from_single_input(
+            details,
+            "cooking".to_string(),
+            total_floor_area,
+        ));
+    }
+    if let Some(details) = input.cooking1 {
+        internal_gains_collection.cooking1 = Some(appliance_gains_from_single_input(
+            details,
+            "cooking1".to_string(),
+            total_floor_area,
+        ));
+    }
+    if let Some(details) = input.cooking2 {
+        internal_gains_collection.cooking2 = Some(appliance_gains_from_single_input(
+            details,
+            "cooking2".to_string(),
+            total_floor_area,
+        ));
+    }
+}
+
+fn appliance_gains_from_single_input(
+    input: ApplianceGainsDetails,
+    supply_end_user_name: String,
+    total_floor_area: f64,
+) -> ApplianceGains {
+    let total_energy_supply = expand_numeric_schedule(input.schedule, false)
+        .iter()
+        .map(|energy_data| energy_data / total_floor_area)
+        .collect();
+
+    ApplianceGains::new(
+        total_energy_supply,
+        supply_end_user_name,
+        input.gains_fraction,
+        input.start_day,
+        input.time_series_step,
     )
 }

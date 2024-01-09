@@ -25,7 +25,7 @@ pub struct Input {
     pub simulation_time: Arc<SimulationTime>,
     pub external_conditions: Arc<ExternalConditionsInput>,
     pub internal_gains: InternalGains,
-    appliance_gains: ApplianceGains,
+    pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     pub energy_supply: EnergySupplyInput,
     pub control: Control,
@@ -110,10 +110,10 @@ pub struct InternalGainsSchedule {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGains {
-    lighting: Option<ApplianceGainsDetails>,
-    cooking: Option<ApplianceGainsDetails>,
-    cooking1: Option<ApplianceGainsDetails>, // TODO not sure how stable these numbered keys are but we'll go with this for now
-    cooking2: Option<ApplianceGainsDetails>,
+    pub lighting: Option<ApplianceGainsDetails>,
+    pub cooking: Option<ApplianceGainsDetails>,
+    pub cooking1: Option<ApplianceGainsDetails>, // TODO not sure how stable these numbered keys are but we'll go with this for now
+    pub cooking2: Option<ApplianceGainsDetails>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,12 +121,12 @@ pub struct ApplianceGains {
 pub struct ApplianceGainsDetails {
     #[serde(rename(deserialize = "type"))]
     gain_type: Option<ApplianceGainType>,
-    start_day: u32,
-    time_series_step: f64,
-    gains_fraction: f64,
+    pub start_day: u32,
+    pub time_series_step: f64,
+    pub gains_fraction: f64,
     #[serde(alias = "EnergySupply")]
     energy_supply: EnergySupplyType,
-    schedule: Schedule,
+    pub schedule: Schedule,
 }
 
 #[derive(Debug, Deserialize)]

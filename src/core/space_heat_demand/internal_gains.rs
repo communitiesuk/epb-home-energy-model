@@ -34,16 +34,32 @@ impl InternalGains {
 /// * `gains_fraction` - fraction of energy supply which is counted as an internal gain
 /// * `start_day` - first day of time series, day of the year, 0 to 365
 /// * `time_series_step` - timestep of the time series data, in hours
-pub struct ApplianceGains<'a> {
+pub struct ApplianceGains {
     total_energy_supply: Vec<f64>,
-    connected_energy_supply: &'a EnergySupply,
-    end_user_name: &'a str,
+    // connected_energy_supply: &'a EnergySupply,
+    end_user_name: String,
     gains_fraction: f64,
     start_day: u32,
     time_series_step: f64,
 }
 
-impl<'a> ApplianceGains<'a> {
+impl ApplianceGains {
+    pub fn new(
+        total_energy_supply: Vec<f64>,
+        end_user_name: String,
+        gains_fraction: f64,
+        start_day: u32,
+        time_series_step: f64,
+    ) -> Self {
+        Self {
+            total_energy_supply,
+            end_user_name,
+            gains_fraction,
+            start_day,
+            time_series_step,
+        }
+    }
+
     /// Return the total internal gain for the current timestep in W
     pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
         let total_energy_supplied = self.total_energy_supply[timestep_idx];
@@ -113,8 +129,8 @@ mod tests {
         let total_internal_gains = vec![160.0, 230.0, 150.0, 100.0];
         let appliance_gains = ApplianceGains {
             total_energy_supply,
-            connected_energy_supply: &energy_supply,
-            end_user_name: "lighting",
+            // connected_energy_supply: &energy_supply,
+            end_user_name: "lighting".to_string(),
             gains_fraction: 0.5,
             start_day: 0,
             time_series_step: 1.0,
