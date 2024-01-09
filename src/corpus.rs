@@ -56,6 +56,8 @@ pub struct Corpus {
     pub zones: HashMap<String, Zone>,
     pub heat_system_name_for_zone: HashMap<String, Option<String>>,
     pub cool_system_name_for_zone: HashMap<String, Option<String>>,
+    pub total_floor_area: f64,
+    pub total_volume: f64,
 }
 
 impl TryFrom<Input> for Corpus {
@@ -118,7 +120,7 @@ impl TryFrom<Input> for Corpus {
         let mut heat_system_name_for_zone: HashMap<String, Option<String>> = Default::default();
         let mut cool_system_name_for_zone: HashMap<String, Option<String>> = Default::default();
 
-        let zones = input
+        let zones: HashMap<String, Zone> = input
             .zone
             .iter()
             .map(|(i, zone)| {
@@ -149,6 +151,10 @@ impl TryFrom<Input> for Corpus {
 
         // TODO: there needs to be some equivalent here of the Python code that builds the dict __energy_supply_conn_unmet_demand_zone
 
+        let (total_floor_area, total_volume) = zones.values().fold((0., 0.), |acc, zone| {
+            (zone.area() + acc.0, zone.volume() + acc.1)
+        });
+
         Ok(Self {
             external_conditions,
             infiltration,
@@ -164,6 +170,8 @@ impl TryFrom<Input> for Corpus {
             zones,
             heat_system_name_for_zone,
             cool_system_name_for_zone,
+            total_floor_area,
+            total_volume,
         })
     }
 }

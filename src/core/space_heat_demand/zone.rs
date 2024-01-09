@@ -168,6 +168,10 @@ impl Zone {
         }
     }
 
+    pub fn area(&self) -> f64 {
+        self.useful_area
+    }
+
     pub fn volume(&self) -> f64 {
         self.volume
     }
