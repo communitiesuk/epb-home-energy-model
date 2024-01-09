@@ -57,8 +57,10 @@ pub struct Corpus {
     pub cool_system_name_for_zone: HashMap<String, Option<String>>,
 }
 
-impl From<Input> for Corpus {
-    fn from(input: Input) -> Self {
+impl TryFrom<Input> for Corpus {
+    type Error = ();
+
+    fn try_from(input: Input) -> Result<Self, Self::Error> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
         let external_conditions = Arc::new(external_conditions_from_input(
@@ -138,7 +140,7 @@ impl From<Input> for Corpus {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             external_conditions,
             infiltration,
             cold_water_sources,
@@ -153,7 +155,7 @@ impl From<Input> for Corpus {
             zones,
             heat_system_name_for_zone,
             cool_system_name_for_zone,
-        }
+        })
     }
 }
 
