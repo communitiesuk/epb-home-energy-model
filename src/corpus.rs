@@ -147,6 +147,8 @@ impl TryFrom<Input> for Corpus {
             return Err(());
         }
 
+        // TODO: there needs to be some equivalent here of the Python code that builds the dict __energy_supply_conn_unmet_demand_zone
+
         Ok(Self {
             external_conditions,
             infiltration,
