@@ -38,6 +38,7 @@ use serde_json::Value;
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::sync::Arc;
 
 pub struct Corpus {
@@ -140,6 +141,12 @@ impl TryFrom<Input> for Corpus {
             })
             .collect();
 
+        if !has_unique_some_values(&heat_system_name_for_zone)
+            || !has_unique_some_values(&cool_system_name_for_zone)
+        {
+            return Err(());
+        }
+
         Ok(Self {
             external_conditions,
             infiltration,
@@ -157,6 +164,12 @@ impl TryFrom<Input> for Corpus {
             cool_system_name_for_zone,
         })
     }
+}
+
+fn has_unique_some_values<K, V: Eq + Hash>(map: &HashMap<K, Option<V>>) -> bool {
+    let some_values: Vec<&V> = map.values().map(|v| v.iter()).flatten().collect();
+    let value_set: HashSet<&&V> = some_values.iter().collect();
+    some_values.len() == value_set.len()
 }
 
 fn external_conditions_from_input(
