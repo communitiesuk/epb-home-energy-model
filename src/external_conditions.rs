@@ -14,7 +14,7 @@ pub enum DaylightSavingsConfig {
     NotApplicable,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct ShadingSegment {
     pub number: usize,
     pub start: i32,

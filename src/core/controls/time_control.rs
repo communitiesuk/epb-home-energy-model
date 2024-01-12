@@ -9,6 +9,25 @@ pub enum Control {
     SetpointTimeControl(SetpointTimeControl),
 }
 
+// macro so accessing individual controls through the enum isn't so repetitive
+#[macro_use]
+macro_rules! per_control {
+    ($val:expr, $pattern:pat => { $res:expr }) => {
+        match $val {
+            Control::OnOffTimeControl($pattern) => $res,
+            Control::ToUChargeControl($pattern) => $res,
+            Control::OnOffMinimisingTimeControl($pattern) => $res,
+            Control::SetpointTimeControl($pattern) => $res,
+        }
+    };
+}
+
+impl Control {
+    pub fn is_on(&self, timestep_idx: usize) -> bool {
+        per_control!(self, c => {c.is_on_for_timestep_idx(timestep_idx)})
+    }
+}
+
 /// An object to model a time-only control with on/off (not modulating) operation
 pub struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
@@ -31,6 +50,10 @@ impl OnOffTimeControl {
     fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
+
+    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
+        self.schedule[timestep_idx]
+    }
 }
 
 /// An object to model a control that governs electrical charging of a heat storage device
@@ -47,6 +70,10 @@ pub struct ToUChargeControl {
 impl ToUChargeControl {
     pub fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
         self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
+    }
+
+    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
+        self.schedule[timestep_idx]
     }
 
     pub fn target_charge(&self, timestep: &SimulationTimeIteration) -> f64 {
@@ -114,6 +141,10 @@ impl OnOffMinimisingTimeControl {
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
+
+    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
+        self.schedule[timestep_idx]
+    }
 }
 
 #[derive(Clone)]
@@ -178,6 +209,10 @@ impl SetpointTimeControl {
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
+        self.is_on_for_timestep_idx(schedule_idx)
+    }
+
+    pub fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
         let setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {

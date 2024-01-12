@@ -5,6 +5,7 @@ pub const LITRES_PER_CUBIC_METRE: u32 = 1_000;
 pub const MINUTES_PER_HOUR: u32 = 60;
 pub const SECONDS_PER_HOUR: u32 = 3_600;
 pub const HOURS_PER_DAY: u32 = 24;
+pub const DAYS_PER_YEAR: u32 = 365;
 pub const DAYS_IN_MONTH: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 pub const MILLIMETRES_IN_METRE: u32 = 1_000;
 

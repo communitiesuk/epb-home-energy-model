@@ -2,6 +2,7 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
+use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
@@ -296,6 +297,18 @@ pub struct HotWaterSource {
     pub hot_water_cylinder: HotWaterSourceDetails,
 }
 
+#[derive(Deserialize_enum_str, PartialEq, Debug)]
+pub enum BoilerHotWaterTest {
+    #[serde(rename = "M&L")]
+    ML,
+    #[serde(rename = "M&S")]
+    MS,
+    #[serde(rename = "M_only")]
+    MOnly,
+    #[serde(rename = "No_additional_tests")]
+    NoAdditionalTests,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HotWaterSourceDetails {
@@ -320,7 +333,7 @@ pub enum HotWaterSourceDetails {
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
         #[allow(non_snake_case)]
-        separate_DHW_tests: Value, // only known value here is "M&L" so looks too early to say this is an enum
+        separate_DHW_tests: BoilerHotWaterTest,
         rejected_energy_1: f64,
         fuel_energy_2: f64,
         rejected_energy_2: f64,
@@ -959,10 +972,12 @@ pub struct HeatSourceTestDatum {
     temp_test: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceLocation {
     #[serde(alias = "internal")]
     Internal,
+    #[serde(alias = "external")]
+    External,
 }
 
 pub type WasteWaterHeatRecovery = HashMap<String, WasteWaterHeatRecoveryDetails>;
