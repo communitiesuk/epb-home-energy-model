@@ -32,8 +32,6 @@ fn process_boolean_schedule_entries(
         _ => panic!("An individual schedule was, illegally, not provided as a list."),
     }
 
-    println!("expansion: {:?}", expansion);
-
     expansion
 }
 
@@ -80,8 +78,6 @@ fn process_numeric_schedule_entries(
         }
         _ => panic!("An individual schedule was, illegally, not provided as a list."),
     }
-
-    println!("expansion: {:?}", expansion);
 
     expansion
 }
