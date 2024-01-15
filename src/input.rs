@@ -322,7 +322,7 @@ pub enum HotWaterSourceDetails {
         #[serde(rename(deserialize = "ColdWaterSource"))]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename(deserialize = "HeatSource"))]
-        heat_source: Value, // to be finalised as it is not quite clear what form this node can take
+        heat_source: HashMap<String, HeatSource>,
         primary_pipework: Option<WaterPipework>,
     },
     CombiBoiler {
@@ -380,6 +380,81 @@ pub enum HeatSourceWetType {
 pub enum HeatSourceControlType {
     #[serde(rename(deserialize = "hw timer"))]
     HotWaterTimer,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum HeatSource {
+    ImmersionHeater {
+        power: f64,
+        #[serde(rename(deserialize = "EnergySupply"))]
+        energy_supply: EnergySupplyType,
+        #[serde(rename(deserialize = "Control"))]
+        control: Option<HeatSourceControlType>,
+        heater_position: f64,
+        thermostat_position: f64,
+    },
+    SolarThermalSystem {
+        #[serde(rename(deserialize = "sol_loc"))]
+        solar_cell_location: SolarCellLocation,
+        area_module: usize,
+        modules: usize,
+        peak_collector_efficiency: f64,
+        incidence_angle_modifier: f64,
+        first_order_hlc: f64,
+        second_order_hlc: f64,
+        collector_mass_flow_rate: f64,
+        power_pump: f64,
+        power_pump_control: f64,
+        #[serde(rename(deserialize = "EnergySupply"))]
+        energy_supply: EnergySupplyType,
+        tilt: f64,
+        orientation360: f64,
+        solar_loop_piping_hlc: f64,
+        heater_position: f64,
+        thermostat_position: f64,
+    },
+    HeatSourceWet {
+        name: String,
+        temp_flow_limit_upper: Option<f64>,
+        #[serde(rename(deserialize = "ColdWaterSource"))]
+        cold_water_source: ColdWaterSourceType,
+        #[serde(rename(deserialize = "EnergySupply"))]
+        energy_supply: EnergySupplyType,
+        #[serde(rename(deserialize = "Control"))]
+        control: Option<HeatSourceControlType>,
+        heater_position: f64,
+        thermostat_position: f64,
+        #[serde(rename(deserialize = "temp_return"))]
+        temperature_return: Option<f64>,
+    },
+    #[serde(rename(deserialize = "HeatPump_HWOnly"))]
+    HeatPumpHotWaterOnly {
+        power_max: f64,
+        vol_hw_daily_average: f64,
+        test_data: HashMap<String, HeatPumpTestDatum>,
+        #[serde(rename(deserialize = "EnergySupply"))]
+        energy_supply: EnergySupplyType,
+        #[serde(rename(deserialize = "Control"))]
+        control: HeatSourceControlType,
+        heater_position: f64,
+        thermostat_position: f64,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+pub enum SolarCellLocation {
+    #[serde(rename(deserialize = "OUT"))]
+    Out,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeatPumpTestDatum {
+    cop_dhw: f64,
+    hw_tapping_prof_daily_total: f64,
+    energy_input_measured: f64,
+    power_standby: f64,
+    hw_vessel_loss_daily: f64,
 }
 
 #[derive(Debug, Deserialize)]
