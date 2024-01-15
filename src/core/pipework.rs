@@ -1,7 +1,9 @@
 use crate::core::material_properties::WATER;
 use crate::core::units::{
-    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
+    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
+    WATTS_PER_KILOWATT,
 };
+use crate::input::{WaterPipeContentsType, WaterPipework};
 use std::f64::consts::PI;
 
 // Set default values for the heat transfer coefficients inside the pipe, in W / m^2 K
@@ -25,6 +27,22 @@ pub struct Pipework {
 pub enum PipeworkContentsType {
     Air,
     Water,
+}
+
+impl From<WaterPipework> for Pipework {
+    fn from(input: WaterPipework) -> Self {
+        Self::new(
+            input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+            input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
+            input.length,
+            input.insulation_thermal_conductivity,
+            input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
+            input.surface_reflectivity,
+            match input.pipe_contents {
+                WaterPipeContentsType::Water => PipeworkContentsType::Water,
+            },
+        )
+    }
 }
 
 impl Pipework {

@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
+use variants_struct::VariantsStruct;
 
 pub fn parse_input_file(file: &Path) -> Result<Input, Box<dyn Error>> {
     let file = File::open(file)?;
@@ -29,6 +30,7 @@ pub struct Input {
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     pub energy_supply: EnergySupplyInput,
+    #[serde(deserialize_with = "deserialize_control")]
     pub control: Control,
     pub hot_water_source: HotWaterSource,
     pub shower: Option<Shower>,
@@ -244,7 +246,35 @@ pub struct ColdWaterSourceDetails {
 
 pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
 
-pub type Control = HashMap<String, ControlDetails>;
+pub type Control = Vec<HeatSourceControl<Option<ControlDetails>>>;
+
+// specialised deserialisation logic for converting a map of controls into a list of HeatSourceControl structs
+fn deserialize_control<'de, D>(deserializer: D) -> Result<Control, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: HashMap<String, ControlDetails> = Deserialize::deserialize(deserializer)?;
+    let mut controls: Control = vec![];
+    for (control_type, control_details) in map {
+        controls.push(match control_type.as_str() {
+            // following strings need to be in sync with HeatSourceControlType known values
+            "hw timer" => HeatSourceControl::new(Some(control_details), None),
+            "window opening" => HeatSourceControl::new(None, Some(control_details)),
+            // there are some erroneous-looking entries like "hw timer 2" and "zone 1 radiators timer"
+            // in the example JSON, even though nothing looks likely to read them -
+            // for now let's just allow but ignore these extra controls
+            _ => continue,
+            // NB. following is code that could be used for rejecting values when parsing:
+            // other => {
+            //     return Err(serde::de::Error::invalid_value(
+            //         serde::de::Unexpected::Str(other),
+            //         &"hw timer or similar",
+            //     ))
+            // }
+        });
+    }
+    Ok(controls)
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -318,7 +348,7 @@ pub enum HotWaterSourceDetails {
         min_temp: f64,
         setpoint_temp: f64,
         #[serde(rename(deserialize = "Control_hold_at_setpnt"))]
-        control_hold_at_setpoint: Option<Value>, // randomly appears in one of the demo files, seems anomalous
+        control_hold_at_setpoint: Option<String>,
         #[serde(rename(deserialize = "ColdWaterSource"))]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename(deserialize = "HeatSource"))]
@@ -360,7 +390,7 @@ pub enum HotWaterSourceDetails {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum ColdWaterSourceType {
     #[serde(rename(deserialize = "mains water"))]
     MainsWater,
@@ -368,7 +398,7 @@ pub enum ColdWaterSourceType {
     HeaderTank,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceWetType {
     #[serde(alias = "boiler")]
     Boiler,
@@ -376,13 +406,17 @@ pub enum HeatSourceWetType {
     HeatPump,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, VariantsStruct)]
+#[struct_name = "HeatSourceControl"]
+#[struct_derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceControlType {
     #[serde(rename(deserialize = "hw timer"))]
     HotWaterTimer,
+    #[serde(rename(deserialize = "window opening"))]
+    WindowOpening,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSource {
     ImmersionHeater {
@@ -409,7 +443,9 @@ pub enum HeatSource {
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         tilt: f64,
-        orientation360: f64,
+        #[serde(rename(deserialize = "orientation360"))]
+        #[serde(deserialize_with = "deserialize_orientation")]
+        orientation: f64,
         solar_loop_piping_hlc: f64,
         heater_position: f64,
         thermostat_position: f64,
@@ -442,13 +478,55 @@ pub enum HeatSource {
     },
 }
 
-#[derive(Debug, Deserialize)]
+impl HeatSource {
+    pub fn heater_position(&self) -> f64 {
+        match self {
+            HeatSource::ImmersionHeater {
+                heater_position, ..
+            } => *heater_position,
+            HeatSource::SolarThermalSystem {
+                heater_position, ..
+            } => *heater_position,
+            HeatSource::HeatSourceWet {
+                heater_position, ..
+            } => *heater_position,
+            HeatSource::HeatPumpHotWaterOnly {
+                heater_position, ..
+            } => *heater_position,
+        }
+    }
+
+    pub fn thermostat_position(&self) -> f64 {
+        match self {
+            HeatSource::ImmersionHeater {
+                thermostat_position,
+                ..
+            } => *thermostat_position,
+            HeatSource::SolarThermalSystem {
+                thermostat_position,
+                ..
+            } => *thermostat_position,
+            HeatSource::HeatSourceWet {
+                thermostat_position,
+                ..
+            } => *thermostat_position,
+            HeatSource::HeatPumpHotWaterOnly {
+                thermostat_position,
+                ..
+            } => *thermostat_position,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub enum SolarCellLocation {
     #[serde(rename(deserialize = "OUT"))]
     Out,
+    HS,
+    NHS,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct HeatPumpTestDatum {
     cop_dhw: f64,
     hw_tapping_prof_daily_total: f64,
@@ -769,7 +847,7 @@ pub struct ZoneInput {
     #[serde(rename(deserialize = "SpaceHeatControl"))]
     pub space_heat_control: Option<String>, // don't know what the options are yet
     #[serde(rename(deserialize = "Control_WindowOpening"))]
-    pub control_window_opening: Option<String>, // don't know what the options are yet
+    pub control_window_opening: Option<HeatSourceControlType>,
     pub area: f64,
     pub volume: f64,
     #[serde(rename(deserialize = "Lighting"))]

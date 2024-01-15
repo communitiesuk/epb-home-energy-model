@@ -22,6 +22,8 @@ macro_rules! per_control {
     };
 }
 
+pub(crate) use per_control;
+
 impl Control {
     pub fn is_on(&self, timestep_idx: usize) -> bool {
         per_control!(self, c => {c.is_on_for_timestep_idx(timestep_idx)})

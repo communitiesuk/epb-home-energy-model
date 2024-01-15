@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 /// This module contains data on the properties of materials, and classes to
 /// organise this data.
 
+#[derive(Clone)]
 pub struct MaterialProperties {
     density: f64,                  // kg/litre
     specific_heat_capacity: f64,   // J/(kg.K)

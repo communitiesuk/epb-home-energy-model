@@ -500,6 +500,34 @@ impl Boiler {
         )
     }
 
+    pub fn create_service_hot_water_regular(
+        &self,
+        service_name: String,
+        temperature_hot_water_in_c: f64,
+        cold_feed: ColdWaterSource,
+        temperature_return: f64,
+        control: Option<Control>,
+    ) -> BoilerServiceWaterRegular {
+        BoilerServiceWaterRegular::new(
+            (*self).clone(),
+            service_name,
+            temperature_hot_water_in_c,
+            cold_feed,
+            temperature_return,
+            control,
+        )
+    }
+
+    pub fn create_service_space_heating(
+        &self,
+        service_name: String,
+        control: Control,
+    ) -> BoilerServiceSpace {
+        // TODO create a service connection using the service name
+
+        BoilerServiceSpace::new((*self).clone(), service_name, control)
+    }
+
     fn cycling_adjustment(
         &self,
         temperature_return_feed: f64,
