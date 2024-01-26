@@ -1,4 +1,4 @@
-use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+use crate::simulation_time::SimulationTime;
 
 /// This module provides objects to represent the source(s) of cold water.
 

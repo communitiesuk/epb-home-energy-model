@@ -56,7 +56,7 @@ pub struct Input {
     heating_control_type: Option<HeatingControlType>,
     #[serde(rename(deserialize = "WaterHeatSchedDefault"))]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
-    heat_source_wet: Option<HeatSourceWet>,
+    pub heat_source_wet: Option<HeatSourceWet>,
     #[serde(rename(deserialize = "WWHRS"))]
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     on_site_generation: Option<OnSiteGeneration>,
@@ -335,7 +335,7 @@ pub struct HotWaterSource {
     pub hot_water_cylinder: HotWaterSourceDetails,
 }
 
-#[derive(Deserialize_enum_str, PartialEq, Debug)]
+#[derive(Clone, Deserialize_enum_str, PartialEq, Debug)]
 pub enum BoilerHotWaterTest {
     #[serde(rename = "M&L")]
     ML,
@@ -347,7 +347,7 @@ pub enum BoilerHotWaterTest {
     NoAdditionalTests,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HotWaterSourceDetails {
     StorageTank {
@@ -396,6 +396,9 @@ pub enum HotWaterSourceDetails {
         #[serde(rename(deserialize = "ColdWaterSource"))]
         cold_water_source: ColdWaterSourceType,
     },
+    HeatBattery {
+        // tbc
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -439,7 +442,7 @@ pub enum HeatSource {
     SolarThermalSystem {
         #[serde(rename(deserialize = "sol_loc"))]
         solar_cell_location: SolarCellLocation,
-        area_module: usize,
+        area_module: f64,
         modules: usize,
         peak_collector_efficiency: f64,
         incidence_angle_modifier: f64,
@@ -543,7 +546,7 @@ pub struct HeatPumpTestDatum {
     hw_vessel_loss_daily: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
     pub internal_diameter_mm: f64,
@@ -555,7 +558,7 @@ pub struct WaterPipework {
     pub pipe_contents: WaterPipeContentsType,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum WaterPipeContentsType {
     #[serde(alias = "water")]
     Water,
@@ -1030,7 +1033,7 @@ pub enum WaterHeatingSchedule {
 
 pub type HeatSourceWet = HashMap<String, HeatSourceWetDetails>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSourceWetDetails {
     HeatPump {
@@ -1100,25 +1103,25 @@ pub enum HeatSourceWetDetails {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum HeatPumpSourceType {
     OutsideAir,
     ExhaustAirMEV,
     HeatNetwork,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum HeatPumpSinkType {
     Water,
     Air,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum HeatPumpBackupControlType {
     TopUp,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatSourceTestDatum {
     air_flow_rate: Option<f64>,

@@ -1,3 +1,4 @@
+use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -15,12 +16,13 @@ enum ServiceType {
     Space,
 }
 
+#[derive(Clone)]
 pub struct BoilerServiceWaterCombi {
     boiler: Boiler,
     service_name: String,
     control: (),
     temperature_hot_water_in_c: f64,
-    cold_feed: ColdWaterSource,
+    cold_feed: WaterSourceWithTemperature,
     separate_dhw_tests: BoilerHotWaterTest,
     rejected_energy_1: Option<f64>,
     storage_loss_factor_2: Option<f64>,
@@ -35,7 +37,7 @@ impl BoilerServiceWaterCombi {
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        cold_feed: ColdWaterSource,
+        cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
     ) -> Result<Self, ()> {
         match boiler_data {
@@ -78,7 +80,7 @@ impl BoilerServiceWaterCombi {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> &ColdWaterSource {
+    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
 
@@ -182,13 +184,14 @@ impl BoilerServiceWaterCombi {
     }
 }
 
+#[derive(Clone)]
 pub struct BoilerServiceWaterRegular {
     boiler: Boiler,
     service_name: String,
     temperature_hot_water_in_c: f64,
     cold_feed: ColdWaterSource,
     temperature_return: f64,
-    control: Option<Control>,
+    control: Option<Arc<Control>>,
 }
 
 impl BoilerServiceWaterRegular {
@@ -198,7 +201,7 @@ impl BoilerServiceWaterRegular {
         temperature_hot_water_in_c: f64,
         cold_feed: ColdWaterSource,
         temperature_return: f64,
-        control: Option<Control>,
+        control: Option<Arc<Control>>,
     ) -> Self {
         Self {
             boiler,
@@ -242,6 +245,7 @@ impl BoilerServiceWaterRegular {
 }
 
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
+#[derive(Clone)]
 pub struct BoilerServiceSpace {
     boiler: Boiler,
     service_name: String,
@@ -488,7 +492,7 @@ impl Boiler {
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        cold_feed: ColdWaterSource,
+        cold_feed: WaterSourceWithTemperature,
     ) -> Result<BoilerServiceWaterCombi, ()> {
         BoilerServiceWaterCombi::new(
             (*self).clone(),
@@ -506,7 +510,7 @@ impl Boiler {
         temperature_hot_water_in_c: f64,
         cold_feed: ColdWaterSource,
         temperature_return: f64,
-        control: Option<Control>,
+        control: Option<Arc<Control>>,
     ) -> BoilerServiceWaterRegular {
         BoilerServiceWaterRegular::new(
             (*self).clone(),
@@ -963,7 +967,7 @@ mod tests {
             combi_boiler_data,
             "boiler_test".to_string(),
             60.,
-            cold_water_source,
+            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
             simulation_time.step,
         )
         .unwrap()

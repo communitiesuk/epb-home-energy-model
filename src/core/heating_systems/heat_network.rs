@@ -1,3 +1,4 @@
+use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::material_properties::WATER;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -9,7 +10,7 @@ pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
     temperature_hot_water: f64, // in C
-    cold_feed: Arc<ColdWaterSource>,
+    cold_feed: WaterSourceWithTemperature,
 }
 
 /// An object to represent a water heating service provided by a heat network.
@@ -26,7 +27,7 @@ impl HeatNetworkServiceWaterDirect {
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
         temperature_hot_water: f64,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: WaterSourceWithTemperature,
     ) -> Self {
         Self {
             heat_network,
@@ -36,8 +37,8 @@ impl HeatNetworkServiceWaterDirect {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> Arc<ColdWaterSource> {
-        self.cold_feed.clone()
+    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+        &self.cold_feed
     }
 
     /// Demand energy for hot water (in kWh) from the heat network
@@ -60,6 +61,7 @@ impl HeatNetworkServiceWaterDirect {
 ///
 /// This object contains the parts of the heat network calculation that are
 /// specific to providing hot water to the dwelling via a hot water cylinder.
+#[derive(Clone)]
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
@@ -194,6 +196,7 @@ impl HeatNetworkServiceSpace {
     }
 }
 
+#[derive(Clone)]
 pub struct HeatNetwork {
     power_max_in_kw: f64,
     daily_loss: f64,                         // in kWh/day
@@ -223,7 +226,7 @@ impl HeatNetwork {
         heat_network: Arc<Mutex<Self>>,
         service_name: String,
         temperature_hot_water: f64,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: WaterSourceWithTemperature,
     ) -> HeatNetworkServiceWaterDirect {
         // TODO create energy supply service connection for this new object
 
@@ -399,7 +402,7 @@ mod tests {
             heat_network_for_water_direct,
             "heat_network_test".to_string(),
             return_temp,
-            Arc::new(cold_feed),
+            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_feed)),
         )
     }
 

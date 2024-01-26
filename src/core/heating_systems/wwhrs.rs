@@ -120,10 +120,6 @@ impl WWHRSInstantaneousSystemC {
         self.stored_temperature = water_temperature;
     }
 
-    pub fn temperature(&self) -> f64 {
-        self.stored_temperature
-    }
-
     pub fn return_temperature(
         &self,
         temp_target: f64,
@@ -149,6 +145,10 @@ impl WWHRSInstantaneousSystemC {
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
         interp(&self.flow_rates, &self.efficiencies, flowrate)
+    }
+
+    pub fn temperature(&self) -> f64 {
+        self.stored_temperature
     }
 }
 
@@ -188,10 +188,6 @@ impl WWHRSInstantaneousSystemA {
         self.stored_temperature = water_temperature;
     }
 
-    pub fn temperature(&self) -> f64 {
-        self.stored_temperature
-    }
-
     pub fn return_temperature(
         &self,
         temp_target: f64,
@@ -217,5 +213,9 @@ impl WWHRSInstantaneousSystemA {
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
         interp(&self.flow_rates, &self.efficiencies, flowrate)
+    }
+
+    pub fn temperature(&self) -> f64 {
+        self.stored_temperature
     }
 }

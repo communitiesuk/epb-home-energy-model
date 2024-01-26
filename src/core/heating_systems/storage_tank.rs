@@ -1,9 +1,10 @@
+use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::MaterialProperties;
 use crate::core::pipework::Pipework;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::corpus::Controls;
+use crate::corpus::{Controls, HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{HeatSource as HeatSourceInput, SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
@@ -11,7 +12,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::iter::zip;
-use std::sync::{Arc, LockResult, Mutex};
+use std::sync::{Arc, Mutex};
 
 // BS EN 15316-5:2017 Appendix B default input data
 // Model Information
@@ -35,18 +36,9 @@ const STORAGE_TANK_F_STO_BAC_ACC: f64 = 1.;
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
 #[derive(Clone)]
-pub enum HeatSource {
+pub enum HeatSourceWithStorageTank {
     Immersion(Arc<Mutex<ImmersionHeater>>),
     Solar(SolarThermalSystem),
-    HeatSourceWet(), // this and the below are defined in a different module, so we may need to refactor this out
-    HeatPumpHotWaterOnly(),
-}
-
-#[derive(Clone)]
-pub struct PositionedHeatSource {
-    heat_source: HeatSource,
-    heater_position: f64,
-    thermostat_position: f64,
 }
 
 /// An object to represent a hot water storage tank/cylinder
@@ -61,7 +53,7 @@ pub struct StorageTank {
     q_std_ls_ref: f64, // measured standby losses due to cylinder insulation at standardised conditions, in kWh/24h
     temp_out_w_min: f64, // minimum temperature required for DHW (domestic hot water)
     temp_set_on: f64,  // set point temperature
-    cold_feed: Arc<ColdWaterSource>,
+    cold_feed: WaterSourceWithTemperature,
     simulation_timestep: f64,
     contents: MaterialProperties,
     // TODO add energy supply connection to record unmet energy demand
@@ -100,11 +92,10 @@ impl StorageTank {
         losses: f64,
         min_temp: f64,
         setpoint_temp: f64,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
         // TODO: add energy supply to register energy use
-        controls: &Controls,
-        heat_sources: HashMap<String, HeatSourceInput>,
+        heat_sources: IndexMap<String, PositionedHeatSource>,
         primary_pipework: Option<WaterPipework>,
         control_hold_at_setpoint: Option<Arc<Control>>,
         contents: MaterialProperties,
@@ -131,34 +122,6 @@ impl StorageTank {
         let primary_pipework: Option<Pipework> =
             primary_pipework.and_then(|pipework| Some(pipework.into()));
 
-        let mut heat_source_data: IndexMap<String, PositionedHeatSource> = Default::default();
-        for (name, heat_source) in heat_sources
-            .iter()
-            .sorted_by(|(_, a), (_, b)| a.thermostat_position().total_cmp(&b.thermostat_position()))
-        {
-            heat_source_data.insert(
-                (*name).clone(),
-                PositionedHeatSource {
-                    heat_source: match heat_source {
-                        HeatSourceInput::ImmersionHeater { power, control, .. } => {
-                            HeatSource::Immersion(Arc::new(Mutex::new(ImmersionHeater::new(
-                                *power,
-                                simulation_timestep,
-                                control.as_ref().and_then(|ctrl| {
-                                    controls.get(ctrl).and_then(|c| Some(c.clone()))
-                                }),
-                            ))))
-                        }
-                        HeatSourceInput::SolarThermalSystem { .. } => todo!(),
-                        HeatSourceInput::HeatSourceWet { .. } => todo!(),
-                        HeatSourceInput::HeatPumpHotWaterOnly { .. } => todo!(),
-                    },
-                    heater_position: heat_source.heater_position(),
-                    thermostat_position: heat_source.thermostat_position(),
-                },
-            );
-        }
-
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
             .map(|(name, heat_source)| ((*name).clone(), false))
@@ -179,7 +142,7 @@ impl StorageTank {
             temp_n,
             input_energy_adj_prev_timestep,
             primary_pipework,
-            heat_source_data,
+            heat_source_data: heat_sources,
             heating_active,
             q_ls_n_prev_heat_source: Default::default(),
             q_sto_h_ls_rbl: Default::default(),
@@ -187,8 +150,8 @@ impl StorageTank {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> Arc<ColdWaterSource> {
-        self.cold_feed.clone()
+    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+        &self.cold_feed
     }
 
     fn get_setpoint_min(&self, timestep_idx: usize) -> f64 {
@@ -391,11 +354,11 @@ impl StorageTank {
         let mut q_x_in_n = [0.; STORAGE_TANK_NB_VOL];
 
         let energy_potential = match heat_source {
-            HeatSource::Solar(ref mut solar_heat_source) => {
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar_heat_source)) => {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
                 solar_heat_source.energy_output_max(self, temp_s3_n, simulation_time)
             }
-            HeatSource::Immersion(immersion_heater) => {
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion_heater)) => {
                 // no demand from heat source if the temperature of the tank at the thermostat position is below the set point
 
                 // trigger heating to start when temperature falls below the minimum
@@ -414,7 +377,10 @@ impl StorageTank {
                             immersion.energy_output_max(simulation_time.index, false);
                     }
 
-                    if !matches!(heat_source, HeatSource::Immersion(_)) {
+                    if !matches!(
+                        heat_source,
+                        HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
+                    ) {
                         let (primary_pipework_losses_kwh, _) =
                             self.primary_pipework_losses(energy_potential);
                         energy_potential -= primary_pipework_losses_kwh;
@@ -674,7 +640,7 @@ impl StorageTank {
             q_x_in_n,
             thermostat_layer,
             q_ls_prev_heat_source,
-            simulation_time.index,
+            simulation_time,
         )
     }
 
@@ -685,7 +651,7 @@ impl StorageTank {
         q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
         thermostat_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
-        timestep_idx: usize,
+        simulation_time_iteration: &SimulationTimeIteration,
     ) -> (
         [f64; STORAGE_TANK_NB_VOL],
         [f64; STORAGE_TANK_NB_VOL],
@@ -719,7 +685,7 @@ impl StorageTank {
         // self.__energy_demand_test = deepcopy(input_energy_adj)
 
         let heat_source_output =
-            self.heat_source_output(heat_source, input_energy_adj, timestep_idx);
+            self.heat_source_output(heat_source, input_energy_adj, simulation_time_iteration);
         input_energy_adj -= heat_source_output;
 
         (
@@ -830,7 +796,7 @@ impl StorageTank {
         heat_source: &mut HeatSource,
         heat_source_name: &str,
         energy_input: f64,
-        timestep_idx: usize,
+        simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
         if energy_input == 0. {
             return 0.;
@@ -851,7 +817,7 @@ impl StorageTank {
                 q_x_in_n,
                 thermostat_layer,
                 self.q_ls_n_prev_heat_source,
-                timestep_idx,
+                simulation_time_iteration,
             );
 
         for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
@@ -915,26 +881,32 @@ impl StorageTank {
         &mut self,
         heat_source: &mut HeatSource,
         input_energy_adj: f64,
-        timestep_idx: usize,
+        simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
         match heat_source {
-            HeatSource::Immersion(immersion) => match immersion.lock() {
-                Ok(ref mut imm) => imm.demand_energy(input_energy_adj, timestep_idx),
-                Err(_) => panic!("was not able to get mutex lock on immersion heater"),
-            },
-            HeatSource::Solar(ref mut solar) => solar.demand_energy(input_energy_adj),
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => {
+                match immersion.lock() {
+                    Ok(ref mut imm) => {
+                        imm.demand_energy(input_energy_adj, simulation_time_iteration.index)
+                    }
+                    Err(_) => panic!("was not able to get mutex lock on immersion heater"),
+                }
+            }
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar)) => {
+                solar.demand_energy(input_energy_adj)
+            }
             _ => {
                 // TODO need to be able to call demand_energy on the other heat sources
-                // let (primary_pipework_losses_kwh, primary_gains) =
-                //     self.primary_pipework_losses(input_energy_adj);
-                // let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
-                // let heat_source_output =
-                //     heat_source.demand_energy(input_energy_adj) - primary_pipework_losses_kwh;
-                // self.input_energy_adj_prev_timestep = input_energy_adj;
-                // // TODO save primary gains internally
-                //
-                // heat_source_output
-                0.
+                let (primary_pipework_losses_kwh, primary_gains) =
+                    self.primary_pipework_losses(input_energy_adj);
+                let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
+                let heat_source_output = heat_source
+                    .demand_energy(input_energy_adj, simulation_time_iteration)
+                    - primary_pipework_losses_kwh;
+                self.input_energy_adj_prev_timestep = input_energy_adj;
+                self.primary_gains = primary_gains;
+
+                heat_source_output
             }
         }
     }
@@ -1047,12 +1019,17 @@ impl PVDiverter {
     ///
     /// Arguments:
     /// * `supply_surplus` - surplus energy, in kWh, available to be diverted (negative by convention)
-    pub fn divert_surplus(&mut self, supply_surplus: f64, timestep_idx: usize) -> f64 {
+    pub fn divert_surplus(
+        &mut self,
+        supply_surplus: f64,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> f64 {
         let mut imm_heater_max_capacity_spare: f64 = Default::default();
         // check how much spare capacity the immersion heater has
         if let Ok(mut immersion) = self.immersion_heater.lock() {
-            imm_heater_max_capacity_spare =
-                immersion.energy_output_max(timestep_idx, true) - self.capacity_already_in_use;
+            imm_heater_max_capacity_spare = immersion
+                .energy_output_max(simulation_time_iteration.index, true)
+                - self.capacity_already_in_use;
         }
 
         // Calculate the maximum energy that could be diverted
@@ -1065,10 +1042,12 @@ impl PVDiverter {
         // Add additional energy to storage tank and calculate how much energy was accepted
         let energy_diverted = match self.storage_tank.lock() {
             Ok(ref mut tank) => tank.additional_energy_input(
-                &mut HeatSource::Immersion(self.immersion_heater.clone()),
+                &mut HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                    self.immersion_heater.clone(),
+                )),
                 &self.heat_source_name,
                 energy_diverted_max,
-                timestep_idx,
+                simulation_time_iteration,
             ),
             Err(_) => panic!("Could not unlock mutex for storage tank in PV diverter"),
         };
@@ -1285,6 +1264,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{per_control, OnOffTimeControl};
     use crate::core::material_properties::WATER;
+    use crate::corpus::HeatSource;
     use crate::input::{EnergySupplyType, HeatSourceControl, HeatSourceControlType};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
@@ -1345,21 +1325,18 @@ mod tests {
             1.68,
             52.0,
             55.0,
-            cold_water_source,
+            WaterSourceWithTemperature::ColdWaterSource(cold_water_source),
             simulation_time_for_storage_tank.step,
-            &Controls::new(
-                vec![HeatSourceControl::new(
-                    Some(control_for_storage_tank.clone()),
-                    None,
-                )],
-                Default::default(),
-            ),
-            HashMap::from([(
+            IndexMap::from([(
                 "imheater".to_string(),
-                HeatSourceInput::ImmersionHeater {
-                    power: 50.,
-                    energy_supply: EnergySupplyType::Electricity,
-                    control: Some(HeatSourceControlType::HotWaterTimer),
+                PositionedHeatSource {
+                    heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                        Arc::new(Mutex::new(ImmersionHeater::new(
+                            50.,
+                            simulation_time_for_storage_tank.step,
+                            Some(control_for_storage_tank),
+                        ))),
+                    )),
                     heater_position: 0.1,
                     thermostat_position: 0.33,
                 },
