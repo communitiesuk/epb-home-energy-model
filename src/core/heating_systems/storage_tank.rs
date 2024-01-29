@@ -1347,10 +1347,13 @@ mod tests {
             55.0,
             cold_water_source,
             simulation_time_for_storage_tank.step,
-            &Controls::new(vec![HeatSourceControl::new(
-                Some(control_for_storage_tank.clone()),
-                None,
-            )]),
+            &Controls::new(
+                vec![HeatSourceControl::new(
+                    Some(control_for_storage_tank.clone()),
+                    None,
+                )],
+                Default::default(),
+            ),
             HashMap::from([(
                 "imheater".to_string(),
                 HeatSourceInput::ImmersionHeater {

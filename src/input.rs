@@ -246,7 +246,15 @@ pub struct ColdWaterSourceDetails {
 
 pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
 
-pub type Control = Vec<HeatSourceControl<Option<ControlDetails>>>;
+pub type CoreControls = Vec<HeatSourceControl<Option<ControlDetails>>>;
+
+pub type ExtraControls = HashMap<String, ControlDetails>;
+
+#[derive(Debug)]
+pub struct Control {
+    pub core: CoreControls,
+    pub extra: ExtraControls,
+}
 
 // specialised deserialisation logic for converting a map of controls into a list of HeatSourceControl structs
 fn deserialize_control<'de, D>(deserializer: D) -> Result<Control, D::Error>
@@ -254,26 +262,26 @@ where
     D: Deserializer<'de>,
 {
     let map: HashMap<String, ControlDetails> = Deserialize::deserialize(deserializer)?;
-    let mut controls: Control = vec![];
+    let mut core: CoreControls = Default::default();
+    let mut extra: ExtraControls = Default::default();
     for (control_type, control_details) in map {
-        controls.push(match control_type.as_str() {
+        match control_type.as_str() {
             // following strings need to be in sync with HeatSourceControlType known values
-            "hw timer" => HeatSourceControl::new(Some(control_details), None),
-            "window opening" => HeatSourceControl::new(None, Some(control_details)),
-            // there are some erroneous-looking entries like "hw timer 2" and "zone 1 radiators timer"
-            // in the example JSON, even though nothing looks likely to read them -
-            // for now let's just allow but ignore these extra controls
-            _ => continue,
-            // NB. following is code that could be used for rejecting values when parsing:
-            // other => {
-            //     return Err(serde::de::Error::invalid_value(
-            //         serde::de::Unexpected::Str(other),
-            //         &"hw timer or similar",
-            //     ))
-            // }
-        });
+            "hw timer" => {
+                core.push(HeatSourceControl::new(Some(control_details), None));
+            }
+            "window opening" => {
+                core.push(HeatSourceControl::new(None, Some(control_details)));
+            }
+            // there are some extra control definitions from time to time called things like
+            // "hw timer 2" and "zone 1 radiators timer" - can only presume now to store these keys as-is
+            // and perhaps match on other references
+            other => {
+                extra.insert(other.to_string(), control_details);
+            }
+        }
     }
-    Ok(controls)
+    Ok(Control { core, extra })
 }
 
 #[derive(Debug, Deserialize)]

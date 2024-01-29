@@ -390,25 +390,34 @@ fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
     )
 }
 
-pub struct Controls(Vec<HeatSourceControl<Option<Arc<Control>>>>);
-
-impl Deref for Controls {
-    type Target = Vec<HeatSourceControl<Option<Arc<Control>>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct Controls {
+    core: Vec<HeatSourceControl<Option<Arc<Control>>>>,
+    extra: HashMap<String, Arc<Control>>,
 }
 
 impl Controls {
-    pub fn new(controls: <Self as Deref>::Target) -> Self {
-        Self(controls)
+    pub fn new(
+        core: Vec<HeatSourceControl<Option<Arc<Control>>>>,
+        extra: HashMap<String, Arc<Control>>,
+    ) -> Self {
+        Self { core, extra }
     }
 
     pub fn get(&self, control_type: &HeatSourceControlType) -> Option<&Arc<Control>> {
-        self.iter()
+        self.core
+            .iter()
             .find(|heat_source_control| heat_source_control.get(control_type).is_some())
             .and_then(|heat_source_control| heat_source_control.get(control_type).unwrap().as_ref())
+    }
+
+    // access a control using a string, possibly because it is one of the "extra" controls
+    pub fn get_with_string(&self, control_name: &str) -> Option<&Arc<Control>> {
+        match control_name {
+            // hard-code ways of resolving to core control types (for now)
+            "hw timer" => self.get(&HeatSourceControlType::HotWaterTimer),
+            "window opening" => self.get(&HeatSourceControlType::WindowOpening),
+            other => self.extra.get(other),
+        }
     }
 }
 
@@ -416,18 +425,19 @@ fn control_from_input(
     control_input: ControlInput,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> Controls {
-    let mut controls: Vec<HeatSourceControl<Option<Arc<Control>>>> = vec![];
+    let mut core: Vec<HeatSourceControl<Option<Arc<Control>>>> = Default::default();
+    let mut extra: HashMap<String, Arc<Control>> = Default::default();
 
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
     // and the way the variants-struct crate works;
     // we should be able to improve it in time
-    for control in control_input {
+    for control in control_input.core {
         match control {
             HeatSourceControl {
                 hot_water_timer: Some(control),
                 ..
             } => {
-                controls.push(HeatSourceControl::new(
+                core.push(HeatSourceControl::new(
                     Some(Arc::new(single_control_from_details(
                         control,
                         simulation_time_iterator,
@@ -439,7 +449,7 @@ fn control_from_input(
                 window_opening: Some(control),
                 ..
             } => {
-                controls.push(HeatSourceControl::new(
+                core.push(HeatSourceControl::new(
                     None,
                     Some(Arc::new(single_control_from_details(
                         control,
@@ -453,8 +463,17 @@ fn control_from_input(
             ),
         }
     }
+    for (name, control) in control_input.extra {
+        extra.insert(
+            name,
+            Arc::new(single_control_from_details(
+                control,
+                simulation_time_iterator,
+            )),
+        );
+    }
 
-    Controls(controls)
+    Controls { core, extra }
 }
 
 fn single_control_from_details(
