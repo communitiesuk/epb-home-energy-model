@@ -24,6 +24,19 @@ macro_rules! per_control {
 
 pub(crate) use per_control;
 
+pub trait ControlBehaviour {
+    fn in_required_period(
+        &self,
+        _simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        None
+    }
+
+    fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        None
+    }
+}
+
 impl Control {
     pub fn is_on(&self, timestep_idx: usize) -> bool {
         per_control!(self, c => {c.is_on_for_timestep_idx(timestep_idx)})
@@ -46,10 +59,8 @@ impl OnOffTimeControl {
             time_series_step,
         }
     }
-}
 
-impl OnOffTimeControl {
-    fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
 
@@ -57,6 +68,8 @@ impl OnOffTimeControl {
         self.schedule[timestep_idx]
     }
 }
+
+impl ControlBehaviour for OnOffTimeControl {}
 
 /// An object to model a control that governs electrical charging of a heat storage device
 /// that can respond to signals from the grid, for example when carbon intensity is low
@@ -82,6 +95,8 @@ impl ToUChargeControl {
         self.charge_level[timestep.time_series_idx_days(self.start_day, self.time_series_step)]
     }
 }
+
+impl ControlBehaviour for ToUChargeControl {}
 
 pub struct OnOffMinimisingTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
@@ -149,6 +164,8 @@ impl OnOffMinimisingTimeControl {
     }
 }
 
+impl ControlBehaviour for OnOffMinimisingTimeControl {}
+
 #[derive(Clone)]
 pub struct SetpointTimeControl {
     /// list of float values (one entry per hour)
@@ -202,12 +219,6 @@ impl SetpointTimeControl {
         })
     }
 
-    pub fn in_required_period(&self, timestep: &SimulationTimeIteration) -> bool {
-        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
-
-        self.schedule[schedule_idx].is_some()
-    }
-
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
 
@@ -231,9 +242,22 @@ impl SetpointTimeControl {
 
         !(setpnt.is_none() && self.setpoint_min.is_none() && self.setpoint_max.is_none())
     }
+}
 
-    pub fn setpnt(&self, timestep: &SimulationTimeIteration) -> Option<f64> {
-        let schedule_idx = timestep.time_series_idx(self.start_day, self.time_series_step);
+impl ControlBehaviour for SetpointTimeControl {
+    fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        let schedule_idx =
+            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
+
+        Some(self.schedule[schedule_idx].is_some())
+    }
+
+    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        let schedule_idx =
+            simulation_time_iteration.time_series_idx(self.start_day, self.time_series_step);
 
         let mut setpnt = self.schedule[schedule_idx];
 
@@ -479,37 +503,37 @@ mod test {
         let results: [bool; 8] = [true, false, false, true, false, true, true, true];
         for it in simulation_time {
             assert_eq!(
-                setpoint_time_control.in_required_period(&it),
+                setpoint_time_control.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with no min or max set, iteration {}",
                 it.index + 1
             );
             assert_eq!(
-                setpoint_time_control_min.in_required_period(&it),
+                setpoint_time_control_min.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with min set, iteration {}",
                 it.index + 1
             );
             assert_eq!(
-                setpoint_time_control_max.in_required_period(&it),
+                setpoint_time_control_max.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with max set, iteration {}",
                 it.index + 1
             );
             assert_eq!(
-                setpoint_time_control_minmax.in_required_period(&it),
+                setpoint_time_control_minmax.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with min and max set, iteration {}",
                 it.index + 1
             );
             assert_eq!(
-                setpoint_time_control_advstart.in_required_period(&it),
+                setpoint_time_control_advstart.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with advanced start, iteration {}",
                 it.index + 1
             );
             assert_eq!(
-                setpoint_time_control_advstart_minmax.in_required_period(&it),
+                setpoint_time_control_advstart_minmax.in_required_period(&it).unwrap(),
                 results[it.index],
                 "incorrect in_required_period value returned for control with advanced start and min/max, iteration {}",
                 it.index + 1
