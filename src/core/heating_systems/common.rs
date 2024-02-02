@@ -2,9 +2,11 @@ use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
 use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
-use crate::core::heating_systems::heat_network::HeatNetworkServiceWaterStorage;
+use crate::core::heating_systems::heat_network::{
+    HeatNetworkServiceSpace, HeatNetworkServiceWaterStorage,
+};
 use crate::core::heating_systems::heat_pump::{
-    HeatPumpHotWaterOnly, HeatPumpServiceSpaceWarmAir, HeatPumpServiceWater,
+    HeatPumpHotWaterOnly, HeatPumpServiceSpace, HeatPumpServiceSpaceWarmAir, HeatPumpServiceWater,
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
@@ -155,3 +157,25 @@ impl SpaceHeatSystem {
         }
     }
 }
+
+pub enum SpaceHeatingService {
+    HeatPump(HeatPumpServiceSpace),
+    Boiler(BoilerServiceSpace),
+    HeatNetwork(HeatNetworkServiceSpace),
+    HeatBattery(()),
+}
+
+// macro so accessing individual controls through the enum isn't so repetitive
+#[macro_use]
+macro_rules! per_space_heating {
+    ($val:expr, $pattern:pat => { $res:expr }) => {
+        match $val {
+            SpaceHeatingService::HeatPump($pattern) => $res,
+            SpaceHeatingService::Boiler($pattern) => $res,
+            SpaceHeatingService::HeatNetwork($pattern) => $res,
+            SpaceHeatingService::HeatBattery($pattern) => unreachable!(),
+        }
+    };
+}
+
+pub(crate) use per_space_heating;

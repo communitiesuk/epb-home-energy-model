@@ -6,6 +6,7 @@ use indexmap::{Equivalent, IndexMap};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Value};
+use serde_repr::Deserialize_repr;
 use serde_valid::Validate;
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -1277,7 +1278,7 @@ pub type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields, tag = "type")]
-pub enum SpaceHeatSystemDetails {
+pub(crate) enum SpaceHeatSystemDetails {
     #[serde(alias = "InstantElecHeater")]
     InstantElectricHeater {
         temp_setback: Option<f64>,
@@ -1407,11 +1408,25 @@ pub struct SpaceHeatSystemHeatSource {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[allow(dead_code)]
 #[serde(deny_unknown_fields)]
-pub struct EcoDesignController {
-    ecodesign_control_class: u32,
-    min_outdoor_temp: Option<i32>,
-    max_outdoor_temp: Option<i32>,
-    min_flow_temp: Option<i32>,
+pub(crate) struct EcoDesignController {
+    pub(crate) ecodesign_control_class: EcoDesignControllerClass,
+    pub(crate) min_outdoor_temp: Option<f64>,
+    pub(crate) max_outdoor_temp: Option<f64>,
+    pub(crate) min_flow_temp: Option<f64>,
+}
+
+#[derive(Debug, Deserialize_repr, PartialEq)]
+#[repr(u8)]
+pub(crate) enum EcoDesignControllerClass {
+    // exact possible classes tbc
+    ClassI = 1,
+    ClassII = 2,
+    ClassIII = 3,
+    ClassIV = 4,
+    ClassV = 5,
+    ClassVI = 6,
+    ClassVII = 7,
+    ClassVIII = 8,
 }
 
 #[derive(Debug, Deserialize)]
