@@ -5,6 +5,7 @@ pub mod heat_network;
 pub mod point_of_use;
 
 pub mod common;
+pub mod emitters;
 pub mod heat_battery;
 pub mod heat_pump;
 pub mod instant_elec_heater;
