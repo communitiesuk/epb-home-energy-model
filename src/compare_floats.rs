@@ -1,4 +1,4 @@
-pub fn min_of_2<T: PartialOrd>(first: T, second: T) -> T {
+pub fn min_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     if first < second {
         first
     } else {
@@ -6,7 +6,7 @@ pub fn min_of_2<T: PartialOrd>(first: T, second: T) -> T {
     }
 }
 
-pub fn max_of_2<T: PartialOrd>(first: T, second: T) -> T {
+pub fn max_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     if first > second {
         first
     } else {
@@ -14,7 +14,6 @@ pub fn max_of_2<T: PartialOrd>(first: T, second: T) -> T {
     }
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;

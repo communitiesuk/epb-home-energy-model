@@ -1,5 +1,6 @@
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
+use arrayvec::ArrayString;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 use serde_enum_str::Deserialize_enum_str;
@@ -106,7 +107,8 @@ pub struct InternalGainsDetails {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InternalGainsSchedule {
-    pub main: Value, // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
+    pub main: Value,
+    // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
     day: Option<Vec<f64>>,
 }
 
@@ -115,7 +117,8 @@ pub struct InternalGainsSchedule {
 pub struct ApplianceGains {
     pub lighting: Option<ApplianceGainsDetails>,
     pub cooking: Option<ApplianceGainsDetails>,
-    pub cooking1: Option<ApplianceGainsDetails>, // TODO not sure how stable these numbered keys are but we'll go with this for now
+    pub cooking1: Option<ApplianceGainsDetails>,
+    // TODO not sure how stable these numbered keys are but we'll go with this for now
     pub cooking2: Option<ApplianceGainsDetails>,
 }
 
@@ -479,7 +482,7 @@ pub enum HeatSource {
     HeatPumpHotWaterOnly {
         power_max: f64,
         vol_hw_daily_average: f64,
-        test_data: HashMap<String, HeatPumpTestDatum>,
+        test_data: HashMap<String, HeatPumpHotWaterTestDatum>,
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         #[serde(rename(deserialize = "Control"))]
@@ -538,7 +541,7 @@ pub enum SolarCellLocation {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct HeatPumpTestDatum {
+pub struct HeatPumpHotWaterTestDatum {
     cop_dhw: f64,
     hw_tapping_prof_daily_total: f64,
     energy_input_measured: f64,
@@ -587,7 +590,8 @@ pub struct MixerShower {
 #[serde(deny_unknown_fields)]
 pub struct InstantElectricShower {
     #[serde(rename(deserialize = "type"))]
-    pub shower_type: ShowerType, // somewhat of a redundant value possibly
+    pub shower_type: ShowerType,
+    // somewhat of a redundant value possibly
     pub rated_power: f64,
     #[serde(rename(deserialize = "ColdWaterSource"))]
     pub cold_water_source: ColdWaterSourceType,
@@ -685,7 +689,8 @@ pub enum SpaceHeatSystemDetails {
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         #[serde(alias = "Control")]
-        control: Option<String>, // not sure what the possible options are here yet
+        control: Option<String>,
+        // not sure what the possible options are here yet
         frac_convective: f64,
         #[serde(alias = "Zone")]
         zone: Option<String>,
@@ -695,7 +700,8 @@ pub enum SpaceHeatSystemDetails {
         temp_charge_cut: f64,
         rated_power: f64,
         rated_power_instant: f64,
-        air_flow_type: String, // don't know what the possible values are here yet
+        air_flow_type: String,
+        // don't know what the possible values are here yet
         temp_dis_safe: f64,
         thermal_mass: f64,
         frac_convective: f64,
@@ -714,9 +720,11 @@ pub enum SpaceHeatSystemDetails {
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         #[serde(alias = "Control")]
-        control: Option<String>, // don't know possible options here
+        control: Option<String>,
+        // don't know possible options here
         #[serde(rename(deserialize = "ControlCharger"))]
-        control_charger: String, // don't know possible options here
+        control_charger: String,
+        // don't know possible options here
         #[serde(alias = "Zone")]
         zone: String, // think these are just arbitrary names?
     },
@@ -728,9 +736,11 @@ pub enum SpaceHeatSystemDetails {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         #[serde(rename(deserialize = "HeatSource"))]
-        heat_source: Value, // unclear which values are possible here
+        heat_source: Value,
+        // unclear which values are possible here
         #[serde(alias = "Control")]
-        control: Option<String>, // don't know possible values
+        control: Option<String>,
+        // don't know possible values
         ecodesign_controller: EcoDesignController,
         design_flow_temp: i32,
         #[serde(alias = "Zone")]
@@ -856,7 +866,8 @@ pub struct ZoneInput {
     #[serde(rename(deserialize = "SpaceCoolSystem"))]
     pub space_cool_system: Option<String>,
     #[serde(rename(deserialize = "SpaceHeatControl"))]
-    pub space_heat_control: Option<String>, // don't know what the options are yet
+    pub space_heat_control: Option<String>,
+    // don't know what the options are yet
     #[serde(rename(deserialize = "Control_WindowOpening"))]
     pub control_window_opening: Option<HeatSourceControlType>,
     pub area: f64,
@@ -1041,7 +1052,8 @@ pub enum HeatSourceWetDetails {
         energy_supply: EnergySupplyType,
         source_type: HeatPumpSourceType,
         #[serde(rename(deserialize = "EnergySupply_heat_network"))]
-        energy_supply_heat_network: Option<String>, // unclear what this is
+        energy_supply_heat_network: Option<String>,
+        // unclear what this is
         temp_distribution_heat_network: Option<f64>,
         sink_type: HeatPumpSinkType,
         #[serde(rename(deserialize = "backup_ctrl_type"))]
@@ -1051,7 +1063,7 @@ pub enum HeatSourceWetDetails {
         min_modulation_rate_20: Option<f64>,
         min_modulation_rate_35: Option<f64>,
         min_modulation_rate_55: Option<f64>,
-        time_constant_onoff_operation: u32,
+        time_constant_onoff_operation: f64,
         temp_return_feed_max: f64,
         temp_lower_operating_limit: f64,
         min_temp_diff_flow_return_for_hp_to_operate: f64,
@@ -1062,7 +1074,7 @@ pub enum HeatSourceWetDetails {
         power_crankcase_heater: f64,
         power_off: f64,
         power_max_backup: f64,
-        test_data: Vec<HeatSourceTestDatum>,
+        test_data: Vec<HeatPumpTestDatum>,
     },
     Boiler {
         #[serde(rename(deserialize = "EnergySupply"))]
@@ -1103,14 +1115,19 @@ pub enum HeatSourceWetDetails {
     },
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum HeatPumpSourceType {
+    Ground,
     OutsideAir,
     ExhaustAirMEV,
+    ExhaustAirMVHR,
+    ExhaustAirMixed,
+    WaterGround,
+    WaterSurface,
     HeatNetwork,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum HeatPumpSinkType {
     Water,
     Air,
@@ -1118,23 +1135,27 @@ pub enum HeatPumpSinkType {
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum HeatPumpBackupControlType {
+    None,
     TopUp,
+    Substitute,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeatSourceTestDatum {
-    air_flow_rate: Option<f64>,
-    test_letter: char,
-    capacity: f64,
-    cop: f64,
+pub struct HeatPumpTestDatum {
+    pub air_flow_rate: Option<f64>,
+    pub test_letter: TestLetter,
+    pub capacity: f64,
+    pub cop: f64,
     #[serde(rename(deserialize = "degradation_coeff"))]
-    degradation_coefficient: f64,
-    design_flow_temp: i32,
-    temp_outlet: i32,
-    temp_source: i32,
-    temp_test: i32,
+    pub degradation_coefficient: f64,
+    pub design_flow_temp: f64,
+    pub temp_outlet: f64,
+    pub temp_source: f64,
+    pub temp_test: f64,
 }
+
+pub type TestLetter = ArrayString<2>;
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceLocation {
