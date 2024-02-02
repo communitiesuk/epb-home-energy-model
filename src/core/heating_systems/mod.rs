@@ -7,6 +7,8 @@ pub mod point_of_use;
 pub mod common;
 pub mod heat_battery;
 pub mod heat_pump;
+
+pub mod elec_storage_heater;
 pub mod instant_elec_heater;
 pub mod storage_tank;
 pub mod wwhrs;

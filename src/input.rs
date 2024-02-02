@@ -792,8 +792,7 @@ pub enum SpaceHeatSystemDetails {
         temp_charge_cut: f64,
         rated_power: f64,
         rated_power_instant: f64,
-        air_flow_type: String,
-        // don't know what the possible values are here yet
+        air_flow_type: ElectricStorageHeaterAirFlowType,
         temp_dis_safe: f64,
         thermal_mass: f64,
         frac_convective: f64,
@@ -846,6 +845,15 @@ pub enum SpaceHeatSystemDetails {
         #[serde(alias = "Control")]
         control: Option<String>,
     },
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ElectricStorageHeaterAirFlowType {
+    #[serde(rename(deserialize = "fan-assisted"))]
+    FanAssisted,
+    #[serde(rename(deserialize = "damper-only"))]
+    DamperOnly,
 }
 
 #[derive(Debug, Deserialize)]

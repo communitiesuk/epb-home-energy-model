@@ -340,6 +340,17 @@ impl Zone {
     }
 }
 
+/// Some places need a reference to a zone just to access internal air temperature - this trait makes testing easier in those circumstances
+pub trait InternalAirTempAccess {
+    fn temp_internal_air(&self) -> f64;
+}
+
+impl InternalAirTempAccess for Zone {
+    fn temp_internal_air(&self) -> f64 {
+        self.temp_prev.lock()[self.zone_idx]
+    }
+}
+
 /// Initialise temperatures of heat balance nodes
 //
 /// ## Arguments
