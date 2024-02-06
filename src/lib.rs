@@ -1,3 +1,4 @@
+mod compare_floats;
 pub mod core;
 mod corpus;
 mod external_conditions;
