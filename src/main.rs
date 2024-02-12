@@ -1,10 +1,10 @@
-extern crate ecaas;
+extern crate hem;
 
 mod read_weather_file;
 
 use clap::{Args, Parser};
-use ecaas::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use ecaas::run_project;
+use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
+use hem::run_project;
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, version, about, long_about = None)]
