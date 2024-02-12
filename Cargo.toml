@@ -19,7 +19,6 @@ log = "0.4.20"
 nalgebra = "0.32.3"
 ordered-float = "4.2.0"
 polyfit-rs = "0.2.1"
-rstest = "0.17.0"
 serde = { version = "1.0.164", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.100"
@@ -27,6 +26,7 @@ variants-struct = "0.1.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
+rstest = "0.17.0"
 walkdir = "2.3.3"
 
 [lib]
