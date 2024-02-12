@@ -32,3 +32,6 @@ walkdir = "2.3.3"
 [lib]
 # don't build doctests for now
 doctest = false
+
+[profile.release]
+lto = true
