@@ -66,9 +66,9 @@ impl BuildingElement {
 }
 
 pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
-    match element {
-        &BuildingElement::Opaque { area: a, .. } => a,
-        &BuildingElement::Transparent {
+    match *element {
+        BuildingElement::Opaque { area: a, .. } => a,
+        BuildingElement::Transparent {
             area: a,
             height,
             width,
@@ -77,9 +77,9 @@ pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
             Some(a) => a,
             None => height * width, // just to give some nominal value
         },
-        &BuildingElement::Ground { area: a, .. } => a,
-        &BuildingElement::AdjacentZTC { area: a, .. } => a,
-        &BuildingElement::AdjacentZTUSimple { area: a, .. } => a,
+        BuildingElement::Ground { area: a, .. } => a,
+        BuildingElement::AdjacentZTC { area: a, .. } => a,
+        BuildingElement::AdjacentZTUSimple { area: a, .. } => a,
     }
 }
 

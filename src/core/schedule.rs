@@ -25,7 +25,7 @@ fn process_boolean_schedule_entries(
     match entries {
         Value::Array(entry_vec) => {
             for entry in entry_vec {
-                let extension = process_boolean_schedule_entry(entry, &schedules, nullable);
+                let extension = process_boolean_schedule_entry(entry, schedules, nullable);
                 expansion.extend(extension);
             }
         }
@@ -72,7 +72,7 @@ fn process_numeric_schedule_entries(
     match entries {
         Value::Array(entry_vec) => {
             for entry in entry_vec {
-                let extension = process_numeric_schedule_entry(entry, &schedules, nullable);
+                let extension = process_numeric_schedule_entry(entry, schedules, nullable);
                 expansion.extend(extension);
             }
         }
@@ -122,12 +122,8 @@ impl From<Value> for ScheduleEvent {
         match value {
             Value::Object(event_map) => ScheduleEvent {
                 start: event_map.get("start").unwrap().as_f64().unwrap(),
-                duration: event_map
-                    .get("duration")
-                    .and_then(|d| Some(d.as_f64().unwrap())),
-                temperature: event_map
-                    .get("temperature")
-                    .and_then(|t| Some(t.as_f64().unwrap())),
+                duration: event_map.get("duration").map(|d| d.as_f64().unwrap()),
+                temperature: event_map.get("temperature").map(|t| t.as_f64().unwrap()),
             },
             _ => panic!("Expected a JSON object when transforming into a schedule event"),
         }

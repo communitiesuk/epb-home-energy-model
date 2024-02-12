@@ -16,8 +16,7 @@ impl ColdWaterSource {
         Self {
             cold_water_temps: cold_water_temps
                 .iter()
-                .map(|t| vec![*t; (timestep / simulation_time.step) as usize])
-                .flatten()
+                .flat_map(|t| vec![*t; (timestep / simulation_time.step) as usize])
                 .collect(),
         }
     }

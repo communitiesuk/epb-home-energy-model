@@ -18,7 +18,7 @@ pub fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
         / DAYS_IN_MONTH.iter().sum::<u32>() as f64
 }
 
-pub fn convert_profile_to_daily(timestep_totals: &Vec<f64>, timestep: f64) -> Vec<f64> {
+pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
     let total_steps = timestep_totals.len();
     let steps_per_day = (HOURS_PER_DAY as f64 / timestep).floor() as usize;
     (0..(total_steps / steps_per_day))

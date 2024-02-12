@@ -89,11 +89,11 @@ impl MixerShower {
                     vol_hot_water = vol_warm_water
                         * frac_hot_water(temp_target, self.temp_hot, wwhrs_return_temperature);
                 }
-                Wwhrs::WWHRSInstantaneousSystemC(systemC) => {
-                    systemC.set_temperature_for_return(wwhrs_return_temperature)
+                Wwhrs::WWHRSInstantaneousSystemC(system_c) => {
+                    system_c.set_temperature_for_return(wwhrs_return_temperature)
                 }
-                Wwhrs::WWHRSInstantaneousSystemA(systemA) => {
-                    systemA.set_temperature_for_return(wwhrs_return_temperature);
+                Wwhrs::WWHRSInstantaneousSystemA(system_a) => {
+                    system_a.set_temperature_for_return(wwhrs_return_temperature);
 
                     vol_hot_water = vol_warm_water
                         * frac_hot_water(temp_target, self.temp_hot, wwhrs_return_temperature);
@@ -149,7 +149,7 @@ impl InstantElectricShower {
         let elec_demand =
             self.power_in_kilowatts * (total_shower_duration / MINUTES_PER_HOUR as f64);
         let vol_warm_water =
-            elec_demand / WATER.volumetric_energy_content_kWh_per_litre(temp_target, temp_cold);
+            elec_demand / WATER.volumetric_energy_content_kwh_per_litre(temp_target, temp_cold);
         let temp_hot = 52f64; // TODO note in Python to change source of this instead of hard-coding
 
         let vol_hot_water_equiv = vol_warm_water * frac_hot_water(temp_target, temp_hot, temp_cold);

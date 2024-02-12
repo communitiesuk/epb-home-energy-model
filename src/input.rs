@@ -290,14 +290,16 @@ where
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ControlDetails {
-    OnOffTimeControl {
+    #[serde[rename(deserialize = "OnOffTimeControl")]]
+    OnOffTime {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
         schedule: Schedule,
     },
-    OnOffCostMinimisingTimeControl {
+    #[serde[rename(deserialize = "OnOffCostMinimisingTimeControl")]]
+    OnOffCostMinimisingTime {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<u32>,
@@ -305,7 +307,8 @@ pub enum ControlDetails {
         time_on_daily: Option<f64>,
         schedule: Schedule,
     },
-    SetpointTimeControl {
+    #[serde[rename(deserialize = "SetpointTimeControl")]]
+    SetpointTime {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<f64>,
@@ -315,7 +318,8 @@ pub enum ControlDetails {
         default_to_max: Option<bool>,
         schedule: Schedule,
     },
-    ToUChargeControl {
+    #[serde[rename(deserialize = "ToUChargeControl")]]
+    ToUCharge {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<u32>,
@@ -373,8 +377,8 @@ pub enum HotWaterSourceDetails {
         heat_source_wet: HeatSourceWetType,
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
-        #[allow(non_snake_case)]
-        separate_DHW_tests: BoilerHotWaterTest,
+        #[serde(rename(deserialize = "separate_DHW_tests"))]
+        separate_dhw_tests: BoilerHotWaterTest,
         rejected_energy_1: f64,
         fuel_energy_2: f64,
         rejected_energy_2: f64,
@@ -383,7 +387,8 @@ pub enum HotWaterSourceDetails {
         #[serde(rename(deserialize = "daily_HW_usage"))]
         daily_hot_water_usage: f64,
     },
-    HIU {
+    #[serde(rename(deserialize = "HIU"))]
+    Hiu {
         #[serde(rename(deserialize = "ColdWaterSource"))]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename(deserialize = "HeatSourceWet"))]
@@ -464,7 +469,8 @@ pub enum HeatSource {
         heater_position: f64,
         thermostat_position: f64,
     },
-    HeatSourceWet {
+    #[serde(rename(deserialize = "HeatSourceWet"))]
+    Wet {
         name: String,
         temp_flow_limit_upper: Option<f64>,
         #[serde(rename(deserialize = "ColdWaterSource"))]
@@ -501,7 +507,7 @@ impl HeatSource {
             HeatSource::SolarThermalSystem {
                 heater_position, ..
             } => *heater_position,
-            HeatSource::HeatSourceWet {
+            HeatSource::Wet {
                 heater_position, ..
             } => *heater_position,
             HeatSource::HeatPumpHotWaterOnly {
@@ -520,7 +526,7 @@ impl HeatSource {
                 thermostat_position,
                 ..
             } => *thermostat_position,
-            HeatSource::HeatSourceWet {
+            HeatSource::Wet {
                 thermostat_position,
                 ..
             } => *thermostat_position,
@@ -536,8 +542,10 @@ impl HeatSource {
 pub enum SolarCellLocation {
     #[serde(rename(deserialize = "OUT"))]
     Out,
-    HS,
-    NHS,
+    #[serde(rename(deserialize = "HS"))]
+    Hs,
+    #[serde(rename(deserialize = "NHS"))]
+    Nhs,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -769,15 +777,17 @@ pub struct EcoDesignController {
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Ventilation {
     #[serde(rename(deserialize = "NatVent"))]
-    NaturalVentilation { req_ach: f64 },
-    WHEV {
+    Natural { req_ach: f64 },
+    #[serde(rename(deserialize = "WHEV"))]
+    Whev {
         req_ach: f64,
         #[serde(rename(deserialize = "SFP"))]
         sfp: f64,
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
     },
-    MVHR {
+    #[serde(rename(deserialize = "MVHR"))]
+    Mvhr {
         req_ach: f64,
         #[serde(rename(deserialize = "SFP"))]
         sfp: f64,
@@ -1105,7 +1115,8 @@ pub enum HeatSourceWetDetails {
         #[serde(rename(deserialize = "ControlCharge"))]
         control_charge: String,
     },
-    HIU {
+    #[serde(rename(deserialize = "HIU"))]
+    Hiu {
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         power_max: f64,

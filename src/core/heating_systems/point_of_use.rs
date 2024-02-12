@@ -1,5 +1,5 @@
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::water_heat_demand::misc::water_demand_to_kWh;
+use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
 
 pub struct PointOfUse {
@@ -33,16 +33,14 @@ impl PointOfUse {
     ) -> f64 {
         let demand_temp = 52.;
 
-        let water_energy_demand = water_demand_to_kWh(
+        let water_energy_demand = water_demand_to_kwh(
             volume_demanded,
             demand_temp,
             self.cold_feed.temperature(simulation_time_iteration.index),
         );
 
-        let energy_used = self.demand_energy(water_energy_demand, simulation_time_iteration);
-
         // Assumption is that system specified has sufficient capacity to meet any realistic demand
-        energy_used
+        self.demand_energy(water_energy_demand, simulation_time_iteration)
     }
 
     /// Demand energy (in kWh) from the heater

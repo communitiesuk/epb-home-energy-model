@@ -75,7 +75,7 @@ impl Ductwork {
         }
     }
 
-    pub fn get_MVHR_location(&self) -> &MVHRLocation {
+    pub fn get_mvhr_location(&self) -> &MVHRLocation {
         &self.mvhr_location
     }
 

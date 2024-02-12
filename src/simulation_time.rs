@@ -32,7 +32,7 @@ impl SimulationTime {
     }
 
     pub(crate) fn iter(&self) -> SimulationTimeIterator {
-        SimulationTimeIterator::from((*self).clone())
+        SimulationTimeIterator::from(*self)
     }
 }
 

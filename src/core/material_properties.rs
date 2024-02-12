@@ -28,7 +28,7 @@ impl MaterialProperties {
         self.specific_heat_capacity
     }
 
-    pub fn specific_heat_capacity_kWh(&self) -> f64 {
+    pub fn specific_heat_capacity_kwh(&self) -> f64 {
         self.specific_heat_capacity / JOULES_PER_KILOWATT_HOUR as f64
     }
 
@@ -54,7 +54,7 @@ impl MaterialProperties {
     /// Arguments:
     /// * `temp_high` - temperature for which energy content should be calculated, in deg C or K
     /// * `temp_base` - temperature which defines "zero energy", in same units as temp_high
-    pub fn volumetric_energy_content_kWh_per_litre(&self, temp_high: f64, temp_base: f64) -> f64 {
+    pub fn volumetric_energy_content_kwh_per_litre(&self, temp_high: f64, temp_base: f64) -> f64 {
         self.volumetric_energy_content_joules_per_litre(temp_high, temp_base)
             / JOULES_PER_KILOWATT_HOUR as f64
     }
@@ -112,7 +112,7 @@ mod tests {
         );
         assert_eq!(
             round_by_precision(
-                matprop.volumetric_energy_content_kWh_per_litre(temp_high, temp_low),
+                matprop.volumetric_energy_content_kwh_per_litre(temp_high, temp_low),
                 1e10
             ),
             round_by_precision(0.01743333333, 1e10),

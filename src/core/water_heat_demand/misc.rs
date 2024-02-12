@@ -17,8 +17,8 @@ pub fn frac_hot_water(temp_target: f64, temp_hot: f64, temp_cold: f64) -> f64 {
 /// * `litres_demand`  -- hot water demand in litres
 /// * `demand_temp`    -- temperature of hot water inside the pipe, in degrees C
 /// * `cold_temp`     -- temperature outside the pipe, in degrees C
-pub fn water_demand_to_kWh(litres_demand: f64, demand_temp: f64, cold_temp: f64) -> f64 {
-    &WATER.volumetric_energy_content_kWh_per_litre(demand_temp, cold_temp) * litres_demand
+pub fn water_demand_to_kwh(litres_demand: f64, demand_temp: f64, cold_temp: f64) -> f64 {
+    WATER.volumetric_energy_content_kwh_per_litre(demand_temp, cold_temp) * litres_demand
 }
 
 #[cfg(test)]
@@ -43,7 +43,7 @@ mod tests {
         for i in 0..8 {
             assert_eq!(
                 round_by_precision(
-                    water_demand_to_kWh(litres_demand[i], demand_temp[i], cold_temp[i]),
+                    water_demand_to_kwh(litres_demand[i], demand_temp[i], cold_temp[i]),
                     1e5
                 ),
                 round_by_precision(

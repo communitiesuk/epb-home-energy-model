@@ -8,6 +8,7 @@ use crate::{
     core::water_heat_demand::cold_water_source::ColdWaterSource,
     input::{BoilerHotWaterTest, HotWaterSourceDetails},
 };
+use std::fmt;
 use std::sync::Arc;
 
 enum ServiceType {
@@ -31,6 +32,20 @@ pub struct BoilerServiceWaterCombi {
     simulation_timestep: f64,
 }
 
+#[derive(Debug)]
+pub struct IncorrectBoilerDataType;
+
+impl fmt::Display for IncorrectBoilerDataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Incorrect boiler data type provided (expected details for a combi boiler"
+        )
+    }
+}
+
+impl std::error::Error for IncorrectBoilerDataType {}
+
 impl BoilerServiceWaterCombi {
     pub fn new(
         boiler: Boiler,
@@ -39,11 +54,11 @@ impl BoilerServiceWaterCombi {
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, IncorrectBoilerDataType> {
         match boiler_data {
             HotWaterSourceDetails::CombiBoiler {
                 // control,
-                separate_DHW_tests: separate_dhw_tests,
+                separate_dhw_tests,
                 rejected_energy_1,
                 storage_loss_factor_2,
                 rejected_factor_3,
@@ -76,7 +91,7 @@ impl BoilerServiceWaterCombi {
                     simulation_timestep,
                 })
             }
-            _ => Err(()),
+            _ => Err(IncorrectBoilerDataType),
         }
     }
 
@@ -88,7 +103,7 @@ impl BoilerServiceWaterCombi {
         let timestep = self.simulation_timestep;
         let return_temperature = 60.;
 
-        let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kWh_per_litre(
+        let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water_in_c,
             self.cold_feed.temperature(timestep_idx),
         );
@@ -311,7 +326,8 @@ pub struct Boiler {
     power_part_load: f64,
     power_full_load: f64,
     power_standby: f64,
-    total_time_running_current_timestep: f64, // some kind of memoisation? review this
+    total_time_running_current_timestep: f64,
+    // some kind of memoisation? review this
     corrected_full_load_gross: f64,
     room_temperature: f64,
     temp_rise_standby_loss: f64,
@@ -493,7 +509,7 @@ impl Boiler {
         service_name: String,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSourceWithTemperature,
-    ) -> Result<BoilerServiceWaterCombi, ()> {
+    ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         BoilerServiceWaterCombi::new(
             (*self).clone(),
             boiler_data,
@@ -852,9 +868,9 @@ mod tests {
                         ServiceType::WaterCombi,
                         boiler_energy_output_required[idx],
                         temp_return_feed[idx],
-                        idx
+                        idx,
                     ),
-                    1e7
+                    1e7,
                 ),
                 [2.0, 10.0][idx],
                 "incorrect energy output provided"
@@ -935,7 +951,7 @@ mod tests {
     #[fixture]
     pub fn combi_boiler_data() -> HotWaterSourceDetails {
         HotWaterSourceDetails::CombiBoiler {
-            separate_DHW_tests: BoilerHotWaterTest::ML,
+            separate_dhw_tests: BoilerHotWaterTest::ML,
             // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
             rejected_energy_1: 0.0004,
             // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test fixture
@@ -988,7 +1004,7 @@ mod tests {
             assert_eq!(
                 round_by_precision(
                     combi_boiler.demand_hot_water(volume_demanded[idx], idx),
-                    1e7
+                    1e7,
                 ),
                 [0.7241412, 0.1748878][idx],
                 "incorrect energy_output_provided"
@@ -1051,7 +1067,7 @@ mod tests {
             assert_eq!(
                 round_by_precision(
                     regular_boiler.demand_energy([0.7241412, 0.1748878][idx], idx),
-                    1e7
+                    1e7,
                 ),
                 [0.7241412, 0.1748878][idx]
             );
@@ -1138,9 +1154,9 @@ mod tests {
                         energy_demanded[idx],
                         temp_flow[idx],
                         temp_return_feed[idx],
-                        idx
+                        idx,
                     ),
-                    1e7
+                    1e7,
                 ),
                 [10.0, 2.0, 0.0][idx]
             );

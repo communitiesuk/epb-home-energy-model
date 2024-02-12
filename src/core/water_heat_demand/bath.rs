@@ -45,9 +45,7 @@ impl Bath {
 
         let vol_warm_water = self.size_in_litres; // may wish to modify the volume of water compared to size of bath
 
-        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold);
-
-        vol_hot_water
+        vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold)
     }
 }
 

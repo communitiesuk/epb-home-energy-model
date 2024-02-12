@@ -56,7 +56,7 @@ fn main() {
         }
         WeatherFileType {
             epw_file: None,
-            cibse_weather_file: Some(file),
+            cibse_weather_file: Some(_),
         } => None,
         _ => None,
     };

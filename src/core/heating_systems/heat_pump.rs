@@ -30,32 +30,32 @@ const N_EXER: f64 = 3.0;
 
 impl HeatPumpSourceType {
     pub fn is_exhaust_air(&self) -> bool {
-        match self {
+        matches!(
+            self,
             HeatPumpSourceType::ExhaustAirMEV
-            | HeatPumpSourceType::ExhaustAirMVHR
-            | HeatPumpSourceType::ExhaustAirMixed => true,
-            _ => false,
-        }
+                | HeatPumpSourceType::ExhaustAirMVHR
+                | HeatPumpSourceType::ExhaustAirMixed
+        )
     }
 
     pub fn source_fluid_is_air(&self) -> bool {
-        match self {
+        matches!(
+            self,
             HeatPumpSourceType::OutsideAir
-            | HeatPumpSourceType::ExhaustAirMEV
-            | HeatPumpSourceType::ExhaustAirMVHR
-            | HeatPumpSourceType::ExhaustAirMixed => true,
-            _ => false,
-        }
+                | HeatPumpSourceType::ExhaustAirMEV
+                | HeatPumpSourceType::ExhaustAirMVHR
+                | HeatPumpSourceType::ExhaustAirMixed
+        )
     }
 
     pub fn source_fluid_is_water(&self) -> bool {
-        match self {
+        matches!(
+            self,
             HeatPumpSourceType::Ground
-            | HeatPumpSourceType::WaterGround
-            | HeatPumpSourceType::WaterSurface
-            | HeatPumpSourceType::HeatNetwork => true,
-            _ => false,
-        }
+                | HeatPumpSourceType::WaterGround
+                | HeatPumpSourceType::WaterSurface
+                | HeatPumpSourceType::HeatNetwork
+        )
     }
 }
 
@@ -106,7 +106,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
         test_data_by_air_flow_rate
             .entry(OrderedFloat(test_data_record.air_flow_rate.unwrap()))
             .or_default()
-            .push(&test_data_record);
+            .push(test_data_record);
     }
 
     // check that all lists have same combination of design flow temp and test letter
@@ -165,13 +165,13 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             }
 
             let capacity = interp(
-                &air_flow_rates_ordered,
+                air_flow_rates_ordered,
                 &capacity_list,
                 throughput_exhaust_air,
             );
-            let cop = interp(&air_flow_rates_ordered, &cop_list, throughput_exhaust_air);
+            let cop = interp(air_flow_rates_ordered, &cop_list, throughput_exhaust_air);
             let degradation_coeff = interp(
-                &air_flow_rates_ordered,
+                air_flow_rates_ordered,
                 &degradation_coeff_list,
                 throughput_exhaust_air,
             );
@@ -274,7 +274,7 @@ impl HeatPumpTestDatum {
         } = self;
         CompleteHeatPumpTestDatum {
             air_flow_rate: *air_flow_rate,
-            test_letter: (*test_letter).clone(),
+            test_letter: *test_letter,
             capacity: *capacity,
             cop: *cop,
             degradation_coefficient: *degradation_coefficient,
@@ -328,9 +328,9 @@ impl HeatPumpTestData {
                 if !dsgn_flow_temps.contains(&dsgn_flow_temp) {
                     dsgn_flow_temps.push(dsgn_flow_temp);
                 }
-                if !test_data.contains_key(&dsgn_flow_temp) {
-                    test_data.insert(dsgn_flow_temp, Default::default());
-                }
+                test_data
+                    .entry(dsgn_flow_temp)
+                    .or_insert_with(|| Default::default());
             }
 
             let mut duplicate = false;
@@ -354,7 +354,7 @@ impl HeatPumpTestData {
             // we are adding) and not 2 (the number of existing records the new
             // record duplicates).
             if duplicate {
-                *dupl.entry(dsgn_flow_temp.clone()).or_default() += 1;
+                *dupl.entry(dsgn_flow_temp).or_default() += 1;
             }
 
             test_data
@@ -366,7 +366,7 @@ impl HeatPumpTestData {
         // Check the number of test records is as expected
         // - 1 or 2 design flow temps
         // - 4 or 5 distinct records for each flow temp
-        if dsgn_flow_temps.len() < 1 {
+        if dsgn_flow_temps.is_empty() {
             return Err("No test data provided for heat pump performance".into());
         } else if dsgn_flow_temps.len() > 2 {
             return Err(
@@ -460,7 +460,7 @@ impl HeatPumpTestData {
                         )
                     })
                     .collect();
-                ((*dsgn_flow_temp).clone(), complete_data)
+                (*dsgn_flow_temp, complete_data)
             })
             .collect();
 
@@ -918,7 +918,7 @@ impl HeatPumpTestData {
 /// corresponding elements in self.__dsgn_flow_temps. This behaviour
 /// is relied upon elsewhere.
 fn ave_degradation_coeff(
-    dsgn_flow_temps: &Vec<OrderedFloat<f64>>,
+    dsgn_flow_temps: &[OrderedFloat<f64>],
     test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> Vec<f64> {
     dsgn_flow_temps
@@ -927,7 +927,7 @@ fn ave_degradation_coeff(
             test_data[dsgn_flow_temp]
                 .iter()
                 .filter(|datum| {
-                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().nth(0).unwrap())
+                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().next().unwrap())
                 }) // assumption is made here that the first letter of the "test_letter" attribute can be considered the test letter
                 .map(|datum| datum.degradation_coefficient)
                 .sum::<f64>()
@@ -940,7 +940,7 @@ fn ave_degradation_coeff(
 /// corresponding elements in self.__dsgn_flow_temps. This behaviour
 /// is relied upon elsewhere.
 fn ave_capacity(
-    dsgn_flow_temps: &Vec<OrderedFloat<f64>>,
+    dsgn_flow_temps: &[OrderedFloat<f64>],
     test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
 ) -> Vec<f64> {
     dsgn_flow_temps
@@ -949,7 +949,7 @@ fn ave_capacity(
             test_data[dsgn_flow_temp]
                 .iter()
                 .filter(|datum| {
-                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().nth(0).unwrap())
+                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().next().unwrap())
                 }) // assumption is made here that the first letter of the "test_letter" attribute can be considered the test letter
                 .map(|datum| datum.capacity)
                 .sum::<f64>()
@@ -963,7 +963,7 @@ const TEMP_SPREAD_AT_TEST_CONDITIONS: [(f64, f64); 4] =
 
 /// List temp spread at test conditions for the design flow temps in the test data
 fn init_temp_spread_test_conditions(
-    dsgn_flow_temps: &Vec<OrderedFloat<f64>>,
+    dsgn_flow_temps: &[OrderedFloat<f64>],
 ) -> Result<Vec<f64>, String> {
     dsgn_flow_temps
         .iter()
@@ -996,10 +996,7 @@ fn init_regression_coeffs(
             .iter()
             .map(|datum| datum.cop)
             .collect();
-        regression_coeffs.insert(
-            (*dsgn_flow_temp).clone(),
-            polyfit(&temp_test_list, &cop_list, 2)?,
-        );
+        regression_coeffs.insert(*dsgn_flow_temp, polyfit(&temp_test_list, &cop_list, 2)?);
     }
 
     Ok(regression_coeffs)
@@ -1190,12 +1187,12 @@ impl HeatPumpServiceSpace {
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_pump.lock().and_then(|mut pump| {
+        self.heat_pump.lock().map(|mut pump| {
             let time_constant_for_service = match pump.sink_type {
                 HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
                 HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
             };
-            Ok(pump.demand_energy(
+            pump.demand_energy(
                 &self.service_name,
                 &ServiceType::Space,
                 energy_demand,
@@ -1209,7 +1206,7 @@ impl HeatPumpServiceSpace {
                     self.temp_spread_correction_fn(),
                 )),
                 None,
-            ))
+            )
         })
     }
 
@@ -1263,7 +1260,7 @@ impl HeatPumpServiceSpace {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = (&self.heat_pump.lock().unwrap().test_data).clone();
+        let test_data = self.heat_pump.lock().unwrap().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(move |temp_output, temp_source| {
@@ -1331,12 +1328,12 @@ impl HeatPumpServiceSpaceWarmAir {
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_pump.lock().and_then(|mut pump| {
+        self.heat_pump.lock().map(|mut pump| {
             let time_constant_for_service = match pump.sink_type {
                 HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
                 HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
             };
-            Ok(pump.demand_energy(
+            pump.demand_energy(
                 &self.service_name,
                 &ServiceType::Space,
                 energy_demand,
@@ -1350,7 +1347,7 @@ impl HeatPumpServiceSpaceWarmAir {
                     self.temp_spread_correction_fn(),
                 )),
                 None,
-            ))
+            )
         })
     }
 
@@ -1405,7 +1402,7 @@ impl HeatPumpServiceSpaceWarmAir {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = (&self.heat_pump.lock().unwrap().test_data).clone();
+        let test_data = self.heat_pump.lock().unwrap().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(move |temp_output, temp_source| {
@@ -2420,6 +2417,7 @@ impl HeatPump {
                     let time_running_subsequent_services =
                         times_running_subsequent_services[service_no];
 
+                    #[allow(clippy::neg_cmp_op_on_partial_ord)]
                     let energy_ancillary_when_off = if service_on
                         && time_running_current_service > 0.
                         && !(time_running_subsequent_services > 0.)
@@ -2573,7 +2571,7 @@ impl HeatPump {
                 .unwrap()
                 .entry((parameter, param_unit))
                 .or_default();
-            for (_t_idx, service_results) in detailed_results.iter().enumerate() {
+            for service_results in detailed_results {
                 if let Ok(service_results) = service_results.lock() {
                     if let ServiceResult::Full(calc) = service_results
                         .iter()
@@ -2787,7 +2785,7 @@ impl HeatPumpEnergyCalculation {
 }
 
 #[derive(Copy, Clone)]
-enum ResultParamValue {
+pub enum ResultParamValue {
     String(ResultString),
     Number(f64),
     Boolean(bool),
@@ -2854,7 +2852,7 @@ impl HeatPumpHotWaterOnly {
         control: Option<Arc<Control>>,
     ) -> Self {
         let efficiencies = Efficiencies {
-            L: test_data.L.as_ref().and_then(|profile_data| {
+            l: test_data.l.as_ref().map(|profile_data| {
                 let HeatPumpHotWaterOnlyTestDatum {
                     cop_dhw,
                     hw_tapping_prof_daily,
@@ -2862,22 +2860,22 @@ impl HeatPumpHotWaterOnly {
                     power_standby,
                     hw_vessel_loss_daily,
                 } = *profile_data;
-                Some(Self::init_efficiency_tapping_profile(
+                Self::init_efficiency_tapping_profile(
                     cop_dhw,
                     hw_tapping_prof_daily,
                     energy_input_measured,
                     power_standby,
                     hw_vessel_loss_daily,
-                ))
+                )
             }),
-            M: {
+            m: {
                 let HeatPumpHotWaterOnlyTestDatum {
                     cop_dhw,
                     hw_tapping_prof_daily,
                     energy_input_measured,
                     power_standby,
                     hw_vessel_loss_daily,
-                } = test_data.M;
+                } = test_data.m;
                 Self::init_efficiency_tapping_profile(
                     cop_dhw,
                     hw_tapping_prof_daily,
@@ -2916,9 +2914,9 @@ impl HeatPumpHotWaterOnly {
     }
 
     fn init_efficiency(efficiencies: &Efficiencies, vol_daily_average: f64) -> f64 {
-        let eff_m = efficiencies.M;
-        match efficiencies.L {
-            None => efficiencies.M,
+        let eff_m = efficiencies.m;
+        match efficiencies.l {
+            None => efficiencies.m,
             Some(eff_l) => {
                 let vol_daily_limit_lower = 100.2;
                 let vol_daily_limit_upper = 199.8;
@@ -2969,14 +2967,14 @@ impl HeatPumpHotWaterOnly {
 }
 
 pub struct HeatPumpHotWaterOnlyTestData {
-    L: Option<HeatPumpHotWaterOnlyTestDatum>,
-    M: HeatPumpHotWaterOnlyTestDatum,
+    l: Option<HeatPumpHotWaterOnlyTestDatum>,
+    m: HeatPumpHotWaterOnlyTestDatum,
 }
 
 #[derive(Default)]
 struct Efficiencies {
-    L: Option<f64>,
-    M: f64,
+    l: Option<f64>,
+    m: f64,
 }
 
 pub struct HeatPumpHotWaterOnlyTestDatum {

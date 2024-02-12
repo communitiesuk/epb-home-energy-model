@@ -152,7 +152,7 @@ impl Pipework {
     /// * `inside_temp` - temperature of water (or air) inside the pipe, in degrees C
     /// * `outside_temp` - temperature outside the pipe, in degrees C
     pub fn cool_down_loss(&self, inside_temp: f64, outside_temp: f64) -> f64 {
-        WATER.volumetric_energy_content_kWh_per_litre(inside_temp, outside_temp)
+        WATER.volumetric_energy_content_kwh_per_litre(inside_temp, outside_temp)
             * self.volume_in_litres
     }
 }

@@ -44,7 +44,7 @@ impl HeatNetworkServiceWaterDirect {
     /// Demand energy for hot water (in kWh) from the heat network
     pub fn demand_hot_water(&mut self, volume_demanded: f64, timestep_idx: usize) -> f64 {
         // Calculate energy needed to meet hot water demand
-        let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kWh_per_litre(
+        let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water,
             self.cold_feed.temperature(timestep_idx),
         );

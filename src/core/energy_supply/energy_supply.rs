@@ -177,18 +177,15 @@ fn init_demand_list(timestep_count: usize) -> Vec<f64> {
 
 pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
     EnergySupplies {
-        mains_electricity: match input.mains_electricity {
-            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
-            _ => None,
-        },
-        mains_gas: match input.mains_gas {
-            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
-            _ => None,
-        },
-        bulk_lpg: match input.bulk_lpg {
-            Some(s) => Some(supply_from_details(s, simulation_timesteps)),
-            _ => None,
-        },
+        mains_electricity: input
+            .mains_electricity
+            .map(|s| supply_from_details(s, simulation_timesteps)),
+        mains_gas: input
+            .mains_gas
+            .map(|s| supply_from_details(s, simulation_timesteps)),
+        bulk_lpg: input
+            .bulk_lpg
+            .map(|s| supply_from_details(s, simulation_timesteps)),
         heat_network: input.heat_network,
         unmet_demand: EnergySupply::new(
             EnergySupplyType::UnmetDemand,

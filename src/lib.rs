@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 mod compare_floats;
 pub mod core;
 mod corpus;
@@ -29,8 +31,8 @@ pub fn run_project(
     _preprocess_only: bool,
     _fhs_assumptions: bool,
     _fhs_fee_assumptions: bool,
-    _fhs_notA_assumptions: bool,
-    _fhs_notB_assumptions: bool,
+    _fhs_not_a_assumptions: bool,
+    _fhs_not_b_assumptions: bool,
     _heat_balance: bool,
 ) -> Result<(), Box<dyn Error>> {
     let input_file_ext = Path::new(input_file).extension().and_then(OsStr::to_str);
@@ -63,7 +65,7 @@ pub fn run_project(
     Ok(())
 }
 
-fn external_conditions_from_input<'a>(
+fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     simulation_time: Arc<SimulationTime>,
@@ -90,11 +92,17 @@ fn external_conditions_from_input<'a>(
         ),
         None => ExternalConditions::new(
             &simulation_time.iter(),
-            input.air_temperatures.clone().unwrap_or(vec![]),
-            input.wind_speeds.clone().unwrap_or(vec![]),
-            input.diffuse_horizontal_radiation.clone().unwrap_or(vec![]),
-            input.direct_beam_radiation.clone().unwrap_or(vec![]),
-            input.solar_reflectivity_of_ground.clone().unwrap_or(vec![]),
+            input.air_temperatures.clone().unwrap_or_default(),
+            input.wind_speeds.clone().unwrap_or_default(),
+            input
+                .diffuse_horizontal_radiation
+                .clone()
+                .unwrap_or_default(),
+            input.direct_beam_radiation.clone().unwrap_or_default(),
+            input
+                .solar_reflectivity_of_ground
+                .clone()
+                .unwrap_or_default(),
             input.latitude.unwrap_or(55.0),
             input.longitude.unwrap_or(0.0),
             0,
@@ -205,7 +213,7 @@ impl Calculation {
         let (mut ductwork_losses, mut ductwork_losses_per_m3) = (0.0, 0.0);
 
         // ductwork gains/losses only for MVHR
-        if let Some(Ventilation::MVHR { .. }) = self.corpus.ventilation {
+        if let Some(Ventilation::Mvhr { .. }) = self.corpus.ventilation {
             // ductwork_losses =
             //     calc_ductwork_losses(0, delta_t_h, self.corpus.ventilation.efficiency());
             // ductwork_losses_per_m3 = ductwork_losses /

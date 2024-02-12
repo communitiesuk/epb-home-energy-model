@@ -324,7 +324,7 @@ fn divisor_for(dwelling_type: DwellingType, shelter_type: InfiltrationShelterTyp
 
 fn dwelling_type(build_type: InfiltrationBuildType, storey: u32) -> DwellingType {
     match (build_type, storey) {
-        (InfiltrationBuildType::House, s) if s == 1 => DwellingType::House1Storey,
+        (InfiltrationBuildType::House, 1) => DwellingType::House1Storey,
         (InfiltrationBuildType::House, _) => DwellingType::House2Storey,
         (InfiltrationBuildType::Flat, s) if s <= 5 => DwellingType::FlatStorey1To5,
         (InfiltrationBuildType::Flat, s) if s <= 10 => DwellingType::FlatStorey6To10,
@@ -359,13 +359,13 @@ fn init_infiltration(
     shelter_factor: f64,
 ) -> f64 {
     ((match pressure_test_type {
-        /// If test results are at 4 Pa, convert to equivalent 50 Pa result
-        /// before applying divisor.
-        /// SAP 10 Technical Paper S10TP-19 "Use of low pressure pulse
-        /// test data in SAP" gives the relationship between air
-        /// permeability measured at 50 Pa and 4 Pa. The equation below is
-        /// based on this but has been converted to work with test results
-        /// expressed in ach rather than m3/m2/h.
+        // If test results are at 4 Pa, convert to equivalent 50 Pa result
+        // before applying divisor.
+        // SAP 10 Technical Paper S10TP-19 "Use of low pressure pulse
+        // test data in SAP" gives the relationship between air
+        // permeability measured at 50 Pa and 4 Pa. The equation below is
+        // based on this but has been converted to work with test results
+        // expressed in ach rather than m3/m2/h.
         InfiltrationTestType::FourPascals => {
             5.254
                 * (pressure_test_result_ach.powf(0.9241)
@@ -697,7 +697,7 @@ impl WindowOpeningForCooling {
         // Assign equivalent areas to each window/group in proportion to actual area
         let opening_area_total = openings
             .iter()
-            .map(|element| area_for_building_element_input(element))
+            .map(area_for_building_element_input)
             .sum::<f64>();
         let opening_area_equiv_total_ratio = window_area_equivalent / opening_area_total;
 

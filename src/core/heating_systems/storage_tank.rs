@@ -108,7 +108,7 @@ impl StorageTank {
         // list of volume of layers in litres
         let vol_n = [volume_total_in_litres / STORAGE_TANK_NB_VOL as f64; STORAGE_TANK_NB_VOL];
         // water specific heat in kWh/kg.K
-        let cp = contents.specific_heat_capacity_kWh();
+        let cp = contents.specific_heat_capacity_kwh();
         let rho = contents.density();
 
         // 6.4.3.2 STEP 0 Initialization
@@ -119,8 +119,7 @@ impl StorageTank {
 
         let input_energy_adj_prev_timestep = 0.;
 
-        let primary_pipework: Option<Pipework> =
-            primary_pipework.and_then(|pipework| Some(pipework.into()));
+        let primary_pipework: Option<Pipework> = primary_pipework.map(|pipework| pipework.into());
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
@@ -173,9 +172,7 @@ impl StorageTank {
         let temp_set_ref = 65.;
         let temp_amb_ref = 20.;
 
-        let h_sto_ls = (1000. * self.q_std_ls_ref) / (24. * (temp_set_ref - temp_amb_ref));
-
-        h_sto_ls
+        (1000. * self.q_std_ls_ref) / (24. * (temp_set_ref - temp_amb_ref))
     }
 
     /// Calculate the energy stored for each layer in the storage volume - kWh
@@ -183,7 +180,7 @@ impl StorageTank {
     /// The energy stored is calculated, for information, accordingly to the limit value of
     /// temperature for domestic hot water.
     pub fn energy_stored(&self, timestep_idx: usize) -> [f64; STORAGE_TANK_NB_VOL] {
-        let q_out_w_n = self
+        self
             .temp_n
             .iter()
             .enumerate()
@@ -195,9 +192,7 @@ impl StorageTank {
                     0.
                 }
             })
-            .collect::<Vec<f64>>().try_into().expect("Unexpected difficulty in calculating energy stored for a storage tank encountered.");
-
-        q_out_w_n
+            .collect::<Vec<f64>>().try_into().expect("Unexpected difficulty in calculating energy stored for a storage tank encountered.")
     }
 
     /// Convert the volume (in litres) demanded into an energy required in kWh
@@ -292,7 +287,7 @@ impl StorageTank {
         timestep_idx: usize,
     ) -> [f64; STORAGE_TANK_NB_VOL] {
         // initialise list of temperature of layers AFTER volume withdrawn in degrees
-        let mut temp_s3_n = self.temp_n.clone();
+        let mut temp_s3_n = self.temp_n;
         // initialise volume in each layer remaining after draw-off
         let mut v_sto_rem_n: [f64; STORAGE_TANK_NB_VOL] = zip(self.vol_n, vol_use_w_n)
             .map(|(x, y)| x - y)
@@ -469,7 +464,7 @@ impl StorageTank {
     ) -> (f64, [f64; STORAGE_TANK_NB_VOL]) {
         // set list of flags for which layers need mixing
         let mut mix_layer_n: [u8; STORAGE_TANK_NB_VOL] = Default::default();
-        let mut temp_s7_n = temp_s6_n.clone();
+        let mut temp_s7_n = temp_s6_n;
 
         // loop through layers from bottom to top, without including top layer;
         // this is because the top layer has no upper layer to compare to
@@ -613,16 +608,7 @@ impl StorageTank {
         thermostat_layer: usize,
         q_ls_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
         simulation_time: &SimulationTimeIteration,
-    ) -> (
-        [f64; STORAGE_TANK_NB_VOL],
-        [f64; STORAGE_TANK_NB_VOL],
-        f64,
-        [f64; STORAGE_TANK_NB_VOL],
-        [f64; STORAGE_TANK_NB_VOL],
-        f64,
-        f64,
-        [f64; STORAGE_TANK_NB_VOL],
-    ) {
+    ) -> TemperatureCalculation {
         // 6.4.3.8 STEP 6 Energy input into the storage
         // input energy delivered to the storage in kWh - timestep dependent
         let q_x_in_n = self.potential_energy_input(
@@ -652,16 +638,7 @@ impl StorageTank {
         thermostat_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> (
-        [f64; STORAGE_TANK_NB_VOL],
-        [f64; STORAGE_TANK_NB_VOL],
-        f64,
-        [f64; STORAGE_TANK_NB_VOL],
-        [f64; STORAGE_TANK_NB_VOL],
-        f64,
-        f64,
-        [f64; STORAGE_TANK_NB_VOL],
-    ) {
+    ) -> TemperatureCalculation {
         let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, q_x_in_n);
 
         // 6.4.3.9 STEP 7 Re-arrange the temperatures in the storage after energy input
@@ -679,7 +656,7 @@ impl StorageTank {
         // TODO 6.4.3.11 Heat exchanger
 
         // demand adjusted energy from heat source (before was just using potential without taking it)
-        let mut input_energy_adj = q_in_h_w.clone();
+        let mut input_energy_adj = q_in_h_w;
 
         // energy demand saved for unittest (not implemented in Rust until needed)
         // self.__energy_demand_test = deepcopy(input_energy_adj)
@@ -745,7 +722,7 @@ impl StorageTank {
             ) = self.run_heat_sources(
                 temp_after_prev_heat_source,
                 &mut positioned_heat_source.heat_source,
-                &heat_source_name,
+                heat_source_name,
                 heater_layer,
                 thermostat_layer,
                 self.q_ls_n_prev_heat_source,
@@ -786,7 +763,7 @@ impl StorageTank {
         self.q_sto_h_ls_rbl = Some(q_sto_h_rbl_env + q_sto_h_rbl_aux);
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
-        self.temp_n = temp_s8_n.clone();
+        self.temp_n = temp_s8_n;
 
         q_use_w_n.iter().sum()
     }
@@ -824,7 +801,7 @@ impl StorageTank {
             self.q_ls_n_prev_heat_source[i] += *q_ls_n;
         }
 
-        self.temp_n = temp_s8_n.clone();
+        self.temp_n = temp_s8_n;
 
         q_in_h_w
     }
@@ -911,6 +888,17 @@ impl StorageTank {
         }
     }
 }
+
+type TemperatureCalculation = (
+    [f64; STORAGE_TANK_NB_VOL],
+    [f64; STORAGE_TANK_NB_VOL],
+    f64,
+    [f64; STORAGE_TANK_NB_VOL],
+    [f64; STORAGE_TANK_NB_VOL],
+    f64,
+    f64,
+    [f64; STORAGE_TANK_NB_VOL],
+);
 
 #[derive(Clone)]
 pub struct ImmersionHeater {
@@ -1147,8 +1135,8 @@ impl SolarThermalSystem {
     ) -> f64 {
         self.air_temp_coll_loop = match self.sol_loc {
             SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time),
-            SolarCellLocation::HS => AIR_TEMP_HEATED_ROOM,
-            SolarCellLocation::NHS => {
+            SolarCellLocation::Hs => AIR_TEMP_HEATED_ROOM,
+            SolarCellLocation::Nhs => {
                 (AIR_TEMP_HEATED_ROOM + self.external_conditions.air_temp(simulation_time)) / 2.
             }
         };
@@ -1158,11 +1146,11 @@ impl SolarThermalSystem {
         // if first time step, pick bottom of the tank temperature as inlet_temp_s1
         let inlet_temp_s1 = if simulation_time.index == 0 {
             let inlet_temp_s1 = temp_storage_tank_s3_n[0];
-            self.inlet_temp = inlet_temp_s1.clone();
+            self.inlet_temp = inlet_temp_s1;
 
             inlet_temp_s1
         } else {
-            self.inlet_temp.clone()
+            self.inlet_temp
         };
 
         // solar irradiance in W/m2
@@ -1234,7 +1222,7 @@ impl SolarThermalSystem {
                 + self.heat_output_collector_loop / (self.collector_mass_flow_rate * self.cp * 2.);
         }
 
-        self.inlet_temp = inlet_temp2.clone();
+        self.inlet_temp = inlet_temp2;
 
         self.heat_output_collector_loop
     }

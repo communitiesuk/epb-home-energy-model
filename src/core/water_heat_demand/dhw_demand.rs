@@ -4,7 +4,7 @@ use crate::core::pipework::{Pipework, PipeworkContentsType};
 use crate::core::schedule::ScheduleEvent;
 use crate::core::units::MILLIMETRES_IN_METRE;
 use crate::core::water_heat_demand::bath::Bath;
-use crate::core::water_heat_demand::misc::water_demand_to_kWh;
+use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
 use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
@@ -38,7 +38,7 @@ impl DomesticHotWaterDemand {
     ) -> Self {
         let showers: HashMap<String, Shower> = shower_input
             .iter()
-            .map(|input| {
+            .flat_map(|input| {
                 let mut showers = vec![(
                     "mixer".to_owned(),
                     mixer_shower_input_to_shower(&input.mixer, cold_water_sources, &wwhrs),
@@ -57,40 +57,34 @@ impl DomesticHotWaterDemand {
 
                 showers
             })
-            .flatten()
             .collect();
         let baths = bath_input
             .iter()
-            .map(|input| match &input.medium {
+            .flat_map(|input| match &input.medium {
                 Some(details) => vec![(
                     "medium".to_owned(),
                     input_to_bath(details, cold_water_sources),
                 )],
                 None => vec![],
             })
-            .flatten()
             .collect();
         let other = other_hot_water_input
             .iter()
-            .map(|input| match &input.other {
+            .flat_map(|input| match &input.other {
                 Some(details) => vec![(
                     "other".to_owned(),
                     input_to_other_water_events(details, cold_water_sources),
                 )],
                 None => vec![],
             })
-            .flatten()
             .collect();
         let total_number_tapping_points = showers
             .iter()
-            .filter(|(_, shower)| match shower {
-                Shower::InstantElectricShower(_) => false,
-                _ => true,
-            })
+            .filter(|(_, shower)| !matches!(shower, Shower::InstantElectricShower(_)))
             .count();
         let hot_water_distribution_pipework = water_distribution_input
             .iter()
-            .map(|input| {
+            .flat_map(|input| {
                 vec![
                     (
                         "internal".to_owned(),
@@ -108,7 +102,6 @@ impl DomesticHotWaterDemand {
                     ),
                 ]
             })
-            .flatten()
             .collect();
 
         Self {
@@ -153,7 +146,7 @@ impl DomesticHotWaterDemand {
                     Shower::MixerShower(s) => {
                         // don't add hw demand and pipework loss from electric shower
                         hw_demand_vol += hw_demand_i;
-                        hw_energy_demand += water_demand_to_kWh(
+                        hw_energy_demand += water_demand_to_kwh(
                             hw_demand_i,
                             s.get_temp_hot(),
                             cold_water_temperature,
@@ -185,7 +178,7 @@ impl DomesticHotWaterDemand {
                     .duration
                     .expect("This usage event is expected to have an associated duration.");
                 hw_demand_vol += other.hot_water_demand(other_temp, other_duration, timestep_idx);
-                hw_energy_demand += water_demand_to_kWh(
+                hw_energy_demand += water_demand_to_kwh(
                     other.hot_water_demand(other_temp, other_duration, timestep_idx),
                     other.get_temp_hot(),
                     cold_water_temperature,
@@ -216,7 +209,7 @@ impl DomesticHotWaterDemand {
                     .expect("This usage event is expected to have an associated temperature.");
                 hw_demand_vol += bath.hot_water_demand(bath_temp, timestep_idx);
                 let bath_duration = bath.get_size() / peak_flowrate;
-                hw_energy_demand += water_demand_to_kWh(
+                hw_energy_demand += water_demand_to_kwh(
                     bath.hot_water_demand(bath_temp, timestep_idx),
                     bath.get_temp_hot(),
                     cold_water_temperature,
@@ -258,7 +251,7 @@ impl DomesticHotWaterDemand {
     }
 }
 
-fn mixer_shower_input_to_shower<'a>(
+fn mixer_shower_input_to_shower(
     input: &MixerShowerInput,
     cold_water_sources: &ColdWaterSources,
     wwhrs: &HashMap<String, Wwhrs>,
@@ -267,11 +260,10 @@ fn mixer_shower_input_to_shower<'a>(
         ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
         ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
     };
-    let wwhrs_instance: Option<Wwhrs> = input.waste_water_heat_recovery.as_ref().and_then(|w| {
-        wwhrs
-            .get(&w.to_string())
-            .and_then(|system| Some(system.clone()))
-    });
+    let wwhrs_instance: Option<Wwhrs> = input
+        .waste_water_heat_recovery
+        .as_ref()
+        .and_then(|w| wwhrs.get(&w.to_string()).map(|system| system.clone()));
 
     Shower::MixerShower(MixerShower::new(
         input.flowrate,

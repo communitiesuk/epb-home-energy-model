@@ -374,11 +374,11 @@ pub fn space_heat_cool_demand(
         "ERROR: Cooling setpoint is below heating setpoint."
     );
 
-    let temp_setpnt_cool_vent: Option<f64> = None;
+    let mut temp_setpnt_cool_vent: Option<f64> = None;
     if let Some(_window_cooling) = vent_cool_extra {
         // temp_setpnt_cool_vent =
         // Set cooling setpoint to Planck temperature to ensure no cooling demand
-        let temp_setpnt_cool_vent = Some(kelvin_to_celsius(1.4e32));
+        temp_setpnt_cool_vent = Some(kelvin_to_celsius(1.4e32));
         assert!(
             temp_setpnt_cool_vent.is_none() || (temp_setpnt_cool_vent.unwrap() >= temp_setpnt_heat),
             "ERROR: Setpoint for additional ventilation is below heating setpoint."
@@ -675,7 +675,7 @@ pub fn space_heat_cool_demand(
 /// A.
 fn calc_temperatures(
     delta_t: f64,
-    temp_prev: &Vec<f64>,
+    temp_prev: &[f64],
     temp_ext_air: f64,
     gains_internal: f64,
     gains_solar: f64,
@@ -1013,8 +1013,8 @@ fn fast_solver(
     coeffs: DMatrix<f64>,
     rhs: DVector<f64>,
     no_of_temps: usize,
-    building_elements: &Vec<NamedBuildingElement>,
-    element_positions: &Vec<(usize, usize)>,
+    building_elements: &[NamedBuildingElement],
+    element_positions: &[(usize, usize)],
     passed_zone_idx: usize,
 ) -> Vec<f64> {
     // Init matrix with zeroes
@@ -1112,9 +1112,9 @@ fn fast_solver(
 /// ## Arguments
 /// * `temp_vector` - vector (list) of temperatures calculated from the heat balance equations
 fn temp_operative(
-    temp_vector: &Vec<f64>,
-    building_elements: &Vec<NamedBuildingElement>,
-    element_positions: &Vec<(usize, usize)>,
+    temp_vector: &[f64],
+    building_elements: &[NamedBuildingElement],
+    element_positions: &[(usize, usize)],
     passed_zone_id: usize,
 ) -> f64 {
     let temp_int_air = temp_vector[passed_zone_id];
