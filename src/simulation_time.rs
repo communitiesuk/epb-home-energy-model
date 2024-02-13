@@ -106,9 +106,17 @@ impl SimulationTimeIterator {
     pub fn step_in_hours(&self) -> f64 {
         self.simulation_time.step
     }
+
+    pub fn current_iteration(&self) -> SimulationTimeIteration {
+        SimulationTimeIteration {
+            index: self.current_index,
+            time: self.current_time,
+            timestep: self.simulation_time.step,
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct SimulationTimeIteration {
     pub index: usize,
     pub time: f64,

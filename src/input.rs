@@ -1107,11 +1107,16 @@ pub enum HeatSourceWetDetails {
         heat_battery_location: HeatSourceLocation,
         electricity_circ_pump: f64,
         electricity_standby: f64,
+        // in kW (Charging)
         rated_charge_power: f64,
+        // in kWh
         heat_storage_capacity: f64,
+        // in kW (Output to hot water and space heat services)
         max_rated_heat_output: f64,
+        // in kW (Losses to internal or external)
         max_rated_losses: f64,
-        number_of_units: u32,
+        // number of units installed in zone
+        number_of_units: usize,
         #[serde(rename(deserialize = "ControlCharge"))]
         control_charge: String,
     },
@@ -1168,7 +1173,7 @@ pub struct HeatPumpTestDatum {
 
 pub type TestLetter = ArrayString<2>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum HeatSourceLocation {
     #[serde(alias = "internal")]
     Internal,
