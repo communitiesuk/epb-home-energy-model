@@ -5,6 +5,7 @@ pub mod material_properties;
 mod pipework;
 
 pub mod common;
+pub mod cooling_systems;
 pub mod ductwork;
 pub mod schedule;
 pub mod space_heat_demand;
