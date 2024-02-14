@@ -16,7 +16,7 @@ use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
+pub fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
     air_change_rate * zone_volume / SECONDS_PER_HOUR as f64
 }
 

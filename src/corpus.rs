@@ -6,7 +6,9 @@ use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::HeatSourceWet;
+use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
+use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, SolarThermalSystem, StorageTank,
@@ -22,14 +24,16 @@ use crate::core::space_heat_demand::building_element::area_for_building_element_
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation_element::{
-    MechanicalVentilationHeatRecovery, NaturalVentilation, VentilationElement,
-    VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
+    air_change_rate_to_flow_rate, MechanicalVentilationHeatRecovery, NaturalVentilation,
+    VentilationElement, VentilationElementInfiltration, WholeHouseExtractVentilation,
+    WindowOpeningForCooling,
 };
 use crate::core::space_heat_demand::zone::{NamedBuildingElement, Zone};
-use crate::core::units::MILLIMETRES_IN_METRE;
+use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::external_conditions::ExternalConditions;
+use crate::input::HeatSourceWetType::HeatPump as HeatPumpInput;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
@@ -47,6 +51,9 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
+
+// TODO make this a runtime parameter?
+const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
 
 pub struct Corpus {
     pub external_conditions: Arc<ExternalConditions>,
@@ -116,7 +123,7 @@ impl TryFrom<Input> for Corpus {
 
         let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
 
-        let ventilation = input.ventilation.map(|v| {
+        let ventilation = input.ventilation.as_ref().map(|v| {
             ventilation_from_input(&v, &infiltration, simulation_time_iterator.clone().as_ref())
         });
 
@@ -178,7 +185,11 @@ impl TryFrom<Input> for Corpus {
                     Arc::new(heat_source_wet_from_input(
                         (*heat_source_wet_details).clone(),
                         external_conditions.clone(),
-                        simulation_time_iterator.clone().as_ref(),
+                        simulation_time_iterator.clone(),
+                        ventilation.as_ref(),
+                        input.ventilation.as_ref().map(|v| v.req_ach()),
+                        total_volume,
+                        &controls,
                     )),
                 )
             })
@@ -1032,6 +1043,15 @@ impl HeatSource {
                 HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
                     h.demand_energy(energy_demand, simulation_time_iteration)
                 }
+                HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
+                    h.demand_energy(energy_demand, *simulation_time_iteration)
+                }
+                HeatSourceWet::HeatPumpWater(ref mut h) => {
+                    h.demand_energy(energy_demand, simulation_time_iteration)
+                }
+                HeatSourceWet::HeatPumpWaterOnly(h) => {
+                    h.demand_energy(energy_demand, simulation_time_iteration.index)
+                }
             },
         }
     }
@@ -1045,20 +1065,52 @@ pub struct PositionedHeatSource {
 }
 
 pub enum WetHeatSource {
-    HeatPump(()),
-    // TODO to be implemented
+    HeatPump(HeatPump),
     Boiler(Boiler),
     Hiu(HeatNetwork),
-    HeatBattery(()), // TODO to be implemented
+    HeatBattery(HeatBattery), // TODO to be implemented
 }
 
 fn heat_source_wet_from_input(
     input: HeatSourceWetDetails,
     external_conditions: Arc<ExternalConditions>,
-    simulation_time: &SimulationTimeIterator,
+    simulation_time: Arc<SimulationTimeIterator>,
+    ventilation: Option<&VentilationElement>,
+    ventilation_req_ach: Option<f64>,
+    total_volume: f64,
+    controls: &Controls,
 ) -> WetHeatSource {
     match &input {
-        HeatSourceWetDetails::HeatPump { .. } => todo!(),
+        HeatSourceWetDetails::HeatPump { source_type, .. } => {
+            let throughput_exhaust_air = if source_type.is_exhaust_air() {
+                // Check that ventilation system is compatible with exhaust air HP
+                if ventilation.is_none()
+                    || !matches!(
+                        ventilation.unwrap(),
+                        VentilationElement::Mvhr(_) | VentilationElement::Whev(_)
+                    )
+                {
+                    panic!("Exhaust air heat pump requires ventilation to be MVHR or WHEV.")
+                }
+                Some(
+                    air_change_rate_to_flow_rate(ventilation_req_ach.unwrap(), total_volume)
+                        * LITRES_PER_CUBIC_METRE as f64,
+                )
+            } else {
+                None
+            };
+
+            WetHeatSource::HeatPump(
+                HeatPump::new(
+                    &input,
+                    simulation_time.step_in_hours(),
+                    external_conditions.clone(),
+                    throughput_exhaust_air,
+                    DETAILED_OUTPUT_HEATING_COOLING,
+                )
+                .unwrap(),
+            )
+        }
         HeatSourceWetDetails::Boiler { .. } => WetHeatSource::Boiler(
             Boiler::new(
                 input,
@@ -1078,7 +1130,22 @@ fn heat_source_wet_from_input(
             *building_level_distribution_losses,
             simulation_time.step_in_hours(),
         )),
-        HeatSourceWetDetails::HeatBattery { .. } => todo!(),
+        HeatSourceWetDetails::HeatBattery { control_charge, .. } => {
+            let heat_source = WetHeatSource::HeatBattery(HeatBattery::new(
+                &input,
+                controls
+                    .get_with_string(control_charge)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "expected a control to be registered with the name '{control_charge}'"
+                        )
+                    })
+                    .clone(),
+                simulation_time,
+                external_conditions.clone(),
+            ));
+            heat_source
+        }
     }
 }
 
@@ -1138,6 +1205,7 @@ fn heat_source_from_input(
             name,
             cold_water_source: cold_water_source_type,
             control,
+            temp_flow_limit_upper,
             ..
         } => {
             let cold_water_source = cold_water_sources
@@ -1153,7 +1221,18 @@ fn heat_source_from_input(
             let source_control = control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone()));
 
             match heat_source_wet.as_ref() {
-                WetHeatSource::HeatPump(_) => todo!(),
+                WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
+                    HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
+                        Arc::new(Mutex::new((*heat_pump).clone())),
+                        energy_supply_conn_name,
+                        temp_setpoint,
+                        55.,
+                        temp_flow_limit_upper
+                            .expect("temp_flow_limit_upper field was expected to be set"),
+                        Arc::new(cold_water_source),
+                        source_control,
+                    )),
+                )),
                 WetHeatSource::Boiler(boiler) => HeatSource::Wet(Box::new(
                     HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
                         energy_supply_conn_name,
@@ -1173,10 +1252,37 @@ fn heat_source_from_input(
                         ),
                     )))
                 }
-                WetHeatSource::HeatBattery(_) => todo!(),
+                WetHeatSource::HeatBattery(battery) => {
+                    HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
+                        HeatBattery::create_service_hot_water_regular(
+                            Arc::new(Mutex::new((*battery).clone())),
+                            &energy_supply_conn_name,
+                            temp_setpoint,
+                            Arc::new(cold_water_source),
+                            55.,
+                            source_control,
+                        ),
+                    )))
+                }
             }
         }
-        HeatSourceInput::HeatPumpHotWaterOnly { .. } => todo!(),
+        HeatSourceInput::HeatPumpHotWaterOnly {
+            power_max,
+            vol_hw_daily_average,
+            ref test_data,
+            energy_supply,
+            control,
+            heater_position,
+            thermostat_position,
+        } => HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
+            HeatPumpHotWaterOnly::new(
+                power_max,
+                &test_data,
+                vol_hw_daily_average,
+                simulation_time.step_in_hours(),
+                controls.get(&control).map(|c| (*c).clone()),
+            ),
+        ))),
     }
 }
 
@@ -1337,7 +1443,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
             ))
         }
-        HotWaterSourceDetails::HeatBattery { .. } => todo!(),
+        HotWaterSourceDetails::HeatBattery { .. } => todo!(), // TODO is from Python
     }
 }
 

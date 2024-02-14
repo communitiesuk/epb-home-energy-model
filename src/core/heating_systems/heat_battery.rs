@@ -5,7 +5,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use interp::interp;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// This module provides object(s) to model the behaviour of heat batteries.
 
@@ -18,8 +18,9 @@ enum ServiceType {
 ///
 /// This object contains the parts of the heat battery calculation that are
 /// specific to providing hot water.
+#[derive(Clone)]
 pub struct HeatBatteryServiceWaterRegular {
-    heat_battery: HeatBattery,
+    heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
     control: Option<Arc<Control>>,
     temp_hot_water: f64,
@@ -29,7 +30,7 @@ pub struct HeatBatteryServiceWaterRegular {
 
 impl HeatBatteryServiceWaterRegular {
     pub fn new(
-        heat_battery: HeatBattery,
+        heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,
         temp_hot_water: f64,
         cold_feed: Arc<ColdWaterSource>,
@@ -55,7 +56,7 @@ impl HeatBatteryServiceWaterRegular {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_battery.demand_energy(
+        self.heat_battery.lock().unwrap().demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
@@ -69,7 +70,10 @@ impl HeatBatteryServiceWaterRegular {
             return 0.0;
         }
 
-        self.heat_battery.energy_output_max(self.temp_hot_water)
+        self.heat_battery
+            .lock()
+            .unwrap()
+            .energy_output_max(self.temp_hot_water)
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
@@ -81,8 +85,9 @@ impl HeatBatteryServiceWaterRegular {
     }
 }
 
+#[derive(Clone)]
 pub struct HeatBatteryServiceSpace {
-    heat_battery: HeatBattery,
+    heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
     control: Arc<Control>,
 }
@@ -92,7 +97,11 @@ pub struct HeatBatteryServiceSpace {
 /// This object contains the parts of the heat battery calculation that are
 /// specific to providing space heating.
 impl HeatBatteryServiceSpace {
-    pub fn new(heat_battery: HeatBattery, service_name: String, control: Arc<Control>) -> Self {
+    pub fn new(
+        heat_battery: Arc<Mutex<HeatBattery>>,
+        service_name: String,
+        control: Arc<Control>,
+    ) -> Self {
         Self {
             heat_battery,
             service_name,
@@ -123,7 +132,7 @@ impl HeatBatteryServiceSpace {
             return 0.0;
         }
 
-        self.heat_battery.demand_energy(
+        self.heat_battery.lock().unwrap().demand_energy(
             &self.service_name,
             ServiceType::Space,
             energy_demand,
@@ -204,12 +213,14 @@ const LABS_TESTS_LOSSES: [[f64; 2]; 20] = [
 
 const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
 
+#[derive(Clone)]
 struct HeatBatteryResult {
     service_name: String,
     time_running: f64,
     current_hb_power: f64,
 }
 
+#[derive(Clone)]
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
     external_conditions: Arc<ExternalConditions>,
@@ -293,6 +304,41 @@ impl HeatBattery {
             q_out_ts: Default::default(),
             q_loss_ts: Default::default(),
         }
+    }
+
+    /// Return a HeatBatteryServiceWaterRegular object and create an EnergySupplyConnection for it
+    ///
+    /// Arguments:
+    /// * `heat_battery` - reference to heat battery
+    /// * `service_name` - name of the service demanding energy from the heat battery
+    /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
+    /// * `temp_limit_upper` - upper operating limit for temperature, in deg C
+    /// * `cold_feed` - reference to ColdWaterSource object
+    /// * `control` - reference to a control object
+    pub fn create_service_hot_water_regular(
+        heat_battery: Arc<Mutex<Self>>,
+        service_name: &str,
+        temp_hot_water: f64,
+        cold_feed: Arc<ColdWaterSource>,
+        temp_return: f64,
+        control: Option<Arc<Control>>,
+    ) -> HeatBatteryServiceWaterRegular {
+        HeatBatteryServiceWaterRegular::new(
+            heat_battery,
+            service_name.to_string(),
+            temp_hot_water,
+            cold_feed,
+            temp_return,
+            control,
+        )
+    }
+
+    pub fn create_service_space_heating(
+        heat_battery: Arc<Mutex<Self>>,
+        service_name: &str,
+        control: Arc<Control>,
+    ) -> HeatBatteryServiceSpace {
+        HeatBatteryServiceSpace::new(heat_battery, service_name.to_string(), control)
     }
 
     /// Converts power value supplied to the correct units

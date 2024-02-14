@@ -488,7 +488,7 @@ pub enum HeatSource {
     HeatPumpHotWaterOnly {
         power_max: f64,
         vol_hw_daily_average: f64,
-        test_data: HashMap<String, HeatPumpHotWaterTestDatum>,
+        test_data: HeatPumpHotWaterTestData,
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         #[serde(rename(deserialize = "Control"))]
@@ -549,12 +549,30 @@ pub enum SolarCellLocation {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct HeatPumpHotWaterTestDatum {
-    cop_dhw: f64,
-    hw_tapping_prof_daily_total: f64,
-    energy_input_measured: f64,
-    power_standby: f64,
-    hw_vessel_loss_daily: f64,
+pub struct HeatPumpHotWaterTestData {
+    #[serde(rename(deserialize = "L"))]
+    pub l: Option<HeatPumpHotWaterOnlyTestDatum>,
+    #[serde(rename(deserialize = "M"))]
+    pub m: HeatPumpHotWaterOnlyTestDatum,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct HeatPumpHotWaterOnlyTestDatum {
+    // CoP measured during EN 16147 test
+    pub cop_dhw: f64,
+    // daily energy requirement (kWh/day) for tapping profile used for test
+    #[serde(rename(deserialize = "hw_tapping_prof_daily_total"))]
+    pub hw_tapping_prof_daily: f64,
+    // electrical input energy (kWh) measured in EN 16147 test over 24 hrs
+    pub energy_input_measured: f64,
+    // standby power (W) measured in EN 16147 test
+    pub power_standby: f64,
+    // daily hot water vessel heat loss
+    // (kWh/day) for a 45 K temperature difference between vessel
+    // and surroundings, tested in accordance with BS 1566 or
+    // EN 12897 or any equivalent standard. Vessel must be same
+    // as that used during EN 16147 test
+    pub hw_vessel_loss_daily: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -796,6 +814,16 @@ pub enum Ventilation {
         energy_supply: EnergySupplyType,
         ductwork: VentilationDuctwork,
     },
+}
+
+impl Ventilation {
+    pub fn req_ach(&self) -> f64 {
+        match self {
+            Ventilation::Natural { req_ach, .. } => *req_ach,
+            Ventilation::Whev { req_ach, .. } => *req_ach,
+            Ventilation::Mvhr { req_ach, .. } => *req_ach,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1131,7 +1159,7 @@ pub enum HeatSourceWetDetails {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 pub enum HeatPumpSourceType {
     Ground,
     OutsideAir,
@@ -1143,13 +1171,13 @@ pub enum HeatPumpSourceType {
     HeatNetwork,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 pub enum HeatPumpSinkType {
     Water,
     Air,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum HeatPumpBackupControlType {
     None,
     TopUp,

@@ -4,8 +4,8 @@ use crate::core::units::{celsius_to_kelvin, kelvin_to_celsius, HOURS_PER_DAY};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    HeatPumpBackupControlType, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
-    HeatSourceWetDetails, TestLetter,
+    HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum, HeatPumpHotWaterTestData,
+    HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum, HeatSourceWetDetails, TestLetter,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use arrayvec::ArrayString;
@@ -14,6 +14,7 @@ use interp::interp;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use polyfit_rs::polyfit_rs::polyfit;
+use serde::Deserialize;
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -1014,6 +1015,7 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 ///
 /// This object contains the parts of the heat pump calculation that are
 /// specific to providing hot water.
+#[derive(Clone)]
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
@@ -1101,6 +1103,7 @@ impl HeatPumpServiceWater {
 const TIME_CONSTANT_SPACE_WATER: f64 = 1370.;
 const TIME_CONSTANT_SPACE_AIR: f64 = 120.;
 
+#[derive(Clone)]
 pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
@@ -1434,6 +1437,7 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
+#[derive(Clone)]
 pub struct HeatPump {
     // energy supply
     simulation_timestep: f64,
@@ -1493,7 +1497,7 @@ impl HeatPump {
     ///        energy_supply_connection_aux -- EnergySupplyConnection object for auxiliary energy
     ///        test_data -- HeatPumpTestData object
     pub fn new(
-        heat_pump_input: HeatSourceWetDetails,
+        heat_pump_input: &HeatSourceWetDetails,
         simulation_timestep: f64,
         external_conditions: Arc<ExternalConditions>,
         throughput_exhaust_air: Option<f64>,
@@ -1551,24 +1555,24 @@ impl HeatPump {
                 min_modulation_rate_55,
                 ..
             } => (
-                source_type,
-                sink_type,
-                backup_control_type,
-                time_delay_backup,
-                modulating_control,
-                time_constant_onoff_operation,
-                temp_return_feed_max,
-                celsius_to_kelvin(temp_lower_operating_limit),
-                min_temp_diff_flow_return_for_hp_to_operate,
-                var_flow_temp_ctrl_during_test,
-                power_heating_circ_pump,
-                power_source_circ_pump,
-                power_standby,
-                power_crankcase_heater,
-                power_off,
-                power_max_backup,
+                *source_type,
+                *sink_type,
+                *backup_control_type,
+                *time_delay_backup,
+                *modulating_control,
+                *time_constant_onoff_operation,
+                *temp_return_feed_max,
+                celsius_to_kelvin(*temp_lower_operating_limit),
+                *min_temp_diff_flow_return_for_hp_to_operate,
+                *var_flow_temp_ctrl_during_test,
+                *power_heating_circ_pump,
+                *power_source_circ_pump,
+                *power_standby,
+                *power_crankcase_heater,
+                *power_off,
+                *power_max_backup,
                 temp_distribution_heat_network,
-                test_data,
+                test_data.clone(),
                 min_modulation_rate_20,
                 min_modulation_rate_35,
                 min_modulation_rate_55,
@@ -1586,7 +1590,7 @@ impl HeatPump {
             _ => Some(celsius_to_kelvin(temp_return_feed_max)),
         };
         let temp_distribution_heat_network = match source_type {
-            HeatPumpSourceType::HeatNetwork => temp_distribution_heat_network,
+            HeatPumpSourceType::HeatNetwork => *temp_distribution_heat_network,
             _ => None,
         };
 
@@ -1708,7 +1712,7 @@ impl HeatPump {
     // TODO implement create service methods
 
     pub fn create_service_hot_water(
-        self,
+        heat_pump: Arc<Mutex<Self>>,
         service_name: String,
         temp_hot_water_in_c: f64,
         temp_return_feed_in_c: f64,
@@ -1717,7 +1721,7 @@ impl HeatPump {
         control: Option<Arc<Control>>,
     ) -> HeatPumpServiceWater {
         HeatPumpServiceWater::new(
-            Arc::new(Mutex::new(self)),
+            heat_pump,
             service_name,
             temp_hot_water_in_c,
             temp_return_feed_in_c,
@@ -1728,14 +1732,14 @@ impl HeatPump {
     }
 
     pub fn create_service_space_heating(
-        self,
+        heat_pump: Arc<Mutex<Self>>,
         service_name: String,
         temp_limit_upper_in_c: f64,
         temp_diff_emit_dsgn: f64,
         control: Arc<Control>,
     ) -> HeatPumpServiceSpace {
         HeatPumpServiceSpace::new(
-            Arc::new(Mutex::new(self)),
+            heat_pump,
             service_name,
             temp_limit_upper_in_c,
             temp_diff_emit_dsgn,
@@ -2836,6 +2840,7 @@ struct AuxiliaryParameters {
 }
 
 /// An object to represent an electric hot-water-only heat pump, tested to EN 16147
+#[derive(Clone)]
 pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     simulation_timestep: f64,
@@ -2846,7 +2851,7 @@ pub struct HeatPumpHotWaterOnly {
 impl HeatPumpHotWaterOnly {
     pub fn new(
         power_max_in_kw: f64,
-        test_data: &HeatPumpHotWaterOnlyTestData,
+        test_data: &HeatPumpHotWaterTestData,
         vol_daily_average: f64,
         simulation_timestep: f64,
         control: Option<Arc<Control>>,
@@ -2966,32 +2971,10 @@ impl HeatPumpHotWaterOnly {
     }
 }
 
-pub struct HeatPumpHotWaterOnlyTestData {
-    l: Option<HeatPumpHotWaterOnlyTestDatum>,
-    m: HeatPumpHotWaterOnlyTestDatum,
-}
-
 #[derive(Default)]
 struct Efficiencies {
     l: Option<f64>,
     m: f64,
-}
-
-pub struct HeatPumpHotWaterOnlyTestDatum {
-    // CoP measured during EN 16147 test
-    cop_dhw: f64,
-    // daily energy requirement (kWh/day) for tapping profile used for test
-    hw_tapping_prof_daily: f64,
-    // electrical input energy (kWh) measured in EN 16147 test over 24 hrs
-    energy_input_measured: f64,
-    // standby power (W) measured in EN 16147 test
-    power_standby: f64,
-    // daily hot water vessel heat loss
-    // (kWh/day) for a 45 K temperature difference between vessel
-    // and surroundings, tested in accordance with BS 1566 or
-    // EN 12897 or any equivalent standard. Vessel must be same
-    // as that used during EN 16147 test
-    hw_vessel_loss_daily: f64,
 }
 
 #[cfg(test)]
