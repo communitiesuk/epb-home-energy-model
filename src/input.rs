@@ -43,7 +43,7 @@ pub struct Input {
     #[serde(rename(deserialize = "Events"))]
     pub water_heating_events: WaterHeatingEvents,
     pub space_heat_system: Option<SpaceHeatSystem>,
-    space_cool_system: Option<SpaceCoolSystem>,
+    pub space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
     pub infiltration: Infiltration,
     pub zone: ZoneDictionary,
@@ -1065,15 +1065,15 @@ pub type SpaceCoolSystem = HashMap<String, SpaceCoolSystemDetails>;
 #[serde(deny_unknown_fields)]
 pub struct SpaceCoolSystemDetails {
     #[serde(rename(deserialize = "type"))]
-    system_type: SpaceCoolSystemType,
+    pub system_type: SpaceCoolSystemType,
     temp_setback: Option<f64>,
-    cooling_capacity: f64,
-    efficiency: f64,
-    frac_convective: f64,
+    pub cooling_capacity: f64,
+    pub efficiency: f64,
+    pub frac_convective: f64,
     #[serde(rename(deserialize = "EnergySupply"))]
     energy_supply: EnergySupplyType,
     #[serde(rename(deserialize = "Control"))]
-    control: Option<String>,
+    pub control: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

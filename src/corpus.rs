@@ -2,6 +2,7 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     Control, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, ToUChargeControl,
 };
+use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -41,6 +42,7 @@ use crate::input::{
     ExternalConditionsInput, HeatSource as HeatSourceInput, HeatSourceControl,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails, SpaceCoolSystemType,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
@@ -77,6 +79,7 @@ pub struct Corpus {
     pub hot_water_sources: HashMap<String, HotWaterSource>,
     pub heat_system_names_requiring_overvent: Vec<String>,
     pub space_heat_systems: HashMap<String, SpaceHeatSystem>,
+    pub space_cool_systems: HashMap<String, AirConditioning>,
 }
 
 impl TryFrom<Input> for Corpus {
@@ -219,7 +222,7 @@ impl TryFrom<Input> for Corpus {
             .space_heat_system
             .as_ref()
             .map(|system| {
-                space_heat_system_from_input(
+                space_heat_systems_from_input(
                     &system,
                     &controls,
                     simulation_time_iterator.as_ref(),
@@ -230,6 +233,23 @@ impl TryFrom<Input> for Corpus {
                         .flatten()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>(),
+                )
+            })
+            .unwrap_or_default();
+
+        let space_cool_systems = input
+            .space_cool_system
+            .as_ref()
+            .map(|system| {
+                space_cool_systems_from_input(
+                    &system,
+                    cool_system_name_for_zone
+                        .values()
+                        .flatten()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                    &controls,
+                    &simulation_time_iterator,
                 )
             })
             .unwrap_or_default();
@@ -255,6 +275,7 @@ impl TryFrom<Input> for Corpus {
             hot_water_sources,
             heat_system_names_requiring_overvent,
             space_heat_systems,
+            space_cool_systems,
         })
     }
 }
@@ -1491,7 +1512,7 @@ fn cold_water_source_for_type(
     }))
 }
 
-fn space_heat_system_from_input(
+fn space_heat_systems_from_input(
     input: &SpaceHeatSystemInput,
     controls: &Controls,
     simulation_time: &SimulationTimeIterator,
@@ -1543,6 +1564,49 @@ fn space_heat_system_from_input(
                         }
                     }
                 },
+            )
+        })
+        .collect::<HashMap<_, _>>()
+}
+
+fn space_cool_systems_from_input(
+    input: &SpaceCoolSystemInput,
+    cool_system_names_for_zone: Vec<&str>,
+    controls: &Controls,
+    simulation_time_iterator: &SimulationTimeIterator,
+) -> HashMap<String, AirConditioning> {
+    input
+        .iter()
+        .filter(|(system_name, _)| cool_system_names_for_zone.contains(&system_name.as_str()))
+        .map(|(system_name, space_cool_system_details)| {
+            if !matches!(
+                space_cool_system_details.system_type,
+                SpaceCoolSystemType::AirConditioning
+            ) {
+                unreachable!(
+                    "There are no known space cool system types other than air conditioning."
+                )
+            }
+            let SpaceCoolSystemDetails {
+                cooling_capacity,
+                efficiency,
+                frac_convective,
+                control,
+                ..
+            } = space_cool_system_details;
+            let control = control
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone()));
+
+            (
+                (*system_name).clone(),
+                AirConditioning::new(
+                    *cooling_capacity,
+                    *efficiency,
+                    *frac_convective,
+                    simulation_time_iterator.step_in_hours(),
+                    control,
+                ),
             )
         })
         .collect::<HashMap<_, _>>()
