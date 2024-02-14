@@ -42,7 +42,7 @@ pub struct Input {
     pub water_distribution: Option<WaterDistribution>,
     #[serde(rename(deserialize = "Events"))]
     pub water_heating_events: WaterHeatingEvents,
-    space_heat_system: Option<SpaceHeatSystem>,
+    pub space_heat_system: Option<SpaceHeatSystem>,
     space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
     pub infiltration: Infiltration,
@@ -761,9 +761,9 @@ pub enum SpaceHeatSystemDetails {
         n: f64,
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
-        #[serde(rename(deserialize = "HeatSource"))]
-        heat_source: Value,
         // unclear which values are possible here
+        #[serde(rename(deserialize = "HeatSource"))]
+        heat_source: SpaceHeatSystemHeatSource,
         #[serde(alias = "Control")]
         control: Option<String>,
         // don't know possible values
@@ -776,10 +776,17 @@ pub enum SpaceHeatSystemDetails {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         #[serde(rename(deserialize = "HeatSource"))]
-        heat_source: Value,
+        heat_source: SpaceHeatSystemHeatSource,
         #[serde(alias = "Control")]
         control: Option<String>,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceHeatSystemHeatSource {
+    pub name: String,
+    pub temp_flow_limit_upper: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]

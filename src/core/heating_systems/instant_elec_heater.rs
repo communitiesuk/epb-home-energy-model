@@ -6,6 +6,7 @@ use std::sync::Arc;
 /// room heaters.
 
 /// Type to represent instantaneous electric heaters
+#[derive(Clone)]
 pub struct InstantElecHeater {
     rated_power_in_kw: f64,
     frac_convective: f64,

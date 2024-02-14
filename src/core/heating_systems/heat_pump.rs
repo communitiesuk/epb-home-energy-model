@@ -1282,6 +1282,7 @@ impl HeatPumpServiceSpace {
 ///
 ///    This object contains the parts of the heat pump calculation that are
 ///    specific to providing space heating via warm air.
+#[derive(Clone)]
 pub struct HeatPumpServiceSpaceWarmAir {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,

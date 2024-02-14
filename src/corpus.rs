@@ -5,10 +5,11 @@ use crate::core::controls::time_control::{
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
-use crate::core::heating_systems::common::HeatSourceWet;
+use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem};
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
+use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, SolarThermalSystem, StorageTank,
@@ -33,7 +34,6 @@ use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::external_conditions::ExternalConditions;
-use crate::input::HeatSourceWetType::HeatPump as HeatPumpInput;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
@@ -41,6 +41,7 @@ use crate::input::{
     ExternalConditionsInput, HeatSource as HeatSourceInput, HeatSourceControl,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
     WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
@@ -74,6 +75,8 @@ pub struct Corpus {
     pub total_volume: f64,
     pub wet_heat_sources: HashMap<String, Arc<WetHeatSource>>,
     pub hot_water_sources: HashMap<String, HotWaterSource>,
+    pub heat_system_names_requiring_overvent: Vec<String>,
+    pub space_heat_systems: HashMap<String, SpaceHeatSystem>,
 }
 
 impl TryFrom<Input> for Corpus {
@@ -210,6 +213,27 @@ impl TryFrom<Input> for Corpus {
             ),
         );
 
+        let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
+
+        let space_heat_systems = input
+            .space_heat_system
+            .as_ref()
+            .map(|system| {
+                space_heat_system_from_input(
+                    &system,
+                    &controls,
+                    simulation_time_iterator.as_ref(),
+                    &Default::default(),
+                    &mut heat_system_names_requiring_overvent,
+                    heat_system_name_for_zone
+                        .values()
+                        .flatten()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unwrap_or_default();
+
         Ok(Self {
             external_conditions,
             infiltration,
@@ -229,6 +253,8 @@ impl TryFrom<Input> for Corpus {
             total_volume,
             wet_heat_sources,
             hot_water_sources,
+            heat_system_names_requiring_overvent,
+            space_heat_systems,
         })
     }
 }
@@ -1418,7 +1444,7 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
-            control,
+            ..
         } => {
             let energy_supply_conn_name = source_name;
             let cold_water_source =
@@ -1463,4 +1489,61 @@ fn cold_water_source_for_type(
             .expect("referenced cold water source was expected to exist")
             .clone(),
     }))
+}
+
+fn space_heat_system_from_input(
+    input: &SpaceHeatSystemInput,
+    controls: &Controls,
+    simulation_time: &SimulationTimeIterator,
+    heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
+    heat_system_names_requiring_overvent: &mut Vec<String>,
+    heat_system_names_for_zone: Vec<&str>,
+) -> HashMap<String, SpaceHeatSystem> {
+    input
+        .iter()
+        .filter(|(system_name, _)| heat_system_names_for_zone.contains(&system_name.as_str()))
+        .map(|(system_name, space_heat_system_details)| {
+            (
+                (*system_name).clone(),
+                match space_heat_system_details {
+                    SpaceHeatSystemDetails::InstantElectricHeater {
+                        rated_power,
+                        control,
+                        frac_convective,
+                        ..
+                    } => SpaceHeatSystem::Instant(InstantElecHeater::new(
+                        *rated_power,
+                        *frac_convective,
+                        simulation_time.step_in_hours(),
+                        control
+                            .as_ref()
+                            .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone())),
+                    )),
+                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater
+                    SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters
+                    SpaceHeatSystemDetails::WarmAir {
+                        frac_convective,
+                        heat_source,
+                        control,
+                        ..
+                    } => {
+                        let heat_source_name = &heat_source.name;
+                        let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
+                        let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
+                        match heat_source.as_ref() {
+                            WetHeatSource::HeatPump(heat_pump) => {
+                                if heat_pump.source_is_exhaust_air() {
+                                    heat_system_names_requiring_overvent.push((*system_name).clone());
+                                }
+                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air((*heat_pump).clone(), energy_supply_conn_name, control
+                                    .as_ref()
+                                    .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
+                            }
+                            _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
+                        }
+                    }
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>()
 }
