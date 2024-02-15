@@ -1120,71 +1120,69 @@ impl ExternalConditions {
         *fdiff_list.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
     }
 
-    // commenting out for now as uses broken method direct_shading_reduction_factor
-    // pub fn shading_reduction_factor_direct_diffuse(
-    //     &self,
-    //     base_height: f64,
-    //     height: f64,
-    //     width: f64,
-    //     tilt: f64,
-    //     orientation: f64,
-    //     window_shading: Vec<WindowShadingObject>,
-    // ) -> (f64, f64) {
-    //     // """ calculates the direct and diffuse shading factors due to external
-    //     // shading objects
-    //     //
-    //     // Arguments:
-    //     // height         -- is the height of the shaded surface (if surface is tilted then
-    //     //                   this must be the vertical projection of the height), in m
-    //     // base_height    -- is the base height of the shaded surface k, in m
-    //     // width          -- is the width of the shaded surface, in m
-    //     // orientation    -- is the orientation angle of the inclined surface, expressed as the
-    //     //                   geographical azimuth angle of the horizontal projection of the
-    //     //                   inclined surface normal, -180 to 180, in degrees;
-    //     // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
-    //     //                   upwards facing, 0 to 180, in degrees;
-    //     // window_shading -- data on overhangs and side fins associated to this building element
-    //     //                   includes the shading object type, depth, anf distance from element
-    //     // """
-    //
-    //     // # first chceck if there is any radiation. This is needed to prevent a potential
-    //     // # divide by zero error in the final step, but also, if there is no radiation
-    //     // # then shading is irrelevant and we can skip the whole calculation
-    //     let CalculatedDirectDiffuseTotalIrradianceWithBreakdown((
-    //         direct,
-    //         diffuse,
-    //         _,
-    //         diffuse_breakdown,
-    //     )) = self.calculated_direct_diffuse_total_irradiance(tilt, orientation, true);
-    //     if direct + diffuse == 0.0 {
-    //         return (0.0, 0.0);
-    //     }
-    //
-    //     // # first check if the surface is outside the solar beam
-    //     // # if so then direct shading is complete and we don't need to
-    //     // # calculate shading from objects
-    //     let fdir = if self.outside_solar_beam(tilt, orientation) {
-    //         0.0
-    //     } else {
-    //         self.direct_shading_reduction_factor(
-    //             base_height,
-    //             height,
-    //             width,
-    //             orientation,
-    //             window_shading,
-    //         )
-    //     };
-    //
-    //     let fdiff = self.diffuse_shading_reduction_factor(
-    //         diffuse_breakdown,
-    //         tilt,
-    //         height,
-    //         width,
-    //         Some(&window_shading),
-    //     );
-    //
-    //     (fdir, fdiff)
-    // }
+    pub fn shading_reduction_factor_direct_diffuse(
+        &self,
+        base_height: f64,
+        height: f64,
+        width: f64,
+        tilt: f64,
+        orientation: f64,
+        window_shading: Vec<WindowShadingObject>,
+        simulation_time: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        // """ calculates the direct and diffuse shading factors due to external
+        // shading objects
+        //
+        // Arguments:
+        // height         -- is the height of the shaded surface (if surface is tilted then
+        //                   this must be the vertical projection of the height), in m
+        // base_height    -- is the base height of the shaded surface k, in m
+        // width          -- is the width of the shaded surface, in m
+        // orientation    -- is the orientation angle of the inclined surface, expressed as the
+        //                   geographical azimuth angle of the horizontal projection of the
+        //                   inclined surface normal, -180 to 180, in degrees;
+        // tilt           -- is the tilt angle of the inclined surface from horizontal, measured
+        //                   upwards facing, 0 to 180, in degrees;
+        // window_shading -- data on overhangs and side fins associated to this building element
+        //                   includes the shading object type, depth, anf distance from element
+        // """
+
+        // # first chceck if there is any radiation. This is needed to prevent a potential
+        // # divide by zero error in the final step, but also, if there is no radiation
+        // # then shading is irrelevant and we can skip the whole calculation
+        let (direct, diffuse, _, diffuse_breakdown) = self
+            .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
+        if direct + diffuse == 0.0 {
+            return (0.0, 0.0);
+        }
+
+        // # first check if the surface is outside the solar beam
+        // # if so then direct shading is complete and we don't need to
+        // # calculate shading from objects
+        let fdir = if self.outside_solar_beam(tilt, orientation, &simulation_time) {
+            0.0
+        } else {
+            self.direct_shading_reduction_factor(
+                base_height,
+                height,
+                width,
+                orientation,
+                Some(&window_shading),
+                simulation_time,
+            )
+            .expect("expected direct shading reduction factor to be calculable")
+        };
+
+        let fdiff = self.diffuse_shading_reduction_factor(
+            diffuse_breakdown.expect("expected diffuse breakdown to be available"),
+            tilt,
+            height,
+            width,
+            Some(&window_shading),
+        );
+
+        (fdir, fdiff)
+    }
 }
 
 pub type CalculatedDirectDiffuseTotalIrradiance = (f64, f64, f64, Option<DiffuseBreakdown>);
