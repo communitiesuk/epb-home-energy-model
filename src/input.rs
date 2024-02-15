@@ -1264,8 +1264,14 @@ pub enum OnSiteGenerationType {
 
 #[derive(Debug, Deserialize)]
 pub enum OnSiteGenerationVentilationStrategy {
+    #[serde(alias = "unventilated")]
+    Unventilated,
     #[serde(alias = "moderately_ventilated")]
     ModeratelyVentilated,
+    #[serde(alias = "strongly_or_forced_ventilated")]
+    StronglyOrForcedVentilated,
+    #[serde(alias = "rear_surface_free")]
+    RearSurfaceFree,
 }
 
 #[derive(Debug, Deserialize)]

@@ -85,7 +85,7 @@ pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
 
 /// calc the vertically projected height of a surface from
 /// the actual height and tilt of the surface
-fn projected_height(tilt: f64, height: f64) -> f64 {
+pub fn projected_height(tilt: f64, height: f64) -> f64 {
     let mut ph = height * tilt.to_radians().sin();
     // BS EN ISO 52010-1 Table 7 geometric input data; shading. Footnote d
     // validity interval H1;ic > 0
