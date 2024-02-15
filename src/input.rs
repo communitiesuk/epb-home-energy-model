@@ -60,7 +60,7 @@ pub struct Input {
     pub heat_source_wet: Option<HeatSourceWet>,
     #[serde(rename(deserialize = "WWHRS"))]
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
-    on_site_generation: Option<OnSiteGeneration>,
+    pub on_site_generation: Option<OnSiteGeneration>,
     #[serde(rename(deserialize = "Window_Opening_For_Cooling"))]
     pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
 }
@@ -1246,15 +1246,17 @@ pub type OnSiteGeneration = HashMap<String, OnSiteGenerationDetails>;
 pub struct OnSiteGenerationDetails {
     #[serde(rename(deserialize = "type"))]
     generation_type: OnSiteGenerationType,
-    peak_power: f64,
-    ventilation_strategy: OnSiteGenerationVentilationStrategy,
-    pitch: f64,
-    orientation360: f64,
-    base_height: f64,
-    height: f64,
-    width: f64,
+    pub peak_power: f64,
+    pub ventilation_strategy: OnSiteGenerationVentilationStrategy,
+    pub pitch: f64,
+    #[serde(rename(deserialize = "orientation360"))]
+    #[serde(deserialize_with = "deserialize_orientation")]
+    pub orientation: f64,
+    pub base_height: f64,
+    pub height: f64,
+    pub width: f64,
     #[serde(rename(deserialize = "EnergySupply"))]
-    energy_supply: EnergySupplyType,
+    pub energy_supply: EnergySupplyType,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1262,7 +1264,7 @@ pub enum OnSiteGenerationType {
     PhotovoltaicSystem,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum OnSiteGenerationVentilationStrategy {
     #[serde(alias = "unventilated")]
     Unventilated,

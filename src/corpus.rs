@@ -5,6 +5,7 @@ use crate::core::controls::time_control::{
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
+use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem};
 use crate::core::heating_systems::heat_battery::HeatBattery;
@@ -42,11 +43,12 @@ use crate::input::{
     ExternalConditionsInput, HeatSource as HeatSourceInput, HeatSourceControl,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
-    SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails, SpaceCoolSystemType,
-    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
+    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
+    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
+    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
+    ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use indexmap::IndexMap;
@@ -80,6 +82,7 @@ pub struct Corpus {
     pub heat_system_names_requiring_overvent: Vec<String>,
     pub space_heat_systems: HashMap<String, SpaceHeatSystem>,
     pub space_cool_systems: HashMap<String, AirConditioning>,
+    pub on_site_generation: HashMap<String, PhotovoltaicSystem>,
 }
 
 impl TryFrom<Input> for Corpus {
@@ -254,6 +257,17 @@ impl TryFrom<Input> for Corpus {
             })
             .unwrap_or_default();
 
+        let on_site_generation = input
+            .on_site_generation
+            .map(|on_site_generation| {
+                on_site_generation_from_input(
+                    &on_site_generation,
+                    external_conditions.clone(),
+                    &simulation_time_iterator,
+                )
+            })
+            .unwrap_or_default();
+
         Ok(Self {
             external_conditions,
             infiltration,
@@ -276,6 +290,7 @@ impl TryFrom<Input> for Corpus {
             heat_system_names_requiring_overvent,
             space_heat_systems,
             space_cool_systems,
+            on_site_generation,
         })
     }
 }
@@ -1608,6 +1623,41 @@ fn space_cool_systems_from_input(
                     control,
                 ),
             )
+        })
+        .collect::<HashMap<_, _>>()
+}
+
+fn on_site_generation_from_input(
+    input: &OnSiteGeneration,
+    external_conditions: Arc<ExternalConditions>,
+    simulation_time_iterator: &SimulationTimeIterator,
+) -> HashMap<String, PhotovoltaicSystem> {
+    input
+        .iter()
+        .map(|(name, generation_details)| {
+            ((*name).clone(), {
+                let OnSiteGenerationDetails {
+                    peak_power,
+                    ventilation_strategy,
+                    pitch,
+                    orientation,
+                    base_height,
+                    height,
+                    width,
+                    ..
+                } = generation_details;
+                PhotovoltaicSystem::new(
+                    *peak_power,
+                    *ventilation_strategy,
+                    *pitch,
+                    *orientation,
+                    *base_height,
+                    *height,
+                    *width,
+                    external_conditions.clone(),
+                    simulation_time_iterator.step_in_hours(),
+                )
+            })
         })
         .collect::<HashMap<_, _>>()
 }
