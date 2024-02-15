@@ -719,85 +719,171 @@ impl ExternalConditions {
     }
 
     // following references nonexistent solar_altitude method in the original python, so leaving incomplete
-    // fn overhang_shading_height(
-    //     &self,
-    //     shaded_surface_height: f64,
-    //     base_shaded_surface_height: f64,
-    //     lowest_height_of_overhang: f64,
-    //     horiz_distance_from_surface_to_overhang: f64,
-    // ) -> f64 {
-    //     // """ calculates the height of the shading on the shaded surface (k),
-    //     // from the shading overhang in segment i at time t. Note that "overhang"
-    //     // has a specific meaning in ISO 52016 Annex F
-    //     //
-    //     // Arguments:
-    //     // shaded_surface_height - Hk            -- is the height of the shaded surface, k, in m
-    //     // base_shaded_surface_height - Hkbase        -- is the base height of the shaded surface k, in m
-    //     // lowest_height_of_overhang - Hovh          -- is the lowest height of the overhang q, in segment i, in m
-    //     // horiz_distance_from_surface_to_overhang Lkovh         -- is the horizontal distance between the shaded surface k
-    //     //                  and the shading overhang, q, in segment i, in m
-    //     // """
-    //     let hshade = shaded_surface_height + base_shaded_surface_height - lowest_height_of_overhang + horiz_distance_from_surface_to_overhang * self.solar_altitude().to_radians().tan();
-    //     if hshade < 0.0 {
-    //         0.0
-    //     } else {
-    //         hshade
-    //     }
-    // }
+    fn overhang_shading_height(
+        &self,
+        shaded_surface_height: f64,
+        base_shaded_surface_height: f64,
+        lowest_height_of_overhang: f64,
+        horiz_distance_from_surface_to_overhang: f64,
+        simulation_time: SimulationTimeIteration,
+    ) -> f64 {
+        // """ calculates the height of the shading on the shaded surface (k),
+        // from the shading overhang in segment i at time t. Note that "overhang"
+        // has a specific meaning in ISO 52016 Annex F
+        //
+        // Arguments:
+        // shaded_surface_height - Hk            -- is the height of the shaded surface, k, in m
+        // base_shaded_surface_height - Hkbase        -- is the base height of the shaded surface k, in m
+        // lowest_height_of_overhang - Hovh          -- is the lowest height of the overhang q, in segment i, in m
+        // horiz_distance_from_surface_to_overhang Lkovh         -- is the horizontal distance between the shaded surface k
+        //                  and the shading overhang, q, in segment i, in m
+        // """
+        let hshade = shaded_surface_height + base_shaded_surface_height - lowest_height_of_overhang
+            + horiz_distance_from_surface_to_overhang
+                * self.solar_altitude(simulation_time).to_radians().tan();
+        if hshade < 0.0 {
+            0.0
+        } else {
+            hshade
+        }
+    }
 
-    // following method is incompletely transcoded from python as original method references a broken method
-    // fn direct_shading_reduction_factor(
-    //     &self,
-    //     base_height: f64,
-    //     height: f64,
-    //     width: f64,
-    //     orientation: f64,
-    //     window_shading: f64,
-    // ) -> Result<f64, &'static str> {
-    //     // """ calculates the shading factor of direct radiation due to external
-    //     // shading objects
-    //     //
-    //     // Arguments:
-    //     // height         -- is the height of the shaded surface (if surface is tilted then
-    //     //                   this must be the vertical projection of the height), in m
-    //     // base_height    -- is the base height of the shaded surface k, in m
-    //     // width          -- is the width of the shaded surface, in m
-    //     // orientation    -- is the orientation angle of the inclined surface, expressed as the
-    //     //                   geographical azimuth angle of the horizontal projection of the
-    //     //                   inclined surface normal, -180 to 180, in degrees;
-    //     // window_shading -- data on overhangs and side fins associated to this building element
-    //     //                   includes the shading object type, depth, anf distance from element
-    //     // """
-    //
-    //     // # start with default assumption of no shading
-    //     let mut hshade_obst = 0.0;
-    //     let mut hshade_ovh = 0.0;
-    //     let mut wfinr = 0.0;
-    //     let mut wfinl = 0.0;
-    //
-    //     // #first process the distant (environment) shading for this building element
-    //     let segment = self.get_segment().unwrap();
-    //
-    //     if let Some(shading_objects) = segment.objects {
-    //         for &shading_object in shading_objects {
-    //             match shading_object.object_type {
-    //                 ShadingObjectType::Obstacle => {
-    //                     let new_shade_height = self.obstacle_shading_height(
-    //                         base_height,
-    //                         shading_object.height,
-    //                         shading_object.distance,
-    //                     );
-    //                     if new_shade_height > hshade_obst {
-    //                         hshade_obst = new_shade_height;
-    //                     }
-    //                 }
-    //                 ShadingObjectType::Overhang => {
-    //                     let new_shade_height = self.overhang_shading_height() //etc etc stopping as this method is incomplete
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    fn solar_altitude(&self, simulation_time: SimulationTimeIteration) -> f64 {
+        // TODO original Python method seems nonexistent, though inferring this may be the correct implementation for now
+        self.solar_altitudes[simulation_time.current_hour() as usize]
+    }
+
+    fn direct_shading_reduction_factor(
+        &self,
+        base_height: f64,
+        height: f64,
+        width: f64,
+        orientation: f64,
+        window_shading: Option<&[WindowShadingObject]>,
+        simulation_time: SimulationTimeIteration,
+    ) -> Result<f64, &'static str> {
+        // """ calculates the shading factor of direct radiation due to external
+        // shading objects
+        //
+        // Arguments:
+        // height         -- is the height of the shaded surface (if surface is tilted then
+        //                   this must be the vertical projection of the height), in m
+        // base_height    -- is the base height of the shaded surface k, in m
+        // width          -- is the width of the shaded surface, in m
+        // orientation    -- is the orientation angle of the inclined surface, expressed as the
+        //                   geographical azimuth angle of the horizontal projection of the
+        //                   inclined surface normal, -180 to 180, in degrees;
+        // window_shading -- data on overhangs and side fins associated to this building element
+        //                   includes the shading object type, depth, anf distance from element
+        // """
+
+        // # start with default assumption of no shading
+        let mut hshade_obst = 0.0;
+        let mut hshade_ovh = 0.0;
+        let mut wfinr = 0.0;
+        let mut wfinl = 0.0;
+
+        // #first process the distant (environment) shading for this building element
+        let segment = self.get_segment(&simulation_time).unwrap();
+
+        if let Some(shading_objects) = segment.objects {
+            for shading_object in shading_objects {
+                match shading_object.object_type {
+                    ShadingObjectType::Obstacle => {
+                        let new_shade_height = self.obstacle_shading_height(
+                            base_height,
+                            shading_object.height,
+                            shading_object.distance,
+                            &simulation_time,
+                        );
+                        hshade_obst = max_of_2(hshade_obst, new_shade_height);
+                    }
+                    ShadingObjectType::Overhang => {
+                        let new_shade_height = self.overhang_shading_height(
+                            height,
+                            base_height,
+                            shading_object.height,
+                            shading_object.distance,
+                            simulation_time,
+                        );
+
+                        hshade_ovh = max_of_2(hshade_ovh, new_shade_height);
+                    }
+                }
+            }
+        }
+
+        // then check if there is any simple shading on this building element
+        // (note only applicable to transparent building elements so window_shading
+        // will always be False for other elements)
+        if let Some(window_shading) = window_shading {
+            let current_hour = simulation_time.current_hour();
+            let altitude = self.solar_altitudes[current_hour as usize];
+            let azimuth = self.solar_azimuth_angles[current_hour as usize];
+            for shading_object in window_shading {
+                let WindowShadingObject {
+                    depth, distance, ..
+                } = shading_object;
+                match shading_object.object_type {
+                    WindowShadingObjectType::Overhang => {
+                        let new_shade_height = (depth * altitude.to_radians().tan()
+                            / (azimuth - orientation).to_radians().cos())
+                            - distance;
+                        hshade_ovh = max_of_2(hshade_ovh, new_shade_height);
+                    }
+                    WindowShadingObjectType::SideFinRight => {
+                        // check if the sun is in the opposite direction
+                        let check = azimuth - orientation;
+                        let new_finrshade = if check > 0. {
+                            0.
+                        } else {
+                            depth * (azimuth - orientation).to_radians().tan() - distance
+                        };
+                        wfinr = max_of_2(wfinr, new_finrshade);
+                    }
+                    WindowShadingObjectType::SideFinLeft => {
+                        // check if the sun is in the opposite direction
+                        let check = azimuth - orientation;
+                        let new_finlshade = if check < 0. {
+                            0.
+                        } else {
+                            depth * (azimuth - orientation).to_radians().tan() - distance
+                        };
+                        wfinl = max_of_2(wfinl, new_finlshade);
+                    }
+                    _ => return Err("unexpected window shading object type encountered"),
+                }
+            }
+        }
+
+        // The height of the shade on the shaded surface from all obstacles is the
+        // largest of all, with as maximum value the height of the shaded object
+        let hk_obst = min_of_2(height, hshade_obst);
+
+        // The height of the shade on the shaded surface from all overhangs is the
+        // largest of all, with as maximum value the height of the shaded object
+        let hk_ovh = min_of_2(height, hshade_ovh);
+
+        // The height of the remaining sunlit area on the shaded surface from
+        // all obstacles and all overhangs
+        let hk_sun = max_of_2(0., height - (hk_obst + hk_ovh));
+
+        // The width of the shade on the shaded surface from all right side fins
+        // is the largest of all, with as maximum value the width of the shaded object
+        let wk_finr = min_of_2(width, wfinr);
+
+        // The width of the shade on the shaded surface from all left side fins
+        // is the largest of all, with as maximum value the width of the shaded object
+        let wk_finl = min_of_2(width, wfinl);
+
+        // The width of the remaining sunlit area on the shaded surface from all
+        // right hand side fins and all left hand side fins
+        let wk_sun = max_of_2(0., width - (wk_finr + wk_finl));
+
+        // And then the direct shading reduction factor of the shaded surface for
+        // obstacles, overhangs and side fins
+        Ok((hk_sun * wk_sun) / (height * width))
+    }
 
     fn diffuse_shading_reduction_factor(
         &self,
@@ -1337,6 +1423,7 @@ fn init_extra_terrestrial_radiation(earth_orbit_deviation: f64) -> f64 {
     1367.0 * (1.0 + 0.033 * earth_orbit_deviation.to_radians().cos())
 }
 
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::external_conditions::BrightnessCoefficientName::{F11, F12, F13, F21, F22, F23};
 use variants_struct::VariantsStruct;
 
