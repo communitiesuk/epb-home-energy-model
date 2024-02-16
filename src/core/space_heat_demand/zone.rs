@@ -284,7 +284,7 @@ impl Zone {
             self.area(),
             self.volume,
             self.c_int,
-            0.0,
+            self.tb_heat_trans_coeff,
             self.zone_idx,
         )
     }
