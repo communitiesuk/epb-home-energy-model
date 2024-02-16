@@ -121,6 +121,25 @@ impl VentilationElementBehaviour for VentilationElement {
     }
 }
 
+impl VentilationElement {
+    pub fn fans(
+        &mut self,
+        zone_volume: f64,
+        timestep_idx: usize,
+        throughput_factor: Option<f64>,
+    ) -> f64 {
+        match self {
+            VentilationElement::Mvhr(ref mut mvhr) => {
+                mvhr.fans(zone_volume, timestep_idx, throughput_factor)
+            }
+            VentilationElement::Whev(ref mut whev) => {
+                whev.fans(zone_volume, throughput_factor, timestep_idx)
+            }
+            VentilationElement::Natural(_) | VentilationElement::Infiltration(_) => 0.,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct VentilationElementInfiltration {
     volume: f64,
@@ -376,7 +395,8 @@ fn init_infiltration(
         + (infiltration_rate_from_openings * shelter_factor)
 }
 
-const P_A: f64 = 1.204; // Air density at 20 degrees C, in kg/m^3 , BS EN ISO 52016-1:2017, Section 6.3.6
+const P_A: f64 = 1.204;
+// Air density at 20 degrees C, in kg/m^3 , BS EN ISO 52016-1:2017, Section 6.3.6
 const C_A: f64 = 1006.0; // Specific heat of air at constant pressure, in J/(kg K), BS EN ISO 52016-1:2017, Section 6.3.6
 
 #[derive(Clone)]
@@ -534,7 +554,7 @@ impl WholeHouseExtractVentilation {
         &mut self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        timestep_index: usize,
+        _timestep_index: usize,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
 
@@ -658,14 +678,17 @@ impl NaturalVentilation {
     }
 }
 
-const G: f64 = 9.81; // m/s
-const C_D: f64 = 0.62; // discharge coefficient
+const G: f64 = 9.81;
+// m/s
+const C_D: f64 = 0.62;
+// discharge coefficient
 const DC_P: f64 = 0.2 - (-0.25); // Difference in wind pressure coeff from CIBSE Guide A Table 4.12 for urban environment
 
 pub struct WindowOpeningForCooling {
     window_area_equivalent: f64,
     external_conditions: Arc<ExternalConditions>,
-    openings: Option<Vec<BuildingElement>>, // actually only meaningfully contains BuildingElement::Transparent
+    openings: Option<Vec<BuildingElement>>,
+    // actually only meaningfully contains BuildingElement::Transparent
     control: Option<SetpointTimeControl>,
     natural_ventilation: Option<NaturalVentilation>,
     a_b: Option<f64>,
@@ -1134,9 +1157,9 @@ mod test {
                         75.0,
                         None,
                         Some(simtime_step.index),
-                        &external_conditions
+                        &external_conditions,
                     ),
-                    1e6
+                    1e6,
                 ),
                 round_by_precision(EXPECTED_HEAT_TRANSFER_COEFFICIENTS[simtime_step.index], 1e6),
                 "incorrect heat transfer coeffient (h_ve) returned"
@@ -1288,9 +1311,9 @@ mod test {
                         75.0,
                         None,
                         Some(i),
-                        &external_conditions
+                        &external_conditions,
                     ),
-                    1e6
+                    1e6,
                 ),
                 round_by_precision(WHOLE_HOUSE_H_VE_RESULTS[i], 1e6),
                 "incorrect heat transfer coefficient (h_ve) returned for iteration {} (1-indexed)",
@@ -1302,9 +1325,9 @@ mod test {
                         75.0,
                         Some(1.2),
                         Some(i),
-                        &external_conditions
+                        &external_conditions,
                     ),
-                    1e6
+                    1e6,
                 ),
                 round_by_precision(WHOLE_HOUSE_H_VE_RESULTS_WITH_THROUGHPUT_FACTOR[i], 1e6),
                 "incorrect heat transfer coefficient with throughput factor (h_ve) returned for iteration {} (1-indexed)",

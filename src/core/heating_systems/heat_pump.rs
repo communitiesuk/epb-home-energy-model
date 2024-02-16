@@ -1321,6 +1321,17 @@ impl HeatPumpServiceSpaceWarmAir {
         self.control.is_on(timestep_idx)
     }
 
+    pub fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl, simulation_time_iteration) })
+    }
+
+    pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        per_control!(&self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+    }
+
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,

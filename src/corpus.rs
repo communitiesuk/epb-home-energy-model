@@ -1,3 +1,4 @@
+use crate::compare_floats::max_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     Control, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, ToUChargeControl,
@@ -24,7 +25,7 @@ use crate::core::schedule::{
     expand_boolean_schedule, expand_numeric_schedule, expand_water_heating_events, ScheduleEvent,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
-use crate::core::space_heat_demand::internal_gains::{ApplianceGains, InternalGains};
+use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation_element::{
     air_change_rate_to_flow_rate, MechanicalVentilationHeatRecovery, NaturalVentilation,
@@ -32,9 +33,13 @@ use crate::core::space_heat_demand::ventilation_element::{
     WindowOpeningForCooling,
 };
 use crate::core::space_heat_demand::zone::{NamedBuildingElement, Zone};
-use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
+use crate::core::units::{
+    kelvin_to_celsius, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
+    WATTS_PER_KILOWATT,
+};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
+use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
@@ -292,6 +297,714 @@ impl TryFrom<Input> for Corpus {
             space_cool_systems,
             on_site_generation,
         })
+    }
+}
+
+impl Corpus {
+    pub fn total_floor_area(&self) -> f64 {
+        self.total_floor_area
+    }
+
+    /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
+    /// according to the SAP10.2 specification
+    pub fn calc_htc_hlp(&self) -> (f64, f64, HashMap<String, f64>, HashMap<String, f64>) {
+        let mut htc_map: HashMap<String, f64> = Default::default();
+        let mut hlp_map: HashMap<String, f64> = Default::default();
+
+        // Calculate the total fabric heat loss, total heat capacity, total ventilation heat
+        // loss and total heat transfer coeffient for thermal bridges across all zones
+        for (z_name, zone) in &self.zones {
+            let fabric_heat_loss = zone.total_fabric_heat_loss();
+            let thermal_bridges = zone.total_thermal_bridges();
+            let vent_heat_loss = zone.total_vent_heat_loss(self.external_conditions.as_ref());
+
+            // Calculate the heat transfer coefficent (HTC), in W / K
+            // TODO (from Python) check ventilation losses are correct
+            let htc = fabric_heat_loss + thermal_bridges + vent_heat_loss;
+
+            // Calculate the HLP, in W/m2 K
+            let hlp = htc / zone.area();
+
+            htc_map.insert((*z_name).clone(), htc);
+            hlp_map.insert((*z_name).clone(), hlp);
+        }
+
+        let total_htc = htc_map.values().sum();
+        let total_hlp = total_htc / self.total_floor_area;
+
+        (total_htc, total_hlp, htc_map, hlp_map)
+    }
+
+    /// Calculate the total heat capacity normalised for floor area
+    pub fn calc_hcp(&self) -> f64 {
+        // TODO (from Python) party walls and solid doors should be exluded according to SAP spec - if party walls are
+        // assumed to be ZTU building elements this could be set to zero?
+        let total_heat_capacity = self
+            .zones
+            .values()
+            .map(|zone| zone.total_heat_capacity())
+            .sum::<f64>();
+
+        total_heat_capacity / self.total_floor_area
+    }
+
+    /// Calculate the heat loss form factor, defined as exposed area / floor area
+    pub fn calc_hlff(&self) -> f64 {
+        let total_heat_loss_area = self
+            .zones
+            .values()
+            .map(|zone| zone.total_heat_loss_area())
+            .sum::<f64>();
+
+        total_heat_loss_area / self.total_floor_area
+    }
+
+    pub fn temp_internal_air(&self) -> f64 {
+        let internal_air_temperature = self
+            .zones
+            .values()
+            .map(|zone| zone.temp_internal_air() * zone.volume())
+            .sum::<f64>();
+
+        internal_air_temperature / self.total_volume
+    }
+
+    /// Return:
+    ///  # - losses from internal distribution pipework (kWh)
+    ///  # - losses from external distribution pipework (kWh)
+    ///  # - internal gains due to hot water use (kWh)
+    fn pipework_losses_and_internal_gains_from_hw(
+        &self,
+        delta_t_h: f64,
+        vol_hot_water_at_tapping_point: f64,
+        hw_duration: f64,
+        no_of_hw_events: usize,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (f64, f64, f64) {
+        let frac_dhw_energy_internal_gains = 0.25;
+
+        let (pw_losses_internal, pw_losses_external) = self.calc_pipework_losses(
+            delta_t_h,
+            hw_duration,
+            no_of_hw_events,
+            simulation_time_iteration,
+        );
+
+        let gains_internal_dhw_use = frac_dhw_energy_internal_gains
+            * water_demand_to_kwh(
+                vol_hot_water_at_tapping_point,
+                52.,
+                self.temp_internal_air(),
+            );
+
+        (
+            pw_losses_internal,
+            pw_losses_external,
+            gains_internal_dhw_use,
+        )
+    }
+
+    fn calc_pipework_losses(
+        &self,
+        delta_t_h: f64,
+        hw_duration: f64,
+        no_of_hw_events: usize,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        let demand_water_temperature = 52.;
+        let internal_air_temperature = self.temp_internal_air();
+        let external_air_temperature = self
+            .external_conditions
+            .air_temp(&simulation_time_iteration);
+
+        self.domestic_hot_water_demand.calc_pipework_losses(
+            delta_t_h,
+            hw_duration,
+            no_of_hw_events,
+            demand_water_temperature,
+            internal_air_temperature,
+            external_air_temperature,
+        )
+    }
+
+    fn calc_ductwork_losses(
+        &self,
+        _t_idx: usize,
+        _delta_t_h: f64,
+        efficiency: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        // assume 100% efficiency
+        // i.e. temp inside the supply and extract ducts is room temp and temp inside exhaust and intake is external temp
+        // assume MVHR unit is running 100% of the time
+        let internal_air_temperature = self.temp_internal_air();
+
+        // Calculate heat loss from ducts when unit is inside
+        // Air temp inside ducts increases, heat lost from dwelling
+        let ductwork = &self.space_heating_ductwork;
+        match ductwork {
+            None => 0.,
+            Some(ductwork) => {
+                // MVHR duct temperatures:
+                // extract_duct_temp - indoor air temperature
+                // intake_duct_temp - outside air temperature
+
+                let intake_duct_temp = self
+                    .external_conditions
+                    .air_temp(&simulation_time_iteration);
+
+                let temp_diff = internal_air_temperature - intake_duct_temp;
+
+                // Supply duct contains what the MVHR could recover
+                let supply_duct_temp = intake_duct_temp + (efficiency * temp_diff);
+
+                // Exhaust duct contans the heat that couldn't be recovered
+                let exhaust_duct_temp = intake_duct_temp + ((1. - efficiency) * temp_diff);
+
+                ductwork
+                    .total_duct_heat_loss(
+                        Some(internal_air_temperature),
+                        Some(supply_duct_temp),
+                        Some(internal_air_temperature),
+                        Some(intake_duct_temp),
+                        Some(exhaust_duct_temp),
+                        efficiency,
+                    )
+                    .unwrap()
+            }
+        }
+    }
+
+    /// Calculate space heating demand, heating system output and temperatures
+    ///
+    /// Arguments:
+    /// * `delta_t_h` - calculation timestep, in hours
+    /// * `gains_internal_dhw` - internal gains from hot water system for this timestep, in W
+    fn calc_space_heating(
+        &mut self,
+        delta_t_h: f64,
+        gains_internal_dhw: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) {
+        let temp_ext_air = self
+            .external_conditions
+            .air_temp(&simulation_time_iteration);
+        // Calculate timestep in seconds
+        let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
+
+        let (ductwork_losses, ductwork_losses_per_m3) = self
+            .ventilation
+            .as_ref()
+            .map(|ventilation| match ventilation {
+                VentilationElement::Mvhr(mvhr) => {
+                    let ductwork_losses = self.calc_ductwork_losses(
+                        0,
+                        delta_t_h,
+                        mvhr.efficiency(),
+                        simulation_time_iteration,
+                    );
+                    let ductwork_losses_per_m3 = ductwork_losses / self.total_volume;
+
+                    (ductwork_losses, ductwork_losses_per_m3)
+                }
+                _ => Default::default(),
+            })
+            .unwrap_or_default();
+
+        // Calculate internal and and solar gains for each zone
+        let mut gains_internal_zone: HashMap<&str, f64> = Default::default();
+        let mut gains_solar_zone: HashMap<&str, f64> = Default::default();
+
+        for (z_name, zone) in &self.zones {
+            // Initialise to dhw internal gains split proportionally to zone floor area
+            let mut gains_internal_zone_inner =
+                gains_internal_dhw * zone.area() / self.total_floor_area;
+            for (_, gains) in [
+                (
+                    "total_internal_gains",
+                    &self
+                        .internal_gains
+                        .total_internal_gains
+                        .as_ref()
+                        .map(|gain| Gains::Internal(gain)),
+                ),
+                (
+                    "metabolic_gains",
+                    &self
+                        .internal_gains
+                        .metabolic_gains
+                        .as_ref()
+                        .map(|gain| Gains::Internal(gain)),
+                ),
+                (
+                    "lighting",
+                    &self
+                        .internal_gains
+                        .lighting
+                        .as_ref()
+                        .map(|gain| Gains::Appliance(gain)),
+                ),
+                (
+                    "cooking",
+                    &self
+                        .internal_gains
+                        .cooking
+                        .as_ref()
+                        .map(|gain| Gains::Appliance(gain)),
+                ),
+                (
+                    "cooking1",
+                    &self
+                        .internal_gains
+                        .cooking1
+                        .as_ref()
+                        .map(|gain| Gains::Appliance(gain)),
+                ),
+                (
+                    "cooking2",
+                    &self
+                        .internal_gains
+                        .cooking2
+                        .as_ref()
+                        .map(|gain| Gains::Appliance(gain)),
+                ),
+                (
+                    "other",
+                    &self
+                        .internal_gains
+                        .other
+                        .as_ref()
+                        .map(|gain| Gains::Internal(gain)),
+                ),
+            ]
+            .iter()
+            .filter_map(|(name, option)| option.as_ref().map(|gains| (name, gains)))
+            {
+                gains_internal_zone_inner +=
+                    gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration.index);
+            }
+            let gains_internal_zone_entry = gains_internal_zone
+                .entry(z_name)
+                .or_insert(gains_internal_zone_inner);
+            // Add gains from ventilation fans (also calculates elec demand from fans)
+            // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
+            match &mut self.ventilation {
+                None => {}
+                Some(VentilationElement::Natural(_)) => {}
+                Some(ref mut ventilation) => {
+                    *gains_internal_zone_entry +=
+                        ventilation.fans(zone.volume(), simulation_time_iteration.index, None)
+                            + ductwork_losses_per_m3 * zone.volume();
+                }
+            }
+            gains_solar_zone.insert(
+                z_name,
+                zone.gains_solar(self.external_conditions.as_ref(), simulation_time_iteration),
+            );
+        }
+
+        // Calculate space heating and cooling demand for each zone and sum
+        // Keep track of how much is from each zone, so that energy provided
+        // can be split between them in same proportion later
+        let (
+            mut space_heat_demand_system,
+            mut space_cool_demand_system,
+            mut space_heat_demand_zone,
+            mut space_cool_demand_zone,
+            mut h_ve_cool_extra_zone,
+        ) = self.space_heat_cool_demand_by_system_and_zone(
+            delta_t_h,
+            temp_ext_air,
+            &gains_internal_zone,
+            &gains_solar_zone,
+            None,
+            simulation_time_iteration,
+        );
+
+        // If any heating systems potentially require overventilation,
+        // calculate running time and throughput factor for all services
+        // combined based on space heating demand assuming no overventilation
+        let mut space_heat_running_time_cumulative = 0.0;
+        let mut throughput_factor = 1.0;
+        for (heat_system_name, heat_system) in &self.space_heat_systems {
+            if self
+                .heat_system_names_requiring_overvent
+                .contains(heat_system_name)
+            {
+                (space_heat_running_time_cumulative, throughput_factor) = heat_system
+                    .running_time_throughput_factor(
+                        space_heat_demand_system[heat_system_name],
+                        space_heat_running_time_cumulative,
+                        simulation_time_iteration,
+                    );
+            }
+        }
+
+        // If there is overventilation due to heating or hot water system (e.g.
+        // exhaust air heat pump) then recalculate space heating/cooling demand
+        // with additional ventilation calculated based on throughput factor
+        // based on original space heating demand calculation. Note the
+        // additional ventilation throughput is the result of the HP running
+        // to satisfy both space and water heating demand but will affect
+        // space heating demand only
+        // TODO (from Python) The space heating demand is only recalculated once, rather
+        //                    than feeding back in to the throughput factor calculation
+        //                    above to get a further-refined space heating demand. This is
+        //                    consistent with the approach in SAP 10.2 and keeps the
+        //                    execution time of the calculation bounded. However, the
+        //                    merits of iterating over this calculation until converging on
+        //                    a solution should be considered in the future.
+        if throughput_factor > 1.0 {
+            for (z_name, zone) in &self.zones {
+                // Add additional gains from ventilation fans
+                match self.ventilation {
+                    None | Some(VentilationElement::Natural(_)) => {}
+                    Some(_) => {
+                        *gains_internal_zone.get_mut(z_name.as_str()).unwrap() +=
+                            self.ventilation.as_mut().unwrap().fans(
+                                zone.volume(),
+                                simulation_time_iteration.index,
+                                Some(throughput_factor - 1.0),
+                            );
+                    }
+                }
+            }
+            (
+                space_heat_demand_system,
+                space_cool_demand_system,
+                space_heat_demand_zone,
+                space_cool_demand_zone,
+                h_ve_cool_extra_zone,
+            ) = self.space_heat_cool_demand_by_system_and_zone(
+                delta_t_h,
+                temp_ext_air,
+                &gains_internal_zone,
+                &gains_solar_zone,
+                Some(throughput_factor),
+                simulation_time_iteration,
+            );
+        }
+
+        // pre-calc whether different space heat/cool systems are in required period, and frac_convective before self.space_heat_systems is mutably borrowed
+        let space_heat_systems_in_required_period =
+            self.space_heat_systems_in_required_period(simulation_time_iteration);
+        let space_heat_systems_frac_convective = self.space_heat_systems_frac_convective();
+        let space_cool_systems_in_required_period =
+            self.space_cool_systems_in_required_period(simulation_time_iteration);
+        let space_cool_systems_frac_convective = self.space_cool_systems_frac_convective();
+
+        // Calculate how much heating the systems can provide
+        let mut space_heat_provided: HashMap<&str, f64> = Default::default();
+        for (heat_system_name, heat_system) in self.space_heat_systems.iter_mut() {
+            space_heat_provided.insert(
+                heat_system_name.as_str(),
+                heat_system.demand_energy(
+                    space_heat_demand_system[heat_system_name.as_str()],
+                    simulation_time_iteration,
+                ),
+            );
+        }
+
+        // Calculate how much cooling the systems can provide
+        let mut space_cool_provided: HashMap<&str, f64> = Default::default();
+        for (cool_system_name, cool_system) in self.space_cool_systems.iter_mut() {
+            space_cool_provided.insert(
+                cool_system_name.as_str(),
+                cool_system.demand_energy(
+                    space_cool_demand_system[cool_system_name.as_str()],
+                    simulation_time_iteration.index,
+                ),
+            );
+        }
+
+        // Apportion the provided heating/cooling between the zones in
+        // proportion to the heating/cooling demand in each zone. Then
+        // update resultant temperatures in zones.
+        let mut internal_air_temp: HashMap<&str, f64> = Default::default();
+        let mut operative_temp: HashMap<&str, f64> = Default::default();
+        let mut heat_balance_map: HashMap<&str, Option<()>> = Default::default(); // using unit type here as placeholder
+        for (z_name, zone) in self.zones.iter_mut() {
+            // Look up names of relevant heating and cooling systems for this zone
+            let h_name = self.heat_system_name_for_zone[z_name.as_str()].as_ref();
+            let c_name = self.cool_system_name_for_zone[z_name.as_str()].as_ref();
+
+            // If zone is unheated or there was no demand on heating system,
+            // set heating gains for zone to zero, else calculate
+            let gains_heat = match h_name {
+                None => 0.0,
+                Some(h_name) => space_heat_provided[h_name.as_str()],
+            };
+
+            // If zone is uncooled or there was no demand on cooling system,
+            // set cooling gains for zone to zero, else calculate
+            let gains_cool = match c_name {
+                None => 0.0,
+                Some(c_name) => space_cool_provided[c_name.as_str()],
+            };
+
+            // Sum heating gains (+ve) and cooling gains (-ve) and convert from kWh to W
+            let gains_heat_cool = (gains_heat + gains_cool) * WATTS_PER_KILOWATT as f64 / delta_t_h;
+
+            // Calculate how much space heating / cooling demand is unmet
+            // Note: Demand is not considered unmet if it is outside the
+            //        required heating/cooling period (which does not include
+            //        times when the system is on due to setback or advanced
+            //        start)
+            // Note: Need to check that demand is non-zero, to avoid
+            //        reporting unmet demand when heating system is absorbing
+            //        energy from zone or cooling system is releasing energy
+            //        to zone, which may be the case in some timesteps for
+            //        systems with significant thermal mass.
+            let in_req_heat_period = match h_name {
+                None => false,
+                Some(h_name) => {
+                    space_heat_systems_in_required_period[h_name.as_str()].unwrap_or(false)
+                }
+            };
+            let space_heat_demand_zone_current = space_heat_demand_zone[z_name];
+            if in_req_heat_period && space_heat_demand_zone_current > 0. {
+                let _energy_shortfall_heat =
+                    max_of_2(0., space_heat_demand_zone_current - gains_heat);
+                // TODO report energy supply unmet demand
+            }
+            let in_req_cool_period = match h_name {
+                None => false,
+                Some(h_name) => {
+                    space_cool_systems_in_required_period[h_name.as_str()].unwrap_or(false)
+                }
+            };
+            let space_cool_demand_zone_current = space_cool_demand_zone[z_name];
+            if in_req_cool_period && space_cool_demand_zone_current > 0. {
+                let _energy_shortfall_cool =
+                    max_of_2(0., -(space_cool_demand_zone_current - gains_cool));
+                // TODO report energy supply unmet demand
+            }
+
+            // Look up convective fraction for heating/cooling for this zone
+            // Note: gains_heat could be negative (or gains_cool could be
+            //       positive) if thermal mass of emitters causes e.g. the
+            //       heat emitters to absorb energy from the zone.
+            let frac_convective = if gains_heat != 0. {
+                space_heat_systems_frac_convective
+                    [h_name.expect("name for space heat system expected to be set")]
+            } else if gains_cool != 0. {
+                space_cool_systems_frac_convective
+                    [c_name.expect("name for space cool system expected to be set")]
+            } else {
+                1.0
+            };
+
+            heat_balance_map.insert(
+                z_name.as_str(),
+                zone.update_temperatures(
+                    delta_t,
+                    temp_ext_air,
+                    gains_internal_zone[z_name.as_str()],
+                    gains_solar_zone[z_name.as_str()],
+                    gains_heat_cool,
+                    frac_convective,
+                    h_ve_cool_extra_zone.get(z_name).copied(),
+                    Some(throughput_factor),
+                    simulation_time_iteration,
+                    self.external_conditions.as_ref(),
+                ),
+            );
+
+            if let Some(h_name) = h_name {
+                *space_heat_demand_system.get_mut(h_name.as_str()) = 0.0;
+                *space_heat_provided.get_mut(h_name.as_str()) = 0.0;
+            }
+            if let Some(c_name) = c_name {
+                *space_cool_demand_system.get_mut(c_name.as_str()) = 0.0;
+                *space_cool_provided.get_mut(c_name.as_str()) = 0.0;
+            }
+
+            internal_air_temp.insert(z_name, zone.temp_internal_air());
+            operative_temp.insert(z_name, zone.temp_operative());
+        }
+
+        (
+            gains_internal_zone,
+            gains_solar_zone,
+            operative_temp,
+            internal_air_temp,
+            space_heat_demand_zone,
+            space_cool_demand_zone,
+            space_heat_demand_system,
+            space_cool_demand_system,
+            space_heat_provided,
+            space_cool_provided,
+            ductwork_losses,
+            heat_balance_map,
+        )
+    }
+
+    fn space_heat_systems_in_required_period(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> HashMap<String, Option<bool>> {
+        (&self.space_heat_systems)
+            .iter()
+            .map(|(system_name, system)| {
+                (
+                    system_name.clone(),
+                    system.in_required_period(simulation_time_iteration),
+                )
+            })
+            .collect()
+    }
+
+    fn space_heat_systems_frac_convective(&self) -> HashMap<String, f64> {
+        (&self.space_heat_systems)
+            .iter()
+            .map(|(system_name, system)| (system_name.clone(), system.frac_convective()))
+            .collect()
+    }
+
+    fn space_cool_systems_in_required_period(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> HashMap<String, Option<bool>> {
+        (&self.space_cool_systems)
+            .iter()
+            .map(|(system_name, system)| {
+                (
+                    system_name.clone(),
+                    system.in_required_period(&simulation_time_iteration),
+                )
+            })
+            .collect()
+    }
+
+    fn space_cool_systems_frac_convective(&self) -> HashMap<String, f64> {
+        (&self.space_cool_systems)
+            .iter()
+            .map(|(system_name, system)| (system_name.clone(), system.frac_convective()))
+            .collect()
+    }
+
+    /// Calculate overall CoP over calculation period for each heating and cooling system
+    fn heat_cool_cop(
+        &self,
+        energy_provided: (),
+        results_end_user: (),
+        energy_supply_conn_name_for_space_hc_system: HashMap<&str, &[&str]>,
+    ) {
+        todo!()
+    }
+
+    /// Calculate space heating and cooling demand for each zone and sum.
+    ///
+    /// Keep track of how much is from each zone, so that energy provided
+    /// can be split between them in same proportion later
+    fn space_heat_cool_demand_by_system_and_zone(
+        &self,
+        delta_t_h: f64,
+        temp_ext_air: f64,
+        gains_internal_zone: &HashMap<&str, f64>,
+        gains_solar_zone: &HashMap<&str, f64>,
+        throughput_factor: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (
+        HashMap<String, f64>,
+        HashMap<String, f64>,
+        HashMap<String, f64>,
+        HashMap<String, f64>,
+        HashMap<String, f64>,
+    ) {
+        let mut space_heat_demand_system: HashMap<String, f64> = Default::default();
+        for heat_system_name in self.space_heat_systems.keys() {
+            space_heat_demand_system.insert((*heat_system_name).clone(), 0.0);
+        }
+
+        let mut space_cool_demand_system: HashMap<String, f64> = Default::default();
+        for cool_system_name in self.space_cool_systems.keys() {
+            space_cool_demand_system.insert((*cool_system_name).clone(), 0.0);
+        }
+
+        let mut space_heat_demand_zone: HashMap<String, f64> = Default::default();
+        let mut space_cool_demand_zone: HashMap<String, f64> = Default::default();
+        let mut h_ve_cool_extra_zone: HashMap<String, f64> = Default::default();
+        for (z_name, zone) in &self.zones {
+            // Look up names of relevant heating and cooling systems for this zone
+            let h_name = self
+                .heat_system_name_for_zone
+                .get(z_name)
+                .and_then(|h| h.as_ref());
+            let c_name = self
+                .cool_system_name_for_zone
+                .get(z_name)
+                .and_then(|c| c.as_ref());
+
+            // Look up convective fraction for heating/cooling for this zone
+            let (frac_convective_heat, temp_setpnt_heat) = match h_name {
+                Some(h_name) => {
+                    let system = &self.space_heat_systems[h_name];
+                    (
+                        system.frac_convective(),
+                        system.temp_setpnt(simulation_time_iteration),
+                    )
+                }
+                None => (1.0, None),
+            };
+            let (frac_convective_cool, temp_setpnt_cool) = match c_name {
+                Some(c_name) => {
+                    let system = &self.space_cool_systems[c_name];
+                    (
+                        system.frac_convective(),
+                        system.temp_setpnt(&simulation_time_iteration),
+                    )
+                }
+                None => (1.0, None),
+            };
+
+            // Use default setpoints when there is no heat/cool system or
+            // there is no setpoint for the current timestep
+
+            // set heating setpoint to absolute zero to ensure no heating demand
+            let temp_setpnt_heat = temp_setpnt_heat.unwrap_or(kelvin_to_celsius(0.));
+            // set cooling setpoint to Planck temperature to ensure no cooling demand
+            let temp_setpnt_cool = temp_setpnt_cool.unwrap_or(kelvin_to_celsius(1.4e32));
+
+            let (
+                space_heat_demand_zone_current,
+                space_cool_demand_zone_current,
+                h_ve_cool_extra_zone_current,
+            ) = zone.space_heat_cool_demand(
+                delta_t_h,
+                temp_ext_air,
+                gains_internal_zone[z_name.as_str()],
+                gains_solar_zone[z_name.as_str()],
+                frac_convective_heat,
+                frac_convective_cool,
+                temp_setpnt_heat,
+                temp_setpnt_cool,
+                throughput_factor,
+                simulation_time_iteration,
+                self.external_conditions.as_ref(),
+            );
+
+            space_heat_demand_zone.insert((*z_name).clone(), space_heat_demand_zone_current);
+            space_cool_demand_zone.insert((*z_name).clone(), space_cool_demand_zone_current);
+            h_ve_cool_extra_zone.insert((*z_name).clone(), h_ve_cool_extra_zone_current);
+
+            if let Some(h_name) = h_name {
+                *space_heat_demand_system.get_mut(h_name.as_str()).unwrap() +=
+                    space_heat_demand_zone[z_name];
+            }
+            if let Some(c_name) = c_name {
+                *space_cool_demand_system.get_mut(c_name.as_str()).unwrap() +=
+                    space_cool_demand_zone[z_name];
+            }
+        }
+
+        (
+            space_heat_demand_system,
+            space_cool_demand_system,
+            space_heat_demand_zone,
+            space_cool_demand_zone,
+            h_ve_cool_extra_zone,
+        )
     }
 }
 

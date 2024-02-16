@@ -24,7 +24,8 @@ use std::sync::Arc;
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
-const F_INT_C: f64 = 0.4; // Can be different for each source of internal gains
+const F_INT_C: f64 = 0.4;
+// Can be different for each source of internal gains
 const F_SOL_C: f64 = 0.1;
 
 // Areal thermal capacity of air and furniture
@@ -176,12 +177,50 @@ impl Zone {
         self.volume
     }
 
+    /// sum solar gains for all elements in the zone
+    /// only transparent elements will have solar gains > 0
+    pub fn gains_solar(
+        &self,
+        external_conditions: &ExternalConditions,
+        simulation_time: SimulationTimeIteration,
+    ) -> f64 {
+        self.building_elements
+            .iter()
+            .map(|el| el.element.solar_gains(external_conditions, simulation_time))
+            .sum::<f64>()
+    }
+
+    /// Return internal air temperature, in deg C
+    pub fn temp_internal_air(&self) -> f64 {
+        self.temp_prev[self.zone_idx]
+    }
+
     pub fn total_fabric_heat_loss(&self) -> f64 {
         self.building_elements
             .iter()
             .map(|nel| {
                 let NamedBuildingElement { element, .. } = nel;
                 element.fabric_heat_loss()
+            })
+            .sum::<f64>()
+    }
+
+    /// Return the total heat loss area, in m2
+    pub fn total_heat_loss_area(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .filter_map(|el| {
+                if matches!(
+                    el.element,
+                    BuildingElement::Opaque { .. }
+                        | BuildingElement::Transparent { .. }
+                        | BuildingElement::Ground { .. }
+                        | BuildingElement::AdjacentZTUSimple { .. }
+                ) {
+                    Some(area_for_building_element_input(&el.element))
+                } else {
+                    None
+                }
             })
             .sum::<f64>()
     }
@@ -207,6 +246,99 @@ impl Zone {
                 vent.h_ve_average_heat_transfer_coefficient(self.volume, external_conditions)
             })
             .sum::<f64>()
+    }
+
+    pub fn space_heat_cool_demand(
+        &self,
+        delta_t_h: f64,
+        temp_ext_air: f64,
+        gains_internal: f64,
+        gains_solar: f64,
+        frac_convective_heat: f64,
+        frac_convective_cool: f64,
+        temp_setpnt_heat: f64,
+        temp_setpnt_cool: f64,
+        throughput_factor: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> (f64, f64, f64) {
+        space_heat_cool_demand(
+            delta_t_h,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            frac_convective_heat,
+            frac_convective_cool,
+            temp_setpnt_heat,
+            temp_setpnt_cool,
+            throughput_factor,
+            &self.building_elements,
+            &self.element_positions,
+            &self.vent_elements,
+            &self.vent_cool_extra,
+            &simulation_time_iteration,
+            external_conditions,
+            &self.temp_prev,
+            self.no_of_temps as usize,
+            self.area_el_total,
+            self.area(),
+            self.volume,
+            self.c_int,
+            0.0,
+            self.zone_idx,
+        )
+    }
+
+    pub fn update_temperatures(
+        &mut self,
+        delta_t: f64,
+        temp_ext_air: f64,
+        gains_internal: f64,
+        gains_solar: f64,
+        gains_heat_cool: f64,
+        frac_convective: f64,
+        vent_extra_h_ve: Option<f64>,
+        throughput_factor: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> Option<()> {
+        let (temp_prev, heat_balance_map) = calc_temperatures(
+            delta_t,
+            &self.temp_prev,
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool,
+            frac_convective,
+            vent_extra_h_ve,
+            throughput_factor,
+            self.no_of_temps as usize,
+            &self.building_elements,
+            &self.element_positions,
+            external_conditions,
+            &simulation_time_iteration,
+            self.zone_idx,
+            self.area_el_total,
+            self.volume,
+            self.c_int,
+            self.tb_heat_trans_coeff,
+            &self.vent_elements,
+            &self.vent_cool_extra,
+            None, // TODO param for whether to print heat balance
+        );
+
+        self.temp_prev = temp_prev;
+
+        heat_balance_map
+    }
+
+    pub fn temp_operative(&self) -> f64 {
+        temp_operative(
+            &self.temp_prev,
+            &self.building_elements,
+            &self.element_positions,
+            self.zone_idx,
+        )
     }
 }
 
@@ -285,7 +417,7 @@ pub fn init_node_temps(
         let gains_heat_cool =
             (space_heat_demand + space_cool_demand) * WATTS_PER_KILOWATT as f64 / DELTA_T_H as f64;
 
-        let temps_updated = calc_temperatures(
+        let (temps_updated, _) = calc_temperatures(
             DELTA_T as f64,
             &temp_prev,
             temp_ext_air_init,
@@ -307,6 +439,7 @@ pub fn init_node_temps(
             tb_heat_trans_coeff,
             vent_elements,
             vent_cool_extra,
+            None, // TODO placeholder for whether to print heat balance
         );
 
         if !isclose(&temps_updated, &temp_prev, Some(1e-08), None) {
@@ -319,7 +452,8 @@ pub fn init_node_temps(
     temp_prev
 }
 
-const DELTA_T_H: u32 = 8760; // hours in a non leap year
+const DELTA_T_H: u32 = 8760;
+// hours in a non leap year
 const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;
 
 // # Assume default convective fraction for heating/cooling suggested in
@@ -392,7 +526,7 @@ pub fn space_heat_cool_demand(
     let gains_heat_cool = 0.0;
 
     // Calculate node and internal air temperatures with heating/cooling gains of zero
-    let temp_vector_no_heat_cool = calc_temperatures(
+    let (temp_vector_no_heat_cool, _) = calc_temperatures(
         delta_t,
         temp_prev,
         temp_ext_air,
@@ -414,6 +548,7 @@ pub fn space_heat_cool_demand(
         tb_heat_trans_coeff,
         vent_elements,
         vent_cool_extra,
+        None, // TODO placeholder for whether to print heat balance
     );
 
     // Calculate internal operative temperature at free-floating conditions
@@ -441,7 +576,7 @@ pub fn space_heat_cool_demand(
             simulation_time.index,
             external_conditions,
         );
-        let temp_vector_vent_max = calc_temperatures(
+        let (temp_vector_vent_max, _) = calc_temperatures(
             delta_t,
             temp_prev,
             temp_ext_air,
@@ -463,6 +598,7 @@ pub fn space_heat_cool_demand(
             tb_heat_trans_coeff,
             vent_elements,
             vent_cool_extra,
+            None, // TODO placeholder for whether to print heat balance
         );
 
         // Calculate internal operative temperature with maximum ventilation
@@ -497,7 +633,7 @@ pub fn space_heat_cool_demand(
             };
 
             // Calculate node and internal air temperatures with heating/cooling gains of zero
-            let temp_vector_no_heat_cool_vent_extra = calc_temperatures(
+            let (temp_vector_no_heat_cool_vent_extra, _) = calc_temperatures(
                 delta_t,
                 temp_prev,
                 temp_ext_air,
@@ -519,6 +655,7 @@ pub fn space_heat_cool_demand(
                 tb_heat_trans_coeff,
                 vent_elements,
                 vent_cool_extra,
+                None, // TODO placeholder for whether to print heat balance
             );
 
             // Calculate internal operative temperature at free-floating conditions
@@ -566,7 +703,7 @@ pub fn space_heat_cool_demand(
     }
 
     // Calculate node and internal air temperatures with maximum heating/cooling
-    let temp_vector_upper_heat_cool = calc_temperatures(
+    let (temp_vector_upper_heat_cool, _) = calc_temperatures(
         delta_t,
         temp_prev,
         temp_ext_air,
@@ -588,6 +725,7 @@ pub fn space_heat_cool_demand(
         tb_heat_trans_coeff,
         vent_elements,
         vent_cool_extra,
+        None, // TODO placeholder for option whether to print heat balance
     );
 
     // Calculate internal operative temperature with maximum heating/cooling
@@ -695,7 +833,10 @@ fn calc_temperatures(
     tb_heat_trans_coeff: f64,
     vent_elements: &Vec<VentilationElement>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
-) -> Vec<f64> {
+    print_heat_balance: Option<bool>,
+) -> (Vec<f64>, Option<()>) {
+    let print_heat_balance = print_heat_balance.unwrap_or(false);
+
     let throughput_factor = throughput_factor.unwrap_or(1.0);
     let vent_extra_h_ve = vent_extra_h_ve.unwrap_or(0.0);
 
@@ -883,14 +1024,22 @@ fn calc_temperatures(
         + F_SOL_C * gains_solar
         + f_hc_c * gains_heat_cool;
 
-    fast_solver(
-        matrix_a,
-        vector_b,
-        no_of_temps,
-        building_elements,
-        element_positions,
-        passed_zone_idx,
-    )
+    // TODO build heat balance map
+    if print_heat_balance {
+        unimplemented!();
+    }
+
+    (
+        fast_solver(
+            matrix_a,
+            vector_b,
+            no_of_temps,
+            building_elements,
+            element_positions,
+            passed_zone_idx,
+        ),
+        None,
+    ) // pass empty heat balance map for now
 }
 
 /// Optimised heat balance solver
@@ -1560,20 +1709,20 @@ mod test {
             &vec![1e10, 1e-8],
             &vec![1.00001e10, 1e-9],
             None,
-            None
+            None,
         ));
         assert!(!isclose(
             &vec![1e10, 1e-8],
             &vec![1.0001e10, 1e-9],
             None,
-            None
+            None,
         ));
         assert!(!isclose(&vec![1e-8, 1e-7], &vec![0.0, 0.0], None, None),);
         assert!(!isclose(
             &vec![1e-100, 1e-7],
             &vec![0.0, 0.0],
             None,
-            Some(0.0)
+            Some(0.0),
         ));
         assert!(isclose(&vec![1e-10, 1e-10], &vec![1e-20, 0.0], None, None),);
         assert!(!isclose(

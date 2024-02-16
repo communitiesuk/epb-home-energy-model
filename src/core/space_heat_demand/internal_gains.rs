@@ -12,6 +12,22 @@ pub struct InternalGains {
     time_series_step: f64,
 }
 
+pub enum Gains<'a> {
+    Internal(&'a InternalGains),
+    Appliance(&'a ApplianceGains),
+}
+
+impl<'a> Gains<'a> {
+    pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
+        match self {
+            Gains::Internal(internal) => internal.total_internal_gain_in_w(zone_area, timestep_idx),
+            Gains::Appliance(appliance) => {
+                appliance.total_internal_gain_in_w(zone_area, timestep_idx)
+            }
+        }
+    }
+}
+
 impl InternalGains {
     pub fn new(total_internal_gains: Vec<f64>, start_day: u32, time_series_step: f64) -> Self {
         InternalGains {
@@ -108,7 +124,7 @@ mod tests {
                 internal_gains.total_internal_gain_in_w(
                     10.0,
                     iteration
-                        .time_series_idx(internal_gains.start_day, internal_gains.time_series_step)
+                        .time_series_idx(internal_gains.start_day, internal_gains.time_series_step),
                 ),
                 expected[iteration
                     .time_series_idx(internal_gains.start_day, internal_gains.time_series_step)]

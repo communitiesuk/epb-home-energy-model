@@ -2,7 +2,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupplyLoos
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{Pipework, PipeworkContentsType};
 use crate::core::schedule::ScheduleEvent;
-use crate::core::units::MILLIMETRES_IN_METRE;
+use crate::core::units::{MILLIMETRES_IN_METRE, MINUTES_PER_HOUR};
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
@@ -248,6 +248,64 @@ impl DomesticHotWaterDemand {
             all_events,
             hw_energy_demand,
         )
+    }
+
+    pub fn calc_pipework_losses(
+        &self,
+        delta_t_h: f64,
+        hw_duration: f64,
+        no_of_hw_events: usize,
+        demand_water_temperature: f64,
+        internal_air_temperature: f64,
+        external_air_temperature: f64,
+    ) -> (f64, f64) {
+        if self.hot_water_distribution_pipework.is_empty() {
+            return (0., 0.);
+        }
+
+        let mut hot_water_time_fraction = hw_duration / (delta_t_h * MINUTES_PER_HOUR as f64);
+        if hot_water_time_fraction > 1. {
+            hot_water_time_fraction = 1.;
+        }
+
+        // TODO For now, ignore heat loss from pipes while water is flowing, as
+        //              this is is not currently added to hot water demand, but is added
+        //              to the internal gains. This would mean that reducing insulation
+        //              would reduce overall energy demand, which would not be correct.
+        //         pipework_watts_heat_loss_internal = self.__hw_distribution_pipework["internal"].heat_loss(
+        //             demand_water_temperature,
+        //             internal_air_temperature,
+        //             )
+        //         pipework_watts_heat_loss_external = self.__hw_distribution_pipework["external"].heat_loss(
+        //             demand_water_temperature,
+        //             external_air_temperature,
+        //             )
+        //
+        //         # only calculate loss for times when there is hot water in the pipes - multiply by time fraction to get to kWh
+        //         pipework_heat_loss_internal \
+        //             = pipework_watts_heat_loss_internal \
+        //             * hot_water_time_fraction \
+        //             * delta_t_h \
+        //             / units.W_per_kW # convert to kWh
+        //         pipework_heat_loss_external \
+        //             = pipework_watts_heat_loss_external \
+        //             * hot_water_time_fraction \
+        //             * delta_t_h \
+        //             / units.W_per_kW # convert to kWh
+        let pipework_heat_loss_internal = no_of_hw_events as f64
+            * self
+                .hot_water_distribution_pipework
+                .get("internal")
+                .expect("expected internal pipework to be defined")
+                .cool_down_loss(demand_water_temperature, internal_air_temperature);
+        let pipework_heat_loss_external = no_of_hw_events as f64
+            * self
+                .hot_water_distribution_pipework
+                .get("external")
+                .expect("expected external pipework to be defined")
+                .cool_down_loss(demand_water_temperature, external_air_temperature);
+
+        (pipework_heat_loss_internal, pipework_heat_loss_external)
     }
 }
 

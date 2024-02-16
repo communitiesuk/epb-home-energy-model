@@ -6,7 +6,8 @@ use std::f64::consts::PI;
 const INTERNAL_HTC: f64 = 15.5; // CIBSE Guide C, Table 3.25, air flow rate approx 3 m/s
 
 // Set default values for the heat transfer coefficient at the outer surface, in W / m^2 K
-const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7; // low emissivity reflective surface, CIBSE Guide C, Table 3.25
+const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7;
+// low emissivity reflective surface, CIBSE Guide C, Table 3.25
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
 /// A struct to represent ductwork for mechanical ventilation with heat recovery
@@ -17,8 +18,10 @@ pub struct Ductwork {
     length_out_in_m: f64,
     mvhr_location: MVHRLocation,
     diameter_including_insulation_in_m: f64,
-    internal_surface_resistance: f64, // in K m / W
-    insulation_resistance: f64,       // in K m / W
+    internal_surface_resistance: f64,
+    // in K m / W
+    insulation_resistance: f64,
+    // in K m / W
     external_surface_resistance: f64, // K m / W
 }
 
@@ -108,6 +111,7 @@ impl Ductwork {
     /// * `efficiency` - heat recovery efficiency of MVHR
     pub fn total_duct_heat_loss(
         &self,
+        _outside_temp: Option<f64>,
         supply_duct_temp_in_c: Option<f64>,
         extract_duct_temp_in_c: Option<f64>,
         intake_duct_temp_in_c: Option<f64>,
@@ -229,7 +233,7 @@ mod tests {
             assert_eq!(
                 round_by_precision(
                     ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx], 0.4),
-                    1e5
+                    1e5,
                 ),
                 [-0.62656, -0.56390, -0.50125, -0.43859, -0.41771, -0.39682, -0.37594, -0.35505]
                     [t_idx],
@@ -254,14 +258,15 @@ mod tests {
                 round_by_precision(
                     ductwork
                         .total_duct_heat_loss(
+                            None,
                             Some(supply_temp[t_idx]),
                             Some(extract_temp[t_idx]),
                             Some(intake_temp[t_idx]),
                             Some(exhaust_temp[t_idx]),
-                            0.7
+                            0.7,
                         )
                         .unwrap(),
-                    1e5
+                    1e5,
                 ),
                 [-0.43859, -0.39473, -0.35087, -0.30701, -0.29239, -0.27777, -0.26316, -0.24854]
                     [t_idx],

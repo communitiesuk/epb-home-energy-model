@@ -63,6 +63,58 @@ impl BuildingElement {
             BuildingElement::Transparent { .. } => 0.0, // Set to zero as not included in heat loss calculations
         }
     }
+
+    /// Return calculated solar gains using pitch and orientation of element
+    pub fn solar_gains(
+        &self,
+        external_conditions: &ExternalConditions,
+        simulation_time: SimulationTimeIteration,
+    ) -> f64 {
+        match *self {
+            BuildingElement::Transparent {
+                area,
+                pitch,
+                orientation,
+                g_value,
+                frame_area_fraction,
+                ..
+            } => {
+                let (i_sol_dir, i_sol_dif, _, _) = external_conditions
+                    .calculated_direct_diffuse_total_irradiance(
+                        pitch,
+                        orientation,
+                        false,
+                        &simulation_time,
+                    );
+                let g_value = Self::convert_g_value(g_value);
+
+                let (f_sh_dir, f_sh_dif) =
+                    shading_factors_direct_diffuse_for(self, external_conditions);
+                g_value
+                    * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+                    * area.expect("area expected to be available for transparent building element")
+                    * (1. - frame_area_fraction)
+            }
+            _ => 0.,
+        }
+    }
+
+    /// return g_value corrected for angle of solar radiation
+    fn convert_g_value(g_value: f64) -> f64 {
+        // TODO (from Python) for windows with scattering glazing or solar shading provisions
+        // there is a different, more complex method for conversion that depends on
+        // timestep (via solar altitude).
+        // suggest this is implemented at the same time as window shading (devices
+        // rather than fixed features) as will also need to link to shading schedule.
+        // see ISO 52016 App E. Page 177
+        // How do we know whether a window has "scattering glazing"?
+        //
+        // g_value = agl * g_alt + (1 - agl) * g_dif
+
+        let fw = 0.90;
+        // default from ISO 52016 App B Table B.22
+        fw * g_value
+    }
 }
 
 pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
@@ -552,8 +604,10 @@ pub fn cloned_element_from_named(named_element: &NamedBuildingElement) -> Buildi
 
 // Thermal properties of ground from BS EN ISO 13370:2017 Table 7
 // Use values for clay or silt (same as BR 443 and SAP 10)
-const THERMAL_CONDUCTIVITY_OF_GROUND: f64 = 1.5; // in W/(m.K)
-const HEAT_CAPACITY_PER_VOLUME_OF_GROUND: f64 = 3000000.0; // in J/(m3.K)
+const THERMAL_CONDUCTIVITY_OF_GROUND: f64 = 1.5;
+// in W/(m.K)
+const HEAT_CAPACITY_PER_VOLUME_OF_GROUND: f64 = 3000000.0;
+// in J/(m3.K)
 const THICKNESS_GROUND_LAYER: f64 = 0.5; // in m. Specified in BS EN ISO 52016-1:2017 section 6.5.8.2
 
 // thermal resistance in (m2.K)/W
