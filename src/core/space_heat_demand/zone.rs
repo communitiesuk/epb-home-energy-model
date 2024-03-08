@@ -20,7 +20,8 @@ use std::borrow::Cow;
 
 use std::hash::{Hash, Hasher};
 use std::iter::Peekable;
-use std::sync::Arc;
+use std::mem;
+use std::sync::{Arc, Mutex};
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
@@ -66,7 +67,7 @@ pub struct Zone {
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
-    temp_prev: Vec<f64>,
+    temp_prev: Arc<Mutex<Vec<f64>>>,
 }
 
 impl Zone {
@@ -134,7 +135,7 @@ impl Zone {
         let zone_idx = n as usize;
         let no_of_temps = n + 1;
 
-        let temp_prev = init_node_temps(
+        let temp_prev = Arc::new(Mutex::new(init_node_temps(
             temp_ext_air_init,
             temp_setpnt_init,
             no_of_temps,
@@ -150,7 +151,7 @@ impl Zone {
             zone_idx,
             c_int,
             tb_heat_trans_coeff,
-        );
+        )));
 
         Zone {
             useful_area: area,
@@ -192,7 +193,7 @@ impl Zone {
 
     /// Return internal air temperature, in deg C
     pub fn temp_internal_air(&self) -> f64 {
-        self.temp_prev[self.zone_idx]
+        self.temp_prev.lock().unwrap()[self.zone_idx]
     }
 
     pub fn total_fabric_heat_loss(&self) -> f64 {
@@ -278,7 +279,7 @@ impl Zone {
             &self.vent_cool_extra,
             &simulation_time_iteration,
             external_conditions,
-            &self.temp_prev,
+            &self.temp_prev.lock().unwrap(),
             self.no_of_temps as usize,
             self.area_el_total,
             self.area(),
@@ -290,7 +291,7 @@ impl Zone {
     }
 
     pub fn update_temperatures(
-        &mut self,
+        &self,
         delta_t: f64,
         temp_ext_air: f64,
         gains_internal: f64,
@@ -304,7 +305,7 @@ impl Zone {
     ) -> Option<()> {
         let (temp_prev, heat_balance_map) = calc_temperatures(
             delta_t,
-            &self.temp_prev,
+            &self.temp_prev.lock().unwrap(),
             temp_ext_air,
             gains_internal,
             gains_solar,
@@ -327,14 +328,16 @@ impl Zone {
             None, // TODO param for whether to print heat balance
         );
 
-        self.temp_prev = temp_prev;
+        if let Ok(mut temp_prev_ref) = self.temp_prev.lock() {
+            let _ = mem::replace(&mut *temp_prev_ref, temp_prev);
+        }
 
         heat_balance_map
     }
 
     pub fn temp_operative(&self) -> f64 {
         temp_operative(
-            &self.temp_prev,
+            &self.temp_prev.lock().unwrap(),
             &self.building_elements,
             &self.element_positions,
             self.zone_idx,

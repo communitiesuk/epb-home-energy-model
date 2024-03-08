@@ -485,7 +485,7 @@ impl Corpus {
         delta_t_h: f64,
         gains_internal_dhw: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) {
+    ) -> SpaceHeatingCalculation {
         let temp_ext_air = self
             .external_conditions
             .air_temp(&simulation_time_iteration);
@@ -723,7 +723,7 @@ impl Corpus {
         let mut internal_air_temp: HashMap<&str, f64> = Default::default();
         let mut operative_temp: HashMap<&str, f64> = Default::default();
         let mut heat_balance_map: HashMap<&str, Option<()>> = Default::default(); // using unit type here as placeholder
-        for (z_name, zone) in self.zones.iter_mut() {
+        for (z_name, zone) in &self.zones {
             // Look up names of relevant heating and cooling systems for this zone
             let h_name = self.heat_system_name_for_zone[z_name.as_str()].as_ref();
             let c_name = self.cool_system_name_for_zone[z_name.as_str()].as_ref();
@@ -761,7 +761,7 @@ impl Corpus {
                     space_heat_systems_in_required_period[h_name.as_str()].unwrap_or(false)
                 }
             };
-            let space_heat_demand_zone_current = space_heat_demand_zone[z_name];
+            let space_heat_demand_zone_current = space_heat_demand_zone[z_name.as_str()];
             if in_req_heat_period && space_heat_demand_zone_current > 0. {
                 let _energy_shortfall_heat =
                     max_of_2(0., space_heat_demand_zone_current - gains_heat);
@@ -773,7 +773,7 @@ impl Corpus {
                     space_cool_systems_in_required_period[h_name.as_str()].unwrap_or(false)
                 }
             };
-            let space_cool_demand_zone_current = space_cool_demand_zone[z_name];
+            let space_cool_demand_zone_current = space_cool_demand_zone[z_name.as_str()];
             if in_req_cool_period && space_cool_demand_zone_current > 0. {
                 let _energy_shortfall_cool =
                     max_of_2(0., -(space_cool_demand_zone_current - gains_cool));
@@ -803,7 +803,7 @@ impl Corpus {
                     gains_solar_zone[z_name.as_str()],
                     gains_heat_cool,
                     frac_convective,
-                    h_ve_cool_extra_zone.get(z_name).copied(),
+                    h_ve_cool_extra_zone.get(z_name.as_str()).copied(),
                     Some(throughput_factor),
                     simulation_time_iteration,
                     self.external_conditions.as_ref(),
@@ -811,16 +811,16 @@ impl Corpus {
             );
 
             if let Some(h_name) = h_name {
-                *space_heat_demand_system.get_mut(h_name.as_str()) = 0.0;
-                *space_heat_provided.get_mut(h_name.as_str()) = 0.0;
+                *space_heat_demand_system.get_mut(h_name.as_str()).unwrap() = 0.0;
+                *space_heat_provided.get_mut(h_name.as_str()).unwrap() = 0.0;
             }
             if let Some(c_name) = c_name {
-                *space_cool_demand_system.get_mut(c_name.as_str()) = 0.0;
-                *space_cool_provided.get_mut(c_name.as_str()) = 0.0;
+                *space_cool_demand_system.get_mut(c_name.as_str()).unwrap() = 0.0;
+                *space_cool_provided.get_mut(c_name.as_str()).unwrap() = 0.0;
             }
 
-            internal_air_temp.insert(z_name, zone.temp_internal_air());
-            operative_temp.insert(z_name, zone.temp_operative());
+            internal_air_temp.insert(z_name.as_str(), zone.temp_internal_air());
+            operative_temp.insert(z_name.as_str(), zone.temp_operative());
         }
 
         (
@@ -1427,6 +1427,21 @@ fn wwhr_system_from_details(
         )),
     }
 }
+
+type SpaceHeatingCalculation<'a> = (
+    HashMap<&'a str, f64>,
+    HashMap<&'a str, f64>,
+    HashMap<&'a str, f64>,
+    HashMap<&'a str, f64>,
+    HashMap<String, f64>,
+    HashMap<String, f64>,
+    HashMap<String, f64>,
+    HashMap<String, f64>,
+    HashMap<&'a str, f64>,
+    HashMap<&'a str, f64>,
+    f64,
+    HashMap<&'a str, Option<()>>,
+);
 
 fn get_cold_water_source_ref_for_type(
     source_type: ColdWaterSourceType,
