@@ -30,6 +30,7 @@ pub struct BoilerServiceWaterCombi {
     rejected_factor_3: Option<f64>,
     daily_hot_water_usage: f64,
     simulation_timestep: f64,
+    combi_loss: f64,
 }
 
 #[derive(Debug)]
@@ -89,6 +90,7 @@ impl BoilerServiceWaterCombi {
                     daily_hot_water_usage,
                     cold_feed,
                     simulation_timestep,
+                    combi_loss: Default::default(),
                 })
             }
             _ => Err(IncorrectBoilerDataType),
@@ -176,17 +178,19 @@ impl BoilerServiceWaterCombi {
         combi_loss
     }
 
-    // pub fn internal_gains(&self) -> f64 {
-    //     // TODO (from the Python) Fraction of hot water energy resulting in internal gains should
-    //     // ideally be defined in one place, but it is duplicated here and in
-    //     // main hot water demand calculation for now.
-    //     let frac_dhw_energy_internal_gains = 0.25;
-    //     let gain_internal = frac_dhw_energy_internal_gains * self.combi_loss * WATTS_PER_KILOWATT as f64 / self.simulation_timestep;
-    //
-    //     // TODO account for the weird nixing/zeroing of the combi_loss in the Python
-    //
-    //     gain_internal
-    // }
+    pub fn internal_gains(&mut self) -> f64 {
+        // TODO (from the Python) Fraction of hot water energy resulting in internal gains should
+        // ideally be defined in one place, but it is duplicated here and in
+        // main hot water demand calculation for now.
+        let frac_dhw_energy_internal_gains = 0.25;
+        let gain_internal =
+            frac_dhw_energy_internal_gains * self.combi_loss * WATTS_PER_KILOWATT as f64
+                / self.simulation_timestep;
+
+        self.combi_loss = Default::default();
+
+        gain_internal
+    }
 
     pub fn energy_output_max(&self) -> f64 {
         self.boiler
@@ -711,6 +715,10 @@ impl Boiler {
         // TODO stash service results
 
         energy_output_provided
+    }
+
+    pub fn timestep_end(&mut self) {
+        // TODO complete me with calc_auxiliary_energy method
     }
 
     pub fn energy_output_max(&self, _temp_output: f64) -> f64 {

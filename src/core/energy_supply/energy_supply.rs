@@ -19,6 +19,22 @@ pub struct EnergySupplies {
     pub unmet_demand: EnergySupply,
 }
 
+impl EnergySupplies {
+    pub fn calc_energy_import_export_betafactor(&mut self, timestep_idx: usize) {
+        if let Some(ref mut supply) = self.mains_electricity {
+            supply.calc_energy_import_export_betafactor(timestep_idx);
+        }
+        if let Some(ref mut supply) = self.mains_gas {
+            supply.calc_energy_import_export_betafactor(timestep_idx);
+        }
+        if let Some(ref mut supply) = self.bulk_lpg {
+            supply.calc_energy_import_export_betafactor(timestep_idx);
+        }
+        self.unmet_demand
+            .calc_energy_import_export_betafactor(timestep_idx);
+    }
+}
+
 #[derive(Clone)]
 pub struct EnergySupply {
     fuel_type: EnergySupplyType,
@@ -153,6 +169,10 @@ impl EnergySupply {
     //
     //     HashMap::from([])
     // }
+
+    pub fn calc_energy_import_export_betafactor(&mut self, _timestep_idx: usize) {
+        // TODO finish this
+    }
 }
 
 fn init_demand_list(timestep_count: usize) -> Vec<f64> {

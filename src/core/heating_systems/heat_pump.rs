@@ -2524,7 +2524,7 @@ impl HeatPump {
     }
 
     /// Calculations to be done at the end of each timestep
-    fn timestep_end(&mut self) {
+    pub fn timestep_end(&mut self) {
         let timestep = self.simulation_timestep;
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
