@@ -18,10 +18,11 @@ use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use std::borrow::Cow;
 
+use parking_lot::Mutex;
 use std::hash::{Hash, Hasher};
 use std::iter::Peekable;
 use std::mem;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
@@ -193,7 +194,7 @@ impl Zone {
 
     /// Return internal air temperature, in deg C
     pub fn temp_internal_air(&self) -> f64 {
-        self.temp_prev.lock().unwrap()[self.zone_idx]
+        self.temp_prev.lock()[self.zone_idx]
     }
 
     pub fn total_fabric_heat_loss(&self) -> f64 {
@@ -279,7 +280,7 @@ impl Zone {
             &self.vent_cool_extra,
             &simulation_time_iteration,
             external_conditions,
-            &self.temp_prev.lock().unwrap(),
+            &self.temp_prev.lock(),
             self.no_of_temps as usize,
             self.area_el_total,
             self.area(),
@@ -305,7 +306,7 @@ impl Zone {
     ) -> Option<()> {
         let (temp_prev, heat_balance_map) = calc_temperatures(
             delta_t,
-            &self.temp_prev.lock().unwrap(),
+            &self.temp_prev.lock(),
             temp_ext_air,
             gains_internal,
             gains_solar,
@@ -328,16 +329,14 @@ impl Zone {
             None, // TODO param for whether to print heat balance
         );
 
-        if let Ok(mut temp_prev_ref) = self.temp_prev.lock() {
-            let _ = mem::replace(&mut *temp_prev_ref, temp_prev);
-        }
+        let _ = mem::replace(&mut *self.temp_prev.lock(), temp_prev);
 
         heat_balance_map
     }
 
     pub fn temp_operative(&self) -> f64 {
         temp_operative(
-            &self.temp_prev.lock().unwrap(),
+            &self.temp_prev.lock(),
             &self.building_elements,
             &self.element_positions,
             self.zone_idx,

@@ -4,7 +4,8 @@ use crate::core::material_properties::WATER;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::simulation_time::SimulationTimeIteration;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
@@ -52,7 +53,6 @@ impl HeatNetworkServiceWaterDirect {
 
         self.heat_network
             .lock()
-            .expect("could not get mutex lock on heat network")
             .demand_energy(&self.service_name, energy_demand)
     }
 }
@@ -100,7 +100,6 @@ impl HeatNetworkServiceWaterStorage {
 
         self.heat_network
             .lock()
-            .expect("could not get mutex lock on heat network")
             .demand_energy(&self.service_name, energy_demand)
     }
 
@@ -111,7 +110,6 @@ impl HeatNetworkServiceWaterStorage {
 
         self.heat_network
             .lock()
-            .expect("could not get mutex lock on heat network")
             .energy_output_max(Some(self.temperature_hot_water))
     }
 
@@ -157,7 +155,6 @@ impl HeatNetworkServiceSpace {
 
         self.heat_network
             .lock()
-            .expect("could not get mutex lock on heat network")
             .demand_energy(&self.service_name, energy_demand)
     }
 
@@ -173,7 +170,6 @@ impl HeatNetworkServiceSpace {
 
         self.heat_network
             .lock()
-            .expect("could not get mutex lock on heat network")
             .energy_output_max(Some(temp_output))
     }
 
@@ -422,7 +418,7 @@ mod tests {
                 ),
                 round_by_precision(expected_demand[t_idx], 1e3),
             );
-            heat_network_for_water_direct.lock().unwrap().timestep_end();
+            heat_network_for_water_direct.lock().timestep_end();
         }
     }
 
@@ -467,7 +463,6 @@ mod tests {
             heat_network_water_storage
                 .heat_network
                 .lock()
-                .unwrap()
                 .timestep_end();
         }
     }
@@ -537,7 +532,6 @@ mod tests {
             heat_network_service_space
                 .heat_network
                 .lock()
-                .unwrap()
                 .timestep_end();
         }
     }

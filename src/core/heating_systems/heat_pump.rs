@@ -13,6 +13,7 @@ use derivative::Derivative;
 use interp::interp;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
+use parking_lot::Mutex;
 use polyfit_rs::polyfit_rs::polyfit;
 use serde::Deserialize;
 use serde_enum_str::Serialize_enum_str;
@@ -20,7 +21,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::Sum;
 use std::ops::{Add, Div};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, MutexGuard, PoisonError};
 
 /// This module provides objects to represent heat pumps and heat pump test data.
 /// The calculations are based on the DAHPSE method developed for generating PCDB
@@ -1064,7 +1065,7 @@ impl HeatPumpServiceWater {
             return 0.0;
         }
 
-        self.heat_pump.lock().unwrap().energy_output_max(
+        self.heat_pump.lock().energy_output_max(
             self.temp_hot_water_in_k,
             self.temp_return_feed_in_k,
             simulation_time_iteration,
@@ -1084,7 +1085,7 @@ impl HeatPumpServiceWater {
 
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_pump.lock().unwrap().demand_energy(
+        self.heat_pump.lock().demand_energy(
             &self.service_name,
             &ServiceType::Water,
             energy_demand,
@@ -1167,7 +1168,7 @@ impl HeatPumpServiceSpace {
         }
 
         let temp_output = celsius_to_kelvin(temp_output);
-        self.heat_pump.lock().unwrap().energy_output_max(
+        self.heat_pump.lock().energy_output_max(
             temp_output,
             temp_return_feed,
             simulation_time_iteration,
@@ -1186,31 +1187,30 @@ impl HeatPumpServiceSpace {
         temp_flow: f64,
         temp_return: f64,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Result<f64, PoisonError<MutexGuard<HeatPump>>> {
+    ) -> f64 {
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_pump.lock().map(|mut pump| {
-            let time_constant_for_service = match pump.sink_type {
-                HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-                HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            };
-            pump.demand_energy(
-                &self.service_name,
-                &ServiceType::Space,
-                energy_demand,
-                celsius_to_kelvin(temp_flow),
-                celsius_to_kelvin(temp_return),
-                self.temp_limit_upper_in_k,
-                time_constant_for_service,
-                service_on,
-                simulation_time_iteration,
-                Some(TempSpreadCorrectionArg::Callable(
-                    self.temp_spread_correction_fn(),
-                )),
-                None,
-            )
-        })
+        let mut pump = self.heat_pump.lock();
+        let time_constant_for_service = match pump.sink_type {
+            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
+            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+        };
+        pump.demand_energy(
+            &self.service_name,
+            &ServiceType::Space,
+            energy_demand,
+            celsius_to_kelvin(temp_flow),
+            celsius_to_kelvin(temp_return),
+            self.temp_limit_upper_in_k,
+            time_constant_for_service,
+            service_on,
+            simulation_time_iteration,
+            Some(TempSpreadCorrectionArg::Callable(
+                self.temp_spread_correction_fn(),
+            )),
+            None,
+        )
     }
 
     /// Return the cumulative running time and throughput factor (exhaust air HPs only)
@@ -1225,29 +1225,26 @@ impl HeatPumpServiceSpace {
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let time_constant_for_service = match self.heat_pump.lock().unwrap().sink_type {
+        let time_constant_for_service = match self.heat_pump.lock().sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
 
-        self.heat_pump
-            .lock()
-            .unwrap()
-            .running_time_throughput_factor(
-                space_heat_running_time_cumulative,
-                &self.service_name,
-                &ServiceType::Space,
-                energy_demand,
-                celsius_to_kelvin(temp_flow),
-                celsius_to_kelvin(temp_return),
-                self.temp_limit_upper_in_k,
-                time_constant_for_service,
-                service_on,
-                simulation_time_iteration,
-                Some(TempSpreadCorrectionArg::Callable(
-                    self.temp_spread_correction_fn(),
-                )),
-            )
+        self.heat_pump.lock().running_time_throughput_factor(
+            space_heat_running_time_cumulative,
+            &self.service_name,
+            &ServiceType::Space,
+            energy_demand,
+            celsius_to_kelvin(temp_flow),
+            celsius_to_kelvin(temp_return),
+            self.temp_limit_upper_in_k,
+            time_constant_for_service,
+            service_on,
+            simulation_time_iteration,
+            Some(TempSpreadCorrectionArg::Callable(
+                self.temp_spread_correction_fn(),
+            )),
+        )
     }
 
     fn temp_spread_correction_fn(&self) -> Box<dyn FnOnce(f64, f64) -> f64> {
@@ -1257,13 +1254,13 @@ impl HeatPumpServiceSpace {
 
         // Average temperature difference between heat transfer medium and
         // refrigerant in evaporator
-        let temp_diff_evaporator = match &self.heat_pump.lock().unwrap().source_type {
+        let temp_diff_evaporator = match &self.heat_pump.lock().source_type {
             t if t.source_fluid_is_air() => 15.0,
             t if t.source_fluid_is_water() => 10.0,
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = self.heat_pump.lock().unwrap().test_data.clone();
+        let test_data = self.heat_pump.lock().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(move |temp_output, temp_source| {
@@ -1336,34 +1333,33 @@ impl HeatPumpServiceSpaceWarmAir {
         &mut self,
         energy_demand: f64,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> Result<f64, PoisonError<MutexGuard<HeatPump>>> {
+    ) -> f64 {
         let temp_flow = self.temp_flow;
         let temp_return = self.temp_return;
 
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_pump.lock().map(|mut pump| {
-            let time_constant_for_service = match pump.sink_type {
-                HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
-                HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            };
-            pump.demand_energy(
-                &self.service_name,
-                &ServiceType::Space,
-                energy_demand,
-                celsius_to_kelvin(temp_flow),
-                celsius_to_kelvin(temp_return),
-                self.temp_limit_upper_in_k,
-                time_constant_for_service,
-                service_on,
-                simulation_time_iteration,
-                Some(TempSpreadCorrectionArg::Callable(
-                    self.temp_spread_correction_fn(),
-                )),
-                None,
-            )
-        })
+        let mut pump = self.heat_pump.lock();
+        let time_constant_for_service = match pump.sink_type {
+            HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
+            HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+        };
+        pump.demand_energy(
+            &self.service_name,
+            &ServiceType::Space,
+            energy_demand,
+            celsius_to_kelvin(temp_flow),
+            celsius_to_kelvin(temp_return),
+            self.temp_limit_upper_in_k,
+            time_constant_for_service,
+            service_on,
+            simulation_time_iteration,
+            Some(TempSpreadCorrectionArg::Callable(
+                self.temp_spread_correction_fn(),
+            )),
+            None,
+        )
     }
 
     pub fn running_time_throughput_factor(
@@ -1378,29 +1374,26 @@ impl HeatPumpServiceSpaceWarmAir {
         let service_on = self.is_on(simulation_time_iteration.index);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let time_constant_for_service = match self.heat_pump.lock().unwrap().sink_type {
+        let time_constant_for_service = match self.heat_pump.lock().sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
 
-        self.heat_pump
-            .lock()
-            .unwrap()
-            .running_time_throughput_factor(
-                space_heat_running_time_cumulative,
-                &self.service_name,
-                &ServiceType::Space,
-                energy_demand,
-                celsius_to_kelvin(temp_flow),
-                celsius_to_kelvin(temp_return),
-                self.temp_limit_upper_in_k,
-                time_constant_for_service,
-                service_on,
-                simulation_time_iteration,
-                Some(TempSpreadCorrectionArg::Callable(
-                    self.temp_spread_correction_fn(),
-                )),
-            )
+        self.heat_pump.lock().running_time_throughput_factor(
+            space_heat_running_time_cumulative,
+            &self.service_name,
+            &ServiceType::Space,
+            energy_demand,
+            celsius_to_kelvin(temp_flow),
+            celsius_to_kelvin(temp_return),
+            self.temp_limit_upper_in_k,
+            time_constant_for_service,
+            service_on,
+            simulation_time_iteration,
+            Some(TempSpreadCorrectionArg::Callable(
+                self.temp_spread_correction_fn(),
+            )),
+        )
     }
 
     /// yes this is copy-pasted from the SpaceService
@@ -1411,13 +1404,13 @@ impl HeatPumpServiceSpaceWarmAir {
 
         // Average temperature difference between heat transfer medium and
         // refrigerant in evaporator
-        let temp_diff_evaporator = match &self.heat_pump.lock().unwrap().source_type {
+        let temp_diff_evaporator = match &self.heat_pump.lock().source_type {
             t if t.source_fluid_is_air() => 15.0,
             t if t.source_fluid_is_water() => 10.0,
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = self.heat_pump.lock().unwrap().test_data.clone();
+        let test_data = self.heat_pump.lock().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
         Box::new(move |temp_output, temp_source| {
@@ -2327,9 +2320,9 @@ impl HeatPump {
         let energy_delivered_total = service_results.energy_delivered_total;
 
         // Save results that are needed later (in the timestep_end function)
-        if let Ok(mut results) = self.service_results.lock() {
-            results.push(ServiceResult::Full(service_results));
-        }
+        self.service_results
+            .lock()
+            .push(ServiceResult::Full(service_results));
         self.total_time_running_current_timestep += time_running;
 
         // Feed/return results to other modules
@@ -2392,75 +2385,74 @@ impl HeatPump {
     fn calc_ancillary_energy(&mut self, timestep: f64, time_remaining_current_timestep: f64) {
         // we need to collect times running separately before the main iteration as we cannot look into the service
         // results while iterating over mutable values
-        if let Ok(mut service_results) = self.service_results.lock() {
-            let times_running_subsequent_services = service_results
-                .iter()
-                .filter(|r| matches!(r, ServiceResult::Full(_)))
-                .enumerate()
-                .map(|(service_no, _)| {
-                    service_results[(service_no + 1)..]
-                        .iter()
-                        .filter(|r| matches!(r, ServiceResult::Full(_)))
-                        .map(|result| {
-                            if let ServiceResult::Full(result) = result {
-                                result.time_running
-                            } else {
-                                panic!("full calculation expected")
-                            }
-                        })
-                        .sum::<f64>()
-                })
-                .collect::<Vec<f64>>();
+        let mut service_results = self.service_results.lock();
+        let times_running_subsequent_services = service_results
+            .iter()
+            .filter(|r| matches!(r, ServiceResult::Full(_)))
+            .enumerate()
+            .map(|(service_no, _)| {
+                service_results[(service_no + 1)..]
+                    .iter()
+                    .filter(|r| matches!(r, ServiceResult::Full(_)))
+                    .map(|result| {
+                        if let ServiceResult::Full(result) = result {
+                            result.time_running
+                        } else {
+                            panic!("full calculation expected")
+                        }
+                    })
+                    .sum::<f64>()
+            })
+            .collect::<Vec<f64>>();
 
-            for (service_no, service_data) in service_results.iter_mut().enumerate() {
-                // we always expect full results here, but to be explicit:
-                if let ServiceResult::Full(ref mut service_data) = service_data {
-                    // Unpack results of previous calculations for this service
-                    let _service_name = service_data.service_name.as_str();
-                    let service_type = service_data.service_type;
-                    let service_on = service_data.service_on;
-                    let time_running_current_service = service_data.time_running;
-                    let deg_coeff_op_cond = service_data.deg_coeff_op_cond;
-                    let compressor_power_min_load = service_data.compressor_power_min_load;
-                    let load_ratio_continuous_min = service_data.load_ratio_continuous_min;
-                    let load_ratio = service_data.load_ratio;
-                    let use_backup_heater_only = service_data.use_backup_heater_only;
-                    let hp_operating_in_onoff_mode = service_data.hp_operating_in_onoff_mode;
-                    let energy_input_hp_divisor = service_data
-                        .energy_input_hp_divisor
-                        .expect("expected energy_input_hp_divisor to be set in a test record");
+        for (service_no, service_data) in service_results.iter_mut().enumerate() {
+            // we always expect full results here, but to be explicit:
+            if let ServiceResult::Full(ref mut service_data) = service_data {
+                // Unpack results of previous calculations for this service
+                let _service_name = service_data.service_name.as_str();
+                let service_type = service_data.service_type;
+                let service_on = service_data.service_on;
+                let time_running_current_service = service_data.time_running;
+                let deg_coeff_op_cond = service_data.deg_coeff_op_cond;
+                let compressor_power_min_load = service_data.compressor_power_min_load;
+                let load_ratio_continuous_min = service_data.load_ratio_continuous_min;
+                let load_ratio = service_data.load_ratio;
+                let use_backup_heater_only = service_data.use_backup_heater_only;
+                let hp_operating_in_onoff_mode = service_data.hp_operating_in_onoff_mode;
+                let energy_input_hp_divisor = service_data
+                    .energy_input_hp_divisor
+                    .expect("expected energy_input_hp_divisor to be set in a test record");
 
-                    let time_running_subsequent_services =
-                        times_running_subsequent_services[service_no];
+                let time_running_subsequent_services =
+                    times_running_subsequent_services[service_no];
 
-                    #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                    let energy_ancillary_when_off = if service_on
-                        && time_running_current_service > 0.
-                        && !(time_running_subsequent_services > 0.)
-                        && !(matches!(self.sink_type, HeatPumpSinkType::Air)
-                            && matches!(service_type, ServiceType::Water))
-                    {
-                        (1. - deg_coeff_op_cond)
-                            * (compressor_power_min_load / load_ratio_continuous_min)
-                            * max_of_2(
-                                (time_remaining_current_timestep
-                                    - load_ratio / load_ratio_continuous_min * timestep),
-                                0.,
-                            )
-                    } else {
-                        0.
-                    };
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                let energy_ancillary_when_off = if service_on
+                    && time_running_current_service > 0.
+                    && !(time_running_subsequent_services > 0.)
+                    && !(matches!(self.sink_type, HeatPumpSinkType::Air)
+                        && matches!(service_type, ServiceType::Water))
+                {
+                    (1. - deg_coeff_op_cond)
+                        * (compressor_power_min_load / load_ratio_continuous_min)
+                        * max_of_2(
+                            (time_remaining_current_timestep
+                                - load_ratio / load_ratio_continuous_min * timestep),
+                            0.,
+                        )
+                } else {
+                    0.
+                };
 
-                    let energy_input_hp = if !use_backup_heater_only && hp_operating_in_onoff_mode {
-                        energy_ancillary_when_off / energy_input_hp_divisor
-                    } else {
-                        0.
-                    };
+                let energy_input_hp = if !use_backup_heater_only && hp_operating_in_onoff_mode {
+                    energy_ancillary_when_off / energy_input_hp_divisor
+                } else {
+                    0.
+                };
 
-                    // TODO record energy use to energy supply
-                    service_data.energy_input_hp += energy_input_hp;
-                    service_data.energy_input_total += energy_input_hp;
-                }
+                // TODO record energy use to energy supply
+                service_data.energy_input_hp += energy_input_hp;
+                service_data.energy_input_total += energy_input_hp;
             }
         }
     }
@@ -2474,16 +2466,14 @@ impl HeatPump {
         // Retrieve control settings for this timestep
         let mut heating_profile_on = false;
         let mut water_profile_on = false;
-        if let Ok(service_results) = self.service_results.lock() {
-            for service_data in service_results.iter() {
-                if let ServiceResult::Full(calculation) = service_data {
-                    match calculation.service_type {
-                        ServiceType::Space => {
-                            heating_profile_on = calculation.service_on;
-                        }
-                        ServiceType::Water => {
-                            water_profile_on = calculation.service_on;
-                        }
+        for service_data in self.service_results.lock().iter() {
+            if let ServiceResult::Full(calculation) = service_data {
+                match calculation.service_type {
+                    ServiceType::Space => {
+                        heating_profile_on = calculation.service_on;
+                    }
+                    ServiceType::Water => {
+                        water_profile_on = calculation.service_on;
                     }
                 }
             }
@@ -2519,18 +2509,16 @@ impl HeatPump {
 
     /// If HP uses heat network as source, calculate energy extracted from heat network
     fn extract_energy_from_source(&self) {
-        if let Ok(service_results) = self.service_results.lock() {
-            for service_data in service_results.iter() {
-                if let ServiceResult::Full(service_data) = service_data {
-                    let HeatPumpEnergyCalculation {
-                        service_name: _service_name,
-                        energy_delivered_hp,
-                        energy_input_hp,
-                        ..
-                    } = service_data;
-                    let _energy_extracted_hp = energy_delivered_hp - energy_input_hp;
-                    // TODO report energy demand to energy supply connections
-                }
+        for service_data in self.service_results.lock().iter() {
+            if let ServiceResult::Full(service_data) = service_data {
+                let HeatPumpEnergyCalculation {
+                    service_name: _service_name,
+                    energy_delivered_hp,
+                    energy_input_hp,
+                    ..
+                } = service_data;
+                let _energy_extracted_hp = energy_delivered_hp - energy_input_hp;
+                // TODO report energy demand to energy supply connections
             }
         }
     }
@@ -2557,13 +2545,13 @@ impl HeatPump {
 
         // If detailed results are to be output, save the results from the current timestep
         if let Some(ref mut detailed_results) = self.detailed_results {
-            if let Ok(mut service_results) = self.service_results.lock() {
-                service_results.push(ServiceResult::Aux(AuxiliaryParameters {
+            self.service_results
+                .lock()
+                .push(ServiceResult::Aux(AuxiliaryParameters {
                     energy_standby,
                     energy_crankcase_heater_mode,
                     energy_off_mode,
                 }));
-            }
             detailed_results.push(self.service_results.clone());
         }
 
@@ -2588,15 +2576,14 @@ impl HeatPump {
                 .entry((parameter, param_unit))
                 .or_default();
             for service_results in detailed_results {
-                if let Ok(service_results) = service_results.lock() {
-                    if let ServiceResult::Full(calc) = service_results
-                        .iter()
-                        .last()
-                        .expect("Expected at least one service result")
-                    {
-                        let result = calc.param(parameter);
-                        auxiliary_param_results.push(result);
-                    }
+                if let ServiceResult::Full(calc) = service_results
+                    .lock()
+                    .iter()
+                    .last()
+                    .expect("Expected at least one service result")
+                {
+                    let result = calc.param(parameter);
+                    auxiliary_param_results.push(result);
                 }
             }
         }

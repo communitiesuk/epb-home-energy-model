@@ -10,9 +10,10 @@ use crate::input::{HeatSource as HeatSourceInput, SolarCellLocation, WaterPipewo
 use crate::simulation_time::SimulationTimeIteration;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::iter::zip;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // BS EN 15316-5:2017 Appendix B default input data
 // Model Information
@@ -366,11 +367,9 @@ impl StorageTank {
                 }
 
                 if self.heating_active[heat_source_name] {
-                    let mut energy_potential: f64 = Default::default();
-                    if let Ok(immersion) = immersion_heater.lock() {
-                        energy_potential =
-                            immersion.energy_output_max(simulation_time.index, false);
-                    }
+                    let mut energy_potential = immersion_heater
+                        .lock()
+                        .energy_output_max(simulation_time.index, false);
 
                     if !matches!(
                         heat_source,
@@ -861,14 +860,9 @@ impl StorageTank {
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
         match heat_source {
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => {
-                match immersion.lock() {
-                    Ok(ref mut imm) => {
-                        imm.demand_energy(input_energy_adj, simulation_time_iteration.index)
-                    }
-                    Err(_) => panic!("was not able to get mutex lock on immersion heater"),
-                }
-            }
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
+                .lock()
+                .demand_energy(input_energy_adj, simulation_time_iteration.index),
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar)) => {
                 solar.demand_energy(input_energy_adj)
             }
@@ -945,9 +939,7 @@ impl ImmersionHeater {
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
         if let Some(ref mut diverter) = &mut self.diverter {
-            if let Ok(mut d) = diverter.lock() {
-                d.capacity_already_in_use(energy_supplied);
-            }
+            diverter.lock().capacity_already_in_use(energy_supplied);
         }
 
         // TODO report demand to energy supply
@@ -991,9 +983,7 @@ impl PVDiverter {
             capacity_already_in_use: Default::default(),
         }));
 
-        if let Ok(mut immersion) = heat_source.lock() {
-            immersion.connect_diverter(diverter.clone());
-        }
+        heat_source.lock().connect_diverter(diverter.clone());
 
         diverter
     }
@@ -1014,11 +1004,11 @@ impl PVDiverter {
     ) -> f64 {
         let mut imm_heater_max_capacity_spare: f64 = Default::default();
         // check how much spare capacity the immersion heater has
-        if let Ok(mut immersion) = self.immersion_heater.lock() {
-            imm_heater_max_capacity_spare = immersion
-                .energy_output_max(simulation_time_iteration.index, true)
-                - self.capacity_already_in_use;
-        }
+        imm_heater_max_capacity_spare = self
+            .immersion_heater
+            .lock()
+            .energy_output_max(simulation_time_iteration.index, true)
+            - self.capacity_already_in_use;
 
         // Calculate the maximum energy that could be diverted
         // Note: supply_surplus argument is negative by convention, so negate it here
@@ -1028,17 +1018,14 @@ impl PVDiverter {
             .unwrap();
 
         // Add additional energy to storage tank and calculate how much energy was accepted
-        let energy_diverted = match self.storage_tank.lock() {
-            Ok(ref mut tank) => tank.additional_energy_input(
-                &mut HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                    self.immersion_heater.clone(),
-                )),
-                &self.heat_source_name,
-                energy_diverted_max,
-                simulation_time_iteration,
-            ),
-            Err(_) => panic!("Could not unlock mutex for storage tank in PV diverter"),
-        };
+        let energy_diverted = self.storage_tank.lock().additional_energy_input(
+            &mut HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                self.immersion_heater.clone(),
+            )),
+            &self.heat_source_name,
+            energy_diverted_max,
+            simulation_time_iteration,
+        );
 
         energy_diverted
     }

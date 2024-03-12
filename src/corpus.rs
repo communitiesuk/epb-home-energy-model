@@ -57,10 +57,11 @@ use crate::input::{
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use indexmap::IndexMap;
+use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // TODO make this a runtime parameter?
 const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
@@ -1812,7 +1813,6 @@ impl HeatSource {
             HeatSource::Storage(ref mut storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => imm
                     .lock()
-                    .expect("Expected to obtain a mutex lock on an immersion heater value")
                     .demand_energy(energy_demand, simulation_time_iteration.index),
                 HeatSourceWithStorageTank::Solar(ref mut solar) => {
                     solar.demand_energy(energy_demand)

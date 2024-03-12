@@ -66,9 +66,9 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::Instant(ref mut instant) => {
                 instant.demand_energy(energy_demand, simulation_time_iteration.index)
             }
-            SpaceHeatSystem::WarmAir(ref mut warm_air) => warm_air
-                .demand_energy(energy_demand, &simulation_time_iteration)
-                .expect("expected to be able to calc demand energy for warm air heat pump"),
+            SpaceHeatSystem::WarmAir(ref mut warm_air) => {
+                warm_air.demand_energy(energy_demand, &simulation_time_iteration)
+            }
         }
     }
 

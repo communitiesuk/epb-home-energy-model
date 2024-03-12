@@ -5,7 +5,8 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use interp::interp;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// This module provides object(s) to model the behaviour of heat batteries.
 
@@ -56,7 +57,7 @@ impl HeatBatteryServiceWaterRegular {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        self.heat_battery.lock().unwrap().demand_energy(
+        self.heat_battery.lock().demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
@@ -72,7 +73,6 @@ impl HeatBatteryServiceWaterRegular {
 
         self.heat_battery
             .lock()
-            .unwrap()
             .energy_output_max(self.temp_hot_water)
     }
 
@@ -132,7 +132,7 @@ impl HeatBatteryServiceSpace {
             return 0.0;
         }
 
-        self.heat_battery.lock().unwrap().demand_energy(
+        self.heat_battery.lock().demand_energy(
             &self.service_name,
             ServiceType::Space,
             energy_demand,
