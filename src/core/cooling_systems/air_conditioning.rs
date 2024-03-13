@@ -104,9 +104,9 @@ mod tests {
         let inputs = [-40.0, -100.0, -30.0, -20.0];
         let expected_demand = [-40.0, -50.0, 0.0, -20.0];
 
-        for (t_idx, _) in simulation_time.iter().enumerate() {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                aircon.demand_energy(inputs[t_idx], t_idx),
+                aircon.demand_energy(inputs[t_idx], t_it),
                 expected_demand[t_idx],
                 "incorrect cooling energy supplied returned"
             );

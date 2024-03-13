@@ -101,9 +101,9 @@ mod tests {
     ) {
         let energy_input = [40.0, 100.0, 30.0, 20.0];
         let demand_expected = [40.0, 50.0, 0.0, 20.0];
-        for (t_idx, _) in simulation_time.iter().enumerate() {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                instant_elec_heater.demand_energy(energy_input[t_idx], t_idx),
+                instant_elec_heater.demand_energy(energy_input[t_idx], t_it),
                 demand_expected[t_idx]
             );
         }

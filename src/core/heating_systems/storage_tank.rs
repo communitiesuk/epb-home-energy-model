@@ -1376,7 +1376,7 @@ mod tests {
         for (t_idx, iteration) in simulation_time_for_storage_tank.iter().enumerate() {
             storage_tank.demand_hot_water(
                 [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
-                &iteration,
+                iteration,
             );
             temp_n_values.push(storage_tank.temp_n);
         }
@@ -1415,9 +1415,9 @@ mod tests {
     ) {
         let energy_inputs = [40., 100., 30., 20.];
         let expected_energy = [40., 50., 0., 20.];
-        for (t_idx, _) in simulation_time_for_immersion_heater.iter().enumerate() {
+        for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
             assert_eq!(
-                immersion_heater.demand_energy(energy_inputs[t_idx], t_idx),
+                immersion_heater.demand_energy(energy_inputs[t_idx], t_it),
                 expected_energy[t_idx],
                 "incorrect energy demand calculated"
             );

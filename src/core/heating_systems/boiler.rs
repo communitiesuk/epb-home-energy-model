@@ -871,7 +871,7 @@ mod tests {
         boiler_energy_output_required: [f64; 2],
         temp_return_feed: [f64; 2],
     ) {
-        for (idx, _) in simulation_time.iter().enumerate() {
+        for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 round_by_precision(
                     boiler.demand_energy(
@@ -879,7 +879,7 @@ mod tests {
                         ServiceType::WaterCombi,
                         boiler_energy_output_required[idx],
                         temp_return_feed[idx],
-                        idx,
+                        t_it,
                     ),
                     1e7,
                 ),
@@ -1011,10 +1011,10 @@ mod tests {
         simulation_time: SimulationTime,
         volume_demanded: [f64; 2],
     ) {
-        for (idx, _) in simulation_time.iter().enumerate() {
+        for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 round_by_precision(
-                    combi_boiler.demand_hot_water(volume_demanded[idx], idx),
+                    combi_boiler.demand_hot_water(volume_demanded[idx], t_it),
                     1e7,
                 ),
                 [0.7241412, 0.1748878][idx],
@@ -1074,10 +1074,10 @@ mod tests {
         mut regular_boiler: BoilerServiceWaterRegular,
         simulation_time: SimulationTime,
     ) {
-        for (idx, _) in simulation_time.iter().enumerate() {
+        for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 round_by_precision(
-                    regular_boiler.demand_energy([0.7241412, 0.1748878][idx], idx),
+                    regular_boiler.demand_energy([0.7241412, 0.1748878][idx], t_it),
                     1e7,
                 ),
                 [0.7241412, 0.1748878][idx]
@@ -1158,14 +1158,14 @@ mod tests {
         let energy_demanded = [10.0, 2.0, 2.0];
         let temp_flow = [55.0, 65.0, 65.0];
         let temp_return_feed = [50.0, 60.0, 60.0];
-        for (idx, _) in simulation_time_for_service_space.iter().enumerate() {
+        for (idx, t_it) in simulation_time_for_service_space.iter().enumerate() {
             assert_eq!(
                 round_by_precision(
                     service_space_boiler.demand_energy(
                         energy_demanded[idx],
                         temp_flow[idx],
                         temp_return_feed[idx],
-                        idx,
+                        t_it,
                     ),
                     1e7,
                 ),
