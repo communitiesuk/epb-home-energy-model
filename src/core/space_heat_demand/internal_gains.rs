@@ -1,6 +1,6 @@
 use crate::core::energy_supply::energy_supply::EnergySupply;
 // use crate::core::units::WATTS_PER_KILOWATT;
-use crate::simulation_time::SimulationTimeIterator;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -18,12 +18,14 @@ pub enum Gains<'a> {
 }
 
 impl<'a> Gains<'a> {
-    pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
+    pub fn total_internal_gain_in_w(
+        &self,
+        zone_area: f64,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
         match self {
-            Gains::Internal(internal) => internal.total_internal_gain_in_w(zone_area, timestep_idx),
-            Gains::Appliance(appliance) => {
-                appliance.total_internal_gain_in_w(zone_area, timestep_idx)
-            }
+            Gains::Internal(internal) => internal.total_internal_gain_in_w(zone_area, simtime),
+            Gains::Appliance(appliance) => appliance.total_internal_gain_in_w(zone_area, simtime),
         }
     }
 }
@@ -38,8 +40,13 @@ impl InternalGains {
     }
 
     /// Return the total internal gain for the current timestep in W
-    pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
-        self.total_internal_gains[timestep_idx] * zone_area
+    pub fn total_internal_gain_in_w(
+        &self,
+        zone_area: f64,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        self.total_internal_gains[simtime.time_series_idx(self.start_day, self.time_series_step)]
+            * zone_area
     }
 }
 
@@ -77,8 +84,13 @@ impl ApplianceGains {
     }
 
     /// Return the total internal gain for the current timestep in W
-    pub fn total_internal_gain_in_w(&self, zone_area: f64, timestep_idx: usize) -> f64 {
-        let total_energy_supplied = self.total_energy_supply[timestep_idx];
+    pub fn total_internal_gain_in_w(
+        &self,
+        zone_area: f64,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        let total_energy_supplied = self.total_energy_supply
+            [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
         // let total_energy_supplied_kWh =
         //     total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
@@ -121,11 +133,7 @@ mod tests {
         let expected = vec![32.0, 46.0, 73.0, 52.0];
         for iteration in simulation_time_iterator {
             assert_eq!(
-                internal_gains.total_internal_gain_in_w(
-                    10.0,
-                    iteration
-                        .time_series_idx(internal_gains.start_day, internal_gains.time_series_step),
-                ),
+                internal_gains.total_internal_gain_in_w(10.0, iteration,),
                 expected[iteration
                     .time_series_idx(internal_gains.start_day, internal_gains.time_series_step)]
             );
@@ -153,7 +161,7 @@ mod tests {
         };
         for iteration in simulation_time_iterator.clone() {
             assert_eq!(
-                appliance_gains.total_internal_gain_in_w(10.0, iteration.index),
+                appliance_gains.total_internal_gain_in_w(10.0, iteration),
                 total_internal_gains[iteration.index]
             );
             // TODO: Python code has a test here for energy supply results by end user

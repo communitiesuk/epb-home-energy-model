@@ -599,7 +599,7 @@ impl Corpus {
             .filter_map(|(name, option)| option.as_ref().map(|gains| (name, gains)))
             {
                 gains_internal_zone_inner +=
-                    gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration.index);
+                    gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration);
             }
             let gains_internal_zone_entry = gains_internal_zone
                 .entry(z_name)
