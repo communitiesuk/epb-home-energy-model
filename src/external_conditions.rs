@@ -296,7 +296,7 @@ impl ExternalConditions {
         )
     }
 
-    pub fn wind_speed_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
+    fn wind_speed_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
         self.wind_speeds[timestep_idx]
     }
 

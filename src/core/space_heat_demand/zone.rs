@@ -956,7 +956,7 @@ fn calc_temperatures(
         sum_vent_elements_h_ve += vei.h_ve_heat_transfer_coefficient(
             volume,
             Some(throughput_factor),
-            Some(simulation_time.index),
+            Some(*simulation_time),
             external_conditions,
         );
     }
@@ -1012,7 +1012,7 @@ fn calc_temperatures(
         sum_vent_elements_h_ve_times_temp_supply += vei.h_ve_heat_transfer_coefficient(
             volume,
             Some(throughput_factor),
-            Some(simulation_time.index),
+            Some(*simulation_time),
             external_conditions,
         ) * vei
             .temp_supply(*simulation_time, external_conditions);

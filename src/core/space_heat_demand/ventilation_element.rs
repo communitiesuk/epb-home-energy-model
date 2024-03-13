@@ -25,7 +25,7 @@ pub trait VentilationElementBehaviour {
         &self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        timestep_idx: Option<usize>,
+        simtime: Option<SimulationTimeIteration>,
         external_conditions: &ExternalConditions,
     ) -> f64;
 
@@ -61,32 +61,32 @@ impl VentilationElementBehaviour for VentilationElement {
         &self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        timestep_idx: Option<usize>,
+        simtime: Option<SimulationTimeIteration>,
         external_conditions: &ExternalConditions,
     ) -> f64 {
         match self {
             VentilationElement::Infiltration(el) => el.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 throughput_factor,
-                timestep_idx,
+                simtime,
                 external_conditions,
             ),
             VentilationElement::Mvhr(el) => el.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 throughput_factor,
-                timestep_idx,
+                simtime,
                 external_conditions,
             ),
             VentilationElement::Whev(el) => el.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 throughput_factor,
-                timestep_idx,
+                simtime,
                 external_conditions,
             ),
             VentilationElement::Natural(el) => el.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 throughput_factor,
-                timestep_idx,
+                simtime,
                 external_conditions,
             ),
         }
@@ -266,13 +266,11 @@ impl VentilationElementBehaviour for VentilationElementInfiltration {
         &self,
         zone_volume: f64,
         _throughput_factor: Option<f64>,
-        timestep_idx: Option<usize>,
+        simtime: Option<SimulationTimeIteration>,
         external_conditions: &ExternalConditions,
     ) -> f64 {
         P_A * C_A
-            * (self.infiltration_rate()
-                * external_conditions.wind_speed_for_timestep_idx(timestep_idx.unwrap())
-                / 4.0)
+            * (self.infiltration_rate() * external_conditions.wind_speed(&simtime.unwrap()) / 4.0)
             * (zone_volume / SECONDS_PER_HOUR as f64)
     }
 
@@ -479,7 +477,7 @@ impl VentilationElementBehaviour for MechanicalVentilationHeatRecovery {
         &self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        _timestep_idx: Option<usize>,
+        _simtime: Option<SimulationTimeIteration>,
         _external_conditions: &ExternalConditions,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
@@ -603,14 +601,13 @@ impl VentilationElementBehaviour for WholeHouseExtractVentilation {
         &self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        timestep_index: Option<usize>,
+        simtime: Option<SimulationTimeIteration>,
         external_conditions: &ExternalConditions,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
 
-        let infiltration_rate_adj = self.infiltration_rate
-            * external_conditions.wind_speed_for_timestep_idx(timestep_index.unwrap())
-            / 4.0;
+        let infiltration_rate_adj =
+            self.infiltration_rate * external_conditions.wind_speed(&simtime.unwrap()) / 4.0;
         let ach = self.air_change_rate(infiltration_rate_adj);
         let q_v = air_change_rate_to_flow_rate(ach, zone_volume) * throughput_factor;
 
@@ -647,12 +644,11 @@ impl VentilationElementBehaviour for NaturalVentilation {
         &self,
         zone_volume: f64,
         _throughput_factor: Option<f64>,
-        timestep_idx: Option<usize>,
+        simtime: Option<SimulationTimeIteration>,
         external_conditions: &ExternalConditions,
     ) -> f64 {
-        let infiltration_rate_adj = self.infiltration_rate
-            * external_conditions.wind_speed_for_timestep_idx(timestep_idx.unwrap())
-            / 4.0;
+        let infiltration_rate_adj =
+            self.infiltration_rate * external_conditions.wind_speed(&simtime.unwrap()) / 4.0;
         let ach = self.air_change_rate(infiltration_rate_adj);
         let q_v = air_change_rate_to_flow_rate(ach, zone_volume);
 
@@ -955,7 +951,7 @@ impl WindowOpeningForCooling {
         simtime: SimulationTimeIteration,
         external_conditions: &ExternalConditions,
     ) -> f64 {
-        let wind_speed = external_conditions.wind_speed_for_timestep_idx(simtime.index);
+        let wind_speed = external_conditions.wind_speed(&simtime);
         let temp_ext = external_conditions.air_temp(&simtime);
         let temp_diff = (temp_int - temp_ext).abs();
         let temp_average_c = (temp_int + temp_ext) / 2.0;
@@ -1019,7 +1015,7 @@ impl WindowOpeningForCooling {
             Some(nv) => nv.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 None,
-                Some(simtime.index),
+                Some(simtime),
                 external_conditions,
             ),
             None => 0.0,
@@ -1176,7 +1172,7 @@ mod test {
                     infiltration_element.h_ve_heat_transfer_coefficient(
                         75.0,
                         None,
-                        Some(simtime_step.index),
+                        Some(simtime_step),
                         &external_conditions,
                     ),
                     1e6,
@@ -1324,13 +1320,13 @@ mod test {
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
-        for (i, _) in simulation_time_iterator.enumerate() {
+        for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 round_by_precision(
                     whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
                         75.0,
                         None,
-                        Some(i),
+                        Some(t_it),
                         &external_conditions,
                     ),
                     1e6,
@@ -1344,7 +1340,7 @@ mod test {
                     whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
                         75.0,
                         Some(1.2),
-                        Some(i),
+                        Some(t_it),
                         &external_conditions,
                     ),
                     1e6,
