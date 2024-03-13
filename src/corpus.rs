@@ -58,6 +58,7 @@ use crate::input::{
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use indexmap::IndexMap;
+use indicatif::ProgressBar;
 use parking_lot::{Mutex, RawMutex};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -931,6 +932,8 @@ impl Corpus {
 
         let mut simulation_time = self.simulation_time.as_ref().to_owned();
 
+        let progress_bar = ProgressBar::new(simulation_time.total_steps() as u64);
+
         for t_it in simulation_time {
             timestep_array.push(t_it.time);
             let (hw_demand_vol, hw_vol_at_tapping_points, hw_duration, no_events, hw_energy_demand) =
@@ -1110,7 +1113,11 @@ impl Corpus {
             // for diverter in self.diverters {
             //
             // }
+
+            progress_bar.inc(1);
         }
+
+        progress_bar.finish();
 
         // Return results from all energy supplies
         let mut results_totals: HashMap<&str, f64> = Default::default();
