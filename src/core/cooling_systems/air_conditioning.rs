@@ -55,12 +55,12 @@ impl AirConditioning {
         self.frac_convective
     }
 
-    pub fn demand_energy(&self, cooling_demand: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_energy(&self, cooling_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let cooling_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(timestep_idx) {
+            if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
                 max_of_2(
                     cooling_demand,
                     -self.cooling_capacity_in_kw * self.simulation_timestep,

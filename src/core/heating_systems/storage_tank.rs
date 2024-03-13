@@ -154,9 +154,9 @@ impl StorageTank {
         &self.cold_feed
     }
 
-    fn get_setpoint_min(&self, timestep_idx: usize) -> f64 {
+    fn get_setpoint_min(&self, simtime: SimulationTimeIteration) -> f64 {
         match &self.control_hold_at_setpoint {
-            Some(control) if control.is_on(timestep_idx) => self.temp_set_on,
+            Some(control) if control.is_on(simtime) => self.temp_set_on,
             _ => self.temp_out_w_min,
         }
     }
@@ -344,7 +344,7 @@ impl StorageTank {
         heat_source_name: &str,
         heater_layer: usize,
         thermostat_layer: usize,
-        simulation_time: &SimulationTimeIteration,
+        simulation_time: SimulationTimeIteration,
     ) -> [f64; STORAGE_TANK_NB_VOL] {
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = [0.; STORAGE_TANK_NB_VOL];
@@ -352,13 +352,13 @@ impl StorageTank {
         let energy_potential = match heat_source {
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar_heat_source)) => {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
-                solar_heat_source.energy_output_max(self, temp_s3_n, simulation_time)
+                solar_heat_source.energy_output_max(self, temp_s3_n, &simulation_time)
             }
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion_heater)) => {
                 // no demand from heat source if the temperature of the tank at the thermostat position is below the set point
 
                 // trigger heating to start when temperature falls below the minimum
-                if temp_s3_n[thermostat_layer] <= self.get_setpoint_min(simulation_time.index) {
+                if temp_s3_n[thermostat_layer] <= self.get_setpoint_min(simulation_time) {
                     self.heating_active
                         .entry(heat_source_name.to_string())
                         .and_modify(|e| {
@@ -369,7 +369,7 @@ impl StorageTank {
                 if self.heating_active[heat_source_name] {
                     let mut energy_potential = immersion_heater
                         .lock()
-                        .energy_output_max(simulation_time.index, false);
+                        .energy_output_max(simulation_time, false);
 
                     if !matches!(
                         heat_source,
@@ -606,7 +606,7 @@ impl StorageTank {
         heater_layer: usize,
         thermostat_layer: usize,
         q_ls_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
-        simulation_time: &SimulationTimeIteration,
+        simulation_time: SimulationTimeIteration,
     ) -> TemperatureCalculation {
         // 6.4.3.8 STEP 6 Energy input into the storage
         // input energy delivered to the storage in kWh - timestep dependent
@@ -636,7 +636,7 @@ impl StorageTank {
         q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
         thermostat_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> TemperatureCalculation {
         let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, q_x_in_n);
 
@@ -677,7 +677,7 @@ impl StorageTank {
     pub fn demand_hot_water(
         &mut self,
         volume_demanded: f64,
-        simulation_time: &SimulationTimeIteration,
+        simulation_time: SimulationTimeIteration,
     ) -> f64 {
         // 6.4.3.3 STEP 1 Calculate energy stored
         // energy stored for domestic hot water - kWh
@@ -772,7 +772,7 @@ impl StorageTank {
         heat_source: &mut HeatSource,
         heat_source_name: &str,
         energy_input: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         if energy_input == 0. {
             return 0.;
@@ -857,12 +857,12 @@ impl StorageTank {
         &mut self,
         heat_source: &mut HeatSource,
         input_energy_adj: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match heat_source {
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
                 .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration.index),
+                .demand_energy(input_energy_adj, simulation_time_iteration),
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar)) => {
                 solar.demand_energy(input_energy_adj)
             }
@@ -922,12 +922,12 @@ impl ImmersionHeater {
     }
 
     /// Demand energy (in kWh) from the heater
-    pub fn demand_energy(&mut self, energy_demand: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_energy(&mut self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let energy_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(timestep_idx) {
+            if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
                 *[energy_demand, self.pwr * self.simulation_timestep]
                     .iter()
                     .max_by(|a, b| a.total_cmp(b).reverse())
@@ -948,12 +948,16 @@ impl ImmersionHeater {
     }
 
     /// Calculate the maximum energy output (in kWh) from the heater
-    pub fn energy_output_max(&self, timestep_idx: usize, ignore_standard_control: bool) -> f64 {
+    pub fn energy_output_max(
+        &self,
+        simtime: SimulationTimeIteration,
+        ignore_standard_control: bool,
+    ) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         if self.control.is_none()
-            || self.control.as_ref().unwrap().is_on(timestep_idx)
+            || self.control.as_ref().unwrap().is_on(simtime)
             || ignore_standard_control
         {
             self.pwr * self.simulation_timestep
@@ -1000,14 +1004,14 @@ impl PVDiverter {
     pub fn divert_surplus(
         &mut self,
         supply_surplus: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         let mut imm_heater_max_capacity_spare: f64 = Default::default();
         // check how much spare capacity the immersion heater has
         imm_heater_max_capacity_spare = self
             .immersion_heater
             .lock()
-            .energy_output_max(simulation_time_iteration.index, true)
+            .energy_output_max(simulation_time_iteration, true)
             - self.capacity_already_in_use;
 
         // Calculate the maximum energy that could be diverted

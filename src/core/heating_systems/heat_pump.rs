@@ -1048,20 +1048,17 @@ impl HeatPumpServiceWater {
         }
     }
 
-    pub fn is_on(&self, timestep_idx: usize) -> bool {
+    pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
         match &self.control {
-            Some(ctrl) => ctrl.is_on(timestep_idx),
+            Some(ctrl) => ctrl.is_on(simtime),
             None => true,
         }
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
     /// spent on higher-priority services
-    pub fn energy_output_max(
-        &mut self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
-        if !self.is_on(simulation_time_iteration.index) {
+    pub fn energy_output_max(&mut self, simulation_time_iteration: SimulationTimeIteration) -> f64 {
+        if !self.is_on(simulation_time_iteration) {
             return 0.0;
         }
 
@@ -1076,12 +1073,12 @@ impl HeatPumpServiceWater {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         let temp_cold_water =
             celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration.index));
 
-        let service_on = self.is_on(simulation_time_iteration.index);
+        let service_on = self.is_on(simulation_time_iteration);
 
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
@@ -1140,8 +1137,8 @@ impl HeatPumpServiceSpace {
         }
     }
 
-    pub fn is_on(&self, timestep_idx: usize) -> bool {
-        self.control.is_on(timestep_idx)
+    pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
+        self.control.is_on(simtime)
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
@@ -1161,9 +1158,9 @@ impl HeatPumpServiceSpace {
         &self,
         temp_output: f64,
         temp_return_feed: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        if !self.is_on(simulation_time_iteration.index) {
+        if !self.is_on(simulation_time_iteration) {
             return 0.0;
         }
 
@@ -1186,9 +1183,9 @@ impl HeatPumpServiceSpace {
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        let service_on = self.is_on(simulation_time_iteration.index);
+        let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let mut pump = self.heat_pump.lock();
@@ -1220,9 +1217,9 @@ impl HeatPumpServiceSpace {
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let service_on = self.is_on(simulation_time_iteration.index);
+        let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let time_constant_for_service = match self.heat_pump.lock().sink_type {
@@ -1314,8 +1311,8 @@ impl HeatPumpServiceSpaceWarmAir {
         }
     }
 
-    pub fn is_on(&self, timestep_idx: usize) -> bool {
-        self.control.is_on(timestep_idx)
+    pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
+        self.control.is_on(simtime)
     }
 
     pub fn in_required_period(
@@ -1332,12 +1329,12 @@ impl HeatPumpServiceSpaceWarmAir {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         let temp_flow = self.temp_flow;
         let temp_return = self.temp_return;
 
-        let service_on = self.is_on(simulation_time_iteration.index);
+        let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let mut pump = self.heat_pump.lock();
@@ -1366,12 +1363,12 @@ impl HeatPumpServiceSpaceWarmAir {
         &self,
         energy_demand: f64,
         space_heat_running_time_cumulative: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
         let temp_flow = self.temp_flow;
         let temp_return = self.temp_return;
 
-        let service_on = self.is_on(simulation_time_iteration.index);
+        let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         let time_constant_for_service = match self.heat_pump.lock().sink_type {
@@ -1783,10 +1780,10 @@ impl HeatPump {
     }
 
     /// Get source temp according to rules in CALCM-01 - DAHPSE - V2.0_DRAFT13, 3.1.1
-    fn get_temp_source(&self, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
+    fn get_temp_source(&self, simulation_time_iteration: SimulationTimeIteration) -> f64 {
         let temp_source = match self.source_type {
             HeatPumpSourceType::Ground => {
-                let temp_ext = self.external_conditions.air_temp(simulation_time_iteration);
+                let temp_ext = self.external_conditions.air_temp(&simulation_time_iteration);
                 *[
                     0.,
                     *[8., temp_ext * 0.25806 + 2.8387]
@@ -1798,7 +1795,7 @@ impl HeatPump {
                     .max_by(|a, b| a.total_cmp(b))
                     .unwrap()
             }
-            HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(simulation_time_iteration),
+            HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(&simulation_time_iteration),
             HeatPumpSourceType::ExhaustAirMEV => 20.0,
             HeatPumpSourceType::ExhaustAirMVHR => 20.0,
             HeatPumpSourceType::ExhaustAirMixed => {
@@ -1841,7 +1838,7 @@ impl HeatPump {
         &self,
         temp_output: f64,
         temp_return_feed: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         let timestep = self.simulation_timestep;
         let time_available = timestep - self.total_time_running_current_timestep;
@@ -1879,7 +1876,7 @@ impl HeatPump {
         temp_output: f64,
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
         let temp_spread_correction_factor = match temp_spread_correction {
             TempSpreadCorrectionArg::Float(correction) => correction,
@@ -1892,7 +1889,8 @@ impl HeatPump {
             let cop_op_cond = temp_spread_correction_factor
                 * self.test_data.cop_op_cond_if_not_air_source(
                     HEAT_PUMP_TEMP_DIFF_LIMIT_LOW,
-                    self.external_conditions.air_temp(simulation_time_iteration), // TODO Python uses .temperature() method here although need to check if this is a bug
+                    self.external_conditions
+                        .air_temp(&simulation_time_iteration), // TODO Python uses .temperature() method here although need to check if this is a bug
                     temp_source,
                     temp_output,
                 );
@@ -2002,7 +2000,7 @@ impl HeatPump {
     fn outside_operating_limits(
         &self,
         temp_return_feed: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> bool {
         let temp_source = self.get_temp_source(simulation_time_iteration);
         let below_min_ext_temp = temp_source <= self.temp_lower_op_limit;
@@ -2050,7 +2048,7 @@ impl HeatPump {
         energy_output_required: f64,
         temp_return_feed: f64,
         thermal_capacity_op_cond: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> bool {
         let outside_operating_limits =
             self.outside_operating_limits(temp_return_feed, simulation_time_iteration);
@@ -2086,7 +2084,7 @@ impl HeatPump {
         temp_limit_upper: f64,
         time_constant_for_service: f64,
         service_on: bool,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
         additional_time_unavailable: Option<f64>,
@@ -2297,7 +2295,7 @@ impl HeatPump {
         temp_limit_upper: f64,
         time_constant_for_service: f64,
         service_on: bool,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
     ) -> f64 {
@@ -2343,7 +2341,7 @@ impl HeatPump {
         temp_limit_upper: f64,
         time_constant_for_service: f64,
         service_on: bool,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
     ) -> (f64, f64) {
         let timestep = self.simulation_timestep;
@@ -2940,12 +2938,12 @@ impl HeatPumpHotWaterOnly {
     }
 
     /// Demand energy (in kWh) from the heat pump
-    pub fn demand_energy(&mut self, energy_demand: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_energy(&mut self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let energy_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(timestep_idx) {
+            if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
                 min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
             } else {
                 0.0
@@ -2958,11 +2956,11 @@ impl HeatPumpHotWaterOnly {
     }
 
     /// Calculate the maximum energy output (in kWh) from the heater
-    pub fn energy_output_max(&self, timestep_idx: usize) -> f64 {
+    pub fn energy_output_max(&self, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        if self.control.is_none() || self.control.as_ref().unwrap().is_on(timestep_idx) {
+        if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0

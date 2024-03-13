@@ -734,7 +734,7 @@ impl Corpus {
                 cool_system_name.as_str(),
                 cool_system.demand_energy(
                     space_cool_demand_system[cool_system_name.as_str()],
-                    simulation_time_iteration.index,
+                    simulation_time_iteration,
                 ),
             );
         }
@@ -2216,13 +2216,13 @@ impl HeatSource {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
             HeatSource::Storage(ref mut storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => imm
                     .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration.index),
+                    .demand_energy(energy_demand, simulation_time_iteration),
                 HeatSourceWithStorageTank::Solar(ref mut solar) => {
                     solar.demand_energy(energy_demand)
                 }
@@ -2233,23 +2233,23 @@ impl HeatSource {
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::WaterRegular(ref mut r) => {
-                    r.demand_energy(energy_demand, simulation_time_iteration.index)
+                    r.demand_energy(energy_demand, simulation_time_iteration)
                 }
                 HeatSourceWet::Space(_) => {
                     panic!("not expected? this value does not have a demand_energy method")
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
-                    h.demand_energy(energy_demand, simulation_time_iteration)
+                    h.demand_energy(energy_demand, &simulation_time_iteration)
                 }
                 HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
-                    h.demand_energy(energy_demand, *simulation_time_iteration)
+                    h.demand_energy(energy_demand, simulation_time_iteration)
                 }
                 HeatSourceWet::HeatPumpWater(ref mut h) => {
                     h.demand_energy(energy_demand, simulation_time_iteration)
                 }
                 HeatSourceWet::HeatPumpWaterOnly(h) => {
-                    h.demand_energy(energy_demand, simulation_time_iteration.index)
+                    h.demand_energy(energy_demand, simulation_time_iteration)
                 }
             },
         }
@@ -2526,10 +2526,10 @@ impl HotWaterSource {
     ) -> f64 {
         match self {
             HotWaterSource::StorageTank(ref mut source) => {
-                source.demand_hot_water(vol_demanded, &simulation_time_iteration)
+                source.demand_hot_water(vol_demanded, simulation_time_iteration)
             }
             HotWaterSource::CombiBoiler(ref mut source) => {
-                source.demand_hot_water(vol_demanded, simulation_time_iteration.index)
+                source.demand_hot_water(vol_demanded, simulation_time_iteration)
             }
             HotWaterSource::PointOfUse(ref mut source) => {
                 source.demand_hot_water(vol_demanded, &simulation_time_iteration)

@@ -52,23 +52,22 @@ impl InstantElecHeater {
     }
 
     /// Demand energy (in kWh) from the heater
-    pub fn demand_energy(&self, energy_demand: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_energy(&self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        let energy_supplied = if self.control.as_ref().is_none()
-            || self.control.as_ref().unwrap().is_on(timestep_idx)
-        {
-            *[
-                energy_demand,
-                self.rated_power_in_kw * self.simulation_timestep,
-            ]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b).reverse())
-            .unwrap()
-        } else {
-            0.
-        };
+        let energy_supplied =
+            if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(simtime) {
+                *[
+                    energy_demand,
+                    self.rated_power_in_kw * self.simulation_timestep,
+                ]
+                .iter()
+                .max_by(|a, b| a.total_cmp(b).reverse())
+                .unwrap()
+            } else {
+                0.
+            };
 
         // TODO register energy supply demand
 

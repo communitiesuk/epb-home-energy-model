@@ -4,6 +4,7 @@ use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EnergySupplyType, HeatSourceLocation, HeatSourceWetDetails};
+use crate::simulation_time::SimulationTimeIteration;
 use crate::{
     core::water_heat_demand::cold_water_source::ColdWaterSource,
     input::{BoilerHotWaterTest, HotWaterSourceDetails},
@@ -101,13 +102,17 @@ impl BoilerServiceWaterCombi {
         &self.cold_feed
     }
 
-    pub fn demand_hot_water(&mut self, volume_demanded: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_hot_water(
+        &mut self,
+        volume_demanded: f64,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
         let timestep = self.simulation_timestep;
         let return_temperature = 60.;
 
         let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water_in_c,
-            self.cold_feed.temperature(timestep_idx),
+            self.cold_feed.temperature(simtime.index),
         );
         let mut energy_demand = volume_demanded * energy_content_kwh_per_litre;
 
@@ -119,7 +124,7 @@ impl BoilerServiceWaterCombi {
             ServiceType::WaterCombi,
             energy_demand,
             return_temperature,
-            timestep_idx,
+            simtime,
         )
     }
 
@@ -232,8 +237,8 @@ impl BoilerServiceWaterRegular {
         }
     }
 
-    pub fn demand_energy(&mut self, energy_demand: f64, timestep_idx: usize) -> f64 {
-        if !self.is_on(timestep_idx) {
+    pub fn demand_energy(&mut self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
+        if !self.is_on(simtime) {
             return 0.;
         }
 
@@ -242,12 +247,12 @@ impl BoilerServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             self.temperature_return,
-            timestep_idx,
+            simtime,
         )
     }
 
-    pub fn energy_output_max(&mut self, timestep_idx: usize) -> f64 {
-        if !self.is_on(timestep_idx) {
+    pub fn energy_output_max(&mut self, simtime: SimulationTimeIteration) -> f64 {
+        if !self.is_on(simtime) {
             return 0.;
         }
 
@@ -255,9 +260,9 @@ impl BoilerServiceWaterRegular {
             .energy_output_max(self.temperature_hot_water_in_c)
     }
 
-    fn is_on(&self, timestep_idx: usize) -> bool {
+    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
         match &self.control {
-            Some(c) => c.is_on(timestep_idx),
+            Some(c) => c.is_on(simtime),
             None => true,
         }
     }
@@ -293,9 +298,9 @@ impl BoilerServiceSpace {
         energy_demand: f64,
         _temp_flow: f64,
         temperature_return: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
-        if !self.is_on(timestep_idx) {
+        if !self.is_on(simtime) {
             return 0.;
         }
 
@@ -304,12 +309,12 @@ impl BoilerServiceSpace {
             ServiceType::Space,
             energy_demand,
             temperature_return,
-            timestep_idx,
+            simtime,
         )
     }
 
-    fn is_on(&self, timestep_idx: usize) -> bool {
-        self.control.is_on(timestep_idx)
+    fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
+        self.control.is_on(simtime)
     }
 }
 
@@ -591,13 +596,11 @@ impl Boiler {
         service_type: ServiceType,
         energy_output_required: f64,
         temperature_return_feed: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         let timestep = self.simulation_timestep;
         // use weather temperature at timestep
-        let outside_temp = self
-            .external_conditions
-            .air_temp_for_timestep_idx(timestep_idx);
+        let outside_temp = self.external_conditions.air_temp(&simtime);
 
         let energy_output_max_power =
             self.boiler_power * (timestep - self.total_time_running_current_timestep);

@@ -52,7 +52,7 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
                 energy_demand,
                 space_heat_running_time_cumulative,
-                &simulation_time_iteration,
+                simulation_time_iteration,
             ),
         }
     }
@@ -64,10 +64,10 @@ impl SpaceHeatSystem {
     ) -> f64 {
         match self {
             SpaceHeatSystem::Instant(ref mut instant) => {
-                instant.demand_energy(energy_demand, simulation_time_iteration.index)
+                instant.demand_energy(energy_demand, simulation_time_iteration)
             }
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
-                warm_air.demand_energy(energy_demand, &simulation_time_iteration)
+                warm_air.demand_energy(energy_demand, simulation_time_iteration)
             }
         }
     }

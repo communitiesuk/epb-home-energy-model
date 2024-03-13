@@ -39,8 +39,8 @@ pub trait ControlBehaviour {
 }
 
 impl Control {
-    pub fn is_on(&self, timestep_idx: usize) -> bool {
-        per_control!(self, c => {c.is_on_for_timestep_idx(timestep_idx)})
+    pub fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
+        per_control!(self, c => {c.is_on(&simulation_time_iteration)})
     }
 }
 
@@ -65,10 +65,6 @@ impl OnOffTimeControl {
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
-
-    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
-        self.schedule[timestep_idx]
-    }
 }
 
 impl ControlBehaviour for OnOffTimeControl {}
@@ -88,10 +84,6 @@ pub struct ToUChargeControl {
 impl ToUChargeControl {
     pub fn is_on(&self, iteration: &SimulationTimeIteration) -> bool {
         self.schedule[iteration.time_series_idx(self.start_day, self.time_series_step)]
-    }
-
-    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
-        self.schedule[timestep_idx]
     }
 
     pub fn target_charge(&self, timestep: &SimulationTimeIteration) -> f64 {
@@ -162,10 +154,6 @@ impl OnOffMinimisingTimeControl {
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
     }
-
-    pub fn is_on_for_timestep_idx(&self, timestep_idx: usize) -> bool {
-        self.schedule[timestep_idx]
-    }
 }
 
 impl ControlBehaviour for OnOffMinimisingTimeControl {}
@@ -229,7 +217,7 @@ impl SetpointTimeControl {
         self.is_on_for_timestep_idx(schedule_idx)
     }
 
-    pub fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
+    fn is_on_for_timestep_idx(&self, schedule_idx: usize) -> bool {
         let setpnt = self.schedule[schedule_idx];
 
         if setpnt.is_none() {
