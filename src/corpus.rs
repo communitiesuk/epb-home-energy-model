@@ -1275,8 +1275,9 @@ impl Corpus {
         energy_provided: &HashMap<String, Vec<f64>>,
         results_end_user: &HashMap<&str, HashMap<&str, f64>>,
         energy_supply_conn_name_for_space_hc_system: HashMap<&str, &[&str]>,
-    ) {
-        todo!()
+    ) -> HashMap<String, NumberOrDivisionByZero> {
+        // TODO implement when energy supplies are available
+        Default::default()
     }
 
     /// Calculate space heating and cooling demand for each zone and sum.
@@ -1397,6 +1398,11 @@ impl Corpus {
 pub enum HotWaterResultMap<'a> {
     Float(HashMap<&'a str, Vec<f64>>),
     Int(HashMap<&'a str, Vec<usize>>),
+}
+
+pub enum NumberOrDivisionByZero {
+    Number(f64),
+    DivisionByZero,
 }
 
 fn has_unique_some_values<K, V: Eq + Hash>(map: &HashMap<K, Option<V>>) -> bool {
@@ -1835,9 +1841,9 @@ type RunResults<'a> = (
     Vec<&'a str>,
     HashMap<&'a str, HashMap<String, Vec<f64>>>,
     HashMap<&'a str, HotWaterResultMap<'a>>,
-    (),
-    (),
-    (),
+    HashMap<String, NumberOrDivisionByZero>,
+    HashMap<String, NumberOrDivisionByZero>,
+    HashMap<String, NumberOrDivisionByZero>,
     HashMap<&'a str, Vec<f64>>,
     HashMap<&'a str, HashMap<&'a str, HashMap<&'a str, f64>>>,
     HashMap<&'a str, f64>,
