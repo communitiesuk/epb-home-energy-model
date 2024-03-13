@@ -108,8 +108,7 @@ pub struct InternalGainsDetails {
 #[serde(deny_unknown_fields)]
 pub struct InternalGainsSchedule {
     pub main: Value,
-    // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
-    day: Option<Vec<f64>>,
+    pub day: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]

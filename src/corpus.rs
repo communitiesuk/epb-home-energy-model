@@ -56,6 +56,7 @@ use crate::input::{
     ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use anyhow::bail;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RawMutex};
 use serde_json::Value;
@@ -94,16 +95,14 @@ pub struct Corpus {
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
 }
 
-impl TryFrom<Input> for Corpus {
-    type Error = ();
-
-    fn try_from(input: Input) -> Result<Self, Self::Error> {
+impl Corpus {
+    pub fn from_inputs(
+        input: Input,
+        external_conditions: ExternalConditions,
+    ) -> Result<Self, anyhow::Error> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
-        let external_conditions = Arc::new(external_conditions_from_input(
-            input.external_conditions.clone(),
-            simulation_time_iterator.clone().as_ref(),
-        ));
+        let external_conditions = Arc::new(external_conditions);
 
         let diverters: Diverters = (&input.energy_supply).into();
 
@@ -181,7 +180,7 @@ impl TryFrom<Input> for Corpus {
         if !has_unique_some_values(&heat_system_name_for_zone)
             || !has_unique_some_values(&cool_system_name_for_zone)
         {
-            return Err(());
+            bail!("the heat or cool systems do not have unique names in the inputs");
         }
 
         // TODO: there needs to be some equivalent here of the Python code that builds the dict __energy_supply_conn_unmet_demand_zone
@@ -318,9 +317,7 @@ impl TryFrom<Input> for Corpus {
             timestep_end_calcs,
         })
     }
-}
 
-impl Corpus {
     pub fn total_floor_area(&self) -> f64 {
         self.total_floor_area
     }
@@ -792,10 +789,10 @@ impl Corpus {
                     max_of_2(0., space_heat_demand_zone_current - gains_heat);
                 // TODO report energy supply unmet demand
             }
-            let in_req_cool_period = match h_name {
+            let in_req_cool_period = match c_name {
                 None => false,
-                Some(h_name) => {
-                    space_cool_systems_in_required_period[h_name.as_str()].unwrap_or(false)
+                Some(c_name) => {
+                    space_cool_systems_in_required_period[c_name.as_str()].unwrap_or(false)
                 }
             };
             let space_cool_demand_zone_current = space_cool_demand_zone[z_name.as_str()];
@@ -925,7 +922,7 @@ impl Corpus {
         hot_water_demand_dict.insert("demand", vec![]);
         hot_water_energy_demand_dict.insert("energy_demand", vec![]);
         hot_water_energy_demand_dict_incl_pipework
-            .insert("energy_demand_incl_pipework_losses", vec![]);
+            .insert("energy_demand_incl_pipework_loss", vec![]);
         hot_water_energy_output_dict.insert("energy_output", vec![]);
         hot_water_duration_dict.insert("duration", vec![]);
         hot_water_no_events_dict.insert("no_events", vec![]);
@@ -1581,11 +1578,12 @@ fn internal_gains_from_input(input: InternalGainsInput) -> InternalGainsCollecti
 }
 
 fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
+    let mut schedule = HashMap::from([("main".to_string(), details.schedule.main)]);
+    if let Some(day) = details.schedule.day {
+        schedule.insert("day".to_string(), day);
+    }
     InternalGains::new(
-        expand_numeric_schedule(
-            HashMap::from([("main".to_string(), details.schedule.main)]),
-            false,
-        ),
+        expand_numeric_schedule(schedule, false),
         details.start_day,
         details.time_series_step,
     )

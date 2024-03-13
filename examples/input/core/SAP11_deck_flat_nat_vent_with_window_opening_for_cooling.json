@@ -8988,7 +8988,7 @@
 				"living external wall": {
 					"type": "BuildingElementOpaque",
 					"area": 6.52,
-					"a_sol": 0.7, 
+					"a_sol": 0.7,
 					"r_c": 5.145,
 					"k_m": 51000,
 					"mass_distribution_class": "I",
@@ -9118,7 +9118,7 @@
 				"bath external wall": {
 					"type": "BuildingElementOpaque",
 					"area": 2.33,
-					"a_sol": 0.7, 
+					"a_sol": 0.7,
 					"r_c": 5.145,
 					"k_m": 51000,
 					"mass_distribution_class": "I",
@@ -9131,7 +9131,7 @@
 				"bed external wall": {
 					"type": "BuildingElementOpaque",
 					"area": 6.6,
-					"a_sol": 0.7, 
+					"a_sol": 0.7,
 					"r_c": 5.145,
 					"k_m": 51000,
 					"mass_distribution_class": "I",

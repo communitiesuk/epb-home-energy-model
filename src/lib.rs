@@ -17,6 +17,7 @@ use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use std::collections::HashMap;
 
 use crate::core::units::{SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
+use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
 use std::error::Error;
@@ -48,7 +49,7 @@ pub fn run_project(
 
     let project_data = parse_input_file(Path::new(input_file));
 
-    println!("{:?}", project_data);
+    // println!("{:?}", project_data);
 
     let input = project_data.unwrap();
 
@@ -58,9 +59,9 @@ pub fn run_project(
         input.simulation_time.clone(),
     );
 
-    let simulation_time = *input.simulation_time.clone().deref();
+    let mut corpus: Corpus = Corpus::from_inputs(input, external_conditions)?;
 
-    Calculation::new(input, external_conditions, simulation_time).run();
+    corpus.run();
 
     Ok(())
 }

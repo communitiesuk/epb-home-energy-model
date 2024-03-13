@@ -2,7 +2,7 @@
 
 use crate::simulation_time::{SimulationTimeIteration, HOURS_IN_DAY};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Control {
     OnOffTimeControl(OnOffTimeControl),
     ToUChargeControl(ToUChargeControl),
@@ -45,7 +45,7 @@ impl Control {
 }
 
 /// An object to model a time-only control with on/off (not modulating) operation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     schedule: Vec<bool>,
@@ -75,7 +75,7 @@ impl ControlBehaviour for OnOffTimeControl {}
 
 /// An object to model a control that governs electrical charging of a heat storage device
 /// that can respond to signals from the grid, for example when carbon intensity is low
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ToUChargeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     pub schedule: Vec<bool>,
@@ -101,7 +101,7 @@ impl ToUChargeControl {
 
 impl ControlBehaviour for ToUChargeControl {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OnOffMinimisingTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
     schedule: Vec<bool>,
@@ -170,7 +170,7 @@ impl OnOffMinimisingTimeControl {
 
 impl ControlBehaviour for OnOffMinimisingTimeControl {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SetpointTimeControl {
     /// list of float values (one entry per hour)
     schedule: Vec<Option<f64>>,

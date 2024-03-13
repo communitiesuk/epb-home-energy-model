@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 /// This module provides objects to air conditioning.
 
+#[derive(Debug)]
 pub struct AirConditioning {
     cooling_capacity_in_kw: f64,
     efficiency: f64,
