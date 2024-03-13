@@ -479,7 +479,7 @@ pub fn temp_ext_for(
                     - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
                     / (area * u_value)
         }
-        _ => external_conditions.air_temp_for_timestep_idx(simulation_time.index),
+        _ => external_conditions.air_temp(simulation_time),
     }
 }
 

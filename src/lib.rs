@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::core::units::{SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::ops::Deref;
@@ -167,7 +167,7 @@ impl Calculation {
                 space_cool_demand_system,
                 ductwork_gains,
                 heat_balance,
-            } = self.calc_space_heating(iteration.timestep, gains_internal_dhw, iteration.index);
+            } = self.calc_space_heating(iteration.timestep, gains_internal_dhw, iteration);
         }
 
         fn hot_water_demand(timestep_idx: usize) -> (f64, f64, u32, f64, f64, f64) {
@@ -202,11 +202,9 @@ impl Calculation {
         &self,
         delta_t_h: f64,
         gains_internal_dhw: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> SpaceHeatingCalculation {
-        let temp_ext_air = self
-            .external_conditions
-            .air_temp_for_timestep_idx(timestep_idx);
+        let temp_ext_air = self.external_conditions.air_temp(&simtime);
 
         // calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;

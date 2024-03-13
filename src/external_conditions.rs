@@ -270,7 +270,7 @@ impl ExternalConditions {
         )
     }
 
-    pub fn air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
+    fn air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
         self.air_temps[timestep_idx]
     }
 

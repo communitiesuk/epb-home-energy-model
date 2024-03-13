@@ -2149,7 +2149,7 @@ fn zone_from_input<'a>(
             thermal_bridging_from_input(&input.thermal_bridging),
             vent_elements,
             vent_cool_extra,
-            external_conditions.air_temp_for_timestep_idx(simulation_time_iterator.current_index()),
+            external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
             external_conditions.clone(),
             simulation_time_iterator,

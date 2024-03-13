@@ -575,7 +575,7 @@ pub fn space_heat_cool_demand(
         let h_ve_cool_max = vent_cool_extra.as_ref().unwrap().h_ve_max(
             volume,
             temp_operative_free,
-            simulation_time.index,
+            *simulation_time,
             external_conditions,
         );
         let (temp_vector_vent_max, _) = calc_temperatures(
@@ -612,10 +612,8 @@ pub fn space_heat_cool_demand(
         );
         let temp_int_air_vent_max = temp_vector_vent_max[passed_zone_idx];
 
-        let vent_cool_extra_temp_supply = temp_supply_for_window_opening(
-            vent_cool_extra.as_ref().unwrap(),
-            simulation_time.index,
-        );
+        let vent_cool_extra_temp_supply =
+            temp_supply_for_window_opening(vent_cool_extra.as_ref().unwrap(), *simulation_time);
 
         // If there is cooling potential from additional ventilation
         if temp_operative_vent_max < temp_operative_free
@@ -1007,7 +1005,7 @@ fn calc_temperatures(
                 vent_cool_extra.as_ref().expect(
                     "TODO: correct this - we are assuming there is always a window opening",
                 ),
-                simulation_time.index,
+                *simulation_time,
             );
     }
     for vei in vent_elements.iter() {
@@ -1017,7 +1015,7 @@ fn calc_temperatures(
             Some(simulation_time.index),
             external_conditions,
         ) * vei
-            .temp_supply(simulation_time.index, external_conditions);
+            .temp_supply(*simulation_time, external_conditions);
     }
     vector_b[passed_zone_idx] = (c_int / delta_t) * temp_prev[passed_zone_idx]
         + sum_vent_elements_h_ve_times_temp_supply

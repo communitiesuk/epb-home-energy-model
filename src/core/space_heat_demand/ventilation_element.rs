@@ -12,7 +12,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BuildingElement, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
 };
-use crate::simulation_time::SimulationTimeIterator;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -29,7 +29,11 @@ pub trait VentilationElementBehaviour {
         external_conditions: &ExternalConditions,
     ) -> f64;
 
-    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64;
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64;
 
     /// Calculate the heat transfer coefficient (h_ve), in W/K,
     ///         according to ISO 52016-1:2017, Section 6.5.10.1, for a constant average windspeed
@@ -88,14 +92,16 @@ impl VentilationElementBehaviour for VentilationElement {
         }
     }
 
-    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
         match self {
-            VentilationElement::Infiltration(el) => {
-                el.temp_supply(timestep_index, external_conditions)
-            }
-            VentilationElement::Mvhr(el) => el.temp_supply(timestep_index, external_conditions),
-            VentilationElement::Whev(el) => el.temp_supply(timestep_index, external_conditions),
-            VentilationElement::Natural(el) => el.temp_supply(timestep_index, external_conditions),
+            VentilationElement::Infiltration(el) => el.temp_supply(simtime, external_conditions),
+            VentilationElement::Mvhr(el) => el.temp_supply(simtime, external_conditions),
+            VentilationElement::Whev(el) => el.temp_supply(simtime, external_conditions),
+            VentilationElement::Natural(el) => el.temp_supply(simtime, external_conditions),
         }
     }
 
@@ -270,10 +276,14 @@ impl VentilationElementBehaviour for VentilationElementInfiltration {
             * (zone_volume / SECONDS_PER_HOUR as f64)
     }
 
-    fn temp_supply(&self, timestep_idx: usize, external_conditions: &ExternalConditions) -> f64 {
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
         // Calculate the supply temperature of the air flow element
         // according to ISO 52016-1:2017, Section 6.5.10.2
-        external_conditions.air_temp_for_timestep_idx(timestep_idx)
+        external_conditions.air_temp(&simtime)
     }
 
     fn h_ve_average_heat_transfer_coefficient(
@@ -488,8 +498,12 @@ impl VentilationElementBehaviour for MechanicalVentilationHeatRecovery {
         P_A * C_A * q_v_effective
     }
 
-    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
-        external_conditions.air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        external_conditions.air_temp(&simtime)
     }
 
     fn h_ve_average_heat_transfer_coefficient(
@@ -604,8 +618,12 @@ impl VentilationElementBehaviour for WholeHouseExtractVentilation {
         P_A * C_A * q_v
     }
 
-    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
-        external_conditions.air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        external_conditions.air_temp(&simtime)
     }
 
     fn h_ve_average_heat_transfer_coefficient(
@@ -642,8 +660,12 @@ impl VentilationElementBehaviour for NaturalVentilation {
         P_A * C_A * q_v
     }
 
-    fn temp_supply(&self, timestep_index: usize, external_conditions: &ExternalConditions) -> f64 {
-        external_conditions.air_temp_for_timestep_idx(timestep_index)
+    fn temp_supply(
+        &self,
+        simtime: SimulationTimeIteration,
+        external_conditions: &ExternalConditions,
+    ) -> f64 {
+        external_conditions.air_temp(&simtime)
     }
 
     fn h_ve_average_heat_transfer_coefficient(
@@ -930,11 +952,11 @@ impl WindowOpeningForCooling {
         &self,
         zone_volume: f64,
         temp_int: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
         external_conditions: &ExternalConditions,
     ) -> f64 {
-        let wind_speed = external_conditions.wind_speed_for_timestep_idx(timestep_idx);
-        let temp_ext = external_conditions.air_temp_for_timestep_idx(timestep_idx);
+        let wind_speed = external_conditions.wind_speed_for_timestep_idx(simtime.index);
+        let temp_ext = external_conditions.air_temp(&simtime);
         let temp_diff = (temp_int - temp_ext).abs();
         let temp_average_c = (temp_int + temp_ext) / 2.0;
         let temp_average_k = celsius_to_kelvin(temp_average_c);
@@ -997,7 +1019,7 @@ impl WindowOpeningForCooling {
             Some(nv) => nv.h_ve_heat_transfer_coefficient(
                 zone_volume,
                 None,
-                Some(timestep_idx),
+                Some(simtime.index),
                 external_conditions,
             ),
             None => 0.0,
@@ -1014,11 +1036,9 @@ impl WindowOpeningForCooling {
 ///         according to ISO 52016-1:2017, Section 6.5.10.2
 pub fn temp_supply_for_window_opening(
     window_opening: &WindowOpeningForCooling,
-    timestep_idx: usize,
+    simtime: SimulationTimeIteration,
 ) -> f64 {
-    window_opening
-        .external_conditions
-        .air_temp_for_timestep_idx(timestep_idx)
+    window_opening.external_conditions.air_temp(&simtime)
 }
 
 #[cfg(test)]
@@ -1175,7 +1195,7 @@ mod test {
     ) {
         for simtime_step in simulation_time_iterator {
             assert_eq!(
-                infiltration_element.temp_supply(simtime_step.index, &external_conditions),
+                infiltration_element.temp_supply(simtime_step, &external_conditions),
                 2.5 * simtime_step.index as f64,
                 "incorrect external temperature returned on iteration {} (1-indexed)",
                 simtime_step.index + 1
@@ -1254,9 +1274,9 @@ mod test {
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
-        for (i, _) in simulation_time_iterator.enumerate() {
+        for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
-                mvhr.temp_supply(i, &external_conditions),
+                mvhr.temp_supply(t_it, &external_conditions),
                 i as f64 * 2.5,
                 "incorrect supply temp returned"
             );
@@ -1356,9 +1376,9 @@ mod test {
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
-        for (i, _) in simulation_time_iterator.enumerate() {
+        for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
-                whole_house_extract_ventilation.temp_supply(i, &external_conditions),
+                whole_house_extract_ventilation.temp_supply(t_it, &external_conditions),
                 i as f64 * 2.5,
                 "incorrect supply temp returned"
             );
