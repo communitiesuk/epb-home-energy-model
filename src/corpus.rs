@@ -64,6 +64,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::ops::Index;
 use std::sync::Arc;
 
 // TODO make this a runtime parameter?
@@ -1120,15 +1121,15 @@ impl Corpus {
         progress_bar.finish();
 
         // Return results from all energy supplies
-        let mut results_totals: HashMap<&str, f64> = Default::default();
-        let mut results_end_user: HashMap<&str, HashMap<&str, f64>> = Default::default();
-        let mut energy_import: HashMap<&str, f64> = Default::default();
-        let mut energy_export: HashMap<&str, f64> = Default::default();
-        let mut energy_generated_consumed: HashMap<&str, f64> = Default::default();
-        let mut energy_to_storage: HashMap<&str, f64> = Default::default();
-        let mut energy_from_storage: HashMap<&str, f64> = Default::default();
-        let mut energy_diverted: HashMap<&str, f64> = Default::default();
-        let mut betafactor: HashMap<&str, f64> = Default::default();
+        let mut results_totals: HashMap<&str, Vec<f64>> = Default::default();
+        let mut results_end_user: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_import: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_export: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_generated_consumed: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_to_storage: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_from_storage: HashMap<&str, Vec<f64>> = Default::default();
+        let mut energy_diverted: HashMap<&str, Vec<f64>> = Default::default();
+        let mut betafactor: HashMap<&str, Vec<f64>> = Default::default();
         // TODO iterate over energy supplies once energy supply is implemented
 
         let hot_water_energy_out = HashMap::from([(
@@ -1273,7 +1274,7 @@ impl Corpus {
     fn heat_cool_cop(
         &self,
         energy_provided: &HashMap<String, Vec<f64>>,
-        results_end_user: &HashMap<&str, HashMap<&str, f64>>,
+        results_end_user: &HashMap<&str, Vec<f64>>,
         energy_supply_conn_name_for_space_hc_system: HashMap<&str, &[&str]>,
     ) -> HashMap<String, NumberOrDivisionByZero> {
         // TODO implement when energy supplies are available
@@ -1828,15 +1829,15 @@ fn wwhr_system_from_details(
 
 type RunResults<'a> = (
     Vec<f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, HashMap<&'a str, f64>>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
+    HashMap<&'a str, Vec<f64>>,
     HashMap<&'a str, HashMap<String, Vec<f64>>>,
     Vec<&'a str>,
     HashMap<&'a str, HashMap<String, Vec<f64>>>,
