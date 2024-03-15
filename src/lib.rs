@@ -90,6 +90,20 @@ pub fn run_project(
         heat_source_wet_results_annual_dict,
     ) = corpus.run();
 
+    // print everything out for now
+    // println!("{timestep_array:?}");
+    println!("{zone_dict:?}");
+    println!("{zone_list:?}");
+    // println!("{hc_system_dict:?}");
+    // println!("{hot_water_dict:?}");
+    // println!("{heat_cop_dict:?}");
+    // println!("{cool_cop_dict:?}");
+    // println!("{dhw_cop_dict:?}");
+    // println!("{ductwork_gains:?}");
+    // println!("{heat_balance_dict:?}");
+    // println!("{heat_source_wet_results_dict:?}");
+    // println!("{heat_source_wet_results_annual_dict:?}");
+
     let _ = write_core_output_file(
         output_file_detailed,
         timestep_array,
@@ -183,6 +197,7 @@ fn write_core_output_file(
     hot_water_dict: HashMap<&str, HotWaterResultMap>,
     ductwork_gains: HashMap<&str, Vec<f64>>,
 ) -> Result<(), anyhow::Error> {
+    println!("writing out to {output_file}");
     let mut writer = Writer::from_path(output_file)?;
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
@@ -365,6 +380,7 @@ fn write_core_output_file(
         }
     }
 
+    println!("flushing out CSV");
     writer.flush()?;
 
     Ok(())

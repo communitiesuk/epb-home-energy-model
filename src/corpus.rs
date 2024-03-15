@@ -1396,11 +1396,13 @@ impl Corpus {
     }
 }
 
+#[derive(Debug)]
 pub enum HotWaterResultMap<'a> {
     Float(HashMap<&'a str, Vec<f64>>),
     Int(HashMap<&'a str, Vec<usize>>),
 }
 
+#[derive(Debug)]
 pub enum NumberOrDivisionByZero {
     Number(f64),
     DivisionByZero,
