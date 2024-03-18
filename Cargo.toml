@@ -8,29 +8,29 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.81"
 arrayvec = { version = "0.7.4", features = ["serde"] }
-clap = { version = "4.3.10", features = ["derive"] }
-csv = "1.2.2"
+clap = { version = "4.5.3", features = ["derive"] }
+csv = "1.3.0"
 derivative = "2.2.0"
-indexmap = { version = "2.0.0", features = ["serde"] }
+indexmap = { version = "2.2.5", features = ["serde"] }
 indicatif = "0.17.8"
-interp = "1.0.2"
+interp = "1.0.3"
 is_close = "0.1.3"
-itertools = "0.11.0"
+itertools = "0.12.1"
 lazy_static = "1.4.0"
-log = "0.4.20"
-nalgebra = "0.32.3"
+log = "0.4.21"
+nalgebra = "0.32.4"
 ordered-float = "4.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 polyfit-rs = "0.2.1"
-serde = { version = "1.0.164", features = ["derive", "rc"] }
+serde = { version = "1.0.197", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.100"
+serde_json = "1.0.114"
 variants-struct = "0.1.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-rstest = "0.17.0"
-walkdir = "2.3.3"
+rstest = "0.18.2"
+walkdir = "2.5.0"
 
 [lib]
 # don't build doctests for now
