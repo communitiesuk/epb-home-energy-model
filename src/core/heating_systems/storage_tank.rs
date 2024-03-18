@@ -3,13 +3,11 @@ use crate::core::controls::time_control::Control;
 use crate::core::material_properties::MaterialProperties;
 use crate::core::pipework::Pipework;
 use crate::core::units::WATTS_PER_KILOWATT;
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::corpus::{Controls, HeatSource, PositionedHeatSource};
+use crate::corpus::{HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{HeatSource as HeatSourceInput, SolarCellLocation, WaterPipework};
+use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::iter::zip;
@@ -439,7 +437,7 @@ impl StorageTank {
         // output energy delivered by the storage in kWh - timestep dependent
         let mut q_sto_h_out_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
 
-        for i in (0..self.vol_n.len()) {
+        for i in 0..self.vol_n.len() {
             delta_temp_n[i] =
                 (q_x_in_n[i] + q_sto_h_out_n[i]) / (self.rho * self.cp * self.vol_n[i]);
             temp_s6_n[i] = temp_s3_n[i] + delta_temp_n[i];
@@ -467,7 +465,7 @@ impl StorageTank {
 
         // loop through layers from bottom to top, without including top layer;
         // this is because the top layer has no upper layer to compare to
-        for i in (0..self.vol_n.len() - 1) {
+        for i in 0..self.vol_n.len() - 1 {
             if temp_s7_n[i] > temp_s7_n[i + 1] {
                 // set layers to mix
                 mix_layer_n[i] = 1;
@@ -482,7 +480,7 @@ impl StorageTank {
                         .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
                         .sum::<f64>();
                 // set same temperature for all applicable layers
-                for j in (0..i + 2) {
+                for j in 0..i + 2 {
                     if mix_layer_n[j] == 1 {
                         temp_s7_n[j] = temp_mix;
                     }
@@ -532,7 +530,7 @@ impl StorageTank {
         // timestep (it seems to assume a 1 hour timestep implicitly), but it is
         // necessary to convert the rate of heat loss to a total heat loss over
         // the time period
-        for i in (0..self.vol_n.len()) {
+        for i in 0..self.vol_n.len() {
             q_ls_n[i] = (h_sto_ls * self.rho * self.cp)
                 * (self.vol_n[i] / self.volume_total_in_litres)
                 * (*[temp_s7_n[i], self.temp_set_on]
@@ -553,7 +551,7 @@ impl StorageTank {
         // the final value of the temperature is reduced due to the effect of the thermal losses.
         // check temperature compared to set point
         // the temperature for each volume are limited to the set point for any volume controlled
-        for i in (0..self.vol_n.len()) {
+        for i in 0..self.vol_n.len() {
             temp_s8_n[i] = if temp_s7_n[i] > self.temp_set_on {
                 // Case 2 - Temperature exceeding the set point
                 self.temp_set_on
@@ -1162,7 +1160,7 @@ impl SolarThermalSystem {
         let mut inlet_temp2: f64 = Default::default(); // need a running slot in the loop for this to be overridden each time
 
         // calculation of collector efficiency
-        for _ in (0..4) {
+        for _ in 0..4 {
             // Eq 53
             let th = (avg_collector_water_temp
                 - self.external_conditions.air_temp(simulation_time))
@@ -1243,6 +1241,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{per_control, OnOffTimeControl};
     use crate::core::material_properties::WATER;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
     use crate::input::{EnergySupplyType, HeatSourceControl, HeatSourceControlType};
     use crate::simulation_time::SimulationTime;

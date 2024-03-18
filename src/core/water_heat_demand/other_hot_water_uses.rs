@@ -47,9 +47,8 @@ impl OtherHotWater {
         // TODO (from Python) Account for behavioural variation factor fbeh (sic)
         let vol_warm_water = self.flowrate * total_demand_duration;
         // ^^^ litres = litres/minute * minutes
-        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold);
 
-        vol_hot_water
+        vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold)
     }
 }
 

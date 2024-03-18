@@ -61,8 +61,6 @@ fn main() {
         _ => None,
     };
 
-    println!("about to loop over the input files and run the calculation on each one!");
-
     run_project(
         args.input_file.as_str(),
         external_conditions,

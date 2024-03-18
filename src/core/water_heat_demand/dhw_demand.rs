@@ -41,7 +41,7 @@ impl DomesticHotWaterDemand {
             .flat_map(|input| {
                 let mut showers = vec![(
                     "mixer".to_owned(),
-                    mixer_shower_input_to_shower(&input.mixer, cold_water_sources, &wwhrs),
+                    mixer_shower_input_to_shower(&input.mixer, cold_water_sources, wwhrs),
                 )];
                 if let Some(ies) = &input.ies {
                     showers.push((
@@ -321,7 +321,7 @@ fn mixer_shower_input_to_shower(
     let wwhrs_instance: Option<Wwhrs> = input
         .waste_water_heat_recovery
         .as_ref()
-        .and_then(|w| wwhrs.get(&w.to_string()).map(|system| system.clone()));
+        .and_then(|w| wwhrs.get(&w.to_string()).cloned());
 
     Shower::MixerShower(MixerShower::new(
         input.flowrate,

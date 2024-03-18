@@ -59,12 +59,10 @@ use crate::simulation_time::{SimulationTime, SimulationTimeIteration, Simulation
 use anyhow::bail;
 use indexmap::IndexMap;
 use indicatif::ProgressBar;
-use parking_lot::{Mutex, RawMutex};
+use parking_lot::Mutex;
 use serde_json::Value;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::ops::Index;
 use std::sync::Arc;
 
 // TODO make this a runtime parameter?
@@ -144,7 +142,7 @@ impl Corpus {
 
         let ventilation = input.ventilation.as_ref().map(|v| {
             Arc::new(Mutex::new(ventilation_from_input(
-                &v,
+                v,
                 &infiltration,
                 simulation_time_iterator.clone().as_ref(),
             )))
@@ -166,7 +164,7 @@ impl Corpus {
                         opening_area_total_from_zones,
                         &input.window_opening_for_cooling,
                         &controls,
-                        ventilation.map(|v| (&*v).clone()),
+                        ventilation.map(|v| (*v).clone()),
                         external_conditions.clone(),
                         &infiltration,
                         simulation_time_iterator.clone().as_ref(),
@@ -211,7 +209,7 @@ impl Corpus {
                     (*heat_source_wet_details).clone(),
                     external_conditions.clone(),
                     simulation_time_iterator.clone(),
-                    ventilation.map(|v| (&*v).clone()),
+                    ventilation.map(|v| (*v).clone()),
                     input.ventilation.as_ref().map(|v| v.req_ach()),
                     total_volume,
                     &controls,
@@ -250,7 +248,7 @@ impl Corpus {
             .as_ref()
             .map(|system| {
                 space_heat_systems_from_input(
-                    &system,
+                    system,
                     &controls,
                     simulation_time_iterator.as_ref(),
                     &Default::default(),
@@ -269,7 +267,7 @@ impl Corpus {
             .as_ref()
             .map(|system| {
                 space_cool_systems_from_input(
-                    &system,
+                    system,
                     cool_system_name_for_zone
                         .values()
                         .flatten()
@@ -545,7 +543,7 @@ impl Corpus {
                         .internal_gains
                         .total_internal_gains
                         .as_ref()
-                        .map(|gain| Gains::Internal(gain)),
+                        .map(Gains::Internal),
                 ),
                 (
                     "metabolic_gains",
@@ -553,47 +551,27 @@ impl Corpus {
                         .internal_gains
                         .metabolic_gains
                         .as_ref()
-                        .map(|gain| Gains::Internal(gain)),
+                        .map(Gains::Internal),
                 ),
                 (
                     "lighting",
-                    &self
-                        .internal_gains
-                        .lighting
-                        .as_ref()
-                        .map(|gain| Gains::Appliance(gain)),
+                    &self.internal_gains.lighting.as_ref().map(Gains::Appliance),
                 ),
                 (
                     "cooking",
-                    &self
-                        .internal_gains
-                        .cooking
-                        .as_ref()
-                        .map(|gain| Gains::Appliance(gain)),
+                    &self.internal_gains.cooking.as_ref().map(Gains::Appliance),
                 ),
                 (
                     "cooking1",
-                    &self
-                        .internal_gains
-                        .cooking1
-                        .as_ref()
-                        .map(|gain| Gains::Appliance(gain)),
+                    &self.internal_gains.cooking1.as_ref().map(Gains::Appliance),
                 ),
                 (
                     "cooking2",
-                    &self
-                        .internal_gains
-                        .cooking2
-                        .as_ref()
-                        .map(|gain| Gains::Appliance(gain)),
+                    &self.internal_gains.cooking2.as_ref().map(Gains::Appliance),
                 ),
                 (
                     "other",
-                    &self
-                        .internal_gains
-                        .other
-                        .as_ref()
-                        .map(|gain| Gains::Internal(gain)),
+                    &self.internal_gains.other.as_ref().map(Gains::Internal),
                 ),
             ]
             .iter()
@@ -907,14 +885,14 @@ impl Corpus {
             }
         }
 
-        for (_z_name, h_name) in &self.heat_system_name_for_zone {
+        for h_name in self.heat_system_name_for_zone.values() {
             if let Some(h_name) = h_name {
                 space_heat_demand_system_dict.insert(h_name.into(), vec![]);
                 space_heat_provided_dict.insert(h_name.into(), vec![]);
             }
         }
 
-        for (_z_name, c_name) in &self.cool_system_name_for_zone {
+        for c_name in self.cool_system_name_for_zone.values() {
             if let Some(c_name) = c_name {
                 space_cool_demand_system_dict.insert(c_name.into(), vec![]);
                 space_cool_provided_dict.insert(c_name.into(), vec![]);
@@ -1226,7 +1204,7 @@ impl Corpus {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> HashMap<String, Option<bool>> {
-        (&self.space_heat_systems)
+        self.space_heat_systems
             .iter()
             .map(|(system_name, system)| {
                 let system = system.lock();
@@ -1239,7 +1217,7 @@ impl Corpus {
     }
 
     fn space_heat_systems_frac_convective(&self) -> HashMap<String, f64> {
-        (&self.space_heat_systems)
+        self.space_heat_systems
             .iter()
             .map(|(system_name, system)| {
                 let system = system.lock();
@@ -1252,7 +1230,7 @@ impl Corpus {
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> HashMap<String, Option<bool>> {
-        (&self.space_cool_systems)
+        self.space_cool_systems
             .iter()
             .map(|(system_name, system)| {
                 (
@@ -1264,7 +1242,7 @@ impl Corpus {
     }
 
     fn space_cool_systems_frac_convective(&self) -> HashMap<String, f64> {
-        (&self.space_cool_systems)
+        self.space_cool_systems
             .iter()
             .map(|(system_name, system)| (system_name.clone(), system.frac_convective()))
             .collect()
@@ -2507,7 +2485,7 @@ fn heat_source_from_input(
         } => HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
             HeatPumpHotWaterOnly::new(
                 power_max,
-                &test_data,
+                test_data,
                 vol_hw_daily_average,
                 simulation_time.step_in_hours(),
                 controls.get(&control).map(|c| (*c).clone()),
@@ -2755,7 +2733,7 @@ fn space_heat_systems_from_input(
                         simulation_time.step_in_hours(),
                         control
                             .as_ref()
-                            .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone())),
+                            .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())),
                     )),
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater
                     SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters
@@ -2775,7 +2753,7 @@ fn space_heat_systems_from_input(
                                 }
                                 SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air((*heat_pump).clone(), energy_supply_conn_name, control
                                     .as_ref()
-                                    .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
+                                    .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
@@ -2813,7 +2791,7 @@ fn space_cool_systems_from_input(
             } = space_cool_system_details;
             let control = control
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(&ctrl).map(|c| (*c).clone()));
+                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone()));
 
             (
                 (*system_name).clone(),

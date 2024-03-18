@@ -12,15 +12,14 @@ mod simulation_time;
 extern crate is_close;
 extern crate lazy_static;
 
-use crate::input::{parse_input_file, ExternalConditionsInput, Input, Ventilation};
+use crate::input::{parse_input_file, ExternalConditionsInput};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::core::units::{SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::{Corpus, HotWaterResultMap};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTime;
 use csv::Writer;
 use itertools::Itertools;
 use lazy_static::lazy_static;

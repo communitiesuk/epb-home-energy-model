@@ -1,7 +1,5 @@
 use crate::input::{Schedule, WaterHeatingEvent};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::ops::Index;
 
 pub type BooleanSchedule = Vec<bool>;
 pub type NumericSchedule = Vec<f64>;

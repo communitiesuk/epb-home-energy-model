@@ -15,13 +15,11 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use polyfit_rs::polyfit_rs::polyfit;
-use serde::Deserialize;
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::iter::Sum;
 use std::ops::{Add, Div};
-use std::sync::{Arc, MutexGuard, PoisonError};
+use std::sync::Arc;
 
 /// This module provides objects to represent heat pumps and heat pump test data.
 /// The calculations are based on the DAHPSE method developed for generating PCDB
@@ -62,7 +60,7 @@ impl HeatPumpSourceType {
 }
 
 #[derive(Copy, Clone, Serialize_enum_str)]
-enum ServiceType {
+pub enum ServiceType {
     Water,
     Space,
 }
@@ -133,7 +131,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 fixed_temps_and_test_letters = Some(fixed_temps_and_test_letters_this);
             }
             Some(ref fixed_temps_and_test_letters) => {
-                if (fixed_temps_and_test_letters != &fixed_temps_and_test_letters_this) {
+                if fixed_temps_and_test_letters != &fixed_temps_and_test_letters_this {
                     return Err("In heat pump test data, fixed temps and test_letters were not consistent for one air_flow_temp value".to_string());
                 }
             }
@@ -211,7 +209,7 @@ fn test_letter(letter: &str) -> TestLetter {
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Debug)]
-struct TestDatumTempsAndTestLetters<'a> {
+pub struct TestDatumTempsAndTestLetters<'a> {
     #[derivative(PartialEq = "ignore")]
     // we need to ignore air flow rate when performing comparisons
     pub air_flow_rate: f64,
@@ -223,7 +221,7 @@ struct TestDatumTempsAndTestLetters<'a> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-struct CompleteHeatPumpTestDatum {
+pub struct CompleteHeatPumpTestDatum {
     pub air_flow_rate: Option<f64>,
     pub test_letter: TestLetter,
     pub capacity: f64,
@@ -249,7 +247,7 @@ impl CompleteHeatPumpTestDatum {
     }
 }
 
-enum DatumItem {
+pub enum DatumItem {
     CarnotCop,
     TempOutlet,
     TempSource,
@@ -330,9 +328,7 @@ impl HeatPumpTestData {
                 if !dsgn_flow_temps.contains(&dsgn_flow_temp) {
                     dsgn_flow_temps.push(dsgn_flow_temp);
                 }
-                test_data
-                    .entry(dsgn_flow_temp)
-                    .or_insert_with(|| Default::default());
+                test_data.entry(dsgn_flow_temp).or_default();
             }
 
             let mut duplicate = false;
@@ -444,9 +440,9 @@ impl HeatPumpTestData {
                         let temp_source = celsius_to_kelvin(datum.temp_source);
                         let temp_outlet = celsius_to_kelvin(datum.temp_outlet);
 
-                        let theoretical_load_ratio = ((carnot_cops[i] / carnot_cop_cld)
+                        let theoretical_load_ratio = (carnot_cops[i] / carnot_cop_cld)
                             * (temp_outlet_cld * temp_source / (temp_source_cld * temp_outlet))
-                                .powf(N_EXER));
+                                .powf(N_EXER);
                         acc.push(theoretical_load_ratio);
                         acc
                     });
@@ -1975,13 +1971,11 @@ impl HeatPump {
         if temp_output > temp_limit_upper {
             if temp_output == temp_used_for_scaling {
                 energy_output_required
+            } else if (temp_limit_upper - temp_used_for_scaling) >= self.temp_diff_flow_return_min {
+                energy_output_required * (temp_limit_upper - temp_used_for_scaling)
+                    / (temp_output - temp_used_for_scaling)
             } else {
-                if (temp_limit_upper - temp_used_for_scaling) >= self.temp_diff_flow_return_min {
-                    energy_output_required * (temp_limit_upper - temp_used_for_scaling)
-                        / (temp_output - temp_used_for_scaling)
-                } else {
-                    0.
-                }
+                0.
             }
         } else {
             energy_output_required
@@ -2434,8 +2428,8 @@ impl HeatPump {
                     (1. - deg_coeff_op_cond)
                         * (compressor_power_min_load / load_ratio_continuous_min)
                         * max_of_2(
-                            (time_remaining_current_timestep
-                                - load_ratio / load_ratio_continuous_min * timestep),
+                            time_remaining_current_timestep
+                                - load_ratio / load_ratio_continuous_min * timestep,
                             0.,
                         )
                 } else {
@@ -2714,12 +2708,12 @@ fn result_str(string: &str) -> ResultString {
     name
 }
 
-enum TempSpreadCorrectionArg {
+pub enum TempSpreadCorrectionArg {
     Float(f64),
     Callable(Box<dyn FnOnce(f64, f64) -> f64>),
 }
 
-enum ServiceResult {
+pub enum ServiceResult {
     Full(HeatPumpEnergyCalculation),
     Aux(AuxiliaryParameters),
 }

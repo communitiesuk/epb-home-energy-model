@@ -12,7 +12,7 @@ use crate::{
 use std::fmt;
 use std::sync::Arc;
 
-enum ServiceType {
+pub enum ServiceType {
     WaterCombi,
     WaterRegular,
     Space,

@@ -2,7 +2,6 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::material_properties::WATER;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::simulation_time::SimulationTimeIteration;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -318,6 +317,7 @@ impl HeatNetwork {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 

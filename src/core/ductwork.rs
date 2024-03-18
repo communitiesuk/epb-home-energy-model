@@ -1,5 +1,4 @@
 use crate::input::MVHRLocation;
-use std::error::Error;
 use std::f64::consts::PI;
 
 // Set default value for the heat transfer coefficient inside the duct, in W / m^2 K

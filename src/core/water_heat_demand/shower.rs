@@ -4,7 +4,6 @@ use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::corpus::ColdWaterSources;
 
 pub enum Shower {
     MixerShower(MixerShower),

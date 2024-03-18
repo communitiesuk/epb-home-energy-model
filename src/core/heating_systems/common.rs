@@ -48,7 +48,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
         match self {
-            SpaceHeatSystem::Instant(instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
+            SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
                 energy_demand,
                 space_heat_running_time_cumulative,

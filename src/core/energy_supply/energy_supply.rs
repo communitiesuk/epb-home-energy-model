@@ -2,7 +2,6 @@ use crate::input::{
     ElectricBattery, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
     HeatNetwork,
 };
-use crate::simulation_time::SimulationTimeIterator;
 use std::collections::HashMap;
 
 // a slightly looser definition of an energy supply that includes heat networks
@@ -230,7 +229,7 @@ fn supply_from_details(
 mod test {
     use super::*;
     use crate::input::EnergySupplyType::MainsGas;
-    use crate::simulation_time::SimulationTime;
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;
 
     #[fixture]

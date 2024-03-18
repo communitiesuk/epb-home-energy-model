@@ -19,12 +19,12 @@ pub enum ThermalBridge {
 }
 
 pub fn heat_transfer_coefficient_for_thermal_bridge(thermal_bridge: &ThermalBridge) -> f64 {
-    match thermal_bridge {
-        &ThermalBridge::Linear {
+    match *thermal_bridge {
+        ThermalBridge::Linear {
             linear_thermal_transmittance: t,
             length: l,
         } => t * l,
-        &ThermalBridge::Point {
+        ThermalBridge::Point {
             heat_transfer_coefficient: h,
         } => h,
     }
