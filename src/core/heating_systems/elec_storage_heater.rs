@@ -6,6 +6,11 @@ use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::ElectricStorageHeaterAirFlowType;
 use crate::simulation_time::SimulationTimeIteration;
 use interp::interp;
+use mathru::algebra::linear::vector::Vector;
+use mathru::analysis::differential_equation::ordinary::problem::Euler;
+use mathru::analysis::differential_equation::ordinary::solver::implicit::BDF;
+use mathru::analysis::differential_equation::ordinary::ImplicitInitialValueProblemBuilder;
+use mathru::vector;
 use nalgebra::SVector;
 use std::sync::Arc;
 
@@ -359,9 +364,9 @@ where
         &'a mut self,
         q_dis_modo: f64,
         simulation_time_iteration: &'a SimulationTimeIteration,
-    ) -> impl FnMut(f64, &'a [f64], &'b mut ()) -> Result<SVector<f64, 2>, String> {
+    ) -> impl FnMut(f64, &'a Vector<f64>) -> Result<Vector<f64>, anyhow::Error> {
         let simulation_time_iteration = (*simulation_time_iteration).clone();
-        move |time: f64, t_core_and_wall: &[f64], _p: &mut ()| {
+        move |time: f64, t_core_and_wall: &'a Vector<f64>, _p: &mut ()| {
             let [d_t_core, d_t_wall] = self
                 .heat_balance(
                     t_core_and_wall.try_into().unwrap(),
@@ -370,7 +375,7 @@ where
                     &simulation_time_iteration,
                 )
                 .0;
-            Ok(SVector::<f64, 2>::new(d_t_core, d_t_wall))
+            Ok(vector![d_t_core, d_t_wall])
         }
     }
 
@@ -381,6 +386,22 @@ where
         q_dis_modo: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Result<([f64; 2], f64, f64, f64), String> {
+        let ode = Euler::default();
+        let problem = ImplicitInitialValueProblemBuilder::new(
+            &ode,
+            time_range[0],
+            vector![temp_core_and_wall[0], temp_core_and_wall[1]],
+        )
+        .t_end(time_range[1])
+        .callback(self.func_core_temperature_change_rate(q_dis_modo, simulation_time_iteration))
+        .build();
+        let step_size = time_range[1] - time_range[0];
+        let solver: BDF<f64> = BDF::new(6, step_size);
+        let (_x, y): (Vec<f64>, Vec<Vector<f64>>) = solver.solve(&problem).unwrap();
+
+        let new_temp_core_and_wall: [f64; 2] =
+            [*y[0].iter().last().unwrap(), *y[1].iter().last().unwrap()];
+
         // let bdf = BDF6::new()
         //     .with_start(time_range[0])?
         //     .with_end(time_range[1])?
@@ -391,7 +412,14 @@ where
         //     &mut (),
         // )?;
         // println!("BDF path result: {path:?}");
-        Ok(([0., 0.], 0., 0., 0.))
+        let (_, q_released, q_dis, q_in) = self.heat_balance(
+            new_temp_core_and_wall,
+            time_range[1],
+            Some(q_dis_modo),
+            simulation_time_iteration,
+        );
+
+        Ok((new_temp_core_and_wall, q_released, q_dis, q_in))
     }
 
     pub fn demand_energy(
@@ -523,6 +551,7 @@ mod tests {
         }
     }
 
+    #[fixture]
     pub fn elec_storage_heater(simulation_time: SimulationTime) -> ElecStorageHeater<MockZone> {
         let zone = MockZone();
         let control = SetpointTimeControl::new(
@@ -593,5 +622,30 @@ mod tests {
             Arc::new(control),
             Arc::new(charge_control),
         )
+    }
+
+    #[rstest]
+    pub fn test_demand_energy(
+        mut elec_storage_heater: ElecStorageHeater<MockZone>,
+        simulation_time: SimulationTime,
+    ) {
+        let inputs = [
+            4.69, 3.59, 4.26, 2.82, 0.31, 3.72, 2.11, 6.55, 7.59, 7.55, 4.52, 2.92, 3.42, 5.83,
+            4.26, 3.63, 4.38, 5.34, 4.65, 3.85, 0.0, 1.86, 2.27, 2.62,
+        ];
+        let expected = [
+            3.18, 2.93, 2.71, 2.49, 0.31, 2.26, 2.11, 2.03, 1.95, 1.9, 1.86, 1.81, 1.77, 1.73, 1.7,
+            1.67, 1.65, 1.63, 1.61, 1.6, 0.02, 1.58, 1.57, 1.56,
+        ];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(elec_storage_heater.demand_energy(inputs[t_idx], &t_it), 1e2),
+                expected[t_idx]
+            );
+        }
+    }
+
+    fn round_by_precision(src: f64, precision: f64) -> f64 {
+        (precision * src).round() / precision
     }
 }
