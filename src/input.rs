@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use variants_struct::VariantsStruct;
 
-pub fn parse_input_file<T>(input: T) -> Result<Input, Box<dyn Error>>
+pub fn parse_input<T>(input: T) -> Result<Input, Box<dyn Error>>
 where
     T: Read,
 {
@@ -1298,7 +1298,7 @@ mod test {
                 !e.file_type().is_dir() && e.file_name().to_str().unwrap().ends_with("json")
             })
         {
-            let parsed = parse_input_file(entry.path());
+            let parsed = parse_input(File::open(entry.path()).unwrap());
             assert!(
                 parsed.is_ok(),
                 "error was {:?} when parsing file {}",

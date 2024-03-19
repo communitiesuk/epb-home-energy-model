@@ -12,7 +12,7 @@ mod simulation_time;
 extern crate is_close;
 extern crate lazy_static;
 
-use crate::input::{parse_input_file, ExternalConditionsInput};
+use crate::input::{parse_input, ExternalConditionsInput};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use std::collections::HashMap;
 
@@ -42,7 +42,7 @@ pub fn run_project<'a, T>(
 where
     T: Read,
 {
-    let project_data = parse_input_file(input);
+    let project_data = parse_input(input);
 
     // println!("{:?}", project_data);
 
