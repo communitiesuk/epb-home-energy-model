@@ -56,7 +56,7 @@ where
 
     let mut corpus: Corpus = Corpus::from_inputs(input, external_conditions)?;
 
-    Ok(corpus.run().clone())
+    Ok(corpus.run())
 }
 
 fn external_conditions_from_input(
