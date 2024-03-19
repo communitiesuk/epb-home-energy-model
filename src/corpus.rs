@@ -844,7 +844,10 @@ impl Corpus {
     }
 
     pub fn run(&mut self) -> RunResults {
-        let mut timestep_array = vec![];
+        let mut simulation_time = self.simulation_time.as_ref().to_owned();
+        let vec_capacity = || Vec::with_capacity(simulation_time.total_steps());
+
+        let mut timestep_array = vec_capacity();
         let mut gains_internal_dict: HashMap<KeyString, Vec<f64>> = Default::default();
         let mut gains_solar_dict: HashMap<KeyString, Vec<f64>> = Default::default();
         let mut operative_temp_dict: HashMap<KeyString, Vec<f64>> = Default::default();
@@ -878,12 +881,12 @@ impl Corpus {
 
         for z_name in self.zones.keys() {
             let z_name = z_name.as_str().try_into().unwrap();
-            gains_internal_dict.insert(z_name, vec![]);
-            gains_solar_dict.insert(z_name, vec![]);
-            operative_temp_dict.insert(z_name, vec![]);
-            internal_air_temp_dict.insert(z_name, vec![]);
-            space_heat_demand_dict.insert(z_name, vec![]);
-            space_cool_demand_dict.insert(z_name, vec![]);
+            gains_internal_dict.insert(z_name, vec_capacity());
+            gains_solar_dict.insert(z_name, vec_capacity());
+            operative_temp_dict.insert(z_name, vec_capacity());
+            internal_air_temp_dict.insert(z_name, vec_capacity());
+            space_heat_demand_dict.insert(z_name, vec_capacity());
+            space_cool_demand_dict.insert(z_name, vec_capacity());
             zone_list.push(z_name);
             for heat_balance_value in heat_balance_all_dict.values_mut() {
                 heat_balance_value.insert(z_name, Default::default());
@@ -893,32 +896,33 @@ impl Corpus {
         for h_name in self.heat_system_name_for_zone.values() {
             if let Some(h_name) = h_name {
                 let h_name = h_name.as_str().try_into().unwrap();
-                space_heat_demand_system_dict.insert(h_name, vec![]);
-                space_heat_provided_dict.insert(h_name, vec![]);
+                space_heat_demand_system_dict.insert(h_name, vec_capacity());
+                space_heat_provided_dict.insert(h_name, vec_capacity());
             }
         }
 
         for c_name in self.cool_system_name_for_zone.values() {
             if let Some(c_name) = c_name {
                 let c_name = c_name.as_str().try_into().unwrap();
-                space_cool_demand_system_dict.insert(c_name, vec![]);
-                space_cool_provided_dict.insert(c_name, vec![]);
+                space_cool_demand_system_dict.insert(c_name, vec_capacity());
+                space_cool_provided_dict.insert(c_name, vec_capacity());
             }
         }
 
-        hot_water_demand_dict.insert("demand".try_into().unwrap(), vec![]);
-        hot_water_energy_demand_dict.insert("energy_demand".try_into().unwrap(), vec![]);
+        hot_water_demand_dict.insert("demand".try_into().unwrap(), vec_capacity());
+        hot_water_energy_demand_dict.insert("energy_demand".try_into().unwrap(), vec_capacity());
         hot_water_energy_demand_dict_incl_pipework.insert(
             "energy_demand_incl_pipework_loss".try_into().unwrap(),
-            vec![],
+            vec_capacity(),
         );
-        hot_water_energy_output_dict.insert("energy_output", vec![]);
-        hot_water_duration_dict.insert("duration".try_into().unwrap(), vec![]);
-        hot_water_no_events_dict.insert("no_events".try_into().unwrap(), vec![]);
-        hot_water_pipework_dict.insert("pw_losses".try_into().unwrap(), vec![]);
-        ductwork_gains_dict.insert("ductwork_gains".try_into().unwrap(), vec![]);
-
-        let mut simulation_time = self.simulation_time.as_ref().to_owned();
+        hot_water_energy_output_dict.insert("energy_output", vec_capacity());
+        hot_water_duration_dict.insert("duration".try_into().unwrap(), vec_capacity());
+        hot_water_no_events_dict.insert(
+            "no_events".try_into().unwrap(),
+            Vec::with_capacity(simulation_time.total_steps()),
+        );
+        hot_water_pipework_dict.insert("pw_losses".try_into().unwrap(), vec_capacity());
+        ductwork_gains_dict.insert("ductwork_gains".try_into().unwrap(), vec_capacity());
 
         let progress_bar = ProgressBar::new(simulation_time.total_steps() as u64);
 
