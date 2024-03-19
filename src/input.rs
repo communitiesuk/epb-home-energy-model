@@ -8,14 +8,16 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::sync::Arc;
 use variants_struct::VariantsStruct;
 
-pub fn parse_input_file(file: &Path) -> Result<Input, Box<dyn Error>> {
-    let file = File::open(file)?;
-    let reader = BufReader::new(file);
+pub fn parse_input_file<T>(input: T) -> Result<Input, Box<dyn Error>>
+where
+    T: Read,
+{
+    let reader = BufReader::new(input);
 
     let project_data: Input = serde_json::from_reader(reader)?;
 

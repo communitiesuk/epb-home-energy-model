@@ -2,7 +2,7 @@
 
 mod compare_floats;
 pub mod core;
-mod corpus;
+pub mod corpus;
 mod external_conditions;
 mod input;
 pub mod read_weather_file;
@@ -14,13 +14,12 @@ extern crate lazy_static;
 
 use crate::input::{parse_input_file, ExternalConditionsInput};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::corpus::{Corpus, HotWaterResultMap};
+pub use crate::corpus::RunResults;
+use crate::corpus::{Corpus, KeyString};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::simulation_time::SimulationTime;
-use csv::Writer;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::error::Error;
@@ -30,8 +29,8 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
-pub fn run_project(
-    input_file: &str,
+pub fn run_project<'a, T>(
+    input: T,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,
     _fhs_assumptions: bool,
@@ -39,19 +38,11 @@ pub fn run_project(
     _fhs_not_a_assumptions: bool,
     _fhs_not_b_assumptions: bool,
     _heat_balance: bool,
-) -> Result<(), Box<dyn Error>> {
-    let input_file_ext = Path::new(input_file).extension().and_then(OsStr::to_str);
-    let input_file_stem = match input_file_ext {
-        Some(ext) => &input_file[..(input_file.len() - ext.len() - 1)],
-        None => input_file,
-    };
-    let output_file_detailed = format!("{input_file_stem}_results.csv");
-    let _output_file_static = format!("{input_file_stem}_results_static.csv");
-    let _output_file_summary = format!("{input_file_stem}_results_summary.csv");
-
-    println!("about to try and open {}", input_file);
-
-    let project_data = parse_input_file(Path::new(input_file));
+) -> Result<RunResults, anyhow::Error>
+where
+    T: Read,
+{
+    let project_data = parse_input_file(input);
 
     // println!("{:?}", project_data);
 
@@ -65,64 +56,7 @@ pub fn run_project(
 
     let mut corpus: Corpus = Corpus::from_inputs(input, external_conditions)?;
 
-    let (
-        timestep_array,
-        results_totals,
-        results_end_user,
-        energy_import,
-        energy_export,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        energy_diverted,
-        betafactor,
-        zone_dict,
-        zone_list,
-        hc_system_dict,
-        hot_water_dict,
-        heat_cop_dict,
-        cool_cop_dict,
-        dhw_cop_dict,
-        ductwork_gains,
-        heat_balance_dict,
-        heat_source_wet_results_dict,
-        heat_source_wet_results_annual_dict,
-    ) = corpus.run();
-
-    // print everything out for now
-    // println!("{timestep_array:?}");
-    println!("{zone_dict:?}");
-    println!("{zone_list:?}");
-    // println!("{hc_system_dict:?}");
-    // println!("{hot_water_dict:?}");
-    // println!("{heat_cop_dict:?}");
-    // println!("{cool_cop_dict:?}");
-    // println!("{dhw_cop_dict:?}");
-    // println!("{ductwork_gains:?}");
-    // println!("{heat_balance_dict:?}");
-    // println!("{heat_source_wet_results_dict:?}");
-    // println!("{heat_source_wet_results_annual_dict:?}");
-
-    let _ = write_core_output_file(
-        output_file_detailed,
-        timestep_array,
-        results_totals,
-        results_end_user,
-        energy_import,
-        energy_export,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        energy_diverted,
-        betafactor,
-        zone_dict,
-        zone_list,
-        hc_system_dict,
-        hot_water_dict,
-        ductwork_gains,
-    );
-
-    Ok(())
+    Ok(corpus.run().clone())
 }
 
 fn external_conditions_from_input(
@@ -178,225 +112,18 @@ fn external_conditions_from_input(
     }
 }
 
-fn write_core_output_file(
-    output_file: String,
-    timestep_array: Vec<f64>,
-    results_totals: HashMap<&str, Vec<f64>>,
-    _results_end_user: HashMap<&str, Vec<f64>>,
-    energy_import: HashMap<&str, Vec<f64>>,
-    energy_export: HashMap<&str, Vec<f64>>,
-    energy_generated_consumed: HashMap<&str, Vec<f64>>,
-    energy_to_storage: HashMap<&str, Vec<f64>>,
-    energy_from_storage: HashMap<&str, Vec<f64>>,
-    energy_diverted: HashMap<&str, Vec<f64>>,
-    betafactor: HashMap<&str, Vec<f64>>,
-    zone_dict: HashMap<&str, HashMap<String, Vec<f64>>>,
-    zone_list: Vec<&str>,
-    hc_system_dict: HashMap<&str, HashMap<String, Vec<f64>>>,
-    hot_water_dict: HashMap<&str, HotWaterResultMap>,
-    ductwork_gains: HashMap<&str, Vec<f64>>,
-) -> Result<(), anyhow::Error> {
-    println!("writing out to {output_file}");
-    let mut writer = Writer::from_path(output_file)?;
-
-    let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
-    let mut units_row = vec!["[count]"];
-    for totals_key in results_totals.keys() {
-        let totals_header = format!("{totals_key} total");
-        headings.push(totals_header.into());
-        units_row.push("[kWh]");
-        // TODO enable when energy supplies implemented
-        // for end_user_key in results_end_user[totals_key].keys() {
-        //     headings.push(end_user_key.into());
-        //     units_row.push("[kWh]");
-        // }
-        headings.push(format!("{totals_key} import").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} export").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} generated and consumed").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} beta factor").into());
-        units_row.push("[ratio]");
-        headings.push(format!("{totals_key} to storage").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} from storage").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} diverted").into());
-        units_row.push("[kWh]");
-
-        for zone in &zone_list {
-            for zone_outputs in zone_dict.keys() {
-                let zone_headings = format!("{zone_outputs} {zone}");
-                headings.push(zone_headings.into());
-                if UNITS_MAP.keys().contains(zone_outputs) {
-                    units_row.push(UNITS_MAP[zone_outputs]);
-                } else {
-                    units_row.push("Unit not defined");
-                }
-            }
-        }
-
-        for system in hc_system_dict.keys() {
-            for hc_name in hc_system_dict[system].keys() {
-                let hc_system_headings = format!("{system} {hc_name}");
-                headings.push(hc_system_headings.into());
-                units_row.push("[kWh]");
-            }
-        }
-
-        headings.push("Ductwork gains".into());
-        units_row.push("[kWh]");
-
-        // Write headings and units to output file
-        writer.write_record(headings.iter().map(|heading| heading.as_ref()))?;
-        writer.write_record(&units_row)?;
-
-        for (t_idx, timestep) in timestep_array.iter().enumerate() {
-            let mut energy_use_row = vec![];
-            let mut zone_row = vec![];
-            let mut hc_system_row = vec![];
-            let mut hw_system_row = vec![];
-            let mut hw_system_row_energy = vec![];
-            let mut hw_system_row_duration = vec![];
-            let mut hw_system_row_events = vec![];
-            let mut pw_losses_row = vec![];
-            let mut ductwork_row = vec![];
-            let mut _energy_shortfall: Vec<f64> = vec![];
-            for totals_key in results_totals.keys() {
-                energy_use_row.push(results_totals[totals_key][t_idx]);
-                // TODO uncomment when energy supplies implemented
-                // for end_user_key in results_end_user[totals_key] {
-                //     energy_use_row.push(results_end_user[totals_key][end_user_key][t_idx]);
-                // }
-                energy_use_row.push(energy_import[totals_key][t_idx]);
-                energy_use_row.push(energy_export[totals_key][t_idx]);
-                energy_use_row.push(energy_generated_consumed[totals_key][t_idx]);
-                energy_use_row.push(betafactor[totals_key][t_idx]);
-                energy_use_row.push(energy_to_storage[totals_key][t_idx]);
-                energy_use_row.push(energy_from_storage[totals_key][t_idx]);
-                energy_use_row.push(energy_diverted[totals_key][t_idx]);
-            }
-
-            // Loop over results separated by zone
-            for zone in &zone_list {
-                for zone_outputs in zone_dict.keys() {
-                    zone_row.push(zone_dict[zone_outputs][zone.to_owned()][t_idx]);
-                }
-            }
-
-            // Loop over heading and cooling system demand
-            for system in hc_system_dict.keys() {
-                for hc_name in hc_system_dict[system].keys() {
-                    hc_system_row.push(hc_system_dict[system][hc_name][t_idx]);
-                }
-            }
-
-            // Loop over hot water demand
-            if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water demand"] {
-                hw_system_row.push(map["demand"][t_idx]);
-            }
-            if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water energy demand"] {
-                hw_system_row_energy.push(map["energy_demand"][t_idx]);
-            }
-            if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water duration"] {
-                hw_system_row_duration.push(map["duration"][t_idx]);
-            }
-            if let HotWaterResultMap::Float(map) = &hot_water_dict["Pipework losses"] {
-                pw_losses_row.push(map["pw_losses"][t_idx]);
-            }
-            if let HotWaterResultMap::Int(map) = &hot_water_dict["Hot Water Events"] {
-                hw_system_row_events.push(map["no_events"][t_idx]);
-            }
-            ductwork_row.push(ductwork_gains["ductwork_gains"][t_idx]);
-
-            // create row of outputs and write to output file
-            // TODO work out how to compile a row of results from the following
-            // let mut row = vec![];
-            // row.append(&mut vec![t_idx.to_string().as_str()]);
-            // row.append(
-            //     energy_use_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     zone_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hc_system_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_energy
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_duration
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_events
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     pw_losses_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     ductwork_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     energy_shortfall
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            //
-            // writer.write_record(&row)?;
-        }
-    }
-
-    println!("flushing out CSV");
-    writer.flush()?;
-
-    Ok(())
-}
-
 lazy_static! {
-    pub static ref UNITS_MAP: HashMap<&'static str, &'static str> = HashMap::from([
-        ("Internal gains", "[W]"),
-        ("Solar gains", "[W]"),
-        ("Operative temp", "[deg C]"),
-        ("Internal air temp", "[deg C]"),
-        ("Space heat demand", "[kWh]"),
-        ("Space cool demand", "[kWh]"),
-        ("Hot water demand", "[litres]"),
-        ("Hot water energy demand", "[kWh]"),
-        ("Hot water duration", "[mins]"),
-        ("Hot Water Events", "[count]"),
-        ("Pipework losses", "[kWh]")
+    pub static ref UNITS_MAP: HashMap<KeyString, &'static str> = HashMap::from([
+        ("Internal gains".try_into().unwrap(), "[W]"),
+        ("Solar gains".try_into().unwrap(), "[W]"),
+        ("Operative temp".try_into().unwrap(), "[deg C]"),
+        ("Internal air temp".try_into().unwrap(), "[deg C]"),
+        ("Space heat demand".try_into().unwrap(), "[kWh]"),
+        ("Space cool demand".try_into().unwrap(), "[kWh]"),
+        ("Hot water demand".try_into().unwrap(), "[litres]"),
+        ("Hot water energy demand".try_into().unwrap(), "[kWh]"),
+        ("Hot water duration".try_into().unwrap(), "[mins]"),
+        ("Hot Water Events".try_into().unwrap(), "[count]"),
+        ("Pipework losses".try_into().unwrap(), "[kWh]")
     ]);
 }

@@ -57,10 +57,12 @@ use crate::input::{
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
+use arrayvec::ArrayString;
 use indexmap::IndexMap;
 use indicatif::ProgressBar;
 use parking_lot::Mutex;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -843,42 +845,45 @@ impl Corpus {
 
     pub fn run(&mut self) -> RunResults {
         let mut timestep_array = vec![];
-        let mut gains_internal_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut gains_solar_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut operative_temp_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut internal_air_temp_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_heat_demand_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_cool_demand_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_heat_demand_system_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_cool_demand_system_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_heat_provided_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut space_cool_provided_dict: HashMap<String, Vec<f64>> = Default::default();
-        let mut zone_list: Vec<&str> = Default::default();
-        let mut hot_water_demand_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut hot_water_energy_demand_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut hot_water_energy_demand_dict_incl_pipework: HashMap<&str, Vec<f64>> =
+        let mut gains_internal_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut gains_solar_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut operative_temp_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut internal_air_temp_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_heat_demand_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_cool_demand_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_heat_demand_system_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_cool_demand_system_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_heat_provided_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut space_cool_provided_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut zone_list: Vec<KeyString> = Default::default();
+        let mut hot_water_demand_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut hot_water_energy_demand_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut hot_water_energy_demand_dict_incl_pipework: HashMap<KeyString, Vec<f64>> =
             Default::default();
         let mut hot_water_energy_output_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut hot_water_duration_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut hot_water_no_events_dict: HashMap<&str, Vec<usize>> = Default::default();
-        let mut hot_water_pipework_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut ductwork_gains_dict: HashMap<&str, Vec<f64>> = Default::default();
-        let mut heat_balance_all_dict: HashMap<&str, HashMap<&str, HashMap<&str, f64>>> =
-            HashMap::from([
-                ("air_node", Default::default()),
-                ("internal_boundary", Default::default()),
-                ("external_boundary", Default::default()),
-            ]);
-        let mut heat_source_wet_results_dict: HashMap<&str, f64> = Default::default();
-        let mut heat_source_wet_results_annual_dict: HashMap<&str, f64> = Default::default();
+        let mut hot_water_duration_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut hot_water_no_events_dict: HashMap<KeyString, Vec<usize>> = Default::default();
+        let mut hot_water_pipework_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut ductwork_gains_dict: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut heat_balance_all_dict: HashMap<
+            KeyString,
+            HashMap<KeyString, HashMap<KeyString, f64>>,
+        > = HashMap::from([
+            ("air_node".try_into().unwrap(), Default::default()),
+            ("internal_boundary".try_into().unwrap(), Default::default()),
+            ("external_boundary".try_into().unwrap(), Default::default()),
+        ]);
+        let mut heat_source_wet_results_dict = Default::default();
+        let mut heat_source_wet_results_annual_dict = Default::default();
 
         for z_name in self.zones.keys() {
-            gains_internal_dict.insert(z_name.into(), vec![]);
-            gains_solar_dict.insert(z_name.into(), vec![]);
-            operative_temp_dict.insert(z_name.into(), vec![]);
-            internal_air_temp_dict.insert(z_name.into(), vec![]);
-            space_heat_demand_dict.insert(z_name.into(), vec![]);
-            space_cool_demand_dict.insert(z_name.into(), vec![]);
+            let z_name = z_name.as_str().try_into().unwrap();
+            gains_internal_dict.insert(z_name, vec![]);
+            gains_solar_dict.insert(z_name, vec![]);
+            operative_temp_dict.insert(z_name, vec![]);
+            internal_air_temp_dict.insert(z_name, vec![]);
+            space_heat_demand_dict.insert(z_name, vec![]);
+            space_cool_demand_dict.insert(z_name, vec![]);
             zone_list.push(z_name);
             for heat_balance_value in heat_balance_all_dict.values_mut() {
                 heat_balance_value.insert(z_name, Default::default());
@@ -887,27 +892,31 @@ impl Corpus {
 
         for h_name in self.heat_system_name_for_zone.values() {
             if let Some(h_name) = h_name {
-                space_heat_demand_system_dict.insert(h_name.into(), vec![]);
-                space_heat_provided_dict.insert(h_name.into(), vec![]);
+                let h_name = h_name.as_str().try_into().unwrap();
+                space_heat_demand_system_dict.insert(h_name, vec![]);
+                space_heat_provided_dict.insert(h_name, vec![]);
             }
         }
 
         for c_name in self.cool_system_name_for_zone.values() {
             if let Some(c_name) = c_name {
-                space_cool_demand_system_dict.insert(c_name.into(), vec![]);
-                space_cool_provided_dict.insert(c_name.into(), vec![]);
+                let c_name = c_name.as_str().try_into().unwrap();
+                space_cool_demand_system_dict.insert(c_name, vec![]);
+                space_cool_provided_dict.insert(c_name, vec![]);
             }
         }
 
-        hot_water_demand_dict.insert("demand", vec![]);
-        hot_water_energy_demand_dict.insert("energy_demand", vec![]);
-        hot_water_energy_demand_dict_incl_pipework
-            .insert("energy_demand_incl_pipework_loss", vec![]);
+        hot_water_demand_dict.insert("demand".try_into().unwrap(), vec![]);
+        hot_water_energy_demand_dict.insert("energy_demand".try_into().unwrap(), vec![]);
+        hot_water_energy_demand_dict_incl_pipework.insert(
+            "energy_demand_incl_pipework_loss".try_into().unwrap(),
+            vec![],
+        );
         hot_water_energy_output_dict.insert("energy_output", vec![]);
-        hot_water_duration_dict.insert("duration", vec![]);
-        hot_water_no_events_dict.insert("no_events", vec![]);
-        hot_water_pipework_dict.insert("pw_losses", vec![]);
-        ductwork_gains_dict.insert("ductwork_gains", vec![]);
+        hot_water_duration_dict.insert("duration".try_into().unwrap(), vec![]);
+        hot_water_no_events_dict.insert("no_events".try_into().unwrap(), vec![]);
+        hot_water_pipework_dict.insert("pw_losses".try_into().unwrap(), vec![]);
+        ductwork_gains_dict.insert("ductwork_gains".try_into().unwrap(), vec![]);
 
         let mut simulation_time = self.simulation_time.as_ref().to_owned();
 
@@ -1099,19 +1108,19 @@ impl Corpus {
         progress_bar.finish();
 
         // Return results from all energy supplies
-        let mut results_totals: HashMap<&str, Vec<f64>> = Default::default();
-        let mut results_end_user: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_import: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_export: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_generated_consumed: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_to_storage: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_from_storage: HashMap<&str, Vec<f64>> = Default::default();
-        let mut energy_diverted: HashMap<&str, Vec<f64>> = Default::default();
-        let mut betafactor: HashMap<&str, Vec<f64>> = Default::default();
+        let mut results_totals = Default::default();
+        let mut results_end_user = Default::default();
+        let mut energy_import = Default::default();
+        let mut energy_export = Default::default();
+        let mut energy_generated_consumed = Default::default();
+        let mut energy_to_storage = Default::default();
+        let mut energy_from_storage = Default::default();
+        let mut energy_diverted = Default::default();
+        let mut betafactor = Default::default();
         // TODO iterate over energy supplies once energy supply is implemented
 
-        let hot_water_energy_out = HashMap::from([(
-            "hw cylinder".to_string(),
+        let hot_water_energy_out: HashMap<KeyString, Vec<f64>> = HashMap::from([(
+            "hw cylinder".try_into().unwrap(),
             hot_water_energy_output_dict
                 .get("energy_output")
                 .unwrap()
@@ -1132,42 +1141,65 @@ impl Corpus {
         );
 
         let zone_dict = HashMap::from([
-            ("Internal gains", gains_internal_dict),
-            ("Solar gains", gains_solar_dict),
-            ("Operative temp", operative_temp_dict),
-            ("Internal air temp", internal_air_temp_dict),
-            ("Space heat demand", space_heat_demand_dict),
-            ("Space cool demand", space_cool_demand_dict),
+            ("Internal gains".try_into().unwrap(), gains_internal_dict),
+            ("Solar gains".try_into().unwrap(), gains_solar_dict),
+            ("Operative temp".try_into().unwrap(), operative_temp_dict),
+            (
+                "Internal air temp".try_into().unwrap(),
+                internal_air_temp_dict,
+            ),
+            (
+                "Space heat demand".try_into().unwrap(),
+                space_heat_demand_dict,
+            ),
+            (
+                "Space cool demand".try_into().unwrap(),
+                space_cool_demand_dict,
+            ),
         ]);
         let hc_system_dict = HashMap::from([
-            ("Heating system", space_heat_demand_system_dict),
-            ("Cooling system", space_cool_demand_system_dict),
-            ("Heating system output", space_heat_provided_dict),
-            ("Cooling system output", space_cool_provided_dict),
+            (
+                "Heating system".try_into().unwrap(),
+                space_heat_demand_system_dict,
+            ),
+            (
+                "Cooling system".try_into().unwrap(),
+                space_cool_demand_system_dict,
+            ),
+            (
+                "Heating system output".try_into().unwrap(),
+                space_heat_provided_dict,
+            ),
+            (
+                "Cooling system output".try_into().unwrap(),
+                space_cool_provided_dict,
+            ),
         ]);
         let hot_water_dict = HashMap::from([
             (
-                "Hot water demand",
+                "Hot water demand".try_into().unwrap(),
                 HotWaterResultMap::Float(hot_water_demand_dict),
             ),
             (
-                "Hot water energy demand",
+                "Hot water energy demand".try_into().unwrap(),
                 HotWaterResultMap::Float(hot_water_energy_demand_dict),
             ),
             (
-                "Hot water energy demand incl pipework_loss",
+                "Hot water energy demand incl pipework_loss"
+                    .try_into()
+                    .unwrap(),
                 HotWaterResultMap::Float(hot_water_energy_demand_dict_incl_pipework),
             ),
             (
-                "Hot water duration",
+                "Hot water duration".try_into().unwrap(),
                 HotWaterResultMap::Float(hot_water_duration_dict),
             ),
             (
-                "Hot Water Events",
+                "Hot Water Events".try_into().unwrap(),
                 HotWaterResultMap::Int(hot_water_no_events_dict),
             ),
             (
-                "Pipework losses",
+                "Pipework losses".try_into().unwrap(),
                 HotWaterResultMap::Float(hot_water_pipework_dict),
             ),
         ]);
@@ -1251,10 +1283,10 @@ impl Corpus {
     /// Calculate overall CoP over calculation period for each heating and cooling system
     fn heat_cool_cop(
         &self,
-        energy_provided: &HashMap<String, Vec<f64>>,
-        results_end_user: &HashMap<&str, Vec<f64>>,
+        energy_provided: &HashMap<KeyString, Vec<f64>>,
+        results_end_user: &HashMap<KeyString, Vec<f64>>,
         energy_supply_conn_name_for_space_hc_system: HashMap<&str, &[&str]>,
-    ) -> HashMap<String, NumberOrDivisionByZero> {
+    ) -> HashMap<KeyString, NumberOrDivisionByZero> {
         // TODO implement when energy supplies are available
         Default::default()
     }
@@ -1374,13 +1406,13 @@ impl Corpus {
     }
 }
 
-#[derive(Debug)]
-pub enum HotWaterResultMap<'a> {
-    Float(HashMap<&'a str, Vec<f64>>),
-    Int(HashMap<&'a str, Vec<usize>>),
+#[derive(Clone, Debug)]
+pub enum HotWaterResultMap {
+    Float(HashMap<KeyString, Vec<f64>>),
+    Int(HashMap<KeyString, Vec<usize>>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum NumberOrDivisionByZero {
     Number(f64),
     DivisionByZero,
@@ -1807,28 +1839,30 @@ fn wwhr_system_from_details(
     }
 }
 
-type RunResults<'a> = (
+pub type KeyString = ArrayString<48>;
+
+pub type RunResults = (
     Vec<f64>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, HashMap<String, Vec<f64>>>,
-    Vec<&'a str>,
-    HashMap<&'a str, HashMap<String, Vec<f64>>>,
-    HashMap<&'a str, HotWaterResultMap<'a>>,
-    HashMap<String, NumberOrDivisionByZero>,
-    HashMap<String, NumberOrDivisionByZero>,
-    HashMap<String, NumberOrDivisionByZero>,
-    HashMap<&'a str, Vec<f64>>,
-    HashMap<&'a str, HashMap<&'a str, HashMap<&'a str, f64>>>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, HashMap<KeyString, Vec<f64>>>,
+    Vec<KeyString>,
+    HashMap<KeyString, HashMap<KeyString, Vec<f64>>>,
+    HashMap<KeyString, HotWaterResultMap>,
+    HashMap<KeyString, NumberOrDivisionByZero>,
+    HashMap<KeyString, NumberOrDivisionByZero>,
+    HashMap<KeyString, NumberOrDivisionByZero>,
+    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, HashMap<KeyString, HashMap<KeyString, f64>>>,
+    HashMap<KeyString, f64>,
+    HashMap<KeyString, f64>,
 );
 
 type SpaceHeatingCalculation<'a> = (
