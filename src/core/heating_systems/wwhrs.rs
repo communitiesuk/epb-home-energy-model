@@ -3,7 +3,7 @@ use interp::interp;
 
 /// This module provides types to model waste water heat recovery systems of different kinds.
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Wwhrs {
     WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB),
     WWHRSInstantaneousSystemC(WWHRSInstantaneousSystemC),
@@ -31,7 +31,7 @@ impl Wwhrs {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemB {
     cold_water_source: ColdWaterSource,
     flow_rates: Vec<f64>,
@@ -88,7 +88,7 @@ impl WWHRSInstantaneousSystemB {
 /// A class to represent instantaneous waste water heat recovery systems with arrangement C
 ///
 /// For System C WWHRS, output of the heat exchanger is fed to the hot water system only
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemC {
     cold_water_source: ColdWaterSource,
     stored_temperature: f64,
@@ -156,7 +156,7 @@ impl WWHRSInstantaneousSystemC {
 ///     
 /// For System A WWHRS, output of the heat exchanger is fed to both the shower
 /// and the hot water system
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemA {
     cold_water_source: ColdWaterSource,
     stored_temperature: f64,

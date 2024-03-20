@@ -34,7 +34,7 @@ const STORAGE_TANK_F_STO_BAC_ACC: f64 = 1.;
 // ambient temperature - degress (sic - from Python code)
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {
     Immersion(Arc<Mutex<ImmersionHeater>>),
     Solar(SolarThermalSystem),
@@ -48,6 +48,7 @@ pub enum HeatSourceWithStorageTank {
 ///
 /// Implements function demand_hot_water(volume_demanded) which all hot water
 /// source objects must implement.
+#[derive(Debug)]
 pub struct StorageTank {
     q_std_ls_ref: f64, // measured standby losses due to cylinder insulation at standardised conditions, in kWh/24h
     temp_out_w_min: f64, // minimum temperature required for DHW (domestic hot water)
@@ -892,7 +893,7 @@ type TemperatureCalculation = (
     [f64; STORAGE_TANK_NB_VOL],
 );
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ImmersionHeater {
     pwr: f64, // rated power
     // energy_supply
@@ -965,6 +966,7 @@ impl ImmersionHeater {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct PVDiverter {
     storage_tank: Arc<Mutex<StorageTank>>,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
@@ -1039,7 +1041,7 @@ impl PVDiverter {
 
 /// The following code contains objects that represent solar thermal systems.
 /// Method 3 in BS EN 15316-4-3:2017.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SolarThermalSystem {
     sol_loc: SolarCellLocation,
     area: f64,

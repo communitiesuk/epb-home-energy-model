@@ -4,7 +4,7 @@ use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemA, WWHRSInstan
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum WaterSourceWithTemperature {
     ColdWaterSource(Arc<ColdWaterSource>),
     WwhrsC(Arc<WWHRSInstantaneousSystemC>),

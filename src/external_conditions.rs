@@ -54,7 +54,7 @@ pub enum WindowShadingObjectType {
     SideFinLeft,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExternalConditions {
     air_temps: Vec<f64>,
     wind_speeds: Vec<f64>,

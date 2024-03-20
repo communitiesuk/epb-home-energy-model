@@ -14,6 +14,7 @@ const INTERNAL_HTC_WATER: f64 = 1500.0; // CIBSE Guide C, Table 3.32
 const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7; // low emissivity reflective surface, CIBSE Guide C, Table 3.25
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
+#[derive(Debug)]
 pub struct Pipework {
     length_in_m: f64,
     internal_diameter_in_m: f64,

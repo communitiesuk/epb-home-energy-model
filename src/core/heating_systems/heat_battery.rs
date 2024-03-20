@@ -19,7 +19,7 @@ enum ServiceType {
 ///
 /// This object contains the parts of the heat battery calculation that are
 /// specific to providing hot water.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatBatteryServiceWaterRegular {
     heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
@@ -85,7 +85,7 @@ impl HeatBatteryServiceWaterRegular {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatBatteryServiceSpace {
     heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
@@ -213,14 +213,14 @@ const LABS_TESTS_LOSSES: [[f64; 2]; 20] = [
 
 const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct HeatBatteryResult {
     service_name: String,
     time_running: f64,
     current_hb_power: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
     external_conditions: Arc<ExternalConditions>,

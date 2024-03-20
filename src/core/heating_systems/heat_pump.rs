@@ -59,7 +59,7 @@ impl HeatPumpSourceType {
     }
 }
 
-#[derive(Copy, Clone, Serialize_enum_str)]
+#[derive(Copy, Clone, Debug, Serialize_enum_str)]
 pub enum ServiceType {
     Water,
     Space,
@@ -297,7 +297,7 @@ impl HeatPumpTestDatum {
 /// NB. OrderedFloat values are used as keys for the test data as,
 /// unlike f64, this is a representation of a float that is both Hash + Eq and so can be
 /// used as a key in a HashMap.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct HeatPumpTestData {
     test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     dsgn_flow_temps: Vec<OrderedFloat<f64>>,
@@ -1012,7 +1012,7 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 ///
 /// This object contains the parts of the heat pump calculation that are
 /// specific to providing hot water.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
@@ -1435,7 +1435,7 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatPump {
     // energy supply
     simulation_timestep: f64,
@@ -2713,11 +2713,13 @@ pub enum TempSpreadCorrectionArg {
     Callable(Box<dyn FnOnce(f64, f64) -> f64>),
 }
 
+#[derive(Debug)]
 pub enum ServiceResult {
     Full(HeatPumpEnergyCalculation),
     Aux(AuxiliaryParameters),
 }
 
+#[derive(Debug)]
 struct HeatPumpEnergyCalculation {
     service_name: ResultString,
     service_type: ServiceType,
@@ -2779,7 +2781,7 @@ impl HeatPumpEnergyCalculation {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ResultParamValue {
     String(ResultString),
     Number(f64),
@@ -2824,6 +2826,7 @@ impl Div for ResultParamValue {
     }
 }
 
+#[derive(Debug)]
 struct AuxiliaryParameters {
     energy_standby: f64,
     energy_crankcase_heater_mode: f64,
@@ -2831,7 +2834,7 @@ struct AuxiliaryParameters {
 }
 
 /// An object to represent an electric hot-water-only heat pump, tested to EN 16147
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     simulation_timestep: f64,

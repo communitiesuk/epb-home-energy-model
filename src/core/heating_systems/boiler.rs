@@ -18,7 +18,7 @@ pub enum ServiceType {
     Space,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BoilerServiceWaterCombi {
     boiler: Boiler,
     service_name: String,
@@ -208,7 +208,7 @@ impl BoilerServiceWaterCombi {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BoilerServiceWaterRegular {
     boiler: Boiler,
     service_name: String,
@@ -269,7 +269,7 @@ impl BoilerServiceWaterRegular {
 }
 
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BoilerServiceSpace {
     boiler: Boiler,
     service_name: String,
@@ -318,7 +318,7 @@ impl BoilerServiceSpace {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Boiler {
     // energy_supply: &EnergySupply,
     simulation_timestep: f64,

@@ -5,6 +5,7 @@ use crate::core::controls::time_control::{
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
+use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1099,7 +1100,7 @@ impl Corpus {
             }
 
             self.energy_supplies
-                .calc_energy_import_export_betafactor(t_it.index);
+                .calc_energy_import_export_betafactor(t_it);
 
             // TODO complete when diverters implemented
             // for diverter in self.diverters {
@@ -1557,7 +1558,7 @@ fn energy_supply_from_input(
         Some(details) => Some(EnergySupply::new(
             details.fuel,
             simulation_time_iterator.total_steps(),
-            details.electric_battery,
+            details.electric_battery.map(ElectricBattery::from_input),
         )),
         None => None,
     }
@@ -2238,7 +2239,7 @@ fn appliance_gains_from_single_input(
     )
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum HeatSource {
     Storage(HeatSourceWithStorageTank),
     Wet(Box<HeatSourceWet>),
@@ -2288,7 +2289,7 @@ impl HeatSource {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PositionedHeatSource {
     pub heat_source: HeatSource,
     pub heater_position: f64,

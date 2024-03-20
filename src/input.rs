@@ -219,8 +219,8 @@ pub enum DiverterHeatSourceType {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
-    capacity: f64,
-    charge_discharge_efficiency: f64,
+    pub capacity: f64,
+    pub charge_discharge_efficiency: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -60,7 +60,7 @@ impl HeatNetworkServiceWaterDirect {
 ///
 /// This object contains the parts of the heat network calculation that are
 /// specific to providing hot water to the dwelling via a hot water cylinder.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
@@ -191,7 +191,7 @@ impl HeatNetworkServiceSpace {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatNetwork {
     power_max_in_kw: f64,
     daily_loss: f64,                         // in kWh/day
