@@ -1,4 +1,5 @@
-use crate::core::energy_supply::energy_supply::EnergySupply;
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::units::WATTS_PER_KILOWATT;
 // use crate::core::units::WATTS_PER_KILOWATT;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 
@@ -59,8 +60,7 @@ impl InternalGains {
 /// * `time_series_step` - timestep of the time series data, in hours
 pub struct ApplianceGains {
     total_energy_supply: Vec<f64>,
-    // connected_energy_supply: &'a EnergySupply,
-    end_user_name: String,
+    energy_supply_connection: EnergySupplyConnection,
     gains_fraction: f64,
     start_day: u32,
     time_series_step: f64,
@@ -69,17 +69,17 @@ pub struct ApplianceGains {
 impl ApplianceGains {
     pub fn new(
         total_energy_supply: Vec<f64>,
-        end_user_name: String,
         gains_fraction: f64,
         start_day: u32,
         time_series_step: f64,
+        energy_supply_connection: EnergySupplyConnection,
     ) -> Self {
         Self {
             total_energy_supply,
-            end_user_name,
             gains_fraction,
             start_day,
             time_series_step,
+            energy_supply_connection,
         }
     }
 
@@ -92,12 +92,12 @@ impl ApplianceGains {
         let total_energy_supplied = self.total_energy_supply
             [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
-        // let total_energy_supplied_kWh =
-        //     total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
+        let total_energy_supplied_kWh =
+            total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
 
-        // TODO: in Python, this tries to mutate the energy supply object, which is weird
-        // need to work out what is happening here and come up with a workaround
-        //self.connected_energy_supply.demand_energy(self.end_user_name, total_energy_supplied_kWh);
+        self.energy_supply_connection
+            .demand_energy(total_energy_supplied_kWh, simtime.index)
+            .unwrap();
 
         total_energy_supplied_w * self.gains_fraction
     }
@@ -108,7 +108,9 @@ mod tests {
     use super::*;
     use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
+    use parking_lot::Mutex;
     use rstest::*;
+    use std::sync::Arc;
 
     #[fixture]
     pub fn simulation_time_iterator() -> SimulationTimeIterator {
@@ -144,17 +146,19 @@ mod tests {
     pub fn test_total_internal_gain_for_appliance(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let energy_supply = EnergySupply::new(
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
             EnergySupplyType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
-        );
+        )));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "lighting").unwrap();
         let total_energy_supply = vec![32.0, 46.0, 30.0, 20.0];
         let total_internal_gains = vec![160.0, 230.0, 150.0, 100.0];
+        let expected_energy_supply_results = [0.32, 0.46, 0.30, 0.20];
         let appliance_gains = ApplianceGains {
             total_energy_supply,
-            // connected_energy_supply: &energy_supply,
-            end_user_name: "lighting".to_string(),
+            energy_supply_connection,
             gains_fraction: 0.5,
             start_day: 0,
             time_series_step: 1.0,
@@ -164,7 +168,11 @@ mod tests {
                 appliance_gains.total_internal_gain_in_w(10.0, iteration),
                 total_internal_gains[iteration.index]
             );
-            // TODO: Python code has a test here for energy supply results by end user
+            assert_eq!(
+                energy_supply.lock().results_by_end_user()["lighting"][iteration.index],
+                expected_energy_supply_results[iteration.index],
+                "incorrect electricity demand returned"
+            );
         }
     }
 }

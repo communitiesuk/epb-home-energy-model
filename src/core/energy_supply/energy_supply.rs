@@ -6,35 +6,73 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // a slightly looser definition of an energy supply that includes heat networks
 pub enum EnergySupplyLoose {
-    EnergySupply(EnergySupply),
-    HeatNetwork(HeatNetwork),
+    EnergySupply(Arc<Mutex<EnergySupply>>),
+    HeatNetwork(Arc<Mutex<EnergySupply>>),
 }
 
+#[derive(Debug)]
 pub struct EnergySupplies {
-    pub mains_electricity: Option<EnergySupply>,
-    pub mains_gas: Option<EnergySupply>,
-    pub bulk_lpg: Option<EnergySupply>,
-    pub heat_network: Option<HeatNetwork>,
-    pub unmet_demand: EnergySupply,
+    pub mains_electricity: Option<Arc<Mutex<EnergySupply>>>,
+    pub mains_gas: Option<Arc<Mutex<EnergySupply>>>,
+    pub bulk_lpg: Option<Arc<Mutex<EnergySupply>>>,
+    pub bottled_lpg: Option<Arc<Mutex<EnergySupply>>>,
+    pub condition_11f_lpg: Option<Arc<Mutex<EnergySupply>>>,
+    pub custom: Option<Arc<Mutex<EnergySupply>>>,
+    pub heat_network: Option<Arc<Mutex<EnergySupply>>>,
+    pub unmet_demand: Arc<Mutex<EnergySupply>>,
 }
 
 impl EnergySupplies {
     pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
         if let Some(ref mut supply) = self.mains_electricity {
-            supply.calc_energy_import_export_betafactor(simtime);
+            supply.lock().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.mains_gas {
-            supply.calc_energy_import_export_betafactor(simtime);
+            supply.lock().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.bulk_lpg {
-            supply.calc_energy_import_export_betafactor(simtime);
+            supply.lock().calc_energy_import_export_betafactor(simtime);
         }
         self.unmet_demand
+            .lock()
             .calc_energy_import_export_betafactor(simtime);
+    }
+
+    pub fn ensured_get_for_type(
+        &mut self,
+        energy_supply_type: EnergySupplyType,
+        timesteps: usize,
+    ) -> Arc<Mutex<EnergySupply>> {
+        let mut energy_supply = match energy_supply_type {
+            EnergySupplyType::Electricity => &mut self.mains_electricity,
+            EnergySupplyType::MainsGas => &mut self.mains_gas,
+            EnergySupplyType::UnmetDemand => return self.unmet_demand.clone(),
+            EnergySupplyType::Custom => &mut self.custom,
+            EnergySupplyType::LpgBulk => &mut self.bulk_lpg,
+            EnergySupplyType::LpgBottled => &mut self.bottled_lpg,
+            EnergySupplyType::LpgCondition11F => &mut self.condition_11f_lpg,
+            EnergySupplyType::HeatNetwork => {
+                unimplemented!("Undetermined what to do when heat network is requested.")
+            }
+        };
+        match energy_supply {
+            Some(supply) => supply.clone(),
+            None => {
+                let supply = Arc::new(Mutex::new(EnergySupply::new(
+                    energy_supply_type,
+                    timesteps,
+                    None,
+                )));
+                energy_supply = &mut Some(supply.clone());
+
+                supply
+            }
+        }
     }
 }
 
@@ -44,6 +82,7 @@ impl EnergySupplies {
 /// system consuming the energy does not have to specify these on every call,
 /// and helping to enforce that each connection to a single supply has a unique
 /// name.
+#[derive(Clone, Debug)]
 pub struct EnergySupplyConnection {
     energy_supply: Arc<Mutex<EnergySupply>>,
     end_user_name: String,
@@ -100,7 +139,7 @@ impl EnergySupplyConnection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EnergySupply {
     fuel_type: EnergySupplyType,
     simulation_timesteps: usize,
@@ -420,26 +459,42 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
         bulk_lpg: input
             .bulk_lpg
             .map(|s| supply_from_details(s, simulation_timesteps)),
-        heat_network: input.heat_network,
-        unmet_demand: EnergySupply::new(
+        heat_network: input
+            .heat_network
+            .map(|hn| supply_from_heat_network_details(hn, simulation_timesteps)),
+        unmet_demand: Arc::new(Mutex::new(EnergySupply::new(
             EnergySupplyType::UnmetDemand,
             simulation_timesteps,
             Default::default(),
-        ),
+        ))),
+        custom: None,
+        condition_11f_lpg: None,
+        bottled_lpg: None,
     }
 }
 
 fn supply_from_details(
     energy_supply_details: EnergySupplyDetails,
     simulation_timesteps: usize,
-) -> EnergySupply {
-    EnergySupply::new(
+) -> Arc<Mutex<EnergySupply>> {
+    Arc::new(Mutex::new(EnergySupply::new(
         energy_supply_details.fuel,
         simulation_timesteps,
         energy_supply_details
             .electric_battery
             .map(ElectricBattery::from_input),
-    )
+    )))
+}
+
+fn supply_from_heat_network_details(
+    heat_network: HeatNetwork,
+    simulation_timesteps: usize,
+) -> Arc<Mutex<EnergySupply>> {
+    Arc::new(Mutex::new(EnergySupply::new(
+        heat_network.fuel,
+        simulation_timesteps,
+        None,
+    )))
 }
 
 #[cfg(test)]

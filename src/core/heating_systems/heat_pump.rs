@@ -1,13 +1,16 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::units::{celsius_to_kelvin, kelvin_to_celsius, HOURS_PER_DAY};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum, HeatPumpHotWaterTestData,
-    HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum, HeatSourceWetDetails, TestLetter,
+    HeatNetwork, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
+    HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
+    HeatSourceWetDetails, TestLetter,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::bail;
 use arrayvec::ArrayString;
 use derivative::Derivative;
 use interp::interp;
@@ -18,7 +21,7 @@ use polyfit_rs::polyfit_rs::polyfit;
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
 use std::iter::Sum;
-use std::ops::{Add, Div};
+use std::ops::{Add, AddAssign, Div};
 use std::sync::Arc;
 
 /// This module provides objects to represent heat pumps and heat pump test data.
@@ -1090,6 +1093,7 @@ impl HeatPumpServiceWater {
             simulation_time_iteration,
             None,
             Some(temp_cold_water),
+            simulation_time_iteration.index,
         )
     }
 }
@@ -1203,6 +1207,7 @@ impl HeatPumpServiceSpace {
                 self.temp_spread_correction_fn(),
             )),
             None,
+            simulation_time_iteration.index,
         )
     }
 
@@ -1352,6 +1357,7 @@ impl HeatPumpServiceSpaceWarmAir {
                 self.temp_spread_correction_fn(),
             )),
             None,
+            simulation_time_iteration.index,
         )
     }
 
@@ -1438,6 +1444,9 @@ const HEAT_PUMP_F_AUX: f64 = 0.0;
 #[derive(Clone, Debug)]
 pub struct HeatPump {
     // energy supply
+    pub energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply_connections: HashMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
     throughput_exhaust_air: f64,
@@ -1463,6 +1472,8 @@ pub struct HeatPump {
     power_max_backup: f64,
     temp_distribution_heat_network: Option<f64>,
     // energy supply for heat networks
+    heat_network: Option<Arc<Mutex<EnergySupply>>>,
+    energy_supply_hn_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
     temp_min_modulation_rate_low: Option<f64>,
@@ -1496,12 +1507,20 @@ impl HeatPump {
     ///        test_data -- HeatPumpTestData object
     pub fn new(
         heat_pump_input: &HeatSourceWetDetails,
+        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply_conn_name_auxiliary: &str,
         simulation_timestep: f64,
         external_conditions: Arc<ExternalConditions>,
         throughput_exhaust_air: Option<f64>,
-        // heat_network: Option<Arc<HeatNetwork>>,
+        heat_network: Option<Arc<Mutex<EnergySupply>>>,
         output_detailed_results: bool,
     ) -> Result<Self, String> {
+        let energy_supply_connections = Default::default();
+        let energy_supply_connection_aux = Arc::new(
+            EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name_auxiliary)
+                .unwrap(),
+        );
+
         let service_results = Default::default();
         let total_time_running_current_timestep = Default::default();
         let time_running_continuous = Default::default();
@@ -1668,6 +1687,9 @@ impl HeatPump {
         };
 
         Ok(Self {
+            energy_supply,
+            energy_supply_connections,
+            energy_supply_connection_aux,
             simulation_timestep,
             external_conditions,
             throughput_exhaust_air: throughput_exhaust_air.unwrap(), // this may not be optional
@@ -1691,6 +1713,8 @@ impl HeatPump {
             power_off_mode,
             power_max_backup,
             temp_distribution_heat_network,
+            heat_network,
+            energy_supply_hn_connections: Default::default(),
             overvent_ratio,
             test_data,
             temp_min_modulation_rate_low,
@@ -1705,9 +1729,47 @@ impl HeatPump {
         self.source_type.is_exhaust_air()
     }
 
-    // TODO implement create_service_connection method
+    fn create_service_connection(
+        heat_pump: Arc<Mutex<Self>>,
+        service_name: &str,
+    ) -> Result<(), anyhow::Error> {
+        // Check that the service_name is not already registered
+        if heat_pump
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name)
+        {
+            bail!("Error: service name already used: {service_name}");
+        }
 
-    // TODO implement create service methods
+        // Set up energy supply connection for this service
+        heat_pump.lock().energy_supply_connections.insert(
+            service_name.to_string(),
+            Arc::new(
+                EnergySupply::connection(heat_pump.lock().energy_supply.clone(), service_name)
+                    .unwrap(),
+            ),
+        );
+
+        // if heat pump uses heat network as source, then set up connection
+        let is_heat_network = matches!(
+            heat_pump.lock().source_type,
+            HeatPumpSourceType::HeatNetwork
+        );
+        let heat_network = heat_pump.lock().heat_network.as_ref().map(Arc::clone);
+        if is_heat_network {
+            if let Some(energy_supply_hn) = heat_network {
+                heat_pump.lock().energy_supply_hn_connections.insert(
+                    service_name.to_string(),
+                    Arc::new(
+                        EnergySupply::connection(energy_supply_hn.clone(), service_name).unwrap(),
+                    ),
+                );
+            }
+        }
+
+        Ok(())
+    }
 
     pub fn create_service_hot_water(
         heat_pump: Arc<Mutex<Self>>,
@@ -1718,6 +1780,7 @@ impl HeatPump {
         cold_feed: Arc<ColdWaterSource>,
         control: Option<Arc<Control>>,
     ) -> HeatPumpServiceWater {
+        Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
         HeatPumpServiceWater::new(
             heat_pump,
             service_name,
@@ -1736,6 +1799,7 @@ impl HeatPump {
         temp_diff_emit_dsgn: f64,
         control: Arc<Control>,
     ) -> HeatPumpServiceSpace {
+        Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
         HeatPumpServiceSpace::new(
             heat_pump,
             service_name,
@@ -1746,27 +1810,31 @@ impl HeatPump {
     }
 
     pub fn create_service_space_heating_warm_air(
-        self,
+        heat_pump: Arc<Mutex<Self>>,
         service_name: String,
         control: Arc<Control>,
         frac_convective: f64,
     ) -> Result<HeatPumpServiceSpaceWarmAir, &'static str> {
-        if !matches!(&self.sink_type, HeatPumpSinkType::Air) {
+        if !matches!(&heat_pump.lock().sink_type, HeatPumpSinkType::Air) {
             return Err("Warm air space heating service requires heat pump with sink type Air");
         }
 
         // Use low temperature test data for space heating - set flow temp such
         // that it matches the one used in the test
-        let temp_flow = self.test_data.dsgn_flow_temps[0].0;
+        let temp_flow = heat_pump.lock().test_data.dsgn_flow_temps[0].0;
 
         // Design temperature difference across the emitters, in deg C or K
         let temp_diff_emit_dsgn = max_of_2(
             temp_flow / 7.,
-            self.test_data.temp_spread_test_conditions(temp_flow),
+            heat_pump
+                .lock()
+                .test_data
+                .temp_spread_test_conditions(temp_flow),
         );
 
+        Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
         Ok(HeatPumpServiceSpaceWarmAir::new(
-            Arc::new(Mutex::new(self)),
+            heat_pump,
             service_name,
             temp_diff_emit_dsgn,
             control,
@@ -2292,6 +2360,7 @@ impl HeatPump {
         simulation_time_iteration: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
+        timestep_idx: usize,
     ) -> f64 {
         let service_results = self.run_demand_energy_calc(
             service_name,
@@ -2310,6 +2379,7 @@ impl HeatPump {
 
         let time_running = service_results.time_running;
         let energy_delivered_total = service_results.energy_delivered_total;
+        let energy_input_total = service_results.energy_input_total;
 
         // Save results that are needed later (in the timestep_end function)
         self.service_results
@@ -2317,8 +2387,9 @@ impl HeatPump {
             .push(ServiceResult::Full(service_results));
         self.total_time_running_current_timestep += time_running;
 
-        // Feed/return results to other modules
-        // TODO report energy to energy supply
+        self.energy_supply_connections[service_name]
+            .demand_energy(energy_input_total, timestep_idx)
+            .unwrap();
 
         energy_delivered_total
     }
@@ -2374,7 +2445,12 @@ impl HeatPump {
         (total_running_time, throughput_factor)
     }
 
-    fn calc_ancillary_energy(&mut self, timestep: f64, time_remaining_current_timestep: f64) {
+    fn calc_ancillary_energy(
+        &mut self,
+        timestep: f64,
+        time_remaining_current_timestep: f64,
+        timestep_index: usize,
+    ) {
         // we need to collect times running separately before the main iteration as we cannot look into the service
         // results while iterating over mutable values
         let mut service_results = self.service_results.lock();
@@ -2401,7 +2477,7 @@ impl HeatPump {
             // we always expect full results here, but to be explicit:
             if let ServiceResult::Full(ref mut service_data) = service_data {
                 // Unpack results of previous calculations for this service
-                let _service_name = service_data.service_name.as_str();
+                let service_name = service_data.service_name.as_str();
                 let service_type = service_data.service_type;
                 let service_on = service_data.service_on;
                 let time_running_current_service = service_data.time_running;
@@ -2442,7 +2518,9 @@ impl HeatPump {
                     0.
                 };
 
-                // TODO record energy use to energy supply
+                self.energy_supply_connections[service_name]
+                    .demand_energy(energy_input_hp, timestep_index)
+                    .unwrap();
                 service_data.energy_input_hp += energy_input_hp;
                 service_data.energy_input_total += energy_input_hp;
             }
@@ -2454,6 +2532,7 @@ impl HeatPump {
         &self,
         timestep: f64,
         time_remaining_current_timestep: f64,
+        timestep_idx: usize,
     ) -> (f64, f64, f64) {
         // Retrieve control settings for this timestep
         let mut heating_profile_on = false;
@@ -2489,8 +2568,10 @@ impl HeatPump {
             }
         }
 
-        let _energy_aux = energy_standby + energy_crankcase_heater_mode + energy_off_mode;
-        // TODO report energy demand to energy supply
+        let energy_aux = energy_standby + energy_crankcase_heater_mode + energy_off_mode;
+        self.energy_supply_connection_aux
+            .demand_energy(energy_aux, timestep_idx)
+            .unwrap();
 
         (
             energy_standby,
@@ -2500,23 +2581,25 @@ impl HeatPump {
     }
 
     /// If HP uses heat network as source, calculate energy extracted from heat network
-    fn extract_energy_from_source(&self) {
+    fn extract_energy_from_source(&self, timestep_idx: usize) {
         for service_data in self.service_results.lock().iter() {
             if let ServiceResult::Full(service_data) = service_data {
                 let HeatPumpEnergyCalculation {
-                    service_name: _service_name,
+                    service_name,
                     energy_delivered_hp,
                     energy_input_hp,
                     ..
                 } = service_data;
-                let _energy_extracted_hp = energy_delivered_hp - energy_input_hp;
-                // TODO report energy demand to energy supply connections
+                let energy_extracted_hp = energy_delivered_hp - energy_input_hp;
+                self.energy_supply_hn_connections[service_name.as_str()]
+                    .demand_energy(energy_extracted_hp, timestep_idx)
+                    .unwrap();
             }
         }
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self) {
+    pub fn timestep_end(&mut self, timestep_idx: usize) {
         let timestep = self.simulation_timestep;
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
@@ -2527,12 +2610,12 @@ impl HeatPump {
             self.time_running_continuous = 0.;
         }
 
-        self.calc_ancillary_energy(timestep, time_remaining_current_timestep);
+        self.calc_ancillary_energy(timestep, time_remaining_current_timestep, timestep_idx);
         let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
-            self.calc_auxiliary_energy(timestep, time_remaining_current_timestep);
+            self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
         if matches!(self.source_type, HeatPumpSourceType::HeatNetwork) {
-            self.extract_energy_from_source();
+            self.extract_energy_from_source(timestep_idx);
         }
 
         // If detailed results are to be output, save the results from the current timestep
@@ -2554,7 +2637,7 @@ impl HeatPump {
 
     pub fn output_detailed_results(
         &self,
-        _hot_water_energy_output: f64,
+        hot_water_energy_output: Vec<ResultParamValue>,
     ) -> (ResultsPerTimestep, ResultsAnnual) {
         let detailed_results = self.detailed_results.as_ref().expect(
             "Detailed results cannot be output when the option to collect them was not selected",
@@ -2581,7 +2664,45 @@ impl HeatPump {
         }
 
         // For each service, report required output parameters
-        // TODO iterate over energy supply connections outputting data into results_per_timestep
+        for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
+            let mut results_entry = results_per_timestep.entry(service_name).or_default();
+            // Look up each required parameter
+            for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
+                let mut param_entry = results_entry
+                    .entry((parameter, param_unit.unwrap_or("")))
+                    .or_default();
+                // Look up value of required parameter in each timestep
+                for service_results in self
+                    .detailed_results
+                    .as_ref()
+                    .expect("Detailed results are expected to have been initialised")
+                    .iter()
+                {
+                    let result = match &service_results.lock()[service_idx] {
+                        ServiceResult::Full(calc) => calc.param(parameter),
+                        ServiceResult::Aux(_) => unreachable!(),
+                    };
+                    param_entry.push(result);
+                }
+            }
+            // For water heating service, record hot water energy delivered from tank
+            *results_per_timestep
+                .get_mut(service_name.as_str())
+                .unwrap()
+                .entry(("energy_delivered_H4", "kWh"))
+                .or_default() = if matches!(
+                match &self.detailed_results.as_ref().unwrap()[0].lock()[service_idx] {
+                    ServiceResult::Full(calc) => calc.service_type,
+                    ServiceResult::Aux(_) => unreachable!(),
+                },
+                ServiceType::Water
+            ) {
+                hot_water_energy_output.clone()
+            } else {
+                results_per_timestep[service_name.as_str()][&("energy_delivered_total", "kWh")]
+                    .clone()
+            };
+        }
 
         let mut results_annual: ResultsAnnual = Default::default();
         results_annual.insert(
@@ -2620,26 +2741,83 @@ impl HeatPump {
         }
 
         // For each service, report required output parameters
-        // TODO iterate over energy supply connections outputting data into results_annual
+        for service_name in self.energy_supply_connections.keys() {
+            let param_totals_for_overall = {
+                let mut annual_results_entry = results_annual.entry(service_name).or_default();
+                let mut param_totals_for_overall: HashMap<(&str, &str), ResultParamValue> =
+                    Default::default();
+                for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
+                    if incl_in_annual {
+                        let parameter_annual_total = results_per_timestep[service_name.as_str()]
+                            [&(parameter, param_unit.unwrap_or(""))]
+                            .iter()
+                            .copied()
+                            .sum::<ResultParamValue>();
+                        annual_results_entry.insert(
+                            (parameter, param_unit.unwrap_or("")),
+                            parameter_annual_total,
+                        );
+                        param_totals_for_overall.insert(
+                            (parameter, param_unit.unwrap_or("")),
+                            parameter_annual_total,
+                        );
+                    }
+                }
+
+                param_totals_for_overall
+            };
+            for (param_index, param_total_for_overall) in param_totals_for_overall {
+                *results_annual
+                    .get_mut("Overall")
+                    .unwrap()
+                    .get_mut(&param_index)
+                    .unwrap() += param_total_for_overall;
+            }
+            *results_annual
+                .get_mut(service_name.as_str())
+                .unwrap()
+                .get_mut(&("energy_delivered_H4", "kWh"))
+                .unwrap() = results_per_timestep[service_name.as_str()]
+                [&("energy_delivered_H4", "kWh")]
+                .iter()
+                .copied()
+                .sum::<ResultParamValue>();
+            let service_energy_delivered_results =
+                results_annual[service_name.as_str()][&("energy_delivered_H4", "kWh")];
+            *results_annual
+                .get_mut("Overall")
+                .unwrap()
+                .get_mut(&("energy_delivered_H4", "kWh"))
+                .unwrap() += service_energy_delivered_results;
+            self.calc_service_cop(results_annual.get_mut(service_name.as_str()).unwrap(), None);
+        }
 
         // Calculate overall CoP for all services combined
-        self.calc_service_cop(&mut results_annual);
+        self.calc_service_cop_overall(&mut results_annual);
 
         (results_per_timestep, results_annual)
     }
 
     /// Calculate CoP for whole simulation period for the given service (or overall)
-    fn calc_service_cop(&self, results_annual: &mut ResultsAnnual) {
+    fn calc_service_cop_overall(&self, results_annual: &mut ResultsAnnual) {
+        let results_auxiliary = results_annual.get("auxiliary").cloned();
+        let results_totals = results_annual.get_mut("Overall").unwrap();
+
+        self.calc_service_cop(results_totals, results_auxiliary);
+    }
+
+    fn calc_service_cop(
+        &self,
+        results_totals: &mut ResultAnnual,
+        results_auxiliary: Option<ResultAnnual>,
+    ) {
         // Add auxiliary energy to overall CoP
         let energy_auxiliary = {
-            let results_auxiliary = results_annual.get("auxiliary");
             match results_auxiliary {
                 Some(results_aux) => results_aux.values().copied().sum(),
                 None => ResultParamValue::Number(0.),
             }
         };
-
-        let mut results_totals = results_annual.get_mut("Overall").unwrap();
 
         // Calculate CoP at different system boundaries
         let cop_h1_numerator = results_totals[&("energy_delivered_HP", "kWh")];
@@ -2818,6 +2996,12 @@ impl Add for ResultParamValue {
     }
 }
 
+impl AddAssign for ResultParamValue {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = Self::Number(self.as_f64() + rhs.as_f64());
+    }
+}
+
 impl Div for ResultParamValue {
     type Output = Self;
 
@@ -2837,6 +3021,7 @@ struct AuxiliaryParameters {
 #[derive(Clone, Debug)]
 pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
+    energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
     efficiency: f64,
@@ -2845,6 +3030,7 @@ pub struct HeatPumpHotWaterOnly {
 impl HeatPumpHotWaterOnly {
     pub fn new(
         power_max_in_kw: f64,
+        energy_supply_connection: EnergySupplyConnection,
         test_data: &HeatPumpHotWaterTestData,
         vol_daily_average: f64,
         simulation_timestep: f64,
@@ -2887,6 +3073,7 @@ impl HeatPumpHotWaterOnly {
 
         Self {
             power_in_kw: power_max_in_kw,
+            energy_supply_connection,
             simulation_timestep,
             control,
             efficiency: Self::init_efficiency(&efficiencies, vol_daily_average),
@@ -2946,8 +3133,10 @@ impl HeatPumpHotWaterOnly {
                 0.0
             };
 
-        let _energy_required = energy_supplied / self.efficiency;
-        // TODO report to energy supply
+        let energy_required = energy_supplied / self.efficiency;
+        self.energy_supply_connection
+            .demand_energy(energy_required, simtime.index)
+            .unwrap();
 
         energy_demand
     }

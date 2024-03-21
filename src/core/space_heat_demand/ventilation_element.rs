@@ -1,5 +1,5 @@
 use crate::core::controls::time_control::SetpointTimeControl;
-use crate::core::energy_supply::energy_supply::EnergySupply;
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::space_heat_demand::building_element::{
     area_for_building_element_input, cloned_element_from_named, element_from_named, mid_height_for,
     orientation_for, projected_height_for_transparent_element,
@@ -412,8 +412,7 @@ pub struct MechanicalVentilationHeatRecovery {
     air_change_rate: f64,
     specific_fan_power: f64,
     efficiency_hr: f64,
-    // energy_supply: &'a mut EnergySupply,
-    // energy_supply_end_user_name: String, // rather than using an EnergySupplyConnection object that encapsulates this
+    energy_supply_connection: EnergySupplyConnection,
     simulation_time_step_in_hours: f64,
 }
 
@@ -422,16 +421,14 @@ impl MechanicalVentilationHeatRecovery {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         efficiency_hr: f64,
-        // energy_supply: &'a mut EnergySupply,
-        // energy_supply_end_user_name: String,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time_step_in_hours: f64,
     ) -> Self {
         Self {
             air_change_rate: required_air_change_rate,
             specific_fan_power,
             efficiency_hr,
-            // energy_supply,
-            // energy_supply_end_user_name,
+            energy_supply_connection,
             simulation_time_step_in_hours,
         }
     }
@@ -439,7 +436,7 @@ impl MechanicalVentilationHeatRecovery {
     pub fn fans(
         &mut self,
         zone_volume: f64,
-        _timestep_index: usize,
+        timestep_index: usize,
         throughput_factor: Option<f64>,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
@@ -451,12 +448,9 @@ impl MechanicalVentilationHeatRecovery {
         let fan_energy_use_kwh =
             (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time_step_in_hours;
 
-        // TODO: work out how this side-effect can be better implemented
-        // let _ = self.energy_supply.demand_energy(
-        //     self.energy_supply_end_user_name.clone(),
-        //     fan_energy_use_kwh,
-        //     timestep_index,
-        // );
+        self.energy_supply_connection
+            .demand_energy(fan_energy_use_kwh, timestep_index)
+            .unwrap();
 
         fan_energy_use_kwh / 2.0
     }
@@ -518,8 +512,7 @@ pub struct WholeHouseExtractVentilation {
     air_change_rate: f64,
     specific_fan_power: f64,
     infiltration_rate: f64,
-    // energy_supply: &'a EnergySupply,
-    // energy_supply_end_user_name: String,
+    energy_supply_connection: EnergySupplyConnection,
     simulation_time_step_in_hours: f64,
 }
 
@@ -528,16 +521,14 @@ impl WholeHouseExtractVentilation {
         required_air_change_rate: f64,
         specific_fan_power: f64,
         infiltration_rate: f64,
-        // energy_supply: &'a EnergySupply,
-        // energy_supply_end_user_name: String,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time_step_in_hours: f64,
     ) -> Self {
         Self {
             air_change_rate: required_air_change_rate,
             infiltration_rate,
             specific_fan_power,
-            // energy_supply,
-            // energy_supply_end_user_name,
+            energy_supply_connection,
             simulation_time_step_in_hours,
         }
     }
@@ -566,7 +557,7 @@ impl WholeHouseExtractVentilation {
         &mut self,
         zone_volume: f64,
         throughput_factor: Option<f64>,
-        _timestep_index: usize,
+        timestep_index: usize,
     ) -> f64 {
         let throughput_factor = throughput_factor.unwrap_or(1.0);
 
@@ -575,15 +566,12 @@ impl WholeHouseExtractVentilation {
         let q_v =
             air_change_rate_to_flow_rate(self.air_change_rate, zone_volume) * throughput_factor;
         let fan_power_w = self.specific_fan_power * (q_v * LITRES_PER_CUBIC_METRE as f64);
-        let fan_power_use_kwh =
+        let fan_energy_use_kwh =
             (fan_power_w / WATTS_PER_KILOWATT as f64) * self.simulation_time_step_in_hours;
 
-        // we need to find a better way to perform this mutation on the energy supply, or equivalent
-        // let _ = self.energy_supply.demand_energy(
-        //     self.energy_supply_end_user_name.clone(),
-        //     fan_power_use_kwh,
-        //     timestep_index,
-        // );
+        self.energy_supply_connection
+            .demand_energy(fan_energy_use_kwh, timestep_index)
+            .unwrap();
 
         0.0
     }
@@ -1044,6 +1032,7 @@ mod test {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::EnergySupplyType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use parking_lot::Mutex;
     use rstest::*;
 
     #[fixture]
@@ -1201,35 +1190,40 @@ mod test {
 
     #[fixture]
     pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
-        let mut energy_supply = EnergySupply::new(
+        EnergySupply::new(
             EnergySupplyType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
-        );
-        energy_supply.register_end_user_name("MVHR".to_string());
-
-        energy_supply
+        )
     }
 
     #[fixture]
     pub fn mvhr(
         simulation_time_iterator: SimulationTimeIterator,
-    ) -> MechanicalVentilationHeatRecovery {
-        MechanicalVentilationHeatRecovery::new(
-            0.5,
-            2.0,
-            0.66,
-            // &mut energy_supply,
-            // "MVHR".to_string(),
-            simulation_time_iterator.step_in_hours(),
+        energy_supply: EnergySupply,
+    ) -> (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>) {
+        let energy_supply = Arc::new(Mutex::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "MVHR").unwrap();
+
+        (
+            MechanicalVentilationHeatRecovery::new(
+                0.5,
+                2.0,
+                0.66,
+                energy_supply_connection,
+                simulation_time_iterator.step_in_hours(),
+            ),
+            energy_supply,
         )
     }
 
     #[rstest]
     pub fn should_have_correct_h_ve_for_mechanical(
-        mvhr: MechanicalVentilationHeatRecovery,
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
         external_conditions: ExternalConditions,
     ) {
+        let (mvhr, _) = mvhr;
         // for (i, _) in simulation_time_iterator.enumerate() {
         assert_eq!(
             round_by_precision(
@@ -1250,9 +1244,11 @@ mod test {
 
     #[rstest]
     pub fn should_have_correct_fan_gains(
-        mut mvhr: MechanicalVentilationHeatRecovery,
+        mut mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let (mut mvhr, energy_supply) = mvhr;
+
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 round_by_precision(mvhr.fans(75.0, i, None), 1e6),
@@ -1260,16 +1256,21 @@ mod test {
                 "incorrect fan gains for MVHR on iteration {} (1-indexed)",
                 i + 1
             );
-            // assert_eq!(mvhr.energy_supply().results_by_end_user().get("MVHR".to_string())) // result_by_end_user not yet implemented
+            assert_eq!(
+                round_by_precision(energy_supply.lock().results_by_end_user()["MVHR"][i], 1e7),
+                round_by_precision(0.0208333333333333, 1e7),
+                "incorrect fan energy use for MVHR"
+            );
         }
     }
 
     #[rstest]
     pub fn should_have_correct_temp_supply_for_mechanical(
-        mvhr: MechanicalVentilationHeatRecovery,
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
+        let (mvhr, _) = mvhr;
         for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 mvhr.temp_supply(t_it, &external_conditions),
@@ -1282,14 +1283,21 @@ mod test {
     #[fixture]
     pub fn whole_house_extract_ventilation(
         simulation_time_iterator: SimulationTimeIterator,
-    ) -> WholeHouseExtractVentilation {
-        WholeHouseExtractVentilation::new(
-            0.5,
-            2.0,
-            0.25,
-            // &energy_supply,
-            // "WHEV".to_string(),
-            simulation_time_iterator.step_in_hours(),
+        energy_supply: EnergySupply,
+    ) -> (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>) {
+        let energy_supply = Arc::new(Mutex::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "WHEV").unwrap();
+
+        (
+            WholeHouseExtractVentilation::new(
+                0.5,
+                2.0,
+                0.25,
+                energy_supply_connection,
+                simulation_time_iterator.step_in_hours(),
+            ),
+            energy_supply,
         )
     }
 
@@ -1316,10 +1324,11 @@ mod test {
 
     #[rstest]
     pub fn should_have_correct_h_ve_for_whole_house(
-        whole_house_extract_ventilation: WholeHouseExtractVentilation,
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
+        let (whole_house_extract_ventilation, _) = whole_house_extract_ventilation;
         for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 round_by_precision(
@@ -1354,24 +1363,33 @@ mod test {
 
     #[rstest]
     pub fn should_have_correct_fan_gains_for_whole_house(
-        mut whole_house_extract_ventilation: WholeHouseExtractVentilation,
+        mut whole_house_extract_ventilation: (
+            WholeHouseExtractVentilation,
+            Arc<Mutex<EnergySupply>>,
+        ),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
+        let (mut whole_house_extract_ventilation, energy_supply) = whole_house_extract_ventilation;
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 round_by_precision(whole_house_extract_ventilation.fans(75.0, None, i), 1e6),
                 round_by_precision(0.0, 1e6),
             );
-            // skip test of results_by_end_user from the energy supply as this is not yet implemented
+            assert_eq!(
+                round_by_precision(energy_supply.lock().results_by_end_user()["WHEV"][i], 1e7),
+                round_by_precision(0.020833333333333333, 1e7),
+                "incorrect fan energy use for WHEV"
+            );
         }
     }
 
     #[rstest]
     pub fn should_have_correct_temp_supply_for_whole_house(
-        whole_house_extract_ventilation: WholeHouseExtractVentilation,
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
+        let (whole_house_extract_ventilation, _) = whole_house_extract_ventilation;
         for (i, t_it) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 whole_house_extract_ventilation.temp_supply(t_it, &external_conditions),

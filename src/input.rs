@@ -132,7 +132,7 @@ pub struct ApplianceGainsDetails {
     pub time_series_step: f64,
     pub gains_fraction: f64,
     #[serde(alias = "EnergySupply")]
-    energy_supply: EnergySupplyType,
+    pub energy_supply: EnergySupplyType,
     pub schedule: Schedule,
 }
 
@@ -144,7 +144,7 @@ pub enum ApplianceGainType {
 }
 
 // NB. assuming for now the fields in this struct map to the FuelCode enum
-// there may be a may to map this a priori but keeping them manually in sync for now
+// there may be a way to map this a priori but keeping them manually in sync for now
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyInput {

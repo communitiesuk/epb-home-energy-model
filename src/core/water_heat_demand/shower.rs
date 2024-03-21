@@ -172,7 +172,9 @@ mod tests {
     use super::*;
     use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
+    use parking_lot::Mutex;
     use rstest::*;
+    use std::sync::Arc;
 
     #[rstest]
     pub fn should_calculate_correct_hot_water_demand_for_mixer() {
@@ -206,7 +208,7 @@ mod tests {
         let mut instant_shower = InstantElectricShower::new(
             50.0,
             cold_water_source,
-            EnergySupplyLoose::EnergySupply(energy_supply),
+            EnergySupplyLoose::EnergySupply(Arc::new(Mutex::new(energy_supply))),
             energy_supply_name,
         );
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
