@@ -1126,7 +1126,7 @@ pub enum HeatSourceWetDetails {
         #[serde(rename(deserialize = "EnergySupply"))]
         energy_supply: EnergySupplyType,
         #[serde(rename(deserialize = "EnergySupply_aux"))]
-        energy_supply_auxiliary: Option<EnergySupplyType>,
+        energy_supply_auxiliary: EnergySupplyType,
         rated_power: f64,
         efficiency_full_load: f64,
         efficiency_part_load: f64,

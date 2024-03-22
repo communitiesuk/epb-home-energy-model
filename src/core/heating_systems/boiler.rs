@@ -730,7 +730,7 @@ mod tests {
     pub fn boiler_data() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: None,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
             rated_power: 24.0,
             efficiency_full_load: 0.88,
             efficiency_part_load: 0.986,
@@ -913,7 +913,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
             energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: None,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,
@@ -1008,7 +1008,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 24.0,
             energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: None,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,
             boiler_location: HeatSourceLocation::Internal,
@@ -1070,7 +1070,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
             energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: None,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,
