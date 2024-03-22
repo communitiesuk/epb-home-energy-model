@@ -1,3 +1,4 @@
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::WATER;
@@ -483,23 +484,17 @@ impl Boiler {
             _ => Err(()),
         }?;
 
-        Ok(*[
+        Ok(min_of_2(
             net_efficiency_part_load - 0.213 * (net_efficiency_part_load - 0.966),
             maximum_part_load_eff,
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b).reverse())
-        .unwrap())
+        ))
     }
 
     pub fn high_value_correction_full_load(net_efficiency_full_load: f64) -> f64 {
-        *[
+        min_of_2(
             net_efficiency_full_load - 0.673 * (net_efficiency_full_load - 0.955),
             0.98,
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b).reverse())
-        .unwrap()
+        )
     }
 
     fn net_to_gross(fuel_type: EnergySupplyType) -> Result<f64, ()> {
@@ -578,15 +573,12 @@ impl Boiler {
         standing_loss: f64,
         temperature_boiler_loc: f64,
     ) -> f64 {
-        *[
-            (standing_loss
+        max_of_2(
+            standing_loss
                 * (temperature_return_feed - self.room_temperature).powf(self.standby_loss_index)
-                - (temperature_return_feed - temperature_boiler_loc).powf(self.standby_loss_index)),
+                - (temperature_return_feed - temperature_boiler_loc).powf(self.standby_loss_index),
             0.,
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap()
+        )
     }
 
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
@@ -604,10 +596,7 @@ impl Boiler {
 
         let energy_output_max_power =
             self.boiler_power * (timestep - self.total_time_running_current_timestep);
-        let energy_output_provided = *[energy_output_required, energy_output_max_power]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b).reverse())
-            .unwrap();
+        let energy_output_provided = min_of_2(energy_output_required, energy_output_max_power);
         // if there is no demand on the boiler or no remaining time then no energy should be provided
         if energy_output_required == 0.
             || (timestep - self.total_time_running_current_timestep) == 0.
@@ -620,13 +609,10 @@ impl Boiler {
 
         let current_boiler_power = if self.min_modulation_load < 1. {
             let min_power = self.boiler_power * self.min_modulation_load;
-            *[
+            max_of_2(
                 energy_output_provided / (timestep - self.total_time_running_current_timestep),
                 min_power,
-            ]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap()
+            )
         } else {
             self.boiler_power
         };
@@ -641,16 +627,13 @@ impl Boiler {
         // If this occurs, an adjustment is calculated for the calculation
         // timestep as follows (when the boiler is firing continuously no
         // adjustment is necessary so cycling_adjustment=0).
-        let prop_of_timestep_at_min_rate = *[
+        let prop_of_timestep_at_min_rate = min_of_2(
             energy_output_required
                 / (self.boiler_power
                     * self.min_modulation_load
                     * (timestep - self.total_time_running_current_timestep)),
             1.0,
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b).reverse())
-        .unwrap();
+        );
 
         // A boiler’s efficiency reduces when installed outside due to an increase in case heat loss.
         // The following adjustment is made when the boiler is located outside
@@ -705,13 +688,10 @@ impl Boiler {
         // TODO register demand to an energy supply
 
         // Calculate running time of boiler
-        let time_running_current_service = *[
+        let time_running_current_service = min_of_2(
             energy_output_provided / current_boiler_power,
             timestep - self.total_time_running_current_timestep,
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b).reverse())
-        .unwrap();
+        );
 
         self.total_time_running_current_timestep += time_running_current_service;
 

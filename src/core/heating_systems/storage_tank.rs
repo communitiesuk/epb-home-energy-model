@@ -1,3 +1,4 @@
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::MaterialProperties;
@@ -534,16 +535,9 @@ impl StorageTank {
         for i in 0..self.vol_n.len() {
             q_ls_n[i] = (h_sto_ls * self.rho * self.cp)
                 * (self.vol_n[i] / self.volume_total_in_litres)
-                * (*[temp_s7_n[i], self.temp_set_on]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b).reverse())
-                    .unwrap()
-                    - STORAGE_TANK_TEMP_AMB)
+                * (min_of_2(temp_s7_n[i], self.temp_set_on) - STORAGE_TANK_TEMP_AMB)
                 * self.simulation_timestep;
-            q_ls_n[i] = *[0., q_ls_n[i] - q_ls_n_prev_heat_source[i]]
-                .iter()
-                .max_by(|a, b| a.total_cmp(b))
-                .unwrap();
+            q_ls_n[i] = max_of_2(0., q_ls_n[i] - q_ls_n_prev_heat_source[i]);
         }
 
         // total thermal losses kWh
@@ -587,10 +581,7 @@ impl StorageTank {
 
         // also referred to as electrical power on
         let sto_bu_on = 1.;
-        let q_in_h_w = *[q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b).reverse())
-            .unwrap();
+        let q_in_h_w = min_of_2(q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on);
 
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
@@ -927,10 +918,7 @@ impl ImmersionHeater {
         // is implicit in demand calculation).
         let energy_supplied =
             if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
-                *[energy_demand, self.pwr * self.simulation_timestep]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b).reverse())
-                    .unwrap()
+                min_of_2(energy_demand, self.pwr * self.simulation_timestep)
             } else {
                 0.
             };
@@ -1016,10 +1004,7 @@ impl PVDiverter {
 
         // Calculate the maximum energy that could be diverted
         // Note: supply_surplus argument is negative by convention, so negate it here
-        let energy_diverted_max = *[imm_heater_max_capacity_spare, -supply_surplus]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b).reverse())
-            .unwrap();
+        let energy_diverted_max = min_of_2(imm_heater_max_capacity_spare, -supply_surplus);
 
         // Add additional energy to storage tank and calculate how much energy was accepted
         let energy_diverted = self.storage_tank.lock().additional_energy_input(
@@ -1219,10 +1204,7 @@ impl SolarThermalSystem {
     }
 
     pub fn demand_energy(&mut self, energy_demand: f64) -> f64 {
-        self.energy_supplied = *[energy_demand, self.heat_output_collector_loop]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b).reverse())
-            .unwrap();
+        self.energy_supplied = min_of_2(energy_demand, self.heat_output_collector_loop);
 
         // Eq 59 and 60 to calculate auxiliary energy - note that the if condition
         // is the wrong way round in BS EN 15316-4-3:2017

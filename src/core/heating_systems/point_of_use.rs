@@ -1,3 +1,4 @@
+use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
@@ -49,13 +50,10 @@ impl PointOfUse {
         energy_demand: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
-        let fuel_demand = *[
+        let fuel_demand = min_of_2(
             energy_demand,
             self.power_in_kw * simulation_time_iteration.timestep * (1. / self.efficiency),
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b).reverse())
-        .unwrap();
+        );
 
         // TODO call on energy supply
 

@@ -1,3 +1,4 @@
+use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
@@ -58,13 +59,10 @@ impl InstantElecHeater {
         // is implicit in demand calculation).
         let energy_supplied =
             if self.control.as_ref().is_none() || self.control.as_ref().unwrap().is_on(simtime) {
-                *[
+                min_of_2(
                     energy_demand,
                     self.rated_power_in_kw * self.simulation_timestep,
-                ]
-                .iter()
-                .max_by(|a, b| a.total_cmp(b).reverse())
-                .unwrap()
+                )
             } else {
                 0.
             };

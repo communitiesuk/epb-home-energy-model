@@ -1,3 +1,4 @@
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::material_properties::WATER;
@@ -273,16 +274,8 @@ impl HeatNetwork {
         if energy_output_max == 0. {
             return energy_output_max;
         }
-        let energy_output_provided = *[
-            0.,
-            *[energy_output_required, energy_output_max]
-                .iter()
-                .max_by(|a, b| a.total_cmp(b).reverse())
-                .unwrap(),
-        ]
-        .iter()
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap();
+        let energy_output_provided =
+            max_of_2(0., min_of_2(energy_output_required, energy_output_max));
 
         // TODO demand energy from energy supply
 

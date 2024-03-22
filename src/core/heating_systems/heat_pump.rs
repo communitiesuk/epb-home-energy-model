@@ -72,10 +72,7 @@ pub enum ServiceType {
 fn carnot_cop(temp_source: f64, temp_outlet: f64, temp_diff_limit_low: Option<f64>) -> f64 {
     let mut temp_diff = temp_outlet - temp_source;
     if let Some(low_limit) = temp_diff_limit_low {
-        temp_diff = *[temp_diff, low_limit]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap();
+        temp_diff = max_of_2(temp_diff, low_limit);
     }
     temp_outlet / temp_diff
 }
@@ -637,10 +634,7 @@ impl HeatPumpTestData {
 
                 let lr_op_cond = (carnot_cop_op_cond / carnot_cop_cld)
                     * (temp_output_cld * temp_source / (flow_temp * temp_source_cld)).powf(N_EXER);
-                *[1.0, lr_op_cond]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b))
-                    .unwrap()
+                max_of_2(1.0, lr_op_cond)
             })
             .collect::<Vec<_>>();
         let flow_temp = kelvin_to_celsius(flow_temp);
@@ -774,11 +768,7 @@ impl HeatPumpTestData {
                     + self.regression_coeffs[dsgn_flow_temp][2] * temp_ext.powi(2))
                     * temp_output
                     * (temp_outlet_cld - temp_source_cld)
-                    / (temp_outlet_cld
-                        * *[temp_output - temp_source, temp_diff_limit_low]
-                            .iter()
-                            .max_by(|a, b| a.total_cmp(b))
-                            .unwrap())
+                    / (temp_outlet_cld * max_of_2(temp_output - temp_source, temp_diff_limit_low))
             })
             .collect::<Vec<_>>();
 
@@ -1619,13 +1609,10 @@ impl HeatPump {
                         .expect("expected throughput_exhaust_air to have been set here"),
                     &test_data,
                 )?;
-            *[
+            max_of_2(
                 1.0,
                 lowest_air_flow_rate_in_test_data / throughput_exhaust_air.unwrap(),
-            ]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap()
+            )
         } else {
             1.0
         };
@@ -1848,16 +1835,10 @@ impl HeatPump {
         let temp_source = match self.source_type {
             HeatPumpSourceType::Ground => {
                 let temp_ext = self.external_conditions.air_temp(&simulation_time_iteration);
-                *[
+                max_of_2(
                     0.,
-                    *[8., temp_ext * 0.25806 + 2.8387]
-                        .iter()
-                        .max_by(|a, b| a.total_cmp(b).reverse())
-                        .unwrap(),
-                ]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b))
-                    .unwrap()
+                    min_of_2(8., temp_ext * 0.25806 + 2.8387)
+                )
             }
             HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(&simulation_time_iteration),
             HeatPumpSourceType::ExhaustAirMEV => 20.0,
@@ -1924,10 +1905,7 @@ impl HeatPump {
         } else {
             // arm for HeatPumpBackupControlType::Substitute as Rust requires assigning
             // conditional to be explicitly exhaustive and we can't do this using a match here
-            *[power_max_hp, self.power_max_backup]
-                .iter()
-                .max_by(|a, b| a.total_cmp(b))
-                .unwrap()
+            max_of_2(power_max_hp, self.power_max_backup)
         };
 
         power_max * time_available
@@ -1989,13 +1967,10 @@ impl HeatPump {
             // Note: DAHPSE method document section 4.5.5 doesn't have
             // temp_spread_correction_factor in formula below. However, section 4.5.7
             // states that the correction factor is to be applied to the CoP.
-            let cop_op_cond = *[
+            let cop_op_cond = max_of_2(
                 1.0,
                 exer_eff_op_cond * carnot_cop_op_cond * temp_spread_correction_factor,
-            ]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap();
+            );
 
             let (limit_upper, limit_lower) = if matches!(self.sink_type, HeatPumpSinkType::Air)
                 && !matches!(service_type, ServiceType::Water)
@@ -2013,16 +1988,7 @@ impl HeatPump {
                         / (lr_below - lr_above)
             };
 
-            let deg_coeff_op_cond = *[
-                *[deg_coeff_op_cond, limit_upper]
-                    .iter()
-                    .max_by(|a, b| a.total_cmp(b).reverse())
-                    .unwrap(),
-                limit_lower,
-            ]
-            .iter()
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap();
+            let deg_coeff_op_cond = max_of_2(min_of_2(deg_coeff_op_cond, limit_upper), limit_lower);
 
             (cop_op_cond, deg_coeff_op_cond)
         }
