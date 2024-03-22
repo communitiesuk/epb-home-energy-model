@@ -2407,7 +2407,7 @@ impl WetHeatSource {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
             WetHeatSource::Boiler(boiler) => boiler.timestep_end(simtime),
             WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(simtime.index),
-            WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(),
+            WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(simtime.index),
         }
     }
 }
@@ -2526,8 +2526,18 @@ fn heat_source_wet_from_input(
                 energy_supply_conn_name_building_level_distribution_losses,
                 simulation_time.step_in_hours(),
             ))
+            // TODO add heat network to timestep_end_calcs
         }
-        HeatSourceWetDetails::HeatBattery { control_charge, .. } => {
+        HeatSourceWetDetails::HeatBattery {
+            control_charge,
+            energy_supply,
+            ..
+        } => {
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply_conn =
+                EnergySupply::connection(energy_supply.clone(), energy_supply_name).unwrap();
+
             let heat_source = WetHeatSource::HeatBattery(HeatBattery::new(
                 &input,
                 controls
@@ -2538,6 +2548,8 @@ fn heat_source_wet_from_input(
                         )
                     })
                     .clone(),
+                energy_supply,
+                energy_supply_conn,
                 simulation_time,
                 external_conditions.clone(),
             ));

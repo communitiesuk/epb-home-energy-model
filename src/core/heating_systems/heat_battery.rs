@@ -1,11 +1,14 @@
 use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use anyhow::bail;
 use interp::interp;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// This module provides object(s) to model the behaviour of heat batteries.
@@ -62,6 +65,7 @@ impl HeatBatteryServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             self.temp_return,
+            simulation_time_iteration.index,
         )
     }
 
@@ -137,6 +141,7 @@ impl HeatBatteryServiceSpace {
             ServiceType::Space,
             energy_demand,
             temp_return,
+            simulation_time_iteration.index,
         )
     }
 
@@ -224,6 +229,9 @@ struct HeatBatteryResult {
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
     external_conditions: Arc<ExternalConditions>,
+    energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply_connection: EnergySupplyConnection,
+    energy_supply_connections: HashMap<String, EnergySupplyConnection>,
     heat_battery_location: HeatSourceLocation,
     pwr_in: f64,
     heat_storage_capacity: f64,
@@ -246,6 +254,8 @@ impl HeatBattery {
     pub fn new(
         heat_battery_details: &HeatSourceWetDetails,
         charge_control: Arc<Control>,
+        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_time: Arc<SimulationTimeIterator>,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
@@ -287,6 +297,9 @@ impl HeatBattery {
         Self {
             simulation_time,
             external_conditions,
+            energy_supply,
+            energy_supply_connection,
+            energy_supply_connections: Default::default(),
             heat_battery_location,
             pwr_in,
             heat_storage_capacity,
@@ -306,6 +319,28 @@ impl HeatBattery {
         }
     }
 
+    pub fn create_service_connection(
+        heat_battery: Arc<Mutex<Self>>,
+        service_name: &str,
+    ) -> anyhow::Result<()> {
+        if heat_battery
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name)
+        {
+            bail!("Error: Service name already used: {service_name}");
+        }
+        let energy_supply = heat_battery.lock().energy_supply.clone();
+
+        // Set up EnergySupplyConnection for this service
+        heat_battery.lock().energy_supply_connections.insert(
+            service_name.to_string(),
+            EnergySupply::connection(energy_supply, service_name).unwrap(),
+        );
+
+        Ok(())
+    }
+
     /// Return a HeatBatteryServiceWaterRegular object and create an EnergySupplyConnection for it
     ///
     /// Arguments:
@@ -323,6 +358,7 @@ impl HeatBattery {
         temp_return: f64,
         control: Option<Arc<Control>>,
     ) -> HeatBatteryServiceWaterRegular {
+        Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
         HeatBatteryServiceWaterRegular::new(
             heat_battery,
             service_name.to_string(),
@@ -338,6 +374,7 @@ impl HeatBattery {
         service_name: &str,
         control: Arc<Control>,
     ) -> HeatBatteryServiceSpace {
+        Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
         HeatBatteryServiceSpace::new(heat_battery, service_name.to_string(), control)
     }
 
@@ -427,6 +464,7 @@ impl HeatBattery {
         _service_type: ServiceType,
         energy_output_required: f64,
         _temp_return_feed: f64,
+        timestep_idx: usize,
     ) -> f64 {
         let timestep = self.simulation_time.step_in_hours();
         let mut charge_level = self.charge_level;
@@ -479,7 +517,12 @@ impl HeatBattery {
 
         self.charge_level = charge_level;
 
-        // TODO record energy supply demand
+        self.energy_supply_connection
+            .demand_energy(e_in * self.n_units as f64, timestep_idx)
+            .unwrap();
+        self.energy_supply_connections[service_name]
+            .energy_out(e_out * self.n_units as f64, timestep_idx)
+            .unwrap();
 
         self.total_time_running_current_timestamp += time_running_current_service;
 
@@ -494,18 +537,25 @@ impl HeatBattery {
     }
 
     /// Calculation of heat battery auxilary energy consumption
-    fn calc_auxiliary_energy(&self, _timestep: f64, time_remaining_current_timestep: f64) {
+    fn calc_auxiliary_energy(
+        &self,
+        _timestep: f64,
+        time_remaining_current_timestep: f64,
+        timestep_idx: usize,
+    ) {
         // Energy used by circulation pump
         let mut energy_aux = self.total_time_running_current_timestamp * self.power_circ_pump;
 
         // Energy used in standby mode
         energy_aux += self.power_standby * time_remaining_current_timestep;
 
-        // TODO report energy supply demand
+        self.energy_supply_connection
+            .demand_energy(energy_aux, timestep_idx)
+            .unwrap();
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self) {
+    pub fn timestep_end(&mut self, timestep_idx: usize) {
         let timestep = self.simulation_time.step_in_hours();
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestamp;
 
@@ -514,7 +564,7 @@ impl HeatBattery {
         }
 
         // Calculating auxiliary energy to provide services during timestep
-        self.calc_auxiliary_energy(timestep, time_remaining_current_timestep);
+        self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
         // Completing any charging left in the timestep and removing all losses from the charge level
         // Calculating heat battery losses in timestep to correct charge level
@@ -546,7 +596,9 @@ impl HeatBattery {
 
         self.charge_level = charge_level;
 
-        // TODO report energy supply demand
+        self.energy_supply_connection
+            .demand_energy(e_in * self.n_units as f64, timestep_idx)
+            .unwrap();
 
         let current_hour = self.simulation_time.current_hour();
 
