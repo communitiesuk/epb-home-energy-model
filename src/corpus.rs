@@ -67,6 +67,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::fmt::format;
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -2405,7 +2406,7 @@ impl WetHeatSource {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
             WetHeatSource::Boiler(boiler) => boiler.timestep_end(simtime),
-            WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(),
+            WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(simtime.index),
             WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(),
         }
     }
@@ -2506,13 +2507,26 @@ fn heat_source_wet_from_input(
             power_max,
             hiu_daily_loss,
             building_level_distribution_losses,
+            energy_supply,
             ..
-        } => WetHeatSource::Hiu(HeatNetwork::new(
-            *power_max,
-            *hiu_daily_loss,
-            *building_level_distribution_losses,
-            simulation_time.step_in_hours(),
-        )),
+        } => {
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply_conn_name_auxiliary =
+                format!("HeatNetwork_auxiliary: {energy_supply_name}");
+            let energy_supply_conn_name_building_level_distribution_losses =
+                format!("HeatNetwork_building_level_distribution_losses: {energy_supply_name}");
+
+            WetHeatSource::Hiu(HeatNetwork::new(
+                *power_max,
+                *hiu_daily_loss,
+                *building_level_distribution_losses,
+                energy_supply,
+                energy_supply_conn_name_auxiliary,
+                energy_supply_conn_name_building_level_distribution_losses,
+                simulation_time.step_in_hours(),
+            ))
+        }
         HeatSourceWetDetails::HeatBattery { control_charge, .. } => {
             let heat_source = WetHeatSource::HeatBattery(HeatBattery::new(
                 &input,
