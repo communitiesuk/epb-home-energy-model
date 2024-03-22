@@ -2354,7 +2354,7 @@ impl HeatSource {
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration),
                 HeatSourceWithStorageTank::Solar(ref mut solar) => {
-                    solar.demand_energy(energy_demand)
+                    solar.demand_energy(energy_demand, simulation_time_iteration.index)
                 }
             },
             HeatSource::Wet(ref mut wet) => match wet.as_mut() {
@@ -2605,25 +2605,33 @@ fn heat_source_from_input(
             tilt,
             orientation,
             solar_loop_piping_hlc,
+            energy_supply,
             ..
-        } => HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
-            solar_cell_location,
-            area_module,
-            modules,
-            peak_collector_efficiency,
-            incidence_angle_modifier,
-            first_order_hlc,
-            second_order_hlc,
-            collector_mass_flow_rate,
-            power_pump,
-            power_pump_control,
-            tilt,
-            orientation,
-            solar_loop_piping_hlc,
-            external_conditions.clone(),
-            simulation_time.step_in_hours(),
-            WATER.clone(),
-        ))),
+        } => {
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
+
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
+                solar_cell_location,
+                area_module,
+                modules,
+                peak_collector_efficiency,
+                incidence_angle_modifier,
+                first_order_hlc,
+                second_order_hlc,
+                collector_mass_flow_rate,
+                power_pump,
+                power_pump_control,
+                energy_supply_conn,
+                tilt,
+                orientation,
+                solar_loop_piping_hlc,
+                external_conditions.clone(),
+                simulation_time.step_in_hours(),
+                WATER.clone(),
+            )))
+        }
         HeatSourceInput::Wet {
             name,
             cold_water_source: cold_water_source_type,

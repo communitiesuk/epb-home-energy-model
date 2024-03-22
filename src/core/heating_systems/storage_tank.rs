@@ -855,7 +855,7 @@ impl StorageTank {
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration),
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar)) => {
-                solar.demand_energy(input_energy_adj)
+                solar.demand_energy(input_energy_adj, simulation_time_iteration.index)
             }
             _ => {
                 // TODO need to be able to call demand_energy on the other heat sources
@@ -1047,7 +1047,7 @@ pub struct SolarThermalSystem {
     collector_mass_flow_rate: f64,
     power_pump: f64,
     power_pump_control: f64,
-    // energy supply
+    energy_supply_connection: EnergySupplyConnection,
     tilt: f64,
     orientation: f64,
     solar_loop_piping_hlc: f64,
@@ -1078,7 +1078,7 @@ impl SolarThermalSystem {
         collector_mass_flow_rate: f64,
         power_pump: f64,
         power_pump_control: f64,
-        // energy supply
+        energy_supply_connection: EnergySupplyConnection,
         tilt: f64,
         orientation: f64,
         solar_loop_piping_hlc: f64,
@@ -1096,6 +1096,7 @@ impl SolarThermalSystem {
             collector_mass_flow_rate,
             power_pump,
             power_pump_control,
+            energy_supply_connection,
             tilt,
             orientation,
             solar_loop_piping_hlc,
@@ -1204,7 +1205,7 @@ impl SolarThermalSystem {
             inlet_temp2 = inlet_temp2_temp;
 
             // Eq 58
-            let avg_collector_water_temp = (self.inlet_temp + inlet_temp2) / 2.
+            let _avg_collector_water_temp = (self.inlet_temp + inlet_temp2) / 2.
                 + self.heat_output_collector_loop / (self.collector_mass_flow_rate * self.cp * 2.);
         }
 
@@ -1213,7 +1214,7 @@ impl SolarThermalSystem {
         self.heat_output_collector_loop
     }
 
-    pub fn demand_energy(&mut self, energy_demand: f64) -> f64 {
+    pub fn demand_energy(&mut self, energy_demand: f64, timestep_idx: usize) -> f64 {
         self.energy_supplied = min_of_2(energy_demand, self.heat_output_collector_loop);
 
         // Eq 59 and 60 to calculate auxiliary energy - note that the if condition
@@ -1225,6 +1226,9 @@ impl SolarThermalSystem {
         };
 
         // TODO register demand to energy supply
+        self.energy_supply_connection
+            .demand_energy(auxiliary_energy_consumption, timestep_idx)
+            .unwrap();
 
         self.energy_supplied
     }
