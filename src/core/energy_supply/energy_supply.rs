@@ -194,11 +194,9 @@ impl EnergySupply {
         end_user_name: &str,
     ) -> Result<EnergySupplyConnection, anyhow::Error> {
         let mut supply = energy_supply.lock();
-        println!("{:?}", supply.demand_by_end_user);
         if supply.demand_by_end_user.contains_key(end_user_name.into()) {
             bail!("The end user name '{end_user_name}' was already used.");
         }
-        println!("end_user_name: {end_user_name}");
         let timesteps = supply.simulation_timesteps;
         supply
             .demand_by_end_user
@@ -593,7 +591,6 @@ mod test {
         simulation_time: SimulationTimeIterator,
     ) {
         let (energy_connection_1, energy_connection_2, energy_supply) = energy_supply_connections;
-        println!("{:?}", energy_supply.lock().results_by_end_user());
         for simtime in simulation_time {
             let _ = energy_connection_1
                 .demand_energy((simtime.index as f64 + 1.0) * 50.0, simtime.index);
