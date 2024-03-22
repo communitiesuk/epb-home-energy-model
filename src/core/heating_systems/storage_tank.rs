@@ -1,6 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::MaterialProperties;
 use crate::core::pipework::Pipework;
 use crate::core::units::WATTS_PER_KILOWATT;
@@ -888,15 +889,22 @@ type TemperatureCalculation = (
 pub struct ImmersionHeater {
     pwr: f64, // rated power
     // energy_supply
+    energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
     diverter: Option<Arc<Mutex<PVDiverter>>>,
 }
 
 impl ImmersionHeater {
-    pub fn new(rated_power: f64, simulation_timestep: f64, control: Option<Arc<Control>>) -> Self {
+    pub fn new(
+        rated_power: f64,
+        energy_supply_connection: EnergySupplyConnection,
+        simulation_timestep: f64,
+        control: Option<Arc<Control>>,
+    ) -> Self {
         Self {
             pwr: rated_power,
+            energy_supply_connection,
             simulation_timestep,
             control,
             diverter: Default::default(),
@@ -929,7 +937,9 @@ impl ImmersionHeater {
             diverter.lock().capacity_already_in_use(energy_supplied);
         }
 
-        // TODO report demand to energy supply
+        self.energy_supply_connection
+            .demand_energy(energy_supplied, simtime.index)
+            .unwrap();
 
         energy_supplied
     }
@@ -1224,6 +1234,7 @@ impl SolarThermalSystem {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::{per_control, OnOffTimeControl};
+    use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
@@ -1295,6 +1306,15 @@ mod tests {
                     heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                         Arc::new(Mutex::new(ImmersionHeater::new(
                             50.,
+                            EnergySupply::connection(
+                                Arc::new(Mutex::new(EnergySupply::new(
+                                    EnergySupplyType::Electricity,
+                                    simulation_time_for_storage_tank.total_steps(),
+                                    None,
+                                ))),
+                                "immersion",
+                            )
+                            .unwrap(),
                             simulation_time_for_storage_tank.step,
                             Some(control_for_storage_tank),
                         ))),
@@ -1382,6 +1402,15 @@ mod tests {
     ) -> ImmersionHeater {
         ImmersionHeater::new(
             50.,
+            EnergySupply::connection(
+                Arc::new(Mutex::new(EnergySupply::new(
+                    EnergySupplyType::MainsGas,
+                    simulation_time_for_immersion_heater.total_steps(),
+                    None,
+                ))),
+                "shower",
+            )
+            .unwrap(),
             simulation_time_for_immersion_heater.step,
             Some(Arc::new(Control::OnOffTimeControl(OnOffTimeControl::new(
                 vec![true, true, false, true],

@@ -2572,13 +2572,25 @@ fn heat_source_from_input(
     // TODO add in all the stuff to do with energy supply
 
     match input {
-        HeatSourceInput::ImmersionHeater { power, control, .. } => HeatSource::Storage(
-            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(ImmersionHeater::new(
-                power,
-                simulation_time.step_in_hours(),
-                control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone())),
-            )))),
-        ),
+        HeatSourceInput::ImmersionHeater {
+            power,
+            control,
+            energy_supply,
+            ..
+        } => {
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
+
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                ImmersionHeater::new(
+                    power,
+                    energy_supply_conn,
+                    simulation_time.step_in_hours(),
+                    control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone())),
+                ),
+            ))))
+        }
         HeatSourceInput::SolarThermalSystem {
             solar_cell_location,
             area_module,
