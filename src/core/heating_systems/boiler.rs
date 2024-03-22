@@ -1,6 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
@@ -10,6 +11,12 @@ use crate::{
     core::water_heat_demand::cold_water_source::ColdWaterSource,
     input::{BoilerHotWaterTest, HotWaterSourceDetails},
 };
+use anyhow::bail;
+use arrayvec::ArrayString;
+use interp::interp;
+use parking_lot::Mutex;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -321,11 +328,11 @@ impl BoilerServiceSpace {
 
 #[derive(Clone, Debug)]
 pub struct Boiler {
-    // energy_supply: &EnergySupply,
+    energy_supply: Arc<Mutex<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
-    // energy_supply_connections: (),
-    // energy_supply_connection_aux: (),
+    energy_supply_connections: HashMap<String, EnergySupplyConnection>,
+    energy_supply_connection_aux: EnergySupplyConnection,
     energy_supply_type: EnergySupplyType,
     // service_results: (),
     boiler_location: HeatSourceLocation,
@@ -343,6 +350,7 @@ pub struct Boiler {
     temp_rise_standby_loss: f64,
     standby_loss_index: f64,
     ebv_curve_offset: f64,
+    service_results: Vec<ServiceResult>,
 }
 
 impl Boiler {
@@ -351,12 +359,14 @@ impl Boiler {
     /// * `external_conditions` - reference to an ExternalConditions value
     pub fn new(
         boiler_data: HeatSourceWetDetails,
+        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply_conn_aux: EnergySupplyConnection,
         external_conditions: Arc<ExternalConditions>,
         simulation_timestep: f64,
     ) -> Result<Self, ()> {
         match boiler_data {
             HeatSourceWetDetails::Boiler {
-                energy_supply,
+                energy_supply: energy_supply_type,
                 energy_supply_auxiliary,
                 rated_power: boiler_power,
                 efficiency_full_load: full_load_gross,
@@ -370,12 +380,12 @@ impl Boiler {
             } => {
                 let total_time_running_current_timestep = 0.;
 
-                let net_to_gross = Self::net_to_gross(energy_supply)?;
+                let net_to_gross = Self::net_to_gross(energy_supply_type)?;
                 let full_load_net = full_load_gross / net_to_gross;
                 let part_load_net = part_load_gross / net_to_gross;
                 let corrected_full_load_net = Self::high_value_correction_full_load(full_load_net);
                 let corrected_part_load_net =
-                    Self::high_value_correction_part_load(energy_supply, part_load_net)?;
+                    Self::high_value_correction_part_load(energy_supply_type, part_load_net)?;
                 let corrected_full_load_gross = corrected_full_load_net * net_to_gross;
                 let corrected_part_load_gross = corrected_part_load_net * net_to_gross;
 
@@ -397,12 +407,12 @@ impl Boiler {
                 let temp_full_load_test = 60.;
                 let offset_for_theoretical_eff = 0.;
                 let theoretical_eff_part_load = Self::efficiency_over_return_temperatures(
-                    energy_supply,
+                    energy_supply_type,
                     temp_part_load_test,
                     offset_for_theoretical_eff,
                 )?;
                 let theoretical_eff_full_load = Self::efficiency_over_return_temperatures(
-                    energy_supply,
+                    energy_supply_type,
                     temp_full_load_test,
                     offset_for_theoretical_eff,
                 )?;
@@ -412,8 +422,11 @@ impl Boiler {
 
                 Ok(Self {
                     external_conditions,
+                    energy_supply,
+                    energy_supply_connection_aux: energy_supply_conn_aux,
+                    energy_supply_connections: Default::default(),
                     simulation_timestep,
-                    energy_supply_type: energy_supply,
+                    energy_supply_type,
                     boiler_location,
                     min_modulation_load,
                     boiler_power,
@@ -427,6 +440,7 @@ impl Boiler {
                     temp_rise_standby_loss,
                     standby_loss_index,
                     ebv_curve_offset,
+                    service_results: Default::default(),
                 })
             }
             _ => Err(()),
@@ -507,13 +521,35 @@ impl Boiler {
         }
     }
 
+    /// Create an EnergySupplyConnection for the service name given
+    pub fn create_service_connection(
+        &mut self,
+        service_name: Cow<'static, str>,
+    ) -> anyhow::Result<()> {
+        if self
+            .energy_supply_connections
+            .contains_key(service_name.as_ref())
+        {
+            bail!("Error: Service name already used: {service_name}");
+        }
+
+        self.energy_supply_connections.insert(
+            service_name.to_string(),
+            EnergySupply::connection(self.energy_supply.clone(), service_name.as_ref()).unwrap(),
+        );
+
+        Ok(())
+    }
+
     pub fn create_service_hot_water_combi(
-        &self,
+        &mut self,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSourceWithTemperature,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
+        self.create_service_connection(service_name.clone().into())
+            .unwrap();
         BoilerServiceWaterCombi::new(
             (*self).clone(),
             boiler_data,
@@ -525,13 +561,15 @@ impl Boiler {
     }
 
     pub fn create_service_hot_water_regular(
-        &self,
+        &mut self,
         service_name: String,
         temperature_hot_water_in_c: f64,
         cold_feed: ColdWaterSource,
         temperature_return: f64,
         control: Option<Arc<Control>>,
     ) -> BoilerServiceWaterRegular {
+        self.create_service_connection(service_name.clone().into())
+            .unwrap();
         BoilerServiceWaterRegular::new(
             (*self).clone(),
             service_name,
@@ -543,12 +581,12 @@ impl Boiler {
     }
 
     pub fn create_service_space_heating(
-        &self,
+        &mut self,
         service_name: String,
         control: Control,
     ) -> BoilerServiceSpace {
-        // TODO create a service connection using the service name
-
+        self.create_service_connection(service_name.clone().into())
+            .unwrap();
         BoilerServiceSpace::new((*self).clone(), service_name, control)
     }
 
@@ -584,7 +622,7 @@ impl Boiler {
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
     pub fn demand_energy(
         &mut self,
-        _service_name: &str,
+        service_name: &str,
         service_type: ServiceType,
         energy_output_required: f64,
         temperature_return_feed: f64,
@@ -602,8 +640,12 @@ impl Boiler {
             || (timestep - self.total_time_running_current_timestep) == 0.
         {
             let energy_output_provided = 0.;
-            // let fuel_demand = 0.;
-            // TODO report some fuel demand to an energy supply, even if it is zero!
+            let fuel_demand = 0.;
+            self.energy_supply_connections
+                .get_mut(service_name)
+                .unwrap()
+                .demand_energy(fuel_demand, simtime.index)
+                .unwrap();
             return energy_output_provided;
         }
 
@@ -654,7 +696,7 @@ impl Boiler {
 
         let cycling_adjustment = if (0.0 < prop_of_timestep_at_min_rate
             && prop_of_timestep_at_min_rate < 1.0)
-            && matches!(service_type, ServiceType::WaterCombi)
+            && !matches!(service_type, ServiceType::WaterCombi)
         {
             self.cycling_adjustment(
                 temperature_return_feed,
@@ -683,9 +725,13 @@ impl Boiler {
 
         let blr_eff_final = 1. / ((1. / boiler_eff) + cyclic_location_adjustment);
 
-        let _fuel_demand = energy_output_provided / blr_eff_final;
+        let fuel_demand = energy_output_provided / blr_eff_final;
 
-        // TODO register demand to an energy supply
+        self.energy_supply_connections
+            .get_mut(service_name)
+            .unwrap()
+            .demand_energy(fuel_demand, simtime.index)
+            .unwrap();
 
         // Calculate running time of boiler
         let time_running_current_service = min_of_2(
@@ -695,13 +741,55 @@ impl Boiler {
 
         self.total_time_running_current_timestep += time_running_current_service;
 
-        // TODO stash service results
+        self.service_results.push(ServiceResult {
+            service_name: service_name.try_into().unwrap(),
+            time_running: time_running_current_service,
+            current_boiler_power,
+        });
 
         energy_output_provided
     }
 
-    pub fn timestep_end(&mut self) {
-        // TODO complete me with calc_auxiliary_energy method
+    /// Calculation of boiler electrical consumption
+    fn calc_auxiliary_energy(&mut self, time_remaining_current_timestep: f64, timestep_idx: usize) {
+        // Energy used by circulation pump
+        let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
+
+        // Energy used in standby mode
+        energy_aux += self.power_standby * time_remaining_current_timestep;
+
+        // Energy used by flue fan electricity for on-off boilers
+        let mut elec_energy_flue_fan =
+            self.total_time_running_current_timestep * self.power_full_load;
+
+        // Overwrite (sic from Python - no overwrite actually happens with current logic) flue fan if boiler modulates
+        for service_data in self.service_results.iter() {
+            let modulation_ratio =
+                min_of_2(service_data.current_boiler_power / self.boiler_power, 1.);
+            if self.min_modulation_load < 1. {
+                let x_axis = [0.3, 1.0];
+                let y_axis = [self.power_part_load, self.power_full_load];
+
+                let flue_fan_el = interp(&x_axis, &y_axis, modulation_ratio);
+                elec_energy_flue_fan = service_data.time_running * flue_fan_el;
+                energy_aux += elec_energy_flue_fan;
+            }
+        }
+
+        self.energy_supply_connection_aux
+            .demand_energy(energy_aux, timestep_idx)
+            .unwrap();
+    }
+
+    /// Calculations to be done at the end of each timestep
+    pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
+        let timestep = simtime.timestep;
+        let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
+
+        self.calc_auxiliary_energy(time_remaining_current_timestep, simtime.index);
+
+        self.total_time_running_current_timestep = Default::default();
+        self.service_results = Default::default();
     }
 
     pub fn energy_output_max(&self, _temp_output: f64) -> f64 {
@@ -712,6 +800,13 @@ impl Boiler {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+struct ServiceResult {
+    service_name: ArrayString<32>,
+    time_running: f64,
+    current_boiler_power: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -719,7 +814,6 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::{ColdWaterSourceType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
-    use lazy_static::lazy_static;
     use rstest::*;
 
     fn round_by_precision(src: f64, precision: f64) -> f64 {
@@ -835,46 +929,75 @@ mod tests {
         boiler_data: HeatSourceWetDetails,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
-    ) -> Boiler {
-        Boiler::new(
+    ) -> (Boiler, Arc<Mutex<EnergySupply>>) {
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+        let mut boiler = Boiler::new(
             boiler_data,
+            energy_supply.clone(),
+            energy_supply_conn_aux,
             Arc::new(external_conditions),
             simulation_time.step,
         )
-        .unwrap()
+        .unwrap();
+        boiler
+            .create_service_connection("boiler_test".into())
+            .unwrap();
+
+        (boiler, energy_supply)
     }
 
     #[rstest]
     pub fn should_provide_correct_energy_output(
-        mut boiler: Boiler,
+        mut boiler: (Boiler, Arc<Mutex<EnergySupply>>),
         simulation_time: SimulationTime,
         boiler_energy_output_required: [f64; 2],
         temp_return_feed: [f64; 2],
     ) {
-        for (idx, t_it) in simulation_time.iter().enumerate() {
+        let (mut boiler, energy_supply) = boiler;
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 round_by_precision(
                     boiler.demand_energy(
                         "boiler_test",
                         ServiceType::WaterCombi,
-                        boiler_energy_output_required[idx],
-                        temp_return_feed[idx],
+                        boiler_energy_output_required[t_idx],
+                        temp_return_feed[t_idx],
                         t_it,
                     ),
                     1e7,
                 ),
-                [2.0, 10.0][idx],
+                [2.0, 10.0][t_idx],
                 "incorrect energy output provided"
             );
-            // TODO do test re energy supply
+            assert_eq!(
+                round_by_precision(
+                    energy_supply.lock().results_by_end_user()["boiler_test"][t_idx],
+                    1e7
+                ),
+                round_by_precision([2.2843673926764496, 11.5067107][t_idx], 1e7),
+                "incorrect fuel demand"
+            );
         }
     }
 
     #[rstest]
     pub fn should_provide_correct_efficiency_over_return_temp(
-        boiler: Boiler,
+        boiler: (Boiler, Arc<Mutex<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
+        let (boiler, _) = boiler;
         let return_temp = [30., 60.];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -886,7 +1009,8 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_high_value_correction(boiler: Boiler) {
+    pub fn should_have_correct_high_value_correction(boiler: (Boiler, Arc<Mutex<EnergySupply>>)) {
+        let (boiler, _) = boiler;
         assert_eq!(
             Boiler::high_value_correction_full_load(0.980),
             0.963175,
@@ -900,7 +1024,8 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_correct_net_to_gross(boiler: Boiler) {
+    pub fn should_calc_correct_net_to_gross(boiler: (Boiler, Arc<Mutex<EnergySupply>>)) {
+        let (boiler, _) = boiler;
         assert_eq!(
             Boiler::net_to_gross(boiler.energy_supply_type),
             Ok(0.901),
@@ -931,12 +1056,32 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        Boiler::new(
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+        let mut boiler = Boiler::new(
             boiler_data_for_combi,
+            energy_supply,
+            energy_supply_conn_aux,
             Arc::new(external_conditions),
             simulation_time.step,
         )
-        .unwrap()
+        .unwrap();
+        boiler
+            .create_service_connection("boiler_test".into())
+            .unwrap();
+
+        boiler
     }
 
     #[fixture]
@@ -1026,12 +1171,32 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        Boiler::new(
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+        let mut boiler = Boiler::new(
             boiler_data_for_regular,
+            energy_supply,
+            energy_supply_conn_aux,
             Arc::new(external_conditions),
             simulation_time.step,
         )
-        .unwrap()
+        .unwrap();
+        boiler
+            .create_service_connection("boiler_test".into())
+            .unwrap();
+
+        boiler
     }
 
     #[fixture]
@@ -1093,12 +1258,32 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time_for_service_space: SimulationTime,
     ) -> Boiler {
-        Boiler::new(
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::MainsGas,
+            simulation_time_for_service_space.total_steps(),
+            None,
+        )));
+        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time_for_service_space.total_steps(),
+            None,
+        )));
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
+
+        let mut boiler = Boiler::new(
             boiler_data_for_service_space,
+            energy_supply,
+            energy_supply_conn_aux,
             Arc::new(external_conditions),
             simulation_time_for_service_space.step,
         )
-        .unwrap()
+        .unwrap();
+        boiler
+            .create_service_connection("boiler_test".into())
+            .unwrap();
+
+        boiler
     }
 
     #[fixture]

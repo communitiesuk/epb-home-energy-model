@@ -1005,7 +1005,7 @@ impl Corpus {
             // Perform calculations that can only be done after all heating
             // services have been calculated
             for system in &self.timestep_end_calcs {
-                system.lock().timestep_end(t_it.index);
+                system.lock().timestep_end(t_it);
             }
 
             for (z_name, gains_internal) in gains_internal_zone {
@@ -2401,10 +2401,10 @@ pub enum WetHeatSource {
 }
 
 impl WetHeatSource {
-    pub fn timestep_end(&mut self, timestep_idx: usize) {
+    pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
         match self {
-            WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(timestep_idx),
-            WetHeatSource::Boiler(boiler) => boiler.timestep_end(),
+            WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
+            WetHeatSource::Boiler(boiler) => boiler.timestep_end(simtime),
             WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(),
             WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(),
         }
@@ -2477,14 +2477,31 @@ fn heat_source_wet_from_input(
                 .unwrap(),
             )))
         }
-        HeatSourceWetDetails::Boiler { .. } => WetHeatSource::Boiler(
-            Boiler::new(
-                input,
-                external_conditions.clone(),
-                simulation_time.step_in_hours(),
+        HeatSourceWetDetails::Boiler {
+            energy_supply,
+            energy_supply_auxiliary,
+            ..
+        } => {
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply_aux = energy_supplies
+                .ensured_get_for_type(*energy_supply_auxiliary, simulation_time.total_steps());
+            let aux_supply_name = format!("Boiler_auxiliary: {energy_supply_name}");
+            let energy_supply_conn_aux =
+                EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())
+                    .unwrap();
+
+            WetHeatSource::Boiler(
+                Boiler::new(
+                    input,
+                    energy_supply,
+                    energy_supply_conn_aux,
+                    external_conditions.clone(),
+                    simulation_time.step_in_hours(),
+                )
+                .expect("could not construct boiler value from provided data"),
             )
-            .expect("could not construct boiler value from provided data"),
-        ),
+        }
         HeatSourceWetDetails::Hiu {
             power_max,
             hiu_daily_loss,
@@ -2589,7 +2606,7 @@ fn heat_source_from_input(
             let source_control = control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone()));
 
             let lock = heat_source_wet.lock();
-            let heat_source_wet_clone = (*lock).clone();
+            let mut heat_source_wet_clone = (*lock).clone();
 
             match heat_source_wet_clone {
                 WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
@@ -2604,7 +2621,7 @@ fn heat_source_from_input(
                         source_control,
                     )),
                 )),
-                WetHeatSource::Boiler(boiler) => HeatSource::Wet(Box::new(
+                WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                     HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
                         energy_supply_conn_name,
                         temp_setpoint,
@@ -2796,7 +2813,7 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             let energy_supply_conn_name = "boiler_water_heating".to_string(); // making assumption wet heat source is boiler, as this is only one allowable
-            let heat_source_wet = match heat_source_wet_type {
+            let mut heat_source_wet = match heat_source_wet_type {
                 HeatSourceWetType::Boiler => {
                     match &*wet_heat_sources
                         .get("boiler")
