@@ -330,7 +330,6 @@ impl HeatNetwork {
         let energy_output_provided =
             max_of_2(0., min_of_2(energy_output_required, energy_output_max));
 
-        // TODO demand energy from energy supply
         self.energy_supply_connections[service_name]
             .demand_energy(energy_output_provided, timestep_idx)
             .unwrap();
@@ -510,8 +509,6 @@ mod tests {
         heat_network_for_water_direct: Arc<Mutex<HeatNetwork>>,
         two_len_simulation_time: SimulationTime,
     ) -> HeatNetworkServiceWaterDirect {
-        // TODO register energy supply
-
         let cold_water_temps = [1.0, 1.2];
         let cold_feed = ColdWaterSource::new(cold_water_temps.into(), &two_len_simulation_time, 1.);
         let return_temp = 60.;

@@ -2706,8 +2706,7 @@ fn heat_source_from_input(
             ref test_data,
             energy_supply,
             control,
-            heater_position,
-            thermostat_position,
+            ..
         } => {
             let energy_supply =
                 energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
