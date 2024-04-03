@@ -2925,7 +2925,6 @@ fn hot_water_source_from_input(
                     }
                 }
             }
-            // TODO add diverters stuff
             HotWaterSource::StorageTank(storage_tank)
         }
         HotWaterSourceDetails::CombiBoiler {
@@ -2935,7 +2934,11 @@ fn hot_water_source_from_input(
         } => {
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
-            let energy_supply_conn_name = "boiler_water_heating".to_string(); // making assumption wet heat source is boiler, as this is only one allowable
+            let energy_supply_conn_name = format!(
+                "{}_water_heating",
+                heat_source_wet_type.to_canonical_string()
+            );
+            energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let mut heat_source_wet = match heat_source_wet_type {
                 HeatSourceWetType::Boiler => {
                     match &*wet_heat_sources
@@ -2964,20 +2967,33 @@ fn hot_water_source_from_input(
             power,
             efficiency,
             cold_water_source: cold_water_source_type,
-            ..
+            energy_supply,
         } => {
-            let _energy_supply_conn_name = source_name;
-            // TODO energy supply stuff
+            let energy_supply =
+                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+            let energy_supply_conn_name = source_name;
+            energy_supply_conn_names.push(energy_supply_conn_name.clone());
+            let energy_supply_conn =
+                EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name).unwrap();
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
-            HotWaterSource::PointOfUse(PointOfUse::new(power, efficiency, cold_water_source))
+            HotWaterSource::PointOfUse(PointOfUse::new(
+                power,
+                efficiency,
+                energy_supply_conn,
+                cold_water_source,
+            ))
         }
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
             ..
         } => {
-            let energy_supply_conn_name = source_name;
+            let energy_supply_conn_name = format!(
+                "{}_water_heating",
+                heat_source_wet_type.to_canonical_string()
+            );
+            energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             let heat_source_wet = match heat_source_wet_type {

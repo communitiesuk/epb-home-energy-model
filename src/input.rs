@@ -2,14 +2,13 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::path::Path;
 use std::sync::Arc;
 use variants_struct::VariantsStruct;
 
@@ -436,12 +435,19 @@ pub enum ColdWaterSourceType {
     HeaderTank,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum HeatSourceWetType {
     #[serde(alias = "boiler")]
     Boiler,
     HeatNetwork,
     HeatPump,
+}
+
+impl HeatSourceWetType {
+    /// Convert the type to a canonical string based on the input format to be used in e.g. energy supply names
+    pub fn to_canonical_string(&self) -> String {
+        serde_json::to_value(self).unwrap().to_string()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, VariantsStruct)]

@@ -1,12 +1,13 @@
 use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSourceWithTemperature;
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
 
 pub struct PointOfUse {
     power_in_kw: f64,
     efficiency: f64,
-    // energy_supply
+    energy_supply_connection: EnergySupplyConnection,
     cold_feed: WaterSourceWithTemperature,
 }
 
@@ -14,11 +15,13 @@ impl PointOfUse {
     pub fn new(
         rated_power_in_kw: f64,
         efficiency: f64,
+        energy_supply_connection: EnergySupplyConnection,
         cold_feed: WaterSourceWithTemperature,
     ) -> Self {
         Self {
             power_in_kw: rated_power_in_kw,
             efficiency,
+            energy_supply_connection,
             cold_feed,
         }
     }
@@ -55,7 +58,9 @@ impl PointOfUse {
             self.power_in_kw * simulation_time_iteration.timestep * (1. / self.efficiency),
         );
 
-        // TODO call on energy supply
+        self.energy_supply_connection
+            .demand_energy(fuel_demand, simulation_time_iteration.index)
+            .unwrap();
 
         fuel_demand
     }
