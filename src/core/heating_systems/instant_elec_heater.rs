@@ -1,5 +1,6 @@
 use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use std::sync::Arc;
 pub struct InstantElecHeater {
     rated_power_in_kw: f64,
     frac_convective: f64,
+    energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
 }
@@ -19,17 +21,20 @@ impl InstantElecHeater {
     /// Arguments
     /// * `rated_power` - in kW
     /// * `frac_convective` - convective fraction for heating
+    /// * `energy_supply_connection` - EnergySupplyConnection value
     /// * `simulation_timestep` - step in hours for context simulation time
     /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
     pub fn new(
         rated_power_in_kw: f64,
         frac_convective: f64,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
         Self {
             rated_power_in_kw,
             frac_convective,
+            energy_supply_connection,
             simulation_timestep,
             control,
         }
@@ -67,7 +72,9 @@ impl InstantElecHeater {
                 0.
             };
 
-        // TODO register energy supply demand
+        self.energy_supply_connection
+            .demand_energy(energy_supplied, simtime.index)
+            .unwrap();
 
         energy_supplied
     }
@@ -77,7 +84,10 @@ impl InstantElecHeater {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
+    use parking_lot::Mutex;
     use rstest::*;
 
     #[fixture]
@@ -89,7 +99,19 @@ mod tests {
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
         let control =
             Control::OnOffTimeControl(OnOffTimeControl::new(vec![true, true, false, true], 0, 1.));
-        InstantElecHeater::new(50., 0.4, simulation_time.step, Some(Arc::new(control)))
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "shower").unwrap();
+        InstantElecHeater::new(
+            50.,
+            0.4,
+            energy_supply_conn,
+            simulation_time.step,
+            Some(Arc::new(control)),
+        )
     }
 
     #[rstest]

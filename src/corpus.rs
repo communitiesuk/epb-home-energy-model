@@ -273,6 +273,7 @@ impl Corpus {
                 space_heat_systems_from_input(
                     system,
                     &controls,
+                    &mut energy_supplies,
                     simulation_time_iterator.as_ref(),
                     &Default::default(),
                     &mut heat_system_names_requiring_overvent,
@@ -3051,6 +3052,7 @@ fn cold_water_source_for_type(
 fn space_heat_systems_from_input(
     input: &SpaceHeatSystemInput,
     controls: &Controls,
+    energy_supplies: &mut EnergySupplies,
     simulation_time: &SimulationTimeIterator,
     heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
@@ -3067,15 +3069,22 @@ fn space_heat_systems_from_input(
                         rated_power,
                         control,
                         frac_convective,
+                        energy_supply,
                         ..
-                    } => SpaceHeatSystem::Instant(InstantElecHeater::new(
-                        *rated_power,
-                        *frac_convective,
-                        simulation_time.step_in_hours(),
-                        control
-                            .as_ref()
-                            .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())),
-                    )),
+                    } => {
+                        let energy_supply = energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+                        let energy_supply_conn_name = system_name;
+                        let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
+                        SpaceHeatSystem::Instant(InstantElecHeater::new(
+                            *rated_power,
+                            *frac_convective,
+                            energy_supply_conn,
+                            simulation_time.step_in_hours(),
+                            control
+                                .as_ref()
+                                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())),
+                        ))
+                    },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater
                     SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters
                     SpaceHeatSystemDetails::WarmAir {
