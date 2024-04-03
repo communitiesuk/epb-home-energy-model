@@ -98,6 +98,7 @@ pub struct Corpus {
     pub space_cool_systems: HashMap<String, AirConditioning>,
     pub on_site_generation: HashMap<String, PhotovoltaicSystem>,
     pub diverters: Vec<Arc<Mutex<PVDiverter>>>,
+    energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
 }
 
@@ -110,7 +111,7 @@ impl Corpus {
 
         let external_conditions = Arc::new(external_conditions);
 
-        let mut diverter_types: DiverterTypes = (&input.energy_supply).into();
+        let diverter_types: DiverterTypes = (&input.energy_supply).into();
         let mut diverters: Vec<Arc<Mutex<PVDiverter>>> = Default::default();
 
         let cold_water_sources =
@@ -244,7 +245,9 @@ impl Corpus {
             .collect();
 
         let mut hot_water_sources: HashMap<String, HotWaterSource> = Default::default();
-        let (hot_water_source, _) = hot_water_source_from_input(
+        let mut energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>> =
+            Default::default();
+        let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
             "hw cylinder".to_string(),
             input.hot_water_source.hot_water_cylinder,
             &cold_water_sources,
@@ -258,6 +261,8 @@ impl Corpus {
             external_conditions.clone(),
         );
         hot_water_sources.insert("hw cylinder".to_string(), hot_water_source);
+        energy_supply_conn_names_for_hot_water_source
+            .insert("hw cylinder".to_string(), hw_cylinder_conn_names);
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 
@@ -334,6 +339,7 @@ impl Corpus {
             space_cool_systems,
             on_site_generation,
             diverters,
+            energy_supply_conn_names_for_hot_water_source,
             timestep_end_calcs,
         })
     }
@@ -1148,8 +1154,11 @@ impl Corpus {
                 .to_owned(),
         )]);
         // TODO replace in energy supply names when available
-        let dhw_cop_dict =
-            self.heat_cool_cop(&hot_water_energy_out, &results_end_user, Default::default());
+        let dhw_cop_dict = self.heat_cool_cop(
+            &hot_water_energy_out,
+            &results_end_user,
+            self.energy_supply_conn_names_for_hot_water_source.clone(),
+        );
         let heat_cop_dict = self.heat_cool_cop(
             &space_cool_provided_dict,
             &results_end_user,
@@ -1306,7 +1315,7 @@ impl Corpus {
         &self,
         energy_provided: &HashMap<KeyString, Vec<f64>>,
         results_end_user: &HashMap<KeyString, Vec<f64>>,
-        energy_supply_conn_name_for_space_hc_system: HashMap<&str, &[&str]>,
+        energy_supply_conn_name_for_space_hc_system: HashMap<String, Vec<String>>,
     ) -> HashMap<KeyString, NumberOrDivisionByZero> {
         // TODO implement when energy supplies are available
         Default::default()
