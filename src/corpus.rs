@@ -18,7 +18,7 @@ use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
-    HeatSourceWithStorageTank, ImmersionHeater, SolarThermalSystem, StorageTank,
+    HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, SolarThermalSystem, StorageTank,
 };
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
@@ -65,9 +65,7 @@ use indexmap::IndexMap;
 use indicatif::ProgressBar;
 use parking_lot::Mutex;
 use serde_json::Value;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::fmt::format;
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -99,6 +97,7 @@ pub struct Corpus {
     pub space_heat_systems: HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     pub space_cool_systems: HashMap<String, AirConditioning>,
     pub on_site_generation: HashMap<String, PhotovoltaicSystem>,
+    pub diverters: Vec<Arc<Mutex<PVDiverter>>>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
 }
 
@@ -111,7 +110,8 @@ impl Corpus {
 
         let external_conditions = Arc::new(external_conditions);
 
-        let mut diverters: Diverters = (&input.energy_supply).into();
+        let mut diverter_types: DiverterTypes = (&input.energy_supply).into();
+        let mut diverters: Vec<Arc<Mutex<PVDiverter>>> = Default::default();
 
         let cold_water_sources =
             cold_water_sources_from_input(input.cold_water_source, &input.simulation_time);
@@ -244,20 +244,20 @@ impl Corpus {
             .collect();
 
         let mut hot_water_sources: HashMap<String, HotWaterSource> = Default::default();
-        hot_water_sources.insert(
+        let (hot_water_source, _) = hot_water_source_from_input(
             "hw cylinder".to_string(),
-            hot_water_source_from_input(
-                "hw cylinder".to_string(),
-                input.hot_water_source.hot_water_cylinder,
-                &cold_water_sources,
-                &wet_heat_sources,
-                &wwhrs,
-                &controls,
-                &mut energy_supplies,
-                simulation_time_iterator.clone().as_ref(),
-                external_conditions.clone(),
-            ),
+            input.hot_water_source.hot_water_cylinder,
+            &cold_water_sources,
+            &wet_heat_sources,
+            &wwhrs,
+            &controls,
+            &mut energy_supplies,
+            &diverter_types,
+            &mut diverters,
+            simulation_time_iterator.clone().as_ref(),
+            external_conditions.clone(),
         );
+        hot_water_sources.insert("hw cylinder".to_string(), hot_water_source);
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 
@@ -333,6 +333,7 @@ impl Corpus {
             space_heat_systems,
             space_cool_systems,
             on_site_generation,
+            diverters,
             timestep_end_calcs,
         })
     }
@@ -980,7 +981,7 @@ impl Corpus {
                 / t_it.timestep;
             match self.hot_water_sources.get_mut("hw cylinder").unwrap() {
                 HotWaterSource::StorageTank(ref mut source) => {
-                    gains_internal_dhw += source.internal_gains();
+                    gains_internal_dhw += source.lock().internal_gains();
                 }
                 HotWaterSource::CombiBoiler(ref mut source) => {
                     gains_internal_dhw += source.internal_gains();
@@ -1118,10 +1119,9 @@ impl Corpus {
             self.energy_supplies
                 .calc_energy_import_export_betafactor(t_it);
 
-            // TODO complete when diverters implemented
-            // for diverter in self.diverters {
-            //
-            // }
+            for diverter in &self.diverters {
+                diverter.lock().timestep_end();
+            }
 
             progress_bar.inc(1);
         }
@@ -1598,18 +1598,32 @@ fn energy_supply_from_heat_network_input(
     })
 }
 
-struct Diverters {
+struct DiverterTypes {
     pub mains_electricity: Option<EnergyDiverter>,
     pub mains_gas: Option<EnergyDiverter>,
     pub bulk_lpg: Option<EnergyDiverter>,
 }
 
-impl From<&EnergySupplyInput> for Diverters {
+impl From<&EnergySupplyInput> for DiverterTypes {
     fn from(input: &EnergySupplyInput) -> Self {
         Self {
             mains_electricity: diverter_from_energy_supply(&input.mains_electricity),
             mains_gas: diverter_from_energy_supply(&input.mains_gas),
             bulk_lpg: diverter_from_energy_supply(&input.bulk_lpg),
+        }
+    }
+}
+
+impl DiverterTypes {
+    pub fn get_for_supply_type(
+        &self,
+        energy_supply_type: EnergySupplyType,
+    ) -> Option<&EnergyDiverter> {
+        match energy_supply_type {
+            EnergySupplyType::Electricity => self.mains_electricity.as_ref(),
+            EnergySupplyType::MainsGas => self.mains_gas.as_ref(),
+            EnergySupplyType::LpgBulk => self.bulk_lpg.as_ref(),
+            _ => unimplemented!(),
         }
     }
 }
@@ -2359,14 +2373,14 @@ impl HeatSource {
             },
             HeatSource::Wet(ref mut wet) => match wet.as_mut() {
                 HeatSourceWet::WaterCombi(_) => {
-                    panic!("not expected? this value does not have a demand_energy method")
+                    unimplemented!("not expected? this value does not have a demand_energy method")
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::WaterRegular(ref mut r) => {
                     r.demand_energy(energy_demand, simulation_time_iteration)
                 }
                 HeatSourceWet::Space(_) => {
-                    panic!("not expected? this value does not have a demand_energy method")
+                    unimplemented!("not expected? this value does not have a demand_energy method")
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
@@ -2384,11 +2398,21 @@ impl HeatSource {
             },
         }
     }
+
+    pub fn as_immersion_heater(&self) -> Option<Arc<Mutex<ImmersionHeater>>> {
+        match self {
+            HeatSource::Storage(storage) => match storage {
+                HeatSourceWithStorageTank::Immersion(immersion) => Some(immersion.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct PositionedHeatSource {
-    pub heat_source: HeatSource,
+    pub heat_source: Arc<Mutex<HeatSource>>,
     pub heater_position: f64,
     pub thermostat_position: f64,
 }
@@ -2560,7 +2584,7 @@ fn heat_source_wet_from_input(
 
 fn heat_source_from_input(
     name: &str,
-    input: HeatSourceInput,
+    input: &HeatSourceInput,
     temp_setpoint: f64,
     wet_heat_sources: &HashMap<String, Arc<Mutex<WetHeatSource>>>,
     simulation_time: &SimulationTimeIterator,
@@ -2568,7 +2592,7 @@ fn heat_source_from_input(
     energy_supplies: &mut EnergySupplies,
     cold_water_sources: &ColdWaterSources,
     external_conditions: Arc<ExternalConditions>,
-) -> HeatSource {
+) -> (HeatSource, String) {
     // TODO add in all the stuff to do with energy supply
 
     match input {
@@ -2579,17 +2603,22 @@ fn heat_source_from_input(
             ..
         } => {
             let energy_supply =
-                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
 
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
-                ImmersionHeater::new(
-                    power,
-                    energy_supply_conn,
-                    simulation_time.step_in_hours(),
-                    control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone())),
-                ),
-            ))))
+            (
+                HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                    ImmersionHeater::new(
+                        *power,
+                        energy_supply_conn,
+                        simulation_time.step_in_hours(),
+                        control
+                            .clone()
+                            .and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone())),
+                    ),
+                )))),
+                name.into(),
+            )
         }
         HeatSourceInput::SolarThermalSystem {
             solar_cell_location,
@@ -2609,28 +2638,31 @@ fn heat_source_from_input(
             ..
         } => {
             let energy_supply =
-                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
 
-            HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
-                solar_cell_location,
-                area_module,
-                modules,
-                peak_collector_efficiency,
-                incidence_angle_modifier,
-                first_order_hlc,
-                second_order_hlc,
-                collector_mass_flow_rate,
-                power_pump,
-                power_pump_control,
-                energy_supply_conn,
-                tilt,
-                orientation,
-                solar_loop_piping_hlc,
-                external_conditions.clone(),
-                simulation_time.step_in_hours(),
-                WATER.clone(),
-            )))
+            (
+                HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
+                    *solar_cell_location,
+                    *area_module,
+                    *modules,
+                    *peak_collector_efficiency,
+                    *incidence_angle_modifier,
+                    *first_order_hlc,
+                    *second_order_hlc,
+                    *collector_mass_flow_rate,
+                    *power_pump,
+                    *power_pump_control,
+                    energy_supply_conn,
+                    *tilt,
+                    *orientation,
+                    *solar_loop_piping_hlc,
+                    external_conditions.clone(),
+                    simulation_time.step_in_hours(),
+                    WATER.clone(),
+                ))),
+                name.into(),
+            )
         }
         HeatSourceInput::Wet {
             name,
@@ -2640,65 +2672,70 @@ fn heat_source_from_input(
             ..
         } => {
             let cold_water_source = cold_water_sources
-                .ref_for_type(cold_water_source_type)
+                .ref_for_type(*cold_water_source_type)
                 .expect("Expected a cold water source to be available to a boiler heat source.");
             let energy_supply_conn_name = format!("{name}_water_heating");
             let heat_source_wet = wet_heat_sources
-                .get(&name)
+                .get(name)
                 .unwrap_or_else(|| {
                     panic!("Expected a wet heat source registered with the name '{name}'.")
                 })
                 .clone();
-            let source_control = control.and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone()));
+            let source_control = control
+                .clone()
+                .and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone()));
 
             let lock = heat_source_wet.lock();
             let mut heat_source_wet_clone = (*lock).clone();
 
-            match heat_source_wet_clone {
-                WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
-                    HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
-                        heat_pump.clone(),
-                        energy_supply_conn_name,
-                        temp_setpoint,
-                        55.,
-                        temp_flow_limit_upper
-                            .expect("temp_flow_limit_upper field was expected to be set"),
-                        Arc::new(cold_water_source),
-                        source_control,
-                    )),
-                )),
-                WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
-                    HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
-                        energy_supply_conn_name,
-                        temp_setpoint,
-                        cold_water_source,
-                        55.,
-                        source_control,
-                    )),
-                )),
-                WetHeatSource::Hiu(heat_network) => {
-                    HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
-                        HeatNetwork::create_service_hot_water_storage(
-                            Arc::new(Mutex::new(heat_network)),
-                            energy_supply_conn_name,
+            (
+                match heat_source_wet_clone {
+                    WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
+                        HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
+                            heat_pump.clone(),
+                            energy_supply_conn_name.clone(),
                             temp_setpoint,
-                            source_control,
-                        ),
-                    )))
-                }
-                WetHeatSource::HeatBattery(battery) => {
-                    HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
-                        HeatBattery::create_service_hot_water_regular(
-                            Arc::new(Mutex::new(battery)),
-                            &energy_supply_conn_name,
-                            temp_setpoint,
+                            55.,
+                            temp_flow_limit_upper
+                                .expect("temp_flow_limit_upper field was expected to be set"),
                             Arc::new(cold_water_source),
+                            source_control,
+                        )),
+                    )),
+                    WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
+                        HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
+                            energy_supply_conn_name.clone(),
+                            temp_setpoint,
+                            cold_water_source,
                             55.,
                             source_control,
-                        ),
-                    )))
-                }
-            }
+                        )),
+                    )),
+                    WetHeatSource::Hiu(heat_network) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
+                            HeatNetwork::create_service_hot_water_storage(
+                                Arc::new(Mutex::new(heat_network)),
+                                energy_supply_conn_name.clone(),
+                                temp_setpoint,
+                                source_control,
+                            ),
+                        )))
+                    }
+                    WetHeatSource::HeatBattery(battery) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
+                            HeatBattery::create_service_hot_water_regular(
+                                Arc::new(Mutex::new(battery)),
+                                &energy_supply_conn_name,
+                                temp_setpoint,
+                                Arc::new(cold_water_source),
+                                55.,
+                                source_control,
+                            ),
+                        )))
+                    }
+                },
+                energy_supply_conn_name,
+            )
         }
         HeatSourceInput::HeatPumpHotWaterOnly {
             power_max,
@@ -2709,27 +2746,30 @@ fn heat_source_from_input(
             ..
         } => {
             let energy_supply =
-                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name).unwrap();
 
-            HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
-                HeatPumpHotWaterOnly::new(
-                    power_max,
-                    energy_supply_connection,
-                    test_data,
-                    vol_hw_daily_average,
-                    simulation_time.step_in_hours(),
-                    controls.get(&control).map(|c| (*c).clone()),
-                ),
-            )))
+            (
+                HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
+                    HeatPumpHotWaterOnly::new(
+                        *power_max,
+                        energy_supply_connection,
+                        test_data,
+                        *vol_hw_daily_average,
+                        simulation_time.step_in_hours(),
+                        controls.get(&control).map(|c| (*c).clone()),
+                    ),
+                ))),
+                energy_supply_conn_name.into(),
+            )
         }
     }
 }
 
 enum HotWaterSource {
-    StorageTank(StorageTank),
+    StorageTank(Arc<Mutex<StorageTank>>),
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
@@ -2737,12 +2777,14 @@ enum HotWaterSource {
 }
 
 impl HotWaterSource {
-    pub fn get_cold_water_source(&self) -> Option<&WaterSourceWithTemperature> {
+    pub fn get_cold_water_source(&self) -> Option<WaterSourceWithTemperature> {
         match self {
-            HotWaterSource::StorageTank(source) => Some(source.get_cold_water_source()),
-            HotWaterSource::CombiBoiler(source) => Some(source.get_cold_water_source()),
-            HotWaterSource::PointOfUse(source) => Some(source.get_cold_water_source()),
-            HotWaterSource::HeatNetwork(source) => Some(source.get_cold_water_source()),
+            HotWaterSource::StorageTank(source) => {
+                Some(source.lock().get_cold_water_source().clone())
+            }
+            HotWaterSource::CombiBoiler(source) => Some(source.get_cold_water_source().clone()),
+            HotWaterSource::PointOfUse(source) => Some(source.get_cold_water_source().clone()),
+            HotWaterSource::HeatNetwork(source) => Some(source.get_cold_water_source().clone()),
             HotWaterSource::HeatBattery(_) => None,
         }
     }
@@ -2753,9 +2795,9 @@ impl HotWaterSource {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
-            HotWaterSource::StorageTank(ref mut source) => {
-                source.demand_hot_water(vol_demanded, simulation_time_iteration)
-            }
+            HotWaterSource::StorageTank(ref mut source) => source
+                .lock()
+                .demand_hot_water(vol_demanded, simulation_time_iteration),
             HotWaterSource::CombiBoiler(ref mut source) => {
                 source.demand_hot_water(vol_demanded, simulation_time_iteration)
             }
@@ -2778,11 +2820,14 @@ fn hot_water_source_from_input(
     wwhrs: &HashMap<String, Wwhrs>,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
+    diverter_types: &DiverterTypes,
+    diverters: &mut Vec<Arc<Mutex<PVDiverter>>>,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
-) -> HotWaterSource {
+) -> (HotWaterSource, Vec<String>) {
+    let mut energy_supply_conn_names = vec![];
     let cloned_input = input.clone();
-    match input {
+    let hot_water_source = match input {
         HotWaterSourceDetails::StorageTank {
             volume,
             daily_losses,
@@ -2812,31 +2857,36 @@ fn hot_water_source_from_input(
             }
             let pipework = primary_pipework.and_then(|p| p.into());
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
-            for (name, hs) in heat_source {
+            let mut heat_source_for_diverter: Option<Arc<Mutex<HeatSource>>> = Default::default();
+            for (name, hs) in &heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
+                let (heat_source, energy_supply_conn_name) = heat_source_from_input(
+                    name.as_str(),
+                    hs,
+                    setpoint_temp,
+                    wet_heat_sources,
+                    simulation_time,
+                    controls,
+                    energy_supplies,
+                    cold_water_sources,
+                    external_conditions.clone(),
+                );
+                let heat_source = Arc::new(Mutex::new(heat_source));
                 heat_sources.insert(
                     name.clone(),
                     PositionedHeatSource {
-                        heat_source: heat_source_from_input(
-                            name.as_str(),
-                            hs,
-                            setpoint_temp,
-                            wet_heat_sources,
-                            simulation_time,
-                            controls,
-                            energy_supplies,
-                            cold_water_sources,
-                            external_conditions.clone(),
-                        ),
+                        heat_source: heat_source.clone(),
                         heater_position,
                         thermostat_position,
                     },
                 );
+                heat_source_for_diverter = Some(heat_source);
+                energy_supply_conn_names.push(energy_supply_conn_name);
             }
             let ctrl_hold_at_setpoint = control_hold_at_setpoint
                 .and_then(|ctrl| controls.get_with_string(ctrl.as_str()).cloned());
-            HotWaterSource::StorageTank(StorageTank::new(
+            let storage_tank = Arc::new(Mutex::new(StorageTank::new(
                 volume,
                 daily_losses,
                 min_temp,
@@ -2847,8 +2897,36 @@ fn hot_water_source_from_input(
                 pipework,
                 ctrl_hold_at_setpoint,
                 WATER.clone(),
-            ))
+            )));
+            for (heat_source_name, hs) in heat_source {
+                let energy_supply_type = hs.energy_supply_type();
+                if let Some(diverter) = diverter_types.get_for_supply_type(energy_supply_type) {
+                    if diverter.storage_tank.matches(&source_name)
+                        && diverter.heat_source.matches(&heat_source_name)
+                    {
+                        let energy_supply = energy_supplies.ensured_get_for_type(
+                            hs.energy_supply_type(),
+                            simulation_time.total_steps(),
+                        );
+                        let immersion_heater = heat_source_for_diverter
+                            .clone()
+                            .expect("More than one heat source was expected to be present")
+                            .lock()
+                            .as_immersion_heater();
+                        if let Some(im) = immersion_heater {
+                            let pv_diverter =
+                                PVDiverter::new(storage_tank.clone(), im, heat_source_name);
+                            energy_supply
+                                .lock()
+                                .connect_diverter(pv_diverter.clone())
+                                .unwrap();
+                            diverters.push(pv_diverter);
+                        }
+                    }
+                }
+            }
             // TODO add diverters stuff
+            HotWaterSource::StorageTank(storage_tank)
         }
         HotWaterSourceDetails::CombiBoiler {
             cold_water_source: cold_water_source_type,
@@ -2923,7 +3001,8 @@ fn hot_water_source_from_input(
             ))
         }
         HotWaterSourceDetails::HeatBattery { .. } => todo!(), // TODO is from Python
-    }
+    };
+    (hot_water_source, energy_supply_conn_names)
 }
 
 fn cold_water_source_for_type(

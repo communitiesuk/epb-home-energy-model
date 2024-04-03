@@ -191,8 +191,8 @@ pub enum EnergySupplyType {
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub struct EnergyDiverter {
-    storage_tank: StorageTankType,
-    heat_source: DiverterHeatSourceType,
+    pub storage_tank: StorageTankType,
+    pub heat_source: DiverterHeatSourceType,
 }
 
 impl Default for EnergyDiverter {
@@ -210,10 +210,28 @@ pub enum StorageTankType {
     HotWaterCylinder,
 }
 
+impl StorageTankType {
+    // implementation here could be derived via serde stuff, but keeping simple/ duplicated for now
+    pub fn matches(&self, type_string: &str) -> bool {
+        match self {
+            StorageTankType::HotWaterCylinder => type_string == "hw cylinder",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub enum DiverterHeatSourceType {
     #[serde(rename(deserialize = "immersion"))]
     Immersion,
+}
+
+impl DiverterHeatSourceType {
+    // implementation here could be derived via serde stuff, but keeping simple/ duplicated for now
+    pub fn matches(&self, type_string: &str) -> bool {
+        match self {
+            DiverterHeatSourceType::Immersion => type_string == "immersion",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -410,7 +428,7 @@ pub enum HotWaterSourceDetails {
     },
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum ColdWaterSourceType {
     #[serde(rename(deserialize = "mains water"))]
     MainsWater,
@@ -537,9 +555,18 @@ impl HeatSource {
             } => *thermostat_position,
         }
     }
+
+    pub fn energy_supply_type(&self) -> EnergySupplyType {
+        match self {
+            HeatSource::ImmersionHeater { energy_supply, .. } => *energy_supply,
+            HeatSource::SolarThermalSystem { energy_supply, .. } => *energy_supply,
+            HeatSource::Wet { energy_supply, .. } => *energy_supply,
+            HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => *energy_supply,
+        }
+    }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub enum SolarCellLocation {
     #[serde(rename(deserialize = "OUT"))]
     Out,

@@ -341,7 +341,7 @@ impl StorageTank {
     pub fn potential_energy_input(
         &mut self,
         temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
-        heat_source: &mut HeatSource,
+        heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         heater_layer: usize,
         thermostat_layer: usize,
@@ -349,6 +349,8 @@ impl StorageTank {
     ) -> [f64; STORAGE_TANK_NB_VOL] {
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = [0.; STORAGE_TANK_NB_VOL];
+
+        let heat_source = &mut *(heat_source.lock());
 
         let energy_potential = match heat_source {
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar_heat_source)) => {
@@ -592,7 +594,7 @@ impl StorageTank {
     fn run_heat_sources(
         &mut self,
         temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
-        heat_source: &mut HeatSource,
+        heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         heater_layer: usize,
         thermostat_layer: usize,
@@ -603,7 +605,7 @@ impl StorageTank {
         // input energy delivered to the storage in kWh - timestep dependent
         let q_x_in_n = self.potential_energy_input(
             temp_s3_n,
-            heat_source,
+            heat_source.clone(),
             heat_source_name,
             heater_layer,
             thermostat_layer,
@@ -623,7 +625,7 @@ impl StorageTank {
     fn calculate_temperatures(
         &mut self,
         temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
-        heat_source: &mut HeatSource,
+        heat_source: Arc<Mutex<HeatSource>>,
         q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
         thermostat_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
@@ -711,7 +713,7 @@ impl StorageTank {
                 q_ls_n_this_heat_source,
             ) = self.run_heat_sources(
                 temp_after_prev_heat_source,
-                &mut positioned_heat_source.heat_source,
+                positioned_heat_source.heat_source.clone(),
                 heat_source_name,
                 heater_layer,
                 thermostat_layer,
@@ -760,7 +762,7 @@ impl StorageTank {
 
     fn additional_energy_input(
         &mut self,
-        heat_source: &mut HeatSource,
+        heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         energy_input: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -846,11 +848,11 @@ impl StorageTank {
 
     fn heat_source_output(
         &mut self,
-        heat_source: &mut HeatSource,
+        heat_source: Arc<Mutex<HeatSource>>,
         input_energy_adj: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        match heat_source {
+        match &mut *(heat_source.clone().lock()) {
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration),
@@ -863,6 +865,7 @@ impl StorageTank {
                     self.primary_pipework_losses(input_energy_adj);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
                 let heat_source_output = heat_source
+                    .lock()
                     .demand_energy(input_energy_adj, simulation_time_iteration)
                     - primary_pipework_losses_kwh;
                 self.input_energy_adj_prev_timestep = input_energy_adj;
@@ -1018,9 +1021,9 @@ impl PVDiverter {
 
         // Add additional energy to storage tank and calculate how much energy was accepted
         let energy_diverted = self.storage_tank.lock().additional_energy_input(
-            &mut HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                self.immersion_heater.clone(),
-            )),
+            Arc::new(Mutex::new(HeatSource::Storage(
+                HeatSourceWithStorageTank::Immersion(self.immersion_heater.clone()),
+            ))),
             &self.heat_source_name,
             energy_diverted_max,
             simulation_time_iteration,
@@ -1307,22 +1310,24 @@ mod tests {
             IndexMap::from([(
                 "imheater".to_string(),
                 PositionedHeatSource {
-                    heat_source: HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                        Arc::new(Mutex::new(ImmersionHeater::new(
-                            50.,
-                            EnergySupply::connection(
-                                Arc::new(Mutex::new(EnergySupply::new(
-                                    EnergySupplyType::Electricity,
-                                    simulation_time_for_storage_tank.total_steps(),
-                                    None,
-                                ))),
-                                "immersion",
-                            )
-                            .unwrap(),
-                            simulation_time_for_storage_tank.step,
-                            Some(control_for_storage_tank),
+                    heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                        HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                            ImmersionHeater::new(
+                                50.,
+                                EnergySupply::connection(
+                                    Arc::new(Mutex::new(EnergySupply::new(
+                                        EnergySupplyType::Electricity,
+                                        simulation_time_for_storage_tank.total_steps(),
+                                        None,
+                                    ))),
+                                    "immersion",
+                                )
+                                .unwrap(),
+                                simulation_time_for_storage_tank.step,
+                                Some(control_for_storage_tank),
+                            ),
                         ))),
-                    )),
+                    ))),
                     heater_position: 0.1,
                     thermostat_position: 0.33,
                 },

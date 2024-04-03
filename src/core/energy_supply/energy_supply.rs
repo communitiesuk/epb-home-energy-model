@@ -144,7 +144,7 @@ pub struct EnergySupply {
     fuel_type: EnergySupplyType,
     simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
-    diverter: Option<PVDiverter>,
+    diverter: Option<Arc<Mutex<PVDiverter>>>,
     demand_total: Vec<f64>,
     demand_by_end_user: IndexMap<String, Vec<f64>>,
     energy_out_by_end_user: IndexMap<String, Vec<f64>>,
@@ -228,7 +228,10 @@ impl EnergySupply {
         Ok(())
     }
 
-    pub fn connect_diverter(&mut self, diverter: PVDiverter) -> Result<(), &'static str> {
+    pub fn connect_diverter(
+        &mut self,
+        diverter: Arc<Mutex<PVDiverter>>,
+    ) -> Result<(), &'static str> {
         if self.diverter.is_some() {
             return Err("diverter was already connected");
         }
@@ -397,7 +400,7 @@ impl EnergySupply {
 
         if let Some(ref mut diverter) = &mut self.diverter {
             *self.energy_diverted.get_mut(timestep_idx).unwrap() =
-                diverter.divert_surplus(supply_surplus, simtime);
+                diverter.lock().divert_surplus(supply_surplus, simtime);
             supply_surplus += self.energy_diverted[timestep_idx];
         }
 
