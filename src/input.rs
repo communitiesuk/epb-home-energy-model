@@ -1105,7 +1105,7 @@ pub struct SpaceCoolSystemDetails {
     pub efficiency: f64,
     pub frac_convective: f64,
     #[serde(rename(deserialize = "EnergySupply"))]
-    energy_supply: EnergySupplyType,
+    pub energy_supply: EnergySupplyType,
     #[serde(rename(deserialize = "Control"))]
     pub control: Option<String>,
 }

@@ -1,5 +1,6 @@
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ pub struct AirConditioning {
     cooling_capacity_in_kw: f64,
     efficiency: f64,
     frac_convective: f64,
-    // energy supply
+    energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
 }
@@ -22,12 +23,14 @@ impl AirConditioning {
     /// * `cooling_capacity` - maximum cooling capacity of the system, in kW
     /// * `efficiency` - SEER
     /// * `frac_convective` - convective fraction for cooling
+    /// * `energy_supply_connection` = an EnergySupplyConnection value
     /// * `simulation_timestep` - reference to timestep for contextual SimulationTime
     /// * `control` - reference to a control object
     pub fn new(
         cooling_capacity_in_kw: f64,
         efficiency: f64,
         frac_convective: f64,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
@@ -35,6 +38,7 @@ impl AirConditioning {
             cooling_capacity_in_kw,
             efficiency,
             frac_convective,
+            energy_supply_connection,
             simulation_timestep,
             control,
         }
@@ -69,7 +73,9 @@ impl AirConditioning {
                 0.
             };
 
-        // TODO energy supply reporting
+        self.energy_supply_connection
+            .demand_energy(-cooling_supplied / self.efficiency, simtime.index)
+            .unwrap();
 
         cooling_supplied
     }
@@ -79,7 +85,10 @@ impl AirConditioning {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
+    use parking_lot::Mutex;
     use rstest::*;
 
     #[fixture]
@@ -88,21 +97,36 @@ mod tests {
     }
 
     #[fixture]
-    pub fn aircon(simulation_time: SimulationTime) -> AirConditioning {
+    pub fn aircon(simulation_time: SimulationTime) -> (AirConditioning, Arc<Mutex<EnergySupply>>) {
         let control = OnOffTimeControl::new(vec![true, true, false, true], 0, 1.0);
-        AirConditioning::new(
-            50.,
-            2.0,
-            0.4,
-            simulation_time.step,
-            Some(Arc::new(Control::OnOffTimeControl(control))),
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "aircon").unwrap();
+        (
+            AirConditioning::new(
+                50.,
+                2.0,
+                0.4,
+                energy_supply_conn,
+                simulation_time.step,
+                Some(Arc::new(Control::OnOffTimeControl(control))),
+            ),
+            energy_supply,
         )
     }
 
     #[rstest]
-    pub fn test_demand_energy(aircon: AirConditioning, simulation_time: SimulationTime) {
+    pub fn test_demand_energy(
+        aircon: (AirConditioning, Arc<Mutex<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (aircon, energy_supply) = aircon;
         let inputs = [-40.0, -100.0, -30.0, -20.0];
         let expected_demand = [-40.0, -50.0, 0.0, -20.0];
+        let expected_energy_supply_results = [20.0, 25.0, 0.0, 10.0];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -110,7 +134,11 @@ mod tests {
                 expected_demand[t_idx],
                 "incorrect cooling energy supplied returned"
             );
-            // TODO test for energy supply
+            assert_eq!(
+                energy_supply.lock().results_by_end_user()["aircon"][t_idx],
+                expected_energy_supply_results[t_idx],
+                "incorrect delivered energy demand returned"
+            );
         }
     }
 }

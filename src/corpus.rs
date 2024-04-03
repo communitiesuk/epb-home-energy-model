@@ -298,6 +298,7 @@ impl Corpus {
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>(),
                     &controls,
+                    &mut energy_supplies,
                     &simulation_time_iterator,
                 )
             })
@@ -3118,6 +3119,7 @@ fn space_cool_systems_from_input(
     input: &SpaceCoolSystemInput,
     cool_system_names_for_zone: Vec<&str>,
     controls: &Controls,
+    energy_supplies: &mut EnergySupplies,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> HashMap<String, AirConditioning> {
     input
@@ -3137,18 +3139,25 @@ fn space_cool_systems_from_input(
                 efficiency,
                 frac_convective,
                 control,
+                energy_supply,
                 ..
             } = space_cool_system_details;
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps());
+            let energy_supply_conn_name = system_name;
+            let energy_supply_conn =
+                EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
             let control = control
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone()));
 
             (
-                (*system_name).clone(),
+                (*energy_supply_conn_name).clone(),
                 AirConditioning::new(
                     *cooling_capacity,
                     *efficiency,
                     *frac_convective,
+                    energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
                     control,
                 ),
