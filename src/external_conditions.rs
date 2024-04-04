@@ -1088,18 +1088,8 @@ impl ExternalConditions {
             // #      definitions of P1 and P2 in formula for F_w_r have been confirmed.
             // # F_sh_dif = max(0.0, min(F_sh_dif_setback, F_sh_dif_fins, F_sh_dif_overhangs))
             // # F_sh_ref = max(0.0, min(F_sh_ref_setback, F_sh_ref_fins, F_sh_ref_overhangs))
-            let min_f_sh = if f_sh_dif_fins < f_sh_dif_overhangs {
-                f_sh_dif_fins
-            } else {
-                f_sh_dif_overhangs
-            };
-            let f_sh_dif = if min_f_sh > 0.0 { min_f_sh } else { 0.0 };
-            let min_f_sh = if f_sh_ref_fins < f_sh_ref_overhangs {
-                f_sh_ref_fins
-            } else {
-                f_sh_ref_overhangs
-            };
-            let f_sh_ref = if min_f_sh > 0.0 { min_f_sh } else { 0.0 };
+            let f_sh_dif = max_of_2(0., min_of_2(f_sh_dif_fins, f_sh_dif_overhangs));
+            let f_sh_ref = max_of_2(0., min_of_2(f_sh_ref_fins, f_sh_ref_overhangs));
 
             let fdiff = (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor)
                 + f_sh_ref * diffuse_irr_ref)
