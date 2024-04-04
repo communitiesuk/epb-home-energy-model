@@ -431,20 +431,18 @@ impl ExternalConditions {
         // #dimensionless parameters a & b
         // #describing the incidence-weighted solid angle sustained by the circumsolar region as seen
         // #respectively by the tilted surface and the horizontal.
-        let a = self
-            .solar_angle_of_incidence(tilt, orientation, simulation_time)
-            .to_radians()
-            .cos();
-
-        if a <= 0.0 {
-            return 0.0;
-        }
-
-        let cosine_of_85_degrees = 85.0f64.to_radians().cos();
-        let mut b = self.solar_zenith_angles[simulation_time.current_hour() as usize];
-        if b < cosine_of_85_degrees {
-            b = cosine_of_85_degrees;
-        }
+        let a = max_of_2(
+            0.,
+            self.solar_angle_of_incidence(tilt, orientation, simulation_time)
+                .to_radians()
+                .cos(),
+        );
+        let b = max_of_2(
+            85.0f64.to_radians().cos(),
+            self.solar_zenith_angles[simulation_time.current_hour() as usize]
+                .to_radians()
+                .cos(),
+        );
 
         a / b
     }
