@@ -1025,7 +1025,7 @@ impl ExternalConditions {
                 + 0.6514 * (1.0 - (p2_finR / (p1_finR.powi(2) + p2_finR.powi(2)).sqrt())))
                 / 2.0;
             let f_w_o = 0.3282 * (1.0 - (p2_ovh / (p1_ovh.powi(2) + p2_ovh.powi(2)).sqrt()));
-            let f_w_sky = (1.0 - (alpha + beta + 90.0f64.to_radians()).sin()) / 2.0;
+            let f_w_sky = (1.0 - (alpha + beta - 90.0f64.to_radians()).sin()) / 2.0;
 
             // # Calculate denominators of eqns F.9 to F.14
             let view_factor_sky_no_obstacles = (1.0 + beta.cos()) / 2.0;
