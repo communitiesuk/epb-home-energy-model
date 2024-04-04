@@ -310,6 +310,7 @@ impl Corpus {
             .map(|on_site_generation| {
                 on_site_generation_from_input(
                     &on_site_generation,
+                    &mut energy_supplies,
                     external_conditions.clone(),
                     &simulation_time_iterator,
                 )
@@ -3183,6 +3184,7 @@ fn space_cool_systems_from_input(
 
 fn on_site_generation_from_input(
     input: &OnSiteGeneration,
+    energy_supplies: &mut EnergySupplies,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> HashMap<String, PhotovoltaicSystem> {
@@ -3198,8 +3200,12 @@ fn on_site_generation_from_input(
                     base_height,
                     height,
                     width,
+                    energy_supply,
                     ..
                 } = generation_details;
+                let energy_supply = energy_supplies
+                    .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps());
+                let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
                 PhotovoltaicSystem::new(
                     *peak_power,
                     *ventilation_strategy,
@@ -3209,6 +3215,7 @@ fn on_site_generation_from_input(
                     *height,
                     *width,
                     external_conditions.clone(),
+                    energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
                 )
             })

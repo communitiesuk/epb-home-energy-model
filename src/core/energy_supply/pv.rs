@@ -1,3 +1,4 @@
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::projected_height;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::external_conditions::ExternalConditions;
@@ -38,7 +39,7 @@ pub struct PhotovoltaicSystem {
     width: f64,
     projected_height: f64,
     external_conditions: Arc<ExternalConditions>,
-    // energy supply
+    energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
 }
 
@@ -69,7 +70,7 @@ impl PhotovoltaicSystem {
     /// * `height` - is the height of the PV panel, in m
     /// * `width` - is the width of the PV panel, in m
     /// * `external_conditions` - reference to ExternalConditions object
-    ///        energy_supply_conn    -- reference to EnergySupplyConnection object
+    /// * `energy_supply_connection` - an EnergySupplyConnection value
     /// * `simulation_timestep` - reference to step length of a SimulationTime object in the context
     pub fn new(
         peak_power: f64,
@@ -80,6 +81,7 @@ impl PhotovoltaicSystem {
         height: f64,
         width: f64,
         external_conditions: Arc<ExternalConditions>,
+        energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
     ) -> Self {
         Self {
@@ -102,6 +104,7 @@ impl PhotovoltaicSystem {
             width,
             projected_height: projected_height(pitch, height),
             external_conditions,
+            energy_supply_connection,
             simulation_timestep,
         }
     }
@@ -135,7 +138,9 @@ impl PhotovoltaicSystem {
         let energy_produced =
             solar_irradiation * self.peak_power * self.f_perf / ref_solar_irradiance;
 
-        // TODO report energy supply demand
+        self.energy_supply_connection
+            .supply_energy(energy_produced, simulation_time_iteration.index)
+            .unwrap();
     }
 
     fn shading_factors_direct_diffuse(
@@ -155,4 +160,171 @@ impl PhotovoltaicSystem {
     }
 }
 
-// TODO implement unit tests once energy supply is hooked up
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::external_conditions::{
+        DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
+    };
+    use crate::input::EnergySupplyType;
+    use crate::simulation_time::SimulationTime;
+    use parking_lot::Mutex;
+    use rstest::*;
+
+    #[fixture]
+    pub fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 8., 1.)
+    }
+
+    #[fixture]
+    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+        ExternalConditions::new(
+            &simulation_time.iter(),
+            vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
+            vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
+            vec![11., 25., 42., 52., 60., 44., 28., 15.],
+            vec![11., 25., 42., 52., 60., 44., 28., 15.],
+            vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+            51.42,
+            -0.75,
+            0,
+            0,
+            Some(0),
+            1.,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            vec![
+                ShadingSegment {
+                    number: 1,
+                    start: 180,
+                    end: 135,
+                    ..Default::default()
+                },
+                ShadingSegment {
+                    number: 2,
+                    start: 135,
+                    end: 90,
+                    objects: Some(vec![ShadingObject {
+                        object_type: ShadingObjectType::Overhang,
+                        height: 2.2,
+                        distance: 6.,
+                    }]),
+                },
+                ShadingSegment {
+                    number: 3,
+                    start: 90,
+                    end: 45,
+                    ..Default::default()
+                },
+                ShadingSegment {
+                    number: 4,
+                    start: 45,
+                    end: 0,
+                    objects: Some(vec![
+                        ShadingObject {
+                            object_type: ShadingObjectType::Obstacle,
+                            height: 40.,
+                            distance: 4.,
+                        },
+                        ShadingObject {
+                            object_type: ShadingObjectType::Overhang,
+                            height: 3.,
+                            distance: 7.,
+                        },
+                    ]),
+                },
+                ShadingSegment {
+                    number: 5,
+                    start: 0,
+                    end: -45,
+                    objects: Some(vec![ShadingObject {
+                        object_type: ShadingObjectType::Obstacle,
+                        height: 3.,
+                        distance: 8.,
+                    }]),
+                },
+                ShadingSegment {
+                    number: 6,
+                    start: -45,
+                    end: -90,
+                    ..Default::default()
+                },
+                ShadingSegment {
+                    number: 7,
+                    start: -90,
+                    end: -135,
+                    ..Default::default()
+                },
+                ShadingSegment {
+                    number: 8,
+                    start: -135,
+                    end: -180,
+                    ..Default::default()
+                },
+            ],
+        )
+    }
+
+    #[fixture]
+    pub fn pv(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) -> (PhotovoltaicSystem, Arc<Mutex<EnergySupply>>) {
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "pv generation").unwrap();
+        let pv = PhotovoltaicSystem::new(
+            2.5,
+            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            30.,
+            0.,
+            10.,
+            2.,
+            3.,
+            Arc::new(external_conditions),
+            energy_supply_conn,
+            simulation_time.step,
+        );
+        (pv, energy_supply)
+    }
+
+    #[rstest]
+    pub fn test_produce_energy(
+        pv: (PhotovoltaicSystem, Arc<Mutex<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (pv, energy_supply) = pv;
+        let expected_generation_results = [
+            -0.019039734375,
+            -0.04586317375,
+            -0.072234285625,
+            -0.08283324375,
+            -0.089484801875,
+            -0.074557144375,
+            -0.05198861375,
+            -0.040747119375,
+        ];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            pv.produce_energy(t_it);
+            assert_eq!(
+                round_by_precision(
+                    energy_supply.lock().results_by_end_user()["pv generation"][t_idx],
+                    1e6
+                ),
+                round_by_precision(expected_generation_results[t_idx], 1e6),
+                "incorrect electricity produced from pv returned"
+            );
+        }
+    }
+
+    fn round_by_precision(src: f64, precision: f64) -> f64 {
+        (precision * src).round() / precision
+    }
+}

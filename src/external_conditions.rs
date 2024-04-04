@@ -25,9 +25,9 @@ pub struct ShadingSegment {
 #[derive(Clone, Debug, Deserialize)]
 pub struct ShadingObject {
     #[serde(rename(deserialize = "type"))]
-    object_type: ShadingObjectType,
-    height: f64,
-    distance: f64,
+    pub object_type: ShadingObjectType,
+    pub height: f64,
+    pub distance: f64,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -496,13 +496,13 @@ impl ExternalConditions {
         //                   upwards facing, 0 to 180, in degrees;
         // """
 
-        self.diffuse_horizontal_radiation(simulation_time.index)
+        (self.diffuse_horizontal_radiation(simulation_time.index)
             + self.direct_beam_radiation(simulation_time.index)
                 * self.solar_altitudes[simulation_time.current_hour() as usize]
                     .to_radians()
-                    .sin()
-                * self.solar_reflectivity_of_ground(simulation_time)
-                * ((1.0 - tilt.to_radians().cos()) / 2.0)
+                    .sin())
+            * self.solar_reflectivity_of_ground(simulation_time)
+            * ((1.0 - tilt.to_radians().cos()) / 2.0)
     }
 
     fn circumsolar_irradiance(
