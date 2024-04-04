@@ -616,26 +616,17 @@ impl ExternalConditions {
             diffuse_irr_total - diffuse_irr_circumsolar + ground_reflection_irradiance;
         let total_irradiance = calculated_direct + calculated_diffuse;
 
-        if diffuse_breakdown {
-            (
-                calculated_direct,
-                calculated_diffuse,
-                total_irradiance,
-                Some(DiffuseBreakdown {
-                    sky: diffuse_irr_sky,
-                    circumsolar: diffuse_irr_circumsolar,
-                    horiz: diffuse_irr_horiz,
-                    ground_refl: ground_reflection_irradiance,
-                }),
-            )
-        } else {
-            (
-                calculated_direct,
-                calculated_diffuse,
-                total_irradiance,
-                None,
-            )
-        }
+        (
+            calculated_direct,
+            calculated_diffuse,
+            total_irradiance,
+            diffuse_breakdown.then(|| DiffuseBreakdown {
+                sky: diffuse_irr_sky,
+                circumsolar: diffuse_irr_circumsolar,
+                horiz: diffuse_irr_horiz,
+                ground_refl: ground_reflection_irradiance,
+            }),
+        )
     }
 
     fn outside_solar_beam(
