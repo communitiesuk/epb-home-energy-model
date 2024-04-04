@@ -99,6 +99,7 @@ pub struct Corpus {
     pub on_site_generation: HashMap<String, PhotovoltaicSystem>,
     pub diverters: Vec<Arc<Mutex<PVDiverter>>>,
     energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>>,
+    energy_supply_conn_names_for_heat_systems: HashMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
 }
 
@@ -266,7 +267,7 @@ impl Corpus {
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 
-        let space_heat_systems = input
+        let (space_heat_systems, energy_supply_conn_names_for_heat_systems) = input
             .space_heat_system
             .as_ref()
             .map(|system| {
@@ -342,6 +343,7 @@ impl Corpus {
             on_site_generation,
             diverters,
             energy_supply_conn_names_for_hot_water_source,
+            energy_supply_conn_names_for_heat_systems,
             timestep_end_calcs,
         })
     }
@@ -1164,12 +1166,18 @@ impl Corpus {
         let heat_cop_dict = self.heat_cool_cop(
             &space_cool_provided_dict,
             &results_end_user,
-            Default::default(),
+            self.energy_supply_conn_names_for_heat_systems
+                .iter()
+                .map(|(k, v)| (k.clone(), vec![v.clone()]))
+                .collect(),
         );
         let cool_cop_dict = self.heat_cool_cop(
             &space_cool_provided_dict,
             &results_end_user,
-            Default::default(),
+            self.space_cool_systems
+                .keys()
+                .map(|system_name| (system_name.clone(), vec![system_name.clone()]))
+                .collect(),
         );
 
         let zone_dict = HashMap::from([
@@ -3058,8 +3066,12 @@ fn space_heat_systems_from_input(
     heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_names_for_zone: Vec<&str>,
-) -> HashMap<String, Arc<Mutex<SpaceHeatSystem>>> {
-    input
+) -> (
+    HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
+    HashMap<String, String>,
+) {
+    let mut energy_conn_names_for_systems: HashMap<String, String> = Default::default();
+    let space_heat_systems = input
         .iter()
         .filter(|(system_name, _)| heat_system_names_for_zone.contains(&system_name.as_str()))
         .map(|(system_name, space_heat_system_details)| {
@@ -3075,6 +3087,7 @@ fn space_heat_systems_from_input(
                     } => {
                         let energy_supply = energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
                         let energy_supply_conn_name = system_name;
+                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
                         SpaceHeatSystem::Instant(InstantElecHeater::new(
                             *rated_power,
@@ -3086,8 +3099,8 @@ fn space_heat_systems_from_input(
                                 .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())),
                         ))
                     },
-                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater
-                    SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters
+                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
+                    SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters, make sure to add energy supply conn name to energy_conn_names_for_systems collection
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,
                         heat_source,
@@ -3096,6 +3109,7 @@ fn space_heat_systems_from_input(
                     } => {
                         let heat_source_name = &heat_source.name;
                         let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
+                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
                         match heat_source.as_ref() {
                             WetHeatSource::HeatPump(heat_pump) => {
@@ -3112,7 +3126,8 @@ fn space_heat_systems_from_input(
                 })),
             )
         })
-        .collect::<HashMap<_, _>>()
+        .collect::<HashMap<_, _>>();
+    (space_heat_systems, energy_conn_names_for_systems)
 }
 
 fn space_cool_systems_from_input(
