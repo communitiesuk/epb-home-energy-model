@@ -68,6 +68,34 @@ impl EnergySupplies {
             }
         }
     }
+
+    pub fn supplies_by_name(&self) -> HashMap<&str, Arc<Mutex<EnergySupply>>> {
+        let mut supplies: HashMap<&str, Arc<Mutex<EnergySupply>>> = Default::default();
+        if let Some(elec) = &self.mains_electricity {
+            supplies.insert("electricity", elec.clone());
+        }
+        if let Some(gas) = &self.mains_gas {
+            supplies.insert("mains gas", gas.clone());
+        }
+        if let Some(lpg) = &self.bulk_lpg {
+            supplies.insert("LPG_bulk", lpg.clone());
+        }
+        if let Some(lpg) = &self.bottled_lpg {
+            supplies.insert("LPG_bottled", lpg.clone());
+        }
+        if let Some(condition_11f) = &self.condition_11f_lpg {
+            supplies.insert("LPG_condition_11F", condition_11f.clone());
+        }
+        if let Some(custom) = &self.custom {
+            supplies.insert("custom", custom.clone());
+        }
+        if let Some(heat_network) = &self.heat_network {
+            supplies.insert("heat network", heat_network.clone());
+        }
+        supplies.insert("unmet_demand", self.unmet_demand.clone());
+
+        supplies
+    }
 }
 
 /// An object to represent the connection of a system that consumes energy to the energy supply

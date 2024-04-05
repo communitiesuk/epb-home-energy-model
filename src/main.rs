@@ -2,18 +2,17 @@ extern crate hem;
 
 mod read_weather_file;
 
-use anyhow::bail;
 use clap::{Args, Parser};
-use csv::Writer;
+use csv::WriterBuilder;
 use hem::corpus::{HotWaterResultMap, KeyString};
 use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
 use hem::{run_project, UNITS_MAP};
+use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::BufReader;
 use std::path::Path;
 
@@ -137,7 +136,7 @@ fn write_core_output_file(
     output_file: String,
     timestep_array: Vec<f64>,
     results_totals: HashMap<KeyString, Vec<f64>>,
-    _results_end_user: HashMap<KeyString, Vec<f64>>,
+    results_end_user: HashMap<KeyString, IndexMap<String, Vec<f64>>>,
     energy_import: HashMap<KeyString, Vec<f64>>,
     energy_export: HashMap<KeyString, Vec<f64>>,
     energy_generated_consumed: HashMap<KeyString, Vec<f64>>,
@@ -152,7 +151,7 @@ fn write_core_output_file(
     ductwork_gains: HashMap<KeyString, Vec<f64>>,
 ) -> Result<(), anyhow::Error> {
     println!("writing out to {output_file}");
-    let mut writer = Writer::from_path(output_file)?;
+    let mut writer = WriterBuilder::new().flexible(true).from_path(output_file)?;
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
     let mut units_row = vec!["[count]"];
@@ -160,11 +159,10 @@ fn write_core_output_file(
         let totals_header = format!("{totals_key} total");
         headings.push(totals_header.into());
         units_row.push("[kWh]");
-        // TODO enable when energy supplies implemented
-        // for end_user_key in results_end_user[totals_key].keys() {
-        //     headings.push(end_user_key.into());
-        //     units_row.push("[kWh]");
-        // }
+        for end_user_key in results_end_user[totals_key].keys() {
+            headings.push((*end_user_key).clone().into());
+            units_row.push("[kWh]");
+        }
         headings.push(format!("{totals_key} import").into());
         units_row.push("[kWh]");
         headings.push(format!("{totals_key} export").into());
@@ -217,13 +215,12 @@ fn write_core_output_file(
             let mut hw_system_row_events = vec![];
             let mut pw_losses_row = vec![];
             let mut ductwork_row = vec![];
-            let mut _energy_shortfall: Vec<f64> = vec![];
+            let mut energy_shortfall: Vec<f64> = vec![];
             for totals_key in results_totals.keys() {
                 energy_use_row.push(results_totals[totals_key][t_idx]);
-                // TODO uncomment when energy supplies implemented
-                // for end_user_key in results_end_user[totals_key] {
-                //     energy_use_row.push(results_end_user[totals_key][end_user_key][t_idx]);
-                // }
+                for (end_user_key, _) in results_end_user[totals_key].iter().enumerate() {
+                    energy_use_row.push(results_end_user[totals_key][end_user_key][t_idx]);
+                }
                 energy_use_row.push(energy_import[totals_key][t_idx]);
                 energy_use_row.push(energy_export[totals_key][t_idx]);
                 energy_use_row.push(energy_generated_consumed[totals_key][t_idx]);
@@ -266,71 +263,65 @@ fn write_core_output_file(
             ductwork_row.push(ductwork_gains["ductwork_gains".try_into().unwrap()][t_idx]);
 
             // create row of outputs and write to output file
-            // TODO work out how to compile a row of results from the following
-            // let mut row = vec![];
-            // row.append(&mut vec![t_idx.to_string().as_str()]);
-            // row.append(
-            //     energy_use_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     zone_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hc_system_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_energy
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_duration
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     hw_system_row_events
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     pw_losses_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     ductwork_row
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            // row.append(
-            //     energy_shortfall
-            //         .into_iter()
-            //         .map(|val| val.to_string().as_mut())
-            //         .collect(),
-            // );
-            //
-            // writer.write_record(&row)?;
+            let mut row: Vec<String> = vec![];
+            row.append(&mut vec![t_idx.to_string()]);
+            row.append(
+                &mut energy_use_row
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(&mut zone_row.into_iter().map(|val| val.to_string()).collect());
+            row.append(
+                &mut hc_system_row
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut hw_system_row
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut hw_system_row_energy
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut hw_system_row_duration
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut hw_system_row_events
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut pw_losses_row
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut ductwork_row
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+            row.append(
+                &mut energy_shortfall
+                    .into_iter()
+                    .map(|val| val.to_string())
+                    .collect(),
+            );
+
+            writer.write_record(&row)?;
         }
     }
 

@@ -1140,16 +1140,31 @@ impl Corpus {
         progress_bar.finish();
 
         // Return results from all energy supplies
-        let mut results_totals = Default::default();
-        let mut results_end_user = Default::default();
-        let mut energy_import = Default::default();
-        let mut energy_export = Default::default();
-        let mut energy_generated_consumed = Default::default();
-        let mut energy_to_storage = Default::default();
-        let mut energy_from_storage = Default::default();
-        let mut energy_diverted = Default::default();
-        let mut betafactor = Default::default();
-        // TODO iterate over energy supplies once energy supply is implemented
+        let mut results_totals: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut results_end_user: HashMap<KeyString, IndexMap<String, Vec<f64>>> =
+            Default::default();
+        let mut energy_import: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut energy_export: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut energy_generated_consumed: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut energy_to_storage: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut energy_from_storage: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut energy_diverted: HashMap<KeyString, Vec<f64>> = Default::default();
+        let mut betafactor: HashMap<KeyString, Vec<f64>> = Default::default();
+        for (name, supply) in self.energy_supplies.supplies_by_name() {
+            let supply = supply.lock();
+            let name: KeyString = name.try_into().unwrap();
+            results_totals.insert(name, supply.results_total().to_owned());
+            results_end_user.insert(name, supply.results_by_end_user());
+            energy_import.insert(name, supply.get_energy_import().to_owned());
+            energy_export.insert(name, supply.get_energy_export().to_owned());
+            energy_generated_consumed
+                .insert(name, supply.get_energy_generated_consumed().to_owned());
+            let (energy_to, energy_from) = supply.get_energy_to_from_battery();
+            energy_to_storage.insert(name, energy_to.to_owned());
+            energy_from_storage.insert(name, energy_from.to_owned());
+            energy_diverted.insert(name, supply.get_energy_diverted().to_owned());
+            betafactor.insert(name, supply.get_beta_factor().to_owned());
+        }
 
         let hot_water_energy_out: HashMap<KeyString, Vec<f64>> = HashMap::from([(
             "hw cylinder".try_into().unwrap(),
@@ -1325,7 +1340,7 @@ impl Corpus {
     fn heat_cool_cop(
         &self,
         energy_provided: &HashMap<KeyString, Vec<f64>>,
-        results_end_user: &HashMap<KeyString, Vec<f64>>,
+        results_end_user: &HashMap<KeyString, IndexMap<String, Vec<f64>>>,
         energy_supply_conn_name_for_space_hc_system: HashMap<String, Vec<String>>,
     ) -> HashMap<KeyString, NumberOrDivisionByZero> {
         // TODO implement when energy supplies are available
@@ -1917,7 +1932,7 @@ pub type KeyString = ArrayString<48>;
 pub type RunResults = (
     Vec<f64>,
     HashMap<KeyString, Vec<f64>>,
-    HashMap<KeyString, Vec<f64>>,
+    HashMap<KeyString, IndexMap<String, Vec<f64>>>,
     HashMap<KeyString, Vec<f64>>,
     HashMap<KeyString, Vec<f64>>,
     HashMap<KeyString, Vec<f64>>,
