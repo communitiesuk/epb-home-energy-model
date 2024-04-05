@@ -1235,7 +1235,6 @@ impl SolarThermalSystem {
             (self.power_pump_control + self.power_pump) * self.simulation_timestep
         };
 
-        // TODO register demand to energy supply
         self.energy_supply_connection
             .demand_energy(auxiliary_energy_consumption, timestep_idx)
             .unwrap();
