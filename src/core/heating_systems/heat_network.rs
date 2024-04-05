@@ -571,8 +571,6 @@ mod tests {
     pub fn heat_network_water_storage(
         heat_network_for_water_storage: Arc<Mutex<HeatNetwork>>,
     ) -> HeatNetworkServiceWaterStorage {
-        // TODO register supply
-
         HeatNetworkServiceWaterStorage::new(
             heat_network_for_water_storage,
             "heat_network_test".to_string(),
@@ -637,8 +635,6 @@ mod tests {
         heat_network_for_service_space: Arc<Mutex<HeatNetwork>>,
         three_len_simulation_time: SimulationTime,
     ) -> HeatNetworkServiceSpace {
-        // TODO register service supply
-
         HeatNetworkServiceSpace::new(
             heat_network_for_service_space,
             "heat_network_test".to_string(),
