@@ -1,4 +1,4 @@
-use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyLoose};
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
@@ -107,22 +107,19 @@ impl MixerShower {
 pub struct InstantElectricShower {
     power_in_kilowatts: f64,
     cold_water_source: ColdWaterSource,
-    electric_supply: EnergySupplyLoose,
-    supply_end_user_name: String,
+    energy_supply_connection: EnergySupplyConnection,
 }
 
 impl InstantElectricShower {
     pub fn new(
         power_in_kilowatts: f64,
         cold_water_source: ColdWaterSource,
-        electric_supply: EnergySupplyLoose,
-        supply_end_user_name: String,
+        energy_supply_connection: EnergySupplyConnection,
     ) -> Self {
         Self {
             power_in_kilowatts,
             cold_water_source,
-            electric_supply,
-            supply_end_user_name,
+            energy_supply_connection,
         }
     }
 
@@ -153,15 +150,9 @@ impl InstantElectricShower {
 
         let vol_hot_water_equiv = vol_warm_water * frac_hot_water(temp_target, temp_hot, temp_cold);
 
-        // following mutates the energy supply so find an alternative for this
-        // let _ = match &self.electric_supply {
-        //     EnergySupplyLoose::EnergySupply(mut supply) => supply.demand_energy(
-        //         self.supply_end_user_name.to_string(),
-        //         elec_demand,
-        //         timestep_idx,
-        //     ),
-        //     EnergySupplyLoose::HeatNetwork(_) => Err("(ignore)"),
-        // };
+        self.energy_supply_connection
+            .demand_energy(elec_demand, timestep_idx)
+            .unwrap();
 
         vol_hot_water_equiv
     }
@@ -198,28 +189,22 @@ mod tests {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
             ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
-        let mut energy_supply = EnergySupply::new(
+        let mut energy_supply = Arc::new(Mutex::new(EnergySupply::new(
             EnergySupplyType::Electricity,
             simulation_time.total_steps(),
             None,
-        );
-        let energy_supply_name = "shower".to_string();
-        energy_supply.register_end_user_name(energy_supply_name.to_string());
-        let mut instant_shower = InstantElectricShower::new(
-            50.0,
-            cold_water_source,
-            EnergySupplyLoose::EnergySupply(Arc::new(Mutex::new(energy_supply))),
-            energy_supply_name,
-        );
+        )));
+        let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
+        let mut instant_shower =
+            InstantElectricShower::new(50.0, cold_water_source, energy_supply_conn);
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
         for (idx, _) in simulation_time.iter().enumerate() {
-            // TODO: enable once results_by_end_user working
-            // assert_eq!(
-            //     energy_supply.results_by_end_user()["shower"][idx],
-            //     expected_results_by_end_user[idx],
-            //     "correct electricity demand not returned"
-            // );
+            assert_eq!(
+                energy_supply.lock().results_by_end_user()["shower"][idx],
+                expected_results_by_end_user[idx],
+                "correct electricity demand not returned"
+            );
             assert_eq!(
                 instant_shower.hot_water_demand(40.0, ((idx + 1) * 6) as f64, idx),
                 expected_demands[idx]

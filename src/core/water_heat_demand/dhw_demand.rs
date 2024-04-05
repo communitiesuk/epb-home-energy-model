@@ -1,4 +1,4 @@
-use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupplyLoose};
+use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{Pipework, PipeworkContentsType};
 use crate::core::schedule::ScheduleEvent;
@@ -342,29 +342,19 @@ fn instant_electric_shower_input_to_shower(
     };
 
     let energy_supply = match &input.energy_supply {
-        EnergySupplyType::Electricity => {
-            EnergySupplyLoose::EnergySupply(energy_supplies.mains_electricity.clone().unwrap())
-        }
-        EnergySupplyType::MainsGas => {
-            EnergySupplyLoose::EnergySupply(energy_supplies.mains_gas.clone().unwrap())
-        }
-        EnergySupplyType::UnmetDemand => {
-            EnergySupplyLoose::EnergySupply(energy_supplies.unmet_demand.clone())
-        }
-        EnergySupplyType::LpgBulk => {
-            EnergySupplyLoose::EnergySupply(energy_supplies.bulk_lpg.clone().unwrap())
-        }
-        EnergySupplyType::HeatNetwork => {
-            EnergySupplyLoose::HeatNetwork(energy_supplies.heat_network.clone().unwrap())
-        }
+        EnergySupplyType::Electricity => energy_supplies.mains_electricity.clone().unwrap(),
+        EnergySupplyType::MainsGas => energy_supplies.mains_gas.clone().unwrap(),
+        EnergySupplyType::UnmetDemand => energy_supplies.unmet_demand.clone(),
+        EnergySupplyType::LpgBulk => energy_supplies.bulk_lpg.clone().unwrap(),
+        EnergySupplyType::HeatNetwork => energy_supplies.heat_network.clone().unwrap(),
         _ => panic!("Unexpected energy supply type for a shower"),
     };
+    let energy_supply_conn = EnergySupply::connection(energy_supply, name.as_str()).unwrap();
 
     Shower::InstantElectricShower(InstantElectricShower::new(
         input.rated_power,
         cold_water_source,
-        energy_supply,
-        name,
+        energy_supply_conn,
     ))
 }
 

@@ -9,12 +9,6 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// a slightly looser definition of an energy supply that includes heat networks
-pub enum EnergySupplyLoose {
-    EnergySupply(Arc<Mutex<EnergySupply>>),
-    HeatNetwork(Arc<Mutex<EnergySupply>>),
-}
-
 #[derive(Debug)]
 pub struct EnergySupplies {
     pub mains_electricity: Option<Arc<Mutex<EnergySupply>>>,
