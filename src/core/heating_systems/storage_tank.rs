@@ -58,7 +58,7 @@ pub struct StorageTank {
     cold_feed: WaterSourceWithTemperature,
     simulation_timestep: f64,
     contents: MaterialProperties,
-    // TODO add energy supply connection to record unmet energy demand
+    energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
     volume_total_in_litres: f64,
     vol_n: [f64; STORAGE_TANK_NB_VOL],
@@ -84,7 +84,9 @@ impl StorageTank {
     /// * `cold_feed` - reference to ColdWaterSource object
     /// * `simulation_timestep` - the timestep for the simulation time being used in the calculation
     /// * `heat_sources`     -- hashmap of names and heat source objects
-    /// * `ctrl_hold_at_setpnt` - reference to Control object with Boolean schedule
+    /// * `primary_pipework` - optional reference to pipework
+    /// * `energy_supply_connection_unmet_demand` - an energy supply connection representing unmet demand
+    /// * `control_hold_at_setpnt` - reference to Control object with Boolean schedule
     ///                               defining when the StorageTank should be held at
     ///                                the setpoint temperature and not allowed to fall
     ///                               to the minimum before recharging
@@ -96,9 +98,9 @@ impl StorageTank {
         setpoint_temp: f64,
         cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
-        // TODO: add energy supply to register energy use
         heat_sources: IndexMap<String, PositionedHeatSource>,
         primary_pipework: Option<WaterPipework>,
+        energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
         control_hold_at_setpoint: Option<Arc<Control>>,
         contents: MaterialProperties,
     ) -> Self {
@@ -135,6 +137,7 @@ impl StorageTank {
             cold_feed,
             simulation_timestep,
             contents,
+            energy_supply_connection_unmet_demand,
             control_hold_at_setpoint,
             volume_total_in_litres,
             vol_n,
@@ -680,11 +683,15 @@ impl StorageTank {
         // energy required for domestic hot water in kWh
         let q_out_w_dis_req = self.energy_required(volume_demanded, simulation_time.index);
         // energy withdrawn, unmet energy required, volume withdrawn
-        let (q_use_w_n, _q_out_w_dis_req_rem, vol_use_w_n) =
+        let (q_use_w_n, q_out_w_dis_req_rem, vol_use_w_n) =
             self.energy_withdrawn(q_out_w_dis_req, q_out_w_n, simulation_time.index);
 
         // if tank cannot provide enough hot water report unmet demand
-        // TODO energy supply stuff!
+        if let Some(energy_supply) = &self.energy_supply_connection_unmet_demand {
+            energy_supply
+                .demand_energy(q_out_w_dis_req_rem, simulation_time.index)
+                .unwrap();
+        }
 
         // 6.4.3.5 STEP 3 Temperature of the storage after volume withdrawn (for DHW)
         let temp_s3_n = self.volume_withdrawn_replaced(vol_use_w_n, simulation_time.index);
@@ -1299,8 +1306,15 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
         cold_water_source: Arc<ColdWaterSource>,
         control_for_storage_tank: Arc<Control>,
-    ) -> StorageTank {
-        StorageTank::new(
+    ) -> (StorageTank, Arc<Mutex<EnergySupply>>) {
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            EnergySupplyType::Electricity,
+            simulation_time_for_storage_tank.total_steps(),
+            None,
+        )));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
+        let storage_tank = StorageTank::new(
             150.0,
             1.68,
             52.0,
@@ -1314,15 +1328,7 @@ mod tests {
                         HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
                             ImmersionHeater::new(
                                 50.,
-                                EnergySupply::connection(
-                                    Arc::new(Mutex::new(EnergySupply::new(
-                                        EnergySupplyType::Electricity,
-                                        simulation_time_for_storage_tank.total_steps(),
-                                        None,
-                                    ))),
-                                    "immersion",
-                                )
-                                .unwrap(),
+                                energy_supply_conn.clone(),
                                 simulation_time_for_storage_tank.step,
                                 Some(control_for_storage_tank),
                             ),
@@ -1333,16 +1339,19 @@ mod tests {
                 },
             )]),
             None,
+            Some(energy_supply_conn),
             None,
             WATER.clone(),
-        )
+        );
+        (storage_tank, energy_supply)
     }
 
     #[rstest]
     pub fn should_calc_demand_hot_water_for_storage_tank(
-        mut storage_tank: StorageTank,
+        mut storage_tank: (StorageTank, Arc<Mutex<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
+        let (mut storage_tank, energy_supply) = storage_tank;
         //collect all values for steps and compare at the same time
         let mut temp_n_values: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
         let expected_temp_n_values = vec![
@@ -1385,19 +1394,32 @@ mod tests {
                 54.595555555555556,
             ],
         ];
+        let expected_energy_supply_results = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            3.9189973050595626,
+            0.0,
+            2.0255553251028573,
+            0.0,
+        ];
         for (t_idx, iteration) in simulation_time_for_storage_tank.iter().enumerate() {
             storage_tank.demand_hot_water(
                 [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
                 iteration,
             );
             temp_n_values.push(storage_tank.temp_n);
+            assert_eq!(
+                energy_supply.lock().results_by_end_user()["immersion"][t_idx],
+                expected_energy_supply_results[t_idx],
+                "incorrect energy supplied returned"
+            );
         }
         assert_eq!(
             round_each_by_precision(temp_n_values, 1e7),
             round_each_by_precision(expected_temp_n_values, 1e7)
         );
-
-        // TODO do unit test for energy supply
     }
 
     #[fixture]

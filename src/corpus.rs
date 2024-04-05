@@ -2915,6 +2915,10 @@ fn hot_water_source_from_input(
                 simulation_time.step_in_hours(),
                 heat_sources,
                 pipework,
+                Some(
+                    EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
+                        .unwrap(),
+                ),
                 ctrl_hold_at_setpoint,
                 WATER.clone(),
             )));
