@@ -1343,8 +1343,39 @@ impl Corpus {
         results_end_user: &HashMap<KeyString, IndexMap<String, Vec<f64>>>,
         energy_supply_conn_name_for_space_hc_system: HashMap<String, Vec<String>>,
     ) -> HashMap<KeyString, NumberOrDivisionByZero> {
-        // TODO implement when energy supplies are available
-        Default::default()
+        let mut hc_output_overall: HashMap<KeyString, f64> = Default::default();
+        let mut hc_input_overall: HashMap<KeyString, f64> = Default::default();
+        let mut cop_dict: HashMap<KeyString, NumberOrDivisionByZero> = Default::default();
+        for (hc_name, hc_output) in energy_provided {
+            hc_output_overall.insert(*hc_name, hc_output.iter().sum::<f64>().abs());
+            hc_input_overall.insert(*hc_name, 0.);
+            let energy_supply_conn_names =
+                energy_supply_conn_name_for_space_hc_system[hc_name.as_str()].clone();
+            for (fuel_name, fuel_summary) in results_end_user {
+                if fuel_name == "_unmet_demand" {
+                    continue;
+                }
+                for (conn_name, energy_cons) in fuel_summary {
+                    if energy_supply_conn_names.contains(conn_name) {
+                        *hc_input_overall.get_mut(hc_name).unwrap() +=
+                            energy_cons.iter().sum::<f64>();
+                    }
+                }
+            }
+
+            cop_dict.insert(
+                *hc_name,
+                if hc_input_overall[hc_name] > 0. {
+                    NumberOrDivisionByZero::Number(
+                        hc_output_overall[hc_name] / hc_input_overall[hc_name],
+                    )
+                } else {
+                    NumberOrDivisionByZero::DivisionByZero
+                },
+            );
+        }
+
+        cop_dict
     }
 
     /// Calculate space heating and cooling demand for each zone and sum.
