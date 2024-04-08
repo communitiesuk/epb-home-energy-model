@@ -11,7 +11,6 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
@@ -94,13 +93,13 @@ fn main() -> anyhow::Result<()> {
         zone_list,
         hc_system_dict,
         hot_water_dict,
-        heat_cop_dict,
-        cool_cop_dict,
-        dhw_cop_dict,
+        _heat_cop_dict,
+        _cool_cop_dict,
+        _dhw_cop_dict,
         ductwork_gains,
-        heat_balance_dict,
-        heat_source_wet_results_dict,
-        heat_source_wet_results_annual_dict,
+        _heat_balance_dict,
+        _heat_source_wet_results_dict,
+        _heat_source_wet_results_annual_dict,
     ) = run_project(
         BufReader::new(File::open(Path::new(input_file))?),
         external_conditions,
@@ -207,7 +206,7 @@ fn write_core_output_file(
         writer.write_record(headings.iter().map(|heading| heading.as_ref()))?;
         writer.write_record(&units_row)?;
 
-        for (t_idx, timestep) in timestep_array.iter().enumerate() {
+        for (t_idx, _timestep) in timestep_array.iter().enumerate() {
             let mut energy_use_row = vec![];
             let mut zone_row = vec![];
             let mut hc_system_row = vec![];
@@ -217,7 +216,7 @@ fn write_core_output_file(
             let mut hw_system_row_events = vec![];
             let mut pw_losses_row = vec![];
             let mut ductwork_row = vec![];
-            let mut energy_shortfall: Vec<f64> = vec![];
+            let energy_shortfall: Vec<f64> = vec![];
             for totals_key in results_totals.keys() {
                 energy_use_row.push(results_totals[totals_key][t_idx]);
                 for (end_user_key, _) in results_end_user[totals_key].iter().enumerate() {
@@ -262,7 +261,7 @@ fn write_core_output_file(
             if let HotWaterResultMap::Int(map) = &hot_water_dict["Hot Water Events"] {
                 hw_system_row_events.push(map["no_events"][t_idx]);
             }
-            ductwork_row.push(ductwork_gains["ductwork_gains".try_into().unwrap()][t_idx]);
+            ductwork_row.push(ductwork_gains["ductwork_gains"][t_idx]);
 
             // create row of outputs and write to output file
             let mut row: Vec<String> = vec![];

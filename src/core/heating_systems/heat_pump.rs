@@ -5,9 +5,8 @@ use crate::core::units::{celsius_to_kelvin, kelvin_to_celsius, HOURS_PER_DAY};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    HeatNetwork, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
-    HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
-    HeatSourceWetDetails, TestLetter,
+    HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum, HeatPumpHotWaterTestData,
+    HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum, HeatSourceWetDetails, TestLetter,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
@@ -884,7 +883,7 @@ impl HeatPumpTestData {
             .dsgn_flow_temps
             .iter()
             .enumerate()
-            .map(|(i, dsgn_flow_temp)| {
+            .map(|(i, _dsgn_flow_temp)| {
                 let temp_spread_test_cond = self.temp_spread_test_conditions[i];
                 1. - ((temp_spread_test_cond - temp_spread_emitter) / 2.)
                     / (temp_output - temp_spread_test_cond / 2. + temp_diff_condenser - temp_source
@@ -1743,7 +1742,7 @@ impl HeatPump {
             heat_pump.lock().source_type,
             HeatPumpSourceType::HeatNetwork
         );
-        let heat_network = heat_pump.lock().heat_network.as_ref().map(Arc::clone);
+        let heat_network = heat_pump.lock().heat_network.clone();
         if is_heat_network {
             if let Some(energy_supply_hn) = heat_network {
                 heat_pump.lock().energy_supply_hn_connections.insert(
@@ -2611,7 +2610,7 @@ impl HeatPump {
         let mut results_per_timestep: ResultsPerTimestep = Default::default();
         results_per_timestep.insert("auxiliary", Default::default());
         for (parameter, param_unit, _) in AUX_PARAMETERS {
-            let mut auxiliary_param_results = results_per_timestep
+            let auxiliary_param_results = results_per_timestep
                 .get_mut("auxiliary")
                 .unwrap()
                 .entry((parameter, param_unit))
@@ -2631,10 +2630,10 @@ impl HeatPump {
 
         // For each service, report required output parameters
         for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
-            let mut results_entry = results_per_timestep.entry(service_name).or_default();
+            let results_entry = results_per_timestep.entry(service_name).or_default();
             // Look up each required parameter
             for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
-                let mut param_entry = results_entry
+                let param_entry = results_entry
                     .entry((parameter, param_unit.unwrap_or("")))
                     .or_default();
                 // Look up value of required parameter in each timestep
@@ -2709,7 +2708,7 @@ impl HeatPump {
         // For each service, report required output parameters
         for service_name in self.energy_supply_connections.keys() {
             let param_totals_for_overall = {
-                let mut annual_results_entry = results_annual.entry(service_name).or_default();
+                let annual_results_entry = results_annual.entry(service_name).or_default();
                 let mut param_totals_for_overall: HashMap<(&str, &str), ResultParamValue> =
                     Default::default();
                 for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {

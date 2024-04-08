@@ -7,7 +7,6 @@ use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::File;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use variants_struct::VariantsStruct;
@@ -1320,6 +1319,7 @@ pub struct WindowOpeningForCooling {
 mod test {
     use super::*;
     use rstest::*;
+    use std::fs::File;
     use walkdir::WalkDir;
 
     #[rstest]

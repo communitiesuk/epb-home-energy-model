@@ -2,7 +2,7 @@ use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BuildingElement, MassDistributionClass};
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 use std::f64::consts::PI;
 
 impl BuildingElement {
@@ -474,11 +474,10 @@ pub fn temp_ext_for(
                 + h_pe * (temp_ext_annual - temp_ext_month);
 
             // BS EN ISO 13370:2017 Eqn F.2
-            let temp_ext = temp_int_month
+            temp_int_month
                 - (heat_flow_month
                     - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
-                    / (area * u_value);
-            temp_ext
+                    / (area * u_value)
         }
         _ => external_conditions.air_temp(simulation_time),
     }
@@ -665,7 +664,7 @@ const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 mod test {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
-    use crate::simulation_time::SimulationTime;
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;
 
     #[fixture]

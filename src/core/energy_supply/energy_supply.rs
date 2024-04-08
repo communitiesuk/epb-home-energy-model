@@ -216,7 +216,7 @@ impl EnergySupply {
         end_user_name: &str,
     ) -> Result<EnergySupplyConnection, anyhow::Error> {
         let mut supply = energy_supply.lock();
-        if supply.demand_by_end_user.contains_key(end_user_name.into()) {
+        if supply.demand_by_end_user.contains_key(end_user_name) {
             bail!("The end user name '{end_user_name}' was already used.");
         }
         let timesteps = supply.simulation_timesteps;
@@ -298,7 +298,7 @@ impl EnergySupply {
         amount_produced: f64,
         timestep_index: usize,
     ) -> Result<(), anyhow::Error> {
-        self.demand_energy(&end_user_name, amount_produced * -1.0, timestep_index)
+        self.demand_energy(end_user_name, amount_produced * -1.0, timestep_index)
     }
 
     /// Return list of the total demand on this energy source for each timestep

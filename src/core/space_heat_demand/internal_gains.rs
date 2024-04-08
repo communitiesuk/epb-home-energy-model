@@ -1,7 +1,7 @@
-use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::units::WATTS_PER_KILOWATT;
 // use crate::core::units::WATTS_PER_KILOWATT;
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -92,11 +92,11 @@ impl ApplianceGains {
         let total_energy_supplied = self.total_energy_supply
             [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
-        let total_energy_supplied_kWh =
+        let total_energy_supplied_kwh =
             total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
 
         self.energy_supply_connection
-            .demand_energy(total_energy_supplied_kWh, simtime.index)
+            .demand_energy(total_energy_supplied_kwh, simtime.index)
             .unwrap();
 
         total_energy_supplied_w * self.gains_fraction
@@ -106,8 +106,9 @@ impl ApplianceGains {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::EnergySupplyType;
-    use crate::simulation_time::SimulationTime;
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
     use rstest::*;
     use std::sync::Arc;

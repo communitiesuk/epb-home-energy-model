@@ -263,9 +263,9 @@ impl DomesticHotWaterDemand {
             return (0., 0.);
         }
 
-        let mut hot_water_time_fraction = hw_duration / (delta_t_h * MINUTES_PER_HOUR as f64);
-        if hot_water_time_fraction > 1. {
-            hot_water_time_fraction = 1.;
+        let mut _hot_water_time_fraction = hw_duration / (delta_t_h * MINUTES_PER_HOUR as f64);
+        if _hot_water_time_fraction > 1. {
+            _hot_water_time_fraction = 1.;
         }
 
         // TODO For now, ignore heat loss from pipes while water is flowing, as

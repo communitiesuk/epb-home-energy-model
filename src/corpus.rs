@@ -873,7 +873,7 @@ impl Corpus {
     }
 
     pub fn run(&mut self) -> RunResults {
-        let mut simulation_time = self.simulation_time.as_ref().to_owned();
+        let simulation_time = self.simulation_time.as_ref().to_owned();
         let vec_capacity = || Vec::with_capacity(simulation_time.total_steps());
 
         let mut timestep_array = vec_capacity();
@@ -922,20 +922,16 @@ impl Corpus {
             }
         }
 
-        for h_name in self.heat_system_name_for_zone.values() {
-            if let Some(h_name) = h_name {
-                let h_name = h_name.as_str().try_into().unwrap();
-                space_heat_demand_system_dict.insert(h_name, vec_capacity());
-                space_heat_provided_dict.insert(h_name, vec_capacity());
-            }
+        for h_name in self.heat_system_name_for_zone.values().flatten() {
+            let h_name = h_name.as_str().try_into().unwrap();
+            space_heat_demand_system_dict.insert(h_name, vec_capacity());
+            space_heat_provided_dict.insert(h_name, vec_capacity());
         }
 
-        for c_name in self.cool_system_name_for_zone.values() {
-            if let Some(c_name) = c_name {
-                let c_name = c_name.as_str().try_into().unwrap();
-                space_cool_demand_system_dict.insert(c_name, vec_capacity());
-                space_cool_provided_dict.insert(c_name, vec_capacity());
-            }
+        for c_name in self.cool_system_name_for_zone.values().flatten() {
+            let c_name = c_name.as_str().try_into().unwrap();
+            space_cool_demand_system_dict.insert(c_name, vec_capacity());
+            space_cool_provided_dict.insert(c_name, vec_capacity());
         }
 
         hot_water_demand_dict.insert("demand".try_into().unwrap(), vec_capacity());
@@ -1001,7 +997,7 @@ impl Corpus {
             }
 
             let (
-                mut gains_internal_zone,
+                gains_internal_zone,
                 gains_solar_zone,
                 operative_temp,
                 internal_air_temp,
@@ -2467,10 +2463,9 @@ impl HeatSource {
 
     pub fn as_immersion_heater(&self) -> Option<Arc<Mutex<ImmersionHeater>>> {
         match self {
-            HeatSource::Storage(storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(immersion) => Some(immersion.clone()),
-                _ => None,
-            },
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => {
+                Some(immersion.clone())
+            }
             _ => None,
         }
     }
@@ -2544,7 +2539,7 @@ fn heat_source_wet_from_input(
                     &Some("heat network".to_string()),
                     "value for EnergySupply_heat_network is always expected to be 'heat network'"
                 );
-                (&energy_supplies.heat_network).as_ref().map(Arc::clone)
+                energy_supplies.heat_network.clone()
             } else {
                 None
             };
@@ -2825,7 +2820,7 @@ fn heat_source_from_input(
                         test_data,
                         *vol_hw_daily_average,
                         simulation_time.step_in_hours(),
-                        controls.get(&control).map(|c| (*c).clone()),
+                        controls.get(control).map(|c| (*c).clone()),
                     ),
                 ))),
                 energy_supply_conn_name.into(),

@@ -1,5 +1,5 @@
 use crate::core::controls::time_control::SetpointTimeControl;
-use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::{
     area_for_building_element_input, cloned_element_from_named, element_from_named, mid_height_for,
     orientation_for, projected_height_for_transparent_element,
@@ -12,7 +12,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BuildingElement, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
 };
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 use std::collections::HashSet;
 use std::sync::Arc;
 

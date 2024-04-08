@@ -618,7 +618,7 @@ impl ExternalConditions {
             calculated_direct,
             calculated_diffuse,
             total_irradiance,
-            diffuse_breakdown.then(|| DiffuseBreakdown {
+            diffuse_breakdown.then_some(DiffuseBreakdown {
                 sky: diffuse_irr_sky,
                 circumsolar: diffuse_irr_circumsolar,
                 horiz: diffuse_irr_horiz,

@@ -20,16 +20,12 @@ pub use crate::corpus::RunResults;
 use crate::corpus::{Corpus, KeyString};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::simulation_time::SimulationTime;
-use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::error::Error;
-use std::ffi::OsStr;
 use std::io::Read;
 use std::ops::Deref;
-use std::path::Path;
 use std::sync::Arc;
 
-pub fn run_project<'a, T>(
+pub fn run_project<T>(
     input: T,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,

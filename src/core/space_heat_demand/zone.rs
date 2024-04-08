@@ -16,8 +16,6 @@ use crate::input::BuildingElement;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
-use std::borrow::Cow;
-
 use parking_lot::Mutex;
 use std::hash::{Hash, Hasher};
 use std::iter::Peekable;
@@ -362,9 +360,9 @@ pub fn init_node_temps(
     mut simulation_time: Peekable<SimulationTimeIterator>,
     vent_cool_extra: &Option<WindowOpeningForCooling>,
     external_conditions: &ExternalConditions,
-    building_elements: &Vec<NamedBuildingElement>,
-    element_positions: &Vec<(usize, usize)>,
-    vent_elements: &Vec<VentilationElement>,
+    building_elements: &[NamedBuildingElement],
+    element_positions: &[(usize, usize)],
+    vent_elements: &[VentilationElement],
     passed_zone_idx: usize,
     c_int: f64,
     tb_heat_trans_coeff: f64,

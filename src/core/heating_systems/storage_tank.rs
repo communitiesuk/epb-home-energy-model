@@ -30,9 +30,6 @@ const STORAGE_TANK_F_RVD_AUX: f64 = 0.25;
 // part of the thermal losses transmitted to the room
 const STORAGE_TANK_F_STO_M: f64 = 0.75;
 
-// standby losses adaptation
-const STORAGE_TANK_F_STO_BAC_ACC: f64 = 1.;
-
 // ambient temperature - degress (sic - from Python code)
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
@@ -127,7 +124,7 @@ impl StorageTank {
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
-            .map(|(name, heat_source)| ((*name).clone(), false))
+            .map(|(name, _heat_source)| ((*name).clone(), false))
             .collect();
 
         Self {
@@ -443,7 +440,7 @@ impl StorageTank {
         // initialise list of theoretical temperature of layers after input in degrees
         let mut temp_s6_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
         // output energy delivered by the storage in kWh - timestep dependent
-        let mut q_sto_h_out_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let q_sto_h_out_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
 
         for i in 0..self.vol_n.len() {
             delta_temp_n[i] =
