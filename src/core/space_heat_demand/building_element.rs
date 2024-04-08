@@ -474,10 +474,11 @@ pub fn temp_ext_for(
                 + h_pe * (temp_ext_annual - temp_ext_month);
 
             // BS EN ISO 13370:2017 Eqn F.2
-            temp_int_month
+            let temp_ext = temp_int_month
                 - (heat_flow_month
                     - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
-                    / (area * u_value)
+                    / (area * u_value);
+            temp_ext
         }
         _ => external_conditions.air_temp(simulation_time),
     }
@@ -806,7 +807,7 @@ mod test {
     }
 
     #[fixture]
-    pub fn building_elements(
+    pub fn opaque_building_elements(
         be_i: BuildingElement,
         be_e: BuildingElement,
         be_ie: BuildingElement,
@@ -821,8 +822,8 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_no_of_nodes(building_elements: [BuildingElement; 5]) {
-        for be in building_elements.iter() {
+    pub fn test_no_of_nodes_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        for be in opaque_building_elements.iter() {
             assert_eq!(
                 number_of_building_element_nodes(be),
                 5,
@@ -837,10 +838,10 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_areas(building_elements: [BuildingElement; 5]) {
+    pub fn test_area_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
-        for (i, be) in building_elements.iter().enumerate() {
+        for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
                 area_for_building_element_input(be),
                 20.0 + i as f64 * area_inc,
@@ -850,7 +851,7 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_heat_flow_direction(building_elements: [BuildingElement; 5]) {
+    pub fn test_heat_flow_direction_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [
@@ -860,7 +861,7 @@ mod test {
             HeatFlowDirection::Downwards,
             HeatFlowDirection::Upwards,
         ];
-        for (i, be) in building_elements.iter().enumerate() {
+        for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
                 heat_flow_direction_for(be, temp_int_air, temp_int_surface[i]),
                 results[i],
@@ -870,10 +871,10 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_r_si(building_elements: [BuildingElement; 5]) {
+    pub fn test_r_si_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
-        for (i, be) in building_elements.iter().enumerate() {
+        for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
                 round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
                 round_by_precision(results[i], 1e2),
@@ -883,12 +884,12 @@ mod test {
     }
 
     #[rstest]
-    pub fn should_have_correct_h_ci(building_elements: [BuildingElement; 5]) {
+    pub fn test_h_ci_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
-        for (i, be) in building_elements.iter().enumerate() {
+        for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
                 round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e1),
                 round_by_precision(results[i], 1e1),
@@ -897,5 +898,718 @@ mod test {
         }
     }
 
-    // incomplete - lots more tests to migrate here!
+    #[rstest]
+    pub fn test_h_ri_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        for be in opaque_building_elements.iter() {
+            assert_eq!(
+                round_by_precision(h_ri_for(be), 1e7),
+                round_by_precision(5.13, 1e7),
+                "incorrect h_ri returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ce_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        for be in opaque_building_elements.iter() {
+            assert_eq!(
+                round_by_precision(h_ce_for(be), 1e7),
+                round_by_precision(20.0, 1e7),
+                "incorrect h_ce returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_re(opaque_building_elements: [BuildingElement; 5]) {
+        for be in opaque_building_elements.iter() {
+            assert_eq!(
+                round_by_precision(h_re_for(be), 1e7),
+                round_by_precision(4.14, 1e7),
+                "incorrect h_ce returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_a_sol_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        // Define increment between test cases
+        let a_sol_inc = 0.01;
+
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(a_sol_for(be), 1e7),
+                round_by_precision(0.6 + i as f64 * a_sol_inc, 1e7),
+                "incorrect a_sol_returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_therm_rad_to_sky_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        let results = [0.0, 6.6691785923823135, 22.77, 38.87082140761768, 45.54];
+
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(therm_rad_to_sky_for(be), 1e7),
+                round_by_precision(results[i], 1e7),
+                "incorrect therm_rad_to_sky returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_pli_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        let results = [
+            [24.0, 12.0, 12.0, 24.0],
+            [12.0, 6.0, 6.0, 12.0],
+            [8.0, 4.0, 4.0, 8.0],
+            [7.5, 3.75, 3.75, 7.5],
+            [15.0, 7.5, 7.5, 15.0],
+        ];
+
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                h_pli_for(be),
+                results[i].to_vec(),
+                "incorrect h_pli list returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_k_pli_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        let results = [
+            [0.0, 0.0, 0.0, 0.0, 19000.0],
+            [18000.0, 0.0, 0.0, 0.0, 0.0],
+            [8500.0, 0.0, 0.0, 0.0, 8500.0],
+            [2000.0, 4000.0, 4000.0, 4000.0, 2000.0],
+            [0.0, 0.0, 15000.0, 0.0, 0.0],
+        ];
+
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                k_pli_for(be),
+                results[i].to_vec(),
+                "incorrect k_pli returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_temp_ext_for_opaque(
+        opaque_building_elements: [BuildingElement; 5],
+        simulation_time: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
+    ) {
+        for be in opaque_building_elements.iter() {
+            for (t_idx, t_it) in simulation_time.clone().enumerate() {
+                assert_eq!(
+                    temp_ext_for(be, &external_conditions, &t_it),
+                    t_idx as f64 * 5.,
+                    "incorrect ext temp returned"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    pub fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        let results = [43.20, 31.56, 27.10, 29.25, 55.54]; // NB. Python test code has this second value as 35.15 and the fourth as 27.15, which seems to incorrect - this has been reported up to BRE by email on 8/4/24
+
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(be.fabric_heat_loss(), 1e2),
+                round_by_precision(results[i], 1e2),
+                "incorrect fabric heat loss returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_heat_capacity_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
+        let results = [380., 405., 425., 440., 450.];
+        for (i, be) in opaque_building_elements.iter().enumerate() {
+            assert_eq!(
+                be.heat_capacity(),
+                results[i],
+                "incorrect heat capacity returned"
+            );
+        }
+    }
+
+    #[fixture]
+    pub fn adjacent_ztc_building_elements() -> [BuildingElement; 5] {
+        let be_i = BuildingElement::AdjacentZTC {
+            area: 20.0,
+            pitch: 180.,
+            r_c: Some(0.25),
+            k_m: 19_000.,
+            mass_distribution_class: MassDistributionClass::I,
+            u_value: None,
+        };
+        let be_e = BuildingElement::AdjacentZTC {
+            area: 22.5,
+            pitch: 135.,
+            r_c: Some(0.5),
+            k_m: 18_000.,
+            mass_distribution_class: MassDistributionClass::E,
+            u_value: None,
+        };
+        let be_ie = BuildingElement::AdjacentZTC {
+            area: 25.0,
+            pitch: 90.,
+            r_c: Some(0.75),
+            k_m: 17_000.,
+            mass_distribution_class: MassDistributionClass::IE,
+            u_value: None,
+        };
+        let be_d = BuildingElement::AdjacentZTC {
+            area: 27.5,
+            pitch: 45.,
+            r_c: Some(0.8),
+            k_m: 16_000.,
+            mass_distribution_class: MassDistributionClass::D,
+            u_value: None,
+        };
+        let be_m = BuildingElement::AdjacentZTC {
+            area: 30.0,
+            pitch: 0.,
+            r_c: Some(0.4),
+            k_m: 15_000.,
+            mass_distribution_class: MassDistributionClass::M,
+            u_value: None,
+        };
+        [be_i, be_e, be_ie, be_d, be_m]
+    }
+
+    #[rstest]
+    pub fn test_no_of_nodes_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                number_of_building_element_nodes(&be),
+                5,
+                "incorrect number of nodes"
+            );
+            assert_eq!(
+                number_of_inside_nodes(&be),
+                3,
+                "incorrect number of inside nodes"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_area_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        // Define increment between test cases
+        let area_inc = 2.5;
+
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(area_for_building_element_input(be), 1e7),
+                round_by_precision(20.0 + i as f64 * area_inc, 1e7),
+                "incorrect area returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_heat_flow_direction_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [BuildingElement; 5],
+    ) {
+        let temp_int_air = 20.0;
+        let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
+        let results = [
+            HeatFlowDirection::Downwards,
+            HeatFlowDirection::Upwards,
+            HeatFlowDirection::Horizontal,
+            HeatFlowDirection::Downwards,
+            HeatFlowDirection::Upwards,
+        ];
+
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                heat_flow_direction_for(be, temp_int_air, temp_int_surface[i]),
+                results[i],
+                "incorrect heat flow direction returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_r_si_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        let results = [0.17, 0.17, 0.13, 0.10, 0.10];
+
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
+                results[i],
+                "incorrect r_si returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ci_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        let temp_int_air = 20.0;
+        let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
+        let results = [0.7, 5.0, 2.5, 0.7, 5.0];
+
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e7),
+                round_by_precision(results[i], 1e7),
+                "incorrect h_ci returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ri_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                round_by_precision(h_ri_for(&be), 1e7),
+                5.13,
+                "incorrect h_ri returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ce_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                round_by_precision(h_ce_for(&be), 1e7),
+                0.0,
+                "incorrect h_ce returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_re_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                round_by_precision(h_re_for(&be), 1e7),
+                0.0,
+                "incorrect h_re returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_a_sol_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                round_by_precision(a_sol_for(&be), 1e7),
+                0.0,
+                "incorrect a_sol returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_therm_rad_to_sky_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [BuildingElement; 5],
+    ) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                round_by_precision(therm_rad_to_sky_for(&be), 1e7),
+                0.0,
+                "incorrect a_sol returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_k_pli_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
+        let results = [
+            [0.0, 0.0, 0.0, 0.0, 19000.0],
+            [18000.0, 0.0, 0.0, 0.0, 0.0],
+            [8500.0, 0.0, 0.0, 0.0, 8500.0],
+            [2000.0, 4000.0, 4000.0, 4000.0, 2000.0],
+            [0.0, 0.0, 15000.0, 0.0, 0.0],
+        ];
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                k_pli_for(be),
+                results[i].to_vec(),
+                "incorrect k_pli list returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_fabric_heat_loss_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [BuildingElement; 5],
+    ) {
+        for be in adjacent_ztc_building_elements {
+            assert_eq!(
+                be.fabric_heat_loss(),
+                0.0,
+                "incorrect fabric heat loss returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_heat_capacity_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [BuildingElement; 5],
+    ) {
+        let results = [380., 405., 425., 440., 450.];
+
+        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+            assert_eq!(
+                be.heat_capacity(),
+                results[i],
+                "incorrect heat capacity returned"
+            );
+        }
+    }
+
+    #[fixture]
+    pub fn ground_building_elements() -> [BuildingElement; 5] {
+        let be_i = BuildingElement::Ground {
+            area: 20.0,
+            pitch: 180.,
+            u_value: 1.5,
+            r_f: 0.1,
+            k_m: 19_000.,
+            mass_distribution_class: MassDistributionClass::I,
+            h_pi: 2.0,
+            h_pe: 2.5,
+            perimeter: 18.,
+            psi_wall_floor_junc: 0.5,
+        };
+        let be_e = BuildingElement::Ground {
+            area: 22.5,
+            pitch: 135.,
+            u_value: 1.4,
+            r_f: 0.2,
+            k_m: 18_000.,
+            mass_distribution_class: MassDistributionClass::E,
+            h_pi: 2.1,
+            h_pe: 2.6,
+            perimeter: 19.,
+            psi_wall_floor_junc: 0.6,
+        };
+        let be_ie = BuildingElement::Ground {
+            area: 25.0,
+            pitch: 90.,
+            u_value: 1.33,
+            r_f: 0.2,
+            k_m: 17_000.,
+            mass_distribution_class: MassDistributionClass::IE,
+            h_pi: 2.2,
+            h_pe: 2.7,
+            perimeter: 20.,
+            psi_wall_floor_junc: 0.7,
+        };
+        let be_d = BuildingElement::Ground {
+            area: 27.5,
+            pitch: 45.,
+            u_value: 1.25,
+            r_f: 0.2,
+            k_m: 16_000.,
+            mass_distribution_class: MassDistributionClass::D,
+            h_pi: 2.3,
+            h_pe: 2.8,
+            perimeter: 21.,
+            psi_wall_floor_junc: 0.8,
+        };
+        let be_m = BuildingElement::Ground {
+            area: 30.0,
+            pitch: 0.,
+            u_value: 1.0,
+            r_f: 0.3,
+            k_m: 15_000.,
+            mass_distribution_class: MassDistributionClass::M,
+            h_pi: 2.4,
+            h_pe: 2.9,
+            perimeter: 22.,
+            psi_wall_floor_junc: 0.9,
+        };
+        [be_i, be_e, be_ie, be_d, be_m]
+    }
+
+    #[fixture]
+    pub fn simulation_time_for_ground() -> SimulationTime {
+        SimulationTime::new(742., 746., 1.)
+    }
+
+    #[fixture]
+    pub fn external_conditions_for_ground(
+        simulation_time_for_ground: SimulationTime,
+    ) -> ExternalConditions {
+        let air_temp_day_jan = vec![
+            0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0, 19.5,
+            17.0, 15.0, 12.0, 10.0, 7.0, 5.0, 3.0, 1.0,
+        ];
+        let air_temp_day_feb: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 1.0).collect();
+        let air_temp_day_mar: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 2.0).collect();
+        let air_temp_day_apr: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 3.0).collect();
+        let air_temp_day_may: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 4.0).collect();
+        let air_temp_day_jun: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 5.0).collect();
+        let air_temp_day_jul: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 6.0).collect();
+        let air_temp_day_aug: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 6.0).collect();
+        let air_temp_day_sep: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 5.0).collect();
+        let air_temp_day_oct: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 4.0).collect();
+        let air_temp_day_nov: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 3.0).collect();
+        let air_temp_day_dec: Vec<f64> = air_temp_day_jan.iter().map(|x| x + 2.0).collect();
+
+        let mut airtemp = vec![];
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_jan);
+        }
+        for _ in 0..28 {
+            airtemp.extend(&air_temp_day_feb);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_mar);
+        }
+        for _ in 0..30 {
+            airtemp.extend(&air_temp_day_apr);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_may);
+        }
+        for _ in 0..30 {
+            airtemp.extend(&air_temp_day_jun);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_jul);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_aug);
+        }
+        for _ in 0..30 {
+            airtemp.extend(&air_temp_day_sep);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_oct);
+        }
+        for _ in 0..30 {
+            airtemp.extend(&air_temp_day_nov);
+        }
+        for _ in 0..31 {
+            airtemp.extend(&air_temp_day_dec);
+        }
+        println!("airtemp: {airtemp:?}");
+        println!("length of airtemp is: {}", airtemp.len());
+
+        ExternalConditions::new(
+            &simulation_time_for_ground.iter(),
+            airtemp,
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.,
+            None,
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            vec![],
+        )
+    }
+
+    #[rstest]
+    pub fn test_no_of_nodes_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        for be in ground_building_elements {
+            assert_eq!(
+                number_of_building_element_nodes(&be),
+                5,
+                "incorrect number of nodes"
+            );
+            assert_eq!(
+                number_of_inside_nodes(&be),
+                3,
+                "incorrect number of inside nodes"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_area_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        // Define increment between test cases
+        let area_inc = 2.5;
+
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(area_for_building_element_input(be), 1e7),
+                round_by_precision(20.0 + i as f64 * area_inc, 1e7),
+                "incorrect area returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_heat_flow_direction_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let temp_int_air = 20.0;
+        let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
+        let results = [
+            HeatFlowDirection::Downwards,
+            HeatFlowDirection::Upwards,
+            HeatFlowDirection::Horizontal,
+            HeatFlowDirection::Downwards,
+            HeatFlowDirection::Upwards,
+        ];
+
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                heat_flow_direction_for(be, temp_int_air, temp_int_surface[i]),
+                results[i],
+                "incorrect heat flow direction returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_r_si_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let results = [0.17, 0.17, 0.13, 0.10, 0.10];
+
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
+                results[i],
+                "incorrect r_si returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ci_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let temp_int_air = 20.0;
+        let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
+        let results = [0.7, 5.0, 2.5, 0.7, 5.0];
+
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e7),
+                results[i],
+                "incorrect h_ci returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ri_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        for be in ground_building_elements.iter() {
+            assert_eq!(h_ri_for(be), 5.13, "incorrect h_ri returned");
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_ce_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let results = [
+            15.78947368,
+            91.30434783,
+            20.59886422,
+            10.34482759,
+            5.084745763,
+        ];
+
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(h_ce_for(be), 1e7),
+                round_by_precision(results[i], 1e7),
+                "incorrect h_ce returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_re_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        for be in ground_building_elements.iter() {
+            assert_eq!(h_re_for(be), 0.0, "incorrect h_re returned");
+        }
+    }
+
+    #[rstest]
+    pub fn test_a_sol_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        for be in ground_building_elements.iter() {
+            assert_eq!(a_sol_for(be), 0.0, "incorrect a_sol returned");
+        }
+    }
+
+    #[rstest]
+    pub fn test_therm_rad_to_sky_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        for be in ground_building_elements.iter() {
+            assert_eq!(
+                therm_rad_to_sky_for(be),
+                0.0,
+                "incorrect therm_rad_to_sky returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_h_pli_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let results = [
+            [6.0, 3.0, 3.0, 6.0],
+            [6.0, 2.896551724137931, 2.8, 5.6],
+            [6.0, 2.8197879858657244, 2.66, 5.32],
+            [6.0, 2.727272727272727, 2.5, 5.0],
+            [6.0, 2.4000000000000004, 2.0, 4.0],
+        ];
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                h_pli_for(be),
+                results[i].to_vec(),
+                "incorrect h_pli list returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_k_pli_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let results = [
+            [0.0, 1500000.0, 0.0, 0.0, 19000.0],
+            [0.0, 1500000.0, 18000.0, 0.0, 0.0],
+            [0.0, 1500000.0, 8500.0, 0.0, 8500.0],
+            [0.0, 1500000.0, 4000.0, 8000.0, 4000.0],
+            [0.0, 1500000.0, 0.0, 15000.0, 0.0],
+        ];
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                k_pli_for(be),
+                results[i].to_vec(),
+                "incorrect k_pli list returned"
+            );
+        }
+    }
+
+    // following test seems incomplete - Python test only seems to exercise the first building element in the list, and other elements come out with different values
+
+    // #[rstest]
+    // pub fn test_temp_ext_for_ground(
+    //     ground_building_elements: [BuildingElement; 5],
+    //     external_conditions_for_ground: ExternalConditions,
+    //     simulation_time_for_ground: SimulationTime,
+    // ) {
+    //     let results = [
+    //         8.474795225438358,
+    //         8.474795225438358,
+    //         8.988219392771693,
+    //         8.988219392771693,
+    //     ];
+    //     for (i, be) in ground_building_elements.iter().enumerate() {
+    //         for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
+    //             println!("t_idx is: {t_idx}");
+    //             assert_eq!(
+    //                 round_by_precision(
+    //                     temp_ext_for(be, &external_conditions_for_ground, &t_it),
+    //                     1e7
+    //                 ),
+    //                 round_by_precision(results[t_idx], 1e7),
+    //                 "incorrect ext temp returned on iteration {t_idx} for building element iteration {i}"
+    //             );
+    //         }
+    //     }
+    // }
 }
