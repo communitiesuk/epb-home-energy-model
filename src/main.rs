@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 #[derive(Parser, Default, Debug)]
@@ -151,7 +151,9 @@ fn write_core_output_file(
     ductwork_gains: HashMap<KeyString, Vec<f64>>,
 ) -> Result<(), anyhow::Error> {
     println!("writing out to {output_file}");
-    let mut writer = WriterBuilder::new().flexible(true).from_path(output_file)?;
+    let file = File::create(output_file)?;
+    let writer = BufWriter::new(file);
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
     let mut units_row = vec!["[count]"];
