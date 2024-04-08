@@ -37,4 +37,5 @@ walkdir = "2.5.0"
 doctest = false
 
 [profile.release]
+opt-level = 3
 lto = true
