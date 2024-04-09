@@ -934,7 +934,7 @@ pub enum InfiltrationTestType {
     FourPascals,
 }
 
-pub type ZoneDictionary = HashMap<String, ZoneInput>;
+pub type ZoneDictionary = IndexMap<String, ZoneInput>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1249,7 +1249,7 @@ pub enum HeatSourceLocation {
     External,
 }
 
-pub type WasteWaterHeatRecovery = HashMap<String, WasteWaterHeatRecoveryDetails>;
+pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Debug, Deserialize)]
 pub struct WasteWaterHeatRecoveryDetails {
@@ -1272,7 +1272,7 @@ pub enum WwhrsType {
     SystemC,
 }
 
-pub type OnSiteGeneration = HashMap<String, OnSiteGenerationDetails>;
+pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

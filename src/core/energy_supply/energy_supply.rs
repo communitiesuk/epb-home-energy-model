@@ -6,7 +6,6 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -64,8 +63,9 @@ impl EnergySupplies {
         }
     }
 
-    pub fn supplies_by_name(&self) -> HashMap<&str, Arc<Mutex<EnergySupply>>> {
-        let mut supplies: HashMap<&str, Arc<Mutex<EnergySupply>>> = Default::default();
+    pub fn supplies_by_name(&self) -> IndexMap<&str, Arc<Mutex<EnergySupply>>> {
+        let mut supplies: IndexMap<&str, Arc<Mutex<EnergySupply>>> = Default::default();
+        supplies.insert("unmet_demand", self.unmet_demand.clone());
         if let Some(elec) = &self.mains_electricity {
             supplies.insert("electricity", elec.clone());
         }
@@ -87,7 +87,6 @@ impl EnergySupplies {
         if let Some(heat_network) = &self.heat_network {
             supplies.insert("heat network", heat_network.clone());
         }
-        supplies.insert("unmet_demand", self.unmet_demand.clone());
 
         supplies
     }

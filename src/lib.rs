@@ -12,14 +12,13 @@ mod simulation_time;
 extern crate is_close;
 extern crate lazy_static;
 
-use crate::input::{parse_input, ExternalConditionsInput};
-use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-use std::collections::HashMap;
-
 pub use crate::corpus::RunResults;
 use crate::corpus::{Corpus, KeyString};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+use crate::input::{parse_input, ExternalConditionsInput};
+use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
+use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use std::io::Read;
 use std::ops::Deref;
@@ -109,7 +108,7 @@ fn external_conditions_from_input(
 }
 
 lazy_static! {
-    pub static ref UNITS_MAP: HashMap<KeyString, &'static str> = HashMap::from([
+    pub static ref UNITS_MAP: IndexMap<KeyString, &'static str> = IndexMap::from([
         ("Internal gains".try_into().unwrap(), "[W]"),
         ("Solar gains".try_into().unwrap(), "[W]"),
         ("Operative temp".try_into().unwrap(), "[deg C]"),
