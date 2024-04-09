@@ -42,7 +42,7 @@ impl EnergySupplies {
         energy_supply_type: EnergySupplyType,
         timesteps: usize,
     ) -> Arc<Mutex<EnergySupply>> {
-        let mut energy_supply = match energy_supply_type {
+        let energy_supply = match energy_supply_type {
             EnergySupplyType::Electricity => &mut self.mains_electricity,
             EnergySupplyType::MainsGas => &mut self.mains_gas,
             EnergySupplyType::UnmetDemand => return self.unmet_demand.clone(),
@@ -56,16 +56,11 @@ impl EnergySupplies {
         };
         match energy_supply {
             Some(supply) => supply.clone(),
-            None => {
-                let supply = Arc::new(Mutex::new(EnergySupply::new(
-                    energy_supply_type,
-                    timesteps,
-                    None,
-                )));
-                energy_supply = &mut Some(supply.clone());
-
-                supply
-            }
+            None => Arc::new(Mutex::new(EnergySupply::new(
+                energy_supply_type,
+                timesteps,
+                None,
+            ))),
         }
     }
 

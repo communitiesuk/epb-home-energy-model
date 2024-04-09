@@ -905,8 +905,8 @@ impl Corpus {
             ("internal_boundary".try_into().unwrap(), Default::default()),
             ("external_boundary".try_into().unwrap(), Default::default()),
         ]);
-        let mut heat_source_wet_results_dict = Default::default();
-        let mut heat_source_wet_results_annual_dict = Default::default();
+        let heat_source_wet_results_dict = Default::default();
+        let heat_source_wet_results_annual_dict = Default::default();
 
         for z_name in self.zones.keys() {
             let z_name = z_name.as_str().try_into().unwrap();

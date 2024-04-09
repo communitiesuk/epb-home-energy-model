@@ -1244,7 +1244,7 @@ mod test {
 
     #[rstest]
     pub fn should_have_correct_fan_gains(
-        mut mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (mut mvhr, energy_supply) = mvhr;

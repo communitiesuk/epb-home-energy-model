@@ -1243,12 +1243,12 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{per_control, OnOffTimeControl};
+    use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
-    use crate::input::{EnergySupplyType, HeatSourceControl, HeatSourceControlType};
+    use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -1344,7 +1344,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_demand_hot_water_for_storage_tank(
-        mut storage_tank: (StorageTank, Arc<Mutex<EnergySupply>>),
+        storage_tank: (StorageTank, Arc<Mutex<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let (mut storage_tank, energy_supply) = storage_tank;

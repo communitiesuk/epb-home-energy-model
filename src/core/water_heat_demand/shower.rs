@@ -1,4 +1,4 @@
-use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
@@ -161,6 +161,7 @@ impl InstantElectricShower {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::EnergySupplyType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
@@ -189,7 +190,7 @@ mod tests {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
             ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
-        let mut energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
             EnergySupplyType::Electricity,
             simulation_time.total_steps(),
             None,

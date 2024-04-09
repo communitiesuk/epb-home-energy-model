@@ -1936,7 +1936,7 @@ mod test {
         air_temps: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let mut external_conditions = external_conditions.clone();
+        let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.air_temp(&simtime_step),
@@ -1956,8 +1956,8 @@ mod test {
     fn should_have_correct_air_temp_annual(external_conditions: ExternalConditions) {
         let precision = 1e6;
         assert_eq!(
-            round_by_precision(external_conditions.air_temp_annual().unwrap(), 1e6),
-            round_by_precision(10.1801369863014, 1e6)
+            round_by_precision(external_conditions.air_temp_annual().unwrap(), precision),
+            round_by_precision(10.1801369863014, precision)
         );
     }
 
@@ -1969,7 +1969,7 @@ mod test {
         let expected_monthly_air_temps: [f64; 12] = [
             6.75, 7.75, 8.75, 9.75, 10.75, 11.75, 12.75, 12.75, 11.75, 10.75, 9.75, 8.75,
         ];
-        let mut external_conditions = external_conditions.clone();
+        let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             let month_idx = simtime_step.current_month().unwrap() as usize;
             assert_eq!(
@@ -2008,8 +2008,8 @@ mod test {
         diffuse_horizontal_radiation: [f64; 8],
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let mut external_conditions = external_conditions.clone();
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+        let external_conditions = external_conditions.clone();
+        for (i, _simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.diffuse_horizontal_radiation(i),
                 diffuse_horizontal_radiation[i]
@@ -2023,8 +2023,8 @@ mod test {
         direct_beam_radiation: [f64; 8],
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let mut external_conditions = external_conditions.clone();
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+        let external_conditions = external_conditions.clone();
+        for (i, _simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.direct_beam_radiation(i),
                 direct_beam_radiation[i]
@@ -2038,7 +2038,7 @@ mod test {
         solar_reflectivity_of_ground: [f64; 8760],
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let mut external_conditions = external_conditions.clone();
+        let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.solar_reflectivity_of_ground(&simtime_step),

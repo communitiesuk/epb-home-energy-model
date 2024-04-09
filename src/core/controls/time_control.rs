@@ -11,7 +11,6 @@ pub enum Control {
 }
 
 // macro so accessing individual controls through the enum isn't so repetitive
-#[macro_use]
 macro_rules! per_control {
     ($val:expr, $pattern:pat => { $res:expr }) => {
         match $val {
@@ -296,7 +295,6 @@ impl ControlBehaviour for SetpointTimeControl {
 mod test {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
-    use itertools::Itertools;
     use rstest::*;
 
     const ON_OFF_SCHEDULE: [bool; 8] = [true, false, true, true, false, true, false, false];

@@ -960,7 +960,7 @@ mod tests {
 
     #[rstest]
     pub fn should_provide_correct_energy_output(
-        mut boiler: (Boiler, Arc<Mutex<EnergySupply>>),
+        boiler: (Boiler, Arc<Mutex<EnergySupply>>),
         simulation_time: SimulationTime,
         boiler_energy_output_required: [f64; 2],
         temp_return_feed: [f64; 2],
@@ -1305,7 +1305,7 @@ mod tests {
 
     #[fixture]
     pub fn service_space_boiler(
-        mut boiler_for_service_space: Boiler,
+        boiler_for_service_space: Boiler,
         control_for_service_space: Control,
     ) -> BoilerServiceSpace {
         BoilerServiceSpace::new(

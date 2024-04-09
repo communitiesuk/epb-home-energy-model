@@ -1368,8 +1368,7 @@ mod test {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
-        MassDistributionClass, ZoneInput,
+        InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType, MassDistributionClass,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use indexmap::IndexMap;
