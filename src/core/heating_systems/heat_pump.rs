@@ -3103,7 +3103,7 @@ impl HeatPumpHotWaterOnly {
             .demand_energy(energy_required, simtime.index)
             .unwrap();
 
-        energy_demand
+        energy_supplied
     }
 
     /// Calculate the maximum energy output (in kWh) from the heater

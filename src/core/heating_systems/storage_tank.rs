@@ -463,7 +463,7 @@ impl StorageTank {
     fn rearrange_temperatures(
         &self,
         temp_s6_n: [f64; STORAGE_TANK_NB_VOL],
-    ) -> (f64, [f64; STORAGE_TANK_NB_VOL]) {
+    ) -> ([f64; STORAGE_TANK_NB_VOL], [f64; STORAGE_TANK_NB_VOL]) {
         // set list of flags for which layers need mixing
         let mut mix_layer_n: [u8; STORAGE_TANK_NB_VOL] = Default::default();
         let mut temp_s7_n = temp_s6_n;
@@ -496,7 +496,13 @@ impl StorageTank {
             }
         }
 
-        let q_h_sto_end = self.rho
+        let q_h_sto_end: [f64; STORAGE_TANK_NB_VOL] = (0..self.vol_n.len())
+            .map(|i| self.rho * self.cp * self.vol_n[i] * temp_s7_n[i])
+            .collect::<Vec<f64>>()
+            .try_into()
+            .unwrap();
+
+        let q_h_sto_end_no = self.rho
             * self.cp
             * (0..self.vol_n.len())
                 .map(|i| self.vol_n[i] * temp_s7_n[i])
@@ -510,8 +516,8 @@ impl StorageTank {
         &self,
         temp_s7_n: [f64; STORAGE_TANK_NB_VOL],
         q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
-        q_h_sto_s7: f64,
-        thermostat_layer: usize,
+        q_h_sto_s7: [f64; STORAGE_TANK_NB_VOL],
+        heater_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
     ) -> (
         f64,
@@ -568,10 +574,15 @@ impl StorageTank {
         // excess energy is calculated as the difference from the energy stored, Qsto,step7, and
         // energy stored once the set temperature is obtained, Qsto,step8, with addition of the
         // thermal losses.
-        let energy_surplus = if temp_s7_n[thermostat_layer] > self.temp_set_on {
-            q_h_sto_s7
-                - q_ls
-                - (self.rho * self.cp * self.volume_total_in_litres * self.temp_set_on)
+        // Note: The surplus must be calculated only for those layers that the
+        //       heat source currently being considered is capable of heating,
+        //       i.e. excluding those below the heater position.
+        let energy_surplus = if temp_s7_n[heater_layer] > self.temp_set_on {
+            (heater_layer..STORAGE_TANK_NB_VOL).fold(0., |acc, i| {
+                acc + q_h_sto_s7[i]
+                    - q_ls_n[i]
+                    - (self.rho * self.cp * self.vol_n[i] * self.temp_set_on)
+            })
         } else {
             0.
         };
@@ -616,7 +627,7 @@ impl StorageTank {
             temp_s3_n,
             heat_source,
             q_x_in_n,
-            thermostat_layer,
+            heater_layer,
             q_ls_prev_heat_source,
             simulation_time,
         )
@@ -627,7 +638,7 @@ impl StorageTank {
         temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
         heat_source: Arc<Mutex<HeatSource>>,
         q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
-        thermostat_layer: usize,
+        heater_layer: usize,
         q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
         simulation_time_iteration: SimulationTimeIteration,
     ) -> TemperatureCalculation {
@@ -641,7 +652,7 @@ impl StorageTank {
             temp_s7_n,
             q_x_in_n,
             q_h_sto_s7,
-            thermostat_layer,
+            heater_layer,
             q_ls_n_prev_heat_source,
         );
 
@@ -788,7 +799,7 @@ impl StorageTank {
                 self.temp_n,
                 heat_source,
                 q_x_in_n,
-                thermostat_layer,
+                heater_layer,
                 self.q_ls_n_prev_heat_source,
                 simulation_time_iteration,
             );
@@ -895,7 +906,6 @@ type TemperatureCalculation = (
 #[derive(Clone, Debug)]
 pub struct ImmersionHeater {
     pwr: f64, // rated power
-    // energy_supply
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
@@ -1302,55 +1312,92 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
         cold_water_source: Arc<ColdWaterSource>,
         control_for_storage_tank: Arc<Control>,
-    ) -> (StorageTank, Arc<Mutex<EnergySupply>>) {
+    ) -> ((StorageTank, StorageTank), Arc<Mutex<EnergySupply>>) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
             EnergySupplyType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
             None,
         )));
-        let energy_supply_conn =
-            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
-        let storage_tank = StorageTank::new(
-            150.0,
-            1.68,
-            52.0,
-            55.0,
-            WaterSourceWithTemperature::ColdWaterSource(cold_water_source),
-            simulation_time_for_storage_tank.step,
-            IndexMap::from([(
-                "imheater".to_string(),
-                PositionedHeatSource {
-                    heat_source: Arc::new(Mutex::new(HeatSource::Storage(
-                        HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
-                            ImmersionHeater::new(
-                                50.,
-                                energy_supply_conn.clone(),
-                                simulation_time_for_storage_tank.step,
-                                Some(control_for_storage_tank),
-                            ),
-                        ))),
-                    ))),
-                    heater_position: 0.1,
-                    thermostat_position: 0.33,
-                },
-            )]),
-            None,
-            Some(energy_supply_conn),
-            None,
-            WATER.clone(),
+        let energy_supply_conns = (
+            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap(),
+            EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap(),
         );
-        (storage_tank, energy_supply)
+
+        let storage_tanks = (
+            StorageTank::new(
+                150.0,
+                1.68,
+                52.0,
+                55.0,
+                WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone()),
+                simulation_time_for_storage_tank.step,
+                IndexMap::from([(
+                    "imheater".to_string(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                                ImmersionHeater::new(
+                                    50.,
+                                    energy_supply_conns.0.clone(),
+                                    simulation_time_for_storage_tank.step,
+                                    Some(control_for_storage_tank.clone()),
+                                ),
+                            ))),
+                        ))),
+                        heater_position: 0.1,
+                        thermostat_position: 0.33,
+                    },
+                )]),
+                None,
+                Some(energy_supply_conns.0),
+                None,
+                WATER.clone(),
+            ),
+            // Also test case where heater does not heat all layers, to ensure this is handled correctly
+            StorageTank::new(
+                210.0,
+                1.61,
+                52.0,
+                60.0,
+                WaterSourceWithTemperature::ColdWaterSource(cold_water_source),
+                simulation_time_for_storage_tank.step,
+                IndexMap::from([(
+                    "imheater2".to_string(),
+                    PositionedHeatSource {
+                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
+                                ImmersionHeater::new(
+                                    5.,
+                                    energy_supply_conns.1.clone(),
+                                    simulation_time_for_storage_tank.step,
+                                    Some(control_for_storage_tank),
+                                ),
+                            ))),
+                        ))),
+                        heater_position: 0.6,
+                        thermostat_position: 0.6,
+                    },
+                )]),
+                None,
+                Some(energy_supply_conns.1),
+                None,
+                WATER.clone(),
+            ),
+        );
+
+        (storage_tanks, energy_supply)
     }
 
     #[rstest]
     pub fn should_calc_demand_hot_water_for_storage_tank(
-        storage_tank: (StorageTank, Arc<Mutex<EnergySupply>>),
+        storage_tank: ((StorageTank, StorageTank), Arc<Mutex<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
-        let (mut storage_tank, energy_supply) = storage_tank;
+        let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
         //collect all values for steps and compare at the same time
-        let mut temp_n_values: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
-        let expected_temp_n_values = vec![
+        let mut temp_n_values_1: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
+        let mut temp_n_values_2: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
+        let expected_temp_n_values_1 = vec![
             [
                 43.5117037037037,
                 54.595555555555556,
@@ -1390,7 +1437,7 @@ mod tests {
                 54.595555555555556,
             ],
         ];
-        let expected_energy_supply_results = [
+        let expected_energy_supply_results_1 = [
             0.0,
             0.0,
             0.0,
@@ -1400,21 +1447,94 @@ mod tests {
             2.0255553251028573,
             0.0,
         ];
+        let expected_temp_n_values_2 = vec![
+            [
+                51.74444444444445,
+                59.687654320987654,
+                59.687654320987654,
+                59.687654320987654,
+            ],
+            [
+                44.83576096913369,
+                58.10817048730805,
+                59.37752591068435,
+                59.37752591068435,
+            ],
+            [
+                36.279411505184825,
+                54.60890513377094,
+                58.76352191705448,
+                59.06959902921961,
+            ],
+            [
+                27.803758539213316,
+                48.41088769491589,
+                57.11721566595131,
+                58.66493643832885,
+            ],
+            [
+                22.115012458237494,
+                41.46704433740872,
+                53.98882801141131,
+                57.857823384416925,
+            ],
+            [18.392953648519935, 34.88146733500239, 60.0, 60.0],
+            [
+                16.198781370486113,
+                29.539425498912564,
+                51.75379869179794,
+                59.687654320987654,
+            ],
+            [14.889587258686573, 25.21241834280409, 60.0, 60.0],
+        ];
+        let expected_energy_supply_results_2 = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.8689721305845337,
+            0.0,
+            1.1479005355748102,
+        ];
         for (t_idx, iteration) in simulation_time_for_storage_tank.iter().enumerate() {
-            storage_tank.demand_hot_water(
+            storage_tank1.demand_hot_water(
                 [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
                 iteration,
             );
-            temp_n_values.push(storage_tank.temp_n);
+            temp_n_values_1.push(storage_tank1.temp_n);
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["immersion"][t_idx],
-                expected_energy_supply_results[t_idx],
+                round_by_precision(
+                    energy_supply.lock().results_by_end_user()["immersion"][t_idx],
+                    1e7
+                ),
+                round_by_precision(expected_energy_supply_results_1[t_idx], 1e7),
                 "incorrect energy supplied returned"
+            );
+
+            storage_tank2.demand_hot_water(
+                [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
+                iteration,
+            );
+            temp_n_values_2.push(storage_tank2.temp_n);
+            assert_eq!(
+                round_by_precision(
+                    energy_supply.lock().results_by_end_user()["immersion2"][t_idx],
+                    1e7
+                ),
+                round_by_precision(expected_energy_supply_results_2[t_idx], 1e7),
+                "incorrect energy supplied returned in case where heater does not heat all layers, iteration {t_idx}"
             );
         }
         assert_eq!(
-            round_each_by_precision(temp_n_values, 1e7),
-            round_each_by_precision(expected_temp_n_values, 1e7)
+            round_each_by_precision(temp_n_values_1, 1e7),
+            round_each_by_precision(expected_temp_n_values_1, 1e7),
+            "incorrect temperatures returned"
+        );
+        assert_eq!(
+            round_each_by_precision(temp_n_values_2, 1e7),
+            round_each_by_precision(expected_temp_n_values_2, 1e7),
+            "incorrect temperatures returned in case where heater does not heat all layers"
         );
     }
 
