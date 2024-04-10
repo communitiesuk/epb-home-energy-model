@@ -81,8 +81,11 @@ impl MixerShower {
             vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold);
 
         if let Some(wwhrs) = &mut self.wwhrs {
+            // Assumed temperature entering WWHRS
+            let temp_drain = 35.0;
+
             let wwhrs_return_temperature =
-                wwhrs.return_temperature(temp_target, self.flowrate, timestep_idx);
+                wwhrs.return_temperature(temp_drain, self.flowrate, timestep_idx);
             match wwhrs {
                 Wwhrs::WWHRSInstantaneousSystemB(_) => {
                     vol_hot_water = vol_warm_water
