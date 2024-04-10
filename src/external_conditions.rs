@@ -650,6 +650,13 @@ impl ExternalConditions {
         let current_hour_idx = simulation_time.current_hour() as usize;
 
         let test1 = orientation - self.solar_azimuth_angles[current_hour_idx];
+        let test1 = if test1 > 180. {
+            test1 - 360.
+        } else if test1 < -180. {
+            test1 + 360.
+        } else {
+            test1
+        };
         let test2 = tilt - self.solar_altitudes[current_hour_idx];
 
         !(-90.0..=90.0).contains(&test1) || !(-90.0..=90.0).contains(&test2)
@@ -1126,7 +1133,7 @@ impl ExternalConditions {
         //                   includes the shading object type, depth, anf distance from element
         // """
 
-        // # first chceck if there is any radiation. This is needed to prevent a potential
+        // # first check if there is any radiation. This is needed to prevent a potential
         // # divide by zero error in the final step, but also, if there is no radiation
         // # then shading is irrelevant and we can skip the whole calculation
         let (direct, diffuse, _, diffuse_breakdown) = self
@@ -1138,8 +1145,22 @@ impl ExternalConditions {
         // # first check if the surface is outside the solar beam
         // # if so then direct shading is complete and we don't need to
         // # calculate shading from objects
+        // # TODO (from Python): The outside solar beam condition is based on a vertical projection
+        //                       of the surface and does not account for the condition where a
+        //                       surface that is only slightly pitched is exposed to direct solar
+        //                       radiation when the sun is high (e.g. a surface pitched slightly
+        //                       to the north will be exposed to direct solar radiation when the
+        //                       sun is high in the southern sky). As the solar radiation
+        //                       calculation already accounts for the situation where the sun is
+        //                       actually behind the surface (accounting for the combination of
+        //                       orientation and pitch), there is no need to zero it using the
+        //                       shading factor. For now, we set the shading factor to 1 and ignore
+        //                       shading from objects on the other side of the building (which if
+        //                       significantly pitched would have to be relatively tall and/or
+        //                       very close to cast a shadow on the surface in question anyway),
+        //                       so that results in the unshaded case will be correct.
         let fdir = if self.outside_solar_beam(tilt, orientation, &simulation_time) {
-            0.0
+            1.0
         } else {
             self.direct_shading_reduction_factor(
                 base_height,
