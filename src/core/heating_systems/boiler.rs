@@ -334,8 +334,8 @@ pub struct Boiler {
     power_part_load: f64,
     power_full_load: f64,
     power_standby: f64,
-    total_time_running_current_timestep: f64,
     // some kind of memoisation? review this
+    total_time_running_current_timestep: f64,
     corrected_full_load_gross: f64,
     room_temperature: f64,
     temp_rise_standby_loss: f64,

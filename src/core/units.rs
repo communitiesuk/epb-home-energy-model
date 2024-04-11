@@ -1,3 +1,11 @@
+use serde::{Deserialize, Deserializer};
+use uom::si::energy::kilowatt_hour;
+use uom::si::f64::{Energy, Length, ThermalConductivity, ThermodynamicTemperature};
+use uom::si::length::millimeter;
+use uom::si::thermal_conductivity::watt_per_meter_kelvin;
+use uom::si::thermodynamic_temperature::degree_celsius;
+use uom::unit;
+
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
 pub const JOULES_PER_KILOJOULE: u32 = 1_000;
 pub const WATTS_PER_KILOWATT: u32 = 1_000;
@@ -35,6 +43,46 @@ pub fn kelvin_to_celsius(temp_k: f64) -> f64 {
 pub fn celsius_to_kelvin(temp_c: f64) -> f64 {
     assert!(temp_c >= -273.15);
     temp_c + 273.15
+}
+
+pub fn deserialize_from_celsius<'de, D>(
+    deserializer: D,
+) -> Result<ThermodynamicTemperature, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let celsius_value = Deserialize::deserialize(deserializer)?;
+    Ok(ThermodynamicTemperature::new::<degree_celsius>(
+        celsius_value,
+    ))
+}
+
+pub fn deserialize_from_kwh<'de, D>(deserializer: D) -> Result<Energy, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let kwh_value = Deserialize::deserialize(deserializer)?;
+    Ok(Energy::new::<kilowatt_hour>(kwh_value))
+}
+
+pub fn deserialize_from_watts_per_meter_kelvin<'de, D>(
+    deserializer: D,
+) -> Result<ThermalConductivity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let wpmk_value = Deserialize::deserialize(deserializer)?;
+    Ok(ThermalConductivity::new::<watt_per_meter_kelvin>(
+        wpmk_value,
+    ))
+}
+
+pub fn deserialize_from_mm<'de, D>(deserializer: D) -> Result<Length, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mm_value = Deserialize::deserialize(deserializer)?;
+    Ok(Length::new::<millimeter>(mm_value))
 }
 
 #[cfg(test)]

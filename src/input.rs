@@ -1,3 +1,4 @@
+use crate::core::units::{deserialize_from_celsius, deserialize_from_kwh};
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::bail;
@@ -9,6 +10,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
+use uom::si::f64::{
+    Area, Energy, Length, ThermalConductivity, ThermodynamicTemperature, Velocity, Volume,
+};
 use variants_struct::VariantsStruct;
 
 pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
@@ -48,7 +52,7 @@ pub struct Input {
     #[serde(rename = "PartO_active_cooling_required")]
     part_o_active_cooling_required: Option<bool>,
     #[allow(dead_code)]
-    ground_floor_area: Option<f64>,
+    ground_floor_area: Option<Area>,
     #[allow(dead_code)]
     number_of_bedrooms: Option<u32>,
     #[allow(dead_code)]
@@ -69,11 +73,15 @@ pub struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
-    pub air_temperatures: Option<Vec<f64>>,
-    pub wind_speeds: Option<Vec<f64>>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub air_temperatures: Option<Vec<ThermodynamicTemperature>>,
+    pub wind_speeds: Option<Vec<Velocity>>,
     // check upstream whether anything uses this
-    #[serde(rename = "ground_temperatures")]
-    _ground_temperatures: Option<Vec<f64>>,
+    #[serde(
+        rename = "ground_temperatures",
+        deserialize_with = "deserialize_from_celsius"
+    )]
+    _ground_temperatures: Option<Vec<ThermodynamicTemperature>>,
     pub diffuse_horizontal_radiation: Option<Vec<f64>>,
     pub direct_beam_radiation: Option<Vec<f64>>,
     pub solar_reflectivity_of_ground: Option<Vec<f64>>,
@@ -289,7 +297,8 @@ pub struct ColdWaterSourceInput {
 #[serde(deny_unknown_fields)]
 pub struct ColdWaterSourceDetails {
     pub start_day: u32,
-    pub temperatures: Vec<f64>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temperatures: Vec<ThermodynamicTemperature>,
     pub time_series_step: f64,
 }
 
@@ -359,8 +368,10 @@ pub enum ControlDetails {
         time_series_step: f64,
         advanced_start: Option<f64>,
         logic_type: Option<ControlLogicType>,
-        setpoint_min: Option<f64>,
-        setpoint_max: Option<f64>,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        setpoint_min: Option<ThermodynamicTemperature>,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        setpoint_max: Option<ThermodynamicTemperature>,
         default_to_max: Option<bool>,
         schedule: Schedule,
     },
@@ -404,10 +415,13 @@ pub enum BoilerHotWaterTest {
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HotWaterSourceDetails {
     StorageTank {
-        volume: f64,
-        daily_losses: f64,
-        min_temp: f64,
-        setpoint_temp: f64,
+        volume: Volume,
+        #[serde(deserialize_with = "deserialize_from_kwh")]
+        daily_losses: Energy,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        min_temp: ThermodynamicTemperature,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        setpoint_temp: ThermodynamicTemperature,
         #[serde(rename = "Control_hold_at_setpnt")]
         control_hold_at_setpoint: Option<String>,
         #[serde(rename = "ColdWaterSource")]
@@ -527,7 +541,8 @@ pub enum HeatSource {
     #[serde(rename(deserialize = "HeatSourceWet"))]
     Wet {
         name: String,
-        temp_flow_limit_upper: Option<f64>,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_flow_limit_upper: Option<ThermodynamicTemperature>,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "EnergySupply")]
@@ -536,8 +551,8 @@ pub enum HeatSource {
         control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
-        #[serde(rename = "temp_return")]
-        temperature_return: Option<f64>,
+        #[serde(rename = "temp_return", deserialize_with = "deserialize_from_celsius")]
+        temperature_return: Option<ThermodynamicTemperature>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
@@ -636,16 +651,20 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
     // and surroundings, tested in accordance with BS 1566 or
     // EN 12897 or any equivalent standard. Vessel must be same
     // as that used during EN 16147 test
-    pub hw_vessel_loss_daily: f64,
+    #[serde(deserialize_with = "deserialize_from_kwh")]
+    pub hw_vessel_loss_daily: Energy,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
-    pub internal_diameter_mm: f64,
-    pub external_diameter_mm: f64,
-    pub length: f64,
-    pub insulation_thermal_conductivity: f64,
+    #[serde(deserialize_with = "deserialize_from_mm")]
+    pub internal_diameter_mm: Length,
+    #[serde(deserialize_with = "deserialize_from_mm")]
+    pub external_diameter_mm: Length,
+    pub length: Length,
+    #[serde(deserialize_with = "deserialize_from_watts_per_meter_kelvin")]
+    pub insulation_thermal_conductivity: ThermalConductivity,
     pub insulation_thickness_mm: f64,
     pub surface_reflectivity: bool,
     pub pipe_contents: WaterPipeContentsType,
@@ -746,7 +765,8 @@ pub struct WaterHeatingEvents {
 pub struct WaterHeatingEvent {
     pub start: f64,
     pub duration: Option<f64>,
-    pub temperature: f64,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temperature: ThermodynamicTemperature,
 }
 
 #[derive(Debug, Deserialize)]
@@ -776,7 +796,8 @@ pub type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
 pub enum SpaceHeatSystemDetails {
     #[serde(alias = "InstantElecHeater")]
     InstantElectricHeater {
-        temp_setback: Option<f64>,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_setback: Option<ThermodynamicTemperature>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
@@ -789,12 +810,14 @@ pub enum SpaceHeatSystemDetails {
     },
     #[serde(alias = "ElecStorageHeater")]
     ElectricStorageHeater {
-        temp_charge_cut: f64,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_charge_cut: ThermodynamicTemperature,
         rated_power: f64,
         rated_power_instant: f64,
-        air_flow_type: String,
         // don't know what the possible values are here yet
-        temp_dis_safe: f64,
+        air_flow_type: String,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_dis_safe: ThermodynamicTemperature,
         thermal_mass: f64,
         frac_convective: f64,
         #[serde(alias = "U_ins")]
@@ -834,7 +857,8 @@ pub enum SpaceHeatSystemDetails {
         control: Option<String>,
         // check upstream if this is used
         ecodesign_controller: EcoDesignController,
-        design_flow_temp: i32,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        design_flow_temp: ThermodynamicTemperature,
         #[serde(alias = "Zone")]
         zone: String, // as above, these are likely arbitrary names
     },
@@ -861,9 +885,12 @@ pub struct SpaceHeatSystemHeatSource {
 #[serde(deny_unknown_fields)]
 pub struct EcoDesignController {
     ecodesign_control_class: u32,
-    min_outdoor_temp: Option<i32>,
-    max_outdoor_temp: Option<i32>,
-    min_flow_temp: Option<i32>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    min_outdoor_temp: Option<ThermodynamicTemperature>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    max_outdoor_temp: Option<ThermodynamicTemperature>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    min_flow_temp: Option<ThermodynamicTemperature>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -983,17 +1010,24 @@ pub struct ZoneInput {
     // don't know what the options are yet
     #[serde(rename = "Control_WindowOpening")]
     pub control_window_opening: Option<HeatSourceControlType>,
-    pub area: f64,
-    pub volume: f64,
+    pub area: Area,
+    pub volume: Volume,
     // check upstream whether this is used
     #[serde(rename = "Lighting")]
     pub _lighting: Option<ZoneLighting>,
     // check upstream whether these two are used
-    #[serde(rename = "temp_setpnt_heat")]
-    _temp_setpnt_heat: Option<f64>,
-    #[serde(rename = "temp_setpnt_cool")]
-    _temp_setpnt_cool: Option<f64>,
-    pub temp_setpnt_init: Option<f64>,
+    #[serde(
+        rename = "temp_setpnt_heat",
+        deserialize_with = "deserialize_from_celsius"
+    )]
+    _temp_setpnt_heat: Option<ThermodynamicTemperature>,
+    #[serde(
+        rename = "temp_setpnt_cool",
+        deserialize_with = "deserialize_from_celsius"
+    )]
+    _temp_setpnt_cool: Option<ThermodynamicTemperature>,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temp_setpnt_init: Option<ThermodynamicTemperature>,
     #[serde(rename = "BuildingElement")]
     pub building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename = "ThermalBridging")]
@@ -1148,8 +1182,8 @@ pub struct SpaceCoolSystemDetails {
     #[serde(rename(deserialize = "type"))]
     pub system_type: SpaceCoolSystemType,
     // TODO check upstream whether this is used
-    #[serde(rename = "temp_setback")]
-    _temp_setback: Option<f64>,
+    #[serde(rename = "temp_setback", deserialize_with = "deserialize_from_celsius")]
+    _temp_setback: Option<ThermodynamicTemperature>,
     pub cooling_capacity: f64,
     pub efficiency: f64,
     pub frac_convective: f64,
@@ -1179,10 +1213,11 @@ pub enum HeatSourceWetDetails {
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         source_type: HeatPumpSourceType,
+        // unclear what this is
         #[serde(rename = "EnergySupply_heat_network")]
         energy_supply_heat_network: Option<String>,
-        // unclear what this is
-        temp_distribution_heat_network: Option<f64>,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_distribution_heat_network: Option<ThermodynamicTemperature>,
         sink_type: HeatPumpSinkType,
         #[serde(rename = "backup_ctrl_type")]
         backup_control_type: HeatPumpBackupControlType,
@@ -1192,9 +1227,12 @@ pub enum HeatSourceWetDetails {
         min_modulation_rate_35: Option<f64>,
         min_modulation_rate_55: Option<f64>,
         time_constant_onoff_operation: f64,
-        temp_return_feed_max: f64,
-        temp_lower_operating_limit: f64,
-        min_temp_diff_flow_return_for_hp_to_operate: f64,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_return_feed_max: ThermodynamicTemperature,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        temp_lower_operating_limit: ThermodynamicTemperature,
+        #[serde(deserialize_with = "deserialize_from_celsius")]
+        min_temp_diff_flow_return_for_hp_to_operate: ThermodynamicTemperature,
         var_flow_temp_ctrl_during_test: bool,
         power_heating_circ_pump: f64,
         power_source_circ_pump: f64,
@@ -1283,10 +1321,14 @@ pub struct HeatPumpTestDatum {
     pub cop: f64,
     #[serde(rename = "degradation_coeff")]
     pub degradation_coefficient: f64,
-    pub design_flow_temp: f64,
-    pub temp_outlet: f64,
-    pub temp_source: f64,
-    pub temp_test: f64,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub design_flow_temp: ThermodynamicTemperature,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temp_outlet: ThermodynamicTemperature,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temp_source: ThermodynamicTemperature,
+    #[serde(deserialize_with = "deserialize_from_celsius")]
+    pub temp_test: ThermodynamicTemperature,
 }
 
 pub type TestLetter = ArrayString<2>;

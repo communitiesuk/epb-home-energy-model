@@ -27,6 +27,7 @@ polyfit-rs = "0.2.1"
 serde = { version = "1.0.199", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.116"
+uom = { version = "0.36.0", features = ["serde"] }
 variants-struct = "0.1.1"
 
 [dev-dependencies]
