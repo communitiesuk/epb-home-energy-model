@@ -6,20 +6,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::error::Error;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use variants_struct::VariantsStruct;
 
-pub fn parse_input<T>(input: T) -> Result<Input, Box<dyn Error>>
-where
-    T: Read,
-{
-    let reader = BufReader::new(input);
-
-    let project_data: Input = serde_json::from_reader(reader)?;
-
-    Ok(project_data)
+pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
+    InputForProcessing::init_with_json(json)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1317,6 +1309,24 @@ pub struct WindowOpeningForCooling {
     // control: String,
 }
 
+pub struct InputForProcessing {
+    input: Input,
+}
+
+impl InputForProcessing {
+    pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
+        let reader = BufReader::new(json);
+
+        let input: Input = serde_json::from_reader(reader)?;
+
+        Ok(Self { input })
+    }
+
+    pub fn finalize(self) -> Input {
+        self.input
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1333,7 +1343,7 @@ mod test {
                 !e.file_type().is_dir() && e.file_name().to_str().unwrap().ends_with("json")
             })
         {
-            let parsed = parse_input(File::open(entry.path()).unwrap());
+            let parsed = ingest_for_processing(File::open(entry.path()).unwrap());
             assert!(
                 parsed.is_ok(),
                 "error was {:?} when parsing file {}",

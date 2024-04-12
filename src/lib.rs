@@ -15,13 +15,12 @@ extern crate lazy_static;
 pub use crate::corpus::RunResults;
 use crate::corpus::{Corpus, KeyString};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-use crate::input::{parse_input, ExternalConditionsInput};
+use crate::input::{ingest_for_processing, ExternalConditionsInput};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use std::io::Read;
-use std::ops::Deref;
 use std::sync::Arc;
 
 pub fn run_project<T>(
@@ -37,11 +36,11 @@ pub fn run_project<T>(
 where
     T: Read,
 {
-    let project_data = parse_input(input);
+    let input_for_processing = ingest_for_processing(input)?;
 
-    // println!("{:?}", project_data);
+    // do wrapper pre-processing here
 
-    let input = project_data.unwrap();
+    let input = input_for_processing.finalize();
 
     let external_conditions = external_conditions_from_input(
         input.external_conditions.clone(),
