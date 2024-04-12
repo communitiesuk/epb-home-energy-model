@@ -1704,9 +1704,11 @@ fn diverter_from_energy_supply(supply: &Option<EnergySupplyDetails>) -> Option<E
         .map(|supply| supply.diverter.clone().unwrap_or_default())
 }
 
+#[derive(Default)]
 pub struct InternalGainsCollection {
     total_internal_gains: Option<InternalGains>,
     metabolic_gains: Option<InternalGains>,
+    _evaporative_losses: Option<InternalGains>,
     lighting: Option<ApplianceGains>,
     cooking: Option<ApplianceGains>,
     cooking1: Option<ApplianceGains>,
@@ -1718,6 +1720,7 @@ fn internal_gains_from_input(input: InternalGainsInput) -> InternalGainsCollecti
     InternalGainsCollection {
         total_internal_gains: input.total_internal_gains.map(internal_gains_from_details),
         metabolic_gains: input.metabolic_gains.map(internal_gains_from_details),
+        _evaporative_losses: input.evaporative_losses.map(internal_gains_from_details),
         lighting: None,
         cooking: None,
         cooking1: None,

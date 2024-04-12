@@ -7,6 +7,7 @@ mod external_conditions;
 mod input;
 pub mod read_weather_file;
 mod simulation_time;
+mod wrappers;
 
 #[macro_use]
 extern crate is_close;
@@ -18,6 +19,7 @@ use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::input::{ingest_for_processing, ExternalConditionsInput};
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
+use crate::wrappers::future_homes_standard::future_homes_standard::apply_fhs_preprocessing;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use std::io::Read;
@@ -27,18 +29,21 @@ pub fn run_project<T>(
     input: T,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,
-    _fhs_assumptions: bool,
+    fhs_assumptions: bool,
     _fhs_fee_assumptions: bool,
-    _fhs_not_a_assumptions: bool,
-    _fhs_not_b_assumptions: bool,
+    fhs_not_a_assumptions: bool,
+    fhs_not_b_assumptions: bool,
     _heat_balance: bool,
 ) -> Result<RunResults, anyhow::Error>
 where
     T: Read,
 {
-    let input_for_processing = ingest_for_processing(input)?;
+    let mut input_for_processing = ingest_for_processing(input)?;
 
     // do wrapper pre-processing here
+    if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+        apply_fhs_preprocessing(&mut input_for_processing)?;
+    }
 
     let input = input_for_processing.finalize();
 

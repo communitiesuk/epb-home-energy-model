@@ -21,10 +21,16 @@ log = "0.4.21"
 nalgebra = "0.32.5"
 ordered-float = "4.2.0"
 parking_lot = { version = "0.12.2", features = ["hardware-lock-elision"] }
+partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+rand_distr = "0.4.3"
 serde = { version = "1.0.201", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.117"
+strum = { version = "0.26.2", features = ["derive"] }
+strum_macros = "0.26.2"
 variants-struct = "0.1.1"
 
 [dev-dependencies]

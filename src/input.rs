@@ -1,6 +1,6 @@
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -50,9 +50,9 @@ pub struct Input {
     #[allow(dead_code)]
     ground_floor_area: Option<f64>,
     #[allow(dead_code)]
-    number_of_bedrooms: Option<u32>,
+    number_of_bedrooms: Option<usize>,
     #[allow(dead_code)]
-    number_of_wet_rooms: Option<u32>,
+    number_of_wet_rooms: Option<usize>,
     #[allow(dead_code)]
     heating_control_type: Option<HeatingControlType>,
     #[allow(dead_code)]
@@ -90,13 +90,14 @@ pub struct ExternalConditionsInput {
     pub shading_segments: Vec<ShadingSegment>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InternalGains {
     #[serde(alias = "total internal gains")]
     pub total_internal_gains: Option<InternalGainsDetails>,
     #[serde(alias = "metabolic gains")]
     pub metabolic_gains: Option<InternalGainsDetails>,
+    pub evaporative_losses: Option<InternalGainsDetails>,
     pub other: Option<InternalGainsDetails>,
 }
 
@@ -112,6 +113,9 @@ pub struct InternalGainsDetails {
 pub struct InternalGainsSchedule {
     pub main: Value,
     pub day: Option<Value>,
+    pub week: Option<Value>,
+    pub weekday: Option<Value>,
+    pub weekend: Option<Value>,
 }
 
 pub type ApplianceGains = HashMap<String, ApplianceGainsDetails>;
@@ -121,7 +125,7 @@ pub type ApplianceGains = HashMap<String, ApplianceGainsDetails>;
 pub struct ApplianceGainsDetails {
     // check upstream whether type is used here
     #[serde(rename(deserialize = "type"))]
-    _gain_type: Option<ApplianceGainType>,
+    gain_type: Option<ApplianceGainType>,
     pub start_day: u32,
     pub time_series_step: f64,
     pub gains_fraction: f64,
@@ -152,6 +156,18 @@ pub struct EnergySupplyInput {
     pub heat_network: Option<HeatNetwork>,
 }
 
+impl EnergySupplyInput {
+    fn fuel_type_for_field(&self, field: &str) -> Option<FuelType> {
+        match field {
+            "mains elec" => self.mains_electricity.as_ref().map(|details| details.fuel),
+            "mains gas" => self.mains_gas.as_ref().map(|details| details.fuel),
+            "bulk LPG" => self.bulk_lpg.as_ref().map(|details| details.fuel),
+            "heat network" => self.heat_network.as_ref().map(|details| details.fuel),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyDetails {
@@ -166,7 +182,7 @@ pub struct EnergySupplyDetails {
 /// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
 /// in the input examples, so keeping them separate for the time being
 /// (It's also hard to see some of these as types of fuel)
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FuelType {
     Electricity,
@@ -177,7 +193,31 @@ pub enum FuelType {
     UnmetDemand,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+impl FuelType {
+    fn to_string(&self) -> String {
+        let json_string = serde_json::to_string(self).unwrap();
+        json_string.to_string()
+    }
+}
+
+impl TryFrom<EnergySupplyType> for FuelType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: EnergySupplyType) -> Result<Self, Self::Error> {
+        Ok(match value {
+            EnergySupplyType::Electricity => FuelType::Electricity,
+            EnergySupplyType::MainsGas => FuelType::MainsGas,
+            EnergySupplyType::Custom => FuelType::Custom,
+            EnergySupplyType::LpgBulk => FuelType::LpgBulk,
+            EnergySupplyType::UnmetDemand => FuelType::UnmetDemand,
+            _ => {
+                bail!("No fuel type defined to map the energy supply type {value:?}")
+            }
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum EnergySupplyType {
     #[serde(rename = "mains elec")]
     Electricity,
@@ -197,20 +237,10 @@ pub enum EnergySupplyType {
     HeatNetwork,
 }
 
-impl TryFrom<EnergySupplyType> for FuelType {
-    type Error = anyhow::Error;
-
-    fn try_from(value: EnergySupplyType) -> Result<Self, Self::Error> {
-        Ok(match value {
-            EnergySupplyType::Electricity => FuelType::Electricity,
-            EnergySupplyType::MainsGas => FuelType::MainsGas,
-            EnergySupplyType::Custom => FuelType::Custom,
-            EnergySupplyType::LpgBulk => FuelType::LpgBulk,
-            EnergySupplyType::UnmetDemand => FuelType::UnmetDemand,
-            _ => {
-                bail!("No fuel type defined to map the energy supply type {value:?}")
-            }
-        })
+impl EnergySupplyType {
+    pub fn to_string(&self) -> String {
+        let json_string = serde_json::to_string(self).unwrap();
+        json_string.to_string()
     }
 }
 
@@ -279,10 +309,28 @@ pub type HeatNetworkFactor = HashMap<String, f64>; // don't really know what the
 
 #[derive(Debug, Deserialize)]
 pub struct ColdWaterSourceInput {
-    #[serde(alias = "mains water")]
+    #[serde(rename = "mains water")]
     pub mains_water: Option<ColdWaterSourceDetails>,
-    #[serde(alias = "header tank")]
+    #[serde(rename = "header tank")]
     pub header_tank: Option<ColdWaterSourceDetails>,
+}
+
+impl ColdWaterSourceInput {
+    fn has_header_tank(&self) -> bool {
+        self.header_tank.is_some()
+    }
+
+    fn set_cold_water_source_details_by_key(&mut self, key: &str, source: ColdWaterSourceDetails) {
+        match key {
+            "mains water" => {
+                self.mains_water = Some(source);
+            }
+            "header tank" => {
+                self.header_tank = Some(source);
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -400,6 +448,22 @@ pub struct HotWaterSource {
     pub hot_water_cylinder: HotWaterSourceDetails,
 }
 
+impl HotWaterSource {
+    fn source_keys(&self) -> Vec<String> {
+        vec!["hw cylinder".to_string()]
+    }
+
+    fn hot_water_source_for_processing(
+        &mut self,
+        source_key: &str,
+    ) -> &mut impl HotWaterSourceDetailsForProcessing {
+        match source_key {
+            "hw cylinder" => &mut self.hot_water_cylinder,
+            _ => unreachable!("requested a source key {source_key} that is not known"),
+        }
+    }
+}
+
 #[derive(Clone, Deserialize_enum_str, PartialEq, Debug)]
 pub enum BoilerHotWaterTest {
     #[serde(rename = "M&L")]
@@ -467,6 +531,91 @@ pub enum HotWaterSourceDetails {
     },
 }
 
+pub trait HotWaterSourceDetailsForProcessing {
+    fn is_storage_tank(&self) -> bool;
+    fn is_combi_boiler(&self) -> bool;
+    fn is_hiu(&self) -> bool;
+    fn is_point_of_use(&self) -> bool;
+    #[allow(dead_code)]
+    fn is_heat_battery(&self) -> bool;
+    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
+    fn set_control_name_for_heat_sources(
+        &mut self,
+        control_name: impl Into<String>,
+    ) -> anyhow::Result<()>;
+    fn set_min_temp_and_setpoint_temp_if_storage_tank(&mut self, min_temp: f64, setpoint_temp: f64);
+}
+
+impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
+    fn is_storage_tank(&self) -> bool {
+        matches!(self, Self::StorageTank { .. })
+    }
+
+    fn is_combi_boiler(&self) -> bool {
+        matches!(self, Self::CombiBoiler { .. })
+    }
+
+    fn is_hiu(&self) -> bool {
+        matches!(self, Self::Hiu { .. })
+    }
+
+    fn is_point_of_use(&self) -> bool {
+        matches!(self, Self::PointOfUse { .. })
+    }
+
+    #[allow(dead_code)]
+    fn is_heat_battery(&self) -> bool {
+        matches!(self, Self::HeatBattery { .. })
+    }
+
+    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
+        if let Self::StorageTank {
+            ref mut control_hold_at_setpoint,
+            ..
+        } = self
+        {
+            *control_hold_at_setpoint = Some(control_name.into());
+        }
+    }
+
+    fn set_control_name_for_heat_sources(
+        &mut self,
+        control_name: impl Into<String>,
+    ) -> anyhow::Result<()> {
+        if let Self::StorageTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            let control_type_for_heat_sources =
+                HeatSourceControlType::deserialize(control_name.into().as_str())?;
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_control(control_type_for_heat_sources);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_min_temp_and_setpoint_temp_if_storage_tank(
+        &mut self,
+        min_temp: f64,
+        setpoint_temp: f64,
+    ) {
+        match self {
+            HotWaterSourceDetails::StorageTank {
+                min_temp: ref mut min_temp_store,
+                setpoint_temp: ref mut setpoint_temp_store,
+                ..
+            } => {
+                *min_temp_store = min_temp;
+                *setpoint_temp_store = setpoint_temp;
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub enum ColdWaterSourceType {
     #[serde(rename = "mains water")]
@@ -490,7 +639,7 @@ impl HeatSourceWetType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, VariantsStruct)]
+#[derive(Clone, Copy, Debug, Deserialize, VariantsStruct)]
 #[struct_name = "HeatSourceControl"]
 #[struct_derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceControlType {
@@ -504,6 +653,14 @@ pub enum HeatSourceControlType {
     WindowOpeningRestOfDwelling,
     #[serde(rename = "always off")]
     AlwaysOff,
+}
+
+impl HeatSourceControlType {
+    pub fn deserialize(control_type: &str) -> anyhow::Result<Self> {
+        Ok(serde_json::from_str(control_type).or(Err(anyhow!(
+            "The heat source control type '{control_type}' is not known"
+        )))?)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -539,6 +696,7 @@ pub enum HeatSource {
         solar_loop_piping_hlc: f64,
         heater_position: f64,
         thermostat_position: f64,
+        control: Option<HeatSourceControlType>,
     },
     #[serde(rename(deserialize = "HeatSourceWet"))]
     Wet {
@@ -616,6 +774,31 @@ impl HeatSource {
             HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => *energy_supply,
         }
     }
+
+    pub fn set_control(&mut self, control_type: HeatSourceControlType) {
+        match self {
+            HeatSource::ImmersionHeater {
+                ref mut control, ..
+            } => {
+                *control = Some(control_type);
+            }
+            HeatSource::SolarThermalSystem {
+                ref mut control, ..
+            } => {
+                *control = Some(control_type);
+            }
+            HeatSource::Wet {
+                ref mut control, ..
+            } => {
+                *control = Some(control_type);
+            }
+            HeatSource::HeatPumpHotWaterOnly {
+                ref mut control, ..
+            } => {
+                *control = control_type;
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -682,6 +865,22 @@ pub struct Shower {
     pub ies: Option<InstantElectricShower>,
 }
 
+impl Shower {
+    /// Provide shower field names as strings.
+    pub fn keys(&self) -> Vec<String> {
+        let mut keys = vec!["mixer".to_string()];
+        if self.ies.is_some() {
+            keys.push("IES".to_string());
+        }
+
+        keys
+    }
+
+    pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
+        name == "ies" && self.ies.is_some()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MixerShower {
@@ -720,6 +919,30 @@ pub struct Bath {
     pub medium: Option<BathDetails>,
 }
 
+impl Bath {
+    /// Provide bath field names as strings.
+    pub fn keys(&self) -> Vec<String> {
+        let mut keys = vec![];
+        if self.medium.is_some() {
+            keys.push("medium".to_string());
+        }
+
+        keys
+    }
+
+    pub fn size_for_field(&self, field: &str) -> Option<f64> {
+        (field == "medium")
+            .then(|| self.medium.as_ref().map(|details| details.size))
+            .unwrap_or_default()
+    }
+
+    pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
+        (field == "medium")
+            .then(|| self.medium.as_ref().map(|details| details.flowrate))
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BathDetails {
     pub size: f64,
@@ -728,10 +951,28 @@ pub struct BathDetails {
     pub flowrate: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUse {
     pub other: Option<OtherWaterUseDetails>,
+}
+
+impl OtherWaterUse {
+    /// Provide other water use field names as strings.
+    pub fn keys(&self) -> Vec<String> {
+        let mut keys = vec![];
+        if self.other.is_some() {
+            keys.push("other".to_string());
+        }
+
+        keys
+    }
+
+    pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
+        (field == "other")
+            .then(|| self.other.as_ref().map(|details| details.flowrate))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -749,7 +990,7 @@ pub struct WaterDistribution {
     pub external: WaterPipework,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct WaterHeatingEvents {
     #[serde(default)]
@@ -760,12 +1001,40 @@ pub struct WaterHeatingEvents {
     pub other: OtherWaterHeatingEvents,
 }
 
+impl WaterHeatingEvents {
+    fn add_event_for_type_and_name(
+        &mut self,
+        event_type: WaterHeatingEventType,
+        name: &str,
+        event: WaterHeatingEvent,
+    ) {
+        match event_type {
+            WaterHeatingEventType::Shower => {
+                self.shower.add_event_for_name(name, event);
+            }
+            WaterHeatingEventType::Bath => {
+                self.bath.add_event_for_name(name, event);
+            }
+            WaterHeatingEventType::Other => {
+                self.other.add_event_for_name(name, event);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
     pub start: f64,
     pub duration: Option<f64>,
     pub temperature: f64,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WaterHeatingEventType {
+    Shower,
+    Bath,
+    Other,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -776,16 +1045,48 @@ pub struct ShowerEvents {
     pub mixer: Vec<WaterHeatingEvent>,
 }
 
+impl ShowerEvents {
+    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
+        match name {
+            "ies" => {
+                self.ies.push(event);
+            }
+            "mixer" => {
+                self.mixer.push(event);
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BathEvents {
     pub medium: Vec<WaterHeatingEvent>,
 }
 
+impl BathEvents {
+    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
+        if name != "medium" {
+            return;
+        }
+        self.medium.push(event);
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterHeatingEvents {
     pub other: Vec<WaterHeatingEvent>,
+}
+
+impl OtherWaterHeatingEvents {
+    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
+        if name != "other" {
+            return;
+        }
+        self.other.push(event);
+    }
 }
 
 pub type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
@@ -840,7 +1141,7 @@ pub enum SpaceHeatSystemDetails {
         zone: String, // think these are just arbitrary names?
     },
     WetDistribution {
-        advanced_start: Option<u32>,
+        advanced_start: Option<f64>,
         thermal_mass: f64,
         c: f64,
         n: f64,
@@ -865,6 +1166,48 @@ pub enum SpaceHeatSystemDetails {
         #[serde(alias = "Control")]
         control: Option<String>,
     },
+}
+
+impl SpaceHeatSystemDetails {
+    pub fn set_control(&mut self, control_string: impl Into<String>) -> anyhow::Result<&Self> {
+        match self {
+            SpaceHeatSystemDetails::InstantElectricHeater {
+                ref mut control, ..
+            } => {
+                *control = Some(control_string.into());
+            }
+            SpaceHeatSystemDetails::ElectricStorageHeater {
+                ref mut control, ..
+            } => {
+                *control = Some(control_string.into());
+            }
+            SpaceHeatSystemDetails::WetDistribution {
+                ref mut control, ..
+            } => {
+                *control = Some(control_string.into());
+            }
+            SpaceHeatSystemDetails::WarmAir {
+                ref mut control, ..
+            } => {
+                *control = Some(control_string.into());
+            }
+        }
+        Ok(self)
+    }
+
+    pub fn temp_setback(&self) -> Option<f64> {
+        match self {
+            SpaceHeatSystemDetails::InstantElectricHeater { temp_setback, .. } => *temp_setback,
+            _ => None,
+        }
+    }
+
+    pub fn advanced_start(&self) -> Option<f64> {
+        match self {
+            SpaceHeatSystemDetails::WetDistribution { advanced_start, .. } => *advanced_start,
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1006,7 +1349,7 @@ pub struct ZoneInput {
     pub volume: f64,
     // check upstream whether this is used
     #[serde(rename = "Lighting")]
-    pub _lighting: Option<ZoneLighting>,
+    pub lighting: Option<ZoneLighting>,
     // check upstream whether these two are used
     #[serde(rename = "temp_setpnt_heat")]
     _temp_setpnt_heat: Option<f64>,
@@ -1019,7 +1362,7 @@ pub struct ZoneInput {
     pub thermal_bridging: ThermalBridging,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum SpaceHeatControlType {
     #[serde(rename = "livingroom")]
     LivingRoom,
@@ -1031,7 +1374,7 @@ pub enum SpaceHeatControlType {
 #[serde(deny_unknown_fields)]
 pub struct ZoneLighting {
     #[serde(rename = "efficacy")]
-    _efficacy: f64,
+    efficacy: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1153,8 +1496,10 @@ pub enum ThermalBridgingDetails {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum HeatingControlType {
+    #[serde(rename = "SeparateTimeAndTempControl")]
+    SeparateTimeAndTemperatureControl,
     #[serde(rename = "SeparateTempControl")]
     SeparateTemperatureControl,
 }
@@ -1166,9 +1511,7 @@ pub type SpaceCoolSystem = HashMap<String, SpaceCoolSystemDetails>;
 pub struct SpaceCoolSystemDetails {
     #[serde(rename(deserialize = "type"))]
     pub system_type: SpaceCoolSystemType,
-    // TODO check upstream whether this is used
-    #[serde(rename = "temp_setback")]
-    _temp_setback: Option<f64>,
+    temp_setback: Option<f64>,
     pub cooling_capacity: f64,
     pub efficiency: f64,
     pub frac_convective: f64,
@@ -1176,6 +1519,17 @@ pub struct SpaceCoolSystemDetails {
     pub energy_supply: EnergySupplyType,
     #[serde(rename = "Control")]
     pub control: Option<String>,
+}
+
+impl SpaceCoolSystemDetails {
+    pub fn set_control(&mut self, control_string: impl Into<String>) -> anyhow::Result<&Self> {
+        self.control = Some(control_string.into());
+        Ok(self)
+    }
+
+    pub fn temp_setback(&self) -> Option<f64> {
+        self.temp_setback
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1383,6 +1737,11 @@ pub struct InputForProcessing {
     input: Input,
 }
 
+/// This type makes methods available for restricted access by wrappers,
+/// in order to work towards a reasonable API for wrappers to interact with inputs rather than
+/// the more brittle approach of allowing full access to the input data structure.
+/// If the full access is encapsulated within methods here, it becomes possible to update the
+/// underlying structure without breaking wrappers.
 impl InputForProcessing {
     pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
         let reader = BufReader::new(json);
@@ -1394,6 +1753,448 @@ impl InputForProcessing {
 
     pub fn finalize(self) -> Input {
         self.input
+    }
+
+    pub fn set_simulation_time(&mut self, simulation_time: SimulationTime) -> &Self {
+        self.input.simulation_time = Arc::new(simulation_time);
+        self
+    }
+
+    pub fn reset_internal_gains(&mut self) -> &Self {
+        self.input.internal_gains = Default::default();
+        self
+    }
+
+    pub fn total_zone_area(&self) -> f64 {
+        self.input.zone.values().map(|z| z.area).sum::<f64>()
+    }
+
+    pub fn area_for_zone(&self, zone: &str) -> anyhow::Result<f64> {
+        Ok(self
+            .input
+            .zone
+            .get(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .area)
+    }
+
+    pub fn number_of_bedrooms(&self) -> Option<usize> {
+        self.input.number_of_bedrooms
+    }
+
+    pub fn set_metabolic_gains(
+        &mut self,
+        start_day: u32,
+        time_series_step: f64,
+        schedule_json: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input.internal_gains.metabolic_gains = Some(InternalGainsDetails {
+            start_day,
+            time_series_step,
+            schedule: serde_json::from_value(schedule_json)?,
+        });
+
+        Ok(self)
+    }
+
+    pub fn set_evaporative_losses(
+        &mut self,
+        start_day: u32,
+        time_series_step: f64,
+        schedule_json: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input.internal_gains.evaporative_losses = Some(InternalGainsDetails {
+            start_day,
+            time_series_step,
+            schedule: serde_json::from_value(schedule_json)?,
+        });
+
+        Ok(self)
+    }
+
+    pub fn heating_control_type(&self) -> Option<HeatingControlType> {
+        self.input.heating_control_type
+    }
+
+    pub fn add_control(
+        &mut self,
+        control_key: impl Into<String>,
+        control_json: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .control
+            .extra
+            .insert(control_key.into(), serde_json::from_value(control_json)?);
+
+        Ok(self)
+    }
+
+    pub fn zone_keys(&self) -> Vec<String> {
+        self.input.zone.keys().cloned().collect()
+    }
+
+    pub fn set_init_temp_setpoint_for_zone(
+        &mut self,
+        zone: &str,
+        temperature: f64,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .zone
+            .get_mut(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .temp_setpnt_init = Some(temperature);
+        Ok(self)
+    }
+
+    pub fn space_heat_control_for_zone(
+        &self,
+        zone: &str,
+    ) -> anyhow::Result<Option<SpaceHeatControlType>> {
+        Ok(self
+            .input
+            .zone
+            .get(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .space_heat_control)
+    }
+
+    pub fn space_heat_system_for_zone(&self, zone: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .input
+            .zone
+            .get(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .space_heat_system
+            .clone())
+    }
+
+    pub fn space_cool_system_for_zone(&self, zone: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .input
+            .zone
+            .get(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .space_cool_system
+            .clone())
+    }
+
+    pub fn lighting_efficacy_for_zone(&self, zone: &str) -> anyhow::Result<Option<f64>> {
+        Ok(self
+            .input
+            .zone
+            .get(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .lighting
+            .as_ref()
+            .map(|lighting| lighting.efficacy))
+    }
+
+    pub fn set_control_window_opening_for_zone(
+        &mut self,
+        zone: &str,
+        opening_type: Option<HeatSourceControlType>,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .zone
+            .get_mut(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
+            .control_window_opening = opening_type;
+        Ok(self)
+    }
+
+    pub fn set_control_string_for_space_heat_system(
+        &mut self,
+        space_heat_system: &str,
+        control_string: &str,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .space_heat_system
+            .as_mut()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .get_mut(space_heat_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_heat_system}'"
+            ))?
+            .set_control(control_string)?;
+        Ok(self)
+    }
+
+    pub fn set_control_string_for_space_cool_system(
+        &mut self,
+        space_cool_system: &str,
+        control_string: &str,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .space_cool_system
+            .as_mut()
+            .ok_or(anyhow!(
+                "There is no space cool system provided at the root of the input"
+            ))?
+            .get_mut(space_cool_system)
+            .ok_or(anyhow!(
+                "There is no provided space cool system with the name '{space_cool_system}'"
+            ))?
+            .set_control(control_string)?;
+        Ok(self)
+    }
+
+    pub fn temperature_setback_for_space_heat_system(
+        &self,
+        space_heat_system: &str,
+    ) -> anyhow::Result<Option<f64>> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .get(space_heat_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_heat_system}'"
+            ))?
+            .temp_setback())
+    }
+
+    pub fn temperature_setback_for_space_cool_system(
+        &self,
+        space_cool_system: &str,
+    ) -> anyhow::Result<Option<f64>> {
+        Ok(self
+            .input
+            .space_cool_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space cool system provided at the root of the input"
+            ))?
+            .get(space_cool_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_cool_system}'"
+            ))?
+            .temp_setback())
+    }
+
+    pub fn advanced_start_for_space_heat_system(
+        &self,
+        space_heat_system: &str,
+    ) -> anyhow::Result<Option<f64>> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .get(space_heat_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_heat_system}'"
+            ))?
+            .advanced_start())
+    }
+
+    pub fn hot_water_source_keys(&self) -> Vec<String> {
+        self.input.hot_water_source.source_keys()
+    }
+
+    pub fn hot_water_source_details_for_key(
+        &mut self,
+        source_key: &str,
+    ) -> &mut impl HotWaterSourceDetailsForProcessing {
+        self.input
+            .hot_water_source
+            .hot_water_source_for_processing(source_key)
+    }
+
+    pub fn set_lighting_gains(&mut self, gains_details: Value) -> anyhow::Result<&Self> {
+        self.set_gains_for_field("lighting", gains_details)
+    }
+
+    pub fn set_gains_for_field(
+        &mut self,
+        field: impl Into<String>,
+        gains_details: Value,
+    ) -> anyhow::Result<&Self> {
+        let gains_details: ApplianceGainsDetails = serde_json::from_value(gains_details)?;
+        let lighting_entry = self.input.appliance_gains.entry(field.into());
+        lighting_entry.and_modify(|entry| *entry = gains_details);
+
+        Ok(self)
+    }
+
+    pub fn appliance_gains_fields_for_cooking(&self) -> Vec<String> {
+        self.input
+            .appliance_gains
+            .iter()
+            .filter_map(|(field, gains)| {
+                matches!(gains.gain_type, Some(ApplianceGainType::Cooking)).then(|| field.clone())
+            })
+            .collect()
+    }
+
+    pub fn energy_supply_type_for_appliance_gains_field(&self, field: &str) -> Option<String> {
+        self.input
+            .appliance_gains
+            .get(field)
+            .map(|details| details.energy_supply.to_string())
+    }
+
+    pub fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
+        self.input.appliance_gains.remove(field);
+
+        Ok(())
+    }
+
+    pub fn fuel_type_for_energy_supply_field(&self, field: &str) -> anyhow::Result<String> {
+        Ok(self
+            .input
+            .energy_supply
+            .fuel_type_for_field(field)
+            .ok_or(anyhow!(
+                "Fuel type not provided for energy supply field '{field}'"
+            ))?
+            .to_string())
+    }
+
+    pub fn shower_flowrate(&self) -> Option<f64> {
+        self.input
+            .shower
+            .as_ref()
+            .map(|shower| shower.mixer.flowrate)
+    }
+
+    pub fn reset_water_heating_events(&mut self) {
+        self.input.water_heating_events = Default::default();
+    }
+
+    pub fn shower_keys(&self) -> Vec<String> {
+        match self.input.shower.as_ref() {
+            Some(shower) => shower.keys(),
+            None => Default::default(),
+        }
+    }
+
+    pub fn shower_name_refers_to_instant_electric(&self, name: &str) -> bool {
+        match &self.input.shower {
+            Some(shower) => shower.name_refers_to_instant_electric_shower(name),
+            None => false,
+        }
+    }
+
+    pub fn bath_keys(&self) -> Vec<String> {
+        match self.input.bath.as_ref() {
+            Some(bath) => bath.keys(),
+            None => Default::default(),
+        }
+    }
+
+    pub fn size_for_bath_field(&self, field: &str) -> Option<f64> {
+        self.input
+            .bath
+            .as_ref()
+            .and_then(|bath| bath.size_for_field(field))
+    }
+
+    pub fn flowrate_for_bath_field(&self, field: &str) -> Option<f64> {
+        self.input
+            .bath
+            .as_ref()
+            .and_then(|bath| bath.flowrate_for_field(field))
+    }
+
+    pub fn other_water_use_keys(&self) -> Vec<String> {
+        match self.input.other_water_use.as_ref() {
+            Some(other) => other.keys(),
+            None => Default::default(),
+        }
+    }
+
+    pub fn flow_rate_for_other_water_use_field(&self, field: &str) -> Option<f64> {
+        self.input
+            .other_water_use
+            .as_ref()
+            .and_then(|other| other.flowrate_for_field(field))
+    }
+
+    pub fn set_other_water_use_details(
+        &mut self,
+        cold_water_source_type: impl Into<String>,
+        flowrate: f64,
+    ) -> anyhow::Result<()> {
+        let other_details = Some(OtherWaterUseDetails {
+            flowrate,
+            cold_water_source: serde_json::from_str(cold_water_source_type.into().as_str())?,
+        });
+        match self.input.other_water_use {
+            Some(ref mut other_water_use) => {
+                other_water_use.other = other_details;
+            }
+            None => {
+                self.input.other_water_use = Some(OtherWaterUse {
+                    other: other_details,
+                    ..Default::default()
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Override all the vol_hw_daily_average values on the heat pump hot water only heat sources.
+    pub fn override_vol_hw_daily_average_on_heat_pumps(&mut self, vol_hw_daily_average: f64) {
+        if let HotWaterSourceDetails::StorageTank {
+            ref mut heat_source,
+            ..
+        } = self.input.hot_water_source.hot_water_cylinder
+        {
+            let heat_source_keys: Vec<String> = heat_source.keys().cloned().collect();
+            for heat_source_key in heat_source_keys {
+                if let HeatSource::HeatPumpHotWaterOnly {
+                    vol_hw_daily_average: ref mut input_hw_daily_average,
+                    ..
+                } = heat_source.get_mut(&heat_source_key).unwrap()
+                {
+                    *input_hw_daily_average = vol_hw_daily_average;
+                }
+            }
+        }
+    }
+
+    pub fn part_g_compliance(&self) -> Option<bool> {
+        self.input.part_g_compliance
+    }
+
+    pub fn add_water_heating_event(
+        &mut self,
+        event_type: WaterHeatingEventType,
+        subtype_name: &str,
+        event: WaterHeatingEvent,
+    ) {
+        self.input.water_heating_events.add_event_for_type_and_name(
+            event_type,
+            subtype_name,
+            event,
+        );
+    }
+
+    pub fn defines_window_opening_for_cooling(&self) -> bool {
+        self.input.window_opening_for_cooling.is_some()
+    }
+
+    pub fn cold_water_source_has_header_tank(&self) -> bool {
+        self.input.cold_water_source.has_header_tank()
+    }
+
+    pub fn set_cold_water_source_by_key(
+        &mut self,
+        key: &str,
+        source_details: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input
+            .cold_water_source
+            .set_cold_water_source_details_by_key(key, serde_json::from_value(source_details)?);
+        Ok(self)
     }
 }
 
