@@ -28,32 +28,32 @@ pub struct Input {
     pub hot_water_source: HotWaterSource,
     pub shower: Option<Shower>,
     pub bath: Option<Bath>,
-    #[serde(rename(deserialize = "Other"))]
+    #[serde(rename = "Other")]
     pub other_water_use: Option<OtherWaterUse>,
-    #[serde(rename(deserialize = "Distribution"))]
+    #[serde(rename = "Distribution")]
     pub water_distribution: Option<WaterDistribution>,
-    #[serde(rename(deserialize = "Events"))]
+    #[serde(rename = "Events")]
     pub water_heating_events: WaterHeatingEvents,
     pub space_heat_system: Option<SpaceHeatSystem>,
     pub space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
     pub infiltration: Infiltration,
     pub zone: ZoneDictionary,
-    #[serde(rename(deserialize = "PartGcompliance"))]
+    #[serde(rename = "PartGcompliance")]
     part_g_compliance: Option<bool>,
-    #[serde(rename(deserialize = "PartO_active_cooling_required"))]
+    #[serde(rename = "PartO_active_cooling_required")]
     part_o_active_cooling_required: Option<bool>,
     ground_floor_area: Option<f64>,
     number_of_bedrooms: Option<u32>,
     number_of_wet_rooms: Option<u32>,
     heating_control_type: Option<HeatingControlType>,
-    #[serde(rename(deserialize = "WaterHeatSchedDefault"))]
+    #[serde(rename = "WaterHeatSchedDefault")]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
     pub heat_source_wet: Option<HeatSourceWet>,
-    #[serde(rename(deserialize = "WWHRS"))]
+    #[serde(rename = "WWHRS")]
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     pub on_site_generation: Option<OnSiteGeneration>,
-    #[serde(rename(deserialize = "Window_Opening_For_Cooling"))]
+    #[serde(rename = "Window_Opening_For_Cooling")]
     pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
 }
 
@@ -142,7 +142,7 @@ pub struct EnergySupplyInput {
     pub mains_electricity: Option<EnergySupplyDetails>,
     #[serde(alias = "mains gas")]
     pub mains_gas: Option<EnergySupplyDetails>,
-    #[serde(rename(deserialize = "bulk LPG"))]
+    #[serde(rename = "bulk LPG")]
     pub bulk_lpg: Option<EnergySupplyDetails>,
     #[serde(alias = "heat network")]
     pub heat_network: Option<HeatNetwork>,
@@ -153,7 +153,7 @@ pub struct EnergySupplyInput {
 pub struct EnergySupplyDetails {
     pub fuel: EnergySupplyType,
     pub diverter: Option<EnergyDiverter>,
-    #[serde(rename(deserialize = "ElectricBattery"))]
+    #[serde(rename = "ElectricBattery")]
     pub electric_battery: Option<ElectricBattery>,
 }
 
@@ -163,17 +163,17 @@ pub enum EnergySupplyType {
     Electricity,
     #[serde(alias = "mains_gas", alias = "mains gas")]
     MainsGas,
-    #[serde(rename(deserialize = "unmet_demand"))]
+    #[serde(rename = "unmet_demand")]
     UnmetDemand,
-    #[serde(rename(deserialize = "custom"))]
+    #[serde(rename = "custom")]
     Custom,
     #[serde(alias = "bulk LPG", alias = "LPG_bulk")]
     LpgBulk,
-    #[serde(rename(deserialize = "LPG_bottled"))]
+    #[serde(rename = "LPG_bottled")]
     LpgBottled,
-    #[serde(rename(deserialize = "LPG_condition_11F"))]
+    #[serde(rename = "LPG_condition_11F")]
     LpgCondition11F,
-    #[serde(rename(deserialize = "heat network"))]
+    #[serde(rename = "heat network")]
     HeatNetwork,
 }
 
@@ -196,7 +196,7 @@ impl Default for EnergyDiverter {
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum StorageTankType {
-    #[serde(rename(deserialize = "hw cylinder"))]
+    #[serde(rename = "hw cylinder")]
     HotWaterCylinder,
 }
 
@@ -211,7 +211,7 @@ impl StorageTankType {
 
 #[derive(Clone, Debug, Deserialize)]
 pub enum DiverterHeatSourceType {
-    #[serde(rename(deserialize = "immersion"))]
+    #[serde(rename = "immersion")]
     Immersion,
 }
 
@@ -299,7 +299,7 @@ where
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ControlDetails {
-    #[serde[rename(deserialize = "OnOffTimeControl")]]
+    #[serde(rename = "OnOffTimeControl")]
     OnOffTime {
         start_day: u32,
         time_series_step: f64,
@@ -307,7 +307,7 @@ pub enum ControlDetails {
         logic_type: Option<ControlLogicType>,
         schedule: Schedule,
     },
-    #[serde[rename(deserialize = "OnOffCostMinimisingTimeControl")]]
+    #[serde(rename = "OnOffCostMinimisingTimeControl")]
     OnOffCostMinimisingTime {
         start_day: u32,
         time_series_step: f64,
@@ -316,7 +316,7 @@ pub enum ControlDetails {
         time_on_daily: Option<f64>,
         schedule: Schedule,
     },
-    #[serde[rename(deserialize = "SetpointTimeControl")]]
+    #[serde(rename = "SetpointTimeControl")]
     SetpointTime {
         start_day: u32,
         time_series_step: f64,
@@ -327,7 +327,7 @@ pub enum ControlDetails {
         default_to_max: Option<bool>,
         schedule: Schedule,
     },
-    #[serde[rename(deserialize = "ToUChargeControl")]]
+    #[serde(rename = "ToUChargeControl")]
     ToUCharge {
         start_day: u32,
         time_series_step: f64,
@@ -347,7 +347,7 @@ pub enum ControlLogicType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HotWaterSource {
-    #[serde[rename(deserialize = "hw cylinder")]]
+    #[serde(rename = "hw cylinder")]
     pub hot_water_cylinder: HotWaterSourceDetails,
 }
 
@@ -371,36 +371,36 @@ pub enum HotWaterSourceDetails {
         daily_losses: f64,
         min_temp: f64,
         setpoint_temp: f64,
-        #[serde(rename(deserialize = "Control_hold_at_setpnt"))]
+        #[serde(rename = "Control_hold_at_setpnt")]
         control_hold_at_setpoint: Option<String>,
-        #[serde(rename(deserialize = "ColdWaterSource"))]
+        #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(rename(deserialize = "HeatSource"))]
+        #[serde(rename = "HeatSource")]
         heat_source: HashMap<String, HeatSource>,
         primary_pipework: Option<WaterPipework>,
     },
     CombiBoiler {
-        #[serde(rename(deserialize = "ColdWaterSource"))]
+        #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(rename(deserialize = "HeatSourceWet"))]
+        #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
-        #[serde(rename(deserialize = "separate_DHW_tests"))]
+        #[serde(rename = "separate_DHW_tests")]
         separate_dhw_tests: BoilerHotWaterTest,
         rejected_energy_1: f64,
         fuel_energy_2: f64,
         rejected_energy_2: f64,
         storage_loss_factor_2: f64,
         rejected_factor_3: f64,
-        #[serde(rename(deserialize = "daily_HW_usage"))]
+        #[serde(rename = "daily_HW_usage")]
         daily_hot_water_usage: f64,
     },
     #[serde(rename(deserialize = "HIU"))]
     Hiu {
-        #[serde(rename(deserialize = "ColdWaterSource"))]
+        #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(rename(deserialize = "HeatSourceWet"))]
+        #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
@@ -408,9 +408,9 @@ pub enum HotWaterSourceDetails {
     PointOfUse {
         power: f64,
         efficiency: f64,
-        #[serde[rename(deserialize = "EnergySupply")]]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename(deserialize = "ColdWaterSource"))]
+        #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
     },
     HeatBattery {
@@ -420,9 +420,9 @@ pub enum HotWaterSourceDetails {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub enum ColdWaterSourceType {
-    #[serde(rename(deserialize = "mains water"))]
+    #[serde(rename = "mains water")]
     MainsWater,
-    #[serde(rename(deserialize = "header tank"))]
+    #[serde(rename = "header tank")]
     HeaderTank,
 }
 
@@ -445,11 +445,11 @@ impl HeatSourceWetType {
 #[struct_name = "HeatSourceControl"]
 #[struct_derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceControlType {
-    #[serde(rename(deserialize = "hw timer"))]
+    #[serde(rename = "hw timer")]
     HotWaterTimer,
-    #[serde(rename(deserialize = "window opening"))]
+    #[serde(rename = "window opening")]
     WindowOpening,
-    #[serde(rename(deserialize = "always off"))]
+    #[serde(rename = "always off")]
     AlwaysOff,
 }
 
@@ -458,9 +458,9 @@ pub enum HeatSourceControlType {
 pub enum HeatSource {
     ImmersionHeater {
         power: f64,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename(deserialize = "Control"))]
+        #[serde(rename = "Control")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
@@ -477,10 +477,10 @@ pub enum HeatSource {
         collector_mass_flow_rate: f64,
         power_pump: f64,
         power_pump_control: f64,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         tilt: f64,
-        #[serde(rename(deserialize = "orientation360"))]
+        #[serde(rename = "orientation360")]
         #[serde(deserialize_with = "deserialize_orientation")]
         orientation: f64,
         solar_loop_piping_hlc: f64,
@@ -491,25 +491,25 @@ pub enum HeatSource {
     Wet {
         name: String,
         temp_flow_limit_upper: Option<f64>,
-        #[serde(rename(deserialize = "ColdWaterSource"))]
+        #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename(deserialize = "Control"))]
+        #[serde(rename = "Control")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
-        #[serde(rename(deserialize = "temp_return"))]
+        #[serde(rename = "temp_return")]
         temperature_return: Option<f64>,
     },
-    #[serde(rename(deserialize = "HeatPump_HWOnly"))]
+    #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
         power_max: f64,
         vol_hw_daily_average: f64,
         test_data: HeatPumpHotWaterTestData,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename(deserialize = "Control"))]
+        #[serde(rename = "Control")]
         control: HeatSourceControlType,
         heater_position: f64,
         thermostat_position: f64,
@@ -567,19 +567,19 @@ impl HeatSource {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub enum SolarCellLocation {
-    #[serde(rename(deserialize = "OUT"))]
+    #[serde(rename = "OUT")]
     Out,
-    #[serde(rename(deserialize = "HS"))]
+    #[serde(rename = "HS")]
     Hs,
-    #[serde(rename(deserialize = "NHS"))]
+    #[serde(rename = "NHS")]
     Nhs,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct HeatPumpHotWaterTestData {
-    #[serde(rename(deserialize = "L"))]
+    #[serde(rename = "L")]
     pub l: Option<HeatPumpHotWaterOnlyTestDatum>,
-    #[serde(rename(deserialize = "M"))]
+    #[serde(rename = "M")]
     pub m: HeatPumpHotWaterOnlyTestDatum,
 }
 
@@ -588,7 +588,7 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
     // CoP measured during EN 16147 test
     pub cop_dhw: f64,
     // daily energy requirement (kWh/day) for tapping profile used for test
-    #[serde(rename(deserialize = "hw_tapping_prof_daily_total"))]
+    #[serde(rename = "hw_tapping_prof_daily_total")]
     pub hw_tapping_prof_daily: f64,
     // electrical input energy (kWh) measured in EN 16147 test over 24 hrs
     pub energy_input_measured: f64,
@@ -623,32 +623,32 @@ pub enum WaterPipeContentsType {
 #[derive(Debug, Deserialize)]
 pub struct Shower {
     pub mixer: MixerShower,
-    #[serde(rename(deserialize = "IES"))]
+    #[serde(rename = "IES")]
     pub ies: Option<InstantElectricShower>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MixerShower {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     pub shower_type: ShowerType,
     pub flowrate: f64,
-    #[serde(rename(deserialize = "ColdWaterSource"))]
+    #[serde(rename = "ColdWaterSource")]
     pub cold_water_source: ColdWaterSourceType,
-    #[serde(rename(deserialize = "WWHRS"))]
+    #[serde(rename = "WWHRS")]
     pub waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstantElectricShower {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     pub shower_type: ShowerType,
     // somewhat of a redundant value possibly
     pub rated_power: f64,
-    #[serde(rename(deserialize = "ColdWaterSource"))]
+    #[serde(rename = "ColdWaterSource")]
     pub cold_water_source: ColdWaterSourceType,
-    #[serde(rename(deserialize = "EnergySupply"))]
+    #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
 }
 
@@ -668,7 +668,7 @@ pub struct Bath {
 #[derive(Debug, Deserialize)]
 pub struct BathDetails {
     pub size: f64,
-    #[serde(rename(deserialize = "ColdWaterSource"))]
+    #[serde(rename = "ColdWaterSource")]
     pub cold_water_source: ColdWaterSourceType,
     pub flowrate: f64,
 }
@@ -683,7 +683,7 @@ pub struct OtherWaterUse {
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUseDetails {
     pub flowrate: f64,
-    #[serde(rename(deserialize = "ColdWaterSource"))]
+    #[serde(rename = "ColdWaterSource")]
     pub cold_water_source: ColdWaterSourceType,
 }
 
@@ -739,7 +739,7 @@ pub enum SpaceHeatSystemDetails {
     InstantElectricHeater {
         temp_setback: Option<f64>,
         rated_power: f64,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         #[serde(alias = "Control")]
         control: Option<String>,
@@ -770,12 +770,12 @@ pub enum SpaceHeatSystemDetails {
         thermal_mass_wall: f64,
         fan_pwr: f64,
         n_units: u32,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         #[serde(alias = "Control")]
         control: Option<String>,
         // don't know possible options here
-        #[serde(rename(deserialize = "ControlCharger"))]
+        #[serde(rename = "ControlCharger")]
         control_charger: String,
         // don't know possible options here
         #[serde(alias = "Zone")]
@@ -789,7 +789,7 @@ pub enum SpaceHeatSystemDetails {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         // unclear which values are possible here
-        #[serde(rename(deserialize = "HeatSource"))]
+        #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
         #[serde(alias = "Control")]
         control: Option<String>,
@@ -802,7 +802,7 @@ pub enum SpaceHeatSystemDetails {
     WarmAir {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
-        #[serde(rename(deserialize = "HeatSource"))]
+        #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
         #[serde(alias = "Control")]
         control: Option<String>,
@@ -828,23 +828,23 @@ pub struct EcoDesignController {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Ventilation {
-    #[serde(rename(deserialize = "NatVent"))]
+    #[serde(rename = "NatVent")]
     Natural { req_ach: f64 },
-    #[serde(rename(deserialize = "WHEV"))]
+    #[serde(rename = "WHEV")]
     Whev {
         req_ach: f64,
-        #[serde(rename(deserialize = "SFP"))]
+        #[serde(rename = "SFP")]
         sfp: f64,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
     },
-    #[serde(rename(deserialize = "MVHR"))]
+    #[serde(rename = "MVHR")]
     Mvhr {
         req_ach: f64,
-        #[serde(rename(deserialize = "SFP"))]
+        #[serde(rename = "SFP")]
         sfp: f64,
         efficiency: f64,
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         ductwork: VentilationDuctwork,
     },
@@ -870,7 +870,7 @@ pub struct VentilationDuctwork {
     pub insulation_thermal_conductivity: f64,
     pub insulation_thickness_mm: f64,
     pub reflective: bool,
-    #[serde(rename(deserialize = "MVHR_location"))]
+    #[serde(rename = "MVHR_location")]
     pub mvhr_location: MVHRLocation,
 }
 
@@ -922,9 +922,9 @@ pub enum InfiltrationBuildType {
 
 #[derive(Debug, Deserialize)]
 pub enum InfiltrationTestType {
-    #[serde(rename(deserialize = "50Pa"))]
+    #[serde(rename = "50Pa")]
     FiftyPascals,
-    #[serde(rename(deserialize = "4Pa"))]
+    #[serde(rename = "4Pa")]
     FourPascals,
 }
 
@@ -933,25 +933,25 @@ pub type ZoneDictionary = IndexMap<String, ZoneInput>;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneInput {
-    #[serde(rename(deserialize = "SpaceHeatSystem"))]
+    #[serde(rename = "SpaceHeatSystem")]
     pub space_heat_system: Option<String>,
-    #[serde(rename(deserialize = "SpaceCoolSystem"))]
+    #[serde(rename = "SpaceCoolSystem")]
     pub space_cool_system: Option<String>,
-    #[serde(rename(deserialize = "SpaceHeatControl"))]
+    #[serde(rename = "SpaceHeatControl")]
     pub space_heat_control: Option<SpaceHeatControlType>,
     // don't know what the options are yet
-    #[serde(rename(deserialize = "Control_WindowOpening"))]
+    #[serde(rename = "Control_WindowOpening")]
     pub control_window_opening: Option<HeatSourceControlType>,
     pub area: f64,
     pub volume: f64,
-    #[serde(rename(deserialize = "Lighting"))]
+    #[serde(rename = "Lighting")]
     pub lighting: Option<ZoneLighting>,
     pub temp_setpnt_heat: Option<f64>,
     pub temp_setpnt_cool: Option<f64>,
     pub temp_setpnt_init: Option<f64>,
-    #[serde(rename(deserialize = "BuildingElement"))]
+    #[serde(rename = "BuildingElement")]
     pub building_elements: IndexMap<String, BuildingElement>,
-    #[serde(rename(deserialize = "ThermalBridging"))]
+    #[serde(rename = "ThermalBridging")]
     pub thermal_bridging: ThermalBridging, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
 }
 
@@ -972,7 +972,7 @@ pub struct ZoneLighting {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum BuildingElement {
-    #[serde(rename(deserialize = "BuildingElementOpaque"))]
+    #[serde(rename = "BuildingElementOpaque")]
     Opaque {
         a_sol: f64,
         u_value: Option<f64>,
@@ -981,7 +981,7 @@ pub enum BuildingElement {
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
         pitch: f64,
-        #[serde(rename(deserialize = "orientation360"))]
+        #[serde(rename = "orientation360")]
         #[serde(deserialize_with = "deserialize_orientation")]
         orientation: f64,
         base_height: f64,
@@ -993,13 +993,13 @@ pub enum BuildingElement {
         h_ce: Option<f64>,
         h_re: Option<f64>,
     },
-    #[serde(rename(deserialize = "BuildingElementTransparent"))]
+    #[serde(rename = "BuildingElementTransparent")]
     Transparent {
         u_value: Option<f64>,
         area: Option<f64>,
         r_c: Option<f64>,
         pitch: f64,
-        #[serde(rename(deserialize = "orientation360"))]
+        #[serde(rename = "orientation360")]
         #[serde(deserialize_with = "deserialize_orientation")]
         orientation: f64,
         g_value: f64,
@@ -1009,7 +1009,7 @@ pub enum BuildingElement {
         width: f64,
         shading: Vec<WindowShadingObject>,
     },
-    #[serde(rename(deserialize = "BuildingElementGround"))]
+    #[serde(rename = "BuildingElementGround")]
     Ground {
         area: f64,
         pitch: f64,
@@ -1022,7 +1022,7 @@ pub enum BuildingElement {
         perimeter: f64,
         psi_wall_floor_junc: f64,
     },
-    #[serde(rename(deserialize = "BuildingElementAdjacentZTC"))]
+    #[serde(rename = "BuildingElementAdjacentZTC")]
     AdjacentZTC {
         area: f64,
         pitch: f64,
@@ -1031,7 +1031,7 @@ pub enum BuildingElement {
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
     },
-    #[serde(rename(deserialize = "BuildingElementAdjacentZTU_Simple"))]
+    #[serde(rename = "BuildingElementAdjacentZTU_Simple")]
     AdjacentZTUSimple {
         area: f64,
         pitch: f64,
@@ -1081,7 +1081,7 @@ pub enum ThermalBridgingDetails {
         linear_thermal_transmittance: f64,
         length: f64,
     },
-    #[serde(rename(deserialize = "ThermalBridgePoint"))]
+    #[serde(rename = "ThermalBridgePoint")]
     Point {
         #[serde(alias = "heat_transfer_coeff")]
         heat_transfer_coefficient: f64,
@@ -1090,7 +1090,7 @@ pub enum ThermalBridgingDetails {
 
 #[derive(Debug, Deserialize)]
 pub enum HeatingControlType {
-    #[serde(rename(deserialize = "SeparateTempControl"))]
+    #[serde(rename = "SeparateTempControl")]
     SeparateTemperatureControl,
 }
 
@@ -1105,9 +1105,9 @@ pub struct SpaceCoolSystemDetails {
     pub cooling_capacity: f64,
     pub efficiency: f64,
     pub frac_convective: f64,
-    #[serde(rename(deserialize = "EnergySupply"))]
+    #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
-    #[serde(rename(deserialize = "Control"))]
+    #[serde(rename = "Control")]
     pub control: Option<String>,
 }
 
@@ -1128,15 +1128,15 @@ pub type HeatSourceWet = HashMap<String, HeatSourceWetDetails>;
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSourceWetDetails {
     HeatPump {
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         source_type: HeatPumpSourceType,
-        #[serde(rename(deserialize = "EnergySupply_heat_network"))]
+        #[serde(rename = "EnergySupply_heat_network")]
         energy_supply_heat_network: Option<String>,
         // unclear what this is
         temp_distribution_heat_network: Option<f64>,
         sink_type: HeatPumpSinkType,
-        #[serde(rename(deserialize = "backup_ctrl_type"))]
+        #[serde(rename = "backup_ctrl_type")]
         backup_control_type: HeatPumpBackupControlType,
         time_delay_backup: f64,
         modulating_control: bool,
@@ -1157,9 +1157,9 @@ pub enum HeatSourceWetDetails {
         test_data: Vec<HeatPumpTestDatum>,
     },
     Boiler {
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename(deserialize = "EnergySupply_aux"))]
+        #[serde(rename = "EnergySupply_aux")]
         energy_supply_auxiliary: EnergySupplyType,
         rated_power: f64,
         efficiency_full_load: f64,
@@ -1172,7 +1172,7 @@ pub enum HeatSourceWetDetails {
         electricity_standby: f64,
     },
     HeatBattery {
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         heat_battery_location: HeatSourceLocation,
         electricity_circ_pump: f64,
@@ -1187,15 +1187,15 @@ pub enum HeatSourceWetDetails {
         max_rated_losses: f64,
         // number of units installed in zone
         number_of_units: usize,
-        #[serde(rename(deserialize = "ControlCharge"))]
+        #[serde(rename = "ControlCharge")]
         control_charge: String,
     },
-    #[serde(rename(deserialize = "HIU"))]
+    #[serde(rename = "HIU")]
     Hiu {
-        #[serde(rename(deserialize = "EnergySupply"))]
+        #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         power_max: f64,
-        #[serde(rename(deserialize = "HIU_daily_loss"))]
+        #[serde(rename = "HIU_daily_loss")]
         hiu_daily_loss: f64,
         building_level_distribution_losses: f64,
     },
@@ -1233,7 +1233,7 @@ pub struct HeatPumpTestDatum {
     pub test_letter: TestLetter,
     pub capacity: f64,
     pub cop: f64,
-    #[serde(rename(deserialize = "degradation_coeff"))]
+    #[serde(rename = "degradation_coeff")]
     pub degradation_coefficient: f64,
     pub design_flow_temp: f64,
     pub temp_outlet: f64,
@@ -1255,9 +1255,9 @@ pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails
 
 #[derive(Debug, Deserialize)]
 pub struct WasteWaterHeatRecoveryDetails {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     pub system_type: WwhrsType,
-    #[serde(rename(deserialize = "ColdWaterSource"))]
+    #[serde(rename = "ColdWaterSource")]
     pub cold_water_source: ColdWaterSourceType,
     pub flow_rates: Vec<f64>,
     pub efficiencies: Vec<f64>,
@@ -1279,18 +1279,18 @@ pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnSiteGenerationDetails {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     generation_type: OnSiteGenerationType,
     pub peak_power: f64,
     pub ventilation_strategy: OnSiteGenerationVentilationStrategy,
     pub pitch: f64,
-    #[serde(rename(deserialize = "orientation360"))]
+    #[serde(rename = "orientation360")]
     #[serde(deserialize_with = "deserialize_orientation")]
     pub orientation: f64,
     pub base_height: f64,
     pub height: f64,
     pub width: f64,
-    #[serde(rename(deserialize = "EnergySupply"))]
+    #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
 }
 
