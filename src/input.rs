@@ -938,7 +938,7 @@ pub struct ZoneInput {
     #[serde(rename(deserialize = "SpaceCoolSystem"))]
     pub space_cool_system: Option<String>,
     #[serde(rename(deserialize = "SpaceHeatControl"))]
-    pub space_heat_control: Option<String>,
+    pub space_heat_control: Option<SpaceHeatControlType>,
     // don't know what the options are yet
     #[serde(rename(deserialize = "Control_WindowOpening"))]
     pub control_window_opening: Option<HeatSourceControlType>,
@@ -953,6 +953,14 @@ pub struct ZoneInput {
     pub building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename(deserialize = "ThermalBridging"))]
     pub thermal_bridging: ThermalBridging, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
+}
+
+#[derive(Debug, Deserialize)]
+pub enum SpaceHeatControlType {
+    #[serde(rename = "livingroom")]
+    LivingRoom,
+    #[serde(rename = "restofdwelling")]
+    RestOfDwelling,
 }
 
 #[derive(Debug, Deserialize)]
