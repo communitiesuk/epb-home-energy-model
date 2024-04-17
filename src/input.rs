@@ -138,13 +138,13 @@ pub enum ApplianceGainType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyInput {
-    #[serde(alias = "mains elec", alias = "mains_elec")]
+    #[serde(rename = "mains elec")]
     pub mains_electricity: Option<EnergySupplyDetails>,
-    #[serde(alias = "mains gas")]
+    #[serde(rename = "mains gas")]
     pub mains_gas: Option<EnergySupplyDetails>,
     #[serde(rename = "bulk LPG")]
     pub bulk_lpg: Option<EnergySupplyDetails>,
-    #[serde(alias = "heat network")]
+    #[serde(rename = "heat network")]
     pub heat_network: Option<HeatNetwork>,
 }
 
@@ -159,7 +159,7 @@ pub struct EnergySupplyDetails {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub enum EnergySupplyType {
-    #[serde(alias = "mains elec", alias = "mains_elec", alias = "electricity")]
+    #[serde(alias = "mains elec", alias = "electricity")]
     Electricity,
     #[serde(alias = "mains_gas", alias = "mains gas")]
     MainsGas,
