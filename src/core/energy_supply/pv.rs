@@ -167,7 +167,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
     use rstest::*;
@@ -274,7 +274,7 @@ mod tests {
         external_conditions: ExternalConditions,
     ) -> (PhotovoltaicSystem, Arc<Mutex<EnergySupply>>) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time.total_steps(),
             None,
         )));

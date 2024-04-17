@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
     use rstest::*;
@@ -100,7 +100,7 @@ mod tests {
         let control =
             Control::OnOffTimeControl(OnOffTimeControl::new(vec![true, true, false, true], 0, 1.));
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time.total_steps(),
             None,
         )));

@@ -1,7 +1,9 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
-use crate::input::{EnergySupplyDetails, EnergySupplyInput, EnergySupplyType, HeatNetwork};
+use crate::input::{
+    EnergySupplyDetails, EnergySupplyInput, EnergySupplyType, FuelType, HeatNetwork,
+};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use indexmap::{indexmap, IndexMap};
@@ -40,11 +42,11 @@ impl EnergySupplies {
         &mut self,
         energy_supply_type: EnergySupplyType,
         timesteps: usize,
-    ) -> Arc<Mutex<EnergySupply>> {
+    ) -> anyhow::Result<Arc<Mutex<EnergySupply>>> {
         let energy_supply = match energy_supply_type {
             EnergySupplyType::Electricity => &mut self.mains_electricity,
             EnergySupplyType::MainsGas => &mut self.mains_gas,
-            EnergySupplyType::UnmetDemand => return self.unmet_demand.clone(),
+            EnergySupplyType::UnmetDemand => return Ok(self.unmet_demand.clone()),
             EnergySupplyType::Custom => &mut self.custom,
             EnergySupplyType::LpgBulk => &mut self.bulk_lpg,
             EnergySupplyType::LpgBottled => &mut self.bottled_lpg,
@@ -54,12 +56,12 @@ impl EnergySupplies {
             }
         };
         match energy_supply {
-            Some(supply) => supply.clone(),
-            None => Arc::new(Mutex::new(EnergySupply::new(
-                energy_supply_type,
+            Some(supply) => Ok(supply.clone()),
+            None => Ok(Arc::new(Mutex::new(EnergySupply::new(
+                energy_supply_type.try_into()?,
                 timesteps,
                 None,
-            ))),
+            )))),
         }
     }
 
@@ -150,14 +152,14 @@ impl EnergySupplyConnection {
         )
     }
 
-    pub fn fuel_type(&self) -> EnergySupplyType {
+    pub fn fuel_type(&self) -> FuelType {
         self.energy_supply.lock().fuel_type()
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct EnergySupply {
-    fuel_type: EnergySupplyType,
+    fuel_type: FuelType,
     simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
     diverter: Option<Arc<Mutex<PVDiverter>>>,
@@ -179,7 +181,7 @@ impl EnergySupply {
     /// * `simulation_timesteps` - the number of steps in the simulation time being used
     /// * `electric_battery` - reference to an ElectricBattery object
     pub fn new(
-        fuel_type: EnergySupplyType,
+        fuel_type: FuelType,
         simulation_timesteps: usize,
         electric_battery: Option<ElectricBattery>,
     ) -> Self {
@@ -201,7 +203,7 @@ impl EnergySupply {
         }
     }
 
-    pub fn fuel_type(&self) -> EnergySupplyType {
+    pub fn fuel_type(&self) -> FuelType {
         self.fuel_type
     }
 
@@ -480,7 +482,7 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
             .heat_network
             .map(|hn| supply_from_heat_network_details(hn, simulation_timesteps)),
         unmet_demand: Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::UnmetDemand,
+            FuelType::UnmetDemand,
             simulation_timesteps,
             Default::default(),
         ))),
@@ -517,7 +519,6 @@ fn supply_from_heat_network_details(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::input::EnergySupplyType::MainsGas;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;
 
@@ -528,7 +529,8 @@ mod test {
 
     #[fixture]
     pub fn energy_supply<'a>(simulation_time: SimulationTimeIterator) -> EnergySupply {
-        let mut energy_supply = EnergySupply::new(MainsGas, simulation_time.total_steps(), None);
+        let mut energy_supply =
+            EnergySupply::new(FuelType::MainsGas, simulation_time.total_steps(), None);
         energy_supply.register_end_user_name("shower".to_string());
         energy_supply.register_end_user_name("bath".to_string());
 

@@ -1258,7 +1258,7 @@ mod tests {
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -1314,7 +1314,7 @@ mod tests {
         control_for_storage_tank: Arc<Control>,
     ) -> ((StorageTank, StorageTank), Arc<Mutex<EnergySupply>>) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
             None,
         )));
@@ -1551,7 +1551,7 @@ mod tests {
             50.,
             EnergySupply::connection(
                 Arc::new(Mutex::new(EnergySupply::new(
-                    EnergySupplyType::MainsGas,
+                    FuelType::MainsGas,
                     simulation_time_for_immersion_heater.total_steps(),
                     None,
                 ))),

@@ -48,7 +48,7 @@ use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
-    ExternalConditionsInput, HeatNetwork as HeatNetworkInput, HeatPumpSourceType,
+    ExternalConditionsInput, FuelType, HeatNetwork as HeatNetworkInput, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControl, HeatSourceControlType, HeatSourceWetDetails,
     HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
@@ -107,7 +107,7 @@ impl Corpus {
     pub fn from_inputs(
         input: Input,
         external_conditions: ExternalConditions,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
         let external_conditions = Arc::new(external_conditions);
@@ -149,15 +149,19 @@ impl Corpus {
 
         let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
 
-        let ventilation = input.ventilation.as_ref().map(|v| {
-            Arc::new(Mutex::new(ventilation_from_input(
-                "Ventilation system",
-                v,
-                &infiltration,
-                simulation_time_iterator.clone().as_ref(),
-                &mut energy_supplies,
-            )))
-        });
+        let ventilation = input
+            .ventilation
+            .as_ref()
+            .map(|v| {
+                anyhow::Ok(Arc::new(Mutex::new(ventilation_from_input(
+                    "Ventilation system",
+                    v,
+                    &infiltration,
+                    simulation_time_iterator.clone().as_ref(),
+                    &mut energy_supplies,
+                )?)))
+            })
+            .transpose()?;
 
         let opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
 
@@ -212,7 +216,7 @@ impl Corpus {
             &mut energy_supplies,
             total_floor_area,
             simulation_time_iterator.total_steps(),
-        );
+        )?;
 
         let mut timestep_end_calcs = vec![];
 
@@ -232,7 +236,7 @@ impl Corpus {
                     total_volume,
                     &controls,
                     &mut energy_supplies,
-                )));
+                )?));
                 match *heat_source.lock() {
                     WetHeatSource::HeatPump(_)
                     | WetHeatSource::Boiler(_)
@@ -241,9 +245,9 @@ impl Corpus {
                     }
                     _ => {}
                 }
-                ((*name).clone(), heat_source)
+                anyhow::Ok(((*name).clone(), heat_source))
             })
-            .collect();
+            .collect::<anyhow::Result<HashMap<String, Arc<Mutex<WetHeatSource>>>>>()?;
 
         let mut hot_water_sources: HashMap<String, HotWaterSource> = Default::default();
         let mut energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>> =
@@ -260,7 +264,7 @@ impl Corpus {
             &mut diverters,
             simulation_time_iterator.clone().as_ref(),
             external_conditions.clone(),
-        );
+        )?;
         hot_water_sources.insert("hw cylinder".to_string(), hot_water_source);
         energy_supply_conn_names_for_hot_water_source
             .insert("hw cylinder".to_string(), hw_cylinder_conn_names);
@@ -271,7 +275,7 @@ impl Corpus {
             .space_heat_system
             .as_ref()
             .map(|system| {
-                space_heat_systems_from_input(
+                anyhow::Ok(space_heat_systems_from_input(
                     system,
                     &controls,
                     &mut energy_supplies,
@@ -283,15 +287,16 @@ impl Corpus {
                         .flatten()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>(),
-                )
+                )?)
             })
+            .transpose()?
             .unwrap_or_default();
 
         let space_cool_systems = input
             .space_cool_system
             .as_ref()
             .map(|system| {
-                space_cool_systems_from_input(
+                anyhow::Ok(space_cool_systems_from_input(
                     system,
                     cool_system_name_for_zone
                         .values()
@@ -301,20 +306,22 @@ impl Corpus {
                     &controls,
                     &mut energy_supplies,
                     &simulation_time_iterator,
-                )
+                )?)
             })
+            .transpose()?
             .unwrap_or_default();
 
         let on_site_generation = input
             .on_site_generation
             .map(|on_site_generation| {
-                on_site_generation_from_input(
+                anyhow::Ok(on_site_generation_from_input(
                     &on_site_generation,
                     &mut energy_supplies,
                     external_conditions.clone(),
                     &simulation_time_iterator,
-                )
+                )?)
             })
+            .transpose()?
             .unwrap_or_default();
 
         Ok(Self {
@@ -1624,7 +1631,7 @@ fn energy_supplies_from_input(
             simulation_time_iterator,
         ),
         unmet_demand: Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::UnmetDemand,
+            FuelType::UnmetDemand,
             simulation_time_iterator.total_steps(),
             Default::default(),
         ))),
@@ -2097,15 +2104,15 @@ fn ventilation_from_input<'a>(
     infiltration: &VentilationElementInfiltration,
     simulation_time: &'a SimulationTimeIterator,
     energy_supplies: &mut EnergySupplies,
-) -> VentilationElement {
-    match ventilation {
+) -> anyhow::Result<VentilationElement> {
+    Ok(match ventilation {
         Ventilation::Whev {
             req_ach,
             sfp,
             energy_supply,
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_name).unwrap();
 
@@ -2126,8 +2133,8 @@ fn ventilation_from_input<'a>(
             energy_supply,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_name).unwrap();
 
@@ -2145,7 +2152,7 @@ fn ventilation_from_input<'a>(
             *req_ach,
             infiltration.infiltration_rate(),
         )),
-    }
+    })
 }
 
 fn energy_supply_from_type_for_ventilation(
@@ -2342,10 +2349,10 @@ fn apply_appliance_gains_from_input(
     energy_supplies: &mut EnergySupplies,
     total_floor_area: f64,
     simulation_timesteps: usize,
-) {
+) -> anyhow::Result<()> {
     if let Some(details) = input.lighting {
         let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps),
+            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "lighting",
         )
         .unwrap();
@@ -2358,7 +2365,7 @@ fn apply_appliance_gains_from_input(
     }
     if let Some(details) = input.cooking {
         let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps),
+            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking",
         )
         .unwrap();
@@ -2371,7 +2378,7 @@ fn apply_appliance_gains_from_input(
     }
     if let Some(details) = input.cooking1 {
         let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps),
+            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking1",
         )
         .unwrap();
@@ -2384,7 +2391,7 @@ fn apply_appliance_gains_from_input(
     }
     if let Some(details) = input.cooking2 {
         let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps),
+            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking2",
         )
         .unwrap();
@@ -2395,6 +2402,8 @@ fn apply_appliance_gains_from_input(
             total_floor_area,
         ));
     }
+
+    Ok(())
 }
 
 fn appliance_gains_from_single_input(
@@ -2511,7 +2520,7 @@ fn heat_source_wet_from_input(
     total_volume: f64,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
-) -> WetHeatSource {
+) -> anyhow::Result<WetHeatSource> {
     match &input {
         HeatSourceWetDetails::HeatPump {
             source_type,
@@ -2548,12 +2557,12 @@ fn heat_source_wet_from_input(
                 None
             };
 
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name_auxiliary =
                 format!("HeatPump_auxiliary: {energy_supply_name}");
 
-            WetHeatSource::HeatPump(Arc::new(Mutex::new(
+            Ok(WetHeatSource::HeatPump(Arc::new(Mutex::new(
                 HeatPump::new(
                     &input,
                     energy_supply,
@@ -2565,23 +2574,23 @@ fn heat_source_wet_from_input(
                     DETAILED_OUTPUT_HEATING_COOLING,
                 )
                 .unwrap(),
-            )))
+            ))))
         }
         HeatSourceWetDetails::Boiler {
             energy_supply,
             energy_supply_auxiliary,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_aux = energy_supplies
-                .ensured_get_for_type(*energy_supply_auxiliary, simulation_time.total_steps());
+                .ensured_get_for_type(*energy_supply_auxiliary, simulation_time.total_steps())?;
             let aux_supply_name = format!("Boiler_auxiliary: {energy_supply_name}");
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())
                     .unwrap();
 
-            WetHeatSource::Boiler(
+            Ok(WetHeatSource::Boiler(
                 Boiler::new(
                     input,
                     energy_supply,
@@ -2590,7 +2599,7 @@ fn heat_source_wet_from_input(
                     simulation_time.step_in_hours(),
                 )
                 .expect("could not construct boiler value from provided data"),
-            )
+            ))
         }
         HeatSourceWetDetails::Hiu {
             power_max,
@@ -2599,14 +2608,14 @@ fn heat_source_wet_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name_auxiliary =
                 format!("HeatNetwork_auxiliary: {energy_supply_name}");
             let energy_supply_conn_name_building_level_distribution_losses =
                 format!("HeatNetwork_building_level_distribution_losses: {energy_supply_name}");
 
-            WetHeatSource::Hiu(HeatNetwork::new(
+            Ok(WetHeatSource::Hiu(HeatNetwork::new(
                 *power_max,
                 *hiu_daily_loss,
                 *building_level_distribution_losses,
@@ -2614,7 +2623,7 @@ fn heat_source_wet_from_input(
                 energy_supply_conn_name_auxiliary,
                 energy_supply_conn_name_building_level_distribution_losses,
                 simulation_time.step_in_hours(),
-            ))
+            )))
             // TODO add heat network to timestep_end_calcs
         }
         HeatSourceWetDetails::HeatBattery {
@@ -2622,8 +2631,8 @@ fn heat_source_wet_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_name).unwrap();
 
@@ -2642,7 +2651,7 @@ fn heat_source_wet_from_input(
                 simulation_time,
                 external_conditions.clone(),
             ));
-            heat_source
+            Ok(heat_source)
         }
     }
 }
@@ -2657,7 +2666,7 @@ fn heat_source_from_input(
     energy_supplies: &mut EnergySupplies,
     cold_water_sources: &ColdWaterSources,
     external_conditions: Arc<ExternalConditions>,
-) -> (HeatSource, String) {
+) -> anyhow::Result<(HeatSource, String)> {
     // TODO add in all the stuff to do with energy supply
 
     match input {
@@ -2667,11 +2676,11 @@ fn heat_source_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
 
-            (
+            Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
                     ImmersionHeater::new(
                         *power,
@@ -2683,7 +2692,7 @@ fn heat_source_from_input(
                     ),
                 )))),
                 name.into(),
-            )
+            ))
         }
         HeatSourceInput::SolarThermalSystem {
             solar_cell_location,
@@ -2702,11 +2711,11 @@ fn heat_source_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
 
-            (
+            Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
                     *solar_cell_location,
                     *area_module,
@@ -2727,7 +2736,7 @@ fn heat_source_from_input(
                     WATER.clone(),
                 ))),
                 name.into(),
-            )
+            ))
         }
         HeatSourceInput::Wet {
             name,
@@ -2753,7 +2762,7 @@ fn heat_source_from_input(
             let lock = heat_source_wet.lock();
             let mut heat_source_wet_clone = (*lock).clone();
 
-            (
+            Ok((
                 match heat_source_wet_clone {
                     WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
@@ -2800,7 +2809,7 @@ fn heat_source_from_input(
                     }
                 },
                 energy_supply_conn_name,
-            )
+            ))
         }
         HeatSourceInput::HeatPumpHotWaterOnly {
             power_max,
@@ -2810,13 +2819,13 @@ fn heat_source_from_input(
             control,
             ..
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name).unwrap();
 
-            (
+            Ok((
                 HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
                     HeatPumpHotWaterOnly::new(
                         *power_max,
@@ -2828,7 +2837,7 @@ fn heat_source_from_input(
                     ),
                 ))),
                 energy_supply_conn_name.into(),
-            )
+            ))
         }
     }
 }
@@ -2889,7 +2898,7 @@ fn hot_water_source_from_input(
     diverters: &mut Vec<Arc<Mutex<PVDiverter>>>,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
-) -> (HotWaterSource, Vec<String>) {
+) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
     let mut energy_supply_conn_names = vec![];
     let cloned_input = input.clone();
     let hot_water_source = match input {
@@ -2936,7 +2945,7 @@ fn hot_water_source_from_input(
                     energy_supplies,
                     cold_water_sources,
                     external_conditions.clone(),
-                );
+                )?;
                 let heat_source = Arc::new(Mutex::new(heat_source));
                 heat_sources.insert(
                     name.clone(),
@@ -2976,7 +2985,7 @@ fn hot_water_source_from_input(
                         let energy_supply = energy_supplies.ensured_get_for_type(
                             hs.energy_supply_type(),
                             simulation_time.total_steps(),
-                        );
+                        )?;
                         let immersion_heater = heat_source_for_diverter
                             .clone()
                             .expect("More than one heat source was expected to be present")
@@ -3038,8 +3047,8 @@ fn hot_water_source_from_input(
             cold_water_source: cold_water_source_type,
             energy_supply,
         } => {
-            let energy_supply =
-                energy_supplies.ensured_get_for_type(energy_supply, simulation_time.total_steps());
+            let energy_supply = energy_supplies
+                .ensured_get_for_type(energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name = source_name;
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let energy_supply_conn =
@@ -3087,7 +3096,8 @@ fn hot_water_source_from_input(
         }
         HotWaterSourceDetails::HeatBattery { .. } => todo!(), // TODO is from Python
     };
-    (hot_water_source, energy_supply_conn_names)
+
+    Ok((hot_water_source, energy_supply_conn_names))
 }
 
 fn cold_water_source_for_type(
@@ -3116,16 +3126,16 @@ fn space_heat_systems_from_input(
     heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_names_for_zone: Vec<&str>,
-) -> (
+) -> anyhow::Result<(
     HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     HashMap<String, String>,
-) {
+)> {
     let mut energy_conn_names_for_systems: HashMap<String, String> = Default::default();
     let space_heat_systems = input
         .iter()
         .filter(|(system_name, _)| heat_system_names_for_zone.contains(&system_name.as_str()))
         .map(|(system_name, space_heat_system_details)| {
-            (
+            Ok((
                 (*system_name).clone(),
                 Arc::new(Mutex::new(match space_heat_system_details {
                     SpaceHeatSystemDetails::InstantElectricHeater {
@@ -3135,7 +3145,7 @@ fn space_heat_systems_from_input(
                         energy_supply,
                         ..
                     } => {
-                        let energy_supply = energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps());
+                        let energy_supply = energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
                         let energy_supply_conn_name = system_name;
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
@@ -3174,10 +3184,10 @@ fn space_heat_systems_from_input(
                         }
                     }
                 })),
-            )
+            ))
         })
-        .collect::<HashMap<_, _>>();
-    (space_heat_systems, energy_conn_names_for_systems)
+        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+    Ok((space_heat_systems, energy_conn_names_for_systems))
 }
 
 fn space_cool_systems_from_input(
@@ -3186,8 +3196,8 @@ fn space_cool_systems_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> HashMap<String, AirConditioning> {
-    input
+) -> anyhow::Result<HashMap<String, AirConditioning>> {
+    Ok(input
         .iter()
         .filter(|(system_name, _)| cool_system_names_for_zone.contains(&system_name.as_str()))
         .map(|(system_name, space_cool_system_details)| {
@@ -3208,7 +3218,7 @@ fn space_cool_systems_from_input(
                 ..
             } = space_cool_system_details;
             let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps());
+                .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
             let energy_supply_conn_name = system_name;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
@@ -3216,7 +3226,7 @@ fn space_cool_systems_from_input(
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone()));
 
-            (
+            Ok((
                 (*energy_supply_conn_name).clone(),
                 AirConditioning::new(
                     *cooling_capacity,
@@ -3226,9 +3236,9 @@ fn space_cool_systems_from_input(
                     simulation_time_iterator.step_in_hours(),
                     control,
                 ),
-            )
+            ))
         })
-        .collect::<HashMap<_, _>>()
+        .collect::<anyhow::Result<HashMap<_, _>>>()?)
 }
 
 fn on_site_generation_from_input(
@@ -3236,11 +3246,11 @@ fn on_site_generation_from_input(
     energy_supplies: &mut EnergySupplies,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> HashMap<String, PhotovoltaicSystem> {
-    input
+) -> anyhow::Result<HashMap<String, PhotovoltaicSystem>> {
+    Ok(input
         .iter()
         .map(|(name, generation_details)| {
-            ((*name).clone(), {
+            Ok(((*name).clone(), {
                 let OnSiteGenerationDetails {
                     peak_power,
                     ventilation_strategy,
@@ -3253,7 +3263,7 @@ fn on_site_generation_from_input(
                     ..
                 } = generation_details;
                 let energy_supply = energy_supplies
-                    .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps());
+                    .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
                 PhotovoltaicSystem::new(
                     *peak_power,
@@ -3267,7 +3277,7 @@ fn on_site_generation_from_input(
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
                 )
-            })
+            }))
         })
-        .collect::<HashMap<_, _>>()
+        .collect::<anyhow::Result<HashMap<_, _>>>()?)
 }

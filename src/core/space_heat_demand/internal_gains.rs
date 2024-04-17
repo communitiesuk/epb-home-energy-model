@@ -107,7 +107,7 @@ impl ApplianceGains {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
     use rstest::*;
@@ -148,7 +148,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
         )));

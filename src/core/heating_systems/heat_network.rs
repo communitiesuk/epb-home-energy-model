@@ -373,7 +373,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -387,7 +387,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Custom,
+            FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
         )));
@@ -482,7 +482,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Custom,
+            FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
         )));
@@ -545,7 +545,7 @@ mod tests {
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Custom,
+            FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
         )));
@@ -608,7 +608,7 @@ mod tests {
         three_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Custom,
+            FuelType::Custom,
             three_len_simulation_time.total_steps(),
             None,
         )));

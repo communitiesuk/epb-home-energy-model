@@ -812,7 +812,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{ColdWaterSourceType, HeatSourceControlType, HeatSourceWetType};
+    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -931,12 +931,12 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> (Boiler, Arc<Mutex<EnergySupply>>) {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::MainsGas,
+            FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
         let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time.total_steps(),
             None,
         )));
@@ -1057,12 +1057,12 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> Boiler {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::MainsGas,
+            FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
         let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time.total_steps(),
             None,
         )));
@@ -1172,12 +1172,12 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> Boiler {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::MainsGas,
+            FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
         let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time.total_steps(),
             None,
         )));
@@ -1259,12 +1259,12 @@ mod tests {
         simulation_time_for_service_space: SimulationTime,
     ) -> Boiler {
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::MainsGas,
+            FuelType::MainsGas,
             simulation_time_for_service_space.total_steps(),
             None,
         )));
         let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time_for_service_space.total_steps(),
             None,
         )));

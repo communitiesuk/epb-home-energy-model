@@ -1,5 +1,6 @@
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
+use anyhow::bail;
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -151,23 +152,39 @@ pub struct EnergySupplyInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnergySupplyDetails {
-    pub fuel: EnergySupplyType,
+    pub fuel: FuelType,
     pub diverter: Option<EnergyDiverter>,
     #[serde(rename = "ElectricBattery")]
     pub electric_battery: Option<ElectricBattery>,
 }
 
+/// TODO clarify further
+/// It's not completely clear at the moment what the difference between fuel type and energy supply type is,
+/// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
+/// in the input examples, so keeping them separate for the time being
+/// (It's also hard to see some of these as types of fuel)
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FuelType {
+    Electricity,
+    MainsGas,
+    Custom,
+    #[serde(rename = "LPG_bulk")]
+    LpgBulk,
+    UnmetDemand,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub enum EnergySupplyType {
-    #[serde(alias = "mains elec", alias = "electricity")]
+    #[serde(rename = "mains elec")]
     Electricity,
-    #[serde(alias = "mains_gas", alias = "mains gas")]
+    #[serde(rename = "mains gas")]
     MainsGas,
     #[serde(rename = "unmet_demand")]
     UnmetDemand,
     #[serde(rename = "custom")]
     Custom,
-    #[serde(alias = "bulk LPG", alias = "LPG_bulk")]
+    #[serde(rename = "bulk LPG")]
     LpgBulk,
     #[serde(rename = "LPG_bottled")]
     LpgBottled,
@@ -175,6 +192,23 @@ pub enum EnergySupplyType {
     LpgCondition11F,
     #[serde(rename = "heat network")]
     HeatNetwork,
+}
+
+impl TryFrom<EnergySupplyType> for FuelType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: EnergySupplyType) -> Result<Self, Self::Error> {
+        Ok(match value {
+            EnergySupplyType::Electricity => FuelType::Electricity,
+            EnergySupplyType::MainsGas => FuelType::MainsGas,
+            EnergySupplyType::Custom => FuelType::Custom,
+            EnergySupplyType::LpgBulk => FuelType::LpgBulk,
+            EnergySupplyType::UnmetDemand => FuelType::UnmetDemand,
+            _ => {
+                bail!("No fuel type defined to map the energy supply type {value:?}")
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -234,7 +268,7 @@ pub struct ElectricBattery {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatNetwork {
-    pub fuel: EnergySupplyType,
+    pub fuel: FuelType,
     pub factor: HeatNetworkFactor,
 }
 

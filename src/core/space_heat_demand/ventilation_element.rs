@@ -1030,7 +1030,7 @@ mod test {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::input::EnergySupplyType;
+    use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
     use rstest::*;
@@ -1191,7 +1191,7 @@ mod test {
     #[fixture]
     pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
         EnergySupply::new(
-            EnergySupplyType::Electricity,
+            FuelType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
         )
