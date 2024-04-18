@@ -69,6 +69,8 @@ pub struct StorageTank {
     q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
     q_sto_h_ls_rbl: Option<f64>, // total recoverable heat losses for heating in kWh, memoised between steps
     primary_gains: f64,          // primary pipework gains for a timestep (mutates over lifetime)
+    #[cfg(test)]
+    energy_demand_test: f64,
 }
 
 impl StorageTank {
@@ -118,6 +120,9 @@ impl StorageTank {
         //   We are expecting to run a "warm-up" period for the main calculation so this doesn't matter.
         let temp_n = [temp_set_on; STORAGE_TANK_NB_VOL];
 
+        #[cfg(test)]
+        let energy_demand_test = 0.;
+
         let input_energy_adj_prev_timestep = 0.;
 
         let primary_pipework: Option<Pipework> = primary_pipework.map(|pipework| pipework.into());
@@ -148,6 +153,8 @@ impl StorageTank {
             q_ls_n_prev_heat_source: Default::default(),
             q_sto_h_ls_rbl: Default::default(),
             primary_gains: Default::default(),
+            #[cfg(test)]
+            energy_demand_test,
         }
     }
 
@@ -663,6 +670,11 @@ impl StorageTank {
         // demand adjusted energy from heat source (before was just using potential without taking it)
         let mut input_energy_adj = q_in_h_w;
 
+        #[cfg(test)]
+        {
+            self.energy_demand_test = input_energy_adj;
+        }
+
         // energy demand saved for unittest (not implemented in Rust until needed)
         // self.__energy_demand_test = deepcopy(input_energy_adj)
 
@@ -815,7 +827,10 @@ impl StorageTank {
         q_in_h_w
     }
 
-    // NB. in the Python there is a method here to access some test data, which is likely for test only
+    #[cfg(test)]
+    fn test_energy_demand(&self) -> f64 {
+        self.energy_demand_test
+    }
 
     /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
     pub fn internal_gains(&mut self) -> f64 {
@@ -1171,7 +1186,7 @@ impl SolarThermalSystem {
             return 0.;
         }
 
-        let avg_collector_water_temp = inlet_temp_s1
+        let mut avg_collector_water_temp = inlet_temp_s1
             + (0.4 * solar_irradiance * self.area) / (self.collector_mass_flow_rate * self.cp * 2.);
 
         let mut inlet_temp2: f64 = Default::default(); // need a running slot in the loop for this to be overridden each time
@@ -1224,7 +1239,7 @@ impl SolarThermalSystem {
             inlet_temp2 = inlet_temp2_temp;
 
             // Eq 58
-            let _avg_collector_water_temp = (self.inlet_temp + inlet_temp2) / 2.
+            avg_collector_water_temp = (self.inlet_temp + inlet_temp2) / 2.
                 + self.heat_output_collector_loop / (self.collector_mass_flow_rate * self.cp * 2.);
         }
 
@@ -1250,6 +1265,16 @@ impl SolarThermalSystem {
 
         self.energy_supplied
     }
+
+    #[cfg(test)]
+    fn test_energy_potential(&self) -> f64 {
+        self.heat_output_collector_loop
+    }
+
+    #[cfg(test)]
+    fn test_energy_supplied(&self) -> f64 {
+        self.energy_supplied
+    }
 }
 
 #[cfg(test)]
@@ -1260,6 +1285,9 @@ mod tests {
     use crate::core::material_properties::WATER;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
+    use crate::external_conditions::{
+        DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
+    };
     use crate::input::{EnergySupplyType, FuelType};
     use crate::simulation_time::SimulationTime;
     use rstest::*;
@@ -1581,6 +1609,302 @@ mod tests {
                 immersion_heater.demand_energy(energy_inputs[t_idx], t_it),
                 expected_energy[t_idx],
                 "incorrect energy demand calculated"
+            );
+        }
+    }
+
+    // following tests are from a separate test file in the Python test_storage_tank_with_solar_thermal.py
+
+    #[fixture]
+    pub fn storage_tank_with_solar_thermal() -> (
+        StorageTank,
+        Arc<Mutex<SolarThermalSystem>>,
+        SimulationTime,
+        Arc<Mutex<EnergySupply>>,
+    ) {
+        let cold_water_temps = [
+            17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
+            17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7,
+        ];
+        let simulation_time = SimulationTime::new(5088., 5112., 1.);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 1.),
+        ));
+        let control = OnOffTimeControl::new(
+            vec![true, false, false, false, true, true, true, true],
+            0,
+            1.,
+        );
+        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+            FuelType::Electricity,
+            simulation_time.total_steps(),
+            None,
+        )));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
+
+        let external_conditions = Arc::new(ExternalConditions::new(
+            &simulation_time.clone().iter(),
+            vec![
+                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+            ],
+            vec![
+                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+                3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+            ],
+            vec![
+                0, 0, 0, 0, 35, 73, 139, 244, 320, 361, 369, 348, 318, 249, 225, 198, 121, 68, 19,
+                0, 0, 0, 0, 0,
+            ]
+            .iter()
+            .map(|x| *x as f64)
+            .collect(),
+            vec![
+                0, 0, 0, 0, 0, 0, 7, 53, 63, 164, 339, 242, 315, 577, 385, 285, 332, 126, 7, 0, 0,
+                0, 0, 0,
+            ]
+            .iter()
+            .map(|x| *x as f64)
+            .collect(),
+            vec![
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+            ],
+            51.383,
+            -0.783,
+            0,
+            212,
+            Some(212),
+            1.,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            vec![
+                ShadingSegment {
+                    number: 1,
+                    start: 180,
+                    end: 135,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 2,
+                    start: 135,
+                    end: 90,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 3,
+                    start: 90,
+                    end: 45,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 4,
+                    start: 45,
+                    end: 0,
+                    objects: Some(vec![ShadingObject {
+                        object_type: ShadingObjectType::Obstacle,
+                        height: 10.5,
+                        distance: 120.,
+                    }]),
+                },
+                ShadingSegment {
+                    number: 5,
+                    start: 0,
+                    end: -45,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 6,
+                    start: -45,
+                    end: -90,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 7,
+                    start: -90,
+                    end: -135,
+                    objects: None,
+                },
+                ShadingSegment {
+                    number: 8,
+                    start: -135,
+                    end: -180,
+                    objects: None,
+                },
+            ],
+        ));
+        let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(
+            SolarCellLocation::Out,
+            3.,
+            1,
+            0.8,
+            0.9,
+            3.5,
+            0.,
+            1.,
+            100.,
+            10.,
+            energy_supply_conn,
+            30.,
+            0.,
+            0.5,
+            external_conditions,
+            simulation_time.step,
+            WATER.clone(),
+        )));
+
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            52.0,
+            55.0,
+            cold_feed,
+            simulation_time.step,
+            IndexMap::from([(
+                "solthermal".to_string(),
+                PositionedHeatSource {
+                    heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                        HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
+                    ))),
+                    heater_position: 0.1,
+                    thermostat_position: 0.33,
+                },
+            )]),
+            None,
+            None,
+            None,
+            WATER.clone(),
+        );
+
+        (storage_tank, solar_thermal, simulation_time, energy_supply)
+    }
+
+    #[rstest]
+    pub fn test_demand_hot_water(
+        storage_tank_with_solar_thermal: (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<Mutex<EnergySupply>>,
+        ),
+    ) {
+        let (mut storage_tank, solar_thermal, simulation_time, energy_supply) =
+            storage_tank_with_solar_thermal;
+        let demands = [
+            100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        let expected_energy_demands = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.3944013153635651,
+            0.7205382866008986,
+            1.1792815529120688,
+            0.9563670953583516,
+            1.066201484260018,
+            0.2842009512268733,
+            0.07050814814814632,
+            0.07050814814814682,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let expected_energy_potentials = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.3944013153635651,
+            0.7205382866008986,
+            1.1792815529120688,
+            0.9563670953583516,
+            1.066201484260018,
+            1.3754941274949404,
+            0.788682346923819,
+            0.4490991945005249,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let expected_energy_supplied = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.3944013153635651,
+            0.7205382866008986,
+            1.1792815529120688,
+            0.9563670953583516,
+            1.066201484260018,
+            0.2842009512268733,
+            0.07050814814814632,
+            0.07050814814814682,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let expected_energy_supply_results = [
+            10, 10, 10, 10, 10, 10, 10, 10, 110, 110, 110, 110, 110, 110, 110, 110, 10, 10, 10, 10,
+            10, 10, 10, 10,
+        ]
+        .map(|x| x as f64);
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            storage_tank.demand_hot_water(demands[t_idx], t_it);
+            assert_eq!(
+                round_by_precision(storage_tank.test_energy_demand(), 1e7),
+                round_by_precision(expected_energy_demands[t_idx], 1e7),
+                "incorrect energy demand from tank"
+            );
+            assert_eq!(
+                round_by_precision(solar_thermal.lock().test_energy_potential(), 1e7),
+                round_by_precision(expected_energy_potentials[t_idx], 1e7),
+                "incorrect energy potential by solar thermal returned"
+            );
+            assert_eq!(
+                round_by_precision(solar_thermal.lock().test_energy_supplied(), 1e7),
+                round_by_precision(expected_energy_supplied[t_idx], 1e7),
+                "incorrect energy supplied by solar thermal returned"
+            );
+            assert_eq!(
+                round_by_precision(
+                    energy_supply.lock().results_by_end_user()["solarthermal"][t_idx],
+                    1e7
+                ),
+                round_by_precision(expected_energy_supply_results[t_idx], 1e7),
+                "incorrect electric energy consumed returned"
             );
         }
     }
