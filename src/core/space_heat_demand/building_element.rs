@@ -1585,30 +1585,236 @@ mod test {
 
     // following test seems incomplete - Python test only seems to exercise the first building element in the list, and other elements come out with different values
 
-    // #[rstest]
-    // pub fn test_temp_ext_for_ground(
-    //     ground_building_elements: [BuildingElement; 5],
-    //     external_conditions_for_ground: ExternalConditions,
-    //     simulation_time_for_ground: SimulationTime,
-    // ) {
-    //     let results = [
-    //         8.474795225438358,
-    //         8.474795225438358,
-    //         8.988219392771693,
-    //         8.988219392771693,
-    //     ];
-    //     for (i, be) in ground_building_elements.iter().enumerate() {
-    //         for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
-    //             println!("t_idx is: {t_idx}");
-    //             assert_eq!(
-    //                 round_by_precision(
-    //                     temp_ext_for(be, &external_conditions_for_ground, &t_it),
-    //                     1e7
-    //                 ),
-    //                 round_by_precision(results[t_idx], 1e7),
-    //                 "incorrect ext temp returned on iteration {t_idx} for building element iteration {i}"
-    //             );
-    //         }
-    //     }
-    // }
+    #[ignore = "waiting for upstream confirmation test assertions are incorrect"]
+    #[rstest]
+    pub fn test_temp_ext_for_ground(
+        ground_building_elements: [BuildingElement; 5],
+        external_conditions_for_ground: ExternalConditions,
+        simulation_time_for_ground: SimulationTime,
+    ) {
+        let results = [
+            8.474795225438358,
+            8.474795225438358,
+            8.988219392771693,
+            8.988219392771693,
+        ];
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
+                assert_eq!(
+                    round_by_precision(
+                        temp_ext_for(be, &external_conditions_for_ground, &t_it),
+                        1e7
+                    ),
+                    round_by_precision(results[t_idx], 1e7),
+                    "incorrect ext temp returned on iteration {t_idx} for building element iteration {i}"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    pub fn test_fabric_heat_loss_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let expected = [30.0, 31.5, 33.25, 34.375, 30.0];
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                round_by_precision(be.fabric_heat_loss(), 1e2),
+                round_by_precision(expected[i], 1e2),
+                "incorrect fabric heat loss returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_heat_capacity_for_ground(ground_building_elements: [BuildingElement; 5]) {
+        let results = [380., 405., 425., 440., 450.];
+        for (i, be) in ground_building_elements.iter().enumerate() {
+            assert_eq!(
+                be.heat_capacity(),
+                results[i],
+                "incorrect heat capacity returned"
+            );
+        }
+    }
+
+    #[fixture]
+    pub fn transparent_building_element() -> BuildingElement {
+        BuildingElement::Transparent {
+            u_value: None,
+            area: None,
+            r_c: Some(0.4),
+            pitch: 90.,
+            orientation: 180.,
+            g_value: 0.75,
+            frame_area_fraction: 0.25,
+            base_height: 1.,
+            height: 1.25,
+            width: 4.,
+            shading: vec![],
+        }
+    }
+
+    #[rstest]
+    pub fn test_no_of_nodes_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            number_of_building_element_nodes(&transparent_building_element),
+            2,
+            "incorrect number of nodes"
+        );
+        assert_eq!(
+            number_of_inside_nodes(&transparent_building_element),
+            0,
+            "incorrect number of inside nodes"
+        );
+    }
+
+    #[rstest]
+    pub fn test_area_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            area_for_building_element_input(&transparent_building_element),
+            5.0,
+            "incorrect area returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_heat_flow_direction(transparent_building_element: BuildingElement) {
+        // Python test uses None here, but reasonable to expecta temperature to be passed in because
+        // that example only works because of the pitch set on this building element, and would fail
+        // for a different value
+        let stock_temperature = 20.;
+        assert_eq!(
+            heat_flow_direction_for(
+                &transparent_building_element,
+                stock_temperature,
+                stock_temperature
+            ),
+            HeatFlowDirection::Horizontal,
+            "incorrect heat flow direction returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_r_si_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            round_by_precision(
+                r_si_for_pitch(pitch_for(&transparent_building_element)),
+                1e2
+            ),
+            0.13,
+            "incorrect r_si returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_h_ci_for_transparent(transparent_building_element: BuildingElement) {
+        // Python test uses None here, but reasonable to expecta temperature to be passed in because
+        // that example only works because of the pitch set on this building element, and would fail
+        // for a different value
+        let stock_temperature = 20.;
+        assert_eq!(
+            h_ci_for(
+                &transparent_building_element,
+                stock_temperature,
+                stock_temperature
+            ),
+            2.5,
+            "incorrect h_ci returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_h_ri_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            h_ri_for(&transparent_building_element),
+            5.13,
+            "incorrect h_ri returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_h_ce_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            h_ce_for(&transparent_building_element),
+            20.0,
+            "incorrect h_ce returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_h_re_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            h_re_for(&transparent_building_element),
+            4.14,
+            "incorrect h_re returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_a_sol_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            a_sol_for(&transparent_building_element),
+            0.0,
+            "incorrect a_sol returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_therm_rad_to_sky_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            therm_rad_to_sky_for(&transparent_building_element),
+            22.77,
+            "incorrect therm_rad_to_sky returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_h_pli_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            h_pli_for(&transparent_building_element),
+            vec![2.5],
+            "incorrect h_pli list returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_k_pli_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            k_pli_for(&transparent_building_element),
+            vec![0.0, 0.0],
+            "non-zero k_pli list returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_temp_ext_for_transparent(
+        transparent_building_element: BuildingElement,
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTimeIterator,
+    ) {
+        for (t_idx, t_it) in simulation_time.enumerate() {
+            assert_eq!(
+                temp_ext_for(&transparent_building_element, &external_conditions, &t_it),
+                t_idx as f64 * 5.0,
+                "incorrect temp ext returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_fabric_heat_loss_for_transparent(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            round_by_precision(transparent_building_element.fabric_heat_loss(), 1e2),
+            8.16,
+            "incorrect fabric heat loss returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_heat_capacity(transparent_building_element: BuildingElement) {
+        assert_eq!(
+            transparent_building_element.heat_capacity(),
+            0.,
+            "incorrect heat capacity returned"
+        );
+    }
 }
