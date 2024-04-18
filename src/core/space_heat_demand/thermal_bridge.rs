@@ -142,4 +142,33 @@ mod test {
             6.7
         );
     }
+
+    #[rstest]
+    pub fn test_heat_trans_coeff_for_linear() {
+        let tb = ThermalBridge::Linear {
+            linear_thermal_transmittance: 0.28,
+            length: 5.0,
+        };
+        assert_eq!(
+            round_by_precision(heat_transfer_coefficient_for_thermal_bridge(&tb), 1e6),
+            1.4,
+            "incorrect heat transfer coefficient returned"
+        );
+    }
+
+    #[rstest]
+    pub fn test_heat_trans_coeff_for_point() {
+        let tb = ThermalBridge::Point {
+            heat_transfer_coefficient: 1.4,
+        };
+        assert_eq!(
+            heat_transfer_coefficient_for_thermal_bridge(&tb),
+            1.4,
+            "incorrect heat transfer coefficient returned"
+        );
+    }
+
+    fn round_by_precision(src: f64, precision: f64) -> f64 {
+        (precision * src).round() / precision
+    }
 }
