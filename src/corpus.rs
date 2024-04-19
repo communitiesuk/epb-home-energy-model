@@ -2350,7 +2350,7 @@ fn apply_appliance_gains_from_input(
     total_floor_area: f64,
     simulation_timesteps: usize,
 ) -> anyhow::Result<()> {
-    if let Some(details) = input.lighting {
+    if let Some(details) = input.get("lighting") {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "lighting",
@@ -2363,7 +2363,7 @@ fn apply_appliance_gains_from_input(
             total_floor_area,
         ));
     }
-    if let Some(details) = input.cooking {
+    if let Some(details) = input.get("cooking") {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking",
@@ -2376,7 +2376,7 @@ fn apply_appliance_gains_from_input(
             total_floor_area,
         ));
     }
-    if let Some(details) = input.cooking1 {
+    if let Some(details) = input.get("cooking1") {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking1",
@@ -2389,7 +2389,7 @@ fn apply_appliance_gains_from_input(
             total_floor_area,
         ));
     }
-    if let Some(details) = input.cooking2 {
+    if let Some(details) = input.get("cooking2") {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
             "cooking2",
@@ -2407,11 +2407,11 @@ fn apply_appliance_gains_from_input(
 }
 
 fn appliance_gains_from_single_input(
-    input: ApplianceGainsDetails,
+    input: &ApplianceGainsDetails,
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
 ) -> ApplianceGains {
-    let total_energy_supply = expand_numeric_schedule(input.schedule, false)
+    let total_energy_supply = expand_numeric_schedule(input.schedule.clone(), false)
         .iter()
         .map(|energy_data| energy_data / total_floor_area)
         .collect();

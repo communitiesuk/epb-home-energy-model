@@ -104,15 +104,7 @@ pub struct InternalGainsSchedule {
     pub day: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ApplianceGains {
-    pub lighting: Option<ApplianceGainsDetails>,
-    pub cooking: Option<ApplianceGainsDetails>,
-    pub cooking1: Option<ApplianceGainsDetails>,
-    // TODO not sure how stable these numbered keys are but we'll go with this for now
-    pub cooking2: Option<ApplianceGainsDetails>,
-}
+pub type ApplianceGains = HashMap<String, ApplianceGainsDetails>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
