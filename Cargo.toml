@@ -26,7 +26,7 @@ parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 polyfit-rs = "0.2.1"
 serde = { version = "1.0.197", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.115"
+serde_json = "1.0.116"
 variants-struct = "0.1.1"
 
 [dev-dependencies]
