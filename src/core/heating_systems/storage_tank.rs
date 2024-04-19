@@ -36,7 +36,7 @@ const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 #[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {
     Immersion(Arc<Mutex<ImmersionHeater>>),
-    Solar(SolarThermalSystem),
+    Solar(Arc<Mutex<SolarThermalSystem>>),
 }
 
 /// An object to represent a hot water storage tank/cylinder
@@ -353,9 +353,11 @@ impl StorageTank {
         let heat_source = &mut *(heat_source.lock());
 
         let energy_potential = match heat_source {
-            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar_heat_source)) => {
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) => {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
-                solar_heat_source.energy_output_max(self, temp_s3_n, &simulation_time)
+                solar_heat_source
+                    .lock()
+                    .energy_output_max(self, temp_s3_n, &simulation_time)
             }
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion_heater)) => {
                 // no demand from heat source if the temperature of the tank at the thermostat position is below the set point
@@ -871,9 +873,9 @@ impl StorageTank {
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration),
-            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref mut solar)) => {
-                solar.demand_energy(input_energy_adj, simulation_time_iteration.index)
-            }
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => solar
+                .lock()
+                .demand_energy(input_energy_adj, simulation_time_iteration.index),
             _ => {
                 // TODO need to be able to call demand_energy on the other heat sources
                 let (primary_pipework_losses_kwh, primary_gains) =

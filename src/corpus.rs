@@ -2442,9 +2442,9 @@ impl HeatSource {
                 HeatSourceWithStorageTank::Immersion(imm) => imm
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration),
-                HeatSourceWithStorageTank::Solar(ref mut solar) => {
-                    solar.demand_energy(energy_demand, simulation_time_iteration.index)
-                }
+                HeatSourceWithStorageTank::Solar(ref solar) => solar
+                    .lock()
+                    .demand_energy(energy_demand, simulation_time_iteration.index),
             },
             HeatSource::Wet(ref mut wet) => match wet.as_mut() {
                 HeatSourceWet::WaterCombi(_) => {
@@ -2716,25 +2716,27 @@ fn heat_source_from_input(
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
 
             Ok((
-                HeatSource::Storage(HeatSourceWithStorageTank::Solar(SolarThermalSystem::new(
-                    *solar_cell_location,
-                    *area_module,
-                    *modules,
-                    *peak_collector_efficiency,
-                    *incidence_angle_modifier,
-                    *first_order_hlc,
-                    *second_order_hlc,
-                    *collector_mass_flow_rate,
-                    *power_pump,
-                    *power_pump_control,
-                    energy_supply_conn,
-                    *tilt,
-                    *orientation,
-                    *solar_loop_piping_hlc,
-                    external_conditions.clone(),
-                    simulation_time.step_in_hours(),
-                    WATER.clone(),
-                ))),
+                HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
+                    SolarThermalSystem::new(
+                        *solar_cell_location,
+                        *area_module,
+                        *modules,
+                        *peak_collector_efficiency,
+                        *incidence_angle_modifier,
+                        *first_order_hlc,
+                        *second_order_hlc,
+                        *collector_mass_flow_rate,
+                        *power_pump,
+                        *power_pump_control,
+                        energy_supply_conn,
+                        *tilt,
+                        *orientation,
+                        *solar_loop_piping_hlc,
+                        external_conditions.clone(),
+                        simulation_time.step_in_hours(),
+                        WATER.clone(),
+                    ),
+                )))),
                 name.into(),
             ))
         }
