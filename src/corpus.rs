@@ -3199,7 +3199,7 @@ fn space_cool_systems_from_input(
     energy_supplies: &mut EnergySupplies,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<HashMap<String, AirConditioning>> {
-    Ok(input
+    input
         .iter()
         .filter(|(system_name, _)| cool_system_names_for_zone.contains(&system_name.as_str()))
         .map(|(system_name, space_cool_system_details)| {
@@ -3240,7 +3240,7 @@ fn space_cool_systems_from_input(
                 ),
             ))
         })
-        .collect::<anyhow::Result<HashMap<_, _>>>()?)
+        .collect::<anyhow::Result<HashMap<_, _>>>()
 }
 
 fn on_site_generation_from_input(
@@ -3249,7 +3249,7 @@ fn on_site_generation_from_input(
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<HashMap<String, PhotovoltaicSystem>> {
-    Ok(input
+    input
         .iter()
         .map(|(name, generation_details)| {
             Ok(((*name).clone(), {
@@ -3281,5 +3281,5 @@ fn on_site_generation_from_input(
                 )
             }))
         })
-        .collect::<anyhow::Result<HashMap<_, _>>>()?)
+        .collect::<anyhow::Result<HashMap<_, _>>>()
 }
