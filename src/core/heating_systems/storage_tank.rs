@@ -511,7 +511,7 @@ impl StorageTank {
             .try_into()
             .unwrap();
 
-        let q_h_sto_end_no = self.rho
+        let _q_h_sto_end_no = self.rho
             * self.cp
             * (0..self.vol_n.len())
                 .map(|i| self.vol_n[i] * temp_s7_n[i])
@@ -803,7 +803,7 @@ impl StorageTank {
         let heat_source_data = &self.heat_source_data[heat_source_name];
 
         let heater_layer = (heat_source_data.heater_position * STORAGE_TANK_NB_VOL as f64) as usize;
-        let thermostat_layer =
+        let _thermostat_layer =
             (heat_source_data.thermostat_position * STORAGE_TANK_NB_VOL as f64) as usize;
 
         let mut q_x_in_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();

@@ -367,7 +367,7 @@ impl Boiler {
         match boiler_data {
             HeatSourceWetDetails::Boiler {
                 energy_supply: energy_supply_type,
-                energy_supply_auxiliary,
+                energy_supply_auxiliary: _,
                 rated_power: boiler_power,
                 efficiency_full_load: full_load_gross,
                 efficiency_part_load: part_load_gross,
