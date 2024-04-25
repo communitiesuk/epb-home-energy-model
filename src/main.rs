@@ -1,7 +1,5 @@
 extern crate hem;
 
-mod read_weather_file;
-
 use clap::{Args, Parser};
 use csv::WriterBuilder;
 use hem::corpus::{HotWaterResultMap, KeyString};
@@ -9,7 +7,6 @@ use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
 use hem::{run_project, UNITS_MAP};
 use indexmap::IndexMap;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
