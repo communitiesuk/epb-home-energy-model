@@ -1,6 +1,6 @@
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
-use crate::core::pipework::{Pipework, PipeworkContentsType};
+use crate::core::pipework::Pipework;
 use crate::core::schedule::ScheduleEvent;
 use crate::core::units::{MILLIMETRES_IN_METRE, MINUTES_PER_HOUR};
 use crate::core::water_heat_demand::bath::Bath;
@@ -13,7 +13,7 @@ use crate::input::{
     Bath as BathInput, BathDetails, ColdWaterSourceType, EnergySupplyType,
     InstantElectricShower as InstantElectricShowerInput, MixerShower as MixerShowerInput,
     OtherWaterUse as OtherWaterUseInput, OtherWaterUseDetails, Shower as ShowerInput,
-    WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipework,
+    WaterDistribution as WaterDistributionInput, WaterPipework,
 };
 use std::collections::HashMap;
 
@@ -393,8 +393,6 @@ fn input_to_water_distribution_pipework(
         input.insulation_thermal_conductivity,
         input.insulation_thickness_mm,
         input.surface_reflectivity,
-        match input.pipe_contents {
-            WaterPipeContentsType::Water => PipeworkContentsType::Water,
-        },
+        input.pipe_contents,
     )
 }

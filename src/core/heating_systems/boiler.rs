@@ -5,12 +5,9 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
+use crate::input::{BoilerHotWaterTest, HotWaterSourceDetails};
 use crate::input::{EnergySupplyType, HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
-use crate::{
-    core::water_heat_demand::cold_water_source::ColdWaterSource,
-    input::{BoilerHotWaterTest, HotWaterSourceDetails},
-};
 use anyhow::bail;
 use arrayvec::ArrayString;
 use interp::interp;

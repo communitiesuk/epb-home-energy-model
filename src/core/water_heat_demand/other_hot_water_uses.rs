@@ -16,6 +16,7 @@ impl OtherHotWater {
         }
     }
 
+    #[cfg(test)]
     pub fn get_flowrate(&self) -> f64 {
         self.flowrate
     }

@@ -640,10 +640,12 @@ pub struct WaterPipework {
     pub pipe_contents: WaterPipeContentsType,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum WaterPipeContentsType {
-    #[serde(alias = "water")]
+    #[serde(rename = "water")]
     Water,
+    #[serde(rename = "air")]
+    Air,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,8 +1,5 @@
 use crate::core::material_properties::WATER;
-use crate::core::units::{
-    JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
-};
+use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::input::{WaterPipeContentsType, WaterPipework};
 use std::f64::consts::PI;
 
@@ -17,17 +14,10 @@ const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective 
 #[derive(Debug)]
 pub struct Pipework {
     length_in_m: f64,
-    internal_diameter_in_m: f64,
     volume_in_litres: f64,
-    d_insulation_in_m: f64,
     interior_surface_resistance: f64, // in K m / W
     insulation_resistance: f64,       // in K m / W
     external_surface_resistance: f64, // in K m / W
-}
-
-pub enum PipeworkContentsType {
-    Air,
-    Water,
 }
 
 impl From<WaterPipework> for Pipework {
@@ -39,9 +29,7 @@ impl From<WaterPipework> for Pipework {
             input.insulation_thermal_conductivity,
             input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
             input.surface_reflectivity,
-            match input.pipe_contents {
-                WaterPipeContentsType::Water => PipeworkContentsType::Water,
-            },
+            input.pipe_contents,
         )
     }
 }
@@ -62,7 +50,7 @@ impl Pipework {
         k_insulation: f64,
         thickness_insulation: f64,
         reflective: bool,
-        contents: PipeworkContentsType,
+        contents: WaterPipeContentsType,
     ) -> Self {
         let volume_in_litres = PI
             * (internal_diameter_in_m / 2f64)
@@ -72,8 +60,8 @@ impl Pipework {
 
         // Set the heat transfer coefficient inside the pipe, in W / m^2 K
         let internal_htc = match contents {
-            PipeworkContentsType::Air => INTERNAL_HTC_AIR,
-            PipeworkContentsType::Water => INTERNAL_HTC_WATER,
+            WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
+            WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
         };
 
         // Set the heat transfer coefficient at the outer surface, in W / m^2 K
@@ -98,9 +86,7 @@ impl Pipework {
 
         Self {
             length_in_m,
-            internal_diameter_in_m,
             volume_in_litres,
-            d_insulation_in_m,
             interior_surface_resistance,
             insulation_resistance,
             external_surface_resistance,
@@ -126,6 +112,7 @@ impl Pipework {
         (inside_temp - outside_temp) / total_resistance * self.length_in_m
     }
 
+    #[cfg(test)]
     /// Calculates by how much the temperature of water in a full pipe will fall
     /// over the timestep.
     ///
@@ -133,6 +120,7 @@ impl Pipework {
     /// * `inside_temp` - temperature of water (or air) inside the pipe, in degrees C
     /// * `outside_temp` - temperature outside the pipe, in degrees C
     pub fn temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+        use crate::core::units::{JOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
         let heat_loss_kwh = (SECONDS_PER_HOUR as f64 * self.heat_loss(inside_temp, outside_temp))
             / WATTS_PER_KILOWATT as f64; // heat loss for the one hour timestep in kWh
 
@@ -182,7 +170,7 @@ mod tests {
             0.035,
             0.038,
             false,
-            PipeworkContentsType::Water,
+            WaterPipeContentsType::Water,
         )
     }
 
