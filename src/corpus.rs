@@ -2184,36 +2184,6 @@ fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
         .sum()
 }
 
-fn check_space_heat_systems_unique_to_zones(zones: &ZoneDictionary) -> Result<(), &'static str> {
-    let res = {
-        let mut name_set = HashSet::new();
-        zones.iter().all(|(_, zone)| match &zone.space_heat_system {
-            Some(system_name) => name_set.insert(system_name),
-            None => true,
-        })
-    };
-    if res {
-        Ok(())
-    } else {
-        Err("A space heat system was declared as used in more than one zone.")
-    }
-}
-
-fn check_space_cool_systems_unique_to_zones(zones: &ZoneDictionary) -> Result<(), &'static str> {
-    let res = {
-        let mut name_set = HashSet::new();
-        zones.iter().all(|(_, zone)| match &zone.space_cool_system {
-            Some(system_name) => name_set.insert(system_name),
-            None => true,
-        })
-    };
-    if res {
-        Ok(())
-    } else {
-        Err("A space cool system was declared as used in more than one zone.")
-    }
-}
-
 fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging {
     match input {
         ThermalBridgingInput::ThermalBridgingElements(input_bridges) => ThermalBridging::Bridges({

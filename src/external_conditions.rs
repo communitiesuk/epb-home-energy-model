@@ -1436,8 +1436,6 @@ enum BrightnessCoefficientName {
     F23,
 }
 
-type Bcn = BrightnessCoefficientName;
-
 // version of Table 8 in ISO 52010
 static BRIGHTNESS_COEFFICIENTS: [BrightnessCoefficientsRow<f64>; 8] = [
     BrightnessCoefficientsRow {
