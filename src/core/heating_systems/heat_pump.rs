@@ -609,6 +609,7 @@ impl HeatPumpTestData {
         ))
     }
 
+    #[cfg(test)]
     /// Return capacity, in kW, at specified test condition (A, B, C, D, F or
     /// cld), interpolated between design flow temps.
     fn capacity_at_test_condition(&self, test_condition: &str, flow_temp: f64) -> f64 {
@@ -1438,7 +1439,6 @@ pub struct HeatPump {
     energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
-    throughput_exhaust_air: f64,
     // litres/ second
     service_results: Arc<Mutex<Vec<ServiceResult>>>,
     total_time_running_current_timestep: f64,
@@ -1678,7 +1678,6 @@ impl HeatPump {
             energy_supply_connection_aux,
             simulation_timestep,
             external_conditions,
-            throughput_exhaust_air: throughput_exhaust_air.unwrap(), // this may not be optional
             service_results,
             total_time_running_current_timestep,
             time_running_continuous,
@@ -2588,9 +2587,9 @@ impl HeatPump {
             self.service_results
                 .lock()
                 .push(ServiceResult::Aux(AuxiliaryParameters {
-                    energy_standby,
-                    energy_crankcase_heater_mode,
-                    energy_off_mode,
+                    _energy_standby: energy_standby,
+                    _energy_crankcase_heater_mode: energy_crankcase_heater_mode,
+                    _energy_off_mode: energy_off_mode,
                 }));
             detailed_results.push(self.service_results.clone());
         }
@@ -2977,9 +2976,9 @@ impl Div for ResultParamValue {
 
 #[derive(Debug)]
 struct AuxiliaryParameters {
-    energy_standby: f64,
-    energy_crankcase_heater_mode: f64,
-    energy_off_mode: f64,
+    _energy_standby: f64,
+    _energy_crankcase_heater_mode: f64,
+    _energy_off_mode: f64,
 }
 
 /// An object to represent an electric hot-water-only heat pump, tested to EN 16147
