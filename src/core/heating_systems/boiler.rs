@@ -136,7 +136,7 @@ impl BoilerServiceWaterCombi {
         )
     }
 
-    fn boiler_combi_loss(&self, energy_demand: f64, timestep: f64) -> f64 {
+    fn boiler_combi_loss(&mut self, energy_demand: f64, timestep: f64) -> f64 {
         // daily hot water usage factor
         let threshold_volume = 100.;
         let fu = if self.daily_hot_water_usage < threshold_volume {
@@ -186,7 +186,7 @@ impl BoilerServiceWaterCombi {
             }
         };
 
-        // TODO account for the weird memoisation of the combi_loss in the Python
+        self.combi_loss = combi_loss;
 
         combi_loss
     }
