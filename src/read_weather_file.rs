@@ -7,7 +7,7 @@ const COLUMN_AIR_TEMP: usize = 6; // dry bulb temp in degrees
 const COLUMN_WIND_SPEED: usize = 21; // wind speed in m/sec
 const COLUMN_DNI_RAD: usize = 14; // direct beam normal irradiation in Wh/m2
 const COLUMN_DIF_RAD: usize = 15; // diffuse irradiation (horizontal plane) in Wh/m2
-const COLUMN_GROUND_REFLECT: usize = 32;
+const _COLUMN_GROUND_REFLECT: usize = 32;
 
 #[derive(Debug)]
 pub struct ExternalConditions {
@@ -19,14 +19,6 @@ pub struct ExternalConditions {
     pub longitude: f64,
     pub latitude: f64,
     pub direct_beam_conversion_needed: bool,
-}
-
-struct ExternalConditionDatum {
-    air_temperature: f64,
-    wind_speed: f64,
-    diffuse_horizontal_radiation: f64,
-    direct_beam_radiation: f64,
-    solar_reflectivity_of_ground: f64,
 }
 
 pub fn weather_data_to_vec(file: &str) -> Result<ExternalConditions, &'static str> {
