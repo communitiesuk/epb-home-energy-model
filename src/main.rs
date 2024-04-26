@@ -108,8 +108,8 @@ fn main() -> anyhow::Result<()> {
         args.heat_balance,
     )?;
 
-    write_core_output_file(
-        output_file_detailed,
+    write_core_output_file(OutputFileArgs {
+        output_file: output_file_detailed,
         timestep_array,
         results_totals,
         results_end_user,
@@ -125,10 +125,10 @@ fn main() -> anyhow::Result<()> {
         hc_system_dict,
         hot_water_dict,
         ductwork_gains,
-    )
+    })
 }
 
-fn write_core_output_file(
+struct OutputFileArgs {
     output_file: String,
     timestep_array: Vec<f64>,
     results_totals: IndexMap<KeyString, Vec<f64>>,
@@ -145,7 +145,27 @@ fn write_core_output_file(
     hc_system_dict: IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
     hot_water_dict: IndexMap<KeyString, HotWaterResultMap>,
     ductwork_gains: IndexMap<KeyString, Vec<f64>>,
-) -> Result<(), anyhow::Error> {
+}
+
+fn write_core_output_file(args: OutputFileArgs) -> Result<(), anyhow::Error> {
+    let OutputFileArgs {
+        output_file,
+        timestep_array,
+        results_totals,
+        results_end_user,
+        energy_import,
+        energy_export,
+        energy_generated_consumed,
+        energy_to_storage,
+        energy_from_storage,
+        energy_diverted,
+        betafactor,
+        zone_dict,
+        zone_list,
+        hc_system_dict,
+        hot_water_dict,
+        ductwork_gains,
+    } = args;
     println!("writing out to {output_file}");
     let file = File::create(output_file)?;
     let writer = BufWriter::new(file);
