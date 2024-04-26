@@ -567,79 +567,24 @@ pub fn space_heat_cool_demand(
     // ventilation - just use cooling instead. Otherwise, cooling demand is zero
     // and need to use interpolation to work out additional ventilation required
     // (just like calc for heat_cool_load_unrestricted below)
-    let h_ve_cool_extra = 0.0;
-    if vent_cool_extra.is_some() && temp_operative_free > temp_setpnt_cool_vent.unwrap() {
-        // Calculate node and internal air temperatures with maximum additional ventilation
-        let h_ve_cool_max = vent_cool_extra.as_ref().unwrap().h_ve_max(
-            volume,
-            temp_operative_free,
-            *simulation_time,
-            external_conditions,
-        );
-        let (temp_vector_vent_max, _) = calc_temperatures(
-            delta_t,
-            temp_prev,
-            temp_ext_air,
-            gains_internal,
-            gains_solar,
-            gains_heat_cool,
-            1.,
-            Some(h_ve_cool_max),
-            Some(throughput_factor),
-            no_of_temps,
-            building_elements,
-            element_positions,
-            external_conditions,
-            simulation_time,
-            passed_zone_idx,
-            area_el_total,
-            volume,
-            c_int,
-            tb_heat_trans_coeff,
-            vent_elements,
-            vent_cool_extra,
-            None, // TODO placeholder for whether to print heat balance
-        );
-
-        // Calculate internal operative temperature with maximum ventilation
-        let temp_operative_vent_max = temp_operative(
-            &temp_vector_vent_max,
-            building_elements,
-            element_positions,
-            passed_zone_idx,
-        );
-        let temp_int_air_vent_max = temp_vector_vent_max[passed_zone_idx];
-
-        let vent_cool_extra_temp_supply =
-            temp_supply_for_window_opening(vent_cool_extra.as_ref().unwrap(), *simulation_time);
-
-        // If there is cooling potential from additional ventilation
-        if temp_operative_vent_max < temp_operative_free
-            && temp_int_air_free > vent_cool_extra_temp_supply
-        {
-            // Calculate ventilation required to reach cooling setpoint for ventilation
-            let h_ve_cool_req = h_ve_cool_max
-                * (temp_setpnt_cool_vent.unwrap() - temp_operative_free)
-                / (temp_operative_vent_max - temp_operative_free)
-                * ((temp_int_air_vent_max - vent_cool_extra_temp_supply)
-                    / (temp_int_air_free - vent_cool_extra_temp_supply));
-
-            // Calculate additional ventilation rate achieved
-            let mut h_ve_cool_extra = match h_ve_cool_req < h_ve_cool_max {
-                true => h_ve_cool_req,
-                false => h_ve_cool_max,
-            };
-
-            // Calculate node and internal air temperatures with heating/cooling gains of zero
-            let (temp_vector_no_heat_cool_vent_extra, _) = calc_temperatures(
+    let h_ve_cool_extra =
+        if vent_cool_extra.is_some() && temp_operative_free > temp_setpnt_cool_vent.unwrap() {
+            // Calculate node and internal air temperatures with maximum additional ventilation
+            let h_ve_cool_max = vent_cool_extra.as_ref().unwrap().h_ve_max(
+                volume,
+                temp_operative_free,
+                *simulation_time,
+                external_conditions,
+            );
+            let (temp_vector_vent_max, _) = calc_temperatures(
                 delta_t,
                 temp_prev,
                 temp_ext_air,
                 gains_internal,
                 gains_solar,
                 gains_heat_cool,
-                1.0,
-                Some(h_ve_cool_extra),
+                1.,
+                Some(h_ve_cool_max),
                 Some(throughput_factor),
                 no_of_temps,
                 building_elements,
@@ -656,49 +601,104 @@ pub fn space_heat_cool_demand(
                 None, // TODO placeholder for whether to print heat balance
             );
 
-            // Calculate internal operative temperature at free-floating conditions
-            // i.e. with no heating/cooling
-            let temp_operative_free_vent_extra = temp_operative(
-                &temp_vector_no_heat_cool_vent_extra,
+            // Calculate internal operative temperature with maximum ventilation
+            let temp_operative_vent_max = temp_operative(
+                &temp_vector_vent_max,
                 building_elements,
                 element_positions,
                 passed_zone_idx,
             );
+            let temp_int_air_vent_max = temp_vector_vent_max[passed_zone_idx];
 
-            // If temperature achieved by additional ventilation is above setpoint
-            // for active cooling, assume cooling system will be used instead of
-            // additional ventilation. Otherwise, use resultant operative temperature
-            // in calculation of space heating/cooling demand.
-            if temp_operative_free_vent_extra > temp_setpnt_cool {
-                h_ve_cool_extra = 0.0;
+            let vent_cool_extra_temp_supply =
+                temp_supply_for_window_opening(vent_cool_extra.as_ref().unwrap(), *simulation_time);
+
+            // If there is cooling potential from additional ventilation
+            if temp_operative_vent_max < temp_operative_free
+                && temp_int_air_free > vent_cool_extra_temp_supply
+            {
+                // Calculate ventilation required to reach cooling setpoint for ventilation
+                let h_ve_cool_req = h_ve_cool_max
+                    * (temp_setpnt_cool_vent.unwrap() - temp_operative_free)
+                    / (temp_operative_vent_max - temp_operative_free)
+                    * ((temp_int_air_vent_max - vent_cool_extra_temp_supply)
+                        / (temp_int_air_free - vent_cool_extra_temp_supply));
+
+                // Calculate additional ventilation rate achieved
+                let mut h_ve_cool_extra = match h_ve_cool_req < h_ve_cool_max {
+                    true => h_ve_cool_req,
+                    false => h_ve_cool_max,
+                };
+
+                // Calculate node and internal air temperatures with heating/cooling gains of zero
+                let (temp_vector_no_heat_cool_vent_extra, _) = calc_temperatures(
+                    delta_t,
+                    temp_prev,
+                    temp_ext_air,
+                    gains_internal,
+                    gains_solar,
+                    gains_heat_cool,
+                    1.0,
+                    Some(h_ve_cool_extra),
+                    Some(throughput_factor),
+                    no_of_temps,
+                    building_elements,
+                    element_positions,
+                    external_conditions,
+                    simulation_time,
+                    passed_zone_idx,
+                    area_el_total,
+                    volume,
+                    c_int,
+                    tb_heat_trans_coeff,
+                    vent_elements,
+                    vent_cool_extra,
+                    None, // TODO placeholder for whether to print heat balance
+                );
+
+                // Calculate internal operative temperature at free-floating conditions
+                // i.e. with no heating/cooling
+                let temp_operative_free_vent_extra = temp_operative(
+                    &temp_vector_no_heat_cool_vent_extra,
+                    building_elements,
+                    element_positions,
+                    passed_zone_idx,
+                );
+
+                // If temperature achieved by additional ventilation is above setpoint
+                // for active cooling, assume cooling system will be used instead of
+                // additional ventilation. Otherwise, use resultant operative temperature
+                // in calculation of space heating/cooling demand.
+                if temp_operative_free_vent_extra > temp_setpnt_cool {
+                    h_ve_cool_extra = 0.0;
+                } else {
+                    temp_operative_free = temp_operative_free_vent_extra;
+                }
+
+                h_ve_cool_extra
             } else {
-                temp_operative_free = temp_operative_free_vent_extra;
+                0.0
             }
-        }
-    }
+        } else {
+            0.0
+        };
 
     // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
     // Determine maximum heating/cooling
-    let mut temp_setpnt = 0.0;
-    let mut heat_cool_load_upper = 0.0;
-    let mut frac_convective = 0.0;
-    if temp_operative_free > temp_setpnt_cool {
-        // Cooling
-        // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-        //      Could max. power be available at this point for all heating/cooling systems?
-        temp_setpnt = temp_setpnt_cool;
-        heat_cool_load_upper = -10. * area;
-        frac_convective = frac_convective_cool;
-    } else if temp_operative_free < temp_setpnt_heat {
-        // Heating
-        // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-        //      Could max. power be available at this point for all heating/cooling systems?
-        temp_setpnt = temp_setpnt_heat;
-        heat_cool_load_upper = 10. * area;
-        frac_convective = frac_convective_heat;
-    } else {
-        return (0.0, 0.0, h_ve_cool_extra);
-    }
+    let (temp_setpnt, heat_cool_load_upper, frac_convective) =
+        if temp_operative_free > temp_setpnt_cool {
+            // Cooling
+            // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_cool, -10. * area, frac_convective_cool)
+        } else if temp_operative_free < temp_setpnt_heat {
+            // Heating
+            // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            //      Could max. power be available at this point for all heating/cooling systems?
+            (temp_setpnt_heat, 10. * area, frac_convective_heat)
+        } else {
+            return (0.0, 0.0, h_ve_cool_extra);
+        };
 
     // Calculate node and internal air temperatures with maximum heating/cooling
     let (temp_vector_upper_heat_cool, _) = calc_temperatures(

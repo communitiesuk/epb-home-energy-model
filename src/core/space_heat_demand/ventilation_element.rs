@@ -945,9 +945,7 @@ impl WindowOpeningForCooling {
         let temp_average_c = (temp_int + temp_ext) / 2.0;
         let temp_average_k = celsius_to_kelvin(temp_average_c);
 
-        let mut q_v = 0.0;
-
-        if self.cross_vent {
+        let q_v = if self.cross_vent {
             let q_v_wind = C_D * self.a_w.unwrap() * wind_speed * DC_P.powf(0.5);
             let q_v_stack = C_D
                 * self.a_b.unwrap()
@@ -957,9 +955,9 @@ impl WindowOpeningForCooling {
                     * (self.a_b.unwrap() / self.a_w.unwrap())
                     * (self.opening_height_diff * DC_P).powf(0.5)
             {
-                q_v = q_v_stack;
+                q_v_stack
             } else {
-                q_v = q_v_wind;
+                q_v_wind
             }
         } else {
             let q_v_wind = 0.025 * self.window_area_equivalent * wind_speed;
@@ -989,11 +987,11 @@ impl WindowOpeningForCooling {
                     }
                 }
             }
-            q_v = match q_v_wind > q_v_stack {
+            match q_v_wind > q_v_stack {
                 true => q_v_wind,
                 false => q_v_stack,
-            };
-        }
+            }
+        };
 
         // Calculate h_ve according to BS EN ISO 52016-1:2017 section 6.5.10 equation 61
         let h_ve = P_A * C_A * q_v;
