@@ -2752,7 +2752,6 @@ fn heat_source_from_input(
                         HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
                             energy_supply_conn_name.clone(),
                             temp_setpoint,
-                            cold_water_source,
                             55.,
                             source_control,
                         )),

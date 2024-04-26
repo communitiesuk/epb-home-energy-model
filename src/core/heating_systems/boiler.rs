@@ -30,7 +30,6 @@ pub enum ServiceType {
 pub struct BoilerServiceWaterCombi {
     boiler: Boiler,
     service_name: String,
-    control: (),
     temperature_hot_water_in_c: f64,
     cold_feed: WaterSourceWithTemperature,
     separate_dhw_tests: BoilerHotWaterTest,
@@ -67,7 +66,6 @@ impl BoilerServiceWaterCombi {
     ) -> Result<Self, IncorrectBoilerDataType> {
         match boiler_data {
             HotWaterSourceDetails::CombiBoiler {
-                // control,
                 separate_dhw_tests,
                 rejected_energy_1,
                 storage_loss_factor_2,
@@ -90,7 +88,6 @@ impl BoilerServiceWaterCombi {
                 Ok(Self {
                     boiler,
                     service_name,
-                    control: (), // should or could be a reference to a control
                     temperature_hot_water_in_c,
                     separate_dhw_tests,
                     rejected_energy_1,
@@ -221,7 +218,6 @@ pub struct BoilerServiceWaterRegular {
     boiler: Boiler,
     service_name: String,
     temperature_hot_water_in_c: f64,
-    cold_feed: ColdWaterSource,
     temperature_return: f64,
     control: Option<Arc<Control>>,
 }
@@ -231,7 +227,6 @@ impl BoilerServiceWaterRegular {
         boiler: Boiler,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        cold_feed: ColdWaterSource,
         temperature_return: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
@@ -239,7 +234,6 @@ impl BoilerServiceWaterRegular {
             boiler,
             service_name,
             temperature_hot_water_in_c,
-            cold_feed,
             temperature_return,
             control,
         }
@@ -566,7 +560,6 @@ impl Boiler {
         &mut self,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        cold_feed: ColdWaterSource,
         temperature_return: f64,
         control: Option<Arc<Control>>,
     ) -> BoilerServiceWaterRegular {
@@ -576,7 +569,6 @@ impl Boiler {
             (*self).clone(),
             service_name,
             temperature_hot_water_in_c,
-            cold_feed,
             temperature_return,
             control,
         )
@@ -744,7 +736,7 @@ impl Boiler {
         self.total_time_running_current_timestep += time_running_current_service;
 
         self.service_results.push(ServiceResult {
-            service_name: service_name.try_into().unwrap(),
+            _service_name: service_name.try_into().unwrap(),
             time_running: time_running_current_service,
             current_boiler_power,
         });
@@ -761,8 +753,7 @@ impl Boiler {
         energy_aux += self.power_standby * time_remaining_current_timestep;
 
         // Energy used by flue fan electricity for on-off boilers
-        let mut elec_energy_flue_fan =
-            self.total_time_running_current_timestep * self.power_full_load;
+        let _elec_energy_flue_fan = self.total_time_running_current_timestep * self.power_full_load;
 
         // Overwrite (sic from Python - no overwrite actually happens with current logic) flue fan if boiler modulates
         for service_data in self.service_results.iter() {
@@ -773,7 +764,7 @@ impl Boiler {
                 let y_axis = [self.power_part_load, self.power_full_load];
 
                 let flue_fan_el = interp(&x_axis, &y_axis, modulation_ratio);
-                elec_energy_flue_fan = service_data.time_running * flue_fan_el;
+                let elec_energy_flue_fan = service_data.time_running * flue_fan_el;
                 energy_aux += elec_energy_flue_fan;
             }
         }
@@ -804,7 +795,7 @@ impl Boiler {
 
 #[derive(Copy, Clone, Debug)]
 struct ServiceResult {
-    service_name: ArrayString<32>,
+    _service_name: ArrayString<32>,
     time_running: f64,
     current_boiler_power: f64,
 }
@@ -1204,15 +1195,11 @@ mod tests {
     }
 
     #[fixture]
-    pub fn regular_boiler<'a>(
-        boiler_for_regular: Boiler,
-        cold_water_source: ColdWaterSource,
-    ) -> BoilerServiceWaterRegular {
+    pub fn regular_boiler<'a>(boiler_for_regular: Boiler) -> BoilerServiceWaterRegular {
         BoilerServiceWaterRegular::new(
             boiler_for_regular,
             "boiler_test".to_string(),
             60.,
-            cold_water_source,
             60.,
             None,
         )
