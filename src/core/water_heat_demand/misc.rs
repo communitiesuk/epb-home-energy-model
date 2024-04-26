@@ -36,7 +36,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calculate_correct_water_demand_to_kWh() {
+    pub fn should_calculate_correct_water_demand_to_kwh() {
         let litres_demand = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0];
         let demand_temp = [40.0, 35.0, 37.0, 39.0, 40.0, 38.0, 39.0, 40.0];
         let cold_temp = [5.0, 4.0, 5.0, 6.0, 5.0, 4.0, 3.0, 4.0];
