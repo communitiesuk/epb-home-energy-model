@@ -1003,8 +1003,10 @@ mod tests {
         let return_temp = [30., 60.];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
-                boiler.boiler_efficiency_over_return_temperatures(return_temp[idx], 0.),
-                Ok([0.967, 0.8769][idx]),
+                boiler
+                    .boiler_efficiency_over_return_temperatures(return_temp[idx], 0.)
+                    .unwrap(),
+                [0.967, 0.8769][idx],
                 "incorrect theoretical boiler efficiency returned"
             );
         }
@@ -1019,8 +1021,8 @@ mod tests {
             "incorrect high value correction for full load"
         );
         assert_eq!(
-            Boiler::high_value_correction_part_load(boiler.energy_supply_type, 1.081),
-            Ok(1.056505),
+            Boiler::high_value_correction_part_load(boiler.energy_supply_type, 1.081).unwrap(),
+            1.056505,
             "incorrect high value correction for part load"
         );
     }
@@ -1029,8 +1031,8 @@ mod tests {
     pub fn should_calc_correct_net_to_gross(boiler: (Boiler, Arc<Mutex<EnergySupply>>)) {
         let (boiler, _) = boiler;
         assert_eq!(
-            Boiler::net_to_gross(boiler.energy_supply_type),
-            Ok(0.901),
+            Boiler::net_to_gross(boiler.energy_supply_type).unwrap(),
+            0.901,
             "incorrect net to gross"
         );
     }
