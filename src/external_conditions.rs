@@ -70,16 +70,12 @@ pub struct ExternalConditions {
     pub january_first: Option<u32>,
     pub daylight_savings: DaylightSavingsConfig,
     pub leap_day_included: bool,
-    direct_beam_conversion_needed: bool,
     shading_segments: Vec<ShadingSegment>,
-    extra_terrestrial_radiation: Vec<f64>,
     solar_declinations: Vec<f64>,
-    solar_times: Vec<f64>,
     solar_hour_angles: Vec<f64>,
     solar_altitudes: Vec<f64>,
     solar_zenith_angles: Vec<f64>,
     solar_azimuth_angles: Vec<f64>,
-    air_masses: Vec<f64>,
     f1_circumsolar_brightness_coefficients: Vec<f64>,
     f2_horizontal_brightness_coefficients: Vec<f64>,
 }
@@ -249,16 +245,12 @@ impl ExternalConditions {
             january_first,
             daylight_savings,
             leap_day_included,
-            direct_beam_conversion_needed,
             shading_segments,
-            extra_terrestrial_radiation,
             solar_declinations,
-            solar_times,
             solar_hour_angles,
             solar_altitudes,
             solar_zenith_angles,
             solar_azimuth_angles,
-            air_masses,
             f1_circumsolar_brightness_coefficients,
             f2_horizontal_brightness_coefficients,
         }
@@ -620,7 +612,7 @@ impl ExternalConditions {
             total_irradiance,
             diffuse_breakdown.then_some(DiffuseBreakdown {
                 sky: diffuse_irr_sky,
-                circumsolar: diffuse_irr_circumsolar,
+                _circumsolar: diffuse_irr_circumsolar,
                 horiz: diffuse_irr_horiz,
                 ground_refl: ground_reflection_irradiance,
             }),
@@ -1189,7 +1181,7 @@ pub type CalculatedDirectDiffuseTotalIrradiance = (f64, f64, f64, Option<Diffuse
 
 pub struct DiffuseBreakdown {
     sky: f64,
-    circumsolar: f64,
+    _circumsolar: f64,
     horiz: f64,
     ground_refl: f64,
 }
