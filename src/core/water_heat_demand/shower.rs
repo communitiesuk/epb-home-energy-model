@@ -189,7 +189,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "test brought into suite but needs to pass"]
     pub fn should_calculate_correct_hot_water_demand_for_instant() {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
@@ -206,6 +205,7 @@ mod tests {
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
         for (idx, _) in simulation_time.iter().enumerate() {
+            instant_shower.hot_water_demand(40.0, ((idx + 1) * 6) as f64, idx);
             assert_eq!(
                 energy_supply.lock().results_by_end_user()["shower"][idx],
                 expected_results_by_end_user[idx],
