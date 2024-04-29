@@ -10,7 +10,7 @@ description = "An engine written in Rust implementing the Home Energy Model (HEM
 [dependencies]
 anyhow = "1.0.82"
 arrayvec = { version = "0.7.4", features = ["serde"] }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive"], optional = true }
 csv = "1.3.0"
 derivative = "2.2.0"
 indexmap = { version = "2.2.6", features = ["serde"] }
@@ -37,6 +37,12 @@ walkdir = "2.5.0"
 [lib]
 # don't build doctests for now
 doctest = false
+
+[[bin]]
+name = "hem"
+path = "src/main.rs"
+doc = false
+required-features = ["clap"]
 
 [profile.release]
 opt-level = 3
