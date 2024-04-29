@@ -62,7 +62,7 @@ use crate::simulation_time::{SimulationTime, SimulationTimeIteration, Simulation
 use anyhow::bail;
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
-use indicatif::ProgressBar;
+use indicatif::ProgressIterator;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -961,9 +961,7 @@ impl Corpus {
         hot_water_pipework_dict.insert("pw_losses".try_into().unwrap(), vec_capacity());
         ductwork_gains_dict.insert("ductwork_gains".try_into().unwrap(), vec_capacity());
 
-        let progress_bar = ProgressBar::new(simulation_time.total_steps() as u64);
-
-        for t_it in simulation_time {
+        for t_it in simulation_time.progress() {
             timestep_array.push(t_it.time);
             let (hw_demand_vol, hw_vol_at_tapping_points, hw_duration, no_events, hw_energy_demand) =
                 self.domestic_hot_water_demand.hot_water_demand(t_it.index);
@@ -1141,11 +1139,7 @@ impl Corpus {
             for diverter in &self.diverters {
                 diverter.lock().timestep_end();
             }
-
-            progress_bar.inc(1);
         }
-
-        progress_bar.finish();
 
         // Return results from all energy supplies
         let mut results_totals: IndexMap<KeyString, Vec<f64>> = Default::default();

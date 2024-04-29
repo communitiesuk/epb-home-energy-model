@@ -116,6 +116,12 @@ impl SimulationTimeIterator {
     }
 }
 
+impl ExactSizeIterator for SimulationTimeIterator {
+    fn len(&self) -> usize {
+        self.total_steps()
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct SimulationTimeIteration {
     pub index: usize,
