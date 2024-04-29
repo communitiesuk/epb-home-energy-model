@@ -62,6 +62,7 @@ use crate::simulation_time::{SimulationTime, SimulationTimeIteration, Simulation
 use anyhow::bail;
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
+#[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -961,7 +962,12 @@ impl Corpus {
         hot_water_pipework_dict.insert("pw_losses".try_into().unwrap(), vec_capacity());
         ductwork_gains_dict.insert("ductwork_gains".try_into().unwrap(), vec_capacity());
 
-        for t_it in simulation_time.progress() {
+        #[cfg(feature = "indicatif")]
+        let simulation_time_iter = simulation_time.progress();
+        #[cfg(not(feature = "indicatif"))]
+        let simulation_time_iter = simulation_time;
+
+        for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             let (hw_demand_vol, hw_vol_at_tapping_points, hw_duration, no_events, hw_energy_demand) =
                 self.domestic_hot_water_demand.hot_water_demand(t_it.index);
