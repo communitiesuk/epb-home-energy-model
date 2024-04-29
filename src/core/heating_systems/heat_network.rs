@@ -373,7 +373,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -411,7 +411,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_heat_network_energy_output_provider(
-        mut heat_network: (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>),
+        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>),
         two_len_simulation_time: SimulationTime,
     ) {
         let (heat_network, energy_supply) = heat_network;
@@ -523,7 +523,7 @@ mod tests {
     #[rstest]
     pub fn should_calc_demand_hot_water_for_water_direct(
         mut heat_network_water_direct: HeatNetworkServiceWaterDirect,
-        mut heat_network_for_water_direct: Arc<Mutex<HeatNetwork>>,
+        heat_network_for_water_direct: Arc<Mutex<HeatNetwork>>,
         two_len_simulation_time: SimulationTime,
     ) {
         let volume_demanded = [50.0, 100.0];

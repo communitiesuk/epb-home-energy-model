@@ -16,12 +16,13 @@ pub struct Ductwork {
     length_in_in_m: f64,
     length_out_in_m: f64,
     mvhr_location: MVHRLocation,
-    diameter_including_insulation_in_m: f64,
     internal_surface_resistance: f64,
     // in K m / W
     insulation_resistance: f64,
     // in K m / W
     external_surface_resistance: f64, // K m / W
+    #[cfg(test)]
+    diameter_including_insulation_in_m: f64,
 }
 
 impl Ductwork {
@@ -70,10 +71,11 @@ impl Ductwork {
             length_in_in_m,
             length_out_in_m,
             mvhr_location,
-            diameter_including_insulation_in_m,
             internal_surface_resistance,
             insulation_resistance,
             external_surface_resistance,
+            #[cfg(test)]
+            diameter_including_insulation_in_m,
         }
     }
 

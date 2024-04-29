@@ -86,7 +86,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
     use rstest::*;

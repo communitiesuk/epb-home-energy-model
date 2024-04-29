@@ -36,7 +36,6 @@ pub struct Zone {
     useful_area: f64,
     volume: f64,
     building_elements: Vec<NamedBuildingElement>,
-    thermal_bridging: ThermalBridging,
     vent_elements: Vec<VentilationElement>,
     vent_cool_extra: Option<WindowOpeningForCooling>,
     tb_heat_trans_coeff: f64,
@@ -156,7 +155,6 @@ impl Zone {
             useful_area: area,
             volume,
             building_elements: named_building_elements,
-            thermal_bridging,
             vent_elements,
             vent_cool_extra,
             tb_heat_trans_coeff,
@@ -301,7 +299,7 @@ impl Zone {
         throughput_factor: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
         external_conditions: &ExternalConditions,
-    ) -> Option<()> {
+    ) -> Option<HeatBalance> {
         let (temp_prev, heat_balance_map) = calc_temperatures(
             delta_t,
             &self.temp_prev.lock(),
@@ -832,7 +830,7 @@ fn calc_temperatures(
     vent_elements: &[VentilationElement],
     vent_cool_extra: &Option<WindowOpeningForCooling>,
     print_heat_balance: Option<bool>,
-) -> (Vec<f64>, Option<()>) {
+) -> (Vec<f64>, Option<HeatBalance>) {
     let print_heat_balance = print_heat_balance.unwrap_or(false);
 
     let throughput_factor = throughput_factor.unwrap_or(1.0);
@@ -1318,46 +1316,46 @@ impl Hash for NamedBuildingElement {
     }
 }
 
-struct HeatBalanceAirNode {
-    solar_gains: f64,
-    internal_gains: f64,
-    heating_or_cooling_system_gains: f64,
-    energy_to_change_internal_temperature: f64,
-    heat_loss_through_thermal_bridges: f64,
-    heat_loss_through_infiltration: f64,
-    heat_loss_through_ventilation: f64,
-    fabric_heat_loss: f64,
+pub struct HeatBalanceAirNode {
+    pub solar_gains: f64,
+    pub internal_gains: f64,
+    pub heating_or_cooling_system_gains: f64,
+    pub energy_to_change_internal_temperature: f64,
+    pub heat_loss_through_thermal_bridges: f64,
+    pub heat_loss_through_infiltration: f64,
+    pub heat_loss_through_ventilation: f64,
+    pub fabric_heat_loss: f64,
 }
 
-struct HeatBalanceInternalBoundary {
-    fabric_int_air_convective: f64,
-    fabric_int_sol: f64,
-    fabric_int_int_gains: f64,
-    fabric_int_heat_cool: f64,
+pub struct HeatBalanceInternalBoundary {
+    pub fabric_int_air_convective: f64,
+    pub fabric_int_sol: f64,
+    pub fabric_int_int_gains: f64,
+    pub fabric_int_heat_cool: f64,
 }
 
-struct HeatBalanceExternalBoundary {
-    solar_gains: f64,
-    internal_gains: f64,
-    heating_or_cooling_system_gains: f64,
-    thermal_bridges: f64,
-    ventilation: f64,
-    infiltration: f64,
-    fabric_ext_air_convective: f64,
-    fabric_ext_air_radiative: f64,
-    fabric_ext_sol: f64,
-    fabric_ext_sky: f64,
-    opaque_fabric_ext: f64,
-    transparent_fabric_ext: f64,
-    ground_fabric_ext: f64,
-    ztc_fabric_ext: f64,
-    ztu_fabric_ext: f64,
+pub struct HeatBalanceExternalBoundary {
+    pub solar_gains: f64,
+    pub internal_gains: f64,
+    pub heating_or_cooling_system_gains: f64,
+    pub thermal_bridges: f64,
+    pub ventilation: f64,
+    pub infiltration: f64,
+    pub fabric_ext_air_convective: f64,
+    pub fabric_ext_air_radiative: f64,
+    pub fabric_ext_sol: f64,
+    pub fabric_ext_sky: f64,
+    pub opaque_fabric_ext: f64,
+    pub transparent_fabric_ext: f64,
+    pub ground_fabric_ext: f64,
+    pub ztc_fabric_ext: f64,
+    pub ztu_fabric_ext: f64,
 }
 
-struct HeatBalance {
-    air_node: HeatBalanceAirNode,
-    internal_boundary: HeatBalanceInternalBoundary,
-    external_boundary: HeatBalanceExternalBoundary,
+pub struct HeatBalance {
+    pub air_node: HeatBalanceAirNode,
+    pub internal_boundary: HeatBalanceInternalBoundary,
+    pub external_boundary: HeatBalanceExternalBoundary,
 }
 
 #[cfg(test)]

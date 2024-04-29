@@ -40,14 +40,22 @@ pub struct Input {
     pub ventilation: Option<Ventilation>,
     pub infiltration: Infiltration,
     pub zone: ZoneDictionary,
+    // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
+    #[allow(dead_code)]
     #[serde(rename = "PartGcompliance")]
     part_g_compliance: Option<bool>,
+    #[allow(dead_code)]
     #[serde(rename = "PartO_active_cooling_required")]
     part_o_active_cooling_required: Option<bool>,
+    #[allow(dead_code)]
     ground_floor_area: Option<f64>,
+    #[allow(dead_code)]
     number_of_bedrooms: Option<u32>,
+    #[allow(dead_code)]
     number_of_wet_rooms: Option<u32>,
+    #[allow(dead_code)]
     heating_control_type: Option<HeatingControlType>,
+    #[allow(dead_code)]
     #[serde(rename = "WaterHeatSchedDefault")]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
     pub heat_source_wet: Option<HeatSourceWet>,
@@ -63,7 +71,9 @@ pub struct Input {
 pub struct ExternalConditionsInput {
     pub air_temperatures: Option<Vec<f64>>,
     pub wind_speeds: Option<Vec<f64>>,
-    ground_temperatures: Option<Vec<f64>>,
+    // check upstream whether anything uses this
+    #[serde(rename = "ground_temperatures")]
+    _ground_temperatures: Option<Vec<f64>>,
     pub diffuse_horizontal_radiation: Option<Vec<f64>>,
     pub direct_beam_radiation: Option<Vec<f64>>,
     pub solar_reflectivity_of_ground: Option<Vec<f64>>,
@@ -109,8 +119,9 @@ pub type ApplianceGains = HashMap<String, ApplianceGainsDetails>;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGainsDetails {
+    // check upstream whether type is used here
     #[serde(rename(deserialize = "type"))]
-    gain_type: Option<ApplianceGainType>,
+    _gain_type: Option<ApplianceGainType>,
     pub start_day: u32,
     pub time_series_step: f64,
     pub gains_fraction: f64,
@@ -821,7 +832,7 @@ pub enum SpaceHeatSystemDetails {
         heat_source: SpaceHeatSystemHeatSource,
         #[serde(alias = "Control")]
         control: Option<String>,
-        // don't know possible values
+        // check upstream if this is used
         ecodesign_controller: EcoDesignController,
         design_flow_temp: i32,
         #[serde(alias = "Zone")]
@@ -844,7 +855,9 @@ pub struct SpaceHeatSystemHeatSource {
     pub temp_flow_limit_upper: Option<f64>,
 }
 
+// it is unclear whether this struct should be used - see reference to the struct above
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 #[serde(deny_unknown_fields)]
 pub struct EcoDesignController {
     ecodesign_control_class: u32,
@@ -972,15 +985,19 @@ pub struct ZoneInput {
     pub control_window_opening: Option<HeatSourceControlType>,
     pub area: f64,
     pub volume: f64,
+    // check upstream whether this is used
     #[serde(rename = "Lighting")]
-    pub lighting: Option<ZoneLighting>,
-    pub temp_setpnt_heat: Option<f64>,
-    pub temp_setpnt_cool: Option<f64>,
+    pub _lighting: Option<ZoneLighting>,
+    // check upstream whether these two are used
+    #[serde(rename = "temp_setpnt_heat")]
+    _temp_setpnt_heat: Option<f64>,
+    #[serde(rename = "temp_setpnt_cool")]
+    _temp_setpnt_cool: Option<f64>,
     pub temp_setpnt_init: Option<f64>,
     #[serde(rename = "BuildingElement")]
     pub building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename = "ThermalBridging")]
-    pub thermal_bridging: ThermalBridging, // this can be either a float or a hashmap of thermal bridging details - see commented out structs below
+    pub thermal_bridging: ThermalBridging,
 }
 
 #[derive(Debug, Deserialize)]
@@ -994,7 +1011,8 @@ pub enum SpaceHeatControlType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneLighting {
-    efficacy: f64,
+    #[serde(rename = "efficacy")]
+    _efficacy: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1129,7 +1147,9 @@ pub type SpaceCoolSystem = HashMap<String, SpaceCoolSystemDetails>;
 pub struct SpaceCoolSystemDetails {
     #[serde(rename(deserialize = "type"))]
     pub system_type: SpaceCoolSystemType,
-    temp_setback: Option<f64>,
+    // TODO check upstream whether this is used
+    #[serde(rename = "temp_setback")]
+    _temp_setback: Option<f64>,
     pub cooling_capacity: f64,
     pub efficiency: f64,
     pub frac_convective: f64,
@@ -1305,26 +1325,21 @@ pub enum WwhrsType {
 pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OnSiteGenerationDetails {
-    #[serde(rename = "type")]
-    generation_type: OnSiteGenerationType,
-    pub peak_power: f64,
-    pub ventilation_strategy: OnSiteGenerationVentilationStrategy,
-    pub pitch: f64,
-    #[serde(rename = "orientation360")]
-    #[serde(deserialize_with = "deserialize_orientation")]
-    pub orientation: f64,
-    pub base_height: f64,
-    pub height: f64,
-    pub width: f64,
-    #[serde(rename = "EnergySupply")]
-    pub energy_supply: EnergySupplyType,
-}
-
-#[derive(Debug, Deserialize)]
-pub enum OnSiteGenerationType {
-    PhotovoltaicSystem,
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum OnSiteGenerationDetails {
+    PhotovoltaicSystem {
+        peak_power: f64,
+        ventilation_strategy: OnSiteGenerationVentilationStrategy,
+        pitch: f64,
+        #[serde(rename = "orientation360")]
+        #[serde(deserialize_with = "deserialize_orientation")]
+        orientation: f64,
+        base_height: f64,
+        height: f64,
+        width: f64,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: EnergySupplyType,
+    },
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]

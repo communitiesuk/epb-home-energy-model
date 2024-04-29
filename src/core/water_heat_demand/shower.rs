@@ -165,7 +165,7 @@ impl InstantElectricShower {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
     use rstest::*;
@@ -188,6 +188,8 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[ignore = "test brought into suite but needs to pass"]
     pub fn should_calculate_correct_hot_water_demand_for_instant() {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];

@@ -2862,7 +2862,7 @@ pub enum ServiceResult {
 }
 
 #[derive(Debug)]
-struct HeatPumpEnergyCalculation {
+pub struct HeatPumpEnergyCalculation {
     service_name: ResultString,
     service_type: ServiceType,
     service_on: bool,
@@ -2975,7 +2975,7 @@ impl Div for ResultParamValue {
 }
 
 #[derive(Debug)]
-struct AuxiliaryParameters {
+pub struct AuxiliaryParameters {
     _energy_standby: f64,
     _energy_crankcase_heater_mode: f64,
     _energy_off_mode: f64,

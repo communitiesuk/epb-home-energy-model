@@ -1981,7 +1981,7 @@ mod test {
             6.75, 7.75, 8.75, 9.75, 10.75, 11.75, 12.75, 12.75, 11.75, 10.75, 9.75, 8.75,
         ];
         let external_conditions = external_conditions.clone();
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+        for simtime_step in simulation_time_iterator {
             let month_idx = simtime_step.current_month().unwrap() as usize;
             assert_eq!(
                 external_conditions.air_temp_monthly(simtime_step.current_month_start_end_hours()),
@@ -1996,7 +1996,7 @@ mod test {
         wind_speeds: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let mut external_conditions = external_conditions.clone();
+        let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.wind_speed(&simtime_step),

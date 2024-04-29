@@ -35,7 +35,7 @@ use crate::core::space_heat_demand::ventilation_element::{
     VentilationElement, VentilationElementInfiltration, WholeHouseExtractVentilation,
     WindowOpeningForCooling,
 };
-use crate::core::space_heat_demand::zone::{NamedBuildingElement, Zone};
+use crate::core::space_heat_demand::zone::{HeatBalance, NamedBuildingElement, Zone};
 use crate::core::units::{
     kelvin_to_celsius, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
     WATTS_PER_KILOWATT,
@@ -106,11 +106,16 @@ pub struct Corpus {
 impl Corpus {
     pub fn from_inputs(
         input: Input,
-        external_conditions: ExternalConditions,
+        external_conditions: Option<ExternalConditions>,
     ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
-        let external_conditions = Arc::new(external_conditions);
+        let external_conditions = Arc::new(match external_conditions {
+            Some(external_conditions) => external_conditions,
+            None => {
+                external_conditions_from_input(input.external_conditions, &simulation_time_iterator)
+            }
+        });
 
         let diverter_types: DiverterTypes = (&input.energy_supply).into();
         let mut diverters: Vec<Arc<Mutex<PVDiverter>>> = Default::default();
@@ -762,7 +767,7 @@ impl Corpus {
         // update resultant temperatures in zones.
         let mut internal_air_temp: HashMap<&str, f64> = Default::default();
         let mut operative_temp: HashMap<&str, f64> = Default::default();
-        let mut heat_balance_map: HashMap<&str, Option<()>> = Default::default(); // using unit type here as placeholder
+        let mut heat_balance_map: HashMap<&str, Option<HeatBalance>> = Default::default(); // using unit type here as placeholder
         for (z_name, zone) in &self.zones {
             // Look up names of relevant heating and cooling systems for this zone
             let h_name = self.heat_system_name_for_zone[z_name.as_str()].as_ref();
@@ -1393,13 +1398,7 @@ impl Corpus {
         gains_solar_zone: &HashMap<&str, f64>,
         throughput_factor: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (
-        HashMap<String, f64>,
-        HashMap<String, f64>,
-        HashMap<String, f64>,
-        HashMap<String, f64>,
-        HashMap<String, f64>,
-    ) {
+    ) -> (NumberMap, NumberMap, NumberMap, NumberMap, NumberMap) {
         let mut space_heat_demand_system: HashMap<String, f64> = Default::default();
         for heat_system_name in self.space_heat_systems.keys() {
             space_heat_demand_system.insert((*heat_system_name).clone(), 0.0);
@@ -1507,6 +1506,8 @@ pub enum NumberOrDivisionByZero {
     Number(f64),
     DivisionByZero,
 }
+
+type NumberMap = HashMap<String, f64>;
 
 fn has_unique_some_values<K, V: Eq + Hash>(map: &HashMap<K, Option<V>>) -> bool {
     let some_values: Vec<&V> = map.values().flat_map(|v| v.iter()).collect();
@@ -2003,7 +2004,7 @@ type SpaceHeatingCalculation<'a> = (
     HashMap<&'a str, f64>,
     HashMap<&'a str, f64>,
     f64,
-    HashMap<&'a str, Option<()>>,
+    HashMap<&'a str, Option<HeatBalance>>,
 );
 
 fn get_cold_water_source_ref_for_type(
@@ -2143,8 +2144,6 @@ fn ventilation_from_input<'a>(
                 *sfp,
                 *efficiency,
                 energy_supply_conn,
-                // energy_supply_from_type_for_ventilation(energy_supply, energy_supplies),
-                // "Ventilation system".to_string(),
                 simulation_time.step_in_hours(),
             ))
         }
@@ -2153,21 +2152,6 @@ fn ventilation_from_input<'a>(
             infiltration.infiltration_rate(),
         )),
     })
-}
-
-fn energy_supply_from_type_for_ventilation(
-    energy_supply_type: &EnergySupplyType,
-    energy_supplies: EnergySupplies,
-) -> Arc<Mutex<EnergySupply>> {
-    match energy_supply_type {
-        EnergySupplyType::Electricity => energy_supplies.mains_electricity.unwrap().clone(),
-        EnergySupplyType::MainsGas => energy_supplies.mains_gas.unwrap().clone(),
-        EnergySupplyType::UnmetDemand => energy_supplies.unmet_demand.clone(),
-        EnergySupplyType::LpgBulk => energy_supplies.bulk_lpg.unwrap().clone(),
-        // commenting out for now as this is a different type and might not be used in this context
-        // EnergySupplyType::HeatNetwork => energy_supplies.heat_network.unwrap(),
-        _ => panic!("Unexpected energy supply type listed for ventilation."),
-    }
 }
 
 fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
@@ -2619,7 +2603,6 @@ fn heat_source_wet_from_input(
                 energy_supply,
                 energy_supply_conn,
                 simulation_time,
-                external_conditions.clone(),
             ));
             Ok(heat_source)
         }
@@ -2772,7 +2755,6 @@ fn heat_source_from_input(
                                 Arc::new(Mutex::new(battery)),
                                 &energy_supply_conn_name,
                                 temp_setpoint,
-                                Arc::new(cold_water_source),
                                 55.,
                                 source_control,
                             ),
@@ -2813,7 +2795,7 @@ fn heat_source_from_input(
     }
 }
 
-enum HotWaterSource {
+pub enum HotWaterSource {
     StorageTank(Arc<Mutex<StorageTank>>),
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
@@ -3097,10 +3079,7 @@ fn space_heat_systems_from_input(
     heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_names_for_zone: Vec<&str>,
-) -> anyhow::Result<(
-    HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
-    HashMap<String, String>,
-)> {
+) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: HashMap<String, String> = Default::default();
     let space_heat_systems = input
         .iter()
@@ -3160,6 +3139,11 @@ fn space_heat_systems_from_input(
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
     Ok((space_heat_systems, energy_conn_names_for_systems))
 }
+
+type SpaceHeatSystemsWithEnergyConnections = (
+    HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
+    HashMap<String, String>,
+);
 
 fn space_cool_systems_from_input(
     input: &SpaceCoolSystemInput,
@@ -3222,7 +3206,7 @@ fn on_site_generation_from_input(
         .iter()
         .map(|(name, generation_details)| {
             Ok(((*name).clone(), {
-                let OnSiteGenerationDetails {
+                let OnSiteGenerationDetails::PhotovoltaicSystem {
                     peak_power,
                     ventilation_strategy,
                     pitch,

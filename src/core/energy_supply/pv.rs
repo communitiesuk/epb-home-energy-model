@@ -167,7 +167,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::Mutex;
     use rstest::*;

@@ -48,7 +48,7 @@ where
         input.simulation_time.clone(),
     );
 
-    let mut corpus: Corpus = Corpus::from_inputs(input, external_conditions)?;
+    let mut corpus: Corpus = Corpus::from_inputs(input, Some(external_conditions))?;
 
     Ok(corpus.run())
 }

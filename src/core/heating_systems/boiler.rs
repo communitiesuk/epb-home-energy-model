@@ -801,6 +801,7 @@ struct ServiceResult {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;

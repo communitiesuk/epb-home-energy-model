@@ -30,7 +30,7 @@ const STORAGE_TANK_F_RVD_AUX: f64 = 0.25;
 // part of the thermal losses transmitted to the room
 const STORAGE_TANK_F_STO_M: f64 = 0.75;
 
-// ambient temperature - degress (sic - from Python code)
+// ambient temperature - degrees
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
 #[derive(Clone, Debug)]
@@ -54,7 +54,6 @@ pub struct StorageTank {
     temp_set_on: f64,  // set point temperature
     cold_feed: WaterSourceWithTemperature,
     simulation_timestep: f64,
-    contents: MaterialProperties,
     energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
     volume_total_in_litres: f64,
@@ -138,7 +137,6 @@ impl StorageTank {
             temp_set_on,
             cold_feed,
             simulation_timestep,
-            contents,
             energy_supply_connection_unmet_demand,
             control_hold_at_setpoint,
             volume_total_in_litres,
@@ -668,19 +666,17 @@ impl StorageTank {
         // TODO 6.4.3.11 Heat exchanger
 
         // demand adjusted energy from heat source (before was just using potential without taking it)
-        let mut input_energy_adj = q_in_h_w;
+        let input_energy_adj = q_in_h_w;
 
         #[cfg(test)]
         {
             self.energy_demand_test = input_energy_adj;
         }
 
-        // energy demand saved for unittest (not implemented in Rust until needed)
-        // self.__energy_demand_test = deepcopy(input_energy_adj)
-
-        let heat_source_output =
+        let _heat_source_output =
             self.heat_source_output(heat_source, input_energy_adj, simulation_time_iteration);
-        input_energy_adj -= heat_source_output;
+        // variable is updated in upstream but then never read
+        // input_energy_adj -= _heat_source_output;
 
         (
             temp_s8_n, q_x_in_n, q_s6, temp_s6_n, temp_s7_n, q_in_h_w, q_ls, q_ls_n,
@@ -1038,9 +1034,8 @@ impl PVDiverter {
         supply_surplus: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        let mut imm_heater_max_capacity_spare: f64 = Default::default();
         // check how much spare capacity the immersion heater has
-        imm_heater_max_capacity_spare = self
+        let imm_heater_max_capacity_spare = self
             .immersion_heater
             .lock()
             .energy_output_max(simulation_time_iteration, true)
@@ -1288,7 +1283,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use rstest::*;
 
@@ -1630,11 +1625,6 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 1.),
         ));
-        let control = OnOffTimeControl::new(
-            vec![true, false, false, false, true, true, true, true],
-            0,
-            1.,
-        );
         let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),

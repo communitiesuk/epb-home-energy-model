@@ -1,9 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::external_conditions::ExternalConditions;
-use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
+use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use interp::interp;
@@ -13,7 +11,7 @@ use std::sync::Arc;
 
 /// This module provides object(s) to model the behaviour of heat batteries.
 
-enum ServiceType {
+pub enum ServiceType {
     WaterRegular,
     Space,
 }
@@ -28,7 +26,6 @@ pub struct HeatBatteryServiceWaterRegular {
     service_name: String,
     control: Option<Arc<Control>>,
     temp_hot_water: f64,
-    cold_feed: Arc<ColdWaterSource>,
     temp_return: f64,
 }
 
@@ -37,7 +34,6 @@ impl HeatBatteryServiceWaterRegular {
         heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,
         temp_hot_water: f64,
-        cold_feed: Arc<ColdWaterSource>,
         temp_return: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
@@ -46,7 +42,6 @@ impl HeatBatteryServiceWaterRegular {
             service_name,
             control,
             temp_hot_water,
-            cold_feed,
             temp_return,
         }
     }
@@ -150,7 +145,8 @@ impl HeatBatteryServiceSpace {
     }
 }
 
-const LABS_TESTS_RATED_OUTPUT: [[f64; 2]; 21] = [
+// TODO - check upstream whether it's an error that these numbers are not used
+const _LABS_TESTS_RATED_OUTPUT: [[f64; 2]; 21] = [
     [0.0, 0.0],
     [0.08, 0.00],
     [0.16, 0.03],
@@ -218,7 +214,9 @@ const LABS_TESTS_LOSSES: [[f64; 2]; 20] = [
 
 const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
 
+// nothing seems to read this - check upstream whether service_results field is necessary
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct HeatBatteryResult {
     service_name: String,
     time_running: f64,
@@ -228,11 +226,9 @@ struct HeatBatteryResult {
 #[derive(Clone, Debug)]
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
-    external_conditions: Arc<ExternalConditions>,
     energy_supply: Arc<Mutex<EnergySupply>>,
     energy_supply_connection: EnergySupplyConnection,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
-    heat_battery_location: HeatSourceLocation,
     pwr_in: f64,
     heat_storage_capacity: f64,
     max_rated_heat_output: f64,
@@ -241,6 +237,7 @@ pub struct HeatBattery {
     power_standby: f64,
     n_units: usize,
     charge_control: Arc<Control>, // ToUChargeControl variant expected
+    // nothing external seems to read this - check upstream whether service_results field is necessary
     service_results: Vec<HeatBatteryResult>,
     total_time_running_current_timestamp: f64,
     flag_first_call: bool,
@@ -257,10 +254,8 @@ impl HeatBattery {
         energy_supply: Arc<Mutex<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: Arc<SimulationTimeIterator>,
-        external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         let (
-            heat_battery_location,
             pwr_in,
             heat_storage_capacity,
             max_rated_heat_output,
@@ -268,8 +263,8 @@ impl HeatBattery {
             power_circ_pump,
             power_standby,
             n_units,
+            ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
-            heat_battery_location,
             rated_charge_power: pwr_in,
             heat_storage_capacity,
             max_rated_heat_output,
@@ -281,7 +276,6 @@ impl HeatBattery {
         } = heat_battery_details
         {
             (
-                *heat_battery_location,
                 *pwr_in,
                 *heat_storage_capacity,
                 *max_rated_heat_output,
@@ -296,11 +290,9 @@ impl HeatBattery {
 
         Self {
             simulation_time,
-            external_conditions,
             energy_supply,
             energy_supply_connection,
             energy_supply_connections: Default::default(),
-            heat_battery_location,
             pwr_in,
             heat_storage_capacity,
             max_rated_heat_output,
@@ -354,7 +346,6 @@ impl HeatBattery {
         heat_battery: Arc<Mutex<Self>>,
         service_name: &str,
         temp_hot_water: f64,
-        cold_feed: Arc<ColdWaterSource>,
         temp_return: f64,
         control: Option<Arc<Control>>,
     ) -> HeatBatteryServiceWaterRegular {
@@ -363,7 +354,6 @@ impl HeatBattery {
             heat_battery,
             service_name.to_string(),
             temp_hot_water,
-            cold_feed,
             temp_return,
             control,
         )
@@ -385,7 +375,7 @@ impl HeatBattery {
     /// * `timestep` - length of the timestep
     ///
     /// returns  -- Energy in kWH
-    fn convert_to_energy(&self, power: f64, timestep: f64) -> f64 {
+    fn _convert_to_energy(&self, power: f64, timestep: f64) -> f64 {
         power * timestep * self.n_units as f64
     }
 

@@ -1,4 +1,4 @@
-use crate::core::controls::time_control::SetpointTimeControl;
+use crate::core::controls::time_control::{ControlBehaviour, SetpointTimeControl};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::{
     area_for_building_element_input, cloned_element_from_named, element_from_named, mid_height_for,
@@ -148,7 +148,6 @@ impl VentilationElement {
 
 #[derive(Clone)]
 pub struct VentilationElementInfiltration {
-    volume: f64,
     infiltration_rate_from_openings: f64,
     q50_divisor: f64,
     shelter_factor: f64,
@@ -229,7 +228,6 @@ impl VentilationElementInfiltration {
         );
 
         VentilationElementInfiltration {
-            volume,
             infiltration_rate_from_openings,
             q50_divisor,
             shelter_factor,
@@ -693,8 +691,8 @@ const DC_P: f64 = 0.2 - (-0.25); // Difference in wind pressure coeff from CIBSE
 pub struct WindowOpeningForCooling {
     window_area_equivalent: f64,
     external_conditions: Arc<ExternalConditions>,
-    openings: Option<Vec<BuildingElement>>,
     // actually only meaningfully contains BuildingElement::Transparent
+    openings: Option<Vec<BuildingElement>>,
     control: Option<SetpointTimeControl>,
     natural_ventilation: Option<NaturalVentilation>,
     a_b: Option<f64>,
@@ -932,6 +930,12 @@ impl WindowOpeningForCooling {
         }
     }
 
+    pub fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        self.control
+            .as_ref()
+            .and_then(|control| control.setpnt(&simtime))
+    }
+
     pub fn h_ve_max(
         &self,
         zone_volume: f64,
@@ -1028,7 +1032,7 @@ mod test {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
     use rstest::*;
@@ -1361,10 +1365,7 @@ mod test {
 
     #[rstest]
     pub fn should_have_correct_fan_gains_for_whole_house(
-        mut whole_house_extract_ventilation: (
-            WholeHouseExtractVentilation,
-            Arc<Mutex<EnergySupply>>,
-        ),
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (mut whole_house_extract_ventilation, energy_supply) = whole_house_extract_ventilation;

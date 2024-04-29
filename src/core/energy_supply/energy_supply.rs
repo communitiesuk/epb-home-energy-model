@@ -460,6 +460,8 @@ impl EnergySupply {
 
 enum BetaFactorFunction {
     Pv,
+    // variant currently commented out in upstream
+    #[allow(dead_code)]
     Wind,
 }
 

@@ -107,7 +107,7 @@ impl ApplianceGains {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::input::{EnergySupplyType, FuelType};
+    use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
     use rstest::*;
