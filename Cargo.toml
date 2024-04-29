@@ -24,7 +24,7 @@ nalgebra = "0.32.5"
 ordered-float = "4.2.0"
 parking_lot = { version = "0.12.2", features = ["hardware-lock-elision"] }
 polyfit-rs = "0.2.1"
-serde = { version = "1.0.198", features = ["derive", "rc"] }
+serde = { version = "1.0.199", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.116"
 variants-struct = "0.1.1"
