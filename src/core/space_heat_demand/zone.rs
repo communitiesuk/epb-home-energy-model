@@ -1359,7 +1359,7 @@ pub struct HeatBalance {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;

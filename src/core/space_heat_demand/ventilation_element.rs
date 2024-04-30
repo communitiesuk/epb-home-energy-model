@@ -1028,7 +1028,7 @@ pub fn temp_supply_for_window_opening(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};

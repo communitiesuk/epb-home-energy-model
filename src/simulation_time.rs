@@ -204,7 +204,7 @@ impl Iterator for SimulationTimeIterator {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use rstest::*;
 

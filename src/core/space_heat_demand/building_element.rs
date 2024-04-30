@@ -661,7 +661,7 @@ const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
 const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};

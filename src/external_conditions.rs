@@ -1591,7 +1591,7 @@ fn init_dimensionless_sky_brightness_parameter(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;

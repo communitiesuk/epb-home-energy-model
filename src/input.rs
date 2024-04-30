@@ -1379,7 +1379,7 @@ impl InputForProcessing {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use rstest::*;
     use std::fs::File;

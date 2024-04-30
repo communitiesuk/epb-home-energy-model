@@ -73,7 +73,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use rstest::*;
     use serde_json::json;

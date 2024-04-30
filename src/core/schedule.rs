@@ -183,7 +183,7 @@ pub fn expand_water_heating_events(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::input::Schedule;
     use rstest::*;

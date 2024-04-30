@@ -292,7 +292,7 @@ impl ControlBehaviour for SetpointTimeControl {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;

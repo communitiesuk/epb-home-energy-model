@@ -519,7 +519,7 @@ fn supply_from_heat_network_details(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use rstest::*;
