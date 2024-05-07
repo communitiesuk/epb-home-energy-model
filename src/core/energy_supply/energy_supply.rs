@@ -373,8 +373,9 @@ impl EnergySupply {
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
     pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
-        let mut supplies = vec![];
-        let mut demands = vec![];
+        let end_user_count = self.demand_by_end_user.len();
+        let mut supplies = Vec::with_capacity(end_user_count);
+        let mut demands = Vec::with_capacity(end_user_count);
         let timestep_idx = simtime.index;
         for user in self.demand_by_end_user.keys() {
             let demand = self.demand_by_end_user[user][timestep_idx];
