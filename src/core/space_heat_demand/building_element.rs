@@ -1585,7 +1585,7 @@ mod tests {
 
     // following test seems incomplete - Python test only seems to exercise the first building element in the list, and other elements come out with different values
 
-    #[ignore = "waiting for upstream confirmation test assertions are incorrect"]
+    #[ignore = "this faulty test has been superseded upstream by a more complex (and working!) test"]
     #[rstest]
     pub fn test_temp_ext_for_ground(
         ground_building_elements: [BuildingElement; 5],
