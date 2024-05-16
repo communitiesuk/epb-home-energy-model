@@ -51,7 +51,7 @@ pub fn weather_data_to_vec(file: &str) -> Result<ExternalConditions, &'static st
             wind_speeds.push(record.get(COLUMN_WIND_SPEED).unwrap().parse().unwrap());
             dir_beam_rad.push(record.get(COLUMN_DNI_RAD).unwrap().parse().unwrap());
             diff_hor_rad.push(record.get(COLUMN_DIF_RAD).unwrap().parse().unwrap());
-            ground_solar_reflc.push(0.2); // this could be an upstream bug as is not reading from the file?
+            ground_solar_reflc.push(0.2);
         }
     }
 
