@@ -371,7 +371,7 @@ impl HeatPumpTestData {
             );
         }
         for (dsgn_flow_temp, data) in test_data.iter() {
-            if dupl.get(dsgn_flow_temp).is_some() {
+            if dupl.contains_key(dsgn_flow_temp) {
                 if (data.len() - dupl.get(dsgn_flow_temp).unwrap()) != 4 {
                     return Err(
                         "Expected 4 distinct records for each design flow temperature".into(),
