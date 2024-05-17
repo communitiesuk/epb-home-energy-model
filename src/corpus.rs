@@ -1794,6 +1794,8 @@ fn control_from_input(
                     // representing an always off control as no control for now as unclear whether we need to model this
                     // (it does not seem to be in upstream Python)
                     None,
+                    None,
+                    None,
                 ));
             }
             HeatSourceControl {
@@ -1806,6 +1808,8 @@ fn control_from_input(
                         control,
                         simulation_time_iterator,
                     ))),
+                    None,
+                    None,
                     None,
                 ));
             }

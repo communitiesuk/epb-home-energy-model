@@ -317,10 +317,22 @@ where
         match control_type.as_str() {
             // following strings need to be in sync with HeatSourceControlType known values
             "hw timer" => {
-                core.push(HeatSourceControl::new(Some(control_details), None, None));
+                core.push(HeatSourceControl::new(
+                    Some(control_details),
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
             }
             "window opening" => {
-                core.push(HeatSourceControl::new(None, Some(control_details), None));
+                core.push(HeatSourceControl::new(
+                    None,
+                    Some(control_details),
+                    None,
+                    None,
+                    None,
+                ));
             }
             // there are some extra control definitions from time to time called things like
             // "hw timer 2" and "zone 1 radiators timer" - can only presume now to store these keys as-is
@@ -486,6 +498,10 @@ pub enum HeatSourceControlType {
     HotWaterTimer,
     #[serde(rename = "window opening")]
     WindowOpening,
+    #[serde(rename = "WindowOpening_LivingRoom")]
+    WindowOpeningLivingRoom,
+    #[serde(rename = "WindowOpening_RestOfDwelling")]
+    WindowOpeningRestOfDwelling,
     #[serde(rename = "always off")]
     AlwaysOff,
 }
