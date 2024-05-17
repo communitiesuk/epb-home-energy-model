@@ -2031,41 +2031,38 @@ fn event_schedules_from_input(
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> HotWaterEventSchedules {
     let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
-    if let Some(shower_events) = events.shower {
-        shower_schedules.insert(
-            "ies".to_string(),
-            schedule_event_from_input(shower_events.ies.iter().collect(), simulation_time_iterator),
-        );
-        shower_schedules.insert(
-            "mixer".to_string(),
-            schedule_event_from_input(
-                shower_events.mixer.iter().collect(),
-                simulation_time_iterator,
-            ),
-        );
-    }
+    let shower_events = &events.shower;
+    shower_schedules.insert(
+        "ies".to_string(),
+        schedule_event_from_input(shower_events.ies.iter().collect(), simulation_time_iterator),
+    );
+    shower_schedules.insert(
+        "mixer".to_string(),
+        schedule_event_from_input(
+            shower_events.mixer.iter().collect(),
+            simulation_time_iterator,
+        ),
+    );
 
     let mut bath_schedules: HashMap<String, EventSchedule> = Default::default();
-    if let Some(bath_events) = events.bath {
-        bath_schedules.insert(
-            "medium".to_string(),
-            schedule_event_from_input(
-                bath_events.medium.iter().collect(),
-                simulation_time_iterator,
-            ),
-        );
-    }
+    let bath_events = &events.bath;
+    bath_schedules.insert(
+        "medium".to_string(),
+        schedule_event_from_input(
+            bath_events.medium.iter().collect(),
+            simulation_time_iterator,
+        ),
+    );
 
     let mut other_schedules: HashMap<String, EventSchedule> = Default::default();
-    if let Some(other_events) = events.other {
-        other_schedules.insert(
-            "other".to_string(),
-            schedule_event_from_input(
-                other_events.other.iter().collect(),
-                simulation_time_iterator,
-            ),
-        );
-    }
+    let other_events = &events.other;
+    other_schedules.insert(
+        "other".to_string(),
+        schedule_event_from_input(
+            other_events.other.iter().collect(),
+            simulation_time_iterator,
+        ),
+    );
 
     HotWaterEventSchedules {
         shower: shower_schedules,

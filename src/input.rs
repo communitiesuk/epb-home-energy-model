@@ -736,9 +736,12 @@ pub struct WaterDistribution {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct WaterHeatingEvents {
-    pub shower: Option<ShowerEvents>,
-    pub bath: Option<BathEvents>,
-    pub other: Option<OtherWaterHeatingEvents>,
+    #[serde(default)]
+    pub shower: ShowerEvents,
+    #[serde(default)]
+    pub bath: BathEvents,
+    #[serde(default)]
+    pub other: OtherWaterHeatingEvents,
 }
 
 #[derive(Debug, Deserialize)]
@@ -749,7 +752,7 @@ pub struct WaterHeatingEvent {
     pub temperature: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ShowerEvents {
     #[serde(alias = "IES")]
@@ -757,13 +760,13 @@ pub struct ShowerEvents {
     pub mixer: Vec<WaterHeatingEvent>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BathEvents {
     pub medium: Vec<WaterHeatingEvent>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterHeatingEvents {
     pub other: Vec<WaterHeatingEvent>,
