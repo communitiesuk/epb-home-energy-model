@@ -2069,3 +2069,72 @@ const AVERAGE_MONTHLY_APPLIANCES_HALF_HOUR_PROFILES: [[f64; 24]; 12] = [
         0.033793649,
     ],
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::*;
+
+    #[ignore = "useless test reported up to BRE"]
+    #[rstest]
+    fn test_check_invalid_shower_flowrate() {
+        assert!(!false);
+    }
+
+    #[ignore = "useless test reported up to BRE"]
+    #[rstest]
+    fn test_check_valid_shower_flowrate() {
+        assert!(true);
+    }
+
+    #[ignore = "useless test reported up to BRE"]
+    #[rstest]
+    fn test_check_minimum_shower_flowrate() {
+        assert!(true);
+    }
+
+    #[rstest]
+    fn test_calc_1_occupant() {
+        // test with on occupant and a range of floor areas
+        assert_eq!(
+            round_by_precision(1.075, 1e2),
+            round_by_precision(calc_n_occupants(10., 1).unwrap(), 1e2),
+        );
+        assert_eq!(
+            round_by_precision(1.232, 1e2),
+            round_by_precision(calc_n_occupants(20., 1).unwrap(), 1e2),
+        );
+        assert_eq!(
+            round_by_precision(1.433, 1e2),
+            round_by_precision(calc_n_occupants(50., 1).unwrap(), 1e2),
+        );
+        assert_eq!(
+            round_by_precision(1.437, 1e2),
+            round_by_precision(calc_n_occupants(100., 1).unwrap(), 1e2),
+        );
+    }
+
+    #[rstest]
+    fn test_calc_n_occupants() {
+        assert_eq!(2.2472, calc_n_occupants(100., 2).unwrap(),);
+        assert_eq!(2.9796, calc_n_occupants(100., 3).unwrap(),);
+        assert_eq!(3.3715, calc_n_occupants(100., 4).unwrap(),);
+        assert_eq!(3.8997, calc_n_occupants(100., 5).unwrap(),);
+        assert_eq!(3.8997, calc_n_occupants(100., 6).unwrap(),);
+    }
+
+    #[rstest]
+    fn test_calc_n_occupants_invalid_bedrooms() {
+        assert!(calc_n_occupants(100., 0).is_err());
+    }
+
+    #[rstest]
+    fn test_calc_n_occupants_invalid_floor_area() {
+        assert!(calc_n_occupants(0., 1).is_err());
+        assert!(calc_n_occupants(-1., 1).is_err());
+    }
+
+    fn round_by_precision(src: f64, precision: f64) -> f64 {
+        (precision * src).round() / precision
+    }
+}
