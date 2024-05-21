@@ -1524,6 +1524,8 @@ impl Display for NumberOrDivisionByZero {
 
 type NumberMap = HashMap<String, f64>;
 
+pub type ResultsEndUser = IndexMap<KeyString, IndexMap<String, Vec<f64>>>;
+
 fn has_unique_some_values<K, V: Eq + Hash>(map: &IndexMap<K, Option<V>>) -> bool {
     let some_values: Vec<&V> = map.values().flat_map(|v| v.iter()).collect();
     let value_set: HashSet<&&V> = some_values.iter().collect();
@@ -1968,7 +1970,7 @@ pub type KeyString = ArrayString<64>;
 pub type RunResults = (
     Vec<f64>,
     IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, IndexMap<String, Vec<f64>>>,
+    ResultsEndUser,
     IndexMap<KeyString, Vec<f64>>,
     IndexMap<KeyString, Vec<f64>>,
     IndexMap<KeyString, Vec<f64>>,

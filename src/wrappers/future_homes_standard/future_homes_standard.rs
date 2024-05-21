@@ -1,23 +1,30 @@
+use crate::corpus::{KeyString, ResultsEndUser};
 use crate::input::{
-    HeatSourceControlType, HeatingControlType, HotWaterSourceDetailsForProcessing,
-    InputForProcessing, SpaceHeatControlType, WaterHeatingEvent, WaterHeatingEventType,
+    EnergySupplyDetails, FuelType, HeatSourceControlType, HeatingControlType,
+    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
+    WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::simulation_time::SimulationTime;
 use crate::wrappers::future_homes_standard::fhs_hw_events::{
     reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
 };
 use anyhow::{anyhow, bail};
-use arrayvec::ArrayVec;
+use arrayvec::{ArrayString, ArrayVec};
+use csv::Reader;
+use indexmap::IndexMap;
+use lazy_static::lazy_static;
 use log::warn;
+use serde::Deserialize;
 use serde_json::{json, Number, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::io::{BufReader, Cursor};
 use std::iter::{repeat, zip};
 
 const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
 const _PE_FACTOR_NAME: &str = "Primary Energy Factor kWh/kWh delivered";
-const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 
+const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 const APPL_OBJ_NAME: &str = "appliances";
 const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
 const GAS_COOK_OBJ_NAME: &str = "Gascooking";
@@ -76,8 +83,292 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     Ok(())
 }
 
+lazy_static! {
+    static ref EMIS_PE_FACTORS: HashMap<String, FactorData> = {
+        let mut factors: HashMap<String, FactorData> = Default::default();
+
+        let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
+            "./FHS_emisPEfactors_07-06-2023.csv"
+        ))));
+        for factor_data in factors_reader.deserialize() {
+            let factor_data: FactorData = factor_data.expect("Reading the PE factors file failed.");
+            if let Some(fuel_code) = &factor_data.fuel_code {
+                factors.insert(fuel_code.clone(), factor_data);
+            }
+        }
+
+        factors
+    };
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct FactorData {
+    #[serde(rename = "Fuel Code")]
+    fuel_code: Option<String>,
+    #[serde(rename = "Fuel")]
+    fuel: String,
+    #[serde(rename = "Emissions Factor kgCO2e/kWh")]
+    emissions_factor: f64,
+    #[serde(rename = "Emissions Factor kgCO2e/kWh including out-of-scope emissions")]
+    emissions_factor_including_out_of_scope_emissions: f64,
+    #[serde(rename = "Primary Energy Factor kWh/kWh delivered")]
+    primary_energy_factor: f64,
+}
+
+pub fn apply_fhs_postprocessing(
+    input: &Input,
+    energy_import: &IndexMap<ArrayString<64>, Vec<f64>>,
+    energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
+    results_end_user: &ResultsEndUser,
+    timestep_array: &[f64],
+    _file_path: &str,
+    _notional: (),
+) {
+    let no_of_timesteps = timestep_array.len();
+
+    // Add unmet demand to list of EnergySupply objects
+
+    // For each EnergySupply object:
+    // look up relevant factors for import/export from csv or custom factors
+    // from input file
+    // - look up relevant factors for generation from csv
+    // - apply relevant factors for import, export and generation
+    // Applying factors in this way rather than applying a net export factor to
+    // exported energy accounts for energy generated and used on site and also
+    // accounts for battery storage losses
+    let mut emis_results: IndexMap<String, FhsCalculationResult> = Default::default();
+    let mut emis_oos_results: IndexMap<String, FhsCalculationResult> = Default::default();
+    let mut pe_results: IndexMap<String, FhsCalculationResult> = Default::default();
+
+    for (energy_supply_key, energy_supply_details) in input
+        .energy_supply
+        .iter()
+        .map(|(key, value)| (String::from(key), value))
+        .chain(
+            [(
+                "_unmet_demand".to_string(),
+                &EnergySupplyDetails {
+                    fuel: FuelType::UnmetDemand,
+                    diverter: None,
+                    electric_battery: None,
+                    factor: None,
+                },
+            )]
+            .into_iter(),
+        )
+    {
+        let mut supply_emis_result = emis_results.entry(energy_supply_key.clone()).or_default();
+        let mut supply_emis_oos_result = emis_oos_results
+            .entry(energy_supply_key.clone())
+            .or_default();
+        let mut supply_pe_result = pe_results.entry(energy_supply_key.clone()).or_default();
+
+        let fuel_code = energy_supply_details.fuel;
+
+        // Get emissions/PE factors for import/export
+        let (emis_factor_import_export, emis_oos_factor_import_export, pe_factor_import_export) =
+            if fuel_code == FuelType::Custom {
+                let factor = energy_supply_details.factor.expect("Expected custom fuel type to have associated factor values as part of energy supply input.");
+                (
+                    factor.emissions,
+                    factor.emissions_including_out_of_scope,
+                    factor.primary_energy_factor,
+                )
+            } else {
+                let factor = EMIS_PE_FACTORS
+                    .get(&fuel_code.to_string())
+                    .unwrap_or_else(|| {
+                        panic!("Expected factor values in the table for the fuel code {fuel_code}.")
+                    });
+                (
+                    factor.emissions_factor,
+                    factor.emissions_factor_including_out_of_scope_emissions,
+                    factor.primary_energy_factor,
+                )
+            };
+
+        // Calculate energy imported and associated emissions/PE
+        supply_emis_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
+            .iter()
+            .map(|x| x * emis_factor_import_export)
+            .collect::<Vec<_>>();
+        supply_emis_oos_result.import = energy_import
+            [&KeyString::from(&energy_supply_key).unwrap()]
+            .iter()
+            .map(|x| x * emis_oos_factor_import_export)
+            .collect::<Vec<_>>();
+        supply_pe_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
+            .iter()
+            .map(|x| x * pe_factor_import_export)
+            .collect::<Vec<_>>();
+
+        // If there is any export, Calculate energy exported and associated emissions/PE
+        // Note that by convention, exported energy is negative
+        (
+            supply_emis_result.export,
+            supply_emis_oos_result.export,
+            supply_pe_result.export,
+        ) = if energy_export[&KeyString::from(&energy_supply_key).unwrap()]
+            .iter()
+            .sum::<f64>()
+            < 0.
+        {
+            (
+                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
+                    .iter()
+                    .map(|x| x * emis_factor_import_export)
+                    .collect::<Vec<_>>(),
+                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
+                    .iter()
+                    .map(|x| x * emis_oos_factor_import_export)
+                    .collect::<Vec<_>>(),
+                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
+                    .iter()
+                    .map(|x| x * pe_factor_import_export)
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            (
+                vec![0.; no_of_timesteps],
+                vec![0.; no_of_timesteps],
+                vec![0.; no_of_timesteps],
+            )
+        };
+
+        // Calculate energy generated and associated emissions/PE
+        let mut energy_generated = vec![0.; no_of_timesteps];
+        for (end_user_name, end_user_energy) in
+            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].iter()
+        {
+            if end_user_energy.iter().sum::<f64>() < 0. {
+                for t_idx in 0..no_of_timesteps {
+                    // Subtract here because generation is represented as negative demand
+                    *energy_generated.get_mut(t_idx).unwrap() -= end_user_energy[t_idx];
+                }
+            }
+        }
+
+        (
+            supply_emis_result.generated,
+            supply_emis_oos_result.generated,
+            supply_pe_result.generated,
+        ) = if energy_generated.iter().sum::<f64>() > 0. {
+            // TODO (from Python) Allow custom (user-defined) factors for generated energy?
+            let fuel_code_generated = format!("{}_generated", fuel_code);
+            let generated_factor = EMIS_PE_FACTORS.get(&fuel_code_generated).unwrap_or_else(|| panic!("Fuel code '{fuel_code}' does not have a generated row in the EMIS factors file."));
+            let FactorData {
+                emissions_factor: emis_factor_generated,
+                emissions_factor_including_out_of_scope_emissions: emis_oos_factor_generated,
+                primary_energy_factor: pe_factor_generated,
+                ..
+            } = generated_factor;
+
+            (
+                energy_generated
+                    .iter()
+                    .map(|x| x * emis_factor_generated)
+                    .collect::<Vec<_>>(),
+                energy_generated
+                    .iter()
+                    .map(|x| x * emis_oos_factor_generated)
+                    .collect::<Vec<_>>(),
+                energy_generated
+                    .iter()
+                    .map(|x| x * pe_factor_generated)
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            (
+                vec![0.; no_of_timesteps],
+                vec![0.; no_of_timesteps],
+                vec![0.; no_of_timesteps],
+            )
+        };
+
+        let mut energy_unregulated = vec![0.; no_of_timesteps];
+        for (end_user_name, end_user_energy) in
+            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].iter()
+        {
+            if [APPL_OBJ_NAME, ELEC_COOK_OBJ_NAME, GAS_COOK_OBJ_NAME]
+                .contains(&end_user_name.as_str())
+            {
+                for t_idx in 0..no_of_timesteps {
+                    *energy_unregulated.get_mut(t_idx).unwrap() += end_user_energy[t_idx];
+                }
+            }
+        }
+
+        supply_emis_result.unregulated = energy_unregulated
+            .iter()
+            .map(|x| x * emis_factor_import_export)
+            .collect::<Vec<_>>();
+        supply_emis_oos_result.unregulated = energy_unregulated
+            .iter()
+            .map(|x| x * emis_oos_factor_import_export)
+            .collect::<Vec<_>>();
+        supply_pe_result.unregulated = energy_unregulated
+            .iter()
+            .map(|x| x * pe_factor_import_export)
+            .collect::<Vec<_>>();
+
+        // Calculate total CO2/PE for each EnergySupply based on import and export,
+        // subtracting unregulated
+        supply_emis_result.total = Vec::with_capacity(no_of_timesteps);
+        supply_emis_oos_result.total = Vec::with_capacity(no_of_timesteps);
+        supply_pe_result.total = Vec::with_capacity(no_of_timesteps);
+        for t_idx in 0..no_of_timesteps {
+            supply_emis_result.total.push(
+                supply_emis_result.import[t_idx]
+                    + supply_emis_result.export[t_idx]
+                    + supply_emis_result.generated[t_idx]
+                    - supply_emis_result.unregulated[t_idx],
+            );
+            supply_emis_oos_result.total.push(
+                supply_emis_oos_result.import[t_idx]
+                    + supply_emis_oos_result.export[t_idx]
+                    + supply_emis_oos_result.generated[t_idx]
+                    - supply_emis_oos_result.unregulated[t_idx],
+            );
+            supply_pe_result.total.push(
+                supply_pe_result.import[t_idx]
+                    + supply_pe_result.export[t_idx]
+                    + supply_pe_result.generated[t_idx]
+                    - supply_pe_result.unregulated[t_idx],
+            );
+        }
+    }
+
+    let tfa = calc_tfa_from_finalised_input(input);
+    let total_emissions_rate = emis_results
+        .values()
+        .map(|emis| emis.total.iter().sum::<f64>())
+        .sum::<f64>()
+        / tfa;
+    let total_pe_rate = pe_results
+        .values()
+        .map(|pe| pe.total.iter().sum::<f64>())
+        .sum::<f64>()
+        / tfa;
+
+    // Write results to output files
+    // TODO implement writing of files
+}
+
+#[derive(Default)]
+struct FhsCalculationResult {
+    import: Vec<f64>,
+    export: Vec<f64>,
+    generated: Vec<f64>,
+    unregulated: Vec<f64>,
+    total: Vec<f64>,
+}
+
 fn calc_tfa(input: &InputForProcessing) -> f64 {
     input.total_zone_area()
+}
+
+fn calc_tfa_from_finalised_input(input: &Input) -> f64 {
+    input.zone.values().map(|z| z.area).sum::<f64>()
 }
 
 fn calc_nbeds(input: &InputForProcessing) -> anyhow::Result<usize> {

@@ -188,33 +188,15 @@ impl Borrow<str> for EnergySupplyKey {
     }
 }
 
-// impl TryInto<EnergySupplyKey> for &str {
-//     type Error = anyhow::Error;
-//
-//     fn try_into(self) -> Result<EnergySupplyKey, Self::Error> {
-//         serde_json::from_value(json!(self))
-//     }
-// }
+impl From<&EnergySupplyKey> for String {
+    fn from(value: &EnergySupplyKey) -> Self {
+        value.try_into().unwrap()
+    }
+}
 
 pub type EnergySupplyInput = IndexMap<EnergySupplyKey, EnergySupplyDetails>;
 
-// NB. assuming for now the fields in this struct map to the FuelCode enum
-// there may be a way to map this a priori but keeping them manually in sync for now
-// #[derive(Debug, Deserialize)]
-// #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-// #[serde(deny_unknown_fields)]
-// pub struct EnergySupplyInput {
-//     #[serde(rename = "mains elec")]
-//     pub mains_electricity: Option<EnergySupplyDetails>,
-//     #[serde(rename = "mains gas")]
-//     pub mains_gas: Option<EnergySupplyDetails>,
-//     #[serde(rename = "bulk LPG")]
-//     pub bulk_lpg: Option<EnergySupplyDetails>,
-//     #[serde(rename = "heat network")]
-//     pub heat_network: Option<EnergySupplyDetails>,
-// }
-
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "fuel", deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
