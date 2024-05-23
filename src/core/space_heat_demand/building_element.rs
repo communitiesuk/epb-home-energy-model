@@ -1012,7 +1012,7 @@ mod tests {
         }
     }
 
-    #[ignore = "the assertion values here cause failures - this has been reported up to BRE"]
+    #[ignore = "the assertion values here cause failures - upstream fix has been committed to"]
     #[rstest]
     pub fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         let results = [43.20, 35.15, 27.10, 27.15, 55.54];
