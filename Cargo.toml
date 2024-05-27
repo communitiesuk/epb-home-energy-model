@@ -20,7 +20,7 @@ lazy_static = "1.4.0"
 log = "0.4.21"
 nalgebra = "0.32.5"
 ordered-float = "4.2.0"
-parking_lot = { version = "0.12.2", features = ["hardware-lock-elision"] }
+parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
 rand = "0.8.5"
