@@ -1,8 +1,25 @@
 # Home Energy Model (HEM) engine written in Rust
 
+## Overview
+
+The [Home Energy Model (HEM)](https://www.gov.uk/government/publications/home-energy-model-technical-documentation) is a
+methodology for calculating the energy performance of buildings that is currently under development by BRE under
+instruction from the UK Department for Energy Security and Net Zero (DESNZ).
+
+This project constitutes a port into Rust of
+the [calculation engine](https://dev.azure.com/BreGroup/_git/Home%20Energy%20Model) written in Python produced by BRE as
+a candidate specification of the Home Energy Model.
+
+Its purpose is to provide a library that is significantly more performant than the Python specification code, as well as
+providing other properties to support its running as part of a live service, including well-defined errors and
+instrumentation for observability.
+
+The project is as yet functionally incomplete, but we have begun working on a test harness that will (in time) be able
+to demonstrate complete 1:1 behavioural parity with the specification code.
+
 ## Running the engine
 
-Requires the `rustup` toolchain to use. ([Instructions](https://rustup.rs) for installation. For MacOS, don't use
+Requires the `rustup` toolchain to use. ([Instructions](https://rustup.rs) for installation. For macOS, don't use
 Homebrew to install Rust.)
 
 To run tests:
