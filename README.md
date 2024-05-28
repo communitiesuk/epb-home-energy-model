@@ -1,4 +1,4 @@
-![test status](https://github.com/communitiesuk/epb-home-energy-model/actions/workflows/test.yml/badge.svg)
+![test status](https://github.com/communitiesuk/epb-home-energy-model/actions/workflows/test.yml/badge.svg) ![version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcommunitiesuk%2Fepb-home-energy-model%2Fmain%2FCargo.toml&query=%24.package.version&style=flat&label=version)
 
 # Home Energy Model (HEM) engine written in Rust
 
