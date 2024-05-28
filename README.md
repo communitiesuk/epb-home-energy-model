@@ -1,3 +1,5 @@
+![test status](https://github.com/communitiesuk/epb-home-energy-model/actions/workflows/test.yml/badge.svg)
+
 # Home Energy Model (HEM) engine written in Rust
 
 ## Overview
