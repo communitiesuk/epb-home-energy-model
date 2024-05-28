@@ -26,6 +26,7 @@ polyfit-rs = "0.2.1"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 rand_distr = "0.4.3"
+schemars = { version = "0.8.21", optional = true }
 serde = { version = "1.0.202", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.117"
@@ -51,3 +52,6 @@ required-features = ["clap"]
 [profile.release]
 opt-level = 3
 lto = true
+
+[workspace]
+members = ["schema-gen"]

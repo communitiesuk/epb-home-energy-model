@@ -10,6 +10,7 @@ const MONTH_START_END_HOURS: [u32; 13] = [
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SimulationTime {
     #[serde(rename(deserialize = "start"))]
     start_time: f64,

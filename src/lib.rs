@@ -4,7 +4,7 @@ mod compare_floats;
 pub mod core;
 pub mod corpus;
 mod external_conditions;
-mod input;
+pub mod input;
 pub mod read_weather_file;
 mod simulation_time;
 mod wrappers;
