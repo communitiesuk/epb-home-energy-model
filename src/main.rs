@@ -92,5 +92,6 @@ fn main() -> anyhow::Result<()> {
         false,
         false,
         args.heat_balance,
+        false, // TODO implement CLI arg
     )
 }

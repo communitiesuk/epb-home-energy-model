@@ -32,6 +32,14 @@ impl SimulationTime {
         ((self.end_time - self.start_time) / self.step).ceil() as usize
     }
 
+    pub fn start_time(&self) -> f64 {
+        self.start_time
+    }
+
+    pub fn end_time(&self) -> f64 {
+        self.end_time
+    }
+
     pub(crate) fn iter(&self) -> SimulationTimeIterator {
         SimulationTimeIterator::from(*self)
     }

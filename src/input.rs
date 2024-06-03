@@ -471,6 +471,10 @@ impl HotWaterSource {
             _ => unreachable!("requested a source key {source_key} that is not known"),
         }
     }
+
+    pub fn as_index_map(&self) -> IndexMap<String, HotWaterSourceDetails> {
+        IndexMap::from([("hw cylinder".to_string(), self.hot_water_cylinder.clone())])
+    }
 }
 
 #[derive(Clone, Deserialize_enum_str, PartialEq, Debug)]
@@ -540,6 +544,16 @@ pub enum HotWaterSourceDetails {
     HeatBattery {
         // tbc
     },
+}
+
+impl HotWaterSourceDetails {
+    pub fn volume(&self) -> Option<f64> {
+        if let Self::StorageTank { volume, .. } = self {
+            Some(*volume)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait HotWaterSourceDetailsForProcessing {
@@ -613,16 +627,14 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         min_temp: f64,
         setpoint_temp: f64,
     ) {
-        match self {
-            HotWaterSourceDetails::StorageTank {
-                min_temp: ref mut min_temp_store,
-                setpoint_temp: ref mut setpoint_temp_store,
-                ..
-            } => {
-                *min_temp_store = min_temp;
-                *setpoint_temp_store = setpoint_temp;
-            }
-            _ => {}
+        if let HotWaterSourceDetails::StorageTank {
+            min_temp: ref mut min_temp_store,
+            setpoint_temp: ref mut setpoint_temp_store,
+            ..
+        } = self
+        {
+            *min_temp_store = min_temp;
+            *setpoint_temp_store = setpoint_temp;
         }
     }
 }

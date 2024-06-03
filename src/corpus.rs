@@ -68,7 +68,9 @@ use indexmap::IndexMap;
 use indicatif::ProgressIterator;
 use parking_lot::Mutex;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -1188,7 +1190,7 @@ impl Corpus {
             self.energy_supply_conn_names_for_hot_water_source.clone(),
         );
         let heat_cop_dict = self.heat_cool_cop(
-            &space_cool_provided_dict,
+            &space_heat_provided_dict,
             &results_end_user,
             self.energy_supply_conn_names_for_heat_systems
                 .iter()
@@ -1501,10 +1503,23 @@ pub enum HotWaterResultMap {
     Int(IndexMap<KeyString, Vec<usize>>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum NumberOrDivisionByZero {
     Number(f64),
     DivisionByZero,
+}
+
+impl Display for NumberOrDivisionByZero {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                NumberOrDivisionByZero::Number(number) => Cow::Owned(format!("{}", number)),
+                NumberOrDivisionByZero::DivisionByZero => Cow::Borrowed("DIV/0"),
+            }
+        )
+    }
 }
 
 type NumberMap = HashMap<String, f64>;
@@ -1952,7 +1967,7 @@ fn wwhr_system_from_details(
     }
 }
 
-pub type KeyString = ArrayString<48>;
+pub type KeyString = ArrayString<64>;
 
 pub type RunResults = (
     Vec<f64>,
