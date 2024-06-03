@@ -29,8 +29,8 @@ use std::borrow::Cow;
 use std::io::Read;
 use std::sync::Arc;
 
-pub fn run_project<T>(
-    input: T,
+pub fn run_project(
+    input: impl Read,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,
@@ -40,8 +40,6 @@ pub fn run_project<T>(
     fhs_not_b_assumptions: bool,
     _heat_balance: bool,
 ) -> Result<(), anyhow::Error>
-where
-    T: Read,
 {
     let mut input_for_processing = ingest_for_processing(input)?;
 
