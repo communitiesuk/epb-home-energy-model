@@ -39,8 +39,7 @@ pub fn run_project(
     fhs_not_a_assumptions: bool,
     fhs_not_b_assumptions: bool,
     _heat_balance: bool,
-) -> Result<(), anyhow::Error>
-{
+) -> Result<(), anyhow::Error> {
     let mut input_for_processing = ingest_for_processing(input)?;
 
     // do wrapper pre-processing here
@@ -304,7 +303,7 @@ fn write_core_output_file(output: impl Output, args: OutputFileArgs) -> Result<(
             }
         }
 
-        // Loop over heading and cooling system demand
+        // Loop over heating and cooling system demand
         for system in hc_system_dict.keys() {
             for hc_name in hc_system_dict[system].keys() {
                 hc_system_row.push(hc_system_dict[system][hc_name][t_idx]);

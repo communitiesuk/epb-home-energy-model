@@ -81,26 +81,26 @@ pub struct Corpus {
     pub energy_supplies: EnergySupplies,
     pub internal_gains: InternalGainsCollection,
     pub controls: Controls,
-    pub wwhrs: HashMap<String, Wwhrs>,
+    pub wwhrs: IndexMap<String, Wwhrs>,
     pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
     pub ventilation: Option<Arc<Mutex<VentilationElement>>>,
     pub space_heating_ductwork: Option<Ductwork>,
     pub zones: IndexMap<String, Zone>,
-    pub energy_supply_conn_unmet_demand_zone: HashMap<String, Arc<EnergySupplyConnection>>,
-    pub heat_system_name_for_zone: HashMap<String, Option<String>>,
-    pub cool_system_name_for_zone: HashMap<String, Option<String>>,
+    pub energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
+    pub heat_system_name_for_zone: IndexMap<String, Option<String>>,
+    pub cool_system_name_for_zone: IndexMap<String, Option<String>>,
     pub total_floor_area: f64,
     pub total_volume: f64,
-    pub wet_heat_sources: HashMap<String, Arc<Mutex<WetHeatSource>>>,
-    pub hot_water_sources: HashMap<String, HotWaterSource>,
+    pub wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    pub hot_water_sources: IndexMap<String, HotWaterSource>,
     pub heat_system_names_requiring_overvent: Vec<String>,
-    pub space_heat_systems: HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
-    pub space_cool_systems: HashMap<String, AirConditioning>,
-    pub on_site_generation: HashMap<String, PhotovoltaicSystem>,
+    pub space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
+    pub space_cool_systems: IndexMap<String, AirConditioning>,
+    pub on_site_generation: IndexMap<String, PhotovoltaicSystem>,
     pub diverters: Vec<Arc<Mutex<PVDiverter>>>,
-    energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>>,
-    energy_supply_conn_names_for_heat_systems: HashMap<String, String>,
+    energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
+    energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
 }
 
@@ -171,8 +171,8 @@ impl Corpus {
 
         let opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
 
-        let mut heat_system_name_for_zone: HashMap<String, Option<String>> = Default::default();
-        let mut cool_system_name_for_zone: HashMap<String, Option<String>> = Default::default();
+        let mut heat_system_name_for_zone: IndexMap<String, Option<String>> = Default::default();
+        let mut cool_system_name_for_zone: IndexMap<String, Option<String>> = Default::default();
 
         let zones: IndexMap<String, Zone> = input
             .zone
@@ -226,7 +226,7 @@ impl Corpus {
 
         let mut timestep_end_calcs = vec![];
 
-        let wet_heat_sources: HashMap<String, Arc<Mutex<WetHeatSource>>> = input
+        let wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>> = input
             .heat_source_wet
             .unwrap_or_default()
             .iter()
@@ -253,10 +253,10 @@ impl Corpus {
                 }
                 anyhow::Ok(((*name).clone(), heat_source))
             })
-            .collect::<anyhow::Result<HashMap<String, Arc<Mutex<WetHeatSource>>>>>()?;
+            .collect::<anyhow::Result<IndexMap<String, Arc<Mutex<WetHeatSource>>>>>()?;
 
-        let mut hot_water_sources: HashMap<String, HotWaterSource> = Default::default();
-        let mut energy_supply_conn_names_for_hot_water_source: HashMap<String, Vec<String>> =
+        let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
+        let mut energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>> =
             Default::default();
         let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
             "hw cylinder".to_string(),
@@ -1349,7 +1349,7 @@ impl Corpus {
         &self,
         energy_provided: &IndexMap<KeyString, Vec<f64>>,
         results_end_user: &IndexMap<KeyString, IndexMap<String, Vec<f64>>>,
-        energy_supply_conn_name_for_space_hc_system: HashMap<String, Vec<String>>,
+        energy_supply_conn_name_for_space_hc_system: IndexMap<String, Vec<String>>,
     ) -> IndexMap<KeyString, NumberOrDivisionByZero> {
         let mut hc_output_overall: IndexMap<KeyString, f64> = Default::default();
         let mut hc_input_overall: IndexMap<KeyString, f64> = Default::default();
@@ -1509,7 +1509,7 @@ pub enum NumberOrDivisionByZero {
 
 type NumberMap = HashMap<String, f64>;
 
-fn has_unique_some_values<K, V: Eq + Hash>(map: &HashMap<K, Option<V>>) -> bool {
+fn has_unique_some_values<K, V: Eq + Hash>(map: &IndexMap<K, Option<V>>) -> bool {
     let some_values: Vec<&V> = map.values().flat_map(|v| v.iter()).collect();
     let value_set: HashSet<&&V> = some_values.iter().collect();
     some_values.len() == value_set.len()
@@ -1931,8 +1931,8 @@ fn single_control_from_details(
 fn wwhrs_from_input(
     wwhrs: Option<WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
-) -> HashMap<String, Wwhrs> {
-    let mut wwhr_systems: HashMap<String, Wwhrs> = HashMap::from([]);
+) -> IndexMap<String, Wwhrs> {
+    let mut wwhr_systems: IndexMap<String, Wwhrs> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
         for (name, system) in systems {
             wwhr_systems
@@ -2288,8 +2288,8 @@ fn zone_from_input<'a>(
 fn set_up_energy_supply_unmet_demand_zones(
     unmet_demand_supply: Arc<Mutex<EnergySupply>>,
     zones: &ZoneDictionary,
-) -> HashMap<String, Arc<EnergySupplyConnection>> {
-    let mut energy_supplies: HashMap<String, Arc<EnergySupplyConnection>> = Default::default();
+) -> IndexMap<String, Arc<EnergySupplyConnection>> {
+    let mut energy_supplies: IndexMap<String, Arc<EnergySupplyConnection>> = Default::default();
 
     for name in zones.keys() {
         energy_supplies.insert(
@@ -2617,7 +2617,7 @@ fn heat_source_from_input(
     name: &str,
     input: &HeatSourceInput,
     temp_setpoint: f64,
-    wet_heat_sources: &HashMap<String, Arc<Mutex<WetHeatSource>>>,
+    wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
@@ -2847,8 +2847,8 @@ fn hot_water_source_from_input(
     source_name: String,
     input: HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
-    wet_heat_sources: &HashMap<String, Arc<Mutex<WetHeatSource>>>,
-    wwhrs: &HashMap<String, Wwhrs>,
+    wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    wwhrs: &IndexMap<String, Wwhrs>,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     diverter_types: &DiverterTypes,
@@ -3084,7 +3084,7 @@ fn space_heat_systems_from_input(
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_names_for_zone: Vec<&str>,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
-    let mut energy_conn_names_for_systems: HashMap<String, String> = Default::default();
+    let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
         .iter()
         .filter(|(system_name, _)| heat_system_names_for_zone.contains(&system_name.as_str()))
@@ -3140,13 +3140,13 @@ fn space_heat_systems_from_input(
                 })),
             ))
         })
-        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+        .collect::<anyhow::Result<IndexMap<_, _>>>()?;
     Ok((space_heat_systems, energy_conn_names_for_systems))
 }
 
 type SpaceHeatSystemsWithEnergyConnections = (
-    HashMap<String, Arc<Mutex<SpaceHeatSystem>>>,
-    HashMap<String, String>,
+    IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
+    IndexMap<String, String>,
 );
 
 fn space_cool_systems_from_input(
@@ -3155,7 +3155,7 @@ fn space_cool_systems_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<HashMap<String, AirConditioning>> {
+) -> anyhow::Result<IndexMap<String, AirConditioning>> {
     input
         .iter()
         .filter(|(system_name, _)| cool_system_names_for_zone.contains(&system_name.as_str()))
@@ -3197,7 +3197,7 @@ fn space_cool_systems_from_input(
                 ),
             ))
         })
-        .collect::<anyhow::Result<HashMap<_, _>>>()
+        .collect::<anyhow::Result<IndexMap<_, _>>>()
 }
 
 fn on_site_generation_from_input(
@@ -3205,7 +3205,7 @@ fn on_site_generation_from_input(
     energy_supplies: &mut EnergySupplies,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<HashMap<String, PhotovoltaicSystem>> {
+) -> anyhow::Result<IndexMap<String, PhotovoltaicSystem>> {
     input
         .iter()
         .map(|(name, generation_details)| {
@@ -3238,5 +3238,5 @@ fn on_site_generation_from_input(
                 )
             }))
         })
-        .collect::<anyhow::Result<HashMap<_, _>>>()
+        .collect::<anyhow::Result<IndexMap<_, _>>>()
 }

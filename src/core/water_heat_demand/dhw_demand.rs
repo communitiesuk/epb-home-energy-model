@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::Pipework;
@@ -32,7 +34,7 @@ impl DomesticHotWaterDemand {
         other_hot_water_input: Option<OtherWaterUseInput>,
         water_distribution_input: Option<WaterDistributionInput>,
         cold_water_sources: &ColdWaterSources,
-        wwhrs: &HashMap<String, Wwhrs>,
+        wwhrs: &IndexMap<String, Wwhrs>,
         energy_supplies: &EnergySupplies,
         event_schedules: HotWaterEventSchedules,
     ) -> Self {
@@ -312,7 +314,7 @@ impl DomesticHotWaterDemand {
 fn mixer_shower_input_to_shower(
     input: &MixerShowerInput,
     cold_water_sources: &ColdWaterSources,
-    wwhrs: &HashMap<String, Wwhrs>,
+    wwhrs: &IndexMap<String, Wwhrs>,
 ) -> Shower {
     let cold_water_source = match input.cold_water_source {
         ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
