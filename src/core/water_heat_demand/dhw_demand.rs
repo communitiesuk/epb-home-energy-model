@@ -45,9 +45,9 @@ impl DomesticHotWaterDemand {
                 )];
                 if let Some(ies) = &input.ies {
                     showers.push((
-                        "ies".to_owned(),
+                        "IES".to_owned(),
                         instant_electric_shower_input_to_shower(
-                            "ies".to_owned(),
+                            "IES".to_owned(),
                             ies,
                             cold_water_sources,
                             energy_supplies,
