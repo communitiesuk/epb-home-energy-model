@@ -69,7 +69,7 @@ impl EnergySupplies {
         let mut supplies: IndexMap<&str, Arc<Mutex<EnergySupply>>> = Default::default();
         supplies.insert("_unmet_demand", self.unmet_demand.clone());
         if let Some(elec) = &self.mains_electricity {
-            supplies.insert("electricity", elec.clone());
+            supplies.insert("mains elec", elec.clone());
         }
         if let Some(gas) = &self.mains_gas {
             supplies.insert("mains gas", gas.clone());
