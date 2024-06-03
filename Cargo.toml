@@ -37,7 +37,7 @@ variants-struct = "0.1.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-rstest = "0.19.0"
+rstest = "0.21.0"
 walkdir = "2.5.0"
 
 [lib]
