@@ -1,2 +1,3 @@
-#Co-Authored-By: Korinna <7438240+kpinakula@users.noreply.github.com>
+#Co-Authored-By: Korinna Pinakoulakis <7438240+kpinakula@users.noreply.github.com>
 #Co-Authored-By: Douglas Greenshields <douglas.greenshields@levellingup.gov.uk>
+#Co-authored-by: Russ Penska <russ-madetech@users.noreply.github.com>
