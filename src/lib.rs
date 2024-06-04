@@ -257,10 +257,28 @@ fn write_core_output_file(output: impl Output, args: OutputFileArgs) -> Result<(
     }
 
     for system in hc_system_dict.keys() {
+        if hc_system_dict[system].keys().len() == 0 {
+            // edge case - if we don't have any hc systems keys use None
+            let none_heading = format!("{system} None");
+            headings.push(none_heading.into());
+            units_row.push("[kWh]");
+            continue;
+        }
+
         for hc_name in hc_system_dict[system].keys() {
             let hc_system_headings = format!("{system} {hc_name}");
             headings.push(hc_system_headings.into());
             units_row.push("[kWh]");
+        }
+    }
+
+    for system in hot_water_dict.keys() {
+        headings.push(system.to_string().into());
+
+        if UNITS_MAP.contains_key(system) {
+            units_row.push(UNITS_MAP[system]);
+        } else {
+            units_row.push("Unit not defined");
         }
     }
 
