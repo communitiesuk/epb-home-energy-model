@@ -1,6 +1,7 @@
 /// A simple statistics module with some utility functions such as calculation of percentiles.
 use statrs::statistics::{Data, OrderStatistics};
 
+#[allow(dead_code)]
 pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
     let numbers = numbers.iter().cloned().collect::<Vec<_>>();
     let mut data = Data::new(numbers);
