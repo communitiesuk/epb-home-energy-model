@@ -8,6 +8,7 @@ pub mod input;
 pub mod output;
 pub mod read_weather_file;
 mod simulation_time;
+mod statistics;
 mod wrappers;
 
 #[macro_use]
