@@ -335,6 +335,7 @@ impl Zone {
             &self.temp_prev.lock(),
             &self.building_elements,
             &self.element_positions,
+            self.area_el_total,
             self.zone_idx,
         )
     }
@@ -555,6 +556,7 @@ pub fn space_heat_cool_demand(
         &temp_vector_no_heat_cool,
         building_elements,
         element_positions,
+        area_el_total,
         passed_zone_idx,
     );
     let temp_int_air_free = temp_vector_no_heat_cool[passed_zone_idx];
@@ -604,6 +606,7 @@ pub fn space_heat_cool_demand(
                 &temp_vector_vent_max,
                 building_elements,
                 element_positions,
+                area_el_total,
                 passed_zone_idx,
             );
             let temp_int_air_vent_max = temp_vector_vent_max[passed_zone_idx];
@@ -660,6 +663,7 @@ pub fn space_heat_cool_demand(
                     &temp_vector_no_heat_cool_vent_extra,
                     building_elements,
                     element_positions,
+                    area_el_total,
                     passed_zone_idx,
                 );
 
@@ -729,6 +733,7 @@ pub fn space_heat_cool_demand(
         &temp_vector_upper_heat_cool,
         building_elements,
         element_positions,
+        area_el_total,
         passed_zone_idx,
     );
 
@@ -1260,6 +1265,7 @@ fn temp_operative(
     temp_vector: &[f64],
     building_elements: &[NamedBuildingElement],
     element_positions: &[(usize, usize)],
+    area_el_total: f64,
     passed_zone_id: usize,
 ) -> f64 {
     let temp_int_air = temp_vector[passed_zone_id];
@@ -1271,6 +1277,7 @@ fn temp_operative(
         .map(|(eli_idx, nel)| {
             let NamedBuildingElement { element: eli, .. } = nel;
             area_for_building_element_input(eli) * temp_vector[element_positions[eli_idx].1]
+                / area_el_total
         })
         .sum::<f64>();
 
