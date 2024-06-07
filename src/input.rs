@@ -1137,7 +1137,7 @@ impl OtherWaterHeatingEvents {
     }
 }
 
-pub type SpaceHeatSystem = HashMap<String, SpaceHeatSystemDetails>;
+pub type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
