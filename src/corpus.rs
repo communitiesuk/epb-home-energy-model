@@ -856,14 +856,12 @@ impl Corpus {
                 ),
             );
 
-            if let Some(h_name) = h_name {
-                *space_heat_demand_system.get_mut(h_name.as_str()).unwrap() = 0.0;
-                *space_heat_provided.get_mut(h_name.as_str()).unwrap() = 0.0;
-            }
-            if let Some(c_name) = c_name {
-                *space_cool_demand_system.get_mut(c_name.as_str()).unwrap() = 0.0;
-                *space_cool_provided.get_mut(c_name.as_str()).unwrap() = 0.0;
-            }
+            // In the Python code we handle an edge case here
+            // and add a None key to these dictionaries
+            // This is currently handlded in this codebase
+            // when we generate the output file instead.
+            // TODO move the edge case logic here to match the Python code
+            // as closely as possible
 
             internal_air_temp.insert(z_name.as_str(), zone.temp_internal_air());
             operative_temp.insert(z_name.as_str(), zone.temp_operative());

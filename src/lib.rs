@@ -324,6 +324,13 @@ fn write_core_output_file(output: impl Output, args: OutputFileArgs) -> Result<(
 
         // Loop over heating and cooling system demand
         for system in hc_system_dict.keys() {
+            // if we don't have any data for this system
+            // we still need to output 0s for the "{system} None" column
+            // Expect this to move into the calculation logic in future
+            if hc_system_dict[system].keys().len() == 0 {
+                hc_system_row.push(0.);
+            }
+
             for hc_name in hc_system_dict[system].keys() {
                 hc_system_row.push(hc_system_dict[system][hc_name][t_idx]);
             }
