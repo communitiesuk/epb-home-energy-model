@@ -805,11 +805,8 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rstest::*;
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
 
     #[fixture]
     pub fn boiler_data() -> HeatSourceWetDetails {
@@ -958,27 +955,20 @@ mod tests {
     ) {
         let (mut boiler, energy_supply) = boiler;
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    boiler.demand_energy(
-                        "boiler_test",
-                        ServiceType::WaterCombi,
-                        boiler_energy_output_required[t_idx],
-                        temp_return_feed[t_idx],
-                        t_it,
-                    ),
-                    1e7,
+            assert_ulps_eq!(
+                boiler.demand_energy(
+                    "boiler_test",
+                    ServiceType::WaterCombi,
+                    boiler_energy_output_required[t_idx],
+                    temp_return_feed[t_idx],
+                    t_it,
                 ),
                 [2.0, 10.0][t_idx],
-                "incorrect energy output provided"
             );
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["boiler_test"][t_idx],
-                    1e7
-                ),
-                round_by_precision([2.2843673926764496, 11.5067107][t_idx], 1e7),
-                "incorrect fuel demand"
+            assert_relative_eq!(
+                energy_supply.lock().results_by_end_user()["boiler_test"][t_idx],
+                [2.2843673926764496, 11.5067107][t_idx],
+                max_relative = 1e-7
             );
         }
     }
@@ -1130,13 +1120,10 @@ mod tests {
         volume_demanded: [f64; 2],
     ) {
         for (idx, t_it) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    combi_boiler.demand_hot_water(volume_demanded[idx], t_it),
-                    1e7,
-                ),
+            assert_relative_eq!(
+                combi_boiler.demand_hot_water(volume_demanded[idx], t_it),
                 [0.7241412, 0.1748878][idx],
-                "incorrect energy_output_provided"
+                max_relative = 1e-6
             );
         }
     }
@@ -1209,12 +1196,10 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         for (idx, t_it) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    regular_boiler.demand_energy([0.7241412, 0.1748878][idx], t_it),
-                    1e7,
-                ),
-                [0.7241412, 0.1748878][idx]
+            assert_relative_eq!(
+                regular_boiler.demand_energy([0.7241412, 0.1748878][idx], t_it),
+                [0.7241412, 0.1748878][idx],
+                max_relative = 1e-7
             );
         }
     }
@@ -1313,15 +1298,12 @@ mod tests {
         let temp_flow = [55.0, 65.0, 65.0];
         let temp_return_feed = [50.0, 60.0, 60.0];
         for (idx, t_it) in simulation_time_for_service_space.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    service_space_boiler.demand_energy(
-                        energy_demanded[idx],
-                        temp_flow[idx],
-                        temp_return_feed[idx],
-                        t_it,
-                    ),
-                    1e7,
+            assert_ulps_eq!(
+                service_space_boiler.demand_energy(
+                    energy_demanded[idx],
+                    temp_flow[idx],
+                    temp_return_feed[idx],
+                    t_it,
                 ),
                 [10.0, 2.0, 0.0][idx]
             );

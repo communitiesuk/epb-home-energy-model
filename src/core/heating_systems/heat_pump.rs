@@ -3127,6 +3127,7 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -3608,13 +3609,9 @@ mod tests {
     pub fn should_calc_degradation_coeff(test_data: HeatPumpTestData) {
         let results = [0.9125, 0.919375, 0.92625, 0.933125, 0.94];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    test_data.average_degradation_coeff(celsius_to_kelvin(*flow_temp)),
-                    1e7,
-                ),
-                round_by_precision(results[i], 1e7),
-                "incorrect average degradation coefficient returned"
+            assert_ulps_eq!(
+                test_data.average_degradation_coeff(celsius_to_kelvin(*flow_temp)),
+                results[i],
             );
         }
     }
@@ -3623,13 +3620,9 @@ mod tests {
     pub fn should_calc_average_capacity(test_data: HeatPumpTestData) {
         let results = [8.3, 8.375, 8.45, 8.525, 8.6];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    test_data.average_capacity(celsius_to_kelvin(*flow_temp)),
-                    1e7,
-                ),
-                round_by_precision(results[i], 1e7),
-                "incorrect average capacity returned on step {i}"
+            assert_ulps_eq!(
+                test_data.average_capacity(celsius_to_kelvin(*flow_temp)),
+                results[i],
             )
         }
     }
@@ -3668,16 +3661,10 @@ mod tests {
         carnot_cop_cases: Vec<(f64, &str, f64)>,
     ) {
         for (flow_temp, test_condition, result) in carnot_cop_cases {
-            assert_eq!(
-                round_by_precision(
-                    test_data.carnot_cop_at_test_condition(
-                        test_condition,
-                        celsius_to_kelvin(flow_temp),
-                    ),
-                    1e7,
-                ),
-                round_by_precision(result, 1e7),
-                "incorrect Carnot CoP at condition {test_condition} returned"
+            assert_ulps_eq!(
+                test_data
+                    .carnot_cop_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                result,
             );
         }
     }
@@ -3704,16 +3691,10 @@ mod tests {
         outlet_temp_cases: Vec<(f64, &'static str, f64)>,
     ) {
         for (flow_temp, test_condition, result) in outlet_temp_cases {
-            assert_eq!(
-                round_by_precision(
-                    test_data.outlet_temp_at_test_condition(
-                        test_condition,
-                        celsius_to_kelvin(flow_temp),
-                    ),
-                    1e7,
-                ),
-                round_by_precision(result, 1e7),
-                "incorrect outlet temp at condition {test_condition} returned"
+            assert_ulps_eq!(
+                test_data
+                    .outlet_temp_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                result,
             );
         }
     }
@@ -3740,16 +3721,10 @@ mod tests {
         source_temp_cases: Vec<(f64, &'static str, f64)>,
     ) {
         for (flow_temp, test_condition, result) in source_temp_cases {
-            assert_eq!(
-                round_by_precision(
-                    test_data.source_temp_at_test_condition(
-                        test_condition,
-                        celsius_to_kelvin(flow_temp),
-                    ),
-                    1e7,
-                ),
-                round_by_precision(result, 1e7),
-                "incorrect source temp at condition {test_condition} returned"
+            assert_ulps_eq!(
+                test_data
+                    .source_temp_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                result,
             );
         }
     }
@@ -3776,14 +3751,9 @@ mod tests {
         capacity_cases: Vec<(f64, &'static str, f64)>,
     ) {
         for (flow_temp, test_condition, result) in capacity_cases {
-            assert_eq!(
-                round_by_precision(
-                    test_data
-                        .capacity_at_test_condition(test_condition, celsius_to_kelvin(flow_temp)),
-                    1e7,
-                ),
-                round_by_precision(result, 1e7),
-                "incorrect capacity at condition {test_condition} returned"
+            assert_ulps_eq!(
+                test_data.capacity_at_test_condition(test_condition, celsius_to_kelvin(flow_temp)),
+                result,
             );
         }
     }
@@ -3805,17 +3775,14 @@ mod tests {
         lr_op_cond_cases: Vec<[f64; 4]>,
     ) {
         for [flow_temp, temp_source, carnot_cop_op_cond, result] in lr_op_cond_cases {
-            assert_eq!(
-                round_by_precision(
-                    test_data.load_ratio_at_operating_conditions(
-                        celsius_to_kelvin(flow_temp),
-                        temp_source,
-                        carnot_cop_op_cond,
-                    ),
-                    1e7,
+            assert_relative_eq!(
+                test_data.load_ratio_at_operating_conditions(
+                    celsius_to_kelvin(flow_temp),
+                    temp_source,
+                    carnot_cop_op_cond,
                 ),
-                round_by_precision(result, 1e7),
-                "incorrect load ratio at operating conditions returned"
+                result,
+                max_relative = 1e-7
             );
         }
     }
@@ -3890,36 +3857,12 @@ mod tests {
                 let flow_temp = celsius_to_kelvin(flow_temp);
                 let (lr_below, lr_above, eff_below, eff_above, deg_below, deg_above) =
                     test_data.lr_eff_degcoeff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond);
-                assert_eq!(
-                    round_by_precision(lr_below, 1e7),
-                    round_by_precision(results_lr_below[i], 1e7),
-                    "incorrect load ratio below operating conditions returned"
-                );
-                assert_eq!(
-                    round_by_precision(lr_above, 1e7),
-                    round_by_precision(results_lr_above[i], 1e7),
-                    "incorrect load ratio above operating conditions returned"
-                );
-                assert_eq!(
-                    round_by_precision(eff_below, 1e7),
-                    round_by_precision(results_eff_below[i], 1e7),
-                    "incorrect efficiency below operating conditions returned"
-                );
-                assert_eq!(
-                    round_by_precision(eff_above, 1e7),
-                    round_by_precision(results_eff_above[i], 1e7),
-                    "incorrect efficiency above operating conditions returned"
-                );
-                assert_eq!(
-                    round_by_precision(deg_below, 1e7),
-                    round_by_precision(results_deg_below[i], 1e7),
-                    "incorrect degradation coeff below operating conditions returned"
-                );
-                assert_eq!(
-                    round_by_precision(deg_above, 1e7),
-                    round_by_precision(results_deg_above[i], 1e7),
-                    "incorrect degradation coeff above operating conditions returned"
-                );
+                assert_relative_eq!(lr_below, results_lr_below[i], max_relative = 1e-7);
+                assert_ulps_eq!(lr_above, results_lr_above[i],);
+                assert_relative_eq!(eff_below, results_eff_below[i], max_relative = 1e-7);
+                assert_ulps_eq!(eff_above, results_eff_above[i],);
+                assert_ulps_eq!(deg_below, results_deg_below[i],);
+                assert_ulps_eq!(deg_above, results_deg_above[i],);
                 i += 1;
             }
         }
@@ -3945,18 +3888,15 @@ mod tests {
         for (i, [temp_diff_limit_low, temp_ext, temp_source, temp_output]) in
             temp_cases.iter().enumerate()
         {
-            assert_eq!(
-                round_by_precision(
-                    test_data.cop_op_cond_if_not_air_source(
-                        *temp_diff_limit_low,
-                        celsius_to_kelvin(*temp_ext),
-                        *temp_source,
-                        *temp_output,
-                    ),
-                    1e7,
+            assert_relative_eq!(
+                test_data.cop_op_cond_if_not_air_source(
+                    *temp_diff_limit_low,
+                    celsius_to_kelvin(*temp_ext),
+                    *temp_source,
+                    *temp_output,
                 ),
-                round_by_precision(results[i], 1e7),
-                "incorrect CoP at operating conditions (not air source) returned"
+                results[i],
+                max_relative = 1e-7
             );
         }
     }
@@ -3978,17 +3918,11 @@ mod tests {
             (false, 273.15, 328.15),
         ];
         for (i, (mod_ctrl, temp_source, temp_output)) in test_cases.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    test_data.capacity_op_cond_if_not_air_source(
-                        *temp_output,
-                        *temp_source,
-                        *mod_ctrl,
-                    ),
-                    1e7,
-                ),
-                round_by_precision(results[i], 1e7),
-                "incorrect capacity at operating conditions (not air source) returned"
+            assert_relative_eq!(
+                test_data
+                    .capacity_op_cond_if_not_air_source(*temp_output, *temp_source, *mod_ctrl,),
+                results[i],
+                max_relative = 1e-7
             );
         }
     }
@@ -4008,19 +3942,16 @@ mod tests {
         let temp_spread_emitter = 10.0;
 
         for (i, temp_output) in [308.15, 313.15, 318.15, 323.15, 328.15].iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    test_data.temp_spread_correction(
-                        temp_source,
-                        *temp_output,
-                        temp_diff_evaporator,
-                        temp_diff_condenser,
-                        temp_spread_emitter,
-                    ),
-                    1e7,
+            assert_relative_eq!(
+                test_data.temp_spread_correction(
+                    temp_source,
+                    *temp_output,
+                    temp_diff_evaporator,
+                    temp_diff_condenser,
+                    temp_spread_emitter,
                 ),
-                round_by_precision(results[i], 1e7),
-                "incorrect temperature spread correction factor returned"
+                results[i],
+                max_relative = 1e-7
             );
         }
     }

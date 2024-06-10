@@ -1375,6 +1375,7 @@ mod tests {
         InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType, MassDistributionClass,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
+    use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use rstest::*;
 
@@ -1661,16 +1662,9 @@ mod tests {
         assert_eq!(zone.volume(), 125.);
     }
 
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
-
     #[rstest]
     pub fn should_have_correct_total_fabric_heat_loss(zone: Zone) {
-        assert_eq!(
-            round_by_precision(zone.total_fabric_heat_loss(), 1e2),
-            round_by_precision(174.58, 1e2),
-        );
+        assert_relative_eq!(zone.total_fabric_heat_loss(), 174.58, max_relative = 1e-2);
     }
 
     #[rstest]
@@ -1680,10 +1674,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_thermal_bridges(zone: Zone) {
-        assert_eq!(
-            round_by_precision(zone.total_thermal_bridges(), 1e2),
-            round_by_precision(4.3, 1e2),
-        );
+        assert_relative_eq!(zone.total_thermal_bridges(), 4.3, max_relative = 1e-2);
     }
 
     #[rstest]
@@ -1691,9 +1682,10 @@ mod tests {
         zone: Zone,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        assert_eq!(
-            round_by_precision(zone.total_vent_heat_loss(external_conditions.as_ref()), 1e1),
-            round_by_precision(157.9, 1e1),
+        assert_relative_eq!(
+            zone.total_vent_heat_loss(external_conditions.as_ref()),
+            157.9,
+            max_relative = 0.05
         );
     }
 

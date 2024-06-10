@@ -1034,6 +1034,7 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use approx::assert_ulps_eq;
     use parking_lot::Mutex;
     use rstest::*;
 
@@ -1128,15 +1129,7 @@ mod tests {
     pub fn should_have_correct_infiltration_rate(
         infiltration_element: VentilationElementInfiltration,
     ) {
-        assert_eq!(
-            round_by_precision(infiltration_element.infiltration_rate(), 1e6),
-            round_by_precision(3.5465798045602606, 1e6),
-            "incorrect infiltration rate returned"
-        )
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
+        assert_ulps_eq!(infiltration_element.infiltration_rate(), 3.5465798045602606,);
     }
 
     const EXPECTED_HEAT_TRANSFER_COEFFICIENTS: [f64; 8] = [
@@ -1157,20 +1150,15 @@ mod tests {
         external_conditions: ExternalConditions,
     ) {
         for simtime_step in simulation_time_iterator {
-            // external_conditions.next();
-            assert_eq!(
-                round_by_precision(
-                    infiltration_element.h_ve_heat_transfer_coefficient(
-                        75.0,
-                        None,
-                        Some(simtime_step),
-                        &external_conditions,
-                    ),
-                    1e6,
+            assert_ulps_eq!(
+                infiltration_element.h_ve_heat_transfer_coefficient(
+                    75.0,
+                    None,
+                    Some(simtime_step),
+                    &external_conditions,
                 ),
-                round_by_precision(EXPECTED_HEAT_TRANSFER_COEFFICIENTS[simtime_step.index], 1e6),
-                "incorrect heat transfer coeffient (h_ve) returned"
-            )
+                EXPECTED_HEAT_TRANSFER_COEFFICIENTS[simtime_step.index],
+            );
         }
     }
 
@@ -1227,19 +1215,13 @@ mod tests {
     ) {
         let (mvhr, _) = mvhr;
         // for (i, _) in simulation_time_iterator.enumerate() {
-        assert_eq!(
-            round_by_precision(
-                mvhr.h_ve_heat_transfer_coefficient(75.0, None, None, &external_conditions),
-                1e6
-            ),
-            round_by_precision(4.28975166666666, 1e6),
+        assert_ulps_eq!(
+            mvhr.h_ve_heat_transfer_coefficient(75.0, None, None, &external_conditions),
+            4.289751666666666,
         );
-        assert_eq!(
-            round_by_precision(
-                mvhr.h_ve_heat_transfer_coefficient(75.0, Some(1.2), None, &external_conditions),
-                1e6
-            ),
-            round_by_precision(5.147701999999999, 1e6),
+        assert_ulps_eq!(
+            mvhr.h_ve_heat_transfer_coefficient(75.0, Some(1.2), None, &external_conditions),
+            5.147701999999999,
         );
         // }
     }
@@ -1252,16 +1234,10 @@ mod tests {
         let (mut mvhr, energy_supply) = mvhr;
 
         for (i, _) in simulation_time_iterator.enumerate() {
-            assert_eq!(
-                round_by_precision(mvhr.fans(75.0, i, None), 1e6),
-                round_by_precision(0.010416666666666666, 1e6),
-                "incorrect fan gains for MVHR on iteration {} (1-indexed)",
-                i + 1
-            );
-            assert_eq!(
-                round_by_precision(energy_supply.lock().results_by_end_user()["MVHR"][i], 1e7),
-                round_by_precision(0.0208333333333333, 1e7),
-                "incorrect fan energy use for MVHR"
+            assert_ulps_eq!(mvhr.fans(75.0, i, None), 0.010416666666666666,);
+            assert_ulps_eq!(
+                energy_supply.lock().results_by_end_user()["MVHR"][i],
+                0.0208333333333333,
             );
         }
     }
@@ -1332,33 +1308,23 @@ mod tests {
     ) {
         let (whole_house_extract_ventilation, _) = whole_house_extract_ventilation;
         for (i, t_it) in simulation_time_iterator.enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
-                        75.0,
-                        None,
-                        Some(t_it),
-                        &external_conditions,
-                    ),
-                    1e6,
+            assert_ulps_eq!(
+                whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
+                    75.0,
+                    None,
+                    Some(t_it),
+                    &external_conditions,
                 ),
-                round_by_precision(WHOLE_HOUSE_H_VE_RESULTS[i], 1e6),
-                "incorrect heat transfer coefficient (h_ve) returned for iteration {} (1-indexed)",
-                i + 1
+                WHOLE_HOUSE_H_VE_RESULTS[i],
             );
-            assert_eq!(
-                round_by_precision(
-                    whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
-                        75.0,
-                        Some(1.2),
-                        Some(t_it),
-                        &external_conditions,
-                    ),
-                    1e6,
+            assert_ulps_eq!(
+                whole_house_extract_ventilation.h_ve_heat_transfer_coefficient(
+                    75.0,
+                    Some(1.2),
+                    Some(t_it),
+                    &external_conditions,
                 ),
-                round_by_precision(WHOLE_HOUSE_H_VE_RESULTS_WITH_THROUGHPUT_FACTOR[i], 1e6),
-                "incorrect heat transfer coefficient with throughput factor (h_ve) returned for iteration {} (1-indexed)",
-                i + 1
+                WHOLE_HOUSE_H_VE_RESULTS_WITH_THROUGHPUT_FACTOR[i],
             );
         }
     }
@@ -1370,14 +1336,10 @@ mod tests {
     ) {
         let (mut whole_house_extract_ventilation, energy_supply) = whole_house_extract_ventilation;
         for (i, _) in simulation_time_iterator.enumerate() {
-            assert_eq!(
-                round_by_precision(whole_house_extract_ventilation.fans(75.0, None, i), 1e6),
-                round_by_precision(0.0, 1e6),
-            );
-            assert_eq!(
-                round_by_precision(energy_supply.lock().results_by_end_user()["WHEV"][i], 1e7),
-                round_by_precision(0.020833333333333333, 1e7),
-                "incorrect fan energy use for WHEV"
+            assert_eq!(whole_house_extract_ventilation.fans(75.0, None, i), 0.0,);
+            assert_ulps_eq!(
+                energy_supply.lock().results_by_end_user()["WHEV"][i],
+                0.020833333333333333,
             );
         }
     }

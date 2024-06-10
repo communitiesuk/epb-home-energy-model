@@ -375,6 +375,7 @@ mod tests {
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rstest::*;
 
     #[fixture]
@@ -430,18 +431,12 @@ mod tests {
                 expected_provided[t_idx]
             );
             heat_network.timestep_end(t_it.index);
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["heat_network_test"][t_idx],
-                    1e7
-                ),
+            assert_ulps_eq!(
+                energy_supply.lock().results_by_end_user()["heat_network_test"][t_idx],
                 expected_test_energy_supply[t_idx]
             );
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["heat_network_auxiliary"][t_idx],
-                    1e7
-                ),
+            assert_ulps_eq!(
+                energy_supply.lock().results_by_end_user()["heat_network_auxiliary"][t_idx],
                 expected_aux_energy_supply[t_idx]
             );
         }
@@ -529,12 +524,10 @@ mod tests {
         let volume_demanded = [50.0, 100.0];
         let expected_demand = [3.429, 6.834];
         for (t_idx, _) in two_len_simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    heat_network_water_direct.demand_hot_water(volume_demanded[t_idx], t_idx),
-                    1e3
-                ),
-                round_by_precision(expected_demand[t_idx], 1e3),
+            assert_relative_eq!(
+                heat_network_water_direct.demand_hot_water(volume_demanded[t_idx], t_idx),
+                expected_demand[t_idx],
+                max_relative = 1e-3
             );
             heat_network_for_water_direct.lock().timestep_end(t_idx);
         }
@@ -678,9 +671,5 @@ mod tests {
                 .lock()
                 .timestep_end(t_idx);
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

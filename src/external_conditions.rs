@@ -1602,6 +1602,7 @@ mod tests {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
+    use approx::assert_relative_eq;
     use rstest::*;
 
     const BASE_AIR_TEMPS: [f64; 24] = [
@@ -1965,16 +1966,13 @@ mod tests {
         }
     }
 
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
-
     #[rstest]
     fn should_have_correct_air_temp_annual(external_conditions: ExternalConditions) {
-        let precision = 1e6;
-        assert_eq!(
-            round_by_precision(external_conditions.air_temp_annual().unwrap(), precision),
-            round_by_precision(10.1801369863014, precision)
+        let precision = 1e-6;
+        assert_relative_eq!(
+            external_conditions.air_temp_annual().unwrap(),
+            10.1801369863014,
+            max_relative = precision
         );
     }
 
@@ -2013,9 +2011,10 @@ mod tests {
 
     #[rstest]
     fn should_have_correct_wind_speed_annual(external_conditions: ExternalConditions) {
-        assert_eq!(
-            round_by_precision(external_conditions.wind_speed_annual().unwrap(), 0.01),
-            round_by_precision(4.23, 0.01)
+        assert_relative_eq!(
+            external_conditions.wind_speed_annual().unwrap(),
+            4.23,
+            max_relative = 0.01
         );
     }
 

@@ -665,6 +665,7 @@ mod tests {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use approx::assert_relative_eq;
     use rstest::*;
 
     #[fixture]
@@ -816,10 +817,6 @@ mod tests {
         [be_i, be_e, be_ie, be_d, be_m]
     }
 
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
-
     #[rstest]
     pub fn test_no_of_nodes_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         for be in opaque_building_elements.iter() {
@@ -874,11 +871,11 @@ mod tests {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
-                round_by_precision(results[i], 1e2),
-                "incorrect r_si returned"
-            )
+            assert_relative_eq!(
+                r_si_for_pitch(pitch_for(be)),
+                results[i],
+                max_relative = 0.05
+            );
         }
     }
 
@@ -889,10 +886,10 @@ mod tests {
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e1),
-                round_by_precision(results[i], 1e1),
-                "incorrect h_ci returned"
+            assert_relative_eq!(
+                h_ci_for(be, temp_int_air, temp_int_surface[i]),
+                results[i],
+                max_relative = 1e-2
             );
         }
     }
@@ -900,33 +897,21 @@ mod tests {
     #[rstest]
     pub fn test_h_ri_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         for be in opaque_building_elements.iter() {
-            assert_eq!(
-                round_by_precision(h_ri_for(be), 1e7),
-                round_by_precision(5.13, 1e7),
-                "incorrect h_ri returned"
-            );
+            assert_relative_eq!(h_ri_for(be), 5.13,);
         }
     }
 
     #[rstest]
     pub fn test_h_ce_for_opaque(opaque_building_elements: [BuildingElement; 5]) {
         for be in opaque_building_elements.iter() {
-            assert_eq!(
-                round_by_precision(h_ce_for(be), 1e7),
-                round_by_precision(20.0, 1e7),
-                "incorrect h_ce returned"
-            );
+            assert_relative_eq!(h_ce_for(be), 20.0,);
         }
     }
 
     #[rstest]
     pub fn test_h_re(opaque_building_elements: [BuildingElement; 5]) {
         for be in opaque_building_elements.iter() {
-            assert_eq!(
-                round_by_precision(h_re_for(be), 1e7),
-                round_by_precision(4.14, 1e7),
-                "incorrect h_ce returned"
-            );
+            assert_relative_eq!(h_re_for(be), 4.14,);
         }
     }
 
@@ -936,11 +921,7 @@ mod tests {
         let a_sol_inc = 0.01;
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(a_sol_for(be), 1e7),
-                round_by_precision(0.6 + i as f64 * a_sol_inc, 1e7),
-                "incorrect a_sol_returned"
-            );
+            assert_relative_eq!(a_sol_for(be), 0.6 + i as f64 * a_sol_inc,);
         }
     }
 
@@ -949,11 +930,7 @@ mod tests {
         let results = [0.0, 6.6691785923823135, 22.77, 38.87082140761768, 45.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(therm_rad_to_sky_for(be), 1e7),
-                round_by_precision(results[i], 1e7),
-                "incorrect therm_rad_to_sky returned"
-            );
+            assert_relative_eq!(therm_rad_to_sky_for(be), results[i],);
         }
     }
 
@@ -1018,11 +995,7 @@ mod tests {
         let results = [43.20, 35.15, 27.10, 27.15, 55.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(be.fabric_heat_loss(), 1e2),
-                round_by_precision(results[i], 1e2),
-                "incorrect fabric heat loss returned"
-            );
+            assert_relative_eq!(be.fabric_heat_loss(), results[i], max_relative = 1e-2);
         }
     }
 
@@ -1105,10 +1078,9 @@ mod tests {
         let area_inc = 2.5;
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(area_for_building_element_input(be), 1e7),
-                round_by_precision(20.0 + i as f64 * area_inc, 1e7),
-                "incorrect area returned"
+            assert_relative_eq!(
+                area_for_building_element_input(be),
+                20.0 + i as f64 * area_inc,
             );
         }
     }
@@ -1141,10 +1113,10 @@ mod tests {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
+            assert_relative_eq!(
+                r_si_for_pitch(pitch_for(be)),
                 results[i],
-                "incorrect r_si returned"
+                max_relative = 0.05
             );
         }
     }
@@ -1156,55 +1128,35 @@ mod tests {
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e7),
-                round_by_precision(results[i], 1e7),
-                "incorrect h_ci returned"
-            );
+            assert_relative_eq!(h_ci_for(be, temp_int_air, temp_int_surface[i]), results[i],);
         }
     }
 
     #[rstest]
     pub fn test_h_ri_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(
-                round_by_precision(h_ri_for(&be), 1e7),
-                5.13,
-                "incorrect h_ri returned"
-            );
+            assert_relative_eq!(h_ri_for(&be), 5.13,);
         }
     }
 
     #[rstest]
     pub fn test_h_ce_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(
-                round_by_precision(h_ce_for(&be), 1e7),
-                0.0,
-                "incorrect h_ce returned"
-            );
+            assert_relative_eq!(h_ce_for(&be), 0.0,);
         }
     }
 
     #[rstest]
     pub fn test_h_re_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(
-                round_by_precision(h_re_for(&be), 1e7),
-                0.0,
-                "incorrect h_re returned"
-            );
+            assert_eq!(h_re_for(&be), 0.0, "incorrect h_re returned");
         }
     }
 
     #[rstest]
     pub fn test_a_sol_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElement; 5]) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(
-                round_by_precision(a_sol_for(&be), 1e7),
-                0.0,
-                "incorrect a_sol returned"
-            );
+            assert_eq!(a_sol_for(&be), 0.0, "incorrect a_sol returned");
         }
     }
 
@@ -1213,11 +1165,7 @@ mod tests {
         adjacent_ztc_building_elements: [BuildingElement; 5],
     ) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(
-                round_by_precision(therm_rad_to_sky_for(&be), 1e7),
-                0.0,
-                "incorrect a_sol returned"
-            );
+            assert_eq!(therm_rad_to_sky_for(&be), 0.0, "incorrect a_sol returned");
         }
     }
 
@@ -1440,10 +1388,9 @@ mod tests {
         let area_inc = 2.5;
 
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(area_for_building_element_input(be), 1e7),
-                round_by_precision(20.0 + i as f64 * area_inc, 1e7),
-                "incorrect area returned"
+            assert_relative_eq!(
+                area_for_building_element_input(be),
+                20.0 + i as f64 * area_inc,
             );
         }
     }
@@ -1474,10 +1421,10 @@ mod tests {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(r_si_for_pitch(pitch_for(be)), 1e2),
+            assert_relative_eq!(
+                r_si_for_pitch(pitch_for(be)),
                 results[i],
-                "incorrect r_si returned"
+                max_relative = 0.05
             );
         }
     }
@@ -1489,11 +1436,7 @@ mod tests {
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(h_ci_for(be, temp_int_air, temp_int_surface[i]), 1e7),
-                results[i],
-                "incorrect h_ci returned"
-            );
+            assert_relative_eq!(h_ci_for(be, temp_int_air, temp_int_surface[i]), results[i],);
         }
     }
 
@@ -1515,11 +1458,7 @@ mod tests {
         ];
 
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(h_ce_for(be), 1e7),
-                round_by_precision(results[i], 1e7),
-                "incorrect h_ce returned"
-            );
+            assert_relative_eq!(h_ce_for(be), results[i], max_relative = 1e-6);
         }
     }
 
@@ -1599,15 +1538,11 @@ mod tests {
             8.988219392771693,
             8.988219392771693,
         ];
-        for (i, be) in ground_building_elements.iter().enumerate() {
+        for be in ground_building_elements.iter() {
             for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
-                assert_eq!(
-                    round_by_precision(
-                        temp_ext_for(be, &external_conditions_for_ground, &t_it),
-                        1e7
-                    ),
-                    round_by_precision(results[t_idx], 1e7),
-                    "incorrect ext temp returned on iteration {t_idx} for building element iteration {i}"
+                assert_relative_eq!(
+                    temp_ext_for(be, &external_conditions_for_ground, &t_it),
+                    results[t_idx],
                 );
             }
         }
@@ -1617,11 +1552,7 @@ mod tests {
     pub fn test_fabric_heat_loss_for_ground(ground_building_elements: [BuildingElement; 5]) {
         let expected = [30.0, 31.5, 33.25, 34.375, 30.0];
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(be.fabric_heat_loss(), 1e2),
-                round_by_precision(expected[i], 1e2),
-                "incorrect fabric heat loss returned"
-            );
+            assert_relative_eq!(be.fabric_heat_loss(), expected[i], max_relative = 1e-2);
         }
     }
 
@@ -1696,13 +1627,10 @@ mod tests {
 
     #[rstest]
     pub fn test_r_si_for_transparent(transparent_building_element: BuildingElement) {
-        assert_eq!(
-            round_by_precision(
-                r_si_for_pitch(pitch_for(&transparent_building_element)),
-                1e2
-            ),
+        assert_relative_eq!(
+            r_si_for_pitch(pitch_for(&transparent_building_element)),
             0.13,
-            "incorrect r_si returned"
+            max_relative = 1e-2
         );
     }
 
@@ -1803,10 +1731,10 @@ mod tests {
 
     #[rstest]
     pub fn test_fabric_heat_loss_for_transparent(transparent_building_element: BuildingElement) {
-        assert_eq!(
-            round_by_precision(transparent_building_element.fabric_heat_loss(), 1e2),
+        assert_relative_eq!(
+            transparent_building_element.fabric_heat_loss(),
             8.16,
-            "incorrect fabric heat loss returned"
+            max_relative = 1e-2
         );
     }
 

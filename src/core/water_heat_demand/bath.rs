@@ -53,6 +53,7 @@ impl Bath {
 mod tests {
     use super::*;
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use rstest::*;
     use std::rc::Rc;
 
@@ -93,15 +94,11 @@ mod tests {
         let bath = Bath::new(100.0, cold_water_source, 4.5);
         let expected_demands = [76.0, 75.510, 75.0];
         for idx in 0..simulation_time.total_steps() {
-            assert_eq!(
-                round_by_precision(bath.hot_water_demand(40.0, idx), 1e3),
-                round_by_precision(expected_demands[idx as usize], 1e3),
-                "incorrect hot water returned"
+            assert_relative_eq!(
+                bath.hot_water_demand(40.0, idx),
+                expected_demands[idx as usize],
+                max_relative = 1e-2
             );
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

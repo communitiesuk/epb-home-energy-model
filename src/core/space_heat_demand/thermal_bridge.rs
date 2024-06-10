@@ -75,6 +75,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_ulps_eq;
     use rstest::*;
     use serde_json::json;
 
@@ -149,11 +150,7 @@ mod tests {
             linear_thermal_transmittance: 0.28,
             length: 5.0,
         };
-        assert_eq!(
-            round_by_precision(heat_transfer_coefficient_for_thermal_bridge(&tb), 1e6),
-            1.4,
-            "incorrect heat transfer coefficient returned"
-        );
+        assert_ulps_eq!(heat_transfer_coefficient_for_thermal_bridge(&tb), 1.4,);
     }
 
     #[rstest]
@@ -166,9 +163,5 @@ mod tests {
             1.4,
             "incorrect heat transfer coefficient returned"
         );
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

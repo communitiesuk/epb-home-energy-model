@@ -1285,6 +1285,7 @@ mod tests {
     };
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rstest::*;
 
     fn round_by_precision(src: f64, precision: f64) -> f64 {
@@ -1528,13 +1529,10 @@ mod tests {
                 iteration,
             );
             temp_n_values_1.push(storage_tank1.temp_n);
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["immersion"][t_idx],
-                    1e7
-                ),
-                round_by_precision(expected_energy_supply_results_1[t_idx], 1e7),
-                "incorrect energy supplied returned"
+            assert_relative_eq!(
+                energy_supply.lock().results_by_end_user()["immersion"][t_idx],
+                expected_energy_supply_results_1[t_idx],
+                max_relative = 1e-7
             );
 
             storage_tank2.demand_hot_water(
@@ -1542,13 +1540,10 @@ mod tests {
                 iteration,
             );
             temp_n_values_2.push(storage_tank2.temp_n);
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["immersion2"][t_idx],
-                    1e7
-                ),
-                round_by_precision(expected_energy_supply_results_2[t_idx], 1e7),
-                "incorrect energy supplied returned in case where heater does not heat all layers, iteration {t_idx}"
+            assert_relative_eq!(
+                energy_supply.lock().results_by_end_user()["immersion2"][t_idx],
+                expected_energy_supply_results_2[t_idx],
+                max_relative = 1e-7
             );
         }
         assert_eq!(
@@ -1873,28 +1868,21 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             storage_tank.demand_hot_water(demands[t_idx], t_it);
-            assert_eq!(
-                round_by_precision(storage_tank.test_energy_demand(), 1e7),
-                round_by_precision(expected_energy_demands[t_idx], 1e7),
-                "incorrect energy demand from tank"
+            assert_ulps_eq!(
+                storage_tank.test_energy_demand(),
+                expected_energy_demands[t_idx],
             );
-            assert_eq!(
-                round_by_precision(solar_thermal.lock().test_energy_potential(), 1e7),
-                round_by_precision(expected_energy_potentials[t_idx], 1e7),
-                "incorrect energy potential by solar thermal returned"
+            assert_ulps_eq!(
+                solar_thermal.lock().test_energy_potential(),
+                expected_energy_potentials[t_idx],
             );
-            assert_eq!(
-                round_by_precision(solar_thermal.lock().test_energy_supplied(), 1e7),
-                round_by_precision(expected_energy_supplied[t_idx], 1e7),
-                "incorrect energy supplied by solar thermal returned"
+            assert_ulps_eq!(
+                solar_thermal.lock().test_energy_supplied(),
+                expected_energy_supplied[t_idx],
             );
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["solarthermal"][t_idx],
-                    1e7
-                ),
-                round_by_precision(expected_energy_supply_results[t_idx], 1e7),
-                "incorrect electric energy consumed returned"
+            assert_ulps_eq!(
+                energy_supply.lock().results_by_end_user()["solarthermal"][t_idx],
+                expected_energy_supply_results[t_idx],
             );
         }
     }

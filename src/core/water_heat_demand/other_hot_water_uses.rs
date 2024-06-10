@@ -57,6 +57,7 @@ impl OtherHotWater {
 mod tests {
     use super::*;
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use rstest::*;
 
     #[rstest]
@@ -91,14 +92,11 @@ mod tests {
         let other_water = OtherHotWater::new(5.0, cold_water_source);
         let expected_demands = [15.2, 15.102, 15.0];
         for (idx, _) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(other_water.hot_water_demand(40.0, 4.0, idx), 1e3),
-                round_by_precision(expected_demands[idx], 1e3)
+            assert_relative_eq!(
+                other_water.hot_water_demand(40.0, 4.0, idx),
+                expected_demands[idx],
+                max_relative = 1e-3
             );
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

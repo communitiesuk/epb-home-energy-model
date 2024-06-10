@@ -58,6 +58,7 @@ impl ElectricBattery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rstest::*;
 
     #[fixture]
@@ -68,28 +69,20 @@ mod tests {
     #[rstest]
     pub fn test_charge_discharge_battery(mut elec_battery: ElectricBattery) {
         // supply to battery exceeds limit
-        assert_eq!(
-            round_by_precision(elec_battery.charge_discharge_battery(-1_000_000.), 1e7),
-            round_by_precision(-2000. / 0.8f64.powf(0.5), 1e7)
+        assert_relative_eq!(
+            elec_battery.charge_discharge_battery(-1_000_000.),
+            -2000. / 0.8f64.powf(0.5),
+            max_relative = 1e-7
         );
         // demand on battery exceeds limit
-        assert_eq!(
-            round_by_precision(elec_battery.charge_discharge_battery(100_000_000.), 1e7),
-            round_by_precision(2000. * 0.8f64.powf(0.5), 1e7)
+        assert_relative_eq!(
+            elec_battery.charge_discharge_battery(100_000_000.),
+            2000. * 0.8f64.powf(0.5),
+            max_relative = 1e-7
         );
         // normal charge
-        assert_eq!(
-            round_by_precision(elec_battery.charge_discharge_battery(-200.), 1e7),
-            -200.
-        );
+        assert_ulps_eq!(elec_battery.charge_discharge_battery(-200.), -200.);
         // normal discharge
-        assert_eq!(
-            round_by_precision(elec_battery.charge_discharge_battery(100.), 1e7),
-            100.
-        );
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
+        assert_ulps_eq!(elec_battery.charge_discharge_battery(100.), 100.);
     }
 }

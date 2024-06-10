@@ -2073,6 +2073,7 @@ const AVERAGE_MONTHLY_APPLIANCES_HALF_HOUR_PROFILES: [[f64; 24]; 12] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use rstest::*;
 
     #[ignore = "useless test reported up to BRE"]
@@ -2096,21 +2097,25 @@ mod tests {
     #[rstest]
     fn test_calc_1_occupant() {
         // test with on occupant and a range of floor areas
-        assert_eq!(
-            round_by_precision(1.075, 1e2),
-            round_by_precision(calc_n_occupants(10., 1).unwrap(), 1e2),
+        assert_relative_eq!(
+            1.075,
+            calc_n_occupants(10., 1).unwrap(),
+            max_relative = 1e-2
         );
-        assert_eq!(
-            round_by_precision(1.232, 1e2),
-            round_by_precision(calc_n_occupants(20., 1).unwrap(), 1e2),
+        assert_relative_eq!(
+            1.232,
+            calc_n_occupants(20., 1).unwrap(),
+            max_relative = 1e-2
         );
-        assert_eq!(
-            round_by_precision(1.433, 1e2),
-            round_by_precision(calc_n_occupants(50., 1).unwrap(), 1e2),
+        assert_relative_eq!(
+            1.433,
+            calc_n_occupants(50., 1).unwrap(),
+            max_relative = 1e-2
         );
-        assert_eq!(
-            round_by_precision(1.437, 1e2),
-            round_by_precision(calc_n_occupants(100., 1).unwrap(), 1e2),
+        assert_relative_eq!(
+            1.437,
+            calc_n_occupants(100., 1).unwrap(),
+            max_relative = 1e-2
         );
     }
 
@@ -2132,9 +2137,5 @@ mod tests {
     fn test_calc_n_occupants_invalid_floor_area() {
         assert!(calc_n_occupants(0., 1).is_err());
         assert!(calc_n_occupants(-1., 1).is_err());
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

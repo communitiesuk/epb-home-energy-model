@@ -169,6 +169,7 @@ mod tests {
     };
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use parking_lot::Mutex;
     use rstest::*;
 
@@ -313,18 +314,11 @@ mod tests {
         ];
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             pv.produce_energy(t_it);
-            assert_eq!(
-                round_by_precision(
-                    energy_supply.lock().results_by_end_user()["pv generation"][t_idx],
-                    1e6
-                ),
-                round_by_precision(expected_generation_results[t_idx], 1e6),
-                "incorrect electricity produced from pv returned"
+            assert_relative_eq!(
+                energy_supply.lock().results_by_end_user()["pv generation"][t_idx],
+                expected_generation_results[t_idx],
+                max_relative = 1e-6
             );
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

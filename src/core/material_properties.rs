@@ -67,11 +67,8 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use rstest::*;
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
 
     #[fixture]
     pub fn matprop() -> MaterialProperties {
@@ -110,13 +107,10 @@ mod tests {
             62_760.0,
             "incorrect volumetric energy content (J per litre)"
         );
-        assert_eq!(
-            round_by_precision(
-                matprop.volumetric_energy_content_kwh_per_litre(temp_high, temp_low),
-                1e10
-            ),
-            round_by_precision(0.01743333333, 1e10),
-            "incorrect volumetric energy content (kWh per litre)"
+        assert_relative_eq!(
+            matprop.volumetric_energy_content_kwh_per_litre(temp_high, temp_low),
+            0.01743333333,
+            max_relative = 1e-9
         );
     }
 }

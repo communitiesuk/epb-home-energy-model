@@ -24,6 +24,7 @@ pub fn water_demand_to_kwh(litres_demand: f64, demand_temp: f64, cold_temp: f64)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use rstest::*;
 
     #[rstest]
@@ -41,21 +42,11 @@ mod tests {
         let demand_temp = [40.0, 35.0, 37.0, 39.0, 40.0, 38.0, 39.0, 40.0];
         let cold_temp = [5.0, 4.0, 5.0, 6.0, 5.0, 4.0, 3.0, 4.0];
         for i in 0..8 {
-            assert_eq!(
-                round_by_precision(
-                    water_demand_to_kwh(litres_demand[i], demand_temp[i], cold_temp[i]),
-                    1e5
-                ),
-                round_by_precision(
-                    [0.20339, 0.36029, 0.55787, 0.76707, 1.01694, 1.18547, 1.46440, 1.6736][i],
-                    1e5
-                ),
-                "incorrect water demand to kWh returned"
+            assert_relative_eq!(
+                water_demand_to_kwh(litres_demand[i], demand_temp[i], cold_temp[i]),
+                [0.20339, 0.36029, 0.55787, 0.76707, 1.01694, 1.18547, 1.46440, 1.6736][i],
+                max_relative = 1e-5
             );
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }

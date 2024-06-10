@@ -150,11 +150,8 @@ impl Pipework {
 mod tests {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use approx::assert_relative_eq;
     use rstest::*;
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
 
     #[fixture]
     pub fn simulation_time() -> SimulationTimeIterator {
@@ -176,28 +173,24 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_interior_surface_resistance(pipework: Pipework) {
-        assert_eq!(
-            round_by_precision(pipework.interior_surface_resistance, 1e5),
-            round_by_precision(0.00849, 1e5),
-            "incorrect R1 returned"
+        assert_relative_eq!(
+            pipework.interior_surface_resistance,
+            0.00849,
+            max_relative = 0.0005
         );
     }
 
     #[rstest]
     pub fn should_have_correct_insulation_resistance(pipework: Pipework) {
-        assert_eq!(
-            round_by_precision(pipework.insulation_resistance, 1e5),
-            round_by_precision(6.43829, 1e5),
-            "incorrect R2 returned"
-        );
+        assert_relative_eq!(pipework.insulation_resistance, 6.43829, max_relative = 1e-4);
     }
 
     #[rstest]
     pub fn should_have_correct_external_surface_resistance(pipework: Pipework) {
-        assert_eq!(
-            round_by_precision(pipework.external_surface_resistance, 1e5),
-            round_by_precision(0.30904, 1e5),
-            "incorrect R3 returned"
+        assert_relative_eq!(
+            pipework.external_surface_resistance,
+            0.30904,
+            max_relative = 1e-4
         );
     }
 
@@ -212,13 +205,10 @@ mod tests {
             5.18072, 5.18072, 5.18072, 5.03270, 4.73666, 4.44062, 4.44062, 4.58864,
         ];
         for (idx, _) in simulation_time.enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    pipework.heat_loss(temps_inside[idx], temps_outside[idx]),
-                    1e5
-                ),
-                round_by_precision(expected_losses[idx], 1e5),
-                "incorrect heat loss returned"
+            assert_relative_eq!(
+                pipework.heat_loss(temps_inside[idx], temps_outside[idx]),
+                expected_losses[idx],
+                max_relative = 1e-4
             );
         }
     }
@@ -232,13 +222,10 @@ mod tests {
         let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
         let expected_drops = [35.0, 35.0, 35.0, 34.0, 32.0, 30.0, 30.0, 31.0];
         for (idx, _) in simulation_time.enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    pipework.temperature_drop(temps_inside[idx], temps_outside[idx]),
-                    1e5
-                ),
-                round_by_precision(expected_drops[idx], 1e5),
-                "incorrect temperature drop returned"
+            assert_relative_eq!(
+                pipework.temperature_drop(temps_inside[idx], temps_outside[idx]),
+                expected_drops[idx],
+                max_relative = 0.0005
             );
         }
     }
@@ -254,13 +241,10 @@ mod tests {
             0.01997, 0.01997, 0.01997, 0.01940, 0.01826, 0.01712, 0.01712, 0.01769,
         ];
         for (idx, _) in simulation_time.enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    pipework.cool_down_loss(temps_inside[idx], temps_outside[idx]),
-                    1e5
-                ),
-                round_by_precision(expected_losses[idx], 1e5),
-                "incorrect cool down loss returned"
+            assert_relative_eq!(
+                pipework.cool_down_loss(temps_inside[idx], temps_outside[idx]),
+                expected_losses[idx],
+                max_relative = 0.0005
             );
         }
     }

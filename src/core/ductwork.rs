@@ -177,6 +177,7 @@ mod tests {
     use super::*;
     use crate::input::MVHRLocation::Inside;
     use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
     use rstest::*;
 
     #[fixture]
@@ -191,37 +192,33 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_diameter(ductwork: Ductwork) {
-        assert_eq!(
-            round_by_precision(ductwork.diameter_including_insulation_in_m, 1e3),
+        assert_relative_eq!(
+            ductwork.diameter_including_insulation_in_m,
             0.071,
-            "incorrect diameter returned"
+            max_relative = 1e-3
         );
     }
 
     #[rstest]
     pub fn should_have_correct_internal_surface_resistance(ductwork: Ductwork) {
-        assert_eq!(
-            round_by_precision(ductwork.internal_surface_resistance, 1e5),
+        assert_relative_eq!(
+            ductwork.internal_surface_resistance,
             0.82144,
-            "incorrect internal surface resistance returned"
+            max_relative = 1e-5
         );
     }
 
     #[rstest]
     pub fn should_have_correct_insulation_resistance(ductwork: Ductwork) {
-        assert_eq!(
-            round_by_precision(ductwork.insulation_resistance, 1e5),
-            8.30633,
-            "incorrect insulation resistance returned"
-        );
+        assert_relative_eq!(ductwork.insulation_resistance, 8.30633, max_relative = 1e-5);
     }
 
     #[rstest]
     pub fn should_have_correct_external_surface_resistance(ductwork: Ductwork) {
-        assert_eq!(
-            round_by_precision(ductwork.external_surface_resistance, 1e5),
+        assert_relative_eq!(
+            ductwork.external_surface_resistance,
             0.44832,
-            "incorrect external surface resistance returned"
+            max_relative = 1e-5
         );
     }
 
@@ -231,14 +228,11 @@ mod tests {
         let inside_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx], 0.4),
-                    1e5,
-                ),
+            assert_relative_eq!(
+                ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx], 0.4),
                 [-0.62656, -0.56390, -0.50125, -0.43859, -0.41771, -0.39682, -0.37594, -0.35505]
                     [t_idx],
-                "incorrect heat loss returned"
+                max_relative = 1e-4
             );
         }
     }
@@ -255,28 +249,21 @@ mod tests {
         let extract_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            assert_eq!(
-                round_by_precision(
-                    ductwork
-                        .total_duct_heat_loss(
-                            None,
-                            Some(supply_temp[t_idx]),
-                            Some(extract_temp[t_idx]),
-                            Some(intake_temp[t_idx]),
-                            Some(exhaust_temp[t_idx]),
-                            0.7,
-                        )
-                        .unwrap(),
-                    1e5,
-                ),
+            assert_relative_eq!(
+                ductwork
+                    .total_duct_heat_loss(
+                        None,
+                        Some(supply_temp[t_idx]),
+                        Some(extract_temp[t_idx]),
+                        Some(intake_temp[t_idx]),
+                        Some(exhaust_temp[t_idx]),
+                        0.7,
+                    )
+                    .unwrap(),
                 [-0.43859, -0.39473, -0.35087, -0.30701, -0.29239, -0.27777, -0.26316, -0.24854]
                     [t_idx],
-                "incorrect total heat loss returned"
+                max_relative = 1e-4
             );
         }
-    }
-
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
     }
 }
