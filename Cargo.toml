@@ -31,7 +31,7 @@ schemars = { version = "0.8.21", optional = true }
 serde = { version = "1.0.203", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.117"
-statrs = "0.16.1"
+statrs = "0.17.1"
 strum = { version = "0.26.2", features = ["derive"] }
 strum_macros = "0.26.3"
 variants-struct = "0.1.1"
