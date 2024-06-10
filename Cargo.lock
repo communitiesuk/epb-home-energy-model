@@ -90,12 +90,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "assert_approx_eq"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c07dab4369547dbe5114677b33fbbf724971019f3818172d59a97a61c774ffd"
-
-[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -421,8 +415,8 @@ name = "hem"
 version = "0.28.0-alpha"
 dependencies = [
  "anyhow",
+ "approx",
  "arrayvec",
- "assert_approx_eq",
  "clap",
  "csv",
  "derivative",

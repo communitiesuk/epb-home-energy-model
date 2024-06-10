@@ -12,7 +12,7 @@ pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_approx_eq::assert_approx_eq;
+    use approx::ulps_eq;
     use rstest::*;
 
     #[fixture]
@@ -27,13 +27,13 @@ mod tests {
 
     #[rstest]
     fn test_percentile(numbers: [f64; 10]) {
-        assert_approx_eq!(percentile(&numbers, 70), 4.95, 1e-2);
-        assert_approx_eq!(percentile(&numbers, 50), 3.65, 1e-2);
+        ulps_eq!(percentile(&numbers, 70), 4.95);
+        ulps_eq!(percentile(&numbers, 50), 3.65);
     }
 
     #[ignore = "there is some divergence with the linear interpolation in numpy's percentile method"]
     #[rstest]
     fn test_percentile_with_other_cases(other_numbers: [f64; 10]) {
-        assert_approx_eq!(percentile(&other_numbers, 80), 16.88, 1e-2);
+        ulps_eq!(percentile(&other_numbers, 80), 16.88);
     }
 }
