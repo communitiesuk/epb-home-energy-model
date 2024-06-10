@@ -1277,10 +1277,9 @@ fn temp_operative(
         .map(|(eli_idx, nel)| {
             let NamedBuildingElement { element: eli, .. } = nel;
             area_for_building_element_input(eli) * temp_vector[element_positions[eli_idx].1]
-                / area_el_total
         })
-        .sum::<f64>();
-
+        .sum::<f64>()
+        / area_el_total;
     (temp_int_air + temp_mean_radiant) / 2.0
 }
 
