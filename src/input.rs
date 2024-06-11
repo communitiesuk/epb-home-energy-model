@@ -19,7 +19,7 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Input {
-    pub simulation_time: Arc<SimulationTime>,
+    pub simulation_time: SimulationTime,
     pub external_conditions: Arc<ExternalConditionsInput>,
     pub internal_gains: InternalGains,
     pub appliance_gains: ApplianceGains,
@@ -1836,7 +1836,7 @@ impl InputForProcessing {
     }
 
     pub fn set_simulation_time(&mut self, simulation_time: SimulationTime) -> &Self {
-        self.input.simulation_time = Arc::new(simulation_time);
+        self.input.simulation_time = simulation_time;
         self
     }
 

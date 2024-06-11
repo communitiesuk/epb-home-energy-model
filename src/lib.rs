@@ -110,7 +110,7 @@ pub fn run_project(
 fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
     external_conditions_data: Option<ExternalConditionsFromFile>,
-    simulation_time: Arc<SimulationTime>,
+    simulation_time: SimulationTime,
 ) -> ExternalConditions {
     match external_conditions_data {
         Some(ec) => ExternalConditions::new(
