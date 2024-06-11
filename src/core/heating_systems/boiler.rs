@@ -806,6 +806,7 @@ mod tests {
     use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[fixture]

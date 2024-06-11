@@ -666,6 +666,7 @@ mod tests {
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[fixture]

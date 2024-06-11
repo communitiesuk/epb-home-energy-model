@@ -40,6 +40,7 @@ pub fn celsius_to_kelvin(temp_c: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[rstest]

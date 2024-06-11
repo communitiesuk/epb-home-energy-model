@@ -17,6 +17,7 @@ pub fn max_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[rstest]

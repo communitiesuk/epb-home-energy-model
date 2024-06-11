@@ -25,6 +25,7 @@ pub fn water_demand_to_kwh(litres_demand: f64, demand_temp: f64, cold_temp: f64)
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[rstest]

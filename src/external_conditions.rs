@@ -1603,6 +1603,7 @@ mod tests {
     use crate::external_conditions::DaylightSavingsConfig::NotApplicable;
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     const BASE_AIR_TEMPS: [f64; 24] = [

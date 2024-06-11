@@ -76,6 +76,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
 mod tests {
     use super::*;
     use approx::assert_ulps_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
 

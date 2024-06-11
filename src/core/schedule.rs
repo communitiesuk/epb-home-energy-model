@@ -186,6 +186,7 @@ pub fn expand_water_heating_events(
 mod tests {
     use super::*;
     use crate::input::Schedule;
+    use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
     use std::collections::HashMap;

@@ -295,6 +295,7 @@ impl ControlBehaviour for SetpointTimeControl {
 mod tests {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     const ON_OFF_SCHEDULE: [bool; 8] = [true, false, true, true, false, true, false, false];

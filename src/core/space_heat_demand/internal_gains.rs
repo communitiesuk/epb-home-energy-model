@@ -110,6 +110,7 @@ mod tests {
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::Mutex;
+    use pretty_assertions::assert_eq;
     use rstest::*;
     use std::sync::Arc;
 

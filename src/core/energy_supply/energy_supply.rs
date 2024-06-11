@@ -523,6 +523,7 @@ fn supply_from_heat_network_details(
 mod tests {
     use super::*;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[fixture]

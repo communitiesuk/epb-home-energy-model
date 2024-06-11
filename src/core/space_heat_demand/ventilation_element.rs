@@ -1036,6 +1036,7 @@ mod tests {
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_ulps_eq;
     use parking_lot::Mutex;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[fixture]

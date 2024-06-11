@@ -54,6 +54,7 @@ mod tests {
     use super::*;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
     use std::rc::Rc;
 

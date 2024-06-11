@@ -68,6 +68,7 @@ lazy_static! {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     #[fixture]

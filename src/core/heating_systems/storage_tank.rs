@@ -1286,6 +1286,7 @@ mod tests {
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
+    use pretty_assertions::assert_eq;
     use rstest::*;
 
     fn round_by_precision(src: f64, precision: f64) -> f64 {
