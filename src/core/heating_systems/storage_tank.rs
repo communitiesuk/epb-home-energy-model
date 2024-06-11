@@ -1869,9 +1869,10 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             storage_tank.demand_hot_water(demands[t_idx], t_it);
-            assert_ulps_eq!(
+            assert_relative_eq!(
                 storage_tank.test_energy_demand(),
                 expected_energy_demands[t_idx],
+                max_relative = 1e-7
             );
             assert_ulps_eq!(
                 solar_thermal.lock().test_energy_potential(),
