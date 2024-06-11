@@ -1285,7 +1285,7 @@ mod tests {
     };
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
-    use approx::{assert_relative_eq, assert_ulps_eq};
+    use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
