@@ -1874,17 +1874,20 @@ mod tests {
                 expected_energy_demands[t_idx],
                 max_relative = 1e-7
             );
-            assert_ulps_eq!(
+            assert_relative_eq!(
                 solar_thermal.lock().test_energy_potential(),
                 expected_energy_potentials[t_idx],
+                max_relative = 1e-7
             );
-            assert_ulps_eq!(
+            assert_relative_eq!(
                 solar_thermal.lock().test_energy_supplied(),
                 expected_energy_supplied[t_idx],
+                max_relative = 1e-7
             );
-            assert_ulps_eq!(
+            assert_relative_eq!(
                 energy_supply.lock().results_by_end_user()["solarthermal"][t_idx],
                 expected_energy_supply_results[t_idx],
+                max_relative = 1e-7
             );
         }
     }
