@@ -885,7 +885,8 @@ fn calc_temperatures(
         matrix_a[(idx, idx + 1)] = -h_pli[i];
         // RHS of heat balance eqn for this node
         let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions, simulation_time);
-        let (f_sh_dir, f_sh_dif) = shading_factors_direct_diffuse_for(eli, external_conditions);
+        let (f_sh_dir, f_sh_dif) =
+            shading_factors_direct_diffuse_for(eli, external_conditions, *simulation_time);
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
             + (h_ce + h_re) * temp_ext_for(eli, external_conditions, simulation_time)
             + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)

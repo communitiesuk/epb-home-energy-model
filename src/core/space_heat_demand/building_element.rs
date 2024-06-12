@@ -89,7 +89,7 @@ impl BuildingElement {
                 let g_value = Self::convert_g_value(g_value);
 
                 let (f_sh_dir, f_sh_dif) =
-                    shading_factors_direct_diffuse_for(self, external_conditions);
+                    shading_factors_direct_diffuse_for(self, external_conditions, simulation_time);
                 g_value
                     * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                     * area.expect("area expected to be available for transparent building element")
@@ -425,17 +425,43 @@ pub fn i_sol_dir_dif_for(
 
 pub fn shading_factors_direct_diffuse_for(
     element: &BuildingElement,
-    _external_conditions: &ExternalConditions,
+    external_conditions: &ExternalConditions,
+    simulation_time: SimulationTimeIteration,
 ) -> (f64, f64) {
     match element {
-        BuildingElement::Opaque { .. } => {
-            // external_conditions --- argh uses currently broken method
-            // TODO: fix this!!
-            (1.0, 1.0) // fixme
-        }
-        BuildingElement::Transparent { .. } => {
-            (1.0, 1.0) // fixme
-        }
+        BuildingElement::Opaque {
+            base_height,
+            height,
+            pitch,
+            width,
+            orientation,
+            ..
+        } => external_conditions.shading_reduction_factor_direct_diffuse(
+            *base_height,
+            projected_height(*pitch, *height),
+            *width,
+            *pitch,
+            *orientation,
+            Default::default(),
+            simulation_time,
+        ),
+        BuildingElement::Transparent {
+            base_height,
+            height,
+            width,
+            pitch,
+            orientation,
+            shading,
+            ..
+        } => external_conditions.shading_reduction_factor_direct_diffuse(
+            *base_height,
+            projected_height(*pitch, *height),
+            *width,
+            *pitch,
+            *orientation,
+            shading.to_vec(),
+            simulation_time,
+        ),
         _ => (1.0, 1.0),
     }
 }
