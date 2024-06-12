@@ -953,7 +953,7 @@ impl ExternalConditions {
             for shading_object in shading_objects.iter() {
                 //todo (maybe make some window shading types?)
                 match shading_object.object_type {
-                    WindowShadingObjectType::Obstacle => {
+                    WindowShadingObjectType::Overhang => {
                         ovh_D_L_ls.push((shading_object.depth, shading_object.distance));
                     }
                     WindowShadingObjectType::SideFinLeft => {
@@ -962,7 +962,7 @@ impl ExternalConditions {
                     WindowShadingObjectType::SideFinRight => {
                         finL_D_L_ls.push((shading_object.depth, shading_object.distance));
                     }
-                    WindowShadingObjectType::Overhang => {
+                    WindowShadingObjectType::Obstacle => {
                         // do nothing
                     }
                 }
