@@ -72,7 +72,8 @@ impl BuildingElement {
     ) -> f64 {
         match *self {
             BuildingElement::Transparent {
-                area,
+                height,
+                width,
                 pitch,
                 orientation,
                 g_value,
@@ -92,11 +93,16 @@ impl BuildingElement {
                     shading_factors_direct_diffuse_for(self, external_conditions, simulation_time);
                 g_value
                     * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
-                    * area.expect("area expected to be available for transparent building element")
+                    * Self::calculate_area(height, width)
                     * (1. - frame_area_fraction)
             }
             _ => 0.,
         }
+    }
+
+    /// Utility function, expected to only be needed temporarily before refactor to build out BuildingElement instance methods
+    fn calculate_area(height: f64, width: f64) -> f64 {
+        height * width
     }
 
     /// return g_value corrected for angle of solar radiation
@@ -120,15 +126,9 @@ impl BuildingElement {
 pub fn area_for_building_element_input(element: &BuildingElement) -> f64 {
     match *element {
         BuildingElement::Opaque { area: a, .. } => a,
-        BuildingElement::Transparent {
-            area: a,
-            height,
-            width,
-            ..
-        } => match a {
-            Some(a) => a,
-            None => height * width, // just to give some nominal value
-        },
+        BuildingElement::Transparent { height, width, .. } => {
+            BuildingElement::calculate_area(height, width)
+        }
         BuildingElement::Ground { area: a, .. } => a,
         BuildingElement::AdjacentZTC { area: a, .. } => a,
         BuildingElement::AdjacentZTUSimple { area: a, .. } => a,

@@ -1466,7 +1466,9 @@ pub enum BuildingElement {
     #[serde(rename = "BuildingElementTransparent")]
     Transparent {
         u_value: Option<f64>,
-        area: Option<f64>,
+        #[serde(rename = "area")]
+        // area is sometimes present but not expected to be used
+        _area: Option<f64>,
         r_c: Option<f64>,
         pitch: f64,
         #[serde(rename = "orientation360")]
