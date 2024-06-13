@@ -2,7 +2,7 @@ use crate::input::{Schedule, WaterHeatingEvent};
 use serde_json::Value;
 
 pub type BooleanSchedule = Vec<bool>;
-pub type NumericSchedule = Vec<f64>;
+pub type NumericSchedule = Vec<Option<f64>>;
 
 const MAIN_SCHEDULE: &str = "main";
 
@@ -84,7 +84,7 @@ fn process_numeric_schedule_entry(
     entry: &Value,
     subschedules: &Schedule,
     nullable: bool,
-) -> Vec<f64> {
+) -> Vec<Option<f64>> {
     match entry {
         Value::String(subschedule) => process_numeric_schedule_entries(
             subschedules.get(subschedule).unwrap(),
@@ -102,7 +102,7 @@ fn process_numeric_schedule_entry(
         .take(repeated_map.get("repeat").unwrap().as_u64().unwrap() as usize)
         .flatten()
         .collect(),
-        Value::Number(number) => vec![number.as_f64().unwrap()],
+        Value::Number(number) => vec![number.as_f64()],
         Value::Null if nullable => vec![Default::default()],
         _ => panic!("Unexpected value in schedule that was sent."),
     }
@@ -271,7 +271,16 @@ mod tests {
 
     #[fixture]
     pub fn numeric_schedule_expanded() -> NumericSchedule {
-        vec![300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0]
+        vec![
+            Some(300.0),
+            Some(120.0),
+            Some(220.0),
+            Some(750.0),
+            Some(890.0),
+            Some(150.0),
+            Some(550.0),
+            Some(280.0),
+        ]
     }
 
     #[rstest]
@@ -282,6 +291,40 @@ mod tests {
         assert_eq!(
             expand_numeric_schedule(numeric_schedule, false),
             numeric_schedule_expanded,
+            "Incorrect expansion of numeric schedule"
+        );
+    }
+
+    #[fixture]
+    pub fn gappy_numeric_schedule() -> Schedule {
+        HashMap::from([(
+            "main".to_string(),
+            json!([300.0, 120.0, null, 750.0, 890.0, null, 550.0, 280.0,]),
+        )])
+    }
+
+    #[fixture]
+    pub fn gappy_numeric_schedule_expanded() -> NumericSchedule {
+        vec![
+            Some(300.0),
+            Some(120.0),
+            None,
+            Some(750.0),
+            Some(890.0),
+            None,
+            Some(550.0),
+            Some(280.0),
+        ]
+    }
+
+    #[rstest]
+    pub fn should_expand_gappy_numeric_schedule_correctly(
+        gappy_numeric_schedule: Schedule,
+        gappy_numeric_schedule_expanded: NumericSchedule,
+    ) {
+        assert_eq!(
+            expand_numeric_schedule(gappy_numeric_schedule, true),
+            gappy_numeric_schedule_expanded,
             "Incorrect expansion of numeric schedule"
         );
     }

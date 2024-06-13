@@ -1733,7 +1733,10 @@ fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
         schedule.insert("day".to_string(), day);
     }
     InternalGains::new(
-        expand_numeric_schedule(schedule, false),
+        expand_numeric_schedule(schedule, false)
+            .into_iter()
+            .filter_map(|x| x)
+            .collect(),
         details.start_day,
         details.time_series_step,
     )
@@ -1855,7 +1858,10 @@ fn single_control_from_details(
             schedule,
             ..
         } => Control::OnOffMinimisingTimeControl(OnOffMinimisingTimeControl::new(
-            expand_numeric_schedule(schedule, false),
+            expand_numeric_schedule(schedule, false)
+                .into_iter()
+                .filter_map(|x| x)
+                .collect(),
             start_day,
             time_series_step,
             time_on_daily.unwrap_or_default(),
@@ -1873,7 +1879,7 @@ fn single_control_from_details(
             SetpointTimeControl::new(
                 expand_numeric_schedule(schedule, true)
                     .iter()
-                    .map(|s| Some(*s))
+                    .cloned()
                     .collect(),
                 start_day,
                 time_series_step,
@@ -2369,7 +2375,7 @@ fn appliance_gains_from_single_input(
 ) -> ApplianceGains {
     let total_energy_supply = expand_numeric_schedule(input.schedule.clone(), false)
         .iter()
-        .map(|energy_data| energy_data / total_floor_area)
+        .map(|energy_data| energy_data.unwrap() / total_floor_area)
         .collect();
 
     ApplianceGains::new(
