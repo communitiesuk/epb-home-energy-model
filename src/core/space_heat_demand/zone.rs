@@ -1570,7 +1570,7 @@ mod tests {
             width: 4.0,
             shading: vec![],
             u_value: None,
-            area: None,
+            _area: None,
         };
         let be_ztu = BuildingElement::AdjacentZTUSimple {
             area: 30.0,

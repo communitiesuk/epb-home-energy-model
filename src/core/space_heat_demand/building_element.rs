@@ -1599,7 +1599,7 @@ mod tests {
     pub fn transparent_building_element() -> BuildingElement {
         BuildingElement::Transparent {
             u_value: None,
-            area: None,
+            _area: None,
             r_c: Some(0.4),
             pitch: 90.,
             orientation: 180.,
