@@ -507,16 +507,21 @@ pub fn space_heat_cool_demand(
         "ERROR: Cooling setpoint is below heating setpoint."
     );
 
-    let mut temp_setpnt_cool_vent: Option<f64> = None;
-    if let Some(_window_cooling) = vent_cool_extra {
-        // temp_setpnt_cool_vent =
-        // Set cooling setpoint to Planck temperature to ensure no cooling demand
-        temp_setpnt_cool_vent = Some(kelvin_to_celsius(1.4e32));
+    let temp_setpnt_cool_vent: Option<f64> = if let Some(_window_cooling) = vent_cool_extra {
+        let temp_setpnt_cool_vent_response = vent_cool_extra
+            .as_ref()
+            .unwrap()
+            // Set cooling setpoint to Planck temperature as fallback to ensure no cooling demand
+            .temp_setpnt(*simulation_time)
+            .unwrap_or_else(|| kelvin_to_celsius(1.4e32));
         assert!(
-            temp_setpnt_cool_vent.is_none() || (temp_setpnt_cool_vent.unwrap() >= temp_setpnt_heat),
+            temp_setpnt_cool_vent_response >= temp_setpnt_heat,
             "ERROR: Setpoint for additional ventilation is below heating setpoint."
         );
-    }
+        Some(temp_setpnt_cool_vent_response)
+    } else {
+        None
+    };
 
     // Calculate timestep in seconds
     let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
