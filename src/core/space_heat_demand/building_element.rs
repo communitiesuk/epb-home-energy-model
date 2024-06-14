@@ -442,7 +442,7 @@ pub fn shading_factors_direct_diffuse_for(
             *width,
             *pitch,
             *orientation,
-            Default::default(),
+            &Default::default(),
             simulation_time,
         ),
         BuildingElement::Transparent {
@@ -459,7 +459,7 @@ pub fn shading_factors_direct_diffuse_for(
             *width,
             *pitch,
             *orientation,
-            shading.to_vec(),
+            shading,
             simulation_time,
         ),
         _ => (1.0, 1.0),

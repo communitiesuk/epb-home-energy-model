@@ -154,7 +154,7 @@ impl PhotovoltaicSystem {
                 self.width,
                 self.pitch,
                 self.orientation,
-                vec![],
+                &vec![],
                 simulation_time_iteration,
             )
     }

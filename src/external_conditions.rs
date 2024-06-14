@@ -1111,7 +1111,7 @@ impl ExternalConditions {
         width: f64,
         tilt: f64,
         orientation: f64,
-        window_shading: Vec<WindowShadingObject>,
+        window_shading: &Vec<WindowShadingObject>,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
         // """ calculates the direct and diffuse shading factors due to external
@@ -1165,7 +1165,7 @@ impl ExternalConditions {
                 height,
                 width,
                 orientation,
-                Some(&window_shading),
+                Some(window_shading),
                 simulation_time,
             )
             .expect("expected direct shading reduction factor to be calculable")
@@ -1176,7 +1176,7 @@ impl ExternalConditions {
             tilt,
             height,
             width,
-            Some(&window_shading),
+            Some(window_shading),
         );
 
         (fdir, fdiff)
