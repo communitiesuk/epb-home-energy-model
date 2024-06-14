@@ -1420,11 +1420,7 @@ fn init_extra_terrestrial_radiation(earth_orbit_deviation: f64) -> f64 {
 }
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::external_conditions::BrightnessCoefficientName::{F11, F12, F13, F21, F22, F23};
-use variants_struct::VariantsStruct;
 
-#[derive(VariantsStruct)]
-#[struct_name = "BrightnessCoefficientsRow"]
 enum BrightnessCoefficientName {
     F11,
     F12,
@@ -1434,8 +1430,17 @@ enum BrightnessCoefficientName {
     F23,
 }
 
+struct BrightnessCoefficientsRow {
+    f11: f64,
+    f12: f64,
+    f13: f64,
+    f21: f64,
+    f22: f64,
+    f23: f64,
+}
+
 // version of Table 8 in ISO 52010
-static BRIGHTNESS_COEFFICIENTS: [BrightnessCoefficientsRow<f64>; 8] = [
+static BRIGHTNESS_COEFFICIENTS: [BrightnessCoefficientsRow; 8] = [
     BrightnessCoefficientsRow {
         f11: -0.008,
         f12: 0.588,
@@ -1502,7 +1507,7 @@ static BRIGHTNESS_COEFFICIENTS: [BrightnessCoefficientsRow<f64>; 8] = [
     },
 ];
 
-fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> &'static f64 {
+fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> f64 {
     // """ returns brightness coefficient as a look up from Table 8 in ISO 52010
     //
     // Arguments:
@@ -1512,7 +1517,7 @@ fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> &'static f6
     //
     // #TODO I've not had a need for the clearness index parameters contained in this table yet,
     // #if they are needed as input or output later then this function can be reworked
-    BRIGHTNESS_COEFFICIENTS[if e < 1.065 {
+    let row = &BRIGHTNESS_COEFFICIENTS[if e < 1.065 {
         0usize
     } else if e < 1.23 {
         1usize
@@ -1528,9 +1533,15 @@ fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> &'static f6
         6usize
     } else {
         7usize
-    }]
-    .get(&fij)
-    .unwrap()
+    }];
+    match fij {
+        BrightnessCoefficientName::F11 => row.f11,
+        BrightnessCoefficientName::F12 => row.f12,
+        BrightnessCoefficientName::F13 => row.f13,
+        BrightnessCoefficientName::F21 => row.f21,
+        BrightnessCoefficientName::F22 => row.f22,
+        BrightnessCoefficientName::F23 => row.f23,
+    }
 }
 
 fn init_f1_circumsolar_brightness_coefficient(e: f64, delta: f64, solar_zenith_angle: f64) -> f64 {
@@ -1541,9 +1552,10 @@ fn init_f1_circumsolar_brightness_coefficient(e: f64, delta: f64, solar_zenith_a
     // delta -- dimensionless sky brightness parameter for the current timestep
     // solar_zenith_angle -- solar zenith angle for the current hour
     // """
-    let f1: f64 = brightness_coefficient(e, F11)
-        + brightness_coefficient(e, F12) * delta
-        + brightness_coefficient(e, F13) * (std::f64::consts::PI * solar_zenith_angle / 180.0);
+    let f1: f64 = brightness_coefficient(e, BrightnessCoefficientName::F11)
+        + brightness_coefficient(e, BrightnessCoefficientName::F12) * delta
+        + brightness_coefficient(e, BrightnessCoefficientName::F13)
+            * (std::f64::consts::PI * solar_zenith_angle / 180.0);
     if f1 < 0.0 {
         0.0
     } else {
@@ -1559,9 +1571,10 @@ fn init_f2_horizontal_brightness_coefficient(e: f64, delta: f64, solar_zenith_an
     // delta -- dimensionless sky brightness parameter
     // solar_zenith_angle -- solar zenith angle for the current hour
     // """
-    brightness_coefficient(e, F21)
-        + brightness_coefficient(e, F22) * delta
-        + brightness_coefficient(e, F23) * (std::f64::consts::PI * solar_zenith_angle / 180.0)
+    brightness_coefficient(e, BrightnessCoefficientName::F21)
+        + brightness_coefficient(e, BrightnessCoefficientName::F22) * delta
+        + brightness_coefficient(e, BrightnessCoefficientName::F23)
+            * (std::f64::consts::PI * solar_zenith_angle / 180.0)
 }
 
 const CLEARNESS_FORMULA_K: f64 = 1.014;
