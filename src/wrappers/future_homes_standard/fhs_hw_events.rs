@@ -364,7 +364,6 @@ impl HotWaterEventGenerator {
                             median_duration: event.median_duration / 60.,
                             mean_duration: event.mean_duration / 60.,
                             hourly_event_counts: (0..23)
-                                .into_iter()
                                 .collect::<Vec<_>>()
                                 .try_into()
                                 .expect(
@@ -464,11 +463,8 @@ impl HotWaterEventGenerator {
         duration: f64,
     ) {
         let mut event_start = event_start;
-        let event_start_events: Vec<HourlyHotWaterEvent> = hourly_events
-            [event_start.floor() as usize]
-            .iter()
-            .cloned()
-            .collect();
+        let hourly_events_idx = event_start.floor() as usize;
+        let event_start_events: Vec<HourlyHotWaterEvent> = hourly_events[hourly_events_idx].to_vec();
         for existing_event in event_start_events {
             if matching_types.contains(&existing_event.event_type)
                 && (event_start >= existing_event.start && event_start < existing_event.end)
@@ -609,11 +605,7 @@ pub enum SimpleLabelBasedOn900KSample {
 
 impl SimpleLabelBasedOn900KSample {
     pub fn is_shower_type(&self) -> bool {
-        match self {
-            SimpleLabelBasedOn900KSample::Shower => true,
-            SimpleLabelBasedOn900KSample::ShowerBig => true,
-            _ => false,
-        }
+        matches!(self, SimpleLabelBasedOn900KSample::Shower | SimpleLabelBasedOn900KSample::ShowerBig)
     }
 
     pub fn is_bath_type(&self) -> bool {
@@ -622,9 +614,9 @@ impl SimpleLabelBasedOn900KSample {
 }
 
 // bundle the data CSVs into the binary
-static DECILE_BANDING_FILE: &'static str = include_str!("decile_banding.csv");
-static DECILE_EVENTS_FILE: &'static str = include_str!("day_of_week_events_by_decile.csv");
-static DECILE_EVENT_TIMES_FILE: &'static str =
+static DECILE_BANDING_FILE: &str = include_str!("decile_banding.csv");
+static DECILE_EVENTS_FILE: &str = include_str!("day_of_week_events_by_decile.csv");
+static DECILE_EVENT_TIMES_FILE: &str =
     include_str!("day_of_week_events_by_decile_event_times.csv");
 
 // represents a record from the decile bands file

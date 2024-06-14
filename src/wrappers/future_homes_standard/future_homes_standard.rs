@@ -13,17 +13,16 @@ use serde_json::{json, Number, Value};
 use std::collections::HashSet;
 use std::iter::{repeat, zip};
 
-const _EMIS_FACTOR_NAME: &'static str = "Emissions Factor kgCO2e/kWh";
-const _EMIS_OOS_FACTOR_NAME: &'static str =
-    "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
-const _PE_FACTOR_NAME: &'static str = "Primary Energy Factor kWh/kWh delivered";
-const ENERGY_SUPPLY_NAME_ELECTRICITY: &'static str = "mains elec";
+const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
+const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
+const _PE_FACTOR_NAME: &str = "Primary Energy Factor kWh/kWh delivered";
+const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 
-const APPL_OBJ_NAME: &'static str = "appliances";
-const ELEC_COOK_OBJ_NAME: &'static str = "Eleccooking";
-const GAS_COOK_OBJ_NAME: &'static str = "Gascooking";
-const HW_TIMER_MAIN_NAME: &'static str = "hw timer";
-const HW_TIMER_HOLD_AT_SETPNT_NAME: &'static str = "hw timer eco7";
+const APPL_OBJ_NAME: &str = "appliances";
+const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
+const GAS_COOK_OBJ_NAME: &str = "Gascooking";
+const HW_TIMER_MAIN_NAME: &str = "hw timer";
+const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
 
 const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
 const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
@@ -800,10 +799,10 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
 fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let zone_keys = input.zone_keys();
     for zone_key in &zone_keys {
-        if let Some(space_heat_control) = input.space_heat_control_for_zone(&zone_key)? {
+        if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
             match space_heat_control {
                 SpaceHeatControlType::LivingRoom => {
-                    if let Some(space_cool_system) = input.space_cool_system_for_zone(&zone_key)? {
+                    if let Some(space_cool_system) = input.space_cool_system_for_zone(zone_key)? {
                         let mut living_room_control = json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
@@ -837,7 +836,7 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                     }
                 }
                 SpaceHeatControlType::RestOfDwelling => {
-                    if let Some(space_cool_system) = input.space_cool_system_for_zone(&zone_key)? {
+                    if let Some(space_cool_system) = input.space_cool_system_for_zone(zone_key)? {
                         let mut rest_of_dwelling_control = json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,

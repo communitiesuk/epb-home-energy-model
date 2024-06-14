@@ -53,7 +53,7 @@ pub fn run_project(
     let external_conditions = external_conditions_from_input(
         input.external_conditions.clone(),
         external_conditions_data,
-        input.simulation_time.clone(),
+        input.simulation_time,
     );
 
     let mut corpus: Corpus = Corpus::from_inputs(input, Some(external_conditions))?;
