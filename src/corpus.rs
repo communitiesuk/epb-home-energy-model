@@ -1854,10 +1854,7 @@ fn single_control_from_details(
             ..
         } => Control::SetpointTimeControl(
             SetpointTimeControl::new(
-                expand_numeric_schedule(schedule, true)
-                    .iter()
-                    .cloned()
-                    .collect(),
+                expand_numeric_schedule(schedule, true).to_vec(),
                 start_day,
                 time_series_step,
                 setpoint_min,

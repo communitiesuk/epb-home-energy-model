@@ -232,11 +232,13 @@ impl DrawoffGenerator {
     }
 }
 
+type DurationFn = Arc<Mutex<Box<dyn FnMut(DrawoffEvent) -> f64>>>;
+
 #[derive(Clone)]
 pub struct Drawoff {
     pub event_type: WaterHeatingEventType,
     pub name: String,
-    pub duration_fn: Arc<Mutex<Box<dyn FnMut(DrawoffEvent) -> f64>>>,
+    pub duration_fn: DurationFn,
 }
 
 impl Drawoff {

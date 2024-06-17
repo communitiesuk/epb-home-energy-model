@@ -203,10 +203,10 @@ pub enum FuelType {
     UnmetDemand,
 }
 
-impl FuelType {
-    fn to_string(&self) -> String {
+impl Display for FuelType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let json_string = serde_json::to_string(self).unwrap();
-        json_string.to_string()
+        write!(f, "{}", json_string)
     }
 }
 
@@ -251,7 +251,7 @@ pub enum EnergySupplyType {
 impl Display for EnergySupplyType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let json_string = serde_json::to_string(self).unwrap();
-        write!(f, "{}", json_string.to_string())
+        write!(f, "{}", json_string)
     }
 }
 
