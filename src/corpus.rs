@@ -1737,7 +1737,7 @@ fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
     InternalGains::new(
         expand_numeric_schedule(schedule, false)
             .into_iter()
-            .filter_map(|x| x)
+            .flatten()
             .collect(),
         details.start_day,
         details.time_series_step,
@@ -1757,8 +1757,7 @@ impl Controls {
     pub fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
         self.core
             .iter()
-            .find(|heat_source_control| heat_source_control.has_type(*control_type))
-            .and_then(|heat_source_control| Some(heat_source_control.get()))
+            .find(|heat_source_control| heat_source_control.has_type(*control_type)).map(|heat_source_control| heat_source_control.get())
     }
 
     // access a control using a string, possibly because it is one of the "extra" controls
@@ -1837,7 +1836,7 @@ fn single_control_from_details(
         } => Control::OnOffMinimisingTimeControl(OnOffMinimisingTimeControl::new(
             expand_numeric_schedule(schedule, false)
                 .into_iter()
-                .filter_map(|x| x)
+                .flatten()
                 .collect(),
             start_day,
             time_series_step,
@@ -2621,9 +2620,8 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        control
-                            .clone()
-                            .and_then(|ctrl| controls.get(&ctrl).map(|c| c.clone())),
+                        (*control)
+                            .and_then(|ctrl| controls.get(&ctrl)),
                     ),
                 )))),
                 name.into(),
@@ -2692,9 +2690,8 @@ fn heat_source_from_input(
                     panic!("Expected a wet heat source registered with the name '{name}'.")
                 })
                 .clone();
-            let source_control = control
-                .clone()
-                .and_then(|ctrl| controls.get(&ctrl).map(|c| c.clone()));
+            let source_control = (*control)
+                .and_then(|ctrl| controls.get(&ctrl));
 
             let lock = heat_source_wet.lock();
             let mut heat_source_wet_clone = (*lock).clone();
@@ -2768,7 +2765,7 @@ fn heat_source_from_input(
                         test_data,
                         *vol_hw_daily_average,
                         simulation_time.step_in_hours(),
-                        controls.get(control).map(|c| c.clone()),
+                        controls.get(control),
                     ),
                 ))),
                 energy_supply_conn_name.into(),
@@ -3088,7 +3085,7 @@ fn space_heat_systems_from_input(
                             simulation_time.step_in_hours(),
                             control
                                 .as_ref()
-                                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone())),
+                                .and_then(|ctrl| controls.get_with_string(ctrl)),
                         ))
                     },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
@@ -3110,7 +3107,7 @@ fn space_heat_systems_from_input(
                                 }
                                 SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control
                                     .as_ref()
-                                    .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
+                                    .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
@@ -3161,7 +3158,7 @@ fn space_cool_systems_from_input(
                 EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
             let control = control
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone()));
+                .and_then(|ctrl| controls.get_with_string(ctrl));
 
             Ok((
                 (*energy_supply_conn_name).clone(),

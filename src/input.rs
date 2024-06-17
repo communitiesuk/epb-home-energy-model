@@ -680,9 +680,9 @@ pub enum HeatSourceControl {
 
 impl HeatSourceControlType {
     pub fn deserialize(control_type: &str) -> anyhow::Result<Self> {
-        Ok(serde_json::from_str(control_type).or(Err(anyhow!(
+        serde_json::from_str(control_type).or(Err(anyhow!(
             "The heat source control type '{control_type}' is not known"
-        )))?)
+        )))
     }
 }
 
