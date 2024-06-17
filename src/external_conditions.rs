@@ -1376,9 +1376,9 @@ fn init_solar_azimuth_angle(
     let solar_altitude = solar_altitude.to_radians();
 
     //now do calculation!
-    let sin_aux1_numerator = solar_declination.cos() * solar_hour_angle.cos();
-    let cos_aux1_numerator =
-        solar_declination.sin() + latitude.sin() * solar_declination.cos() * solar_hour_angle.cos();
+    let sin_aux1_numerator = solar_declination.cos() * solar_hour_angle.sin();
+    let cos_aux1_numerator = latitude.cos() * solar_declination.sin()
+        + latitude.sin() * solar_declination.cos() * solar_hour_angle.cos();
 
     let denominator = solar_altitude.sin().asin().cos();
 
