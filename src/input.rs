@@ -9,7 +9,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
-use variants_struct::VariantsStruct;
 
 pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
     InputForProcessing::init_with_json(json)
@@ -361,7 +360,7 @@ pub struct ColdWaterSourceDetails {
 
 pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
 
-pub type CoreControls = Vec<HeatSourceControl<Option<ControlDetails>>>;
+pub type CoreControls = Vec<HeatSourceControl>;
 
 pub type ExtraControls = HashMap<String, ControlDetails>;
 
@@ -377,29 +376,17 @@ fn deserialize_control<'de, D>(deserializer: D) -> Result<Control, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let map: HashMap<String, ControlDetails> = Deserialize::deserialize(deserializer)?;
+    let map: IndexMap<String, ControlDetails> = Deserialize::deserialize(deserializer)?;
     let mut core: CoreControls = Default::default();
     let mut extra: ExtraControls = Default::default();
     for (control_type, control_details) in map {
         match control_type.as_str() {
             // following strings need to be in sync with HeatSourceControlType known values
             "hw timer" => {
-                core.push(HeatSourceControl::new(
-                    Some(control_details),
-                    None,
-                    None,
-                    None,
-                    None,
-                ));
+                core.push(HeatSourceControl::HotWaterTimer(control_details));
             }
             "window opening" => {
-                core.push(HeatSourceControl::new(
-                    None,
-                    Some(control_details),
-                    None,
-                    None,
-                    None,
-                ));
+                core.push(HeatSourceControl::WindowOpening(control_details));
             }
             // there are some extra control definitions from time to time called things like
             // "hw timer 2" and "zone 1 radiators timer" - can only presume now to store these keys as-is
@@ -665,11 +652,8 @@ impl HeatSourceWetType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, VariantsStruct)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "schemars", struct_derive(schemars::JsonSchema))]
-#[struct_name = "HeatSourceControl"]
-#[struct_derive(Clone, Debug, Deserialize)]
 pub enum HeatSourceControlType {
     #[serde(rename = "hw timer")]
     HotWaterTimer,
@@ -681,6 +665,16 @@ pub enum HeatSourceControlType {
     WindowOpeningRestOfDwelling,
     #[serde(rename = "always off")]
     AlwaysOff,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum HeatSourceControl {
+    HotWaterTimer(ControlDetails),
+    WindowOpening(ControlDetails),
+    WindowOpeningLivingRoom(ControlDetails),
+    WindowOpeningRestOfDwelling(ControlDetails),
+    AlwaysOff(ControlDetails),
 }
 
 impl HeatSourceControlType {

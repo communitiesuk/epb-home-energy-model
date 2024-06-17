@@ -1,6 +1,7 @@
 // This module provides structs to model time controls
 
 use crate::simulation_time::{SimulationTimeIteration, HOURS_IN_DAY};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub enum Control {
@@ -22,6 +23,7 @@ macro_rules! per_control {
     };
 }
 
+use crate::input::HeatSourceControlType;
 pub(crate) use per_control;
 
 pub trait ControlBehaviour {
@@ -40,6 +42,44 @@ pub trait ControlBehaviour {
 impl Control {
     pub fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
         per_control!(self, c => {c.is_on(&simulation_time_iteration)})
+    }
+}
+
+pub enum HeatSourceControl {
+    HotWaterTimer(Arc<Control>),
+    WindowOpening(Arc<Control>),
+    WindowOpeningLivingRoom(Arc<Control>),
+    WindowOpeningRestOfDwelling(Arc<Control>),
+    AlwaysOff(Arc<Control>),
+}
+
+impl HeatSourceControl {
+    pub fn has_type(&self, control_type: HeatSourceControlType) -> bool {
+        match control_type {
+            HeatSourceControlType::HotWaterTimer => {
+                matches!(self, HeatSourceControl::HotWaterTimer(_))
+            }
+            HeatSourceControlType::WindowOpening => {
+                matches!(self, HeatSourceControl::WindowOpening(_))
+            }
+            HeatSourceControlType::WindowOpeningLivingRoom => {
+                matches!(self, HeatSourceControl::WindowOpeningLivingRoom(_))
+            }
+            HeatSourceControlType::WindowOpeningRestOfDwelling => {
+                matches!(self, HeatSourceControl::WindowOpeningRestOfDwelling(_))
+            }
+            HeatSourceControlType::AlwaysOff => matches!(self, HeatSourceControl::AlwaysOff(_)),
+        }
+    }
+
+    pub fn get(&self) -> Arc<Control> {
+        match self {
+            HeatSourceControl::HotWaterTimer(control) => control.clone(),
+            HeatSourceControl::WindowOpening(control) => control.clone(),
+            HeatSourceControl::WindowOpeningLivingRoom(control) => control.clone(),
+            HeatSourceControl::WindowOpeningRestOfDwelling(control) => control.clone(),
+            HeatSourceControl::AlwaysOff(control) => control.clone(),
+        }
     }
 }
 

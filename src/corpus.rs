@@ -1,7 +1,8 @@
 use crate::compare_floats::max_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    Control, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, ToUChargeControl,
+    Control, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
+    ToUChargeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -49,14 +50,15 @@ use crate::input::{
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
     ExternalConditionsInput, FuelType, HeatNetwork as HeatNetworkInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControl, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
-    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
-    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
+    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
+    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
+    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
+    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
+    ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
@@ -1743,32 +1745,29 @@ fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
 }
 
 pub struct Controls {
-    core: Vec<HeatSourceControl<Option<Arc<Control>>>>,
+    core: Vec<HeatSourceControl>,
     extra: HashMap<String, Arc<Control>>,
 }
 
 impl Controls {
-    pub fn new(
-        core: Vec<HeatSourceControl<Option<Arc<Control>>>>,
-        extra: HashMap<String, Arc<Control>>,
-    ) -> Self {
+    pub fn new(core: Vec<HeatSourceControl>, extra: HashMap<String, Arc<Control>>) -> Self {
         Self { core, extra }
     }
 
-    pub fn get(&self, control_type: &HeatSourceControlType) -> Option<&Arc<Control>> {
+    pub fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
         self.core
             .iter()
-            .find(|heat_source_control| heat_source_control.get(control_type).is_some())
-            .and_then(|heat_source_control| heat_source_control.get(control_type).unwrap().as_ref())
+            .find(|heat_source_control| heat_source_control.has_type(*control_type))
+            .and_then(|heat_source_control| Some(heat_source_control.get()))
     }
 
     // access a control using a string, possibly because it is one of the "extra" controls
-    pub fn get_with_string(&self, control_name: &str) -> Option<&Arc<Control>> {
+    pub fn get_with_string(&self, control_name: &str) -> Option<Arc<Control>> {
         match control_name {
             // hard-code ways of resolving to core control types (for now)
             "hw timer" => self.get(&HeatSourceControlType::HotWaterTimer),
             "window opening" => self.get(&HeatSourceControlType::WindowOpening),
-            other => self.extra.get(other),
+            other => self.extra.get(other).cloned(),
         }
     }
 }
@@ -1777,7 +1776,7 @@ fn control_from_input(
     control_input: ControlInput,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> Controls {
-    let mut core: Vec<HeatSourceControl<Option<Arc<Control>>>> = Default::default();
+    let mut core: Vec<HeatSourceControl> = Default::default();
     let mut extra: HashMap<String, Arc<Control>> = Default::default();
 
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
@@ -1785,37 +1784,15 @@ fn control_from_input(
     // we should be able to improve it in time
     for control in control_input.core {
         match control {
-            HeatSourceControl {
-                hot_water_timer: Some(control),
-                ..
-            } => {
-                core.push(HeatSourceControl::new(
-                    Some(Arc::new(single_control_from_details(
-                        control,
-                        simulation_time_iterator,
-                    ))),
-                    None,
-                    // representing an always off control as no control for now as unclear whether we need to model this
-                    // (it does not seem to be in upstream Python)
-                    None,
-                    None,
-                    None,
-                ));
+            HeatSourceControlInput::HotWaterTimer(control) => {
+                core.push(HeatSourceControl::HotWaterTimer(Arc::new(
+                    single_control_from_details(control, simulation_time_iterator),
+                )));
             }
-            HeatSourceControl {
-                window_opening: Some(control),
-                ..
-            } => {
-                core.push(HeatSourceControl::new(
-                    None,
-                    Some(Arc::new(single_control_from_details(
-                        control,
-                        simulation_time_iterator,
-                    ))),
-                    None,
-                    None,
-                    None,
-                ));
+            HeatSourceControlInput::WindowOpening(control) => {
+                core.push(HeatSourceControl::WindowOpening(Arc::new(
+                    single_control_from_details(control, simulation_time_iterator),
+                )));
             }
             unknown => panic!(
                 "incorrectly formed HeatSourceControl struct encountered: {:?}",
@@ -2649,7 +2626,7 @@ fn heat_source_from_input(
                         simulation_time.step_in_hours(),
                         control
                             .clone()
-                            .and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone())),
+                            .and_then(|ctrl| controls.get(&ctrl).map(|c| c.clone())),
                     ),
                 )))),
                 name.into(),
@@ -2720,7 +2697,7 @@ fn heat_source_from_input(
                 .clone();
             let source_control = control
                 .clone()
-                .and_then(|ctrl| controls.get(&ctrl).map(|c| (*c).clone()));
+                .and_then(|ctrl| controls.get(&ctrl).map(|c| c.clone()));
 
             let lock = heat_source_wet.lock();
             let mut heat_source_wet_clone = (*lock).clone();
@@ -2794,7 +2771,7 @@ fn heat_source_from_input(
                         test_data,
                         *vol_hw_daily_average,
                         simulation_time.step_in_hours(),
-                        controls.get(control).map(|c| (*c).clone()),
+                        controls.get(control).map(|c| c.clone()),
                     ),
                 ))),
                 energy_supply_conn_name.into(),
@@ -2919,8 +2896,8 @@ fn hot_water_source_from_input(
                 heat_source_for_diverter = Some(heat_source);
                 energy_supply_conn_names.push(energy_supply_conn_name);
             }
-            let ctrl_hold_at_setpoint = control_hold_at_setpoint
-                .and_then(|ctrl| controls.get_with_string(ctrl.as_str()).cloned());
+            let ctrl_hold_at_setpoint =
+                control_hold_at_setpoint.and_then(|ctrl| controls.get_with_string(ctrl.as_str()));
             let storage_tank = Arc::new(Mutex::new(StorageTank::new(
                 volume,
                 daily_losses,
@@ -3114,7 +3091,7 @@ fn space_heat_systems_from_input(
                             simulation_time.step_in_hours(),
                             control
                                 .as_ref()
-                                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())),
+                                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone())),
                         ))
                     },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
@@ -3136,7 +3113,7 @@ fn space_heat_systems_from_input(
                                 }
                                 SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control
                                     .as_ref()
-                                    .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
+                                    .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone())).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
@@ -3187,7 +3164,7 @@ fn space_cool_systems_from_input(
                 EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
             let control = control
                 .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| (*c).clone()));
+                .and_then(|ctrl| controls.get_with_string(ctrl).map(|c| c.clone()));
 
             Ok((
                 (*energy_supply_conn_name).clone(),

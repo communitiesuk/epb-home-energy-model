@@ -34,7 +34,6 @@ serde_json = "1.0.117"
 statrs = "0.17.1"
 strum = { version = "0.26.2", features = ["derive"] }
 strum_macros = "0.26.3"
-variants-struct = "0.1.1"
 
 [dev-dependencies]
 approx = "0.5.1"
