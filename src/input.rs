@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 
@@ -247,10 +248,10 @@ pub enum EnergySupplyType {
     HeatNetwork,
 }
 
-impl EnergySupplyType {
-    pub fn to_string(&self) -> String {
+impl Display for EnergySupplyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let json_string = serde_json::to_string(self).unwrap();
-        json_string.to_string()
+        write!(f, "{}", json_string.to_string())
     }
 }
 
@@ -320,7 +321,7 @@ pub struct HeatNetwork {
     pub factor: HeatNetworkFactor,
 }
 
-pub type HeatNetworkFactor = HashMap<String, f64>; // don't really know what these values can be yet
+type HeatNetworkFactor = HashMap<String, f64>; // don't really know what these values can be yet
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -2103,9 +2104,8 @@ impl InputForProcessing {
         self.input
             .appliance_gains
             .iter()
-            .filter_map(|(field, gains)| {
-                matches!(gains.gain_type, Some(ApplianceGainType::Cooking)).then(|| field.clone())
-            })
+            .filter(|(_field, gains)| matches!(gains.gain_type, Some(ApplianceGainType::Cooking)))
+            .map(|(field, _gains)| field.clone())
             .collect()
     }
 
@@ -2209,7 +2209,6 @@ impl InputForProcessing {
             None => {
                 self.input.other_water_use = Some(OtherWaterUse {
                     other: other_details,
-                    ..Default::default()
                 });
             }
         }

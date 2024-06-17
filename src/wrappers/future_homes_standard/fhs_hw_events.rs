@@ -78,8 +78,7 @@ pub fn reset_events_and_provide_drawoff_generator(
     let mut other_month_index: isize = -1;
 
     let other_duration_func_gen = || {
-        let cold_water_feed_temps: Vec<f64> =
-            cold_water_feed_temps.iter().cloned().collect::<Vec<_>>();
+        let cold_water_feed_temps: Vec<f64> = cold_water_feed_temps.to_vec();
         move |flow_rate: f64, event: DrawoffEvent| -> f64 {
             loop {
                 other_month_index += 1;
@@ -354,23 +353,20 @@ impl HotWaterEventGenerator {
                 let event: DecileEvent =
                     event.expect("There was a problem reading the static decile events file");
                 if event.decile - 1 == decile {
-                    week
-                        .entry(event.day_name)
-                        .or_default()
-                        .insert(event.simple_labels2_based_on_900k_sample, DayDigest {
+                    week.entry(event.day_name).or_default().insert(
+                        event.simple_labels2_based_on_900k_sample,
+                        DayDigest {
                             event_count: event.event_count,
                             median_event_volume: event.median_event_volume,
                             mean_event_volume: event.mean_event_volume,
                             median_duration: event.median_duration / 60.,
                             mean_duration: event.mean_duration / 60.,
-                            hourly_event_counts: (0..23)
-                                .collect::<Vec<_>>()
-                                .try_into()
-                                .expect(
-                                    "Hourly event counts were not set up with the expected size range",
-                                ),
+                            hourly_event_counts: (0..23).collect::<Vec<_>>().try_into().expect(
+                                "Hourly event counts were not set up with the expected size range",
+                            ),
                             hourly_event_distribution: Default::default(),
-                        });
+                        },
+                    );
                 }
             }
         }
@@ -464,7 +460,8 @@ impl HotWaterEventGenerator {
     ) {
         let mut event_start = event_start;
         let hourly_events_idx = event_start.floor() as usize;
-        let event_start_events: Vec<HourlyHotWaterEvent> = hourly_events[hourly_events_idx].to_vec();
+        let event_start_events: Vec<HourlyHotWaterEvent> =
+            hourly_events[hourly_events_idx].to_vec();
         for existing_event in event_start_events {
             if matching_types.contains(&existing_event.event_type)
                 && (event_start >= existing_event.start && event_start < existing_event.end)
@@ -605,7 +602,10 @@ pub enum SimpleLabelBasedOn900KSample {
 
 impl SimpleLabelBasedOn900KSample {
     pub fn is_shower_type(&self) -> bool {
-        matches!(self, SimpleLabelBasedOn900KSample::Shower | SimpleLabelBasedOn900KSample::ShowerBig)
+        matches!(
+            self,
+            SimpleLabelBasedOn900KSample::Shower | SimpleLabelBasedOn900KSample::ShowerBig
+        )
     }
 
     pub fn is_bath_type(&self) -> bool {
@@ -616,8 +616,7 @@ impl SimpleLabelBasedOn900KSample {
 // bundle the data CSVs into the binary
 static DECILE_BANDING_FILE: &str = include_str!("decile_banding.csv");
 static DECILE_EVENTS_FILE: &str = include_str!("day_of_week_events_by_decile.csv");
-static DECILE_EVENT_TIMES_FILE: &str =
-    include_str!("day_of_week_events_by_decile_event_times.csv");
+static DECILE_EVENT_TIMES_FILE: &str = include_str!("day_of_week_events_by_decile_event_times.csv");
 
 // represents a record from the decile bands file
 #[derive(Clone, Copy, Debug, Deserialize)]
