@@ -186,14 +186,14 @@ pub fn expand_water_heating_events(
 mod tests {
     use super::*;
     use crate::input::Schedule;
+    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
-    use std::collections::HashMap;
 
     #[fixture]
     pub fn boolean_schedule() -> Schedule {
-        HashMap::from([
+        IndexMap::from([
             (
                 "main".to_string(),
                 json!([
@@ -263,7 +263,7 @@ mod tests {
 
     #[fixture]
     pub fn numeric_schedule() -> Schedule {
-        HashMap::from([(
+        IndexMap::from([(
             "main".to_string(),
             json!([300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0,]),
         )])
@@ -297,7 +297,7 @@ mod tests {
 
     #[fixture]
     pub fn gappy_numeric_schedule() -> Schedule {
-        HashMap::from([(
+        IndexMap::from([(
             "main".to_string(),
             json!([300.0, 120.0, null, 750.0, 890.0, null, 550.0, 280.0,]),
         )])

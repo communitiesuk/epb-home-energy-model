@@ -1730,7 +1730,8 @@ fn internal_gains_from_input(input: InternalGainsInput) -> InternalGainsCollecti
 }
 
 fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
-    let mut schedule = HashMap::from([("main".to_string(), details.schedule.main)]);
+    let mut schedule: IndexMap<String, Value> =
+        IndexMap::from([("main".to_string(), details.schedule.main)]);
     if let Some(day) = details.schedule.day {
         schedule.insert("day".to_string(), day);
     }
@@ -1757,7 +1758,8 @@ impl Controls {
     pub fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
         self.core
             .iter()
-            .find(|heat_source_control| heat_source_control.has_type(*control_type)).map(|heat_source_control| heat_source_control.get())
+            .find(|heat_source_control| heat_source_control.has_type(*control_type))
+            .map(|heat_source_control| heat_source_control.get())
     }
 
     // access a control using a string, possibly because it is one of the "extra" controls
@@ -2620,8 +2622,7 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        (*control)
-                            .and_then(|ctrl| controls.get(&ctrl)),
+                        (*control).and_then(|ctrl| controls.get(&ctrl)),
                     ),
                 )))),
                 name.into(),
@@ -2690,8 +2691,7 @@ fn heat_source_from_input(
                     panic!("Expected a wet heat source registered with the name '{name}'.")
                 })
                 .clone();
-            let source_control = (*control)
-                .and_then(|ctrl| controls.get(&ctrl));
+            let source_control = (*control).and_then(|ctrl| controls.get(&ctrl));
 
             let lock = heat_source_wet.lock();
             let mut heat_source_wet_clone = (*lock).clone();

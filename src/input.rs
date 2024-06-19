@@ -6,7 +6,6 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::Deserialize_enum_str;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
 use std::sync::Arc;
@@ -123,7 +122,7 @@ pub struct InternalGainsSchedule {
     pub weekend: Option<Value>,
 }
 
-pub type ApplianceGains = HashMap<String, ApplianceGainsDetails>;
+pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -321,7 +320,7 @@ pub struct HeatNetwork {
     pub factor: HeatNetworkFactor,
 }
 
-type HeatNetworkFactor = HashMap<String, f64>; // don't really know what these values can be yet
+type HeatNetworkFactor = IndexMap<String, f64>; // don't really know what these values can be yet
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -359,11 +358,11 @@ pub struct ColdWaterSourceDetails {
     pub time_series_step: f64,
 }
 
-pub type Schedule = HashMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
+pub type Schedule = IndexMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
 
 pub type CoreControls = Vec<HeatSourceControl>;
 
-pub type ExtraControls = HashMap<String, ControlDetails>;
+pub type ExtraControls = IndexMap<String, ControlDetails>;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -501,7 +500,7 @@ pub enum HotWaterSourceDetails {
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSource")]
-        heat_source: HashMap<String, HeatSource>,
+        heat_source: IndexMap<String, HeatSource>,
         primary_pipework: Option<WaterPipework>,
     },
     CombiBoiler {
@@ -1567,7 +1566,7 @@ pub enum HeatingControlType {
     SeparateTemperatureControl,
 }
 
-pub type SpaceCoolSystem = HashMap<String, SpaceCoolSystemDetails>;
+pub type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -1609,7 +1608,7 @@ pub enum WaterHeatingSchedule {
     HeatingHours,
 }
 
-pub type HeatSourceWet = HashMap<String, HeatSourceWetDetails>;
+pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -2117,7 +2116,7 @@ impl InputForProcessing {
     }
 
     pub fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
-        self.input.appliance_gains.remove(field);
+        self.input.appliance_gains.shift_remove(field);
 
         Ok(())
     }
