@@ -9,3 +9,6 @@ src/weather.epw
 
 # MacOS generated file
 **/.DS_Store
+
+# IDE generated files
+.vscode
