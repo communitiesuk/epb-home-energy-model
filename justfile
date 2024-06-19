@@ -3,4 +3,4 @@
 
 validate:
     #!/usr/bin/env bash
-    cd {{justfile_directory()}}/../epb-home-energy-model-output-validator && cargo run && cargo test && cd {{justfile_directory()}}
+    cd {{justfile_directory()}}/../epb-home-energy-model-output-validator && cargo run -- --rust-only && cargo test && cd {{justfile_directory()}}
