@@ -1,5 +1,5 @@
 use csv::ReaderBuilder as CsvReaderBuilder;
-use std::fs::File;
+use std::io::Read;
 
 const COLUMN_LONGITUDE: usize = 7;
 const COLUMN_LATITUDE: usize = 6;
@@ -21,13 +21,7 @@ pub struct ExternalConditions {
     pub direct_beam_conversion_needed: bool,
 }
 
-pub fn weather_data_to_vec(file: &str) -> Result<ExternalConditions, &'static str> {
-    let file = match File::open(file) {
-        Ok(f) => f,
-        Err(_) => {
-            return Err("The weather file provided did not exist!");
-        }
-    };
+pub fn weather_data_to_vec(file: impl Read) -> Result<ExternalConditions, &'static str> {
     let mut reader = CsvReaderBuilder::new()
         .flexible(true)
         .has_headers(false)

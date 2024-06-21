@@ -69,7 +69,7 @@ fn main() -> anyhow::Result<()> {
             epw_file: Some(file),
             cibse_weather_file: None,
         } => {
-            let external_conditions_data = weather_data_to_vec(file.as_str());
+            let external_conditions_data = weather_data_to_vec(File::open(file)?);
             match external_conditions_data {
                 Ok(data) => Some(data),
                 Err(_) => panic!("Could not parse the weather file!"),
