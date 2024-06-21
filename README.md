@@ -21,6 +21,8 @@ to demonstrate complete 1:1 behavioural parity with the specification code.
 
 ## Running the engine
 
+### From CLI
+
 Requires the `rustup` toolchain to use. ([Instructions](https://rustup.rs) for installation. For macOS, don't use
 Homebrew to install Rust.)
 
@@ -38,6 +40,27 @@ cargo run --release --features="clap indicatif" -- path/to/input.json -e path/to
 ```
 
 The `clap` feature above is mandatory. The `indicatif` feature switches on the output of a progress bar.
+
+### In AWS Lambda
+
+There is a package in the Cargo workspace called `hem-lambda` that can be used to run the HEM calculation within [AWS
+Lambda](https://aws.amazon.com/pm/lambda/).
+
+Using the [cargo-lambda](https://www.cargo-lambda.info) toolchain, you can build a Lambda function (in the below case
+targeting ARM64 i.e. Graviton2) as follows:
+
+```bash
+cargo lambda build --arm64 -r --package=hem-lambda
+```
+
+You can then (given configured AWS access - you may wish to use [aws-vault](https://github.com/99designs/aws-vault) for
+this) deploy to AWS using e.g.:
+
+```bash
+cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
+```
+
+## Other tasks
 
 ### Reverse-engineering JSON schema from input definition
 
