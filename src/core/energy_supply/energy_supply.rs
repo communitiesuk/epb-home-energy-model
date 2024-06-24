@@ -6,8 +6,10 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
+use atomic_float::AtomicF64;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -120,7 +122,7 @@ impl EnergySupplyConnection {
         amount_demanded: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.write().energy_out(
+        self.energy_supply.read().energy_out(
             self.end_user_name.as_str(),
             amount_demanded,
             timestep_idx,
@@ -133,7 +135,7 @@ impl EnergySupplyConnection {
         amount_demanded: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.write().demand_energy(
+        self.energy_supply.read().demand_energy(
             self.end_user_name.as_str(),
             amount_demanded,
             timestep_idx,
@@ -145,7 +147,7 @@ impl EnergySupplyConnection {
         amount_produced: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.write().supply_energy(
+        self.energy_supply.read().supply_energy(
             self.end_user_name.as_str(),
             amount_produced,
             timestep_idx,
@@ -157,15 +159,15 @@ impl EnergySupplyConnection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct EnergySupply {
     fuel_type: FuelType,
     simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
     diverter: Option<Arc<RwLock<PVDiverter>>>,
-    demand_total: Vec<f64>,
-    demand_by_end_user: IndexMap<String, Vec<f64>>,
-    energy_out_by_end_user: IndexMap<String, Vec<f64>>,
+    demand_total: Vec<AtomicF64>,
+    demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
+    energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     beta_factor: Vec<f64>,
     supply_surplus: Vec<f64>,
     demand_not_met: Vec<f64>,
@@ -190,7 +192,7 @@ impl EnergySupply {
             simulation_timesteps,
             electric_battery,
             diverter: None,
-            demand_total: init_demand_list(simulation_timesteps),
+            demand_total: init_atomic_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
             beta_factor: init_demand_list(simulation_timesteps),
@@ -219,11 +221,11 @@ impl EnergySupply {
         supply
             .demand_by_end_user
             .entry(end_user_name.into())
-            .or_insert(init_demand_list(timesteps));
+            .or_insert(init_atomic_demand_list(timesteps));
         supply
             .energy_out_by_end_user
             .entry(end_user_name.into())
-            .or_insert(init_demand_list(timesteps));
+            .or_insert(init_atomic_demand_list(timesteps));
 
         Ok(EnergySupplyConnection {
             energy_supply: energy_supply.clone(),
@@ -232,7 +234,7 @@ impl EnergySupply {
     }
 
     pub fn energy_out(
-        &mut self,
+        &self,
         end_user_name: &str,
         amount_demanded: f64,
         timestep_index: usize,
@@ -240,8 +242,8 @@ impl EnergySupply {
         if !self.demand_by_end_user.contains_key(end_user_name) {
             bail!("Error: End user name not already registered by calling connection function.",);
         }
-        self.energy_out_by_end_user.get_mut(end_user_name).unwrap()[timestep_index] +=
-            amount_demanded;
+        self.energy_out_by_end_user.get(end_user_name).unwrap()[timestep_index]
+            .fetch_add(amount_demanded, Ordering::SeqCst);
 
         Ok(())
     }
@@ -263,14 +265,16 @@ impl EnergySupply {
     pub fn register_end_user_name(&mut self, end_user_name: String) {
         self.demand_by_end_user.insert(
             end_user_name.clone(),
-            init_demand_list(self.simulation_timesteps),
+            init_atomic_demand_list(self.simulation_timesteps),
         );
-        self.energy_out_by_end_user
-            .insert(end_user_name, init_demand_list(self.simulation_timesteps));
+        self.energy_out_by_end_user.insert(
+            end_user_name,
+            init_atomic_demand_list(self.simulation_timesteps),
+        );
     }
 
     pub fn demand_energy(
-        &mut self,
+        &self,
         end_user_name: &str,
         amount_demanded: f64,
         timestep_index: usize,
@@ -278,8 +282,9 @@ impl EnergySupply {
         if !self.demand_by_end_user.contains_key(end_user_name) {
             bail!("Error: End user name not already registered by calling connection function.",);
         }
-        self.demand_total[timestep_index] += amount_demanded;
-        self.demand_by_end_user.get_mut(end_user_name).unwrap()[timestep_index] += amount_demanded;
+        self.demand_total[timestep_index].fetch_add(amount_demanded, Ordering::SeqCst);
+        self.demand_by_end_user.get(end_user_name).unwrap()[timestep_index]
+            .fetch_add(amount_demanded, Ordering::SeqCst);
 
         Ok(())
     }
@@ -289,7 +294,7 @@ impl EnergySupply {
     /// Note: this is energy generated so it is subtracted from demand.
     /// Treat as negative
     pub fn supply_energy(
-        &mut self,
+        &self,
         end_user_name: &str,
         amount_produced: f64,
         timestep_index: usize,
@@ -298,8 +303,11 @@ impl EnergySupply {
     }
 
     /// Return list of the total demand on this energy source for each timestep
-    pub fn results_total(&self) -> &Vec<f64> {
-        &self.demand_total
+    pub fn results_total(&self) -> Vec<f64> {
+        self.demand_total
+            .iter()
+            .map(|d| d.load(Ordering::SeqCst))
+            .collect()
     }
 
     /// Return the demand from each end user on this energy source for each timestep.
@@ -317,7 +325,16 @@ impl EnergySupply {
                 .cloned()
                 .collect::<Vec<String>>()
         {
-            return self.demand_by_end_user.clone();
+            return self
+                .demand_by_end_user
+                .iter()
+                .map(|(end_user, demand)| {
+                    (
+                        end_user.clone(),
+                        demand.iter().map(|d| d.load(Ordering::SeqCst)).collect(),
+                    )
+                })
+                .collect();
         }
 
         let mut all_results_by_end_user = indexmap! {};
@@ -334,7 +351,10 @@ impl EnergySupply {
                         .1
                         .iter()
                         .enumerate()
-                        .map(|(i, demand_val)| demand_val + energy_out.1[i])
+                        .map(|(i, demand_val)| {
+                            demand_val.load(Ordering::SeqCst)
+                                + energy_out.1[i].load(Ordering::SeqCst)
+                        })
                         .collect(),
                 );
             }
@@ -378,33 +398,39 @@ impl EnergySupply {
         let mut demands = Vec::with_capacity(end_user_count);
         let timestep_idx = simtime.index;
         for user in self.demand_by_end_user.keys() {
-            let demand = self.demand_by_end_user[user][timestep_idx];
+            let demand = self.demand_by_end_user[user].get(timestep_idx).unwrap();
             // if energy is negative that means it's actually a supply, we
             // need to separate the two for beta factor calc. If we had
             // multiple different supplies they would have to be separated
             // here
-            if demand < 0. {
+            if demand.load(Ordering::SeqCst) < 0. {
                 supplies.push(demand);
             } else {
                 demands.push(demand);
             }
         }
 
-        *self.beta_factor.get_mut(timestep_idx).unwrap() = self.beta_factor_function(
-            -supplies.iter().sum::<f64>(),
-            demands.iter().sum::<f64>(),
-            BetaFactorFunction::Pv,
-        );
+        let supplies_sum = supplies
+            .iter()
+            .map(|d| d.load(Ordering::SeqCst))
+            .sum::<f64>();
+        let demands_sum = demands
+            .iter()
+            .map(|d| d.load(Ordering::SeqCst))
+            .sum::<f64>();
+
+        *self.beta_factor.get_mut(timestep_idx).unwrap() =
+            self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv);
 
         let current_beta_factor = self.beta_factor[timestep_idx];
-        let supplies_sum = supplies.iter().sum::<f64>();
+
         // PV elec consumed within dwelling in absence of battery storage or diverter (kWh)
         // if there were multiple sources they would each have their own beta factors
         let supply_consumed = supplies_sum * current_beta_factor;
         // Surplus PV elec generation (kWh) - ie amount to be exported to the grid or batteries
         let mut supply_surplus = supplies_sum * (1. - current_beta_factor);
         // Elec demand not met by PV (kWh) - ie amount to be imported from the grid or batteries
-        let mut demand_not_met = demands.iter().sum::<f64>() + supply_consumed;
+        let mut demand_not_met = demands_sum + supply_consumed;
         // See if there is a net supply/demand for the timestep
         if let Some(ref mut battery) = &mut self.electric_battery {
             // See if the battery can deal with excess supply/demand for this timestep
@@ -466,8 +492,14 @@ enum BetaFactorFunction {
     Wind,
 }
 
+fn init_atomic_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
+    (0..timestep_count)
+        .map(|_| Default::default())
+        .collect::<Vec<_>>()
+}
+
 fn init_demand_list(timestep_count: usize) -> Vec<f64> {
-    vec![0.0; timestep_count]
+    vec![Default::default(); timestep_count]
 }
 
 pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
@@ -582,7 +614,7 @@ mod tests {
 
     #[rstest]
     pub fn test_results_total(
-        mut energy_supply: EnergySupply,
+        energy_supply: EnergySupply,
         simulation_time: SimulationTimeIterator,
     ) {
         for simtime in simulation_time {

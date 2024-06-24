@@ -1163,8 +1163,8 @@ impl Corpus {
         for (name, supply) in self.energy_supplies.supplies_by_name() {
             let supply = supply.read();
             let name: KeyString = name.try_into().unwrap();
-            results_totals.insert(name, supply.results_total().to_owned());
-            results_end_user.insert(name, supply.results_by_end_user());
+            results_totals.insert(name, supply.results_total());
+            results_end_user.insert(name, supply.results_by_end_user().to_owned());
             energy_import.insert(name, supply.get_energy_import().to_owned());
             energy_export.insert(name, supply.get_energy_export().to_owned());
             energy_generated_consumed
