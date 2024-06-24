@@ -15,7 +15,7 @@ use derivative::Derivative;
 use interp::interp;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
@@ -1434,7 +1434,7 @@ const HEAT_PUMP_F_AUX: f64 = 0.0;
 #[derive(Clone, Debug)]
 pub struct HeatPump {
     // energy supply
-    pub energy_supply: Arc<Mutex<EnergySupply>>,
+    pub energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
@@ -1461,7 +1461,7 @@ pub struct HeatPump {
     power_max_backup: f64,
     temp_distribution_heat_network: Option<f64>,
     // energy supply for heat networks
-    heat_network: Option<Arc<Mutex<EnergySupply>>>,
+    heat_network: Option<Arc<RwLock<EnergySupply>>>,
     energy_supply_hn_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
@@ -1496,12 +1496,12 @@ impl HeatPump {
     ///        test_data -- HeatPumpTestData object
     pub fn new(
         heat_pump_input: &HeatSourceWetDetails,
-        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_name_auxiliary: &str,
         simulation_timestep: f64,
         external_conditions: Arc<ExternalConditions>,
         throughput_exhaust_air: Option<f64>,
-        heat_network: Option<Arc<Mutex<EnergySupply>>>,
+        heat_network: Option<Arc<RwLock<EnergySupply>>>,
         output_detailed_results: bool,
     ) -> Result<Self, String> {
         let energy_supply_connections = Default::default();

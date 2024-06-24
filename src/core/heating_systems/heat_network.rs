@@ -6,7 +6,7 @@ use crate::core::material_properties::WATER;
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -204,7 +204,7 @@ pub struct HeatNetwork {
     power_max_in_kw: f64,
     daily_loss: f64,                         // in kWh/day
     building_level_distribution_losses: f64, // in watts
-    energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
     energy_supply_connection_building_level_distribution_losses: EnergySupplyConnection,
@@ -217,7 +217,7 @@ impl HeatNetwork {
         power_max_in_kw: f64,
         daily_loss: f64,
         building_level_distribution_losses: f64,
-        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_name_auxiliary: String,
         energy_supply_conn_name_building_level_distribution_losses: String,
         simulation_timestep: f64,
@@ -387,8 +387,8 @@ mod tests {
     #[fixture]
     pub fn heat_network(
         two_len_simulation_time: SimulationTime,
-    ) -> (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+    ) -> (Arc<Mutex<HeatNetwork>>, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
@@ -413,7 +413,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_heat_network_energy_output_provider(
-        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>),
+        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<RwLock<EnergySupply>>),
         two_len_simulation_time: SimulationTime,
     ) {
         let (heat_network, energy_supply) = heat_network;
@@ -433,11 +433,11 @@ mod tests {
             );
             heat_network.timestep_end(t_it.index);
             assert_ulps_eq!(
-                energy_supply.lock().results_by_end_user()["heat_network_test"][t_idx],
+                energy_supply.read().results_by_end_user()["heat_network_test"][t_idx],
                 expected_test_energy_supply[t_idx]
             );
             assert_ulps_eq!(
-                energy_supply.lock().results_by_end_user()["heat_network_auxiliary"][t_idx],
+                energy_supply.read().results_by_end_user()["heat_network_auxiliary"][t_idx],
                 expected_aux_energy_supply[t_idx]
             );
         }
@@ -445,7 +445,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_correct_hiu_loss(
-        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>),
+        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<RwLock<EnergySupply>>),
         two_len_simulation_time: SimulationTime,
     ) {
         let (heat_network, _) = heat_network;
@@ -460,7 +460,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_building_level_distribution_losses(
-        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<Mutex<EnergySupply>>),
+        heat_network: (Arc<Mutex<HeatNetwork>>, Arc<RwLock<EnergySupply>>),
         two_len_simulation_time: SimulationTime,
     ) {
         let (heat_network, _) = heat_network;
@@ -477,7 +477,7 @@ mod tests {
     pub fn heat_network_for_water_direct(
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
@@ -538,7 +538,7 @@ mod tests {
     pub fn heat_network_for_water_storage(
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
@@ -601,7 +601,7 @@ mod tests {
     pub fn heat_network_for_service_space(
         three_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             three_len_simulation_time.total_steps(),
             None,

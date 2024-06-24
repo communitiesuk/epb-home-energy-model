@@ -11,7 +11,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use arrayvec::ArrayString;
 use interp::interp;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -319,7 +319,7 @@ impl BoilerServiceSpace {
 
 #[derive(Clone, Debug)]
 pub struct Boiler {
-    energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
@@ -350,7 +350,7 @@ impl Boiler {
     /// * `external_conditions` - reference to an ExternalConditions value
     pub fn new(
         boiler_data: HeatSourceWetDetails,
-        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_aux: EnergySupplyConnection,
         external_conditions: Arc<ExternalConditions>,
         simulation_timestep: f64,
@@ -918,13 +918,13 @@ mod tests {
         boiler_data: HeatSourceWetDetails,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
-    ) -> (Boiler, Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+    ) -> (Boiler, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
-        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -949,7 +949,7 @@ mod tests {
 
     #[rstest]
     pub fn should_provide_correct_energy_output(
-        boiler: (Boiler, Arc<Mutex<EnergySupply>>),
+        boiler: (Boiler, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
         boiler_energy_output_required: [f64; 2],
         temp_return_feed: [f64; 2],
@@ -967,7 +967,7 @@ mod tests {
                 [2.0, 10.0][t_idx],
             );
             assert_relative_eq!(
-                energy_supply.lock().results_by_end_user()["boiler_test"][t_idx],
+                energy_supply.read().results_by_end_user()["boiler_test"][t_idx],
                 [2.2843673926764496, 11.5067107][t_idx],
                 max_relative = 1e-7
             );
@@ -976,7 +976,7 @@ mod tests {
 
     #[rstest]
     pub fn should_provide_correct_efficiency_over_return_temp(
-        boiler: (Boiler, Arc<Mutex<EnergySupply>>),
+        boiler: (Boiler, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
         let (boiler, _) = boiler;
@@ -993,7 +993,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_high_value_correction(boiler: (Boiler, Arc<Mutex<EnergySupply>>)) {
+    pub fn should_have_correct_high_value_correction(boiler: (Boiler, Arc<RwLock<EnergySupply>>)) {
         let (boiler, _) = boiler;
         assert_eq!(
             Boiler::high_value_correction_full_load(0.980),
@@ -1008,7 +1008,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_correct_net_to_gross(boiler: (Boiler, Arc<Mutex<EnergySupply>>)) {
+    pub fn should_calc_correct_net_to_gross(boiler: (Boiler, Arc<RwLock<EnergySupply>>)) {
         let (boiler, _) = boiler;
         assert_eq!(
             Boiler::net_to_gross(boiler.energy_supply_type).unwrap(),
@@ -1040,12 +1040,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
-        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -1152,12 +1152,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
         )));
-        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -1233,12 +1233,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time_for_service_space: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::MainsGas,
             simulation_time_for_service_space.total_steps(),
             None,
         )));
-        let energy_supply_aux = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time_for_service_space.total_steps(),
             None,

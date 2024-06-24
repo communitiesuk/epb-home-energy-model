@@ -170,7 +170,7 @@ mod tests {
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use rstest::*;
 
     #[fixture]
@@ -273,8 +273,8 @@ mod tests {
     pub fn pv(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
-    ) -> (PhotovoltaicSystem, Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+    ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -298,7 +298,7 @@ mod tests {
 
     #[rstest]
     pub fn test_produce_energy(
-        pv: (PhotovoltaicSystem, Arc<Mutex<EnergySupply>>),
+        pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
         let (pv, energy_supply) = pv;
@@ -315,7 +315,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             pv.produce_energy(t_it);
             assert_relative_eq!(
-                energy_supply.lock().results_by_end_user()["pv generation"][t_idx],
+                energy_supply.read().results_by_end_user()["pv generation"][t_idx],
                 expected_generation_results[t_idx],
                 max_relative = 1e-6
             );

@@ -87,7 +87,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -100,7 +100,7 @@ mod tests {
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
         let control =
             Control::OnOffTimeControl(OnOffTimeControl::new(vec![true, true, false, true], 0, 1.));
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,

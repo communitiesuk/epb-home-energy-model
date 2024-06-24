@@ -88,7 +88,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -98,9 +98,9 @@ mod tests {
     }
 
     #[fixture]
-    pub fn aircon(simulation_time: SimulationTime) -> (AirConditioning, Arc<Mutex<EnergySupply>>) {
+    pub fn aircon(simulation_time: SimulationTime) -> (AirConditioning, Arc<RwLock<EnergySupply>>) {
         let control = OnOffTimeControl::new(vec![true, true, false, true], 0, 1.0);
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -121,7 +121,7 @@ mod tests {
 
     #[rstest]
     pub fn test_demand_energy(
-        aircon: (AirConditioning, Arc<Mutex<EnergySupply>>),
+        aircon: (AirConditioning, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
         let (aircon, energy_supply) = aircon;
@@ -136,7 +136,7 @@ mod tests {
                 "incorrect cooling energy supplied returned"
             );
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["aircon"][t_idx],
+                energy_supply.read().results_by_end_user()["aircon"][t_idx],
                 expected_energy_supply_results[t_idx],
                 "incorrect delivered energy demand returned"
             );

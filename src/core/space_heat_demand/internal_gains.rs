@@ -109,7 +109,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
     use std::sync::Arc;
@@ -148,7 +148,7 @@ mod tests {
     pub fn test_total_internal_gain_for_appliance(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
@@ -171,7 +171,7 @@ mod tests {
                 total_internal_gains[iteration.index]
             );
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["lighting"][iteration.index],
+                energy_supply.read().results_by_end_user()["lighting"][iteration.index],
                 expected_energy_supply_results[iteration.index],
                 "incorrect electricity demand returned"
             );

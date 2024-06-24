@@ -167,7 +167,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
     use std::sync::Arc;
@@ -195,7 +195,7 @@ mod tests {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
             ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -208,7 +208,7 @@ mod tests {
         for (idx, _) in simulation_time.iter().enumerate() {
             instant_shower.hot_water_demand(40.0, ((idx + 1) * 6) as f64, idx);
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["shower"][idx],
+                energy_supply.read().results_by_end_user()["shower"][idx],
                 expected_results_by_end_user[idx],
                 "correct electricity demand not returned"
             );

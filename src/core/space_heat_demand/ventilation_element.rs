@@ -1035,7 +1035,7 @@ mod tests {
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_ulps_eq;
-    use parking_lot::Mutex;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -1192,8 +1192,8 @@ mod tests {
     pub fn mvhr(
         simulation_time_iterator: SimulationTimeIterator,
         energy_supply: EnergySupply,
-    ) -> (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(energy_supply));
+    ) -> (MechanicalVentilationHeatRecovery, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "MVHR").unwrap();
 
@@ -1211,7 +1211,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_h_ve_for_mechanical(
-        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<RwLock<EnergySupply>>),
         external_conditions: ExternalConditions,
     ) {
         let (mvhr, _) = mvhr;
@@ -1229,7 +1229,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_fan_gains(
-        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<RwLock<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (mut mvhr, energy_supply) = mvhr;
@@ -1237,7 +1237,7 @@ mod tests {
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_ulps_eq!(mvhr.fans(75.0, i, None), 0.010416666666666666,);
             assert_ulps_eq!(
-                energy_supply.lock().results_by_end_user()["MVHR"][i],
+                energy_supply.read().results_by_end_user()["MVHR"][i],
                 0.0208333333333333,
             );
         }
@@ -1245,7 +1245,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_temp_supply_for_mechanical(
-        mvhr: (MechanicalVentilationHeatRecovery, Arc<Mutex<EnergySupply>>),
+        mvhr: (MechanicalVentilationHeatRecovery, Arc<RwLock<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
@@ -1263,8 +1263,8 @@ mod tests {
     pub fn whole_house_extract_ventilation(
         simulation_time_iterator: SimulationTimeIterator,
         energy_supply: EnergySupply,
-    ) -> (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(energy_supply));
+    ) -> (WholeHouseExtractVentilation, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "WHEV").unwrap();
 
@@ -1303,7 +1303,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_h_ve_for_whole_house(
-        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<RwLock<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {
@@ -1332,14 +1332,14 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_fan_gains_for_whole_house(
-        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<RwLock<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (mut whole_house_extract_ventilation, energy_supply) = whole_house_extract_ventilation;
         for (i, _) in simulation_time_iterator.enumerate() {
             assert_eq!(whole_house_extract_ventilation.fans(75.0, None, i), 0.0,);
             assert_ulps_eq!(
-                energy_supply.lock().results_by_end_user()["WHEV"][i],
+                energy_supply.read().results_by_end_user()["WHEV"][i],
                 0.020833333333333333,
             );
         }
@@ -1347,7 +1347,7 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_temp_supply_for_whole_house(
-        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<Mutex<EnergySupply>>),
+        whole_house_extract_ventilation: (WholeHouseExtractVentilation, Arc<RwLock<EnergySupply>>),
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
     ) {

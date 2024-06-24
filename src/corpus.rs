@@ -1161,7 +1161,7 @@ impl Corpus {
         let mut energy_diverted: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut betafactor: IndexMap<KeyString, Vec<f64>> = Default::default();
         for (name, supply) in self.energy_supplies.supplies_by_name() {
-            let supply = supply.lock();
+            let supply = supply.read();
             let name: KeyString = name.try_into().unwrap();
             results_totals.insert(name, supply.results_total().to_owned());
             results_end_user.insert(name, supply.results_by_end_user());
@@ -1646,7 +1646,7 @@ fn energy_supplies_from_input(
             input.heat_network,
             simulation_time_iterator,
         ),
-        unmet_demand: Arc::new(Mutex::new(EnergySupply::new(
+        unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_time_iterator.total_steps(),
             Default::default(),
@@ -1660,9 +1660,9 @@ fn energy_supplies_from_input(
 fn energy_supply_from_input(
     input: Option<EnergySupplyDetails>,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> Option<Arc<Mutex<EnergySupply>>> {
+) -> Option<Arc<RwLock<EnergySupply>>> {
     input.map(|details| {
-        Arc::new(Mutex::new(EnergySupply::new(
+        Arc::new(RwLock::new(EnergySupply::new(
             details.fuel,
             simulation_time_iterator.total_steps(),
             details.electric_battery.map(ElectricBattery::from_input),
@@ -1673,9 +1673,9 @@ fn energy_supply_from_input(
 fn energy_supply_from_heat_network_input(
     input: Option<HeatNetworkInput>,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> Option<Arc<Mutex<EnergySupply>>> {
+) -> Option<Arc<RwLock<EnergySupply>>> {
     input.map(|heat_network| {
-        Arc::new(Mutex::new(EnergySupply::new(
+        Arc::new(RwLock::new(EnergySupply::new(
             heat_network.fuel,
             simulation_time_iterator.total_steps(),
             None,
@@ -2280,7 +2280,7 @@ fn zone_from_input<'a>(
 }
 
 fn set_up_energy_supply_unmet_demand_zones(
-    unmet_demand_supply: Arc<Mutex<EnergySupply>>,
+    unmet_demand_supply: Arc<RwLock<EnergySupply>>,
     zones: &ZoneDictionary,
 ) -> IndexMap<String, Arc<EnergySupplyConnection>> {
     let mut energy_supplies: IndexMap<String, Arc<EnergySupplyConnection>> = Default::default();
@@ -2942,7 +2942,7 @@ fn hot_water_source_from_input(
                             let pv_diverter =
                                 PVDiverter::new(storage_tank.clone(), im, heat_source_name);
                             energy_supply
-                                .lock()
+                                .write()
                                 .connect_diverter(pv_diverter.clone())
                                 .unwrap();
                             diverters.push(pv_diverter);

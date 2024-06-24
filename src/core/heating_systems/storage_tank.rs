@@ -1342,8 +1342,8 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
         cold_water_source: Arc<ColdWaterSource>,
         control_for_storage_tank: Arc<Control>,
-    ) -> ((StorageTank, StorageTank), Arc<Mutex<EnergySupply>>) {
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+    ) -> ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
             None,
@@ -1420,7 +1420,7 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_demand_hot_water_for_storage_tank(
-        storage_tank: ((StorageTank, StorageTank), Arc<Mutex<EnergySupply>>),
+        storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
         let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
@@ -1534,7 +1534,7 @@ mod tests {
             );
             temp_n_values_1.push(storage_tank1.temp_n);
             assert_relative_eq!(
-                energy_supply.lock().results_by_end_user()["immersion"][t_idx],
+                energy_supply.read().results_by_end_user()["immersion"][t_idx],
                 expected_energy_supply_results_1[t_idx],
                 max_relative = 1e-7
             );
@@ -1545,7 +1545,7 @@ mod tests {
             );
             temp_n_values_2.push(storage_tank2.temp_n);
             assert_relative_eq!(
-                energy_supply.lock().results_by_end_user()["immersion2"][t_idx],
+                energy_supply.read().results_by_end_user()["immersion2"][t_idx],
                 expected_energy_supply_results_2[t_idx],
                 max_relative = 1e-7
             );
@@ -1574,7 +1574,7 @@ mod tests {
         ImmersionHeater::new(
             50.,
             EnergySupply::connection(
-                Arc::new(Mutex::new(EnergySupply::new(
+                Arc::new(RwLock::new(EnergySupply::new(
                     FuelType::MainsGas,
                     simulation_time_for_immersion_heater.total_steps(),
                     None,
@@ -1614,7 +1614,7 @@ mod tests {
         StorageTank,
         Arc<Mutex<SolarThermalSystem>>,
         SimulationTime,
-        Arc<Mutex<EnergySupply>>,
+        Arc<RwLock<EnergySupply>>,
     ) {
         let cold_water_temps = [
             17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
@@ -1624,7 +1624,7 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 1.),
         ));
-        let energy_supply = Arc::new(Mutex::new(EnergySupply::new(
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
@@ -1777,7 +1777,7 @@ mod tests {
             StorageTank,
             Arc<Mutex<SolarThermalSystem>>,
             SimulationTime,
-            Arc<Mutex<EnergySupply>>,
+            Arc<RwLock<EnergySupply>>,
         ),
     ) {
         let (mut storage_tank, solar_thermal, simulation_time, energy_supply) =
@@ -1888,7 +1888,7 @@ mod tests {
                 max_relative = 1e-7
             );
             assert_relative_eq!(
-                energy_supply.lock().results_by_end_user()["solarthermal"][t_idx],
+                energy_supply.read().results_by_end_user()["solarthermal"][t_idx],
                 expected_energy_supply_results[t_idx],
                 max_relative = 1e-7
             );

@@ -7,34 +7,34 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use indexmap::{indexmap, IndexMap};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct EnergySupplies {
-    pub mains_electricity: Option<Arc<Mutex<EnergySupply>>>,
-    pub mains_gas: Option<Arc<Mutex<EnergySupply>>>,
-    pub bulk_lpg: Option<Arc<Mutex<EnergySupply>>>,
-    pub bottled_lpg: Option<Arc<Mutex<EnergySupply>>>,
-    pub condition_11f_lpg: Option<Arc<Mutex<EnergySupply>>>,
-    pub custom: Option<Arc<Mutex<EnergySupply>>>,
-    pub heat_network: Option<Arc<Mutex<EnergySupply>>>,
-    pub unmet_demand: Arc<Mutex<EnergySupply>>,
+    pub mains_electricity: Option<Arc<RwLock<EnergySupply>>>,
+    pub mains_gas: Option<Arc<RwLock<EnergySupply>>>,
+    pub bulk_lpg: Option<Arc<RwLock<EnergySupply>>>,
+    pub bottled_lpg: Option<Arc<RwLock<EnergySupply>>>,
+    pub condition_11f_lpg: Option<Arc<RwLock<EnergySupply>>>,
+    pub custom: Option<Arc<RwLock<EnergySupply>>>,
+    pub heat_network: Option<Arc<RwLock<EnergySupply>>>,
+    pub unmet_demand: Arc<RwLock<EnergySupply>>,
 }
 
 impl EnergySupplies {
     pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
         if let Some(ref mut supply) = self.mains_electricity {
-            supply.lock().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.mains_gas {
-            supply.lock().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.bulk_lpg {
-            supply.lock().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         self.unmet_demand
-            .lock()
+            .write()
             .calc_energy_import_export_betafactor(simtime);
     }
 
@@ -42,7 +42,7 @@ impl EnergySupplies {
         &mut self,
         energy_supply_type: EnergySupplyType,
         timesteps: usize,
-    ) -> anyhow::Result<Arc<Mutex<EnergySupply>>> {
+    ) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
         let energy_supply = match energy_supply_type {
             EnergySupplyType::Electricity => &mut self.mains_electricity,
             EnergySupplyType::MainsGas => &mut self.mains_gas,
@@ -57,7 +57,7 @@ impl EnergySupplies {
         };
         match energy_supply {
             Some(supply) => Ok(supply.clone()),
-            None => Ok(Arc::new(Mutex::new(EnergySupply::new(
+            None => Ok(Arc::new(RwLock::new(EnergySupply::new(
                 energy_supply_type.try_into()?,
                 timesteps,
                 None,
@@ -65,8 +65,8 @@ impl EnergySupplies {
         }
     }
 
-    pub fn supplies_by_name(&self) -> IndexMap<&str, Arc<Mutex<EnergySupply>>> {
-        let mut supplies: IndexMap<&str, Arc<Mutex<EnergySupply>>> = Default::default();
+    pub fn supplies_by_name(&self) -> IndexMap<&str, Arc<RwLock<EnergySupply>>> {
+        let mut supplies: IndexMap<&str, Arc<RwLock<EnergySupply>>> = Default::default();
         supplies.insert("_unmet_demand", self.unmet_demand.clone());
         if let Some(elec) = &self.mains_electricity {
             supplies.insert("mains elec", elec.clone());
@@ -102,12 +102,12 @@ impl EnergySupplies {
 /// name.
 #[derive(Clone, Debug)]
 pub struct EnergySupplyConnection {
-    energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply: Arc<RwLock<EnergySupply>>,
     end_user_name: String,
 }
 
 impl EnergySupplyConnection {
-    pub fn new(energy_supply: Arc<Mutex<EnergySupply>>, end_user_name: String) -> Self {
+    pub fn new(energy_supply: Arc<RwLock<EnergySupply>>, end_user_name: String) -> Self {
         Self {
             energy_supply,
             end_user_name,
@@ -120,7 +120,7 @@ impl EnergySupplyConnection {
         amount_demanded: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.lock().energy_out(
+        self.energy_supply.write().energy_out(
             self.end_user_name.as_str(),
             amount_demanded,
             timestep_idx,
@@ -133,7 +133,7 @@ impl EnergySupplyConnection {
         amount_demanded: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.lock().demand_energy(
+        self.energy_supply.write().demand_energy(
             self.end_user_name.as_str(),
             amount_demanded,
             timestep_idx,
@@ -145,7 +145,7 @@ impl EnergySupplyConnection {
         amount_produced: f64,
         timestep_idx: usize,
     ) -> Result<(), anyhow::Error> {
-        self.energy_supply.lock().supply_energy(
+        self.energy_supply.write().supply_energy(
             self.end_user_name.as_str(),
             amount_produced,
             timestep_idx,
@@ -153,7 +153,7 @@ impl EnergySupplyConnection {
     }
 
     pub fn fuel_type(&self) -> FuelType {
-        self.energy_supply.lock().fuel_type()
+        self.energy_supply.read().fuel_type()
     }
 }
 
@@ -208,10 +208,10 @@ impl EnergySupply {
     }
 
     pub fn connection(
-        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         end_user_name: &str,
     ) -> Result<EnergySupplyConnection, anyhow::Error> {
-        let mut supply = energy_supply.lock();
+        let mut supply = energy_supply.write();
         if supply.demand_by_end_user.contains_key(end_user_name) {
             bail!("The end user name '{end_user_name}' was already used.");
         }
@@ -484,7 +484,7 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
         heat_network: input
             .heat_network
             .map(|hn| supply_from_heat_network_details(hn, simulation_timesteps)),
-        unmet_demand: Arc::new(Mutex::new(EnergySupply::new(
+        unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_timesteps,
             Default::default(),
@@ -498,8 +498,8 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
 fn supply_from_details(
     energy_supply_details: EnergySupplyDetails,
     simulation_timesteps: usize,
-) -> Arc<Mutex<EnergySupply>> {
-    Arc::new(Mutex::new(EnergySupply::new(
+) -> Arc<RwLock<EnergySupply>> {
+    Arc::new(RwLock::new(EnergySupply::new(
         energy_supply_details.fuel,
         simulation_timesteps,
         energy_supply_details
@@ -511,8 +511,8 @@ fn supply_from_details(
 fn supply_from_heat_network_details(
     heat_network: HeatNetwork,
     simulation_timesteps: usize,
-) -> Arc<Mutex<EnergySupply>> {
-    Arc::new(Mutex::new(EnergySupply::new(
+) -> Arc<RwLock<EnergySupply>> {
+    Arc::new(RwLock::new(EnergySupply::new(
         heat_network.fuel,
         simulation_timesteps,
         None,
@@ -547,9 +547,9 @@ mod tests {
     ) -> (
         EnergySupplyConnection,
         EnergySupplyConnection,
-        Arc<Mutex<EnergySupply>>,
+        Arc<RwLock<EnergySupply>>,
     ) {
-        let shared_supply = Arc::new(Mutex::new(energy_supply));
+        let shared_supply = Arc::new(RwLock::new(energy_supply));
         let energy_connection_1 = EnergySupplyConnection {
             energy_supply: shared_supply.clone(),
             end_user_name: "shower".to_string(),
@@ -564,7 +564,7 @@ mod tests {
     #[fixture]
     pub fn energy_supply_connection_1<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
-            energy_supply: Arc::new(Mutex::new(energy_supply)),
+            energy_supply: Arc::new(RwLock::new(energy_supply)),
             end_user_name: "shower".to_string(),
         }
     }
@@ -572,7 +572,7 @@ mod tests {
     #[fixture]
     pub fn energy_supply_connection_2<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
-            energy_supply: Arc::new(Mutex::new(energy_supply)),
+            energy_supply: Arc::new(RwLock::new(energy_supply)),
             end_user_name: "bath".to_string(),
         }
     }
@@ -611,7 +611,7 @@ mod tests {
         energy_supply_connections: (
             EnergySupplyConnection,
             EnergySupplyConnection,
-            Arc<Mutex<EnergySupply>>,
+            Arc<RwLock<EnergySupply>>,
         ),
         simulation_time: SimulationTimeIterator,
     ) {
@@ -621,11 +621,11 @@ mod tests {
                 .demand_energy((simtime.index as f64 + 1.0) * 50.0, simtime.index);
             let _ = energy_connection_2.demand_energy(simtime.index as f64 * 20.0, simtime.index);
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["shower"][simtime.index],
+                energy_supply.read().results_by_end_user()["shower"][simtime.index],
                 EXPECTED_TOTAL_DEMANDS_BY_END_USER[0][simtime.index]
             );
             assert_eq!(
-                energy_supply.lock().results_by_end_user()["bath"][simtime.index],
+                energy_supply.read().results_by_end_user()["bath"][simtime.index],
                 EXPECTED_TOTAL_DEMANDS_BY_END_USER[1][simtime.index]
             );
         }
@@ -667,7 +667,7 @@ mod tests {
         energy_supply_connections: (
             EnergySupplyConnection,
             EnergySupplyConnection,
-            Arc<Mutex<EnergySupply>>,
+            Arc<RwLock<EnergySupply>>,
         ),
         simulation_time: SimulationTimeIterator,
     ) {
@@ -684,7 +684,7 @@ mod tests {
                 .supply_energy(t_idx as f64 * t_idx as f64 * 80., t_idx)
                 .unwrap();
 
-            let mut energy_supply = energy_supply.lock();
+            let mut energy_supply = energy_supply.write();
             energy_supply.calc_energy_import_export_betafactor(t_it);
 
             assert_eq!(

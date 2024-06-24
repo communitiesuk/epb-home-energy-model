@@ -5,7 +5,7 @@ use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use interp::interp;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -226,7 +226,7 @@ struct HeatBatteryResult {
 #[derive(Clone, Debug)]
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
-    energy_supply: Arc<Mutex<EnergySupply>>,
+    energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connection: EnergySupplyConnection,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
     pwr_in: f64,
@@ -251,7 +251,7 @@ impl HeatBattery {
     pub fn new(
         heat_battery_details: &HeatSourceWetDetails,
         charge_control: Arc<Control>,
-        energy_supply: Arc<Mutex<EnergySupply>>,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: Arc<SimulationTimeIterator>,
     ) -> Self {
