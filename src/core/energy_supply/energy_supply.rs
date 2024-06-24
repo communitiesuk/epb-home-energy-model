@@ -750,7 +750,7 @@ mod tests {
                 .supply_energy(t_idx as f64 * t_idx as f64 * 80., t_idx)
                 .unwrap();
 
-            let mut energy_supply = energy_supply.write();
+            let energy_supply = energy_supply.read();
             energy_supply.calc_energy_import_export_betafactor(t_it);
 
             assert_eq!(
