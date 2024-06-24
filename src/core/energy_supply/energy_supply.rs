@@ -27,16 +27,16 @@ pub struct EnergySupplies {
 impl EnergySupplies {
     pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
         if let Some(ref mut supply) = self.mains_electricity {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.mains_gas {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.bulk_lpg {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
         self.unmet_demand
-            .write()
+            .read()
             .calc_energy_import_export_betafactor(simtime);
     }
 
@@ -168,13 +168,13 @@ pub struct EnergySupply {
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
-    beta_factor: Vec<f64>,
-    supply_surplus: Vec<f64>,
-    demand_not_met: Vec<f64>,
-    energy_into_battery: Vec<f64>,
-    energy_out_of_battery: Vec<f64>,
-    energy_diverted: Vec<f64>,
-    energy_generated_consumed: Vec<f64>,
+    beta_factor: Vec<AtomicF64>,
+    supply_surplus: Vec<AtomicF64>,
+    demand_not_met: Vec<AtomicF64>,
+    energy_into_battery: Vec<AtomicF64>,
+    energy_out_of_battery: Vec<AtomicF64>,
+    energy_diverted: Vec<AtomicF64>,
+    energy_generated_consumed: Vec<AtomicF64>,
 }
 
 impl EnergySupply {
@@ -192,7 +192,7 @@ impl EnergySupply {
             simulation_timesteps,
             electric_battery,
             diverter: None,
-            demand_total: init_atomic_demand_list(simulation_timesteps),
+            demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
             beta_factor: init_demand_list(simulation_timesteps),
@@ -221,11 +221,11 @@ impl EnergySupply {
         supply
             .demand_by_end_user
             .entry(end_user_name.into())
-            .or_insert(init_atomic_demand_list(timesteps));
+            .or_insert(init_demand_list(timesteps));
         supply
             .energy_out_by_end_user
             .entry(end_user_name.into())
-            .or_insert(init_atomic_demand_list(timesteps));
+            .or_insert(init_demand_list(timesteps));
 
         Ok(EnergySupplyConnection {
             energy_supply: energy_supply.clone(),
@@ -265,12 +265,10 @@ impl EnergySupply {
     pub fn register_end_user_name(&mut self, end_user_name: String) {
         self.demand_by_end_user.insert(
             end_user_name.clone(),
-            init_atomic_demand_list(self.simulation_timesteps),
+            init_demand_list(self.simulation_timesteps),
         );
-        self.energy_out_by_end_user.insert(
-            end_user_name,
-            init_atomic_demand_list(self.simulation_timesteps),
-        );
+        self.energy_out_by_end_user
+            .insert(end_user_name, init_demand_list(self.simulation_timesteps));
     }
 
     pub fn demand_energy(
@@ -363,36 +361,60 @@ impl EnergySupply {
         all_results_by_end_user
     }
 
-    pub fn get_energy_import(&self) -> &[f64] {
-        &self.demand_not_met
+    pub fn get_energy_import(&self) -> Vec<f64> {
+        self.demand_not_met
+            .iter()
+            .map(|v| v.load(Ordering::SeqCst))
+            .collect::<Vec<_>>()
     }
 
-    pub fn get_energy_export(&self) -> &[f64] {
-        &self.supply_surplus
+    pub fn get_energy_export(&self) -> Vec<f64> {
+        self.supply_surplus
+            .iter()
+            .map(|v| v.load(Ordering::SeqCst))
+            .collect::<Vec<_>>()
     }
 
     /// Return the amount of generated energy consumed in the building for all timesteps
-    pub fn get_energy_generated_consumed(&self) -> &[f64] {
-        &self.energy_generated_consumed
+    pub fn get_energy_generated_consumed(&self) -> Vec<f64> {
+        self.energy_generated_consumed
+            .iter()
+            .map(|v| v.load(Ordering::SeqCst))
+            .collect::<Vec<_>>()
     }
 
     /// Return the amount of generated energy sent to battery and drawn from battery
-    pub fn get_energy_to_from_battery(&self) -> (&[f64], &[f64]) {
-        (&self.energy_into_battery, &self.energy_out_of_battery)
+    pub fn get_energy_to_from_battery(&self) -> (Vec<f64>, Vec<f64>) {
+        (
+            self.energy_into_battery
+                .iter()
+                .map(|v| v.load(Ordering::SeqCst))
+                .collect::<Vec<_>>(),
+            self.energy_out_of_battery
+                .iter()
+                .map(|v| v.load(Ordering::SeqCst))
+                .collect::<Vec<_>>(),
+        )
     }
 
     /// Return the amount of generated energy diverted to minimise export
-    pub fn get_energy_diverted(&self) -> &[f64] {
-        &self.energy_diverted
+    pub fn get_energy_diverted(&self) -> Vec<f64> {
+        self.energy_diverted
+            .iter()
+            .map(|v| v.load(Ordering::SeqCst))
+            .collect::<Vec<_>>()
     }
 
-    pub fn get_beta_factor(&self) -> &[f64] {
-        &self.beta_factor
+    pub fn get_beta_factor(&self) -> Vec<f64> {
+        self.beta_factor
+            .iter()
+            .map(|v| v.load(Ordering::SeqCst))
+            .collect::<Vec<_>>()
     }
 
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
-    pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
+    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -419,10 +441,12 @@ impl EnergySupply {
             .map(|d| d.load(Ordering::SeqCst))
             .sum::<f64>();
 
-        *self.beta_factor.get_mut(timestep_idx).unwrap() =
-            self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv);
+        self.beta_factor.get(timestep_idx).unwrap().store(
+            self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv),
+            Ordering::SeqCst,
+        );
 
-        let current_beta_factor = self.beta_factor[timestep_idx];
+        let current_beta_factor = self.beta_factor[timestep_idx].load(Ordering::SeqCst);
 
         // PV elec consumed within dwelling in absence of battery storage or diverter (kWh)
         // if there were multiple sources they would each have their own beta factors
@@ -432,30 +456,44 @@ impl EnergySupply {
         // Elec demand not met by PV (kWh) - ie amount to be imported from the grid or batteries
         let mut demand_not_met = demands_sum + supply_consumed;
         // See if there is a net supply/demand for the timestep
-        if let Some(ref mut battery) = &mut self.electric_battery {
+        if let Some(ref battery) = &self.electric_battery {
             // See if the battery can deal with excess supply/demand for this timestep
             // supply_surplus is -ve by convention and demand_not_met is +ve
             let energy_out_of_battery = battery.charge_discharge_battery(supply_surplus);
             supply_surplus -= energy_out_of_battery;
-            *self.energy_into_battery.get_mut(timestep_idx).unwrap() = -energy_out_of_battery;
+            self.energy_into_battery
+                .get(timestep_idx)
+                .unwrap()
+                .store(-energy_out_of_battery, Ordering::SeqCst);
             let energy_out_of_battery = battery.charge_discharge_battery(demand_not_met);
             demand_not_met -= energy_out_of_battery;
-            *self.energy_out_of_battery.get_mut(timestep_idx).unwrap() = -energy_out_of_battery;
+            self.energy_out_of_battery
+                .get(timestep_idx)
+                .unwrap()
+                .store(-energy_out_of_battery, Ordering::SeqCst);
         }
 
-        if let Some(ref mut diverter) = &mut self.diverter {
-            *self.energy_diverted.get_mut(timestep_idx).unwrap() =
-                diverter.read().divert_surplus(supply_surplus, simtime);
-            supply_surplus += self.energy_diverted[timestep_idx];
+        if let Some(ref diverter) = &self.diverter {
+            self.energy_diverted.get(timestep_idx).unwrap().store(
+                diverter.read().divert_surplus(supply_surplus, simtime),
+                Ordering::SeqCst,
+            );
+            supply_surplus += self.energy_diverted[timestep_idx].load(Ordering::SeqCst);
         }
 
-        *self.supply_surplus.get_mut(timestep_idx).unwrap() += supply_surplus;
-        *self.demand_not_met.get_mut(timestep_idx).unwrap() += demand_not_met;
+        self.supply_surplus
+            .get(timestep_idx)
+            .unwrap()
+            .fetch_add(supply_surplus, Ordering::SeqCst);
+        self.demand_not_met
+            .get(timestep_idx)
+            .unwrap()
+            .fetch_add(demand_not_met, Ordering::SeqCst);
         // Report energy generated and consumed as positive number, so subtract negative number
-        *self
-            .energy_generated_consumed
-            .get_mut(timestep_idx)
-            .unwrap() -= supply_consumed;
+        self.energy_generated_consumed
+            .get(timestep_idx)
+            .unwrap()
+            .fetch_sub(supply_consumed, Ordering::SeqCst);
     }
 
     /// wrapper that applies relevant function to obtain
@@ -492,14 +530,10 @@ enum BetaFactorFunction {
     Wind,
 }
 
-fn init_atomic_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
+fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
     (0..timestep_count)
         .map(|_| Default::default())
         .collect::<Vec<_>>()
-}
-
-fn init_demand_list(timestep_count: usize) -> Vec<f64> {
-    vec![Default::default(); timestep_count]
 }
 
 pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
