@@ -977,7 +977,7 @@ impl ExternalConditions {
             finR_D_L_ls.remove(0);
         }
         if finL_D_L_ls.len() >= 2 {
-            finR_D_L_ls.remove(0);
+            finL_D_L_ls.remove(0);
         }
 
         // #perform the diff shading calculation for each combination of overhangs and fins
