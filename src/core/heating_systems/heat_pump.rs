@@ -1728,13 +1728,15 @@ impl HeatPump {
         }
 
         // Set up energy supply connection for this service
-        heat_pump.lock().energy_supply_connections.insert(
-            service_name.to_string(),
-            Arc::new(
-                EnergySupply::connection(heat_pump.lock().energy_supply.clone(), service_name)
-                    .unwrap(),
-            ),
-        );
+        {
+            let mut heat_pump = heat_pump.lock();
+            let connection = Arc::new(
+                EnergySupply::connection(heat_pump.energy_supply.clone(), service_name).unwrap(),
+            );
+            heat_pump
+                .energy_supply_connections
+                .insert(service_name.to_string(), connection);
+        }
 
         // if heat pump uses heat network as source, then set up connection
         let is_heat_network = matches!(
