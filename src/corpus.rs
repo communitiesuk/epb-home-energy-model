@@ -66,7 +66,7 @@ use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -102,7 +102,7 @@ pub struct Corpus {
     pub space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     pub space_cool_systems: IndexMap<String, AirConditioning>,
     pub on_site_generation: IndexMap<String, PhotovoltaicSystem>,
-    pub diverters: Vec<Arc<Mutex<PVDiverter>>>,
+    pub diverters: Vec<Arc<RwLock<PVDiverter>>>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
@@ -123,7 +123,7 @@ impl Corpus {
         });
 
         let diverter_types: DiverterTypes = (&input.energy_supply).into();
-        let mut diverters: Vec<Arc<Mutex<PVDiverter>>> = Default::default();
+        let mut diverters: Vec<Arc<RwLock<PVDiverter>>> = Default::default();
 
         let cold_water_sources =
             cold_water_sources_from_input(input.cold_water_source, &input.simulation_time);
@@ -1145,7 +1145,7 @@ impl Corpus {
                 .calc_energy_import_export_betafactor(t_it);
 
             for diverter in &self.diverters {
-                diverter.lock().timestep_end();
+                diverter.write().timestep_end();
             }
         }
 
@@ -2842,7 +2842,7 @@ fn hot_water_source_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     diverter_types: &DiverterTypes,
-    diverters: &mut Vec<Arc<Mutex<PVDiverter>>>,
+    diverters: &mut Vec<Arc<RwLock<PVDiverter>>>,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>)> {

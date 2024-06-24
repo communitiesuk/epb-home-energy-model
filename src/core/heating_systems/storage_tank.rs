@@ -9,10 +9,12 @@ use crate::corpus::{HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
+use atomic_float::AtomicF64;
 use indexmap::IndexMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::iter::zip;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 // BS EN 15316-5:2017 Appendix B default input data
@@ -922,7 +924,7 @@ pub struct ImmersionHeater {
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control: Option<Arc<Control>>,
-    diverter: Option<Arc<Mutex<PVDiverter>>>,
+    diverter: Option<Arc<RwLock<PVDiverter>>>,
 }
 
 impl ImmersionHeater {
@@ -941,7 +943,7 @@ impl ImmersionHeater {
         }
     }
 
-    pub fn connect_diverter(&mut self, diverter: Arc<Mutex<PVDiverter>>) {
+    pub fn connect_diverter(&mut self, diverter: Arc<RwLock<PVDiverter>>) {
         if self.diverter.is_some() {
             panic!("diverter was already connected");
         }
@@ -964,7 +966,7 @@ impl ImmersionHeater {
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
         if let Some(ref mut diverter) = &mut self.diverter {
-            diverter.lock().capacity_already_in_use(energy_supplied);
+            diverter.read().capacity_already_in_use(energy_supplied);
         }
 
         self.energy_supply_connection
@@ -994,12 +996,12 @@ impl ImmersionHeater {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PVDiverter {
     storage_tank: Arc<Mutex<StorageTank>>,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
-    capacity_already_in_use: f64,
+    capacity_already_in_use: AtomicF64,
 }
 
 impl PVDiverter {
@@ -1007,8 +1009,8 @@ impl PVDiverter {
         storage_tank: Arc<Mutex<StorageTank>>,
         heat_source: Arc<Mutex<ImmersionHeater>>,
         heat_source_name: String,
-    ) -> Arc<Mutex<Self>> {
-        let diverter = Arc::new(Mutex::new(Self {
+    ) -> Arc<RwLock<Self>> {
+        let diverter = Arc::new(RwLock::new(Self {
             storage_tank,
             heat_source_name,
             immersion_heater: heat_source.clone(),
@@ -1021,8 +1023,9 @@ impl PVDiverter {
     }
 
     /// Record heater output that would happen anyway, to avoid double-counting
-    pub fn capacity_already_in_use(&mut self, energy_supplied: f64) {
-        self.capacity_already_in_use += energy_supplied;
+    pub fn capacity_already_in_use(&self, energy_supplied: f64) {
+        self.capacity_already_in_use
+            .fetch_add(energy_supplied, Ordering::SeqCst);
     }
 
     /// Divert as much surplus as possible to the heater
@@ -1030,7 +1033,7 @@ impl PVDiverter {
     /// Arguments:
     /// * `supply_surplus` - surplus energy, in kWh, available to be diverted (negative by convention)
     pub fn divert_surplus(
-        &mut self,
+        &self,
         supply_surplus: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
@@ -1039,7 +1042,7 @@ impl PVDiverter {
             .immersion_heater
             .lock()
             .energy_output_max(simulation_time_iteration, true)
-            - self.capacity_already_in_use;
+            - self.capacity_already_in_use.load(Ordering::SeqCst);
 
         // Calculate the maximum energy that could be diverted
         // Note: supply_surplus argument is negative by convention, so negate it here
