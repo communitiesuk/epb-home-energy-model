@@ -362,51 +362,37 @@ impl EnergySupply {
     }
 
     pub fn get_energy_import(&self) -> Vec<f64> {
-        self.demand_not_met
-            .iter()
-            .map(|v| v.load(Ordering::SeqCst))
-            .collect::<Vec<_>>()
+        Self::vec_of_floats_from_atomics(&self.demand_not_met)
     }
 
     pub fn get_energy_export(&self) -> Vec<f64> {
-        self.supply_surplus
-            .iter()
-            .map(|v| v.load(Ordering::SeqCst))
-            .collect::<Vec<_>>()
+        Self::vec_of_floats_from_atomics(&self.supply_surplus)
     }
 
     /// Return the amount of generated energy consumed in the building for all timesteps
     pub fn get_energy_generated_consumed(&self) -> Vec<f64> {
-        self.energy_generated_consumed
-            .iter()
-            .map(|v| v.load(Ordering::SeqCst))
-            .collect::<Vec<_>>()
+        Self::vec_of_floats_from_atomics(&self.energy_generated_consumed)
     }
 
     /// Return the amount of generated energy sent to battery and drawn from battery
     pub fn get_energy_to_from_battery(&self) -> (Vec<f64>, Vec<f64>) {
         (
-            self.energy_into_battery
-                .iter()
-                .map(|v| v.load(Ordering::SeqCst))
-                .collect::<Vec<_>>(),
-            self.energy_out_of_battery
-                .iter()
-                .map(|v| v.load(Ordering::SeqCst))
-                .collect::<Vec<_>>(),
+            Self::vec_of_floats_from_atomics(&self.energy_into_battery),
+            Self::vec_of_floats_from_atomics(&self.energy_out_of_battery),
         )
     }
 
     /// Return the amount of generated energy diverted to minimise export
     pub fn get_energy_diverted(&self) -> Vec<f64> {
-        self.energy_diverted
-            .iter()
-            .map(|v| v.load(Ordering::SeqCst))
-            .collect::<Vec<_>>()
+        Self::vec_of_floats_from_atomics(&self.energy_diverted)
     }
 
     pub fn get_beta_factor(&self) -> Vec<f64> {
-        self.beta_factor
+        Self::vec_of_floats_from_atomics(&self.beta_factor)
+    }
+
+    fn vec_of_floats_from_atomics(atomics: &[AtomicF64]) -> Vec<f64> {
+        atomics
             .iter()
             .map(|v| v.load(Ordering::SeqCst))
             .collect::<Vec<_>>()
