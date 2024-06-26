@@ -2,10 +2,11 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
-use indexmap::IndexMap;
+use indexmap::{Equivalent, IndexMap};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::Deserialize_enum_str;
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
 use std::sync::Arc;
@@ -147,75 +148,71 @@ pub enum ApplianceGainType {
     Cooking,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum EnergySupplyKey {
+    #[serde(rename = "mains elec")]
+    MainsElectricity,
+    #[serde(rename = "mains gas")]
+    MainsGas,
+    #[serde(rename = "bulk LPG")]
+    BulkLpg,
+    #[serde(rename = "heat network")]
+    HeatNetwork,
+}
+
+impl Equivalent<str> for EnergySupplyKey {
+    fn equivalent(&self, key: &str) -> bool {
+        if let Ok(key) = serde_json::from_value::<EnergySupplyKey>(json!(key)) {
+            key == *self
+        } else {
+            false
+        }
+    }
+}
+
+impl Borrow<str> for EnergySupplyKey {
+    fn borrow(&self) -> &str {
+        match serde_json::to_value(self)
+            .expect("Expected an EnergySupplyKey to be turned into a string")
+        {
+            Value::String(string) => match string.as_str() {
+                "mains elec" => "mains elec",
+                "mains gas" => "mains elec",
+                "bulk LPG" => "bulk LPG",
+                "heat network" => "heat network",
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
+// impl TryInto<EnergySupplyKey> for &str {
+//     type Error = anyhow::Error;
+//
+//     fn try_into(self) -> Result<EnergySupplyKey, Self::Error> {
+//         serde_json::from_value(json!(self))
+//     }
+// }
+
+pub type EnergySupplyInput = IndexMap<EnergySupplyKey, EnergySupplyDetails>;
+
 // NB. assuming for now the fields in this struct map to the FuelCode enum
 // there may be a way to map this a priori but keeping them manually in sync for now
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct EnergySupplyInput {
-    #[serde(rename = "mains elec")]
-    pub mains_electricity: Option<EnergySupplyDetails>,
-    #[serde(rename = "mains gas")]
-    pub mains_gas: Option<EnergySupplyDetails>,
-    #[serde(rename = "bulk LPG")]
-    pub bulk_lpg: Option<EnergySupplyDetails>,
-    #[serde(rename = "heat network")]
-    pub heat_network: Option<EnergySupplyDetails>,
-}
-
-impl EnergySupplyInput {
-    fn fuel_type_for_field(&self, field: &str) -> Option<FuelType> {
-        match field {
-            "mains elec" => self
-                .mains_electricity
-                .as_ref()
-                .map(|details| details.into()),
-            "mains gas" => self.mains_gas.as_ref().map(|details| details.into()),
-            "bulk LPG" => self.bulk_lpg.as_ref().map(|details| details.into()),
-            "heat network" => self.heat_network.as_ref().map(|details| details.into()),
-            _ => None,
-        }
-    }
-}
-
-impl<'a> IntoIterator for &'a EnergySupplyInput {
-    type Item = (&'static str, &'a EnergySupplyDetails);
-    type IntoIter = EnergySupplyInputIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        EnergySupplyInputIterator {
-            position: 0,
-            energy_supply_input: &self,
-        }
-    }
-}
-
-pub struct EnergySupplyInputIterator<'a> {
-    position: usize,
-    energy_supply_input: &'a EnergySupplyInput,
-}
-
-impl<'a> Iterator for EnergySupplyInputIterator<'a> {
-    type Item = (&'static str, &'a EnergySupplyDetails);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let number_of_fields = 4usize;
-        for i in self.position..number_of_fields {
-            let (field, details) = match i {
-                0 => ("mains elec", &self.energy_supply_input.mains_electricity),
-                1 => ("mains gas", &self.energy_supply_input.mains_gas),
-                2 => ("bulk LPG", &self.energy_supply_input.bulk_lpg),
-                3 => ("heat network", &self.energy_supply_input.heat_network),
-                _ => unreachable!(),
-            };
-            if let Some(details) = details {
-                self.position = i + 1;
-                return Some((field, details));
-            }
-        }
-        None
-    }
-}
+// #[derive(Debug, Deserialize)]
+// #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+// #[serde(deny_unknown_fields)]
+// pub struct EnergySupplyInput {
+//     #[serde(rename = "mains elec")]
+//     pub mains_electricity: Option<EnergySupplyDetails>,
+//     #[serde(rename = "mains gas")]
+//     pub mains_gas: Option<EnergySupplyDetails>,
+//     #[serde(rename = "bulk LPG")]
+//     pub bulk_lpg: Option<EnergySupplyDetails>,
+//     #[serde(rename = "heat network")]
+//     pub heat_network: Option<EnergySupplyDetails>,
+// }
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -2188,10 +2185,11 @@ impl InputForProcessing {
         Ok(self
             .input
             .energy_supply
-            .fuel_type_for_field(field)
+            .get(field)
             .ok_or(anyhow!(
                 "Fuel type not provided for energy supply field '{field}'"
             ))?
+            .fuel
             .to_string())
     }
 
@@ -2360,43 +2358,5 @@ mod tests {
                 entry.file_name().to_str().unwrap()
             );
         }
-    }
-
-    #[rstest]
-    fn iterate_energy_supply_input() {
-        let input: EnergySupplyInput = serde_json::from_value(json!({
-          "mains elec": {
-            "fuel": "electricity"
-          },
-          "mains gas": {
-            "fuel": "mains_gas"
-          }
-        }))
-        .unwrap();
-        let iterated: Vec<(&'static str, &EnergySupplyDetails)> =
-            input.into_iter().collect::<Vec<_>>();
-        assert_eq!(
-            iterated,
-            vec![
-                (
-                    "mains elec",
-                    &EnergySupplyDetails {
-                        fuel: FuelType::Electricity,
-                        diverter: None,
-                        electric_battery: None,
-                        factor: None,
-                    }
-                ),
-                (
-                    "mains gas",
-                    &EnergySupplyDetails {
-                        fuel: FuelType::MainsGas,
-                        diverter: None,
-                        electric_battery: None,
-                        factor: None,
-                    }
-                )
-            ]
-        );
     }
 }

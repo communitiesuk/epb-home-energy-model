@@ -25,7 +25,7 @@ impl ElectricBattery {
         }
     }
 
-    pub fn from_input(input: ElectricBatteryInput) -> Self {
+    pub fn from_input(input: &ElectricBatteryInput) -> Self {
         Self::new(input.capacity, input.charge_discharge_efficiency)
     }
 

@@ -1,7 +1,9 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
-use crate::input::{EnergySupplyDetails, EnergySupplyInput, EnergySupplyType, FuelType};
+use crate::input::{
+    EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType, FuelType,
+};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use atomic_float::AtomicF64;
@@ -523,16 +525,16 @@ fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
 pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
     EnergySupplies {
         mains_electricity: input
-            .mains_electricity
+            .get(&EnergySupplyKey::MainsElectricity)
             .map(|s| supply_from_details(s, simulation_timesteps)),
         mains_gas: input
-            .mains_gas
+            .get(&EnergySupplyKey::MainsGas)
             .map(|s| supply_from_details(s, simulation_timesteps)),
         bulk_lpg: input
-            .bulk_lpg
+            .get(&EnergySupplyKey::BulkLpg)
             .map(|s| supply_from_details(s, simulation_timesteps)),
         heat_network: input
-            .heat_network
+            .get(&EnergySupplyKey::HeatNetwork)
             .map(|s| supply_from_details(s, simulation_timesteps)),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
@@ -546,12 +548,13 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
 }
 
 fn supply_from_details(
-    energy_supply_details: EnergySupplyDetails,
+    energy_supply_details: &EnergySupplyDetails,
     simulation_timesteps: usize,
 ) -> Arc<RwLock<EnergySupply>> {
-    let fuel_type: FuelType = (&energy_supply_details).into();
+    let fuel_type: FuelType = energy_supply_details.into();
     let electric_battery = energy_supply_details
         .electric_battery
+        .as_ref()
         .map(ElectricBattery::from_input);
     Arc::new(RwLock::new(EnergySupply::new(
         fuel_type,

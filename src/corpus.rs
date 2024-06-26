@@ -48,16 +48,17 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
-    ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
-    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
-    HeatSourceControl as HeatSourceControlInput, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
-    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
-    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
+    ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey,
+    EnergySupplyType, ExternalConditionsInput, FuelType, HeatPumpSourceType,
+    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
+    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
+    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
+    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
+    ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
@@ -1636,12 +1637,21 @@ fn energy_supplies_from_input(
 ) -> EnergySupplies {
     EnergySupplies {
         mains_electricity: energy_supply_from_input(
-            input.mains_electricity,
+            input.get(&EnergySupplyKey::MainsElectricity),
             simulation_time_iterator,
         ),
-        mains_gas: energy_supply_from_input(input.mains_gas, simulation_time_iterator),
-        bulk_lpg: energy_supply_from_input(input.bulk_lpg, simulation_time_iterator),
-        heat_network: energy_supply_from_input(input.heat_network, simulation_time_iterator),
+        mains_gas: energy_supply_from_input(
+            input.get(&EnergySupplyKey::MainsGas),
+            simulation_time_iterator,
+        ),
+        bulk_lpg: energy_supply_from_input(
+            input.get(&EnergySupplyKey::BulkLpg),
+            simulation_time_iterator,
+        ),
+        heat_network: energy_supply_from_input(
+            input.get(&EnergySupplyKey::HeatNetwork),
+            simulation_time_iterator,
+        ),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_time_iterator.total_steps(),
@@ -1654,14 +1664,17 @@ fn energy_supplies_from_input(
 }
 
 fn energy_supply_from_input(
-    input: Option<EnergySupplyDetails>,
+    input: Option<&EnergySupplyDetails>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> Option<Arc<RwLock<EnergySupply>>> {
     input.map(|details| {
         Arc::new(RwLock::new(EnergySupply::new(
             details.fuel,
             simulation_time_iterator.total_steps(),
-            details.electric_battery.map(ElectricBattery::from_input),
+            details
+                .electric_battery
+                .as_ref()
+                .map(ElectricBattery::from_input),
         )))
     })
 }
@@ -1675,9 +1688,11 @@ struct DiverterTypes {
 impl From<&EnergySupplyInput> for DiverterTypes {
     fn from(input: &EnergySupplyInput) -> Self {
         Self {
-            mains_electricity: diverter_from_energy_supply(&input.mains_electricity),
-            mains_gas: diverter_from_energy_supply(&input.mains_gas),
-            bulk_lpg: diverter_from_energy_supply(&input.bulk_lpg),
+            mains_electricity: diverter_from_energy_supply(
+                input.get(&EnergySupplyKey::MainsElectricity),
+            ),
+            mains_gas: diverter_from_energy_supply(input.get(&EnergySupplyKey::MainsGas)),
+            bulk_lpg: diverter_from_energy_supply(input.get(&EnergySupplyKey::BulkLpg)),
         }
     }
 }
@@ -1696,10 +1711,8 @@ impl DiverterTypes {
     }
 }
 
-fn diverter_from_energy_supply(supply: &Option<EnergySupplyDetails>) -> Option<EnergyDiverter> {
-    supply
-        .as_ref()
-        .map(|supply| supply.diverter.clone().unwrap_or_default())
+fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<EnergyDiverter> {
+    supply.map(|supply| supply.diverter.clone().unwrap_or_default())
 }
 
 #[derive(Default)]
