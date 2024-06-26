@@ -49,16 +49,15 @@ use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
     ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyType,
-    ExternalConditionsInput, FuelType, HeatNetwork as HeatNetworkInput, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
-    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
-    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
-    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
-    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
-    ZoneDictionary, ZoneInput,
+    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControl as HeatSourceControlInput, HeatSourceControlType, HeatSourceWetDetails,
+    HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
+    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
+    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
+    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
@@ -1642,10 +1641,7 @@ fn energy_supplies_from_input(
         ),
         mains_gas: energy_supply_from_input(input.mains_gas, simulation_time_iterator),
         bulk_lpg: energy_supply_from_input(input.bulk_lpg, simulation_time_iterator),
-        heat_network: energy_supply_from_heat_network_input(
-            input.heat_network,
-            simulation_time_iterator,
-        ),
+        heat_network: energy_supply_from_input(input.heat_network, simulation_time_iterator),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_time_iterator.total_steps(),
@@ -1666,19 +1662,6 @@ fn energy_supply_from_input(
             details.fuel,
             simulation_time_iterator.total_steps(),
             details.electric_battery.map(ElectricBattery::from_input),
-        )))
-    })
-}
-
-fn energy_supply_from_heat_network_input(
-    input: Option<HeatNetworkInput>,
-    simulation_time_iterator: &SimulationTimeIterator,
-) -> Option<Arc<RwLock<EnergySupply>>> {
-    input.map(|heat_network| {
-        Arc::new(RwLock::new(EnergySupply::new(
-            heat_network.fuel,
-            simulation_time_iterator.total_steps(),
-            None,
         )))
     })
 }

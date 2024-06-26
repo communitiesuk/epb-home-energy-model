@@ -1,9 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
-use crate::input::{
-    EnergySupplyDetails, EnergySupplyInput, EnergySupplyType, FuelType, HeatNetwork,
-};
+use crate::input::{EnergySupplyDetails, EnergySupplyInput, EnergySupplyType, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use atomic_float::AtomicF64;
@@ -535,7 +533,7 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
             .map(|s| supply_from_details(s, simulation_timesteps)),
         heat_network: input
             .heat_network
-            .map(|hn| supply_from_heat_network_details(hn, simulation_timesteps)),
+            .map(|s| supply_from_details(s, simulation_timesteps)),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_timesteps,
@@ -551,23 +549,14 @@ fn supply_from_details(
     energy_supply_details: EnergySupplyDetails,
     simulation_timesteps: usize,
 ) -> Arc<RwLock<EnergySupply>> {
+    let fuel_type: FuelType = (&energy_supply_details).into();
+    let electric_battery = energy_supply_details
+        .electric_battery
+        .map(ElectricBattery::from_input);
     Arc::new(RwLock::new(EnergySupply::new(
-        energy_supply_details.fuel,
+        fuel_type,
         simulation_timesteps,
-        energy_supply_details
-            .electric_battery
-            .map(ElectricBattery::from_input),
-    )))
-}
-
-fn supply_from_heat_network_details(
-    heat_network: HeatNetwork,
-    simulation_timesteps: usize,
-) -> Arc<RwLock<EnergySupply>> {
-    Arc::new(RwLock::new(EnergySupply::new(
-        heat_network.fuel,
-        simulation_timesteps,
-        None,
+        electric_battery,
     )))
 }
 

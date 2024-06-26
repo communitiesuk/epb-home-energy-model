@@ -160,16 +160,19 @@ pub struct EnergySupplyInput {
     #[serde(rename = "bulk LPG")]
     pub bulk_lpg: Option<EnergySupplyDetails>,
     #[serde(rename = "heat network")]
-    pub heat_network: Option<HeatNetwork>,
+    pub heat_network: Option<EnergySupplyDetails>,
 }
 
 impl EnergySupplyInput {
     fn fuel_type_for_field(&self, field: &str) -> Option<FuelType> {
         match field {
-            "mains elec" => self.mains_electricity.as_ref().map(|details| details.fuel),
-            "mains gas" => self.mains_gas.as_ref().map(|details| details.fuel),
-            "bulk LPG" => self.bulk_lpg.as_ref().map(|details| details.fuel),
-            "heat network" => self.heat_network.as_ref().map(|details| details.fuel),
+            "mains elec" => self
+                .mains_electricity
+                .as_ref()
+                .map(|details| details.into()),
+            "mains gas" => self.mains_gas.as_ref().map(|details| details.into()),
+            "bulk LPG" => self.bulk_lpg.as_ref().map(|details| details.into()),
+            "heat network" => self.heat_network.as_ref().map(|details| details.into()),
             _ => None,
         }
     }
@@ -177,12 +180,13 @@ impl EnergySupplyInput {
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(tag = "fuel", deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
     pub fuel: FuelType,
     pub diverter: Option<EnergyDiverter>,
     #[serde(rename = "ElectricBattery")]
     pub electric_battery: Option<ElectricBattery>,
+    pub factor: Option<CustomEnergySourceFactor>,
 }
 
 /// TODO clarify further
@@ -200,6 +204,12 @@ pub enum FuelType {
     #[serde(rename = "LPG_bulk")]
     LpgBulk,
     UnmetDemand,
+}
+
+impl From<&EnergySupplyDetails> for FuelType {
+    fn from(value: &EnergySupplyDetails) -> Self {
+        value.fuel
+    }
 }
 
 impl Display for FuelType {
@@ -312,15 +322,17 @@ pub struct ElectricBattery {
     pub charge_discharge_efficiency: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct HeatNetwork {
-    pub fuel: FuelType,
-    pub factor: HeatNetworkFactor,
+pub struct CustomEnergySourceFactor {
+    #[serde(rename = "Emissions Factor kgCO2e/kWh")]
+    pub emissions: f64,
+    #[serde(rename = "Emissions Factor kgCO2e/kWh including out-of-scope emissions")]
+    pub emissions_including_out_of_scope: f64,
+    #[serde(rename = "Primary Energy Factor kWh/kWh delivered")]
+    pub primary_energy_factor: f64,
 }
-
-type HeatNetworkFactor = IndexMap<String, f64>; // don't really know what these values can be yet
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
