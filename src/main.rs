@@ -5,6 +5,7 @@ use hem::output::FileOutput;
 use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
 use hem::run_project;
 use std::ffi::OsStr;
+use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -56,13 +57,11 @@ fn main() -> anyhow::Result<()> {
     // let _output_file_static = format!("{input_file_stem}_results_static.csv");
     // let _output_file_summary = format!("{input_file_stem}_results_summary.csv");
 
-    let file_output = FileOutput::new(
-        input_file_stem.parent().unwrap().to_path_buf(),
-        format!(
-            "{}_{{}}.csv",
-            input_file_stem.file_name().unwrap().to_str().unwrap()
-        ),
-    );
+    let mut output_path = PathBuf::new();
+    output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
+    fs::create_dir_all(&output_path)?;
+    let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
+    let file_output = FileOutput::new(output_path, format!("{}__core__{{}}.csv", input_file_name));
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {
         WeatherFileType {
