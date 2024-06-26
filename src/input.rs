@@ -178,7 +178,46 @@ impl EnergySupplyInput {
     }
 }
 
-#[derive(Debug, Deserialize)]
+impl<'a> IntoIterator for &'a EnergySupplyInput {
+    type Item = (&'static str, &'a EnergySupplyDetails);
+    type IntoIter = EnergySupplyInputIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        EnergySupplyInputIterator {
+            position: 0,
+            energy_supply_input: &self,
+        }
+    }
+}
+
+pub struct EnergySupplyInputIterator<'a> {
+    position: usize,
+    energy_supply_input: &'a EnergySupplyInput,
+}
+
+impl<'a> Iterator for EnergySupplyInputIterator<'a> {
+    type Item = (&'static str, &'a EnergySupplyDetails);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let number_of_fields = 4usize;
+        for i in self.position..number_of_fields {
+            let (field, details) = match i {
+                0 => ("mains elec", &self.energy_supply_input.mains_electricity),
+                1 => ("mains gas", &self.energy_supply_input.mains_gas),
+                2 => ("bulk LPG", &self.energy_supply_input.bulk_lpg),
+                3 => ("heat network", &self.energy_supply_input.heat_network),
+                _ => unreachable!(),
+            };
+            if let Some(details) = details {
+                self.position = i + 1;
+                return Some((field, details));
+            }
+        }
+        None
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "fuel", deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
@@ -194,7 +233,7 @@ pub struct EnergySupplyDetails {
 /// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
 /// in the input examples, so keeping them separate for the time being
 /// (It's also hard to see some of these as types of fuel)
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FuelType {
@@ -264,7 +303,7 @@ impl Display for EnergySupplyType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
@@ -282,7 +321,7 @@ impl Default for EnergyDiverter {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum StorageTankType {
     #[serde(rename = "hw cylinder")]
@@ -298,7 +337,7 @@ impl StorageTankType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum DiverterHeatSourceType {
     #[serde(rename = "immersion")]
@@ -314,7 +353,7 @@ impl DiverterHeatSourceType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
@@ -322,7 +361,7 @@ pub struct ElectricBattery {
     pub charge_discharge_efficiency: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CustomEnergySourceFactor {
@@ -2300,6 +2339,7 @@ impl InputForProcessing {
 mod tests {
     use super::*;
     use rstest::*;
+    use serde_json::json;
     use std::fs::File;
     use walkdir::WalkDir;
 
@@ -2320,5 +2360,43 @@ mod tests {
                 entry.file_name().to_str().unwrap()
             );
         }
+    }
+
+    #[rstest]
+    fn iterate_energy_supply_input() {
+        let input: EnergySupplyInput = serde_json::from_value(json!({
+          "mains elec": {
+            "fuel": "electricity"
+          },
+          "mains gas": {
+            "fuel": "mains_gas"
+          }
+        }))
+        .unwrap();
+        let iterated: Vec<(&'static str, &EnergySupplyDetails)> =
+            input.into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            iterated,
+            vec![
+                (
+                    "mains elec",
+                    &EnergySupplyDetails {
+                        fuel: FuelType::Electricity,
+                        diverter: None,
+                        electric_battery: None,
+                        factor: None,
+                    }
+                ),
+                (
+                    "mains gas",
+                    &EnergySupplyDetails {
+                        fuel: FuelType::MainsGas,
+                        diverter: None,
+                        electric_battery: None,
+                        factor: None,
+                    }
+                )
+            ]
+        );
     }
 }
