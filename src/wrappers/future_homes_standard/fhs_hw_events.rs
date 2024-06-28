@@ -363,9 +363,7 @@ impl HotWaterEventGenerator {
                             mean_event_volume: event.mean_event_volume,
                             median_duration: event.median_duration / 60.,
                             mean_duration: event.mean_duration / 60.,
-                            hourly_event_counts: (0..23).collect::<Vec<_>>().try_into().expect(
-                                "Hourly event counts were not set up with the expected size range",
-                            ),
+                            hourly_event_counts: [0usize; 24],
                             hourly_event_distribution: Default::default(),
                         },
                     );
