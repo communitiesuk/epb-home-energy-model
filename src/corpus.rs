@@ -1761,11 +1761,7 @@ fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollect
 }
 
 fn internal_gains_from_details(details: &InternalGainsDetails) -> InternalGains {
-    let mut schedule: IndexMap<String, Value> =
-        IndexMap::from([("main".to_string(), details.schedule.main.clone())]);
-    if let Some(day) = &details.schedule.day {
-        schedule.insert("day".to_string(), day.clone());
-    }
+    let schedule: IndexMap<String, Value> = (&details.schedule).into();
     InternalGains::new(
         expand_numeric_schedule(&schedule, false)
             .into_iter()

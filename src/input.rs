@@ -123,6 +123,27 @@ pub struct InternalGainsSchedule {
     pub weekend: Option<Value>,
 }
 
+impl From<&InternalGainsSchedule> for IndexMap<String, Value> {
+    fn from(value: &InternalGainsSchedule) -> Self {
+        let mut schedule: IndexMap<String, Value> =
+            IndexMap::from([("main".to_string(), value.main.clone())]);
+        if let Some(day) = &value.day {
+            schedule.insert("day".to_string(), day.clone());
+        }
+        if let Some(week) = &value.week {
+            schedule.insert("week".to_string(), week.clone());
+        }
+        if let Some(weekday) = &value.weekday {
+            schedule.insert("weekday".to_string(), weekday.clone());
+        }
+        if let Some(weekend) = &value.weekend {
+            schedule.insert("weekend".to_string(), weekend.clone());
+        }
+
+        schedule
+    }
+}
+
 pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 
 #[derive(Debug, Deserialize)]
