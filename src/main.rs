@@ -86,7 +86,7 @@ fn main() -> anyhow::Result<()> {
         file_output,
         external_conditions,
         args.preprocess_only,
-        false,
+        args.wrapper_choice.future_homes_standard,
         false,
         false,
         false,
