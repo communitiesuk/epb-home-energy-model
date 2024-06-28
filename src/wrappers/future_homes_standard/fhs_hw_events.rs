@@ -52,39 +52,29 @@ pub fn reset_events_and_provide_drawoff_generator(
     let mut baths: Vec<Drawoff> = Default::default();
     let mut other: Vec<Drawoff> = Default::default();
 
-    let mut shower_month_index: isize = -1;
     let shower_duration_func = move |event: DrawoffEvent| -> f64 {
-        loop {
-            shower_month_index += 1;
-            if !(MONTH_HOUR_STARTS[shower_month_index as usize] as f64 > event.time) {
-                break;
-            }
-        }
-        event.duration * fhw * BEHAVIOURAL_HW_FACTOR_M[shower_month_index as usize]
+        let shower_month_index = MONTH_HOUR_STARTS
+            .iter()
+            .position(|&value| value as f64 > event.time)
+            .unwrap();
+        event.duration * fhw * BEHAVIOURAL_HW_FACTOR_M[shower_month_index]
     };
 
-    let mut bath_month_index: isize = -1;
-    let mut bath_duration_func = move |bath_size: f64, flowrate: f64, event: DrawoffEvent| -> f64 {
-        loop {
-            bath_month_index += 1;
-            if !(MONTH_HOUR_STARTS[bath_month_index as usize] as f64 > event.time) {
-                break;
-            }
-        }
-        (bath_size / flowrate) * fhw * BEHAVIOURAL_HW_FACTOR_M[bath_month_index as usize]
+    let bath_duration_func = move |bath_size: f64, flowrate: f64, event: DrawoffEvent| -> f64 {
+        let bath_month_index = MONTH_HOUR_STARTS
+            .iter()
+            .position(|&value| value as f64 > event.time)
+            .unwrap();
+        (bath_size / flowrate) * fhw * BEHAVIOURAL_HW_FACTOR_M[bath_month_index]
     };
-
-    let mut other_month_index: isize = -1;
 
     let other_duration_func_gen = || {
         let cold_water_feed_temps: Vec<f64> = cold_water_feed_temps.to_vec();
         move |flow_rate: f64, event: DrawoffEvent| -> f64 {
-            loop {
-                other_month_index += 1;
-                if !(MONTH_HOUR_STARTS[other_month_index as usize] as f64 > event.time) {
-                    break;
-                }
-            }
+            let other_month_index = MONTH_HOUR_STARTS
+                .iter()
+                .position(|&value| value as f64 > event.time)
+                .unwrap();
             let frac_hw = frac_hot_water(
                 event_temperature,
                 hw_temperature,
@@ -92,7 +82,7 @@ pub fn reset_events_and_provide_drawoff_generator(
             );
             (event.volume / frac_hw / flow_rate)
                 * fhw
-                * OTHER_HW_FACTOR_M[other_month_index as usize]
+                * OTHER_HW_FACTOR_M[other_month_index]
                 * part_g_bonus
         }
     };
@@ -130,7 +120,7 @@ pub fn reset_events_and_provide_drawoff_generator(
 
     for other_name in input.other_water_use_keys() {
         let other_flow_rate = input.flow_rate_for_other_water_use_field(other_name.as_str()).unwrap_or_else(|| panic!("Tried to access an input for other water use with a nonexistent key '{other_name}'"));
-        let mut other_duration_func = other_duration_func_gen();
+        let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
             event_type: WaterHeatingEventType::Other,
             duration_fn: Arc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
@@ -165,7 +155,7 @@ pub fn reset_events_and_provide_drawoff_generator(
                     "Tried to access an input for other water use with a nonexistent key 'other'"
                 )
             });
-        let mut other_duration_func = other_duration_func_gen();
+        let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
             event_type: WaterHeatingEventType::Other,
             name: "other".to_string(),
