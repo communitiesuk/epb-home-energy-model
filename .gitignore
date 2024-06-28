@@ -2,7 +2,10 @@
 
 #jetbraaaaains IDEs
 .idea
+
+#results files
 **/*_results*.csv
+**/*_postproc*.csv
 
 #weather file in case compilation using this resource is needed
 src/weather.epw
