@@ -212,7 +212,7 @@ impl Borrow<str> for EnergySupplyKey {
 
 impl From<&EnergySupplyKey> for String {
     fn from(value: &EnergySupplyKey) -> Self {
-        value.try_into().unwrap()
+        serde_json::to_value(value).unwrap().to_string()
     }
 }
 

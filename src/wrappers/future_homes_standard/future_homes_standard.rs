@@ -179,7 +179,7 @@ pub fn apply_fhs_postprocessing(
                 let factor = EMIS_PE_FACTORS
                     .get(&fuel_code.to_string())
                     .unwrap_or_else(|| {
-                        panic!("Expected factor values in the table for the fuel code {fuel_code}.")
+                        panic!("Expected factor values in the table for the fuel code {fuel_code} were not present.")
                     });
                 (
                     factor.emissions_factor,
