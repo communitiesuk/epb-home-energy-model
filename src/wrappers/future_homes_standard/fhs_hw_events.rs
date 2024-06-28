@@ -14,7 +14,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
 use std::iter::Iterator;
-use std::mem;
 use std::sync::Arc;
 use strum::EnumCount;
 use strum_macros::EnumCount as EnumCountMacro;
@@ -377,13 +376,12 @@ impl HotWaterEventGenerator {
             for times in decile_event_times_reader.deserialize() {
                 let times: DecileEventTimes =
                     times.expect("There was a problem reading the static decile event times file");
-                let mut hourly_event_counts = week
+                let current_day_digest = week
                     .get_mut(&times.day_name)
                     .unwrap()
                     .get_mut(&times.simple_labels2_based_on_900k_sample)
-                    .unwrap()
-                    .hourly_event_counts;
-                let _ = mem::replace(&mut hourly_event_counts[times.hour], times.event_count);
+                    .unwrap();
+                current_day_digest.hourly_event_counts[times.hour] = times.event_count;
             }
         }
 
