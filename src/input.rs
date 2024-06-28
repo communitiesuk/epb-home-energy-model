@@ -642,8 +642,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             ..
         } = self
         {
-            let control_type_for_heat_sources =
-                HeatSourceControlType::deserialize(control_name.into().as_str())?;
+            let control_type_for_heat_sources = control_name.into().try_into()?;
             for heat_source in heat_source.values_mut() {
                 heat_source.set_control(control_type_for_heat_sources);
             }
@@ -694,7 +693,7 @@ impl HeatSourceWetType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum HeatSourceControlType {
     #[serde(rename = "hw timer")]
@@ -717,14 +716,6 @@ pub enum HeatSourceControl {
     WindowOpeningLivingRoom(ControlDetails),
     WindowOpeningRestOfDwelling(ControlDetails),
     AlwaysOff(ControlDetails),
-}
-
-impl HeatSourceControlType {
-    pub fn deserialize(control_type: &str) -> anyhow::Result<Self> {
-        serde_json::from_str(control_type).or(Err(anyhow!(
-            "The heat source control type '{control_type}' is not known"
-        )))
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
