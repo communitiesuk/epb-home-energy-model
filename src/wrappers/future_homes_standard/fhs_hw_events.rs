@@ -554,10 +554,10 @@ struct DecileEventTimes {
     hour: usize,
     event_count: usize,
     #[allow(dead_code)]
-    no_hholds: usize,
+    no_hholds: Option<usize>,
     day_name: DayOfWeek,
     #[allow(dead_code)]
-    day_wk_mon1: usize,
+    day_wk_mon1: Option<usize>,
     simple_labels2_based_on_900k_sample: SimpleLabelBasedOn900KSample,
 }
 
