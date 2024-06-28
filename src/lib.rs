@@ -34,6 +34,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::Read;
 use std::sync::Arc;
+use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
 
 pub fn run_project(
     input: impl Read,
@@ -64,7 +65,7 @@ pub fn run_project(
 
     let summary_input_digest: SummaryInputDigest = (&input).into();
 
-    let mut corpus: Corpus = Corpus::from_inputs(input, Some(external_conditions))?;
+    let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
 
     let (
         timestep_array,
@@ -169,6 +170,19 @@ pub fn run_project(
             daily_hw_demand_75th_percentile,
         },
     )?;
+
+    if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+        let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
+        apply_fhs_postprocessing(
+            &input,
+            &output,
+            &energy_import,
+            &energy_export,
+            &results_end_user,
+            &timestep_array,
+            notional,
+        )?;
+    } // TODO add arm for FEE post processing
 
     Ok(())
 }

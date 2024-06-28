@@ -928,7 +928,7 @@ pub enum WaterPipeContentsType {
     Air,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Shower {
     pub mixer: MixerShower,
@@ -952,7 +952,7 @@ impl Shower {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct MixerShower {
@@ -965,7 +965,7 @@ pub struct MixerShower {
     pub waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct InstantElectricShower {
@@ -979,7 +979,7 @@ pub struct InstantElectricShower {
     pub energy_supply: EnergySupplyType,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ShowerType {
     MixerShower,
@@ -987,7 +987,7 @@ pub enum ShowerType {
     InstantElectricShower,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Bath {
@@ -1018,7 +1018,7 @@ impl Bath {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BathDetails {
     pub size: f64,
@@ -1027,7 +1027,7 @@ pub struct BathDetails {
     pub flowrate: f64,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUse {
@@ -1052,7 +1052,7 @@ impl OtherWaterUse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUseDetails {
@@ -1061,7 +1061,7 @@ pub struct OtherWaterUseDetails {
     pub cold_water_source: ColdWaterSourceType,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WaterDistribution {
@@ -1398,7 +1398,7 @@ pub struct Infiltration {
     pub gas_fires: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum InfiltrationShelterType {
@@ -1408,7 +1408,7 @@ pub enum InfiltrationShelterType {
     Exposed,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum InfiltrationBuildType {
@@ -1416,7 +1416,7 @@ pub enum InfiltrationBuildType {
     Flat,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum InfiltrationTestType {
     #[serde(rename = "50Pa")]
@@ -1787,7 +1787,7 @@ pub enum HeatSourceLocation {
 
 pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
@@ -1799,7 +1799,7 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub utilisation_factor: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WwhrsType {
     #[serde(alias = "WWHRS_InstantaneousSystemA")]

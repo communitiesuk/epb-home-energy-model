@@ -110,44 +110,49 @@ pub struct Corpus {
 
 impl Corpus {
     pub fn from_inputs(
-        input: Input,
+        input: &Input,
         external_conditions: Option<ExternalConditions>,
     ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
         let external_conditions = Arc::new(match external_conditions {
             Some(external_conditions) => external_conditions,
-            None => {
-                external_conditions_from_input(input.external_conditions, &simulation_time_iterator)
-            }
+            None => external_conditions_from_input(
+                input.external_conditions.clone(),
+                &simulation_time_iterator,
+            ),
         });
 
         let diverter_types: DiverterTypes = (&input.energy_supply).into();
         let mut diverters: Vec<Arc<RwLock<PVDiverter>>> = Default::default();
 
         let cold_water_sources =
-            cold_water_sources_from_input(input.cold_water_source, &input.simulation_time);
-        let wwhrs = wwhrs_from_input(input.waste_water_heat_recovery, &cold_water_sources);
+            cold_water_sources_from_input(&input.cold_water_source, &input.simulation_time);
+        let wwhrs = wwhrs_from_input(
+            input.waste_water_heat_recovery.as_ref(),
+            &cold_water_sources,
+        );
 
         let mut energy_supplies = energy_supplies_from_input(
-            input.energy_supply,
+            &input.energy_supply,
             simulation_time_iterator.clone().as_ref(),
         );
 
-        let controls = control_from_input(input.control, simulation_time_iterator.clone().as_ref());
+        let controls =
+            control_from_input(&input.control, simulation_time_iterator.clone().as_ref());
 
         let event_schedules = event_schedules_from_input(
-            input.water_heating_events,
+            &input.water_heating_events,
             simulation_time_iterator.as_ref(),
         );
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.shower,
-            input.bath,
-            input.other_water_use,
+            input.shower.as_ref().map(|s| s.clone()),
+            input.bath.as_ref().map(|b| b.clone()),
+            input.other_water_use.clone(),
             match &input.hot_water_source.hot_water_cylinder {
                 HotWaterSourceDetails::PointOfUse { .. } => None,
-                _ => input.water_distribution,
+                _ => input.water_distribution.as_ref().map(|d| d.clone()),
             },
             &cold_water_sources,
             &wwhrs,
@@ -155,7 +160,7 @@ impl Corpus {
             event_schedules.clone(),
         );
 
-        let infiltration = infiltration_from_input(input.infiltration);
+        let infiltration = infiltration_from_input(&input.infiltration);
 
         let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
 
@@ -218,11 +223,11 @@ impl Corpus {
             (zone.area() + acc.0, zone.volume() + acc.1)
         });
 
-        let mut internal_gains = internal_gains_from_input(input.internal_gains);
+        let mut internal_gains = internal_gains_from_input(&input.internal_gains);
 
         apply_appliance_gains_from_input(
             &mut internal_gains,
-            input.appliance_gains,
+            &input.appliance_gains,
             &mut energy_supplies,
             total_floor_area,
             simulation_time_iterator.total_steps(),
@@ -232,6 +237,7 @@ impl Corpus {
 
         let wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>> = input
             .heat_source_wet
+            .clone()
             .unwrap_or_default()
             .iter()
             .map(|(name, heat_source_wet_details)| {
@@ -264,7 +270,7 @@ impl Corpus {
             Default::default();
         let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
             "hw cylinder".to_string(),
-            input.hot_water_source.hot_water_cylinder,
+            &input.hot_water_source.hot_water_cylinder,
             &cold_water_sources,
             &wet_heat_sources,
             &wwhrs,
@@ -323,6 +329,7 @@ impl Corpus {
 
         let on_site_generation = input
             .on_site_generation
+            .as_ref()
             .map(|on_site_generation| {
                 anyhow::Ok(on_site_generation_from_input(
                     &on_site_generation,
@@ -1563,7 +1570,7 @@ fn external_conditions_from_input(
     )
 }
 
-fn infiltration_from_input(input: Infiltration) -> VentilationElementInfiltration {
+fn infiltration_from_input(input: &Infiltration) -> VentilationElementInfiltration {
     VentilationElementInfiltration::new(
         input.storeys_in_building,
         input.shelter,
@@ -1609,32 +1616,34 @@ impl ColdWaterSources {
 }
 
 fn cold_water_sources_from_input(
-    input: ColdWaterSourceInput,
+    input: &ColdWaterSourceInput,
     simulation_time: &SimulationTime,
 ) -> ColdWaterSources {
     ColdWaterSources {
         mains_water: input
             .mains_water
+            .as_ref()
             .map(|details| cold_water_source_from_input_details(details, simulation_time)),
         header_tank: input
             .header_tank
+            .as_ref()
             .map(|details| cold_water_source_from_input_details(details, simulation_time)),
     }
 }
 
 fn cold_water_source_from_input_details(
-    details: ColdWaterSourceDetails,
+    details: &ColdWaterSourceDetails,
     simulation_time: &SimulationTime,
 ) -> ColdWaterSource {
     ColdWaterSource::new(
-        details.temperatures,
+        details.temperatures.clone(),
         simulation_time,
         details.time_series_step,
     )
 }
 
 fn energy_supplies_from_input(
-    input: EnergySupplyInput,
+    input: &EnergySupplyInput,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> EnergySupplies {
     EnergySupplies {
@@ -1729,27 +1738,36 @@ pub struct InternalGainsCollection {
     other: Option<InternalGains>,
 }
 
-fn internal_gains_from_input(input: InternalGainsInput) -> InternalGainsCollection {
+fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollection {
     InternalGainsCollection {
-        total_internal_gains: input.total_internal_gains.map(internal_gains_from_details),
-        metabolic_gains: input.metabolic_gains.map(internal_gains_from_details),
-        _evaporative_losses: input.evaporative_losses.map(internal_gains_from_details),
+        total_internal_gains: input
+            .total_internal_gains
+            .as_ref()
+            .map(internal_gains_from_details),
+        metabolic_gains: input
+            .metabolic_gains
+            .as_ref()
+            .map(internal_gains_from_details),
+        _evaporative_losses: input
+            .evaporative_losses
+            .as_ref()
+            .map(internal_gains_from_details),
         lighting: None,
         cooking: None,
         cooking1: None,
         cooking2: None,
-        other: input.other.map(internal_gains_from_details),
+        other: input.other.as_ref().map(internal_gains_from_details),
     }
 }
 
-fn internal_gains_from_details(details: InternalGainsDetails) -> InternalGains {
+fn internal_gains_from_details(details: &InternalGainsDetails) -> InternalGains {
     let mut schedule: IndexMap<String, Value> =
-        IndexMap::from([("main".to_string(), details.schedule.main)]);
-    if let Some(day) = details.schedule.day {
-        schedule.insert("day".to_string(), day);
+        IndexMap::from([("main".to_string(), details.schedule.main.clone())]);
+    if let Some(day) = &details.schedule.day {
+        schedule.insert("day".to_string(), day.clone());
     }
     InternalGains::new(
-        expand_numeric_schedule(schedule, false)
+        expand_numeric_schedule(&schedule, false)
             .into_iter()
             .flatten()
             .collect(),
@@ -1787,7 +1805,7 @@ impl Controls {
 }
 
 fn control_from_input(
-    control_input: ControlInput,
+    control_input: &ControlInput,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> Controls {
     let mut core: Vec<HeatSourceControl> = Default::default();
@@ -1796,16 +1814,16 @@ fn control_from_input(
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
     // and the way the variants-struct crate works;
     // we should be able to improve it in time
-    for control in control_input.core {
+    for control in &control_input.core {
         match control {
             HeatSourceControlInput::HotWaterTimer(control) => {
                 core.push(HeatSourceControl::HotWaterTimer(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator),
+                    single_control_from_details(&control, simulation_time_iterator),
                 )));
             }
             HeatSourceControlInput::WindowOpening(control) => {
                 core.push(HeatSourceControl::WindowOpening(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator),
+                    single_control_from_details(&control, simulation_time_iterator),
                 )));
             }
             unknown => panic!(
@@ -1814,9 +1832,9 @@ fn control_from_input(
             ),
         }
     }
-    for (name, control) in control_input.extra {
+    for (name, control) in &control_input.extra {
         extra.insert(
-            name,
+            name.to_string(),
             Arc::new(single_control_from_details(
                 control,
                 simulation_time_iterator,
@@ -1828,7 +1846,7 @@ fn control_from_input(
 }
 
 fn single_control_from_details(
-    details: ControlDetails,
+    details: &ControlDetails,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> Control {
     match details {
@@ -1839,8 +1857,8 @@ fn single_control_from_details(
             ..
         } => Control::OnOffTimeControl(OnOffTimeControl::new(
             expand_boolean_schedule(schedule, false),
-            start_day,
-            time_series_step,
+            *start_day,
+            *time_series_step,
         )),
         ControlDetails::OnOffCostMinimisingTime {
             start_day,
@@ -1853,8 +1871,8 @@ fn single_control_from_details(
                 .into_iter()
                 .flatten()
                 .collect(),
-            start_day,
-            time_series_step,
+            *start_day,
+            *time_series_step,
             time_on_daily.unwrap_or_default(),
         )),
         ControlDetails::SetpointTime {
@@ -1869,12 +1887,12 @@ fn single_control_from_details(
         } => Control::SetpointTimeControl(
             SetpointTimeControl::new(
                 expand_numeric_schedule(schedule, true).to_vec(),
-                start_day,
-                time_series_step,
-                setpoint_min,
-                setpoint_max,
-                default_to_max,
-                advanced_start,
+                *start_day,
+                *time_series_step,
+                *setpoint_min,
+                *setpoint_max,
+                *default_to_max,
+                *advanced_start,
                 simulation_time_iterator.step_in_hours(),
             )
             .unwrap(),
@@ -1912,8 +1930,8 @@ fn single_control_from_details(
 
             Control::ToUChargeControl(ToUChargeControl {
                 schedule: expand_boolean_schedule(schedule, false),
-                start_day,
-                time_series_step,
+                start_day: *start_day,
+                time_series_step: *time_series_step,
                 charge_level: charge_level_vec,
             })
         }
@@ -1921,15 +1939,15 @@ fn single_control_from_details(
 }
 
 fn wwhrs_from_input(
-    wwhrs: Option<WasteWaterHeatRecovery>,
+    wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
 ) -> IndexMap<String, Wwhrs> {
     let mut wwhr_systems: IndexMap<String, Wwhrs> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
         for (name, system) in systems {
             wwhr_systems
-                .entry(name)
-                .or_insert(wwhr_system_from_details(system, cold_water_sources));
+                .entry(name.clone())
+                .or_insert(wwhr_system_from_details(system.clone(), cold_water_sources));
         }
     }
 
@@ -2026,7 +2044,7 @@ pub struct HotWaterEventSchedules {
 }
 
 fn event_schedules_from_input(
-    events: WaterHeatingEvents,
+    events: &WaterHeatingEvents,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> HotWaterEventSchedules {
     let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
@@ -2295,7 +2313,7 @@ fn set_up_energy_supply_unmet_demand_zones(
 
 fn apply_appliance_gains_from_input(
     internal_gains_collection: &mut InternalGainsCollection,
-    input: ApplianceGainsInput,
+    input: &ApplianceGainsInput,
     energy_supplies: &mut EnergySupplies,
     total_floor_area: f64,
     simulation_timesteps: usize,
@@ -2361,7 +2379,7 @@ fn appliance_gains_from_single_input(
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
 ) -> ApplianceGains {
-    let total_energy_supply = expand_numeric_schedule(input.schedule.clone(), false)
+    let total_energy_supply = expand_numeric_schedule(&input.schedule, false)
         .iter()
         .map(|energy_data| energy_data.unwrap() / total_floor_area)
         .collect();
@@ -2833,7 +2851,7 @@ impl HotWaterSource {
 
 fn hot_water_source_from_input(
     source_name: String,
-    input: HotWaterSourceDetails,
+    input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
     wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
     wwhrs: &IndexMap<String, Wwhrs>,
@@ -2874,16 +2892,16 @@ fn hot_water_source_from_input(
                     }
                 }
             }
-            let pipework = primary_pipework.and_then(|p| p.into());
+            let pipework = primary_pipework.as_ref().and_then(|p| p.into());
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
             let mut heat_source_for_diverter: Option<Arc<Mutex<HeatSource>>> = Default::default();
-            for (name, hs) in &heat_source {
+            for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
                 let (heat_source, energy_supply_conn_name) = heat_source_from_input(
                     name.as_str(),
                     hs,
-                    setpoint_temp,
+                    *setpoint_temp,
                     wet_heat_sources,
                     simulation_time,
                     controls,
@@ -2903,17 +2921,18 @@ fn hot_water_source_from_input(
                 heat_source_for_diverter = Some(heat_source);
                 energy_supply_conn_names.push(energy_supply_conn_name);
             }
-            let ctrl_hold_at_setpoint =
-                control_hold_at_setpoint.and_then(|ctrl| controls.get_with_string(ctrl.as_str()));
+            let ctrl_hold_at_setpoint = control_hold_at_setpoint
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl.as_str()));
             let storage_tank = Arc::new(Mutex::new(StorageTank::new(
-                volume,
-                daily_losses,
-                min_temp,
-                setpoint_temp,
+                *volume,
+                *daily_losses,
+                *min_temp,
+                *setpoint_temp,
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                pipework,
+                pipework.map(|p| p.clone()),
                 Some(
                     EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
                         .unwrap(),
@@ -2938,7 +2957,7 @@ fn hot_water_source_from_input(
                             .as_immersion_heater();
                         if let Some(im) = immersion_heater {
                             let pv_diverter =
-                                PVDiverter::new(storage_tank.clone(), im, heat_source_name);
+                                PVDiverter::new(storage_tank.clone(), im, heat_source_name.clone());
                             energy_supply
                                 .write()
                                 .connect_diverter(pv_diverter.clone())
@@ -2993,7 +3012,7 @@ fn hot_water_source_from_input(
             energy_supply,
         } => {
             let energy_supply = energy_supplies
-                .ensured_get_for_type(energy_supply, simulation_time.total_steps())?;
+                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name = source_name;
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let energy_supply_conn =
@@ -3001,8 +3020,8 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             HotWaterSource::PointOfUse(PointOfUse::new(
-                power,
-                efficiency,
+                *power,
+                *efficiency,
                 energy_supply_conn,
                 cold_water_source,
             ))
@@ -3046,7 +3065,7 @@ fn hot_water_source_from_input(
 }
 
 fn cold_water_source_for_type(
-    cold_water_source_type: ColdWaterSourceType,
+    cold_water_source_type: &ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
 ) -> WaterSourceWithTemperature {
     WaterSourceWithTemperature::ColdWaterSource(Arc::new(match cold_water_source_type {

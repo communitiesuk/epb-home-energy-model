@@ -4,13 +4,14 @@ use crate::input::{
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
     WaterHeatingEvent, WaterHeatingEventType,
 };
+use crate::output::Output;
 use crate::simulation_time::SimulationTime;
 use crate::wrappers::future_homes_standard::fhs_hw_events::{
     reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
 };
 use anyhow::{anyhow, bail};
 use arrayvec::{ArrayString, ArrayVec};
-use csv::Reader;
+use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use log::warn;
@@ -106,7 +107,7 @@ struct FactorData {
     #[serde(rename = "Fuel Code")]
     fuel_code: Option<String>,
     #[serde(rename = "Fuel")]
-    fuel: String,
+    _fuel: String,
     #[serde(rename = "Emissions Factor kgCO2e/kWh")]
     emissions_factor: f64,
     #[serde(rename = "Emissions Factor kgCO2e/kWh including out-of-scope emissions")]
@@ -117,13 +118,13 @@ struct FactorData {
 
 pub fn apply_fhs_postprocessing(
     input: &Input,
+    output: &impl Output,
     energy_import: &IndexMap<ArrayString<64>, Vec<f64>>,
     energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
     results_end_user: &ResultsEndUser,
     timestep_array: &[f64],
-    _file_path: &str,
-    _notional: (),
-) {
+    notional: bool,
+) -> anyhow::Result<()> {
     let no_of_timesteps = timestep_array.len();
 
     // Add unmet demand to list of EnergySupply objects
@@ -157,11 +158,11 @@ pub fn apply_fhs_postprocessing(
             .into_iter(),
         )
     {
-        let mut supply_emis_result = emis_results.entry(energy_supply_key.clone()).or_default();
-        let mut supply_emis_oos_result = emis_oos_results
+        let supply_emis_result = emis_results.entry(energy_supply_key.clone()).or_default();
+        let supply_emis_oos_result = emis_oos_results
             .entry(energy_supply_key.clone())
             .or_default();
-        let mut supply_pe_result = pe_results.entry(energy_supply_key.clone()).or_default();
+        let supply_pe_result = pe_results.entry(energy_supply_key.clone()).or_default();
 
         let fuel_code = energy_supply_details.fuel;
 
@@ -237,8 +238,8 @@ pub fn apply_fhs_postprocessing(
 
         // Calculate energy generated and associated emissions/PE
         let mut energy_generated = vec![0.; no_of_timesteps];
-        for (end_user_name, end_user_energy) in
-            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].iter()
+        for end_user_energy in
+            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].values()
         {
             if end_user_energy.iter().sum::<f64>() < 0. {
                 for t_idx in 0..no_of_timesteps {
@@ -351,7 +352,17 @@ pub fn apply_fhs_postprocessing(
         / tfa;
 
     // Write results to output files
-    // TODO implement writing of files
+    write_postproc_file(output, "emissions", emis_results, no_of_timesteps)?;
+    write_postproc_file(
+        output,
+        "emissions_incl_out_of_scope",
+        emis_oos_results,
+        no_of_timesteps,
+    )?;
+    write_postproc_file(output, "primary_energy", pe_results, no_of_timesteps)?;
+    write_postproc_summary_file(output, total_emissions_rate, total_pe_rate, notional)?;
+
+    Ok(())
 }
 
 #[derive(Default)]
@@ -361,6 +372,91 @@ struct FhsCalculationResult {
     generated: Vec<f64>,
     unregulated: Vec<f64>,
     total: Vec<f64>,
+}
+
+impl FhsCalculationResult {
+    fn labels(&self) -> [&'static str; 5] {
+        ["import", "export", "generated", "unregulated", "total"]
+    }
+
+    fn printable_values_for_index(&self, index: usize) -> [String; 5] {
+        [
+            self.import[index].to_string(),
+            self.export[index].to_string(),
+            self.generated[index].to_string(),
+            self.unregulated[index].to_string(),
+            self.total[index].to_string(),
+        ]
+    }
+}
+
+fn write_postproc_file(
+    output: &impl Output,
+    file_location: &str,
+    results: IndexMap<String, FhsCalculationResult>,
+    no_of_timesteps: usize,
+) -> anyhow::Result<()> {
+    let file_location = format!("postproc_{file_location}");
+
+    let mut row_headers: Vec<String> = Default::default();
+    let mut rows_results: Vec<Vec<String>> = Default::default();
+
+    // Loop over each EnergySupply object and add headers and results to rows
+    for (energy_supply, energy_supply_results) in &results {
+        for result_name in energy_supply_results.labels() {
+            // Create header row
+            row_headers.push(format!("{energy_supply} {result_name}"));
+        }
+    }
+
+    // Create results rows
+    for t_idx in 0..no_of_timesteps {
+        let mut row = vec![];
+        for energy_supply_results in results.values() {
+            row.push(energy_supply_results.printable_values_for_index(t_idx));
+        }
+        rows_results.push(row.iter().flatten().cloned().collect());
+    }
+
+    let writer = output.writer_for_location_key(&file_location)?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    writer.write_record(row_headers)?;
+    for record in rows_results {
+        writer.write_record(record)?;
+    }
+
+    writer.flush()?;
+
+    Ok(())
+}
+
+fn write_postproc_summary_file(
+    output: &impl Output,
+    total_emissions_rate: f64,
+    total_pe_rate: f64,
+    notional: bool,
+) -> anyhow::Result<()> {
+    let (emissions_rate_name, pe_rate_name) = if notional {
+        ("TER", "TPER")
+    } else {
+        ("DER", "DPER")
+    };
+
+    let writer = output.writer_for_location_key("postproc_summary")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    writer.write_record(["", "", "Total"])?;
+    writer.write_record([
+        emissions_rate_name,
+        "kgCO2/m2",
+        total_emissions_rate.to_string().as_str(),
+    ])?;
+    writer.write_record([pe_rate_name, "kWh/m2", total_pe_rate.to_string().as_str()])?;
+
+    writer.flush()?;
+
+    Ok(())
 }
 
 fn calc_tfa(input: &InputForProcessing) -> f64 {
