@@ -144,6 +144,7 @@ pub struct ApplianceGainsDetails {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ApplianceGainType {
+    Appliances,
     Lighting,
     Cooking,
 }
