@@ -599,7 +599,7 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
     // 08:30 - 22:00
     let mut heating_fhs_weekend = Vec::with_capacity(48);
     heating_fhs_weekend.extend(repeat(false).take(17));
-    heating_fhs_weekend.extend(repeat(true).take(29));
+    heating_fhs_weekend.extend(repeat(true).take(27));
     heating_fhs_weekend.extend(repeat(false).take(4));
     let heating_fhs_weekend: [bool; 48] = heating_fhs_weekend.try_into().unwrap();
 
