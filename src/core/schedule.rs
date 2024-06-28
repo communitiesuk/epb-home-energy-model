@@ -255,7 +255,7 @@ mod tests {
         boolean_schedule_expanded: BooleanSchedule,
     ) {
         assert_eq!(
-            expand_boolean_schedule(boolean_schedule, false),
+            expand_boolean_schedule(&boolean_schedule, false),
             boolean_schedule_expanded,
             "Incorrect expansion of Boolean schedule"
         );
@@ -289,7 +289,7 @@ mod tests {
         numeric_schedule_expanded: NumericSchedule,
     ) {
         assert_eq!(
-            expand_numeric_schedule(numeric_schedule, false),
+            expand_numeric_schedule(&numeric_schedule, false),
             numeric_schedule_expanded,
             "Incorrect expansion of numeric schedule"
         );
@@ -323,7 +323,7 @@ mod tests {
         gappy_numeric_schedule_expanded: NumericSchedule,
     ) {
         assert_eq!(
-            expand_numeric_schedule(gappy_numeric_schedule, true),
+            expand_numeric_schedule(&gappy_numeric_schedule, true),
             gappy_numeric_schedule_expanded,
             "Incorrect expansion of numeric schedule"
         );
