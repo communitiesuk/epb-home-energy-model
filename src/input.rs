@@ -50,11 +50,9 @@ pub struct Input {
     part_o_active_cooling_required: Option<bool>,
     #[allow(dead_code)]
     ground_floor_area: Option<f64>,
-    #[allow(dead_code)]
     number_of_bedrooms: Option<usize>,
     #[allow(dead_code)]
     number_of_wet_rooms: Option<usize>,
-    #[allow(dead_code)]
     heating_control_type: Option<HeatingControlType>,
     #[allow(dead_code)]
     #[serde(rename = "WaterHeatSchedDefault")]
@@ -1954,6 +1952,14 @@ impl InputForProcessing {
         self.input.heating_control_type
     }
 
+    pub fn set_heating_control_type(
+        &mut self,
+        heating_control_type_value: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input.heating_control_type = Some(serde_json::from_value(heating_control_type_value)?);
+        Ok(self)
+    }
+
     pub fn add_control(
         &mut self,
         control_key: impl Into<String>,
@@ -2006,6 +2012,20 @@ impl InputForProcessing {
             .clone())
     }
 
+    pub fn set_space_heat_system_for_zone(
+        &mut self,
+        zone: &str,
+        system_name: &str,
+    ) -> anyhow::Result<&Self> {
+        let zone = self
+            .input
+            .zone
+            .get_mut(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?;
+        zone.space_heat_system = Some(system_name.to_string());
+        Ok(self)
+    }
+
     pub fn space_cool_system_for_zone(&self, zone: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .input
@@ -2014,6 +2034,20 @@ impl InputForProcessing {
             .ok_or(anyhow!("Used zone key for a zone that does not exist"))?
             .space_cool_system
             .clone())
+    }
+
+    pub fn set_space_cool_system_for_zone(
+        &mut self,
+        zone: &str,
+        system_name: &str,
+    ) -> anyhow::Result<&Self> {
+        let zone = self
+            .input
+            .zone
+            .get_mut(zone)
+            .ok_or(anyhow!("Used zone key for a zone that does not exist"))?;
+        zone.space_cool_system = Some(system_name.to_string());
+        Ok(self)
     }
 
     pub fn lighting_efficacy_for_zone(&self, zone: &str) -> anyhow::Result<Option<f64>> {
@@ -2025,6 +2059,18 @@ impl InputForProcessing {
             .lighting
             .as_ref()
             .map(|lighting| lighting.efficacy))
+    }
+
+    pub fn set_lighting_efficacy_for_all_zones(&mut self, efficacy: f64) -> &Self {
+        for lighting in self
+            .input
+            .zone
+            .values_mut()
+            .filter_map(|zone| zone.lighting.as_mut())
+        {
+            lighting.efficacy = efficacy;
+        }
+        self
     }
 
     pub fn set_control_window_opening_for_zone(
@@ -2302,6 +2348,11 @@ impl InputForProcessing {
         self.input.part_g_compliance
     }
 
+    pub fn set_part_g_compliance(&mut self, is_compliant: bool) -> &Self {
+        self.input.part_g_compliance = Some(is_compliant);
+        self
+    }
+
     pub fn add_water_heating_event(
         &mut self,
         event_type: WaterHeatingEventType,
@@ -2332,6 +2383,113 @@ impl InputForProcessing {
             .cold_water_source
             .set_cold_water_source_details_by_key(key, serde_json::from_value(source_details)?);
         Ok(self)
+    }
+
+    pub fn zero_infiltration_extract_fans(&mut self) -> anyhow::Result<&Self> {
+        self.input.infiltration.extract_fans = 0;
+        Ok(self)
+    }
+
+    pub fn infiltration_volume(&self) -> f64 {
+        self.input.infiltration.volume
+    }
+
+    pub fn set_ventilation(&mut self, ventilation_value: Value) -> anyhow::Result<&Self> {
+        self.input.ventilation = Some(serde_json::from_value(ventilation_value)?);
+        Ok(self)
+    }
+
+    pub fn set_hot_water_cylinder(&mut self, source_value: Value) -> anyhow::Result<&Self> {
+        self.input.hot_water_source.hot_water_cylinder = serde_json::from_value(source_value)?;
+        Ok(self)
+    }
+
+    pub fn set_water_distribution(&mut self, distribution_value: Value) -> anyhow::Result<&Self> {
+        self.input.water_distribution = Some(serde_json::from_value(distribution_value)?);
+        Ok(self)
+    }
+
+    pub fn set_shower(&mut self, shower_value: Value) -> anyhow::Result<&Self> {
+        self.input.shower = Some(serde_json::from_value(shower_value)?);
+        Ok(self)
+    }
+
+    pub fn set_bath(&mut self, bath_value: Value) -> anyhow::Result<&Self> {
+        self.input.bath = Some(serde_json::from_value(bath_value)?);
+        Ok(self)
+    }
+
+    pub fn set_other_water_use(&mut self, other_water_use_value: Value) -> anyhow::Result<&Self> {
+        self.input.other_water_use = Some(serde_json::from_value(other_water_use_value)?);
+        Ok(self)
+    }
+
+    pub fn remove_wwhrs(&mut self) -> &Self {
+        self.input.waste_water_heat_recovery = None;
+        self
+    }
+
+    pub fn remove_space_heat_systems(&mut self) -> &Self {
+        self.input.space_heat_system = None;
+        self
+    }
+
+    pub fn set_space_heat_system_for_key(
+        &mut self,
+        key: &str,
+        space_heat_system_value: Value,
+    ) -> anyhow::Result<&Self> {
+        let mut empty_details: IndexMap<String, SpaceHeatSystemDetails> = Default::default();
+        let system_details: SpaceHeatSystemDetails =
+            serde_json::from_value(space_heat_system_value)?;
+        let systems = self
+            .input
+            .space_heat_system
+            .as_mut()
+            .unwrap_or(&mut empty_details);
+        systems.insert(key.to_string(), system_details);
+        Ok(self)
+    }
+
+    pub fn remove_space_cool_systems(&mut self) -> &Self {
+        self.input.space_cool_system = None;
+        self
+    }
+
+    pub fn set_space_cool_system_for_key(
+        &mut self,
+        key: &str,
+        space_cool_system_value: Value,
+    ) -> anyhow::Result<&Self> {
+        let mut empty_details: IndexMap<String, SpaceCoolSystemDetails> = Default::default();
+        let system_details: SpaceCoolSystemDetails =
+            serde_json::from_value(space_cool_system_value)?;
+        let systems = self
+            .input
+            .space_cool_system
+            .as_mut()
+            .unwrap_or(&mut empty_details);
+        systems.insert(key.to_string(), system_details);
+        Ok(self)
+    }
+
+    pub fn remove_on_site_generation(&mut self) -> &mut Self {
+        self.input.on_site_generation = None;
+        self
+    }
+
+    pub fn remove_all_diverters_from_energy_supplies(&mut self) -> &mut Self {
+        for energy_supply in self.input.energy_supply.values_mut() {
+            energy_supply.diverter = None;
+        }
+        self
+    }
+
+    pub fn remove_all_batteries_from_energy_supplies(&mut self) -> &mut Self {
+        for energy_supply in self.input.energy_supply.values_mut() {
+            energy_supply.electric_battery = None;
+        }
+        self
     }
 }
 

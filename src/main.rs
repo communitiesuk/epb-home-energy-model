@@ -87,6 +87,8 @@ fn main() -> anyhow::Result<()> {
         external_conditions,
         args.preprocess_only,
         args.wrapper_choice.future_homes_standard,
+        args.wrapper_choice.future_homes_standard_fee,
+        false,
         false,
         false,
         false,

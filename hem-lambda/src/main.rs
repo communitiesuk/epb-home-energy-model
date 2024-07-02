@@ -35,6 +35,8 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         false,
         false,
         false,
+        false,
+        false,
     )?;
 
     // Return something that implements IntoResponse.

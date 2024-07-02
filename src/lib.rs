@@ -35,6 +35,9 @@ use std::fmt::{Display, Formatter};
 use std::io::Read;
 use std::sync::Arc;
 use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
+use wrappers::future_homes_standard::future_homes_standard_fee::{
+    apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
+};
 
 pub fn run_project(
     input: impl Read,
@@ -42,9 +45,11 @@ pub fn run_project(
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,
     fhs_assumptions: bool,
-    _fhs_fee_assumptions: bool,
+    fhs_fee_assumptions: bool,
     fhs_not_a_assumptions: bool,
     fhs_not_b_assumptions: bool,
+    fhs_fee_not_a_assumptions: bool,
+    fhs_fee_not_b_assumptions: bool,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> Result<(), anyhow::Error> {
@@ -53,6 +58,8 @@ pub fn run_project(
     // do wrapper pre-processing here
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
         apply_fhs_preprocessing(&mut input_for_processing)?;
+    } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
+        apply_fhs_fee_preprocessing(&mut input_for_processing)?;
     }
 
     let input = input_for_processing.finalize();
@@ -182,7 +189,14 @@ pub fn run_project(
             &timestep_array,
             notional,
         )?;
-    } // TODO add arm for FEE post processing
+    } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
+        apply_fhs_fee_postprocessing(
+            &output,
+            total_floor_area,
+            space_heat_demand_total,
+            space_cool_demand_total,
+        )?;
+    }
 
     Ok(())
 }

@@ -25,7 +25,7 @@ const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
 const _PE_FACTOR_NAME: &str = "Primary Energy Factor kWh/kWh delivered";
 
-const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
+pub const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 const APPL_OBJ_NAME: &str = "appliances";
 const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
 const GAS_COOK_OBJ_NAME: &str = "Gascooking";
@@ -459,7 +459,7 @@ fn write_postproc_summary_file(
     Ok(())
 }
 
-fn calc_tfa(input: &InputForProcessing) -> f64 {
+pub fn calc_tfa(input: &InputForProcessing) -> f64 {
     input.total_zone_area()
 }
 
