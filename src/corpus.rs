@@ -147,12 +147,12 @@ impl Corpus {
         );
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.shower.as_ref().map(|s| s.clone()),
-            input.bath.as_ref().map(|b| b.clone()),
+            input.shower.clone(),
+            input.bath.clone(),
             input.other_water_use.clone(),
             match &input.hot_water_source.hot_water_cylinder {
                 HotWaterSourceDetails::PointOfUse { .. } => None,
-                _ => input.water_distribution.as_ref().map(|d| d.clone()),
+                _ => input.water_distribution.clone(),
             },
             &cold_water_sources,
             &wwhrs,
@@ -332,7 +332,7 @@ impl Corpus {
             .as_ref()
             .map(|on_site_generation| {
                 anyhow::Ok(on_site_generation_from_input(
-                    &on_site_generation,
+                    on_site_generation,
                     &mut energy_supplies,
                     external_conditions.clone(),
                     &simulation_time_iterator,
@@ -1814,12 +1814,12 @@ fn control_from_input(
         match control {
             HeatSourceControlInput::HotWaterTimer(control) => {
                 core.push(HeatSourceControl::HotWaterTimer(Arc::new(
-                    single_control_from_details(&control, simulation_time_iterator),
+                    single_control_from_details(control, simulation_time_iterator),
                 )));
             }
             HeatSourceControlInput::WindowOpening(control) => {
                 core.push(HeatSourceControl::WindowOpening(Arc::new(
-                    single_control_from_details(&control, simulation_time_iterator),
+                    single_control_from_details(control, simulation_time_iterator),
                 )));
             }
             unknown => panic!(
@@ -2928,7 +2928,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                pipework.map(|p| p.clone()),
+                pipework.cloned(),
                 Some(
                     EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
                         .unwrap(),
@@ -2940,7 +2940,7 @@ fn hot_water_source_from_input(
                 let energy_supply_type = hs.energy_supply_type();
                 if let Some(diverter) = diverter_types.get_for_supply_type(energy_supply_type) {
                     if diverter.storage_tank.matches(&source_name)
-                        && diverter.heat_source.matches(&heat_source_name)
+                        && diverter.heat_source.matches(heat_source_name)
                     {
                         let energy_supply = energy_supplies.ensured_get_for_type(
                             hs.energy_supply_type(),

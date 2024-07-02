@@ -242,9 +242,8 @@ pub fn apply_fhs_postprocessing(
             results_end_user[&KeyString::from(&energy_supply_key).unwrap()].values()
         {
             if end_user_energy.iter().sum::<f64>() < 0. {
-                for t_idx in 0..no_of_timesteps {
-                    // Subtract here because generation is represented as negative demand
-                    *energy_generated.get_mut(t_idx).unwrap() -= end_user_energy[t_idx];
+                for (t_idx, energy_generated_value) in energy_generated.iter_mut().enumerate() {
+                    *energy_generated_value -= end_user_energy[t_idx];
                 }
             }
         }
@@ -293,8 +292,8 @@ pub fn apply_fhs_postprocessing(
             if [APPL_OBJ_NAME, ELEC_COOK_OBJ_NAME, GAS_COOK_OBJ_NAME]
                 .contains(&end_user_name.as_str())
             {
-                for t_idx in 0..no_of_timesteps {
-                    *energy_unregulated.get_mut(t_idx).unwrap() += end_user_energy[t_idx];
+                for (t_idx, energy_unregulated_value) in energy_unregulated.iter_mut().enumerate() {
+                    *energy_unregulated_value += end_user_energy[t_idx];
                 }
             }
         }

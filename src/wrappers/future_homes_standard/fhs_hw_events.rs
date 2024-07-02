@@ -14,7 +14,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
 use std::iter::Iterator;
-use std::sync::Arc;
+use std::rc::Rc;
 use strum::EnumCount;
 use strum_macros::EnumCount as EnumCountMacro;
 
@@ -98,7 +98,7 @@ pub fn reset_events_and_provide_drawoff_generator(
         showers.push(Drawoff {
             event_type: WaterHeatingEventType::Shower,
             name: shower,
-            duration_fn: Arc::new(Mutex::new(Box::new(shower_duration_func))),
+            duration_fn: Rc::new(Mutex::new(Box::new(shower_duration_func))),
         });
     }
 
@@ -109,7 +109,7 @@ pub fn reset_events_and_provide_drawoff_generator(
         let bath_flowrate = input.flowrate_for_bath_field(bath.as_str()).unwrap();
         baths.push(Drawoff {
             event_type: WaterHeatingEventType::Bath,
-            duration_fn: Arc::new(Mutex::new(Box::new(partial!(move bath_duration_func =>
+            duration_fn: Rc::new(Mutex::new(Box::new(partial!(move bath_duration_func =>
                 bath_size,
                 bath_flowrate,
                 _
@@ -123,7 +123,7 @@ pub fn reset_events_and_provide_drawoff_generator(
         let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
             event_type: WaterHeatingEventType::Other,
-            duration_fn: Arc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
+            duration_fn: Rc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
                 other_flow_rate,
                 _
             )))),
@@ -159,7 +159,7 @@ pub fn reset_events_and_provide_drawoff_generator(
         other.push(Drawoff {
             event_type: WaterHeatingEventType::Other,
             name: "other".to_string(),
-            duration_fn: Arc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
+            duration_fn: Rc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
                 other_flow_rate,
                 _
             )))),
@@ -170,23 +170,23 @@ pub fn reset_events_and_provide_drawoff_generator(
     // If neither is present then bath sized drawoff
     match (showers.is_empty(), baths.is_empty()) {
         (true, false) => {
-            showers = baths.clone();
+            showers.clone_from(&baths);
         }
         (false, true) => {
-            baths = showers.clone();
+            baths.clone_from(&showers);
         }
         (false, false) => {
             baths.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
                 name: "other".to_string(),
-                duration_fn: Arc::new(Mutex::new(Box::new(
+                duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => 100., 8.0, _),
                 ))),
             });
             showers.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
                 name: "other".to_string(),
-                duration_fn: Arc::new(Mutex::new(Box::new(
+                duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => 100., 8.0, _),
                 ))),
             });
@@ -221,7 +221,7 @@ impl DrawoffGenerator {
     }
 }
 
-type DurationFn = Arc<Mutex<Box<dyn FnMut(DrawoffEvent) -> f64>>>;
+type DurationFn = Rc<Mutex<Box<dyn FnMut(DrawoffEvent) -> f64>>>;
 
 #[derive(Clone)]
 pub struct Drawoff {

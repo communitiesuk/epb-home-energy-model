@@ -7,11 +7,11 @@ pub type NumericSchedule = Vec<Option<f64>>;
 const MAIN_SCHEDULE: &str = "main";
 
 pub fn expand_boolean_schedule(schedule: &Schedule, nullable: bool) -> BooleanSchedule {
-    process_boolean_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), &schedule, nullable)
+    process_boolean_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), schedule, nullable)
 }
 
 pub fn expand_numeric_schedule(schedule: &Schedule, nullable: bool) -> NumericSchedule {
-    process_numeric_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), &schedule, nullable)
+    process_numeric_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), schedule, nullable)
 }
 
 fn process_boolean_schedule_entries(
