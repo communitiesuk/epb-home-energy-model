@@ -195,5 +195,7 @@ pub fn apply_fhs_fee_postprocessing(
         fabric_energy_eff.to_string().as_str(),
     ])?;
 
+    writer.flush()?;
+
     Ok(())
 }
