@@ -17,8 +17,8 @@ phases:
       - NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
       # install cargo-lambda
-      - brew tap cargo-lambda/cargo-lambda
-      - brew install cargo-lambda
+      - /home/linuxbrew/.linuxbrew/bin/brew tap cargo-lambda/cargo-lambda
+      - /home/linuxbrew/.linuxbrew/bin/brew install cargo-lambda
 
       # build the lambda
       - cd hem-lambda
