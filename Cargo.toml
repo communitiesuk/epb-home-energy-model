@@ -29,7 +29,7 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 rand_distr = "0.4.3"
 schemars = { version = "0.8.21", optional = true }
-serde = { version = "1.0.203", features = ["derive", "rc"] }
+serde = { version = "1.0.204", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.119"
 statrs = "0.17.1"
