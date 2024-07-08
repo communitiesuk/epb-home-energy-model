@@ -3,7 +3,17 @@ version: 0.2
 phases:
   build:
     commands:
-      - echo "Running commands"
+      # install rust and cargo
+      - curl https://sh.rustup.rs -sSf | sh
+      - cargo --version
+
+      # install cargo-lambda
+      - brew tap cargo-lambda/cargo-lambda
+      - brew install cargo-lambda
+
+      # build the lambda
+      - cd hem-lambda
+      - cargo lambda build --arm64 -r --package=hem-lambda
       
   post_build:
     commands:
