@@ -1,0 +1,10 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - echo "Running commands"
+      
+  post_build:
+    commands:
+      - echo "Running post_build commands"
