@@ -6,6 +6,11 @@ phases:
       # install rust and cargo
       # -y option to accept default configuration
       - curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+      # configure shell so we can use "cargo" command
+      . "$HOME/.cargo/env"     
+
+      # reference cargo directly
       - cargo --version
 
       # install cargo-lambda
@@ -14,7 +19,7 @@ phases:
 
       # build the lambda
       - cd hem-lambda
-      - cargo lambda build --arm64 -r --package=hem-lambda
+      - ~/.cargo/bin/cargo lambda build --arm64 -r --package=hem-lambda
       
   post_build:
     commands:
