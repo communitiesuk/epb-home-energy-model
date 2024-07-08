@@ -13,6 +13,9 @@ phases:
       # reference cargo directly
       - cargo --version
 
+      # install homebrew
+      - NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
       # install cargo-lambda
       - brew tap cargo-lambda/cargo-lambda
       - brew install cargo-lambda
