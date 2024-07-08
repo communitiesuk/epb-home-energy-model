@@ -4,7 +4,8 @@ phases:
   build:
     commands:
       # install rust and cargo
-      - curl https://sh.rustup.rs -sSf | sh
+      # -y option to accept default configuration
+      - curl https://sh.rustup.rs -sSf | sh -s -- -y
       - cargo --version
 
       # install cargo-lambda
