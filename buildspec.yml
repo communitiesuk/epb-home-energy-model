@@ -16,16 +16,19 @@ phases:
       # install homebrew
       - NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
+      # temporary - list out available cargo commands
+      - cargo --list
+
       # install cargo-lambda
       - /home/linuxbrew/.linuxbrew/bin/brew tap cargo-lambda/cargo-lambda
       - /home/linuxbrew/.linuxbrew/bin/brew install cargo-lambda
 
+      # temporary - list out available cargo commands
+      - cargo --list
+
       # build the lambda
       - cd hem-lambda
       - cargo lambda build --arm64 -r --package=hem-lambda
-
-      # temporary - list out available cargo commands
-      - cargo --list
       
   post_build:
     commands:
