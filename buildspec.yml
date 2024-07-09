@@ -15,13 +15,15 @@ phases:
 
       # install homebrew
       - NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      - (echo; echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"') >> /root/.bashrc
+      - eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
       # temporary - list out available cargo commands
       - cargo --list
 
       # install cargo-lambda
-      - /home/linuxbrew/.linuxbrew/bin/brew tap cargo-lambda/cargo-lambda
-      - /home/linuxbrew/.linuxbrew/bin/brew install cargo-lambda
+      - brew tap cargo-lambda/cargo-lambda
+      - brew install cargo-lambda
 
       # temporary - list out available cargo commands
       - cargo --list
