@@ -23,6 +23,9 @@ phases:
       # build the lambda
       - cd hem-lambda
       - cargo lambda build --arm64 -r --package=hem-lambda
+
+      # temporary - list out available cargo commands
+      - cargo --list
       
   post_build:
     commands:
