@@ -128,10 +128,16 @@ impl DomesticHotWaterDemand {
                 .shower
                 .get(name)
                 .and_then(|schedule| schedule[timestep_idx].clone());
+
+            // println!("Timestep {:?}. Usage events for shower {:?}: {:?}", timestep_idx, name, usage_events);
+            // println!("Event schedule shower {:?} {:?}", name, self.event_schedules.shower.get(name));
+
             let cold_water_source = shower.get_cold_water_source();
             let cold_water_temperature = cold_water_source.temperature(timestep_idx);
 
             for event in usage_events.iter().flatten() {
+                // println!("An event happened! Name: {:?}, Shower: {:?}, Event: {:?}", name, shower, event);
+                println!("An event happened! Name: {}",name);
                 let shower_temp = event
                     .temperature
                     .expect("This usage event is expected to have an associated temperature.");

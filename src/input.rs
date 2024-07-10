@@ -966,7 +966,7 @@ impl Shower {
     }
 
     pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
-        name == "ies" && self.ies.is_some()
+        name == "IES" && self.ies.is_some()
     }
 }
 
@@ -1148,7 +1148,7 @@ pub struct ShowerEvents {
 impl ShowerEvents {
     fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
         match name {
-            "ies" => {
+            "IES" => {
                 self.ies.push(event);
             }
             "mixer" => {

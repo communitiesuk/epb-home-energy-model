@@ -2046,7 +2046,7 @@ fn event_schedules_from_input(
     let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
     let shower_events = &events.shower;
     shower_schedules.insert(
-        "ies".to_string(),
+        "IES".to_string(),
         schedule_event_from_input(shower_events.ies.iter().collect(), simulation_time_iterator),
     );
     shower_schedules.insert(
