@@ -8,8 +8,8 @@ phases:
       - curl https://sh.rustup.rs -sSf | sh -s -- -y
 
       # configure shell so we can use "cargo" command
-      - . "$HOME/.cargo/env"     
-
+      - . "$HOME/.cargo/env"
+      
       # reference cargo directly
       - cargo --version
 
@@ -30,8 +30,8 @@ phases:
 
       # build the lambda
       - cd hem-lambda
-      - cargo lambda build --arm64 -r --package=hem-lambda
-      
+        #  - cargo lambda build --arm64 -r --package=hem-lambda
+
   post_build:
     commands:
       - echo "Running post_build commands"
