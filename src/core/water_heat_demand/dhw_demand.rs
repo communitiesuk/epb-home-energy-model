@@ -394,7 +394,7 @@ fn input_to_water_distribution_pipework(
         input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
         length_average,
         input.insulation_thermal_conductivity,
-        input.insulation_thickness_mm,
+        input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
         input.surface_reflectivity,
         input.pipe_contents,
     )
