@@ -60,7 +60,7 @@ impl DomesticHotWaterDemand {
                 showers
             })
             .collect();
-        let baths = bath_input
+        let baths: HashMap<String, Bath> = bath_input
             .iter()
             .flat_map(|input| match &input.medium {
                 Some(details) => vec![(
@@ -70,7 +70,7 @@ impl DomesticHotWaterDemand {
                 None => vec![],
             })
             .collect();
-        let other = other_hot_water_input
+        let other: HashMap<String, OtherHotWater> = other_hot_water_input
             .iter()
             .flat_map(|input| match &input.other {
                 Some(details) => vec![(
@@ -80,10 +80,12 @@ impl DomesticHotWaterDemand {
                 None => vec![],
             })
             .collect();
-        let total_number_tapping_points = showers
+        let mixer_shower_count = showers
             .iter()
             .filter(|(_, shower)| !matches!(shower, Shower::InstantElectricShower(_)))
             .count();
+        let total_number_tapping_points = mixer_shower_count + baths.len() + other.len();
+
         let hot_water_distribution_pipework = water_distribution_input
             .iter()
             .flat_map(|input| {
