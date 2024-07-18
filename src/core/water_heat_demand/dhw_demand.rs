@@ -326,7 +326,7 @@ fn mixer_shower_input_to_shower(
     let wwhrs_instance: Option<Wwhrs> = input
         .waste_water_heat_recovery
         .as_ref()
-        .and_then(|w| wwhrs.get(&w.to_string()).cloned());
+        .and_then(|w| wwhrs.get(&w.as_str().unwrap().to_string()).cloned());
 
     Shower::MixerShower(MixerShower::new(
         input.flowrate,
