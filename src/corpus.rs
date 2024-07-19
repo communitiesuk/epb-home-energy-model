@@ -1723,7 +1723,7 @@ impl DiverterTypes {
 }
 
 fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<EnergyDiverter> {
-    supply.map(|supply| supply.diverter.clone().unwrap_or_default())
+    supply.and_then(|supply| supply.diverter.clone())
 }
 
 #[derive(Default)]
