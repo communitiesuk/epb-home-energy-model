@@ -85,7 +85,7 @@ pub struct Corpus {
     pub energy_supplies: EnergySupplies,
     pub internal_gains: InternalGainsCollection,
     pub controls: Controls,
-    pub wwhrs: IndexMap<String, Wwhrs>,
+    pub wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
     pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
     pub ventilation: Option<Arc<Mutex<VentilationElement>>>,
@@ -1937,13 +1937,16 @@ fn single_control_from_details(
 fn wwhrs_from_input(
     wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
-) -> IndexMap<String, Wwhrs> {
-    let mut wwhr_systems: IndexMap<String, Wwhrs> = IndexMap::from([]);
+) -> IndexMap<String, Arc<Mutex<Wwhrs>>> {
+    let mut wwhr_systems: IndexMap<String, Arc<Mutex<Wwhrs>>> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
         for (name, system) in systems {
             wwhr_systems
                 .entry(name.clone())
-                .or_insert(wwhr_system_from_details(system.clone(), cold_water_sources));
+                .or_insert(Arc::new(Mutex::new(wwhr_system_from_details(
+                    system.clone(),
+                    cold_water_sources,
+                ))));
         }
     }
 
@@ -2850,7 +2853,7 @@ fn hot_water_source_from_input(
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
     wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
-    wwhrs: &IndexMap<String, Wwhrs>,
+    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     diverter_types: &DiverterTypes,
@@ -2875,17 +2878,8 @@ fn hot_water_source_from_input(
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             if !wwhrs.is_empty() {
                 for heat_recovery_system in wwhrs.values() {
-                    match heat_recovery_system {
-                        Wwhrs::WWHRSInstantaneousSystemC(c) => {
-                            cold_water_source =
-                                WaterSourceWithTemperature::WwhrsC(Arc::new((*c).clone()));
-                        }
-                        Wwhrs::WWHRSInstantaneousSystemA(a) => {
-                            cold_water_source =
-                                WaterSourceWithTemperature::WwhrsA(Arc::new((*a).clone()));
-                        }
-                        _ => {}
-                    }
+                    cold_water_source =
+                        WaterSourceWithTemperature::Wwhrs(heat_recovery_system.clone());
                 }
             }
             let pipework = primary_pipework.as_ref().and_then(|p| p.into());

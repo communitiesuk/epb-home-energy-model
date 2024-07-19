@@ -29,6 +29,16 @@ impl Wwhrs {
             }
         }
     }
+
+    pub fn temperature(&self) -> f64 {
+        match self {
+            Wwhrs::WWHRSInstantaneousSystemB(_) => {
+                unreachable!("A SystemB WWHRS does not expect to have temperature() called on it")
+            }
+            Wwhrs::WWHRSInstantaneousSystemC(c) => c.temperature(),
+            Wwhrs::WWHRSInstantaneousSystemA(a) => a.temperature(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

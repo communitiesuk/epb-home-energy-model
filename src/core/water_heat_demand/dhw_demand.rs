@@ -17,7 +17,9 @@ use crate::input::{
     OtherWaterUse as OtherWaterUseInput, OtherWaterUseDetails, Shower as ShowerInput,
     WaterDistribution as WaterDistributionInput, WaterPipework,
 };
+use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct DomesticHotWaterDemand {
     showers: HashMap<String, Shower>,
@@ -34,7 +36,7 @@ impl DomesticHotWaterDemand {
         other_hot_water_input: Option<OtherWaterUseInput>,
         water_distribution_input: Option<WaterDistributionInput>,
         cold_water_sources: &ColdWaterSources,
-        wwhrs: &IndexMap<String, Wwhrs>,
+        wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
         energy_supplies: &EnergySupplies,
         event_schedules: HotWaterEventSchedules,
     ) -> Self {
@@ -317,13 +319,13 @@ impl DomesticHotWaterDemand {
 fn mixer_shower_input_to_shower(
     input: &MixerShowerInput,
     cold_water_sources: &ColdWaterSources,
-    wwhrs: &IndexMap<String, Wwhrs>,
+    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
 ) -> Shower {
     let cold_water_source = match input.cold_water_source {
         ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
         ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
     };
-    let wwhrs_instance: Option<Wwhrs> = input
+    let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = input
         .waste_water_heat_recovery
         .as_ref()
         .and_then(|w| wwhrs.get(&w.as_str().unwrap().to_string()).cloned());

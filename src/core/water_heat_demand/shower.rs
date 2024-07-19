@@ -4,6 +4,9 @@ use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
+use parking_lot::Mutex;
+use std::ops::DerefMut;
+use std::sync::Arc;
 
 pub enum Shower {
     MixerShower(MixerShower),
@@ -38,12 +41,16 @@ impl Shower {
 pub struct MixerShower {
     flowrate: f64,
     cold_water_source: ColdWaterSource,
-    wwhrs: Option<Wwhrs>,
+    wwhrs: Option<Arc<Mutex<Wwhrs>>>,
     temp_hot: f64,
 }
 
 impl MixerShower {
-    pub fn new(flowrate: f64, cold_water_source: ColdWaterSource, wwhrs: Option<Wwhrs>) -> Self {
+    pub fn new(
+        flowrate: f64,
+        cold_water_source: ColdWaterSource,
+        wwhrs: Option<Arc<Mutex<Wwhrs>>>,
+    ) -> Self {
         Self {
             flowrate,
             cold_water_source,
@@ -81,20 +88,22 @@ impl MixerShower {
             vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold);
 
         if let Some(wwhrs) = &mut self.wwhrs {
+            let mut wwhrs = wwhrs.lock();
+
             // Assumed temperature entering WWHRS
             let temp_drain = 35.0;
 
             let wwhrs_return_temperature =
                 wwhrs.return_temperature(temp_drain, self.flowrate, timestep_idx);
-            match wwhrs {
+            match wwhrs.deref_mut() {
                 Wwhrs::WWHRSInstantaneousSystemB(_) => {
                     vol_hot_water = vol_warm_water
                         * frac_hot_water(temp_target, self.temp_hot, wwhrs_return_temperature);
                 }
-                Wwhrs::WWHRSInstantaneousSystemC(system_c) => {
+                Wwhrs::WWHRSInstantaneousSystemC(ref mut system_c) => {
                     system_c.set_temperature_for_return(wwhrs_return_temperature)
                 }
-                Wwhrs::WWHRSInstantaneousSystemA(system_a) => {
+                Wwhrs::WWHRSInstantaneousSystemA(ref mut system_a) => {
                     system_a.set_temperature_for_return(wwhrs_return_temperature);
 
                     vol_hot_water = vol_warm_water
