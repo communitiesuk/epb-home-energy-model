@@ -1369,8 +1369,6 @@ mod tests {
         for _ in 0..31 {
             airtemp.extend(&air_temp_day_dec);
         }
-        println!("airtemp: {airtemp:?}");
-        println!("length of airtemp is: {}", airtemp.len());
 
         ExternalConditions::new(
             &simulation_time_for_ground.iter(),
