@@ -993,10 +993,10 @@ fn create_appliance_gains(
 fn check_shower_flowrate(input: &InputForProcessing) -> anyhow::Result<()> {
     let min_flowrate = 8.0;
 
-    if let Some(flowrate) = input.shower_flowrate() {
+    for (name, flowrate) in input.shower_flowrates() {
         if flowrate < min_flowrate {
             // only currently known shower name that can have a flowrate is "mixer"
-            bail!("Invalid flow rate: {flowrate} l/s in shower with name 'mixer'");
+            bail!("Invalid flow rate: {flowrate} l/s in shower with name '{name}'");
         }
     }
 

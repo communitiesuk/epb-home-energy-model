@@ -13,9 +13,8 @@ use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower}
 use crate::corpus::{ColdWaterSources, HotWaterEventSchedules};
 use crate::input::{
     Bath as BathInput, BathDetails, ColdWaterSourceType, EnergySupplyType,
-    InstantElectricShower as InstantElectricShowerInput, MixerShower as MixerShowerInput,
     OtherWaterUse as OtherWaterUseInput, OtherWaterUseDetails, Shower as ShowerInput,
-    WaterDistribution as WaterDistributionInput, WaterPipework,
+    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterPipework,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -31,7 +30,7 @@ pub struct DomesticHotWaterDemand {
 
 impl DomesticHotWaterDemand {
     pub fn new(
-        shower_input: Option<ShowerInput>,
+        showers_input: Option<ShowersInput>,
         bath_input: Option<BathInput>,
         other_hot_water_input: Option<OtherWaterUseInput>,
         water_distribution_input: Option<WaterDistributionInput>,
@@ -40,26 +39,21 @@ impl DomesticHotWaterDemand {
         energy_supplies: &EnergySupplies,
         event_schedules: HotWaterEventSchedules,
     ) -> Self {
-        let showers: HashMap<String, Shower> = shower_input
+        let showers: HashMap<String, Shower> = showers_input
             .iter()
             .flat_map(|input| {
-                let mut showers = vec![(
-                    "mixer".to_owned(),
-                    mixer_shower_input_to_shower(&input.mixer, cold_water_sources, wwhrs),
-                )];
-                if let Some(ies) = &input.ies {
-                    showers.push((
-                        "IES".to_owned(),
-                        instant_electric_shower_input_to_shower(
-                            "IES".to_owned(),
-                            ies,
+                input.0.iter().map(|(name, shower)| {
+                    (
+                        name.clone(),
+                        shower_from_input(
+                            &name,
+                            shower,
                             cold_water_sources,
                             energy_supplies,
+                            wwhrs,
                         ),
-                    ))
-                }
-
-                showers
+                    )
+                })
             })
             .collect();
         let baths: HashMap<String, Bath> = bath_input
@@ -316,53 +310,68 @@ impl DomesticHotWaterDemand {
     }
 }
 
-fn mixer_shower_input_to_shower(
-    input: &MixerShowerInput,
-    cold_water_sources: &ColdWaterSources,
-    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
-) -> Shower {
-    let cold_water_source = match input.cold_water_source {
-        ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
-    };
-    let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = input
-        .waste_water_heat_recovery
-        .as_ref()
-        .and_then(|w| wwhrs.get(&w.as_str().unwrap().to_string()).cloned());
-
-    Shower::MixerShower(MixerShower::new(
-        input.flowrate,
-        cold_water_source,
-        wwhrs_instance,
-    ))
-}
-
-fn instant_electric_shower_input_to_shower(
-    name: String,
-    input: &InstantElectricShowerInput,
+fn shower_from_input(
+    name: &str,
+    input: &ShowerInput,
     cold_water_sources: &ColdWaterSources,
     energy_supplies: &EnergySupplies,
+    wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
 ) -> Shower {
-    let cold_water_source = match input.cold_water_source {
-        ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
-    };
+    match input {
+        ShowerInput::MixerShower {
+            cold_water_source,
+            waste_water_heat_recovery,
+            flowrate,
+        } => {
+            let cold_water_source = match cold_water_source {
+                ColdWaterSourceType::MainsWater => {
+                    cold_water_sources.ref_for_mains_water().unwrap()
+                }
+                ColdWaterSourceType::HeaderTank => {
+                    cold_water_sources.ref_for_header_tank().unwrap()
+                }
+            };
+            let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = waste_water_heat_recovery
+                .as_ref()
+                .and_then(|w| wwhrs.get(&w.as_str().unwrap().to_string()).cloned());
 
-    let energy_supply = match &input.energy_supply {
-        EnergySupplyType::Electricity => energy_supplies.mains_electricity.clone().unwrap(),
-        EnergySupplyType::MainsGas => energy_supplies.mains_gas.clone().unwrap(),
-        EnergySupplyType::UnmetDemand => energy_supplies.unmet_demand.clone(),
-        EnergySupplyType::LpgBulk => energy_supplies.bulk_lpg.clone().unwrap(),
-        EnergySupplyType::HeatNetwork => energy_supplies.heat_network.clone().unwrap(),
-        _ => panic!("Unexpected energy supply type for a shower"),
-    };
-    let energy_supply_conn = EnergySupply::connection(energy_supply, name.as_str()).unwrap();
+            Shower::MixerShower(MixerShower::new(
+                *flowrate,
+                cold_water_source,
+                wwhrs_instance,
+            ))
+        }
+        ShowerInput::InstantElectricShower {
+            cold_water_source,
+            energy_supply,
+            rated_power,
+        } => {
+            let cold_water_source = match cold_water_source {
+                ColdWaterSourceType::MainsWater => {
+                    cold_water_sources.ref_for_mains_water().unwrap()
+                }
+                ColdWaterSourceType::HeaderTank => {
+                    cold_water_sources.ref_for_header_tank().unwrap()
+                }
+            };
 
-    Shower::InstantElectricShower(InstantElectricShower::new(
-        input.rated_power,
-        cold_water_source,
-        energy_supply_conn,
-    ))
+            let energy_supply = match energy_supply {
+                EnergySupplyType::Electricity => energy_supplies.mains_electricity.clone().unwrap(),
+                EnergySupplyType::MainsGas => energy_supplies.mains_gas.clone().unwrap(),
+                EnergySupplyType::UnmetDemand => energy_supplies.unmet_demand.clone(),
+                EnergySupplyType::LpgBulk => energy_supplies.bulk_lpg.clone().unwrap(),
+                EnergySupplyType::HeatNetwork => energy_supplies.heat_network.clone().unwrap(),
+                _ => panic!("Unexpected energy supply type for a shower"),
+            };
+            let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
+
+            Shower::InstantElectricShower(InstantElectricShower::new(
+                *rated_power,
+                cold_water_source,
+                energy_supply_conn,
+            ))
+        }
+    }
 }
 
 fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> Bath {

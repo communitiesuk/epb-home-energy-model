@@ -28,7 +28,7 @@ pub struct Input {
     #[serde(deserialize_with = "deserialize_control")]
     pub control: Control,
     pub hot_water_source: HotWaterSource,
-    pub shower: Option<Shower>,
+    pub shower: Option<Showers>,
     pub bath: Option<Bath>,
     #[serde(rename = "Other")]
     pub other_water_use: Option<OtherWaterUse>,
@@ -948,26 +948,40 @@ pub enum WaterPipeContentsType {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct Shower {
-    pub mixer: MixerShower,
-    #[serde(rename = "IES")]
-    pub ies: Option<InstantElectricShower>,
-}
+pub struct Showers(pub IndexMap<String, Shower>);
 
-impl Shower {
+impl Showers {
     /// Provide shower field names as strings.
     pub fn keys(&self) -> Vec<String> {
-        let mut keys = vec!["mixer".to_string()];
-        if self.ies.is_some() {
-            keys.push("IES".to_string());
-        }
-
-        keys
+        self.0.keys().cloned().collect()
     }
 
     pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
-        name == "IES" && self.ies.is_some()
+        self.0.get(name).map_or(false, |shower| {
+            matches!(shower, Shower::InstantElectricShower { .. })
+        })
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields, tag = "type")]
+pub enum Shower {
+    MixerShower {
+        flowrate: f64,
+        #[serde(rename = "ColdWaterSource")]
+        cold_water_source: ColdWaterSourceType,
+        #[serde(rename = "WWHRS")]
+        waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
+    },
+    #[serde(rename = "InstantElecShower")]
+    InstantElectricShower {
+        rated_power: f64,
+        #[serde(rename = "ColdWaterSource")]
+        cold_water_source: ColdWaterSourceType,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: EnergySupplyType,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1001,7 +1015,7 @@ pub struct InstantElectricShower {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ShowerType {
     MixerShower,
-    #[serde(alias = "InstantElecShower")]
+    #[serde(rename = "InstantElecShower")]
     InstantElectricShower,
 }
 
@@ -2241,11 +2255,21 @@ impl InputForProcessing {
             .to_string())
     }
 
-    pub fn shower_flowrate(&self) -> Option<f64> {
+    pub fn shower_flowrates(&self) -> IndexMap<String, f64> {
         self.input
             .shower
             .as_ref()
-            .map(|shower| shower.mixer.flowrate)
+            .map(|showers| {
+                showers
+                    .0
+                    .iter()
+                    .filter_map(|(name, shower)| match shower {
+                        Shower::MixerShower { flowrate, .. } => Some((name.clone(), *flowrate)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn reset_water_heating_events(&mut self) {

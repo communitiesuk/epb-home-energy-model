@@ -894,6 +894,7 @@ impl StorageTank {
                 let (primary_pipework_losses_kwh, primary_gains) =
                     self.primary_pipework_losses(input_energy_adj);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
+
                 let heat_source_output = heat_source
                     .lock()
                     .demand_energy(input_energy_adj, simulation_time_iteration)
