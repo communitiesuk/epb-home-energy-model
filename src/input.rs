@@ -31,7 +31,7 @@ pub struct Input {
     pub shower: Option<Showers>,
     pub bath: Option<Baths>,
     #[serde(rename = "Other")]
-    pub other_water_use: Option<OtherWaterUse>,
+    pub other_water_use: Option<OtherWaterUses>,
     #[serde(rename = "Distribution")]
     pub water_distribution: Option<WaterDistribution>,
     #[serde(rename = "Events")]
@@ -1016,25 +1016,16 @@ pub struct BathDetails {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct OtherWaterUse {
-    pub other: Option<OtherWaterUseDetails>,
-}
+pub struct OtherWaterUses(pub IndexMap<String, OtherWaterUseDetails>);
 
-impl OtherWaterUse {
+impl OtherWaterUses {
     /// Provide other water use field names as strings.
     pub fn keys(&self) -> Vec<String> {
-        let mut keys = vec![];
-        if self.other.is_some() {
-            keys.push("other".to_string());
-        }
-
-        keys
+        self.0.keys().cloned().collect()
     }
 
     pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        (field == "other")
-            .then(|| self.other.as_ref().map(|details| details.flowrate))
-            .unwrap_or_default()
+        self.0.get(field).map(|other| other.flowrate)
     }
 }
 
@@ -2284,18 +2275,20 @@ impl InputForProcessing {
         cold_water_source_type: impl Into<String>,
         flowrate: f64,
     ) -> anyhow::Result<()> {
-        let other_details = Some(OtherWaterUseDetails {
+        let other_details = OtherWaterUseDetails {
             flowrate,
             cold_water_source: serde_json::from_str(cold_water_source_type.into().as_str())?,
-        });
+        };
+
         match self.input.other_water_use {
             Some(ref mut other_water_use) => {
-                other_water_use.other = other_details;
+                other_water_use.0.insert("other".to_string(), other_details);
             }
             None => {
-                self.input.other_water_use = Some(OtherWaterUse {
-                    other: other_details,
-                });
+                self.input.other_water_use = Some(OtherWaterUses(IndexMap::from([(
+                    "other".to_string(),
+                    other_details,
+                )])));
             }
         }
 

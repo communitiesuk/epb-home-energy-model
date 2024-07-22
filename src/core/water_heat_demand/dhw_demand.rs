@@ -12,9 +12,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, HotWaterEventSchedules};
 use crate::input::{
-    BathDetails, Baths as BathInput, ColdWaterSourceType, EnergySupplyType,
-    OtherWaterUse as OtherWaterUseInput, OtherWaterUseDetails, Shower as ShowerInput,
-    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterPipework,
+    BathDetails, Baths as BathInput, ColdWaterSourceType, EnergySupplyType, OtherWaterUseDetails,
+    OtherWaterUses as OtherWaterUseInput, Shower as ShowerInput, Showers as ShowersInput,
+    WaterDistribution as WaterDistributionInput, WaterPipework,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -67,12 +67,13 @@ impl DomesticHotWaterDemand {
             .collect();
         let other: HashMap<String, OtherHotWater> = other_hot_water_input
             .iter()
-            .flat_map(|input| match &input.other {
-                Some(details) => vec![(
-                    "other".to_owned(),
-                    input_to_other_water_events(details, cold_water_sources),
-                )],
-                None => vec![],
+            .flat_map(|input| {
+                input.0.iter().map(|(name, other)| {
+                    (
+                        name.clone(),
+                        input_to_other_water_events(other, cold_water_sources),
+                    )
+                })
             })
             .collect();
         let mixer_shower_count = showers
