@@ -29,7 +29,7 @@ pub struct Input {
     pub control: Control,
     pub hot_water_source: HotWaterSource,
     pub shower: Option<Showers>,
-    pub bath: Option<Bath>,
+    pub bath: Option<Baths>,
     #[serde(rename = "Other")]
     pub other_water_use: Option<OtherWaterUse>,
     #[serde(rename = "Distribution")]
@@ -987,31 +987,20 @@ pub enum Shower {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct Bath {
-    pub medium: Option<BathDetails>,
-}
+pub struct Baths(pub IndexMap<String, BathDetails>);
 
-impl Bath {
+impl Baths {
     /// Provide bath field names as strings.
     pub fn keys(&self) -> Vec<String> {
-        let mut keys = vec![];
-        if self.medium.is_some() {
-            keys.push("medium".to_string());
-        }
-
-        keys
+        self.0.keys().cloned().collect()
     }
 
     pub fn size_for_field(&self, field: &str) -> Option<f64> {
-        (field == "medium")
-            .then(|| self.medium.as_ref().map(|details| details.size))
-            .unwrap_or_default()
+        self.0.get(field).map(|bath| bath.size)
     }
 
     pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        (field == "medium")
-            .then(|| self.medium.as_ref().map(|details| details.flowrate))
-            .unwrap_or_default()
+        self.0.get(field).map(|bath| bath.flowrate)
     }
 }
 

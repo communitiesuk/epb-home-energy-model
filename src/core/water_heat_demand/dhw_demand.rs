@@ -12,7 +12,7 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, HotWaterEventSchedules};
 use crate::input::{
-    Bath as BathInput, BathDetails, ColdWaterSourceType, EnergySupplyType,
+    BathDetails, Baths as BathInput, ColdWaterSourceType, EnergySupplyType,
     OtherWaterUse as OtherWaterUseInput, OtherWaterUseDetails, Shower as ShowerInput,
     Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterPipework,
 };
@@ -58,12 +58,11 @@ impl DomesticHotWaterDemand {
             .collect();
         let baths: HashMap<String, Bath> = bath_input
             .iter()
-            .flat_map(|input| match &input.medium {
-                Some(details) => vec![(
-                    "medium".to_owned(),
-                    input_to_bath(details, cold_water_sources),
-                )],
-                None => vec![],
+            .flat_map(|input| {
+                input
+                    .0
+                    .iter()
+                    .map(|(name, bath)| (name.clone(), input_to_bath(bath, cold_water_sources)))
             })
             .collect();
         let other: HashMap<String, OtherHotWater> = other_hot_water_input
