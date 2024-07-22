@@ -987,41 +987,6 @@ pub enum Shower {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct MixerShower {
-    #[serde(rename = "type")]
-    pub shower_type: ShowerType,
-    pub flowrate: f64,
-    #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: ColdWaterSourceType,
-    #[serde(rename = "WWHRS")]
-    pub waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct InstantElectricShower {
-    #[serde(rename = "type")]
-    pub shower_type: ShowerType,
-    // somewhat of a redundant value possibly
-    pub rated_power: f64,
-    #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: ColdWaterSourceType,
-    #[serde(rename = "EnergySupply")]
-    pub energy_supply: EnergySupplyType,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub enum ShowerType {
-    MixerShower,
-    #[serde(rename = "InstantElecShower")]
-    InstantElectricShower,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
 pub struct Bath {
     pub medium: Option<BathDetails>,
 }
