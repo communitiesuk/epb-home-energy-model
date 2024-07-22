@@ -61,7 +61,18 @@ fn main() -> anyhow::Result<()> {
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
-    let file_output = FileOutput::new(output_path, format!("{}__core__{{}}.csv", input_file_name));
+    // following is rough initial mapping given existing fhs options
+    let output_type = if args.wrapper_choice.future_homes_standard {
+        "FHS"
+    } else if args.wrapper_choice.future_homes_standard_fee {
+        "FHS_FEE"
+    } else {
+        "core"
+    };
+    let file_output = FileOutput::new(
+        output_path,
+        format!("{input_file_name}__{output_type}__{{}}.csv"),
+    );
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {
         WeatherFileType {
