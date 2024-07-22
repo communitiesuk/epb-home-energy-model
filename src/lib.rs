@@ -1007,7 +1007,7 @@ struct HourForTimestep {
     hour: f64,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum StringOrNumber {
     String(KeyString),
     Number(f64),

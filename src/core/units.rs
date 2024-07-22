@@ -1,3 +1,5 @@
+use crate::compare_floats::min_of_2;
+
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
 pub const JOULES_PER_KILOJOULE: u32 = 1_000;
 pub const WATTS_PER_KILOWATT: u32 = 1_000;
@@ -21,9 +23,13 @@ pub fn average_monthly_to_annual(list_monthly_averages: [f64; 12]) -> f64 {
 pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f64> {
     let total_steps = timestep_totals.len();
     let steps_per_day = (HOURS_PER_DAY as f64 / timestep).floor() as usize;
-    (0..(total_steps / steps_per_day))
-        .map(|x| x * steps_per_day)
-        .map(|y| timestep_totals[y..(y + steps_per_day)].iter().sum::<f64>())
+    (0..total_steps)
+        .step_by(steps_per_day)
+        .map(|y| {
+            timestep_totals[y..min_of_2(y + steps_per_day, timestep_totals.len() - 1)]
+                .iter()
+                .sum::<f64>()
+        })
         .collect()
 }
 
