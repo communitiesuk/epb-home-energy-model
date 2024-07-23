@@ -16,29 +16,65 @@ struct SapArgs {
     input_file: String,
     #[command(flatten)]
     weather_file: WeatherFileType,
-    #[arg(long, short, default_value_t = false)]
+    #[arg(
+        long,
+        short,
+        default_value_t = false,
+        help = "Run preprocessing step only"
+    )]
     preprocess_only: bool,
     #[command(flatten)]
     wrapper_choice: WrapperChoice,
-    #[clap(long, default_value_t = false)]
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "Output heat balance for each zone"
+    )]
     heat_balance: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
 #[group(required = false, multiple = false)]
 struct WrapperChoice {
-    #[arg(long)]
+    #[arg(long, help = "Use Future Homes Standard calculation assumptions")]
     future_homes_standard: bool,
-    #[arg(long = "future-homes-standard-FEE")]
+    #[arg(
+        long = "future-homes-standard-FEE",
+        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions"
+    )]
     future_homes_standard_fee: bool,
+    #[arg(
+        long = "future-homes-standard-notA",
+        help = "Use Future Homes Standard calculation assumptions for notional option A"
+    )]
+    future_homes_standard_not_a: bool,
+    #[arg(
+        long = "future-homes-standard-notB",
+        help = "Use Future Homes Standard calculation assumptions for notional option B"
+    )]
+    future_homes_standard_not_b: bool,
+    #[arg(
+        long = "future-homes-standard-FEE-notA",
+        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions for notional option A"
+    )]
+    future_homes_standard_fee_not_a: bool,
+    #[arg(
+        long = "future-homes-standard-FEE-notB",
+        help = "Use Future Homes Standard Fabric Energy Efficiency assumptions for notional option B"
+    )]
+    future_homes_standard_fee_not_b: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
 #[group(required = false, multiple = false)]
 struct WeatherFileType {
-    #[arg(long, short)]
+    #[arg(long, short, help = "Path to weather file in .epw format")]
     epw_file: Option<String>,
-    #[arg(long, short)]
+    #[arg(
+        long = "CIBSE-weather-file",
+        short,
+        help = "Path to CIBSE weather file in .csv format"
+    )]
     cibse_weather_file: Option<String>,
 }
 
@@ -99,10 +135,10 @@ fn main() -> anyhow::Result<()> {
         args.preprocess_only,
         args.wrapper_choice.future_homes_standard,
         args.wrapper_choice.future_homes_standard_fee,
-        false,
-        false,
-        false,
-        false,
+        args.wrapper_choice.future_homes_standard_not_a,
+        args.wrapper_choice.future_homes_standard_not_b,
+        args.wrapper_choice.future_homes_standard_fee_not_a,
+        args.wrapper_choice.future_homes_standard_fee_not_b,
         args.heat_balance,
         false, // TODO implement CLI arg
     )
