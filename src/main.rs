@@ -29,7 +29,7 @@ struct SapArgs {
 struct WrapperChoice {
     #[arg(long)]
     future_homes_standard: bool,
-    #[arg(long)]
+    #[arg(long = "future-homes-standard-FEE")]
     future_homes_standard_fee: bool,
 }
 
