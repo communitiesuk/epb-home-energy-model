@@ -1828,6 +1828,7 @@ pub struct WindowOpeningForCooling {
     // control: String,
 }
 
+#[derive(Debug)]
 pub struct InputForProcessing {
     input: Input,
 }
@@ -2410,14 +2411,10 @@ impl InputForProcessing {
         key: &str,
         space_heat_system_value: Value,
     ) -> anyhow::Result<&Self> {
-        let mut empty_details: IndexMap<String, SpaceHeatSystemDetails> = Default::default();
+        let empty_details: IndexMap<String, SpaceHeatSystemDetails> = Default::default();
         let system_details: SpaceHeatSystemDetails =
             serde_json::from_value(space_heat_system_value)?;
-        let systems = self
-            .input
-            .space_heat_system
-            .as_mut()
-            .unwrap_or(&mut empty_details);
+        let systems = self.input.space_heat_system.get_or_insert(empty_details);
         systems.insert(key.to_string(), system_details);
         Ok(self)
     }
@@ -2432,14 +2429,10 @@ impl InputForProcessing {
         key: &str,
         space_cool_system_value: Value,
     ) -> anyhow::Result<&Self> {
-        let mut empty_details: IndexMap<String, SpaceCoolSystemDetails> = Default::default();
+        let empty_details: IndexMap<String, SpaceCoolSystemDetails> = Default::default();
         let system_details: SpaceCoolSystemDetails =
             serde_json::from_value(space_cool_system_value)?;
-        let systems = self
-            .input
-            .space_cool_system
-            .as_mut()
-            .unwrap_or(&mut empty_details);
+        let systems = self.input.space_cool_system.get_or_insert(empty_details);
         systems.insert(key.to_string(), system_details);
         Ok(self)
     }
