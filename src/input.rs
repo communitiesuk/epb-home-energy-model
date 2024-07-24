@@ -2211,8 +2211,9 @@ impl InputForProcessing {
         gains_details: Value,
     ) -> anyhow::Result<&Self> {
         let gains_details: ApplianceGainsDetails = serde_json::from_value(gains_details)?;
-        let lighting_entry = self.input.appliance_gains.entry(field.into());
-        lighting_entry.and_modify(|entry| *entry = gains_details);
+        self.input
+            .appliance_gains
+            .insert(field.into(), gains_details);
 
         Ok(self)
     }
