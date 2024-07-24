@@ -2243,7 +2243,7 @@ impl InputForProcessing {
         Ok(self
             .input
             .energy_supply
-            .get(field)
+            .get(&(field.parse::<EnergySupplyKey>()?))
             .ok_or(anyhow!(
                 "Fuel type not provided for energy supply field '{field}'"
             ))?
