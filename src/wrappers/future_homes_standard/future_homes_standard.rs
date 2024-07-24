@@ -914,7 +914,7 @@ fn create_cooking_gains(
             ELEC_COOK_OBJ_NAME,
             json!({
                 "type": "cooking",
-                "EnergySupply": "mains gas",
+                "EnergySupply": "mains elec",
                 "start_day": 0,
                 "time_series_step": 0.5,
                 "gains_fraction": 0.5,
