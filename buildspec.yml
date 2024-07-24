@@ -22,6 +22,9 @@ phases:
       - brew tap cargo-lambda/cargo-lambda
       - brew install cargo-lambda
 
+      # copy the weather file
+      - aws s3 cp s3://ecaas-api-pipeline-storage/ecaas-api-pipeline/weather.epw src/weather.epw
+
       # build the lambda
       - cd hem-lambda
       - cargo lambda build --arm64 -r --package=hem-lambda
