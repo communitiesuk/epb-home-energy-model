@@ -7,18 +7,20 @@ use crate::simulation_time::SimulationTimeIteration;
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
 /// * `start_day` - first day of time series, day of the year, 0 to 365
 /// * `time_series_step` - timestep of the time series data, in hours
+#[derive(Clone, Debug)]
 pub struct InternalGains {
     total_internal_gains: Vec<f64>,
     start_day: u32,
     time_series_step: f64,
 }
 
-pub enum Gains<'a> {
-    Internal(&'a InternalGains),
-    Appliance(&'a ApplianceGains),
+#[derive(Clone, Debug)]
+pub enum Gains {
+    Internal(InternalGains),
+    Appliance(ApplianceGains),
 }
 
-impl<'a> Gains<'a> {
+impl Gains {
     pub fn total_internal_gain_in_w(
         &self,
         zone_area: f64,
@@ -58,6 +60,7 @@ impl InternalGains {
 /// * `gains_fraction` - fraction of energy supply which is counted as an internal gain
 /// * `start_day` - first day of time series, day of the year, 0 to 365
 /// * `time_series_step` - timestep of the time series data, in hours
+#[derive(Clone, Debug)]
 pub struct ApplianceGains {
     total_energy_supply: Vec<f64>,
     energy_supply_connection: EnergySupplyConnection,

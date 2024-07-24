@@ -591,47 +591,7 @@ impl Corpus {
             // Initialise to dhw internal gains split proportionally to zone floor area
             let mut gains_internal_zone_inner =
                 gains_internal_dhw * zone.area() / self.total_floor_area;
-            for (_, gains) in [
-                (
-                    "total_internal_gains",
-                    &self
-                        .internal_gains
-                        .total_internal_gains
-                        .as_ref()
-                        .map(Gains::Internal),
-                ),
-                (
-                    "metabolic_gains",
-                    &self
-                        .internal_gains
-                        .metabolic_gains
-                        .as_ref()
-                        .map(Gains::Internal),
-                ),
-                (
-                    "lighting",
-                    &self.internal_gains.lighting.as_ref().map(Gains::Appliance),
-                ),
-                (
-                    "cooking",
-                    &self.internal_gains.cooking.as_ref().map(Gains::Appliance),
-                ),
-                (
-                    "cooking1",
-                    &self.internal_gains.cooking1.as_ref().map(Gains::Appliance),
-                ),
-                (
-                    "cooking2",
-                    &self.internal_gains.cooking2.as_ref().map(Gains::Appliance),
-                ),
-                (
-                    "other",
-                    &self.internal_gains.other.as_ref().map(Gains::Internal),
-                ),
-            ]
-            .iter()
-            .filter_map(|(name, option)| option.as_ref().map(|gains| (name, gains)))
-            {
+            for gains in self.internal_gains.values() {
                 gains_internal_zone_inner +=
                     gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration);
             }
@@ -1726,38 +1686,54 @@ fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<E
     supply.and_then(|supply| supply.diverter.clone())
 }
 
-#[derive(Default)]
-pub struct InternalGainsCollection {
-    total_internal_gains: Option<InternalGains>,
-    metabolic_gains: Option<InternalGains>,
-    _evaporative_losses: Option<InternalGains>,
-    lighting: Option<ApplianceGains>,
-    cooking: Option<ApplianceGains>,
-    cooking1: Option<ApplianceGains>,
-    cooking2: Option<ApplianceGains>,
-    other: Option<InternalGains>,
-}
+// #[derive(Default)]
+// pub struct InternalGainsCollection {
+//     total_internal_gains: Option<InternalGains>,
+//     metabolic_gains: Option<InternalGains>,
+//     _evaporative_losses: Option<InternalGains>,
+//     lighting: Option<ApplianceGains>,
+//     cooking: Option<ApplianceGains>,
+//     cooking1: Option<ApplianceGains>,
+//     cooking2: Option<ApplianceGains>,
+//     other: Option<InternalGains>,
+// }
+
+pub type InternalGainsCollection = IndexMap<String, Gains>;
 
 fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollection {
-    InternalGainsCollection {
-        total_internal_gains: input
-            .total_internal_gains
-            .as_ref()
-            .map(internal_gains_from_details),
-        metabolic_gains: input
-            .metabolic_gains
-            .as_ref()
-            .map(internal_gains_from_details),
-        _evaporative_losses: input
-            .evaporative_losses
-            .as_ref()
-            .map(internal_gains_from_details),
-        lighting: None,
-        cooking: None,
-        cooking1: None,
-        cooking2: None,
-        other: input.other.as_ref().map(internal_gains_from_details),
-    }
+    let mut gains_collection = InternalGainsCollection::from([]);
+    input
+        .total_internal_gains
+        .as_ref()
+        .and_then(|internal_gains| {
+            gains_collection.insert(
+                "total_internal_gains".to_string(),
+                Gains::Internal(internal_gains_from_details(internal_gains)),
+            )
+        });
+    input.metabolic_gains.as_ref().and_then(|internal_gains| {
+        gains_collection.insert(
+            "metabolic_gains".to_string(),
+            Gains::Internal(internal_gains_from_details(internal_gains)),
+        )
+    });
+    input
+        .evaporative_losses
+        .as_ref()
+        .and_then(|internal_gains| {
+            gains_collection.insert(
+                "evaporative_losses".to_string(),
+                Gains::Internal(internal_gains_from_details(internal_gains)),
+            )
+        });
+    input.other.as_ref().and_then(|internal_gains| {
+        gains_collection.insert(
+            "other".to_string(),
+            Gains::Internal(internal_gains_from_details(internal_gains)),
+        )
+    });
+
+    gains_collection
 }
 
 fn internal_gains_from_details(details: &InternalGainsDetails) -> InternalGains {
@@ -2317,57 +2293,20 @@ fn apply_appliance_gains_from_input(
     total_floor_area: f64,
     simulation_timesteps: usize,
 ) -> anyhow::Result<()> {
-    if let Some(details) = input.get("lighting") {
+    for (name, gains_details) in input {
         let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
-            "lighting",
-        )
-        .unwrap();
-
-        internal_gains_collection.lighting = Some(appliance_gains_from_single_input(
-            details,
-            energy_supply_conn,
-            total_floor_area,
-        ));
-    }
-    if let Some(details) = input.get("cooking") {
-        let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
-            "cooking",
-        )
-        .unwrap();
-
-        internal_gains_collection.cooking = Some(appliance_gains_from_single_input(
-            details,
-            energy_supply_conn,
-            total_floor_area,
-        ));
-    }
-    if let Some(details) = input.get("cooking1") {
-        let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
-            "cooking1",
-        )
-        .unwrap();
-
-        internal_gains_collection.cooking1 = Some(appliance_gains_from_single_input(
-            details,
-            energy_supply_conn,
-            total_floor_area,
-        ));
-    }
-    if let Some(details) = input.get("cooking2") {
-        let energy_supply_conn = EnergySupply::connection(
-            energy_supplies.ensured_get_for_type(details.energy_supply, simulation_timesteps)?,
-            "cooking2",
-        )
-        .unwrap();
-
-        internal_gains_collection.cooking2 = Some(appliance_gains_from_single_input(
-            details,
-            energy_supply_conn,
-            total_floor_area,
-        ));
+            energy_supplies
+                .ensured_get_for_type(gains_details.energy_supply, simulation_timesteps)?,
+            name.as_str(),
+        )?;
+        internal_gains_collection.insert(
+            name.clone(),
+            Gains::Appliance(appliance_gains_from_single_input(
+                gains_details,
+                energy_supply_conn,
+                total_floor_area,
+            )),
+        );
     }
 
     Ok(())
