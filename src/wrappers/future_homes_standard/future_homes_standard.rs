@@ -893,7 +893,7 @@ fn create_cooking_gains(
         .map(|half_hour| (1_000 * 2) as f64 * annual_cooking_gas_kwh / 365. * half_hour);
 
     // add back gas and electric cooking gains if they are present
-    if cooking_fuels.contains("mains gas") {
+    if cooking_fuels.contains("mains_gas") {
         input.set_gains_for_field(
             GAS_COOK_OBJ_NAME,
             json!({

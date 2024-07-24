@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::{Equivalent, IndexMap};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_enum_str::Deserialize_enum_str;
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Value};
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
@@ -168,7 +168,7 @@ pub enum ApplianceGainType {
     Cooking,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum EnergySupplyKey {
     #[serde(rename = "mains elec")]
@@ -198,7 +198,7 @@ impl Borrow<str> for EnergySupplyKey {
         {
             Value::String(string) => match string.as_str() {
                 "mains elec" => "mains elec",
-                "mains gas" => "mains elec",
+                "mains gas" => "mains gas",
                 "bulk LPG" => "bulk LPG",
                 "heat network" => "heat network",
                 _ => unreachable!(),
@@ -215,6 +215,53 @@ impl From<&EnergySupplyKey> for String {
             .as_str()
             .unwrap()
             .to_string()
+    }
+}
+
+#[cfg(test)]
+mod energy_supply_key_tests {
+    use crate::input::{EnergySupplyDetails, EnergySupplyKey, FuelType};
+    use indexmap::IndexMap;
+    use rstest::*;
+
+    #[rstest]
+    fn deserialize_energy_supply_key() {
+        assert_eq!(
+            "bulk LPG".parse::<EnergySupplyKey>().unwrap(),
+            EnergySupplyKey::BulkLpg
+        );
+        assert_eq!(
+            "mains elec".parse::<EnergySupplyKey>().unwrap(),
+            EnergySupplyKey::MainsElectricity
+        );
+    }
+
+    #[rstest]
+    fn use_energy_supply_key_to_get_supply_details() {
+        let supplies = IndexMap::from([
+            (
+                EnergySupplyKey::MainsElectricity,
+                EnergySupplyDetails {
+                    fuel: FuelType::Electricity,
+                    diverter: None,
+                    electric_battery: None,
+                    factor: None,
+                },
+            ),
+            (
+                EnergySupplyKey::MainsGas,
+                EnergySupplyDetails {
+                    fuel: FuelType::Electricity,
+                    diverter: None,
+                    electric_battery: None,
+                    factor: None,
+                },
+            ),
+        ]);
+        assert!(supplies.get(&EnergySupplyKey::MainsElectricity).is_some());
+        assert!(supplies
+            .get(&("mains gas".parse::<EnergySupplyKey>().unwrap()))
+            .is_some());
     }
 }
 
@@ -304,8 +351,11 @@ pub enum EnergySupplyType {
 
 impl Display for EnergySupplyType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let json_string = serde_json::to_string(self).unwrap();
-        write!(f, "{}", json_string)
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
     }
 }
 
