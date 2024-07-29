@@ -2,7 +2,6 @@ use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::input::{InputForProcessing, WaterHeatingEventType};
 use crate::wrappers::future_homes_standard::future_homes_standard::HourlyHotWaterEvent;
 use anyhow::bail;
-use arrayvec::ArrayVec;
 use csv::Reader;
 use indexmap::IndexMap;
 use parking_lot::Mutex;
@@ -397,14 +396,9 @@ impl HotWaterEventGenerator {
                                     "Unable to create a poisson generator with the lambda {lambda}"
                                 )
                             });
-                            ArrayVec::from(
-                                TryInto::<[f64; POISSON_DISTRIBUTION_SIZE]>::try_into(
-                                    (0..POISSON_DISTRIBUTION_SIZE)
-                                        .map(|_| poisson.sample(&mut rng))
-                                        .collect::<Vec<f64>>(),
-                                )
-                                .unwrap(),
-                            )
+                            (0..POISSON_DISTRIBUTION_SIZE)
+                                .map(|_| poisson.sample(&mut rng))
+                                .collect::<Vec<f64>>()
                         },
                         poisson_arr_idx: 0,
                     }));
@@ -515,7 +509,7 @@ struct DayDigest {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct PoissonDistribution {
-    poisson_arr: ArrayVec<f64, POISSON_DISTRIBUTION_SIZE>,
+    poisson_arr: Vec<f64>,
     poisson_arr_idx: usize,
 }
 
