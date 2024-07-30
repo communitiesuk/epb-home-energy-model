@@ -288,7 +288,7 @@ impl HotWaterEventGenerator {
                 (DayOfWeek::Sunday, Default::default()),
             ]);
 
-        let mut rng = ChaCha8Rng::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
+        let rng = ChaCha8Rng::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
 
         let mut decile: i8 = -1;
         let mut banding_correction = 1.0;
@@ -397,7 +397,7 @@ impl HotWaterEventGenerator {
                                 )
                             });
                             (0..POISSON_DISTRIBUTION_SIZE)
-                                .map(|_| poisson.sample(&mut rng))
+                                .map(|_| poisson.sample(&mut rng.clone()))
                                 .collect::<Vec<f64>>()
                         },
                         poisson_arr_idx: 0,
