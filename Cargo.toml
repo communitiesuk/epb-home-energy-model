@@ -26,8 +26,8 @@ parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
 rand = "0.8.5"
-rand_chacha = "0.3.1"
 rand_distr = "0.4.3"
+rand_pcg = "0.3.1"
 schemars = { version = "0.8.21", optional = true }
 serde = { version = "1.0.204", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"

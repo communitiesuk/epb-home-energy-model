@@ -7,8 +7,8 @@ use indexmap::IndexMap;
 use parking_lot::Mutex;
 use partial_application::partial;
 use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Poisson};
+use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
@@ -267,7 +267,7 @@ impl From<SimpleLabelBasedOn900KSample> for WaterHeatingEventType {
 
 pub struct HotWaterEventGenerator {
     week: IndexMap<DayOfWeek, HashMap<SimpleLabelBasedOn900KSample, DayDigest>>,
-    rng: ChaCha8Rng,
+    rng: Lcg128Xsl64,
 }
 
 impl HotWaterEventGenerator {
@@ -288,7 +288,7 @@ impl HotWaterEventGenerator {
                 (DayOfWeek::Sunday, Default::default()),
             ]);
 
-        let rng = ChaCha8Rng::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
+        let rng = Pcg64::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
 
         let mut decile: i8 = -1;
         let mut banding_correction = 1.0;
