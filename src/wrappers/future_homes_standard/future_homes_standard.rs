@@ -153,6 +153,8 @@ pub fn apply_fhs_postprocessing(
                     diverter: None,
                     electric_battery: None,
                     factor: None,
+                    priority: None,
+                    is_export_capable: None,
                 },
             )]
             .into_iter(),

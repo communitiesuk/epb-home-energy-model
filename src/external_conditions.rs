@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use crate::input::deserialize_orientation;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use itertools::Itertools;
 use serde::Deserialize;
@@ -19,8 +20,12 @@ pub enum DaylightSavingsConfig {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ShadingSegment {
     pub number: usize,
-    pub start: i32,
-    pub end: i32,
+    #[serde(rename = "start360")]
+    #[serde(deserialize_with = "deserialize_orientation")]
+    pub start: f64,
+    #[serde(rename = "end360")]
+    #[serde(deserialize_with = "deserialize_orientation")]
+    pub end: f64,
     pub objects: Option<Vec<ShadingObject>>,
 }
 
@@ -1890,50 +1895,50 @@ mod tests {
         vec![
             ShadingSegment {
                 number: 1,
-                start: 180,
-                end: 135,
+                start: 180.,
+                end: 135.,
                 objects: None,
             },
             ShadingSegment {
                 number: 2,
-                start: 135,
-                end: 90,
+                start: 135.,
+                end: 90.,
                 objects: None,
             },
             ShadingSegment {
                 number: 3,
-                start: 90,
-                end: 45,
+                start: 90.,
+                end: 45.,
                 objects: None,
             },
             ShadingSegment {
                 number: 4,
-                start: 45,
-                end: 0,
+                start: 45.,
+                end: 0.,
                 objects: None,
             },
             ShadingSegment {
                 number: 5,
-                start: 0,
-                end: -45,
+                start: 0.,
+                end: -45.,
                 objects: None,
             },
             ShadingSegment {
                 number: 6,
-                start: -45,
-                end: -90,
+                start: -45.,
+                end: -90.,
                 objects: None,
             },
             ShadingSegment {
                 number: 7,
-                start: -90,
-                end: -135,
+                start: -90.,
+                end: -135.,
                 objects: None,
             },
             ShadingSegment {
                 number: 8,
-                start: -135,
-                end: -180,
+                start: -135.,
+                end: -180.,
                 objects: None,
             },
         ]

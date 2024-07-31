@@ -13,13 +13,12 @@ pub struct PointOfUse {
 
 impl PointOfUse {
     pub fn new(
-        rated_power_in_kw: f64,
         efficiency: f64,
         energy_supply_connection: EnergySupplyConnection,
         cold_feed: WaterSourceWithTemperature,
     ) -> Self {
         Self {
-            power_in_kw: rated_power_in_kw,
+            power_in_kw: 1., // NB. temporary value until this module is migrated to 0.30
             efficiency,
             energy_supply_connection,
             cold_feed,

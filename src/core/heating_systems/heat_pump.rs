@@ -185,6 +185,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 temp_outlet: datum.temp_outlet,
                 temp_source: datum.temp_source,
                 temp_test: datum.temp_test,
+                eahp_mixed_ext_air_ratio: None, // temporary to align with new 0.30 input
             }
         })
         .collect::<Vec<_>>();
@@ -270,6 +271,7 @@ impl HeatPumpTestDatum {
             temp_outlet,
             temp_source,
             temp_test,
+            ..
         } = self;
         CompleteHeatPumpTestDatum {
             air_flow_rate: *air_flow_rate,
@@ -1696,7 +1698,9 @@ impl HeatPump {
             power_standby,
             power_crankcase_heater_mode,
             power_off_mode,
-            power_max_backup,
+            power_max_backup: power_max_backup.expect(
+                "Missing power_max_backup not yet accounted for in migration from 0.28 to 0.30",
+            ),
             temp_distribution_heat_network,
             heat_network,
             energy_supply_hn_connections: Default::default(),
@@ -3146,6 +3150,7 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: Some(0.25),
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(200.0),
@@ -3157,6 +3162,7 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: Some(0.75),
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(100.0),
@@ -3168,6 +3174,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
+                eahp_mixed_ext_air_ratio: Some(0.25),
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(200.0),
@@ -3179,6 +3186,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
+                eahp_mixed_ext_air_ratio: Some(0.75),
             },
         ];
         let data_eahp_interpolated = vec![
@@ -3192,6 +3200,7 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3203,6 +3212,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
+                eahp_mixed_ext_air_ratio: None,
             },
         ];
 
@@ -3238,6 +3248,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 0.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3249,6 +3260,7 @@ mod tests {
                 temp_outlet: 30.,
                 temp_source: 0.,
                 temp_test: 2.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3260,6 +3272,7 @@ mod tests {
                 temp_outlet: 27.,
                 temp_source: 0.,
                 temp_test: 7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3271,6 +3284,7 @@ mod tests {
                 temp_outlet: 24.,
                 temp_source: 0.,
                 temp_test: 12.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3282,6 +3296,7 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 0.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3293,6 +3308,7 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3304,6 +3320,7 @@ mod tests {
                 temp_outlet: 42.,
                 temp_source: 0.,
                 temp_test: 2.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3315,6 +3332,7 @@ mod tests {
                 temp_outlet: 36.,
                 temp_source: 0.,
                 temp_test: 7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3326,6 +3344,7 @@ mod tests {
                 temp_outlet: 30.,
                 temp_source: 0.,
                 temp_test: 12.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3337,6 +3356,7 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -3348,6 +3368,7 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
+                eahp_mixed_ext_air_ratio: None,
             },
         ]
     }

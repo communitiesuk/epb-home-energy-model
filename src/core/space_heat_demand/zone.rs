@@ -1378,7 +1378,8 @@ mod tests {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType, MassDistributionClass,
+        FloorType, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
+        MassDistributionClass, WindShieldLocation,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
@@ -1509,6 +1510,7 @@ mod tests {
     ) -> Zone {
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(false),
             area: 20.0,
             pitch: 180.,
             a_sol: 0.6,
@@ -1527,6 +1529,7 @@ mod tests {
             h_re: None,
         };
         let be_opaque_d = BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(true),
             area: 26.0,
             pitch: 180.,
             a_sol: 0.55,
@@ -1554,18 +1557,32 @@ mod tests {
         };
         let be_ground = BuildingElement::Ground {
             area: 25.0,
+            total_area: 25.0,
             pitch: 90.,
             u_value: 1.33,
             r_f: 0.2,
             k_m: 17000.,
             mass_distribution_class: MassDistributionClass::IE,
-            h_pi: 2.2,
-            h_pe: 2.7,
+            floor_type: FloorType::SuspendedFloor,
+            height_upper_surface: Some(0.5),
+            edge_insulation: None,
+            thermal_transmission_walls: Some(0.5),
+            thermal_resistance_of_insulation: Some(7.),
+            area_per_perimeter_vent: Some(0.01),
+            shield_fact_location: Some(WindShieldLocation::Sheltered),
+            h_pi: Some(2.2),
+            h_pe: Some(2.7),
+            thickness_walls: 0.2,
+            depth_basement_floor: None,
+            thermal_resistance_of_basement_walls: None,
+            thermal_transmittance_of_floor_above_basement: None,
+            height_basement_walls: None,
             perimeter: 20.0,
             psi_wall_floor_junc: 0.7,
         };
         let be_transparent = BuildingElement::Transparent {
             pitch: 90.,
+            window_openable_control: None,
             r_c: Some(0.4),
             orientation: 180.,
             g_value: 0.75,
@@ -1573,6 +1590,11 @@ mod tests {
             base_height: 1.0,
             height: 1.25,
             width: 4.0,
+            free_area_height: None,
+            mid_height: None,
+            max_window_open_area: None,
+            security_risk: None,
+            window_part_list: None,
             shading: vec![],
             u_value: None,
             _area: None,

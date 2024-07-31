@@ -26,7 +26,7 @@ impl ElectricBattery {
     }
 
     pub fn from_input(input: &ElectricBatteryInput) -> Self {
-        Self::new(input.capacity, input.charge_discharge_efficiency)
+        Self::new(input.capacity, input.charge_discharge_efficiency_round_trip)
     }
 
     pub fn charge_discharge_battery(&self, elec_demand: f64) -> f64 {

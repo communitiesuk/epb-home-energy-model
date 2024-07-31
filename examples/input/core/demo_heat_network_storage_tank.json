@@ -9,23 +9,23 @@
     "shading_segments": [
       {
         "number": 1,
-        "start": 180,
-        "end": 135
+        "start360": 0,
+        "end360": 45
       },
       {
         "number": 2,
-        "start": 135,
-        "end": 90
+        "start360": 45,
+        "end360": 90
       },
       {
         "number": 3,
-        "start": 90,
-        "end": 45
+        "start360": 90,
+        "end360": 135
       },
       {
         "number": 4,
-        "start": 45,
-        "end": 0,
+        "start360": 135,
+        "end360": 180,
         "shading": [
           {
             "type": "obstacle",
@@ -36,23 +36,23 @@
       },
       {
         "number": 5,
-        "start": 0,
-        "end": -45
+        "start360": 180,
+        "end360": 225
       },
       {
         "number": 6,
-        "start": -45,
-        "end": -90
+        "start360": 225,
+        "end360": 270
       },
       {
         "number": 7,
-        "start": -90,
-        "end": -135
+        "start360": 270,
+        "end360": 315
       },
       {
         "number": 8,
-        "start": -135,
-        "end": -180
+        "start360": 315,
+        "end360": 360
       }
     ]
   },
@@ -62,14 +62,14 @@
       "time_series_step": 1,
       "schedule": {
         "main": [
-          3.2,
-          4.6,
-          7.3,
-          5.2,
-          8.9,
-          5.6,
-          10.2,
-          8.1
+          256,
+          368,
+          584,
+          416,
+          712,
+          448,
+          816,
+          648
         ]
       }
     }
@@ -93,10 +93,12 @@
   },
   "EnergySupply": {
     "mains elec": {
-      "fuel": "electricity"
+      "fuel": "electricity",
+      "is_export_capable": true
     },
     "mains gas": {
-      "fuel": "mains_gas"
+      "fuel": "mains_gas",
+      "is_export_capable": true
     },
     "heat network": {
       "fuel": "custom",
@@ -104,7 +106,8 @@
         "Emissions Factor kgCO2e/kWh": 0.041,
         "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.041,
         "Primary Energy Factor kWh/kWh delivered": 0.850
-      }
+      },
+      "is_export_capable": true
     }
   },
   "Control": {
@@ -175,51 +178,68 @@
           "thermostat_position": 0.3
         }
       },
-      "primary_pipework": {
-        "internal_diameter_mm": 25,
-        "external_diameter_mm": 27,
-        "length": 2.0,
-        "insulation_thermal_conductivity": 0.035,
-        "insulation_thickness_mm": 38,
-        "surface_reflectivity": false,
-        "pipe_contents": "water"
+      "primary_pipework": [
+        {
+          "location": "internal",
+          "internal_diameter_mm": 24,
+          "external_diameter_mm": 27,
+          "length": 2.0,
+          "insulation_thermal_conductivity": 0.035,
+          "insulation_thickness_mm": 40,
+          "surface_reflectivity": false,
+          "pipe_contents": "water"
+        },
+        {
+          "location": "external",
+          "internal_diameter_mm": 25,
+          "external_diameter_mm": 27,
+          "length": 0.0,
+          "insulation_thermal_conductivity": 0.035,
+          "insulation_thickness_mm": 38,
+          "surface_reflectivity": false,
+          "pipe_contents": "water"
+        }
+      ]
+    }
+  },
+  "HotWaterDemand": {
+    "Shower": {
+      "mixer": {
+        "type": "MixerShower",
+        "flowrate": 8.0,
+        "ColdWaterSource": "mains water"
+      },
+      "IES": {
+        "type": "InstantElecShower",
+        "rated_power": 9.0,
+        "ColdWaterSource": "mains water",
+        "EnergySupply": "mains elec"
       }
-    }
-  },
-  "Shower": {
-    "mixer": {
-      "type": "MixerShower",
-      "flowrate": 8.0,
-      "ColdWaterSource": "mains water"
     },
-    "IES": {
-      "type": "InstantElecShower",
-      "rated_power": 9.0,
-      "ColdWaterSource": "mains water",
-      "EnergySupply": "mains elec"
-    }
-  },
-  "Bath": {},
-  "Other": {},
-  "Distribution": {
-    "internal": {
-      "internal_diameter_mm": 25,
-      "external_diameter_mm": 27,
-      "length": 8.0,
-      "insulation_thermal_conductivity": 0.035,
-      "insulation_thickness_mm": 38,
-      "surface_reflectivity": false,
-      "pipe_contents": "water"
-    },
-    "external": {
-      "internal_diameter_mm": 25,
-      "external_diameter_mm": 27,
-      "length": 8.0,
-      "insulation_thermal_conductivity": 0.035,
-      "insulation_thickness_mm": 38,
-      "surface_reflectivity": false,
-      "pipe_contents": "water"
-    }
+    "Bath": {},
+    "Other": {},
+    "Distribution": [
+      {
+        "location": "internal",
+        "internal_diameter_mm": 25,
+        "length": 8.0
+      },
+      {
+        "location": "internal",
+        "internal_diameter_mm": 25,
+        "length": 8.0
+      },
+      {
+        "location": "external",
+        "internal_diameter_mm": 25,
+        "length": 8.0
+      },
+      {
+        "location": "external",
+        "internal_diameter_mm": 25,
+        "length": 8.0
+      }
+    ]
   },
   "Events": {
     "Shower": {
@@ -280,24 +300,56 @@
       "Zone": "zone 1"
     }
   },
-  "Infiltration": {
+  "General": {
     "storeys_in_building": 1,
-    "shelter": "normal",
-    "build_type": "house",
-    "test_result": 4.0,
-    "test_type": "50Pa",
-    "env_area": 125.0,
-    "volume": 250.0,
-    "sheltered_sides": 1,
-    "open_chimneys": 1,
-    "open_flues": 1,
-    "closed_fire": 2,
-    "flues_d": 1,
-    "flues_e": 1,
-    "blocked_chimneys": 0,
-    "extract_fans": 2,
-    "passive_vents": 2,
-    "gas_fires": 0
+    "build_type": "house"
+  },
+  "InfiltrationVentilation": {
+    "cross_vent_factor": true,
+    "shield_class": "Normal",
+    "terrain_class": "Country",
+    "altitude": 30,
+    "Vents": {
+      "vent1": {
+        "mid_height_air_flow_path": 1.5,
+        "area_cm2": 100,
+        "pressure_difference_ref": 20,
+        "orientation360": 180,
+        "pitch": 60
+      }
+    },
+    "Leaks": {
+      "ventilation_zone_height": 6,
+      "test_pressure": 50,
+      "test_result": 1.2,
+      "area_roof": 100,
+      "area_facades": 50,
+      "env_area": 220
+    },
+    "MechanicalVentilation": {
+      "mechvent1": {
+        "sup_air_flw_ctrl": "ODA",
+        "sup_air_temp_ctrl": "CONST",
+        "design_zone_cooling_covered_by_mech_vent": 3.4,
+        "design_zone_heating_covered_by_mech_vent": 1,
+        "vent_type": "Centralised continuous MEV",
+        "SFP": 1.5,
+        "EnergySupply": "mains elec",
+        "design_outdoor_air_flow_rate": 80
+      }
+    },
+    "PDUs": {
+    },
+    "Cowls": {
+    },
+    "CombustionAppliances": {
+      "Fireplace": {
+        "supply_situation": "room_air",
+        "exhaust_situation": "into_separate_duct",
+        "fuel_type": "wood",
+        "appliance_type": "open_fireplace"
+      }
+    }
   },
   "Zone": {
     "zone 1": {
@@ -372,6 +424,14 @@
           "base_height": 1,
           "height": 1.25,
           "width": 4,
+          "free_area_height": 1.6,
+          "mid_height": 1.5,
+          "max_window_open_area": 3,
+          "window_part_list": [
+            {
+              "mid_height_air_flow_path": 1.5
+            }
+          ],
           "shading": [
             {
               "type": "overhang",
@@ -392,14 +452,15 @@
         },
         "ground": {
           "type": "BuildingElementGround",
+          "total_area": 15.0,
           "area": 15.0,
           "pitch": 180.0,
           "u_value": 1.4,
           "r_f": 0.2,
           "k_m": 19300,
           "mass_distribution_class": "D",
-          "h_pi": 2.0,
-          "h_pe": 2.5,
+          "floor_type": "Slab_no_edge_insulation",
+          "thickness_walls": 0.2,
           "perimeter": 16.0,
           "psi_wall_floor_junc": 0.5
         },

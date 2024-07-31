@@ -147,12 +147,12 @@ impl Corpus {
         );
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.shower.clone(),
-            input.bath.clone(),
-            input.other_water_use.clone(),
+            input.hot_water_demand.shower.clone(),
+            input.hot_water_demand.bath.clone(),
+            input.hot_water_demand.other_water_use.clone(),
             match &input.hot_water_source.hot_water_cylinder {
                 HotWaterSourceDetails::PointOfUse { .. } => None,
-                _ => input.water_distribution.clone(),
+                _ => input.hot_water_demand.water_distribution.clone(),
             },
             &cold_water_sources,
             &wwhrs,
@@ -160,7 +160,7 @@ impl Corpus {
             event_schedules.clone(),
         );
 
-        let infiltration = infiltration_from_input(&input.infiltration);
+        let infiltration = infiltration_from_input(input.infiltration.as_ref().unwrap());
 
         let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
 
@@ -2651,7 +2651,10 @@ fn heat_source_from_input(
             ..
         } => {
             let cold_water_source = cold_water_sources
-                .ref_for_type(*cold_water_source_type)
+                .ref_for_type(
+                    cold_water_source_type
+                        .expect("Expect a cold water source to be defined on a wet heat source"),
+                )
                 .expect("Expected a cold water source to be available to a boiler heat source.");
             let energy_supply_conn_name = format!("{name}_water_heating");
             let heat_source_wet = wet_heat_sources
@@ -2812,6 +2815,7 @@ fn hot_water_source_from_input(
             cold_water_source: cold_water_source_type,
             primary_pipework,
             heat_source,
+            ..
         } => {
             let mut cold_water_source: WaterSourceWithTemperature =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
@@ -2861,7 +2865,9 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                pipework.cloned(),
+                pipework
+                    .cloned()
+                    .and_then(|pipework| pipework.first().map(|pipework| (*pipework).clone())),
                 Some(
                     EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
                         .unwrap(),
@@ -2935,10 +2941,10 @@ fn hot_water_source_from_input(
             )
         }
         HotWaterSourceDetails::PointOfUse {
-            power,
             efficiency,
             cold_water_source: cold_water_source_type,
             energy_supply,
+            ..
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
@@ -2949,7 +2955,6 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             HotWaterSource::PointOfUse(PointOfUse::new(
-                *power,
                 *efficiency,
                 energy_supply_conn,
                 cold_water_source,

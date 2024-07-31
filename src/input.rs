@@ -28,18 +28,13 @@ pub struct Input {
     #[serde(deserialize_with = "deserialize_control")]
     pub control: Control,
     pub hot_water_source: HotWaterSource,
-    pub shower: Option<Showers>,
-    pub bath: Option<Baths>,
-    #[serde(rename = "Other")]
-    pub other_water_use: Option<OtherWaterUses>,
-    #[serde(rename = "Distribution")]
-    pub water_distribution: Option<WaterDistribution>,
+    pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
     pub water_heating_events: WaterHeatingEvents,
     pub space_heat_system: Option<SpaceHeatSystem>,
     pub space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
-    pub infiltration: Infiltration,
+    pub infiltration: Option<Infiltration>,
     pub zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
     #[allow(dead_code)]
@@ -63,6 +58,10 @@ pub struct Input {
     pub on_site_generation: Option<OnSiteGeneration>,
     #[serde(rename = "Window_Opening_For_Cooling")]
     pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
+    pub general: General,
+    pub infiltration_ventilation: InfiltrationVentilation,
+    pub appliances: Option<IndexMap<String, ApplianceEntry>>,
+    pub tariff: Option<Tariff>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,6 +245,8 @@ mod energy_supply_key_tests {
                     diverter: None,
                     electric_battery: None,
                     factor: None,
+                    priority: None,
+                    is_export_capable: None,
                 },
             ),
             (
@@ -255,6 +256,8 @@ mod energy_supply_key_tests {
                     diverter: None,
                     electric_battery: None,
                     factor: None,
+                    priority: None,
+                    is_export_capable: None,
                 },
             ),
         ]);
@@ -276,6 +279,16 @@ pub struct EnergySupplyDetails {
     #[serde(rename = "ElectricBattery")]
     pub electric_battery: Option<ElectricBattery>,
     pub factor: Option<CustomEnergySourceFactor>,
+    pub priority: Option<Vec<SecondarySupplyType>>,
+    pub is_export_capable: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum SecondarySupplyType {
+    ElectricBattery,
+    #[serde(rename = "diverter")]
+    Diverter,
 }
 
 /// TODO clarify further
@@ -414,7 +427,20 @@ impl DiverterHeatSourceType {
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
     pub capacity: f64,
-    pub charge_discharge_efficiency: f64,
+    pub charge_discharge_efficiency_round_trip: f64,
+    pub battery_age: f64,
+    minimum_charge_rate_one_way_trip: f64,
+    maximum_charge_rate_one_way_trip: f64,
+    maximum_discharge_rate_one_way_trip: f64,
+    battery_location: BatteryLocation,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum BatteryLocation {
+    Inside,
+    Outside,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -604,6 +630,7 @@ pub enum HotWaterSourceDetails {
     StorageTank {
         volume: f64,
         daily_losses: f64,
+        heat_exchanger_surface_area: Option<f64>,
         min_temp: f64,
         setpoint_temp: f64,
         #[serde(rename = "Control_hold_at_setpnt")]
@@ -612,7 +639,7 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
-        primary_pipework: Option<WaterPipework>,
+        primary_pipework: Option<Vec<WaterPipework>>,
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
@@ -628,6 +655,7 @@ pub enum HotWaterSourceDetails {
         rejected_energy_2: f64,
         storage_loss_factor_2: f64,
         rejected_factor_3: f64,
+        setpoint_temp: Option<f64>,
         #[serde(rename = "daily_HW_usage")]
         daily_hot_water_usage: f64,
     },
@@ -639,14 +667,15 @@ pub enum HotWaterSourceDetails {
         heat_source_wet: HeatSourceWetType,
         #[serde(alias = "Control")]
         control: HeatSourceControlType,
+        setpoint_temp: f64,
     },
     PointOfUse {
-        power: f64,
         efficiency: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
+        setpoint_temp: f64,
     },
     HeatBattery {
         // tbc
@@ -757,9 +786,10 @@ pub enum ColdWaterSourceType {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum HeatSourceWetType {
-    #[serde(alias = "boiler")]
+    #[serde(rename = "boiler")]
     Boiler,
     HeatNetwork,
+    #[serde(rename = "hp")]
     HeatPump,
 }
 
@@ -836,7 +866,7 @@ pub enum HeatSource {
         name: String,
         temp_flow_limit_upper: Option<f64>,
         #[serde(rename = "ColdWaterSource")]
-        cold_water_source: ColdWaterSourceType,
+        cold_water_source: Option<ColdWaterSourceType>,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         #[serde(rename = "Control")]
@@ -850,6 +880,10 @@ pub enum HeatSource {
     HeatPumpHotWaterOnly {
         power_max: f64,
         vol_hw_daily_average: f64,
+        tank_volume_declared: f64,
+        heat_exchanger_surface_area_declared: f64,
+        daily_losses_declared: f64,
+        in_use_factor_mismatch: f64,
         test_data: HeatPumpHotWaterTestData,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
@@ -977,7 +1011,17 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+pub struct WaterPipeworkSimple {
+    pub location: WaterPipeworkLocation,
+    pub internal_diameter_mm: f64,
+    pub length: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct WaterPipework {
+    pub location: WaterPipeworkLocation,
     pub internal_diameter_mm: f64,
     pub external_diameter_mm: f64,
     pub length: f64,
@@ -989,11 +1033,31 @@ pub struct WaterPipework {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum WaterPipeworkLocation {
+    #[serde(rename = "internal")]
+    Internal,
+    #[serde(rename = "external")]
+    External,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum WaterPipeContentsType {
     #[serde(rename = "water")]
     Water,
     #[serde(rename = "air")]
     Air,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct HotWaterDemand {
+    pub shower: Option<Showers>,
+    pub bath: Option<Baths>,
+    #[serde(rename = "Other")]
+    pub other_water_use: Option<OtherWaterUses>,
+    #[serde(rename = "Distribution")]
+    pub water_distribution: Option<WaterDistribution>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1088,13 +1152,7 @@ pub struct OtherWaterUseDetails {
     pub cold_water_source: ColdWaterSourceType,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct WaterDistribution {
-    pub internal: WaterPipework,
-    pub external: WaterPipework,
-}
+pub type WaterDistribution = Vec<WaterPipeworkSimple>;
 
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -1507,6 +1565,7 @@ pub struct ZoneLighting {
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
+        is_unheated_pitched_roof: Option<bool>,
         a_sol: f64,
         u_value: Option<f64>,
         r_c: Option<f64>,
@@ -1532,6 +1591,8 @@ pub enum BuildingElement {
         #[serde(rename = "area")]
         // area is sometimes present but not expected to be used
         _area: Option<f64>,
+        #[serde(rename = "Control_WindowOpenable")]
+        window_openable_control: Option<String>, // unclear how this might be used
         r_c: Option<f64>,
         pitch: f64,
         #[serde(rename = "orientation360")]
@@ -1542,20 +1603,44 @@ pub enum BuildingElement {
         base_height: f64,
         height: f64,
         width: f64,
+        // following attributes may be FHS only
+        free_area_height: Option<f64>,
+        mid_height: Option<f64>,
+        max_window_open_area: Option<f64>,
+        security_risk: Option<bool>,
+        window_part_list: Option<Vec<WindowPart>>,
+        // end possible FHS only attributes
         shading: Vec<WindowShadingObject>,
     },
     #[serde(rename = "BuildingElementGround")]
     Ground {
         area: f64,
+        total_area: f64,
         pitch: f64,
         u_value: f64,
         r_f: f64,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
-        h_pi: f64,
-        h_pe: f64,
+        floor_type: FloorType,
+        height_upper_surface: Option<f64>,
+        #[serde(rename = "thermal_transm_walls")]
+        thermal_transmission_walls: Option<f64>,
+        #[serde(rename = "thermal_resist_insul")]
+        thermal_resistance_of_insulation: Option<f64>,
+        area_per_perimeter_vent: Option<f64>,
+        shield_fact_location: Option<WindShieldLocation>,
+        h_pi: Option<f64>, // (need to make a separate definition for building elements that contain h_pi and h_pe)
+        h_pe: Option<f64>,
+        thickness_walls: f64,
+        depth_basement_floor: Option<f64>,
+        #[serde(rename = "thermal_resist_walls_base")]
+        thermal_resistance_of_basement_walls: Option<f64>,
+        #[serde(rename = "thermal_transm_envi_base")]
+        thermal_transmittance_of_floor_above_basement: Option<f64>,
+        height_basement_walls: Option<f64>,
         perimeter: f64,
         psi_wall_floor_junc: f64,
+        edge_insulation: Option<Vec<EdgeInsulation>>,
     },
     #[serde(rename = "BuildingElementAdjacentZTC")]
     AdjacentZTC {
@@ -1579,7 +1664,7 @@ pub enum BuildingElement {
 }
 
 // special deserialization logic so that orientations are normalized correctly on the way in
-fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
+pub fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -1600,6 +1685,51 @@ pub enum MassDistributionClass {
     I,
     IE,
     M,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct WindowPart {
+    mid_height_air_flow_path: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum FloorType {
+    #[serde(rename = "Slab_no_edge_insulation")]
+    SlabNoEdgeInsulation,
+    #[serde(rename = "Slab_edge_insulation")]
+    SlabEdgeInsulation,
+    #[serde(rename = "Suspended_floor")]
+    SuspendedFloor,
+    #[serde(rename = "Heated_basement")]
+    HeatedBasement,
+    #[serde(rename = "Unheated_basement")]
+    UnheatedBasement,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum WindShieldLocation {
+    Sheltered,
+    Average,
+    Exposed,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(tag = "type")]
+pub enum EdgeInsulation {
+    #[serde(rename = "horizontal")]
+    Horizontal {
+        width: f64,
+        edge_thermal_resistance: f64,
+    },
+    #[serde(rename = "vertical")]
+    Vertical {
+        depth: f64,
+        edge_thermal_resistance: f64,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -1704,13 +1834,21 @@ pub enum HeatSourceWetDetails {
         temp_lower_operating_limit: f64,
         min_temp_diff_flow_return_for_hp_to_operate: f64,
         var_flow_temp_ctrl_during_test: bool,
+        power_heating_warm_air_fan: Option<f64>,
         power_heating_circ_pump: f64,
         power_source_circ_pump: f64,
         power_standby: f64,
         power_crankcase_heater: f64,
         power_off: f64,
-        power_max_backup: f64,
+        power_max_backup: Option<f64>,
+        eahp_mixed_max_temp: Option<f64>,
+        eahp_mixed_min_temp: Option<f64>,
+        #[serde(rename = "MechanicalVentilation")]
+        mechanical_ventilation: Option<String>,
+        #[serde(rename = "BufferTank")]
+        buffer_tank: Option<HeatPumpBufferTank>,
         test_data: Vec<HeatPumpTestDatum>,
+        boiler: Option<HeatPumpBoiler>,
     },
     Boiler {
         #[serde(rename = "EnergySupply")]
@@ -1785,6 +1923,15 @@ pub enum HeatPumpBackupControlType {
     Substitute,
 }
 
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct HeatPumpBufferTank {
+    daily_losses: f64,
+    volume: f64,
+    pump_fixed_flow_rate: f64,
+    pump_power_at_flow_rate: f64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1799,6 +1946,35 @@ pub struct HeatPumpTestDatum {
     pub temp_outlet: f64,
     pub temp_source: f64,
     pub temp_test: f64,
+    pub eahp_mixed_ext_air_ratio: Option<f64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct HeatPumpBoiler {
+    #[serde(rename = "EnergySupply")]
+    energy_supply: EnergySupplyType,
+    #[serde(rename = "EnergySupply_aux")]
+    energy_supply_auxiliary: EnergySupplyType,
+    rated_power: f64,
+    efficiency_full_load: f64,
+    efficiency_part_load: f64,
+    boiler_location: HeatSourceLocation,
+    modulation_load: f64,
+    electricity_circ_pump: f64,
+    electricity_part_load: f64,
+    electricity_full_load: f64,
+    electricity_standby: f64,
+    cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BoilerCostScheduleHybrid {
+    cost_schedule_start_day: u32,
+    cost_schedule_time_series_step: f64,
+    cost_schedule_hp: Schedule,
+    cost_schedule_boiler: Schedule,
 }
 
 pub type TestLetter = ArrayString<2>;
@@ -1855,6 +2031,9 @@ pub enum OnSiteGenerationDetails {
         width: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
+        shading: Vec<WindowShadingObject>,
+        inverter_peak_power: f64,
+        inverter_is_inside: bool,
     },
 }
 
@@ -1875,7 +2054,245 @@ pub enum OnSiteGenerationVentilationStrategy {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WindowOpeningForCooling {
     pub equivalent_area: f64,
-    // control: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct General {
+    pub storeys_in_building: usize,
+    pub storey_of_dwelling: Option<usize>,
+    pub build_type: BuildType,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum BuildType {
+    #[serde(rename = "house")]
+    House,
+    #[serde(rename = "flat")]
+    Flat,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct InfiltrationVentilation {
+    cross_vent_factor: bool,
+    shield_class: VentilationShieldClass,
+    terrain_class: TerrainClass,
+    altitude: f64,
+    #[serde(rename = "Control_WindowAdjust")]
+    window_adjust_control: Option<String>, // don't know what this can be
+    noise_nuisance: Option<bool>,
+    #[serde(rename = "Vents")]
+    vents: IndexMap<String, Vent>,
+    #[serde(rename = "Leaks")]
+    leaks: VentilationLeaks,
+    #[serde(rename = "MechanicalVentilation")]
+    mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
+    #[serde(rename = "AirTerminalDevices")]
+    air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
+    #[serde(rename = "PDUs")]
+    pdus: IndexMap<String, ()>, // don't know what this looks like yet
+    #[serde(rename = "Cowls")]
+    cowls: IndexMap<String, ()>, // don't know what this looks like yet
+    #[serde(rename = "CombustionAppliances")]
+    combustion_appliances: IndexMap<String, CombustionAppliance>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum VentilationShieldClass {
+    Open,
+    Normal,
+    Shielded,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum TerrainClass {
+    #[serde(rename = "Open terrain")]
+    OpenTerrain,
+    Country,
+    Urban,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Vent {
+    mid_height_air_flow_path: f64,
+    area_cm2: f64,
+    pressure_difference_ref: f64,
+    #[serde(rename = "orientation360")]
+    #[serde(deserialize_with = "deserialize_orientation")]
+    orientation: f64,
+    pitch: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct VentilationLeaks {
+    ventilation_zone_height: f64,
+    test_pressure: f64,
+    test_result: f64,
+    env_area: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct MechanicalVentilation {
+    #[serde(rename = "sup_air_flw_ctrl")]
+    supply_air_flow_rate_control: SupplyAirFlowRateControlType,
+    #[serde(rename = "sup_air_temp_ctrl")]
+    supply_air_temperature_control_type: SupplyAirTemperatureControlType,
+    #[serde(rename = "design_zone_cooling_covered_by_mech_vent")]
+    design_zone_cooling_covered_by_mechanical_vent: f64,
+    #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
+    design_zone_heating_covered_by_mechanical_vent: f64,
+    vent_type: VentType,
+    measured_fan_power: Option<f64>,
+    measured_air_flow_rate: Option<f64>,
+    #[serde(rename = "EnergySupply")]
+    energy_supply: EnergySupplyType,
+    design_outdoor_air_flow_rate: f64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum SupplyAirFlowRateControlType {
+    ODA,
+    #[serde(rename = "LOAD")]
+    Load,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum SupplyAirTemperatureControlType {
+    #[serde(rename = "CONST")]
+    Constant,
+    #[serde(rename = "NO_CTRL")]
+    NoControl,
+    #[serde(rename = "LOAD_COM")]
+    LoadCom,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum VentType {
+    #[serde(rename = "Intermittent MEV")]
+    IntermittentMev,
+    #[serde(rename = "Centralised continuous MEV")]
+    CentralisedContinuousMev,
+    #[serde(rename = "Decentralised continuous MEV")]
+    DecentralisedContinuousMev,
+    #[serde(rename = "MVHR")]
+    Mvhr,
+    #[serde(rename = "PIV")]
+    Piv,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct AirTerminalDevice {
+    area_cm2: f64,
+    pressure_difference_ref: f64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct CombustionAppliance {
+    supply_situation: CombustionAirSupplySituation,
+    exhaust_situation: FlueGasExhaustSituation,
+    fuel_type: CombustionFuelType,
+    appliance_type: CombustionApplianceType,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum CombustionAirSupplySituation {
+    #[serde(rename = "room_air")]
+    RoomAir,
+    #[serde(rename = "outside")]
+    Outside,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum FlueGasExhaustSituation {
+    #[serde(rename = "into_room")]
+    IntoRoom,
+    #[serde(rename = "into_separate_duct")]
+    IntoSeparateDuct,
+    #[serde(rename = "into_mech_vent")]
+    IntoMechVent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CombustionFuelType {
+    Wood,
+    Gas,
+    Oil,
+    Coal,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CombustionApplianceType {
+    OpenFireplace,
+    ClosedWithFan,
+    OpenGasFlueBalancer,
+    OpenGasKitchenStove,
+    OpenGasFire,
+    ClosedFire,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum ApplianceEntry {
+    Object(Appliance),
+    Reference(ApplianceReference),
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Appliance {
+    #[serde(rename = "kWh_per_100cycle")]
+    kwh_per_100_cycle: Option<f64>,
+    load_shifting: Option<ApplianceLoadShifting>,
+    kg_load: Option<f64>,
+    #[serde(rename = "kWh_per_annum")]
+    kwh_per_annum: Option<f64>,
+    #[serde(rename = "Energysupply")]
+    energy_supply: Option<EnergySupplyType>,
+    #[serde(rename = "kWh_per_cycle")]
+    kwh_per_cycle: Option<f64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ApplianceLoadShifting {
+    max_shift_hrs: f64,
+    demand_limit_weighted: f64,
+    weight: String, // not sure yet what these can be
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum ApplianceReference {
+    Default,
+    #[serde(rename = "Not Installed")]
+    NotInstalled,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Tariff {
+    schedule: Schedule,
 }
 
 #[derive(Debug)]
@@ -2254,6 +2671,7 @@ impl InputForProcessing {
 
     pub fn shower_flowrates(&self) -> IndexMap<String, f64> {
         self.input
+            .hot_water_demand
             .shower
             .as_ref()
             .map(|showers| {
@@ -2274,21 +2692,21 @@ impl InputForProcessing {
     }
 
     pub fn shower_keys(&self) -> Vec<String> {
-        match self.input.shower.as_ref() {
+        match self.input.hot_water_demand.shower.as_ref() {
             Some(shower) => shower.keys(),
             None => Default::default(),
         }
     }
 
     pub fn shower_name_refers_to_instant_electric(&self, name: &str) -> bool {
-        match &self.input.shower {
+        match &self.input.hot_water_demand.shower {
             Some(shower) => shower.name_refers_to_instant_electric_shower(name),
             None => false,
         }
     }
 
     pub fn bath_keys(&self) -> Vec<String> {
-        match self.input.bath.as_ref() {
+        match self.input.hot_water_demand.bath.as_ref() {
             Some(bath) => bath.keys(),
             None => Default::default(),
         }
@@ -2296,6 +2714,7 @@ impl InputForProcessing {
 
     pub fn size_for_bath_field(&self, field: &str) -> Option<f64> {
         self.input
+            .hot_water_demand
             .bath
             .as_ref()
             .and_then(|bath| bath.size_for_field(field))
@@ -2303,13 +2722,14 @@ impl InputForProcessing {
 
     pub fn flowrate_for_bath_field(&self, field: &str) -> Option<f64> {
         self.input
+            .hot_water_demand
             .bath
             .as_ref()
             .and_then(|bath| bath.flowrate_for_field(field))
     }
 
     pub fn other_water_use_keys(&self) -> Vec<String> {
-        match self.input.other_water_use.as_ref() {
+        match self.input.hot_water_demand.other_water_use.as_ref() {
             Some(other) => other.keys(),
             None => Default::default(),
         }
@@ -2317,6 +2737,7 @@ impl InputForProcessing {
 
     pub fn flow_rate_for_other_water_use_field(&self, field: &str) -> Option<f64> {
         self.input
+            .hot_water_demand
             .other_water_use
             .as_ref()
             .and_then(|other| other.flowrate_for_field(field))
@@ -2332,15 +2753,14 @@ impl InputForProcessing {
             cold_water_source: serde_json::from_str(cold_water_source_type.into().as_str())?,
         };
 
-        match self.input.other_water_use {
+        match self.input.hot_water_demand.other_water_use {
             Some(ref mut other_water_use) => {
                 other_water_use.0.insert("other".to_string(), other_details);
             }
             None => {
-                self.input.other_water_use = Some(OtherWaterUses(IndexMap::from([(
-                    "other".to_string(),
-                    other_details,
-                )])));
+                self.input.hot_water_demand.other_water_use = Some(OtherWaterUses(IndexMap::from(
+                    [("other".to_string(), other_details)],
+                )));
             }
         }
 
@@ -2409,12 +2829,14 @@ impl InputForProcessing {
     }
 
     pub fn zero_infiltration_extract_fans(&mut self) -> anyhow::Result<&Self> {
-        self.input.infiltration.extract_fans = 0;
+        if let Some(ref mut infiltration) = self.input.infiltration {
+            infiltration.extract_fans = 0;
+        }
         Ok(self)
     }
 
     pub fn infiltration_volume(&self) -> f64 {
-        self.input.infiltration.volume
+        self.input.infiltration.as_ref().unwrap().volume
     }
 
     pub fn set_ventilation(&mut self, ventilation_value: Value) -> anyhow::Result<&Self> {
@@ -2428,22 +2850,24 @@ impl InputForProcessing {
     }
 
     pub fn set_water_distribution(&mut self, distribution_value: Value) -> anyhow::Result<&Self> {
-        self.input.water_distribution = Some(serde_json::from_value(distribution_value)?);
+        self.input.hot_water_demand.water_distribution =
+            Some(serde_json::from_value(distribution_value)?);
         Ok(self)
     }
 
     pub fn set_shower(&mut self, shower_value: Value) -> anyhow::Result<&Self> {
-        self.input.shower = Some(serde_json::from_value(shower_value)?);
+        self.input.hot_water_demand.shower = Some(serde_json::from_value(shower_value)?);
         Ok(self)
     }
 
     pub fn set_bath(&mut self, bath_value: Value) -> anyhow::Result<&Self> {
-        self.input.bath = Some(serde_json::from_value(bath_value)?);
+        self.input.hot_water_demand.bath = Some(serde_json::from_value(bath_value)?);
         Ok(self)
     }
 
     pub fn set_other_water_use(&mut self, other_water_use_value: Value) -> anyhow::Result<&Self> {
-        self.input.other_water_use = Some(serde_json::from_value(other_water_use_value)?);
+        self.input.hot_water_demand.other_water_use =
+            Some(serde_json::from_value(other_water_use_value)?);
         Ok(self)
     }
 
@@ -2521,7 +2945,15 @@ mod tests {
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| {
-                !e.file_type().is_dir() && e.file_name().to_str().unwrap().ends_with("json")
+                !e.file_type().is_dir()
+                    && e.file_name().to_str().unwrap().ends_with("json")
+                    && !e
+                        .path()
+                        .parent()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .ends_with("results") // don't test against files in results output directories
             })
         {
             let parsed = ingest_for_processing(File::open(entry.path()).unwrap());

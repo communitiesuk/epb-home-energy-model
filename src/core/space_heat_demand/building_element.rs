@@ -496,8 +496,8 @@ pub fn temp_ext_for(
             // BS EN ISO 13370:2017 Eqn C.4
             let heat_flow_month = u_value * area * (temp_int_annual - temp_ext_annual)
                 + perimeter * psi_wall_floor_junc * (temp_int_month - temp_ext_month)
-                - h_pi * (temp_int_annual - temp_int_month)
-                + h_pe * (temp_ext_annual - temp_ext_month);
+                - h_pi.unwrap() * (temp_int_annual - temp_int_month)
+                + h_pe.unwrap() * (temp_ext_annual - temp_ext_month);
 
             // BS EN ISO 13370:2017 Eqn F.2
             temp_int_month
@@ -690,6 +690,7 @@ const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 mod tests {
     use super::*;
     use crate::external_conditions::DaylightSavingsConfig;
+    use crate::input::{EdgeInsulation, FloorType, WindShieldLocation};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -726,6 +727,7 @@ mod tests {
     #[fixture]
     pub fn be_i() -> BuildingElement {
         BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(false),
             area: 20.0,
             pitch: 180.0,
             a_sol: 0.6,
@@ -748,6 +750,7 @@ mod tests {
     #[fixture]
     pub fn be_e() -> BuildingElement {
         BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(false),
             area: 22.5,
             pitch: 135.0,
             a_sol: 0.61,
@@ -770,6 +773,7 @@ mod tests {
     #[fixture]
     pub fn be_ie() -> BuildingElement {
         BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(false),
             area: 25.0,
             pitch: 90.0,
             a_sol: 0.62,
@@ -792,6 +796,7 @@ mod tests {
     #[fixture]
     pub fn be_d() -> BuildingElement {
         BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(true),
             area: 27.5,
             pitch: 45.0,
             a_sol: 0.63,
@@ -814,6 +819,7 @@ mod tests {
     #[fixture]
     pub fn be_m() -> BuildingElement {
         BuildingElement::Opaque {
+            is_unheated_pitched_roof: Some(false),
             area: 30.0,
             pitch: 0.0,
             a_sol: 0.64,
@@ -1246,61 +1252,135 @@ mod tests {
     pub fn ground_building_elements() -> [BuildingElement; 5] {
         let be_i = BuildingElement::Ground {
             area: 20.0,
+            total_area: 20.0,
             pitch: 180.,
             u_value: 1.5,
             r_f: 0.1,
             k_m: 19_000.,
             mass_distribution_class: MassDistributionClass::I,
-            h_pi: 2.0,
-            h_pe: 2.5,
+            floor_type: FloorType::SuspendedFloor,
+            edge_insulation: None,
+            height_upper_surface: Some(0.5),
+            thermal_transmission_walls: Some(0.5),
+            thermal_resistance_of_insulation: Some(7.),
+            area_per_perimeter_vent: Some(0.01),
+            shield_fact_location: Some(WindShieldLocation::Sheltered),
+            thermal_resistance_of_basement_walls: None,
+            thermal_transmittance_of_floor_above_basement: None,
+            height_basement_walls: None,
+            h_pi: Some(2.0),
+            h_pe: Some(2.5),
+            thickness_walls: 0.2,
+            depth_basement_floor: None,
             perimeter: 18.,
             psi_wall_floor_junc: 0.5,
         };
         let be_e = BuildingElement::Ground {
             area: 22.5,
+            total_area: 22.5,
             pitch: 135.,
             u_value: 1.4,
             r_f: 0.2,
             k_m: 18_000.,
             mass_distribution_class: MassDistributionClass::E,
-            h_pi: 2.1,
-            h_pe: 2.6,
+            floor_type: FloorType::SlabNoEdgeInsulation,
+            edge_insulation: None,
+            height_upper_surface: None,
+            thermal_transmission_walls: None,
+            thermal_resistance_of_insulation: None,
+            area_per_perimeter_vent: None,
+            shield_fact_location: None,
+            thermal_resistance_of_basement_walls: None,
+            thermal_transmittance_of_floor_above_basement: None,
+            height_basement_walls: None,
+            h_pi: Some(2.1),
+            h_pe: Some(2.6),
+            thickness_walls: 0.2,
+            depth_basement_floor: None,
             perimeter: 19.,
             psi_wall_floor_junc: 0.6,
         };
         let be_ie = BuildingElement::Ground {
             area: 25.0,
+            total_area: 25.0,
             pitch: 90.,
             u_value: 1.33,
             r_f: 0.2,
             k_m: 17_000.,
             mass_distribution_class: MassDistributionClass::IE,
-            h_pi: 2.2,
-            h_pe: 2.7,
+            floor_type: FloorType::SlabEdgeInsulation,
+            edge_insulation: Some(vec![
+                EdgeInsulation::Horizontal {
+                    width: 3.0,
+                    edge_thermal_resistance: 2.0,
+                },
+                EdgeInsulation::Vertical {
+                    depth: 1.0,
+                    edge_thermal_resistance: 2.0,
+                },
+            ]),
+            height_upper_surface: None,
+            thermal_transmission_walls: None,
+            thermal_resistance_of_insulation: None,
+            area_per_perimeter_vent: None,
+            shield_fact_location: None,
+            thermal_resistance_of_basement_walls: None,
+            thermal_transmittance_of_floor_above_basement: None,
+            height_basement_walls: None,
+            h_pi: Some(2.2),
+            h_pe: Some(2.7),
+            thickness_walls: 0.2,
+            depth_basement_floor: None,
             perimeter: 20.,
             psi_wall_floor_junc: 0.7,
         };
         let be_d = BuildingElement::Ground {
             area: 27.5,
+            total_area: 27.5,
             pitch: 45.,
             u_value: 1.25,
             r_f: 0.2,
             k_m: 16_000.,
             mass_distribution_class: MassDistributionClass::D,
-            h_pi: 2.3,
-            h_pe: 2.8,
+            floor_type: FloorType::HeatedBasement,
+            edge_insulation: None,
+            height_upper_surface: None,
+            thermal_transmission_walls: None,
+            thermal_resistance_of_insulation: None,
+            area_per_perimeter_vent: None,
+            shield_fact_location: None,
+            thermal_resistance_of_basement_walls: Some(6.),
+            thermal_transmittance_of_floor_above_basement: None,
+            height_basement_walls: None,
+            h_pi: Some(2.3),
+            h_pe: Some(2.8),
+            thickness_walls: 0.2,
+            depth_basement_floor: Some(2.3),
             perimeter: 21.,
             psi_wall_floor_junc: 0.8,
         };
         let be_m = BuildingElement::Ground {
             area: 30.0,
+            total_area: 30.0,
             pitch: 0.,
             u_value: 1.0,
             r_f: 0.3,
             k_m: 15_000.,
             mass_distribution_class: MassDistributionClass::M,
-            h_pi: 2.4,
-            h_pe: 2.9,
+            floor_type: FloorType::UnheatedBasement,
+            edge_insulation: None,
+            height_upper_surface: None,
+            thermal_transmission_walls: Some(0.5),
+            thermal_resistance_of_insulation: None,
+            area_per_perimeter_vent: None,
+            shield_fact_location: None,
+            thermal_resistance_of_basement_walls: Some(0.15),
+            thermal_transmittance_of_floor_above_basement: Some(1.2),
+            height_basement_walls: Some(2.3),
+            h_pi: Some(2.4),
+            h_pe: Some(2.9),
+            thickness_walls: 0.2,
+            depth_basement_floor: Some(2.3),
             perimeter: 22.,
             psi_wall_floor_junc: 0.9,
         };
@@ -1598,6 +1678,7 @@ mod tests {
         BuildingElement::Transparent {
             u_value: None,
             _area: None,
+            window_openable_control: None,
             r_c: Some(0.4),
             pitch: 90.,
             orientation: 180.,
@@ -1606,6 +1687,11 @@ mod tests {
             base_height: 1.,
             height: 1.25,
             width: 4.,
+            free_area_height: None,
+            mid_height: None,
+            max_window_open_area: None,
+            security_risk: None,
+            window_part_list: None,
             shading: vec![],
         }
     }

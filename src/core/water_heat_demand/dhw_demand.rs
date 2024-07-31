@@ -4,7 +4,7 @@ use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::Pipework;
 use crate::core::schedule::ScheduleEvent;
-use crate::core::units::{MILLIMETRES_IN_METRE, MINUTES_PER_HOUR};
+use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::core::water_heat_demand::other_hot_water_uses::OtherHotWater;
@@ -14,7 +14,7 @@ use crate::corpus::{ColdWaterSources, HotWaterEventSchedules};
 use crate::input::{
     BathDetails, Baths as BathInput, ColdWaterSourceType, EnergySupplyType, OtherWaterUseDetails,
     OtherWaterUses as OtherWaterUseInput, Shower as ShowerInput, Showers as ShowersInput,
-    WaterDistribution as WaterDistributionInput, WaterPipework,
+    WaterDistribution as WaterDistributionInput,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -80,26 +80,27 @@ impl DomesticHotWaterDemand {
             .iter()
             .filter(|(_, shower)| !matches!(shower, Shower::InstantElectricShower(_)))
             .count();
-        let total_number_tapping_points = mixer_shower_count + baths.len() + other.len();
+        let _total_number_tapping_points = mixer_shower_count + baths.len() + other.len();
 
         let hot_water_distribution_pipework = water_distribution_input
             .iter()
-            .flat_map(|input| {
+            .flat_map(|_input| {
                 vec![
-                    (
-                        "internal".to_owned(),
-                        input_to_water_distribution_pipework(
-                            &input.internal,
-                            total_number_tapping_points,
-                        ),
-                    ),
-                    (
-                        "external".to_owned(),
-                        input_to_water_distribution_pipework(
-                            &input.external,
-                            total_number_tapping_points,
-                        ),
-                    ),
+                    // comment out just now while migrating to 0.30
+                    // (
+                    //     "internal".to_owned(),
+                    //     input_to_water_distribution_pipework(
+                    //         &input.internal,
+                    //         total_number_tapping_points,
+                    //     ),
+                    // ),
+                    // (
+                    //     "external".to_owned(),
+                    //     input_to_water_distribution_pipework(
+                    //         &input.external,
+                    //         total_number_tapping_points,
+                    //     ),
+                    // ),
                 ]
             })
             .collect();
@@ -395,20 +396,20 @@ fn input_to_other_water_events(
     OtherHotWater::new(input.flowrate, cold_water_source)
 }
 
-fn input_to_water_distribution_pipework(
-    input: &WaterPipework,
-    total_number_tapping_points: usize,
-) -> Pipework {
-    // Calculate average length of pipework between HW system and tapping point
-    let length_average = input.length / total_number_tapping_points as f64;
-
-    Pipework::new(
-        input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
-        input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
-        length_average,
-        input.insulation_thermal_conductivity,
-        input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
-        input.surface_reflectivity,
-        input.pipe_contents,
-    )
-}
+// fn input_to_water_distribution_pipework(
+//     input: &WaterPipework,
+//     total_number_tapping_points: usize,
+// ) -> Pipework {
+//     // Calculate average length of pipework between HW system and tapping point
+//     let length_average = input.length / total_number_tapping_points as f64;
+//
+//     Pipework::new(
+//         input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+//         input.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
+//         length_average,
+//         input.insulation_thermal_conductivity,
+//         input.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
+//         input.surface_reflectivity,
+//         input.pipe_contents,
+//     )
+// }

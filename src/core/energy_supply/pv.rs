@@ -200,14 +200,14 @@ mod tests {
             vec![
                 ShadingSegment {
                     number: 1,
-                    start: 180,
-                    end: 135,
+                    start: 180.,
+                    end: 135.,
                     ..Default::default()
                 },
                 ShadingSegment {
                     number: 2,
-                    start: 135,
-                    end: 90,
+                    start: 135.,
+                    end: 90.,
                     objects: Some(vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
@@ -216,14 +216,14 @@ mod tests {
                 },
                 ShadingSegment {
                     number: 3,
-                    start: 90,
-                    end: 45,
+                    start: 90.,
+                    end: 45.,
                     ..Default::default()
                 },
                 ShadingSegment {
                     number: 4,
-                    start: 45,
-                    end: 0,
+                    start: 45.,
+                    end: 0.,
                     objects: Some(vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
@@ -239,8 +239,8 @@ mod tests {
                 },
                 ShadingSegment {
                     number: 5,
-                    start: 0,
-                    end: -45,
+                    start: 0.,
+                    end: -45.,
                     objects: Some(vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
@@ -249,20 +249,20 @@ mod tests {
                 },
                 ShadingSegment {
                     number: 6,
-                    start: -45,
-                    end: -90,
+                    start: -45.,
+                    end: -90.,
                     ..Default::default()
                 },
                 ShadingSegment {
                     number: 7,
-                    start: -90,
-                    end: -135,
+                    start: -90.,
+                    end: -135.,
                     ..Default::default()
                 },
                 ShadingSegment {
                     number: 8,
-                    start: -135,
-                    end: -180,
+                    start: -135.,
+                    end: -180.,
                     ..Default::default()
                 },
             ],
