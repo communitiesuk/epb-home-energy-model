@@ -1422,16 +1422,6 @@ pub enum Ventilation {
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
     },
-    #[serde(rename = "MVHR")]
-    Mvhr {
-        req_ach: f64,
-        #[serde(rename = "SFP")]
-        sfp: f64,
-        efficiency: f64,
-        #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
-        ductwork: VentilationDuctwork,
-    },
 }
 
 impl Ventilation {
@@ -1439,24 +1429,8 @@ impl Ventilation {
         match self {
             Ventilation::Natural { req_ach, .. } => *req_ach,
             Ventilation::Whev { req_ach, .. } => *req_ach,
-            Ventilation::Mvhr { req_ach, .. } => *req_ach,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct VentilationDuctwork {
-    pub internal_diameter_mm: f64,
-    pub external_diameter_mm: f64,
-    pub length_in: f64,
-    pub length_out: f64,
-    pub insulation_thermal_conductivity: f64,
-    pub insulation_thickness_mm: f64,
-    pub reflective: bool,
-    #[serde(rename = "MVHR_location")]
-    pub mvhr_location: MVHRLocation,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]

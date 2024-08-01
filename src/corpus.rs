@@ -32,14 +32,12 @@ use crate::core::space_heat_demand::building_element::area_for_building_element_
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation_element::{
-    air_change_rate_to_flow_rate, MechanicalVentilationHeatRecovery, NaturalVentilation,
-    VentilationElement, VentilationElementInfiltration, WholeHouseExtractVentilation,
-    WindowOpeningForCooling,
+    air_change_rate_to_flow_rate, NaturalVentilation, VentilationElement,
+    VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
 };
 use crate::core::space_heat_demand::zone::{HeatBalance, NamedBuildingElement, Zone};
 use crate::core::units::{
-    kelvin_to_celsius, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    kelvin_to_celsius, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
@@ -2072,20 +2070,8 @@ fn schedule_event_from_input(
     expand_water_heating_events(events_input, sim_timestep, total_timesteps)
 }
 
-fn ductwork_from_ventilation_input(ventilation: &Option<Ventilation>) -> Option<Ductwork> {
-    ventilation.as_ref().and_then(|v| match v {
-        Ventilation::Mvhr { ductwork, .. } => Some(Ductwork::new(
-            ductwork.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
-            ductwork.external_diameter_mm / MILLIMETRES_IN_METRE as f64,
-            ductwork.length_in,
-            ductwork.length_out,
-            ductwork.insulation_thermal_conductivity,
-            ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64,
-            ductwork.reflective,
-            ductwork.mvhr_location,
-        )),
-        _ => None,
-    })
+fn ductwork_from_ventilation_input(_ventilation: &Option<Ventilation>) -> Option<Ductwork> {
+    None
 }
 
 fn ventilation_from_input<'a>(
@@ -2113,26 +2099,6 @@ fn ventilation_from_input<'a>(
                 energy_supply_conn,
                 // energy_supply_from_type_for_ventilation(energy_supply, energy_supplies),
                 // "Ventilation system".to_string(),
-                simulation_time.step_in_hours(),
-            ))
-        }
-        Ventilation::Mvhr {
-            req_ach,
-            sfp,
-            efficiency,
-            energy_supply,
-            ..
-        } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
-            let energy_supply_conn =
-                EnergySupply::connection(energy_supply, energy_supply_name).unwrap();
-
-            VentilationElement::Mvhr(MechanicalVentilationHeatRecovery::new(
-                *req_ach,
-                *sfp,
-                *efficiency,
-                energy_supply_conn,
                 simulation_time.step_in_hours(),
             ))
         }
