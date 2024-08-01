@@ -2141,7 +2141,9 @@ pub struct VentilationLeaks {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct MechanicalVentilation {
+    vent_sys_op: Option<String>, // this seems useless/unreferenced
     #[serde(rename = "sup_air_flw_ctrl")]
     supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
@@ -2151,11 +2153,19 @@ pub struct MechanicalVentilation {
     #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
     design_zone_heating_covered_by_mechanical_vent: f64,
     vent_type: VentType,
+    #[serde(rename = "mvhr_eff")]
+    mvhr_efficiency: Option<f64>,
+    mvhr_location: Option<MVHRLocation>,
+    #[serde(rename = "Control")]
+    control: Option<String>,
+    #[serde(rename = "SFP")]
+    sfp: Option<f64>,
     measured_fan_power: Option<f64>,
     measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
     energy_supply: EnergySupplyType,
     design_outdoor_air_flow_rate: f64,
+    ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -2190,6 +2200,39 @@ pub enum VentType {
     Mvhr,
     #[serde(rename = "PIV")]
     Piv,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MechanicalVentilationDuctwork {
+    cross_section_shape: DuctShape,
+    duct_perimeter_mm: Option<f64>,
+    internal_diameter_mm: Option<f64>,
+    external_diameter_mm: Option<f64>,
+    length: f64,
+    insulation_thermal_conductivity: f64,
+    insulation_thickness_mm: f64,
+    reflective: bool,
+    duct_type: DuctType,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DuctShape {
+    Circular,
+    Rectangular,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DuctType {
+    Intake,
+    Supply,
+    Extract,
+    Exhaust,
 }
 
 #[derive(Clone, Debug, Deserialize)]
