@@ -103,6 +103,7 @@ pub struct InternalGains {
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct InternalGainsDetails {
     pub start_day: u32,
     pub time_series_step: f64,
@@ -457,6 +458,7 @@ pub struct CustomEnergySourceFactor {
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ColdWaterSourceInput {
     #[serde(rename = "mains water")]
     pub mains_water: Option<ColdWaterSourceDetails>,
@@ -981,6 +983,7 @@ pub enum SolarCellLocation {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterTestData {
     #[serde(rename = "L")]
     pub l: Option<HeatPumpHotWaterOnlyTestDatum>,
@@ -990,6 +993,7 @@ pub struct HeatPumpHotWaterTestData {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterOnlyTestDatum {
     // CoP measured during EN 16147 test
     pub cop_dhw: f64,
@@ -1051,8 +1055,11 @@ pub enum WaterPipeContentsType {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HotWaterDemand {
+    #[serde(rename = "Shower")]
     pub shower: Option<Showers>,
+    #[serde(rename = "Bath")]
     pub bath: Option<Baths>,
     #[serde(rename = "Other")]
     pub other_water_use: Option<OtherWaterUses>,
@@ -1120,6 +1127,7 @@ impl Baths {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BathDetails {
     pub size: f64,
     #[serde(rename = "ColdWaterSource")]
@@ -1689,6 +1697,7 @@ pub enum MassDistributionClass {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct WindowPart {
     mid_height_air_flow_path: f64,
 }
@@ -1925,6 +1934,7 @@ pub enum HeatPumpBackupControlType {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HeatPumpBufferTank {
     daily_losses: f64,
     volume: f64,
@@ -1951,6 +1961,7 @@ pub struct HeatPumpTestDatum {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
     #[serde(rename = "EnergySupply")]
     energy_supply: EnergySupplyType,
@@ -1970,6 +1981,7 @@ pub struct HeatPumpBoiler {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BoilerCostScheduleHybrid {
     cost_schedule_start_day: u32,
     cost_schedule_time_series_step: f64,
@@ -1992,6 +2004,7 @@ pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
     pub system_type: WwhrsType,
@@ -2000,6 +2013,7 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub flow_rates: Vec<f64>,
     pub efficiencies: Vec<f64>,
     pub utilisation_factor: f64,
+    pub electrical_consumption: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -2052,6 +2066,7 @@ pub enum OnSiteGenerationVentilationStrategy {
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct WindowOpeningForCooling {
     pub equivalent_area: f64,
 }
@@ -2120,6 +2135,7 @@ pub enum TerrainClass {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Vent {
     mid_height_air_flow_path: f64,
     area_cm2: f64,
@@ -2132,10 +2148,13 @@ pub struct Vent {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VentilationLeaks {
     ventilation_zone_height: f64,
     test_pressure: f64,
     test_result: f64,
+    area_roof: Option<f64>,
+    area_facades: Option<f64>,
     env_area: f64,
 }
 
@@ -2237,6 +2256,7 @@ pub enum DuctType {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AirTerminalDevice {
     area_cm2: f64,
     pressure_difference_ref: f64,
@@ -2244,6 +2264,7 @@ pub struct AirTerminalDevice {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CombustionAppliance {
     supply_situation: CombustionAirSupplySituation,
     exhaust_situation: FlueGasExhaustSituation,
@@ -2303,9 +2324,11 @@ pub enum ApplianceEntry {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Appliance {
     #[serde(rename = "kWh_per_100cycle")]
     kwh_per_100_cycle: Option<f64>,
+    #[serde(rename = "loadshifting")]
     load_shifting: Option<ApplianceLoadShifting>,
     kg_load: Option<f64>,
     #[serde(rename = "kWh_per_annum")]
@@ -2318,6 +2341,7 @@ pub struct Appliance {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ApplianceLoadShifting {
     max_shift_hrs: f64,
     demand_limit_weighted: f64,
@@ -2334,6 +2358,7 @@ pub enum ApplianceReference {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Tariff {
     schedule: Schedule,
 }
