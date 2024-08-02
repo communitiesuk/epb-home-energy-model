@@ -1643,10 +1643,12 @@ fn energy_supply_from_input(
         Arc::new(RwLock::new(EnergySupply::new(
             details.fuel,
             simulation_time_iterator.total_steps(),
-            details
-                .electric_battery
-                .as_ref()
-                .map(ElectricBattery::from_input),
+            None,
+            // use None for now while migrating to 0.30
+            // details
+            //     .electric_battery
+            //     .as_ref()
+            //     .map(ElectricBattery::from_input),
         )))
     })
 }

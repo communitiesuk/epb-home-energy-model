@@ -445,13 +445,13 @@ impl EnergySupply {
         if let Some(ref battery) = &self.electric_battery {
             // See if the battery can deal with excess supply/demand for this timestep
             // supply_surplus is -ve by convention and demand_not_met is +ve
-            let energy_out_of_battery = battery.charge_discharge_battery(supply_surplus);
+            let energy_out_of_battery = battery.charge_discharge_battery(supply_surplus, simtime);
             supply_surplus -= energy_out_of_battery;
             self.energy_into_battery
                 .get(timestep_idx)
                 .unwrap()
                 .store(-energy_out_of_battery, Ordering::SeqCst);
-            let energy_out_of_battery = battery.charge_discharge_battery(demand_not_met);
+            let energy_out_of_battery = battery.charge_discharge_battery(demand_not_met, simtime);
             demand_not_met -= energy_out_of_battery;
             self.energy_out_of_battery
                 .get(timestep_idx)
@@ -552,10 +552,12 @@ fn supply_from_details(
     simulation_timesteps: usize,
 ) -> Arc<RwLock<EnergySupply>> {
     let fuel_type: FuelType = energy_supply_details.into();
-    let electric_battery = energy_supply_details
-        .electric_battery
-        .as_ref()
-        .map(ElectricBattery::from_input);
+    // TODO using None here while migrating to 0.30
+    // let electric_battery = energy_supply_details
+    //     .electric_battery
+    //     .as_ref()
+    //     .map(ElectricBattery::from_input);
+    let electric_battery = None;
     Arc::new(RwLock::new(EnergySupply::new(
         fuel_type,
         simulation_timesteps,
