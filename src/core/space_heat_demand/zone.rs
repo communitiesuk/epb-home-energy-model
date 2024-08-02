@@ -891,7 +891,7 @@ fn calc_temperatures(
         // RHS of heat balance eqn for this node
         let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions, simulation_time);
         let (f_sh_dir, f_sh_dif) =
-            shading_factors_direct_diffuse_for(eli, external_conditions, *simulation_time);
+            shading_factors_direct_diffuse_for(eli, external_conditions, *simulation_time).unwrap();
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
             + (h_ce + h_re) * temp_ext_for(eli, external_conditions, simulation_time)
             + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
@@ -1395,6 +1395,10 @@ mod tests {
         4.7, 4.8, 4.9, 5.0, 5.1, 5.2, 5.3, 5.4, 5.7, 5.4, 5.6, 5.3, 5.1, 4.8, 4.7, 4.6, 4.5, 4.2,
         4.9, 4.3, 4.4, 4.5, 4.3, 4.6,
     ];
+    const BASE_WIND_DIRECTIONS: [f64; 24] = [
+        300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140., 190.,
+        200., 320., 330., 340., 350., 355., 315., 5.,
+    ];
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -1455,8 +1459,8 @@ mod tests {
         let wind_speed_day_nov = BASE_WIND_SPEEDS.map(|t| t - 0.5);
         let wind_speed_day_dec = BASE_WIND_SPEEDS.map(|t| t - 0.3);
 
-        let mut wind_speeds = vec![];
-        for (temps, days_in_month) in [
+        let mut wind_speeds = Vec::with_capacity(8760);
+        for (speeds, days_in_month) in [
             (wind_speed_day_jan, DAYS_IN_MONTH[0]),
             (wind_speed_day_feb, DAYS_IN_MONTH[1]),
             (wind_speed_day_mar, DAYS_IN_MONTH[2]),
@@ -1471,7 +1475,46 @@ mod tests {
             (wind_speed_day_dec, DAYS_IN_MONTH[11]),
         ] {
             wind_speeds.extend_from_slice(
-                temps
+                speeds
+                    .iter()
+                    .cloned()
+                    .cycle()
+                    .take((days_in_month * HOURS_IN_DAY) as usize)
+                    .collect::<Vec<f64>>()
+                    .as_slice(),
+            );
+        }
+
+        let wind_direction_day_jan = BASE_WIND_DIRECTIONS;
+        let wind_direction_day_feb = BASE_WIND_DIRECTIONS.map(|d| d - 1.);
+        let wind_direction_day_mar = BASE_WIND_DIRECTIONS.map(|d| d - 2.);
+        let wind_direction_day_apr = BASE_WIND_DIRECTIONS.map(|d| d - 3.);
+        let wind_direction_day_may = BASE_WIND_DIRECTIONS.map(|d| d - 4.);
+        let wind_direction_day_jun = BASE_WIND_DIRECTIONS.map(|d| d + 1.);
+        let wind_direction_day_jul = BASE_WIND_DIRECTIONS.map(|d| d + 2.);
+        let wind_direction_day_aug = BASE_WIND_DIRECTIONS.map(|d| d + 3.);
+        let wind_direction_day_sep = BASE_WIND_DIRECTIONS.map(|d| d + 4.);
+        let wind_direction_day_oct = BASE_WIND_DIRECTIONS.map(|d| d - 5.);
+        let wind_direction_day_nov = BASE_WIND_DIRECTIONS.map(|d| d + 5.);
+        let wind_direction_day_dec = BASE_WIND_DIRECTIONS.map(|d| d - 0.);
+
+        let mut wind_directions = Vec::with_capacity(8760);
+        for (directions, days_in_month) in [
+            (wind_direction_day_jan, DAYS_IN_MONTH[0]),
+            (wind_direction_day_feb, DAYS_IN_MONTH[1]),
+            (wind_direction_day_mar, DAYS_IN_MONTH[2]),
+            (wind_direction_day_apr, DAYS_IN_MONTH[3]),
+            (wind_direction_day_may, DAYS_IN_MONTH[4]),
+            (wind_direction_day_jun, DAYS_IN_MONTH[5]),
+            (wind_direction_day_jul, DAYS_IN_MONTH[6]),
+            (wind_direction_day_aug, DAYS_IN_MONTH[7]),
+            (wind_direction_day_sep, DAYS_IN_MONTH[8]),
+            (wind_direction_day_oct, DAYS_IN_MONTH[9]),
+            (wind_direction_day_nov, DAYS_IN_MONTH[10]),
+            (wind_direction_day_dec, DAYS_IN_MONTH[11]),
+        ] {
+            wind_directions.extend_from_slice(
+                directions
                     .iter()
                     .cloned()
                     .cycle()
@@ -1485,6 +1528,7 @@ mod tests {
             &simulation_time.iter(),
             air_temps,
             wind_speeds,
+            wind_directions,
             vec![0.0; 4],
             vec![0.0; 4],
             vec![0.2; 4],

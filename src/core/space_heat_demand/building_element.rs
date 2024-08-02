@@ -90,7 +90,8 @@ impl BuildingElement {
                 let g_value = Self::convert_g_value(g_value);
 
                 let (f_sh_dir, f_sh_dif) =
-                    shading_factors_direct_diffuse_for(self, external_conditions, simulation_time);
+                    shading_factors_direct_diffuse_for(self, external_conditions, simulation_time)
+                        .unwrap();
                 g_value
                     * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                     * Self::calculate_area(height, width)
@@ -427,8 +428,8 @@ pub fn shading_factors_direct_diffuse_for(
     element: &BuildingElement,
     external_conditions: &ExternalConditions,
     simulation_time: SimulationTimeIteration,
-) -> (f64, f64) {
-    match element {
+) -> anyhow::Result<(f64, f64)> {
+    Ok(match element {
         BuildingElement::Opaque {
             base_height,
             height,
@@ -444,7 +445,7 @@ pub fn shading_factors_direct_diffuse_for(
             *orientation,
             &Default::default(),
             simulation_time,
-        ),
+        )?,
         BuildingElement::Transparent {
             base_height,
             height,
@@ -461,9 +462,9 @@ pub fn shading_factors_direct_diffuse_for(
             *orientation,
             shading,
             simulation_time,
-        ),
+        )?,
         _ => (1.0, 1.0),
-    }
+    })
 }
 
 /// Return the temperature on the other side of the building element
@@ -706,6 +707,7 @@ mod tests {
         ExternalConditions::new(
             &simulation_time,
             vec![0.0, 5.0, 10.0, 15.0],
+            vec![],
             vec![],
             vec![0.0; 4],
             vec![0.0; 4],
@@ -1453,7 +1455,8 @@ mod tests {
         ExternalConditions::new(
             &simulation_time_for_ground.iter(),
             airtemp,
-            vec![0.0; 8760],
+            vec![2.; 8760],
+            vec![180.; 8760],
             vec![0.0; 8760],
             vec![0.0; 8760],
             vec![0.0; 8760],

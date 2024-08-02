@@ -1055,6 +1055,7 @@ mod tests {
             &simulation_time_iterator,
             air_temps,
             wind_speeds,
+            vec![180.; 8],
             vec![0.0; 8],
             vec![0.0; 8],
             vec![],

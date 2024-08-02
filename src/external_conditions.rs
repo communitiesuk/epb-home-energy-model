@@ -2,6 +2,7 @@
 
 use crate::input::deserialize_orientation;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
+use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use serde::Deserialize;
 
@@ -63,12 +64,14 @@ pub enum WindowShadingObjectType {
     Overhang,
     SideFinRight,
     SideFinLeft,
+    Reveal,
 }
 
 #[derive(Clone, Debug)]
 pub struct ExternalConditions {
     air_temps: Vec<f64>,
     wind_speeds: Vec<f64>,
+    wind_directions: Vec<f64>,
     diffuse_horizontal_radiations: Vec<f64>,
     direct_beam_radiations: Vec<f64>,
     solar_reflectivity_of_ground: Vec<f64>,
@@ -91,11 +94,40 @@ pub struct ExternalConditions {
     f2_horizontal_brightness_coefficients: Vec<f64>,
 }
 
+/// Arguments:
+/// * `simulation_time` - reference to SimulationTime iteration
+/// * `air_temps` - list of external air temperatures, in deg C (one entry per hour)
+/// * `wind_speeds` - list of wind speeds, in m/s (one entry per hour)
+/// * `wind_directions` - list of wind directions in degrees where North=0, East=90,
+///                       South=180, West=270. Values range: 0 to 360.
+///                       Wind direction is reported by the direction from which it originates.
+///                       E.g, a southernly (180 degree) wind blows from the south to the north.
+/// * `diffuse_horizontal_radiation` - list of diffuse horizontal radiation values, in W/m2 (one entry per hour)
+/// * `direct_beam_radiation` - list of direct beam radiation values, in W/m2 (one entry per hour)
+/// * `solar_reflectivity_of_ground` - list of ground reflectivity values, 0 to 1 (one entry per hour)
+/// * `latitude` - latitude of weather station, angle from south, in degrees (single value)
+/// * `longitude` - longitude of weather station, easterly +ve westerly -ve, in degrees (single value)
+/// * `timezone` - timezone of weather station, -12 to 12 (single value)
+/// * `start_day` - first day of the time series, day of the year, 0 to 365 (single value)
+/// * `end_day` - last day of the time series, day of the year, 0 to 365 (single value)
+/// * `time_series_step` - timestep of the time series data, in hours
+/// * `january_first` - day of the week for January 1st, monday to sunday, 1 to 7 (single value)
+/// * `daylight_savings` - handling of daylight savings time, (single value)
+///                        e.g. applicable and taken into account,
+///                        applicable but not taken into account,
+///                        not applicable
+/// * `leap_day_included` - whether climate data includes a leap day, true or false (single value)
+/// * `direct_beam_conversion_needed` - A flag to indicate whether direct beam radiation from climate data needs to be
+///                                     converted from horizontal to normal incidence. If normal direct beam radiation
+///                                     values are provided then no conversion is needed.
+/// * `shading_segments` - data splitting the ground plane into segments (8-36) and giving height
+///                        and distance to shading objects surrounding the building
 impl ExternalConditions {
     pub fn new(
         simulation_time: &SimulationTimeIterator,
         air_temps: Vec<f64>,
         wind_speeds: Vec<f64>,
+        wind_directions: Vec<f64>,
         diffuse_horizontal_radiations: Vec<f64>,
         direct_beam_radiations: Vec<f64>,
         solar_reflectivity_of_ground: Vec<f64>,
@@ -244,6 +276,7 @@ impl ExternalConditions {
         Self {
             air_temps,
             wind_speeds,
+            wind_directions,
             diffuse_horizontal_radiations,
             direct_beam_radiations,
             solar_reflectivity_of_ground,
@@ -309,6 +342,10 @@ impl ExternalConditions {
         }
         let sum: f64 = self.wind_speeds.iter().sum();
         Some(sum / self.wind_speeds.len() as f64)
+    }
+
+    pub fn wind_direction(&self, simulation_time: SimulationTimeIteration) -> f64 {
+        self.wind_directions[simulation_time.time_series_idx(self.start_day, self.time_series_step)]
     }
 
     pub fn diffuse_horizontal_radiation(&self, timestep_idx: usize) -> f64 {
@@ -668,7 +705,7 @@ impl ExternalConditions {
     fn get_segment(
         &self,
         simulation_time: &SimulationTimeIteration,
-    ) -> Result<ShadingSegment, &'static str> {
+    ) -> anyhow::Result<ShadingSegment> {
         // """ for complex (environment) shading objects, we need to know which
         // segment the azimuth of the sun occupies at each timestep
         //
@@ -677,14 +714,28 @@ impl ExternalConditions {
         let current_hour_idx = simulation_time.current_hour() as usize;
         let azimuth = self.solar_azimuth_angles[current_hour_idx];
 
-        match self
-            .shading_segments
-            .iter()
-            .find(|&segment| azimuth < segment.start as f64 && azimuth > segment.end as f64)
-        {
-            Some(segment) => Ok(segment.clone()),
-            None => Err("Solar segment was not found - this is an unexpected error"),
+        let mut previous_segment_end: Option<f64> = None;
+
+        for segment in &self.shading_segments {
+            if let Some(previous_segment_end) = previous_segment_end {
+                if previous_segment_end != segment.start {
+                    return Err(anyhow!("No gaps between shading segments allowed"));
+                }
+            }
+            previous_segment_end = Some(segment.end);
+            if segment.end > segment.start {
+                return Err(anyhow!(
+                    "End orientation is less than the start orientation. Check shading inputs.",
+                ));
+            }
+            if azimuth < segment.start && azimuth > segment.end {
+                return Ok(segment.clone());
+            }
         }
+
+        Err(anyhow!(
+            "Solar segment was not found - this is an unexpected error"
+        ))
     }
 
     fn obstacle_shading_height(
@@ -760,7 +811,7 @@ impl ExternalConditions {
         orientation: f64,
         window_shading: Option<&[WindowShadingObject]>,
         simulation_time: SimulationTimeIteration,
-    ) -> Result<f64, &'static str> {
+    ) -> anyhow::Result<f64> {
         // """ calculates the shading factor of direct radiation due to external
         // shading objects
         //
@@ -850,7 +901,7 @@ impl ExternalConditions {
                         };
                         wfinl = max_of_2(wfinl, new_finlshade);
                     }
-                    _ => return Err("unexpected window shading object type encountered"),
+                    _ => return Err(anyhow!("unexpected window shading object type encountered")),
                 }
             }
         }
@@ -891,7 +942,7 @@ impl ExternalConditions {
         height: f64,
         width: f64,
         window_shading: Option<&Vec<WindowShadingObject>>,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         // """ calculates the shading factor of diffuse radiation due to external
         // shading objects
         //
@@ -969,6 +1020,9 @@ impl ExternalConditions {
                     }
                     WindowShadingObjectType::Obstacle => {
                         // do nothing
+                    }
+                    WindowShadingObjectType::Reveal => {
+                        unimplemented!("reveal type not implemented")
                     }
                 }
             }
@@ -1099,6 +1153,9 @@ impl ExternalConditions {
             let f_sh_dif = max_of_2(0., min_of_2(f_sh_dif_fins, f_sh_dif_overhangs));
             let f_sh_ref = max_of_2(0., min_of_2(f_sh_ref_fins, f_sh_ref_overhangs));
 
+            if diffuse_irr_total == 0. {
+                bail!("Zero diffuse radiation with non-zero direct radiation.");
+            }
             let fdiff = (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor)
                 + f_sh_ref * diffuse_irr_ref)
                 / diffuse_irr_total;
@@ -1106,7 +1163,10 @@ impl ExternalConditions {
         }
 
         // following is finding the max value of fdiff_list
-        *fdiff_list.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
+        Ok(*fdiff_list
+            .iter()
+            .max_by(|a, b| a.total_cmp(b).reverse())
+            .unwrap())
     }
 
     pub fn shading_reduction_factor_direct_diffuse(
@@ -1118,7 +1178,7 @@ impl ExternalConditions {
         orientation: f64,
         window_shading: &Vec<WindowShadingObject>,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         // """ calculates the direct and diffuse shading factors due to external
         // shading objects
         //
@@ -1142,7 +1202,30 @@ impl ExternalConditions {
         let (direct, diffuse, _, diffuse_breakdown) = self
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
         if direct + diffuse == 0.0 {
-            return (0.0, 0.0);
+            return Ok((0.0, 0.0));
+        }
+
+        let mut window_shading_expanded: Vec<WindowShadingObject> = vec![];
+        for shading in window_shading {
+            if let WindowShadingObjectType::Reveal = shading.object_type {
+                window_shading_expanded.push(WindowShadingObject {
+                    object_type: WindowShadingObjectType::Overhang,
+                    depth: shading.depth,
+                    distance: shading.distance,
+                });
+                window_shading_expanded.push(WindowShadingObject {
+                    object_type: WindowShadingObjectType::SideFinLeft,
+                    depth: shading.depth,
+                    distance: shading.distance,
+                });
+                window_shading_expanded.push(WindowShadingObject {
+                    object_type: WindowShadingObjectType::SideFinRight,
+                    depth: shading.depth,
+                    distance: shading.distance,
+                });
+            } else {
+                window_shading_expanded.push(*shading);
+            }
         }
 
         // # first check if the surface is outside the solar beam
@@ -1170,10 +1253,9 @@ impl ExternalConditions {
                 height,
                 width,
                 orientation,
-                Some(window_shading),
+                Some(&window_shading_expanded),
                 simulation_time,
-            )
-            .expect("expected direct shading reduction factor to be calculable")
+            )?
         };
 
         let fdiff = self.diffuse_shading_reduction_factor(
@@ -1181,10 +1263,10 @@ impl ExternalConditions {
             tilt,
             height,
             width,
-            Some(window_shading),
-        );
+            Some(&window_shading_expanded),
+        )?;
 
-        (fdir, fdiff)
+        Ok((fdir, fdiff))
     }
 }
 
@@ -1825,6 +1907,55 @@ mod tests {
         speeds
     }
 
+    const BASE_WIND_DIRECTIONS: [f64; 24] = [
+        300., 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140., 190.,
+        200., 320., 330., 340., 350., 355., 315., 5.,
+    ];
+
+    #[fixture]
+    pub fn wind_directions() -> Vec<f64> {
+        let wind_direction_day_jan = BASE_WIND_DIRECTIONS;
+        let wind_direction_day_feb = BASE_WIND_DIRECTIONS.map(|d| d - 1.);
+        let wind_direction_day_mar = BASE_WIND_DIRECTIONS.map(|d| d - 2.);
+        let wind_direction_day_apr = BASE_WIND_DIRECTIONS.map(|d| d - 3.);
+        let wind_direction_day_may = BASE_WIND_DIRECTIONS.map(|d| d - 4.);
+        let wind_direction_day_jun = BASE_WIND_DIRECTIONS.map(|d| d + 1.);
+        let wind_direction_day_jul = BASE_WIND_DIRECTIONS.map(|d| d + 2.);
+        let wind_direction_day_aug = BASE_WIND_DIRECTIONS.map(|d| d + 3.);
+        let wind_direction_day_sep = BASE_WIND_DIRECTIONS.map(|d| d + 4.);
+        let wind_direction_day_oct = BASE_WIND_DIRECTIONS.map(|d| d - 5.);
+        let wind_direction_day_nov = BASE_WIND_DIRECTIONS.map(|d| d + 5.);
+        let wind_direction_day_dec = BASE_WIND_DIRECTIONS.map(|d| d - 0.);
+
+        let mut wind_directions = Vec::with_capacity(8760);
+        for (directions, days_in_month) in [
+            (wind_direction_day_jan, DAYS_IN_MONTH[0]),
+            (wind_direction_day_feb, DAYS_IN_MONTH[1]),
+            (wind_direction_day_mar, DAYS_IN_MONTH[2]),
+            (wind_direction_day_apr, DAYS_IN_MONTH[3]),
+            (wind_direction_day_may, DAYS_IN_MONTH[4]),
+            (wind_direction_day_jun, DAYS_IN_MONTH[5]),
+            (wind_direction_day_jul, DAYS_IN_MONTH[6]),
+            (wind_direction_day_aug, DAYS_IN_MONTH[7]),
+            (wind_direction_day_sep, DAYS_IN_MONTH[8]),
+            (wind_direction_day_oct, DAYS_IN_MONTH[9]),
+            (wind_direction_day_nov, DAYS_IN_MONTH[10]),
+            (wind_direction_day_dec, DAYS_IN_MONTH[11]),
+        ] {
+            wind_directions.extend_from_slice(
+                directions
+                    .iter()
+                    .cloned()
+                    .cycle()
+                    .take((days_in_month * HOURS_IN_DAY) as usize)
+                    .collect::<Vec<f64>>()
+                    .as_slice(),
+            );
+        }
+
+        wind_directions
+    }
+
     #[fixture]
     pub fn diffuse_horizontal_radiation() -> [f64; 8] {
         [333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0]
@@ -1950,6 +2081,7 @@ mod tests {
             &simulation_time_iterator(),
             air_temps(),
             wind_speeds(),
+            wind_directions(),
             diffuse_horizontal_radiation().to_vec(),
             direct_beam_radiation().to_vec(),
             solar_reflectivity_of_ground().to_vec(),
@@ -2038,6 +2170,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_wind_directions(
+        external_conditions: ExternalConditions,
+        wind_directions: Vec<f64>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        for t_it in simulation_time_iterator {
+            assert_eq!(
+                external_conditions.wind_direction(t_it),
+                wind_directions[t_it.index]
+            );
+        }
+    }
+
+    #[rstest]
     fn should_have_correct_diffuse_horizontal_radiation(
         external_conditions: ExternalConditions,
         diffuse_horizontal_radiation: [f64; 8],
@@ -2078,6 +2224,86 @@ mod tests {
             assert_eq!(
                 external_conditions.solar_reflectivity_of_ground(&simtime_step),
                 solar_reflectivity_of_ground[i]
+            );
+        }
+    }
+
+    /// Test that using a reveal produces the same results as an equivalent overhang and side fins
+    #[rstest]
+    fn test_window_shading(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let reveal_depth = 0.1;
+        let reveal_distance = 0.2;
+        let base_height = 0.;
+        let height = 2.;
+        let width = 2.;
+        let tilt = 90.;
+        let orientation = 180.;
+
+        // Create shading objects with reveal
+        let shading_with_reveal = vec![WindowShadingObject {
+            object_type: WindowShadingObjectType::Reveal,
+            depth: reveal_depth,
+            distance: reveal_distance,
+        }];
+
+        // Create shading objects with overhang and fins
+        let shading_with_overhang_fin = vec![
+            WindowShadingObject {
+                object_type: WindowShadingObjectType::Overhang,
+                depth: reveal_depth,
+                distance: reveal_distance,
+            },
+            WindowShadingObject {
+                object_type: WindowShadingObjectType::SideFinRight,
+                depth: reveal_depth,
+                distance: reveal_distance,
+            },
+            WindowShadingObject {
+                object_type: WindowShadingObjectType::SideFinLeft,
+                depth: reveal_depth,
+                distance: reveal_distance,
+            },
+        ];
+
+        for t_it in simulation_time_iterator {
+            // Calculate shading factors with reveal
+            let shading_factor_reveal = external_conditions
+                .shading_reduction_factor_direct_diffuse(
+                    base_height,
+                    height,
+                    width,
+                    tilt,
+                    orientation,
+                    &shading_with_reveal,
+                    t_it,
+                )
+                .unwrap();
+
+            // Calculate shading factors with overhang and fins
+            let shading_factor_overhang_fin = external_conditions
+                .shading_reduction_factor_direct_diffuse(
+                    base_height,
+                    height,
+                    width,
+                    tilt,
+                    orientation,
+                    &shading_with_overhang_fin,
+                    t_it,
+                )
+                .unwrap();
+
+            assert_relative_eq!(
+                shading_factor_reveal.0,
+                shading_factor_overhang_fin.0,
+                max_relative = 1e-5
+            );
+            assert_relative_eq!(
+                shading_factor_reveal.1,
+                shading_factor_overhang_fin.1,
+                max_relative = 1e-5
             );
         }
     }

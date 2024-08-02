@@ -1507,6 +1507,7 @@ fn external_conditions_from_input(
         simulation_time,
         input.air_temperatures.clone().unwrap_or_default(),
         input.wind_speeds.clone().unwrap_or_default(),
+        vec![], // empty vec for wind directions to be replaced while migrating to 0.30
         input
             .diffuse_horizontal_radiation
             .clone()
