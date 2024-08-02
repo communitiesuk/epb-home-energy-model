@@ -514,7 +514,7 @@ impl Corpus {
         let ductwork = &self.space_heating_ductwork;
         match ductwork {
             None => 0.,
-            Some(ductwork) => {
+            Some(_ductwork) => {
                 // MVHR duct temperatures:
                 // extract_duct_temp - indoor air temperature
                 // intake_duct_temp - outside air temperature
@@ -526,21 +526,23 @@ impl Corpus {
                 let temp_diff = internal_air_temperature - intake_duct_temp;
 
                 // Supply duct contains what the MVHR could recover
-                let supply_duct_temp = intake_duct_temp + (efficiency * temp_diff);
+                let _supply_duct_temp = intake_duct_temp + (efficiency * temp_diff);
 
                 // Exhaust duct contans the heat that couldn't be recovered
-                let exhaust_duct_temp = intake_duct_temp + ((1. - efficiency) * temp_diff);
+                let _exhaust_duct_temp = intake_duct_temp + ((1. - efficiency) * temp_diff);
 
-                ductwork
-                    .total_duct_heat_loss(
-                        Some(internal_air_temperature),
-                        Some(supply_duct_temp),
-                        Some(internal_air_temperature),
-                        Some(intake_duct_temp),
-                        Some(exhaust_duct_temp),
-                        efficiency,
-                    )
-                    .unwrap()
+                // comment out for now while migrating to 0.30
+                // ductwork
+                //     .total_duct_heat_loss(
+                //         Some(internal_air_temperature),
+                //         Some(supply_duct_temp),
+                //         Some(internal_air_temperature),
+                //         Some(intake_duct_temp),
+                //         Some(exhaust_duct_temp),
+                //         efficiency,
+                //     )
+                //     .unwrap()
+                0.
             }
         }
     }

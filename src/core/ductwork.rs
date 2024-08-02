@@ -1,4 +1,5 @@
-use crate::input::MVHRLocation;
+use crate::input::{DuctShape, DuctType, MVHRLocation};
+use anyhow::anyhow;
 use std::f64::consts::PI;
 
 // Set default value for the heat transfer coefficient inside the duct, in W / m^2 K
@@ -10,97 +11,150 @@ const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7;
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
 /// A struct to represent ductwork for mechanical ventilation with heat recovery
-/// (MVHR), assuming steady state heat transfer in a hollow cyclinder (duct)
-/// with radial heat flow. ISO 12241:2022
+/// (MVHR), assuming steady state heat transfer in, 1. a hollow cylinder (duct)
+/// with radial heat flow and 2. a rectangular cross-section ISO 12241:2022
+#[derive(Clone, Copy)]
 pub struct Ductwork {
-    length_in_in_m: f64,
-    length_out_in_m: f64,
+    length_in_m: f64,
     mvhr_location: MVHRLocation,
+    mvhr_efficiency: f64,
     internal_surface_resistance: f64,
+    duct_type: DuctType,
     // in K m / W
     insulation_resistance: f64,
     // in K m / W
     external_surface_resistance: f64, // K m / W
     #[cfg(test)]
-    diameter_including_insulation_in_m: f64,
+    diameter_including_insulation_in_m: Option<f64>,
 }
 
 impl Ductwork {
     /// Arguments:
+    /// * `cross_section_shape` - whether cross-section of duct is circular or rectangular (square)
+    /// * `duct_perimeter` - if ductwork is rectangular(square) enter perimeter, in m
     /// * `internal_diameter` - internal diameter of the duct, in m
     /// * `external_diameter` - external diameter of the duct, in m
-    /// * `length_in` - length of intake duct, in m
-    /// * `length_out` - length of exhaust duct, in m
+    /// * `length` - length of duct, in m
     /// * `k_insulation` - thermal conductivity of the insulation, in W / m K
     /// * `thickness_insulation` - thickness of the duct insulation, in m
     /// * `reflective` - whether the outer surface of the duct is reflective (true) or not (false) (boolean input)
+    /// * `duct_type` - intake, supply, extract or exhaust
     /// * `mvhr_location` - location of the MVHR unit (inside or outside the thermal envelope)
+    /// * `mvhr_efficiency` - heat recovery efficiency of MVHR unit (0 to 1)
     pub fn new(
-        internal_diameter_in_m: f64,
-        external_diameter_in_m: f64,
-        length_in_in_m: f64,
-        length_out_in_m: f64,
+        cross_section_shape: DuctShape,
+        duct_perimeter_in_m: Option<f64>,
+        internal_diameter_in_m: Option<f64>,
+        external_diameter_in_m: Option<f64>,
+        length_in_m: f64,
         k_insulation: f64,
         thickness_insulation_in_m: f64,
         reflective: bool,
+        duct_type: DuctType,
         mvhr_location: MVHRLocation,
-    ) -> Self {
+        mvhr_efficiency: f64,
+    ) -> anyhow::Result<Self> {
         let external_htc = if reflective {
             EXTERNAL_REFLECTIVE_HTC
         } else {
             EXTERNAL_NONREFLECTIVE_HTC
         };
 
-        // Calculate the diameter of the duct including the insulation (D_ins, here diameter_including_insulation_in_m), in m
-        let diameter_including_insulation_in_m =
-            external_diameter_in_m + (2. * thickness_insulation_in_m);
-
-        // Calculate the interior linear surface resistance, in K m / W
-        let internal_surface_resistance = 1. / (INTERNAL_HTC * PI * internal_diameter_in_m);
-
-        // Calculate the insulation linear thermal resistance, in K m / W
-        let insulation_resistance = (diameter_including_insulation_in_m / internal_diameter_in_m)
-            .ln()
-            / (2. * PI * k_insulation);
-
-        // Calculate the exterior linear surface resistance, in K m / W
-        let external_surface_resistance =
-            1. / (external_htc * PI * diameter_including_insulation_in_m);
-
-        Self {
-            length_in_in_m,
-            length_out_in_m,
-            mvhr_location,
+        let (
+            _diameter_including_insulation_in_m,
             internal_surface_resistance,
             insulation_resistance,
             external_surface_resistance,
+        ) = match cross_section_shape {
+            DuctShape::Circular => {
+                let external_diameter_in_m = external_diameter_in_m.ok_or_else(|| {
+                    anyhow!("An external diameter is needed for circular ductwork.")
+                })?;
+                let internal_diameter_in_m = internal_diameter_in_m.ok_or_else(|| {
+                    anyhow!("An internal diameter is needed for circular ductwork.")
+                })?;
+
+                // Calculate the diameter of the duct including the insulation (D_ins, here diameter_including_insulation_in_m), in m
+                let diameter_including_insulation_in_m =
+                    external_diameter_in_m + (2. * thickness_insulation_in_m);
+
+                // Calculate the interior linear surface resistance, in K m / W
+                let internal_surface_resistance = 1. / (INTERNAL_HTC * PI * internal_diameter_in_m);
+
+                // Calculate the insulation linear thermal resistance, in K m / W
+                let insulation_resistance =
+                    (diameter_including_insulation_in_m / internal_diameter_in_m).ln()
+                        / (2. * PI * k_insulation);
+
+                // Calculate the exterior linear surface resistance, in K m / W
+                let external_surface_resistance =
+                    1. / (external_htc * PI * diameter_including_insulation_in_m);
+
+                (
+                    Some(diameter_including_insulation_in_m),
+                    internal_surface_resistance,
+                    insulation_resistance,
+                    external_surface_resistance,
+                )
+            }
+            DuctShape::Rectangular => {
+                let duct_perimeter_in_m = duct_perimeter_in_m.ok_or_else(|| {
+                    anyhow!("Duct perimeter was expected to be provided for rectangular ductwork.")
+                })?;
+
+                // Calculate the perimeter of the duct including the insulation, in m
+                // the value 8 is specified in the standard ISO 12241:2022 and not assigned a description
+                let duct_perimeter_external =
+                    duct_perimeter_in_m + (8. * thickness_insulation_in_m);
+
+                // Calculate the interior linear surface resistance, in K m / W
+                let internal_surface_resistance = 1.0 / (INTERNAL_HTC * duct_perimeter_in_m);
+
+                // Calculate the insulation linear thermal resistance, in K m / W
+                let insulation_resistance = (2.0 * thickness_insulation_in_m)
+                    / (k_insulation * (duct_perimeter_in_m + duct_perimeter_external));
+
+                // Calculate the exterior linear surface resistance, in K m / W
+                let external_surface_resistance = 1.0 / (external_htc * duct_perimeter_external);
+
+                (
+                    None,
+                    internal_surface_resistance,
+                    insulation_resistance,
+                    external_surface_resistance,
+                )
+            }
+        };
+
+        Ok(Self {
+            length_in_m,
+            mvhr_location,
+            mvhr_efficiency,
+            internal_surface_resistance,
+            insulation_resistance,
+            external_surface_resistance,
+            duct_type,
             #[cfg(test)]
-            diameter_including_insulation_in_m,
-        }
+            diameter_including_insulation_in_m: _diameter_including_insulation_in_m,
+        })
     }
 
-    pub fn get_mvhr_location(&self) -> &MVHRLocation {
-        &self.mvhr_location
+    pub fn duct_type(&self) -> DuctType {
+        self.duct_type
     }
 
     /// Return the heat loss for air inside the duct for the current timestep
     /// Arguments:
     /// * `inside_temp_in_c` - temperature of air inside the duct, in degrees C
     /// * `outside_temp_in_c` - temperature outside the duct, in degrees C
-    /// * `length`
-    pub fn duct_heat_loss(
-        &self,
-        inside_temp_in_c: f64,
-        outside_temp_in_c: f64,
-        length: f64,
-    ) -> f64 {
+    pub fn duct_heat_loss(&self, inside_temp_in_c: f64, outside_temp_in_c: f64) -> f64 {
         // Calculate total thermal resistance
         let total_resistance = self.internal_surface_resistance
             + self.insulation_resistance
             + self.external_surface_resistance;
 
         // Calculate heat loss, in W
-        (inside_temp_in_c - outside_temp_in_c) / total_resistance * length
+        (inside_temp_in_c - outside_temp_in_c) / total_resistance * self.length_in_m
     }
 
     /// Return the heat loss for air inside the duct for the current timestep
@@ -112,62 +166,44 @@ impl Ductwork {
     /// * `efficiency` - heat recovery efficiency of MVHR
     pub fn total_duct_heat_loss(
         &self,
-        _outside_temp: Option<f64>,
-        supply_duct_temp_in_c: Option<f64>,
-        extract_duct_temp_in_c: Option<f64>,
-        intake_duct_temp_in_c: Option<f64>,
-        exhaust_duct_temp_in_c: Option<f64>,
-        efficiency: f64,
-    ) -> Result<f64, &str> {
+        temp_indoor_air_in_c: f64,
+        temp_outdoor_air_in_c: f64,
+    ) -> f64 {
+        let temp_diff = temp_indoor_air_in_c - temp_outdoor_air_in_c;
+
         match self.mvhr_location {
             // Outside location
             // Air inside the duct loses heat, external environment gains heat
             // Loses energy to outside in extract duct - losses must be X by the efficiency of heat recovery
             // Loses energy to outside in supply duct - lose all because after MVHR unit
-            MVHRLocation::Outside => {
-                if supply_duct_temp_in_c.is_none()
-                    || extract_duct_temp_in_c.is_none()
-                    || intake_duct_temp_in_c.is_none()
-                {
-                    return Err("Duct temperatures not provided for outside MVHR.");
+            MVHRLocation::Outside => match self.duct_type {
+                DuctType::Intake | DuctType::Exhaust => 0.0,
+                DuctType::Supply => {
+                    let supply_duct_temp =
+                        temp_outdoor_air_in_c + (self.mvhr_efficiency * temp_diff);
+                    self.duct_heat_loss(supply_duct_temp, temp_outdoor_air_in_c)
                 }
-                let outside_temp = intake_duct_temp_in_c.unwrap();
-                let supply_heat_loss = self.duct_heat_loss(
-                    supply_duct_temp_in_c.unwrap(),
-                    outside_temp,
-                    self.length_in_in_m,
-                );
-                let extract_heat_loss = self.duct_heat_loss(
-                    extract_duct_temp_in_c.unwrap(),
-                    outside_temp,
-                    self.length_out_in_m,
-                );
-                Ok(-(supply_heat_loss + (extract_heat_loss * efficiency)))
-            }
+                DuctType::Extract => {
+                    self.duct_heat_loss(temp_indoor_air_in_c, temp_outdoor_air_in_c)
+                        * self.mvhr_efficiency
+                }
+            },
             // Inside location
             // This will be a negative heat loss i.e. air inside the duct gains heat, dwelling loses heat
             // Gains energy from zone in intake duct - benefit of gain must be X by the efficiency of heat recovery
             // Gains energy from zone in exhaust duct
-            MVHRLocation::Inside => {
-                if intake_duct_temp_in_c.is_none()
-                    || exhaust_duct_temp_in_c.is_none()
-                    || extract_duct_temp_in_c.is_none()
-                {
-                    return Err("Duct temperatures not provided for inside MVHR.");
+            MVHRLocation::Inside => match self.duct_type {
+                DuctType::Supply | DuctType::Extract => 0.0,
+                DuctType::Intake => {
+                    self.duct_heat_loss(temp_outdoor_air_in_c, temp_indoor_air_in_c)
+                        * self.mvhr_efficiency
                 }
-                let outside_temp = extract_duct_temp_in_c.unwrap();
-                let intake_heat_loss = self.duct_heat_loss(
-                    intake_duct_temp_in_c.unwrap(),
-                    outside_temp,
-                    self.length_in_in_m,
-                );
-                let exhaust_heat_loss = self.duct_heat_loss(
-                    exhaust_duct_temp_in_c.unwrap(),
-                    outside_temp,
-                    self.length_out_in_m,
-                );
-                Ok((intake_heat_loss * efficiency) + exhaust_heat_loss)
-            }
+                DuctType::Exhaust => {
+                    let exhaust_duct_temp =
+                        temp_outdoor_air_in_c + ((1.0 - self.mvhr_efficiency) * temp_diff);
+                    self.duct_heat_loss(exhaust_duct_temp, temp_indoor_air_in_c)
+                }
+            },
         }
     }
 }
@@ -175,14 +211,127 @@ impl Ductwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::MVHRLocation::Inside;
+    use crate::input::MVHRLocation;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use rstest::*;
 
     #[fixture]
-    pub fn ductwork() -> Ductwork {
-        Ductwork::new(0.025, 0.027, 0.4, 0.4, 0.02, 0.022, false, Inside)
+    pub fn circular_ductwork() -> [Ductwork; 8] {
+        [
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Exhaust,
+                MVHRLocation::Inside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Intake,
+                MVHRLocation::Inside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Supply,
+                MVHRLocation::Inside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Extract,
+                MVHRLocation::Inside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Exhaust,
+                MVHRLocation::Outside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Intake,
+                MVHRLocation::Outside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Supply,
+                MVHRLocation::Outside,
+                0.4,
+            )
+            .unwrap(),
+            Ductwork::new(
+                DuctShape::Circular,
+                None,
+                Some(0.025),
+                Some(0.027),
+                0.4,
+                0.02,
+                0.022,
+                false,
+                DuctType::Extract,
+                MVHRLocation::Outside,
+                0.4,
+            )
+            .unwrap(),
+        ]
     }
 
     #[fixture]
@@ -191,45 +340,55 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_diameter(ductwork: Ductwork) {
+    pub fn should_have_correct_diameter(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
-            ductwork.diameter_including_insulation_in_m,
+            circular_ductwork[0]
+                .diameter_including_insulation_in_m
+                .unwrap(),
             0.071,
             max_relative = 1e-3
         );
     }
 
     #[rstest]
-    pub fn should_have_correct_internal_surface_resistance(ductwork: Ductwork) {
+    pub fn should_have_correct_internal_surface_resistance(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
-            ductwork.internal_surface_resistance,
+            circular_ductwork[0].internal_surface_resistance,
             0.82144,
             max_relative = 1e-5
         );
     }
 
     #[rstest]
-    pub fn should_have_correct_insulation_resistance(ductwork: Ductwork) {
-        assert_relative_eq!(ductwork.insulation_resistance, 8.30633, max_relative = 1e-5);
+    pub fn should_have_correct_insulation_resistance(circular_ductwork: [Ductwork; 8]) {
+        assert_relative_eq!(
+            circular_ductwork[0].insulation_resistance,
+            8.30633,
+            max_relative = 1e-5
+        );
     }
 
     #[rstest]
-    pub fn should_have_correct_external_surface_resistance(ductwork: Ductwork) {
+    pub fn should_have_correct_external_surface_resistance(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
-            ductwork.external_surface_resistance,
+            circular_ductwork[0].external_surface_resistance,
             0.44832,
             max_relative = 1e-5
         );
     }
 
     #[rstest]
-    pub fn should_calc_correct_duct_heat_loss(ductwork: Ductwork, simulation_time: SimulationTime) {
+    pub fn should_calc_correct_duct_heat_loss(
+        circular_ductwork: [Ductwork; 8],
+        simulation_time: SimulationTime,
+    ) {
         let outside_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
         let inside_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+        let ductwork = circular_ductwork[0];
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx], 0.4),
+                ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx]),
                 [-0.62656, -0.56390, -0.50125, -0.43859, -0.41771, -0.39682, -0.37594, -0.35505]
                     [t_idx],
                 max_relative = 1e-4
@@ -239,30 +398,111 @@ mod tests {
 
     #[rstest]
     pub fn should_calc_correct_total_duct_heat_loss(
-        ductwork: Ductwork,
+        circular_ductwork: [Ductwork; 8],
         simulation_time: SimulationTime,
     ) {
-        // let outside_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5]; // unused param from Python code
-        let intake_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
-        let exhaust_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
-        let supply_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
-        let extract_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
+        let outside_temp = [10.0, 10.0, 10.0, 10.0, 5.0, 5.0, 5.0, 5.0];
+        let inside_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                ductwork
-                    .total_duct_heat_loss(
-                        None,
-                        Some(supply_temp[t_idx]),
-                        Some(extract_temp[t_idx]),
-                        Some(intake_temp[t_idx]),
-                        Some(exhaust_temp[t_idx]),
-                        0.7,
-                    )
-                    .unwrap(),
-                [-0.43859, -0.39473, -0.35087, -0.30701, -0.29239, -0.27777, -0.26316, -0.24854]
+                circular_ductwork[0].total_duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx],),
+                [
+                    -0.16708267856927533,
+                    -0.15872854464081154,
+                    -0.1503744107123478,
+                    -0.14202027678388404,
+                    -0.23391574999698542,
+                    -0.24226988392544924,
+                    -0.250624017853913,
+                    -0.25897815178237676,
+                ][t_idx],
+                max_relative = 1e-6
+            );
+        }
+    }
+
+    #[fixture]
+    pub fn rectangular_ductwork() -> Ductwork {
+        Ductwork::new(
+            DuctShape::Rectangular,
+            Some(0.1),
+            None,
+            None,
+            0.4,
+            0.02,
+            0.022,
+            false,
+            DuctType::Exhaust,
+            MVHRLocation::Inside,
+            0.4,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    pub fn rectangular_should_have_correct_internal_surface_resistance(
+        rectangular_ductwork: Ductwork,
+    ) {
+        assert_relative_eq!(
+            rectangular_ductwork.internal_surface_resistance,
+            0.64516,
+            max_relative = 1e-5
+        );
+    }
+
+    #[rstest]
+    pub fn rectangular_should_have_correct_insulation_resistance(rectangular_ductwork: Ductwork) {
+        assert_relative_eq!(
+            rectangular_ductwork.insulation_resistance,
+            5.85106,
+            max_relative = 1e-5
+        );
+    }
+
+    #[rstest]
+    pub fn rectangular_should_have_correct_external_surface_resistance(
+        rectangular_ductwork: Ductwork,
+    ) {
+        assert_relative_eq!(
+            rectangular_ductwork.external_surface_resistance,
+            0.36232,
+            max_relative = 1e-5
+        );
+    }
+
+    #[rstest]
+    pub fn rectangular_should_have_correct_duct_heat_loss(
+        rectangular_ductwork: Ductwork,
+        simulation_time: SimulationTime,
+    ) {
+        let outside_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
+        let inside_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                rectangular_ductwork.duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx]),
+                [-0.87482, -0.787339, -0.69986, -0.61237, -0.58321, -0.55405, -0.52489, -0.49573]
                     [t_idx],
-                max_relative = 1e-4
+                max_relative = 1e-5
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn rectangular_should_have_correct_total_duct_heat_loss(
+        rectangular_ductwork: Ductwork,
+        simulation_time: SimulationTime,
+    ) {
+        let inside_temp = [20.0, 19.5, 19.0, 18.5, 19.0, 19.5, 20.0, 20.5];
+        let outside_temp = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                rectangular_ductwork.total_duct_heat_loss(inside_temp[t_idx], outside_temp[t_idx]),
+                [
+                    -0.349928, -0.314936, -0.279943, -0.244950, -0.233286, -0.221621, -0.209957,
+                    -0.198293
+                ][t_idx],
+                max_relative = 1e-5
             );
         }
     }
