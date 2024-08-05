@@ -896,10 +896,11 @@ impl StorageTank {
                     self.primary_pipework_losses(input_energy_adj);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
-                let heat_source_output = heat_source
-                    .lock()
-                    .demand_energy(input_energy_adj, simulation_time_iteration)
-                    - primary_pipework_losses_kwh;
+                let heat_source_output = heat_source.lock().demand_energy(
+                    input_energy_adj,
+                    self.temp_set_on,
+                    simulation_time_iteration,
+                ) - primary_pipework_losses_kwh;
                 self.input_energy_adj_prev_timestep = input_energy_adj;
                 self.primary_gains = primary_gains;
 

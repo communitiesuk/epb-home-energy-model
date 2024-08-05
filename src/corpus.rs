@@ -41,7 +41,9 @@ use crate::core::units::{
     kelvin_to_celsius, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
+use crate::core::water_heat_demand::dhw_demand::{
+    DemandVolTargetKey, DomesticHotWaterDemand, VolumeReference,
+};
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
@@ -942,7 +944,7 @@ impl Corpus {
             timestep_array.push(t_it.time);
             let (
                 hw_demand_vol,
-                _,
+                hw_demand_vol_target,
                 hw_vol_at_tapping_points,
                 hw_duration,
                 no_events,
@@ -969,7 +971,7 @@ impl Corpus {
                 .hot_water_sources
                 .get_mut("hw cylinder")
                 .unwrap()
-                .demand_hot_water(hw_demand_vol, t_it);
+                .demand_hot_water(hw_demand_vol, hw_demand_vol_target, t_it);
 
             let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                 .pipework_losses_and_internal_gains_from_hw(
@@ -2367,6 +2369,7 @@ impl HeatSource {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
+        temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
@@ -2384,7 +2387,15 @@ impl HeatSource {
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::WaterRegular(ref mut r) => {
-                    r.demand_energy(energy_demand, simulation_time_iteration)
+                    r.demand_energy(
+                        energy_demand,
+                        temp_return,
+                        None,
+                        None,
+                        simulation_time_iteration,
+                    )
+                    .expect("Regular water boiler could not register energy demand")
+                    .0
                 }
                 HeatSourceWet::Space(_) => {
                     unimplemented!("not expected? this value does not have a demand_energy method")
@@ -2712,7 +2723,6 @@ fn heat_source_from_input(
                         HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
                             energy_supply_conn_name.clone(),
                             temp_setpoint,
-                            55.,
                             source_control,
                         )),
                     )),
@@ -2796,15 +2806,16 @@ impl HotWaterSource {
     pub fn demand_hot_water(
         &mut self,
         vol_demanded: f64,
+        vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
             HotWaterSource::StorageTank(ref mut source) => source
                 .lock()
                 .demand_hot_water(vol_demanded, simulation_time_iteration),
-            HotWaterSource::CombiBoiler(ref mut source) => {
-                source.demand_hot_water(vol_demanded, simulation_time_iteration)
-            }
+            HotWaterSource::CombiBoiler(ref mut source) => source
+                .demand_hot_water(vol_demand_target, simulation_time_iteration)
+                .expect("Combi boiler could not calc demand hot water."),
             HotWaterSource::PointOfUse(ref mut source) => {
                 source.demand_hot_water(vol_demanded, &simulation_time_iteration)
             }

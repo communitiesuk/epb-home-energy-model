@@ -29,10 +29,10 @@ pub struct DomesticHotWaterDemand {
     event_schedules: EventSchedule,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VolumeReference {
-    warm_temp: f64,
-    warm_vol: f64,
+    pub warm_temp: f64,
+    pub warm_vol: f64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

@@ -4,12 +4,14 @@ use crate::core::controls::time_control::Control;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
+use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, HotWaterSourceDetails};
 use crate::input::{EnergySupplyType, HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use arrayvec::ArrayString;
+use indexmap::IndexMap;
 use interp::interp;
 use parking_lot::RwLock;
 use std::borrow::Cow;
@@ -45,7 +47,7 @@ impl fmt::Display for IncorrectBoilerDataType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Incorrect boiler data type provided (expected details for a combi boiler"
+            "Incorrect boiler data type provided (expected details for a combi boiler)"
         )
     }
 }
@@ -104,11 +106,15 @@ impl BoilerServiceWaterCombi {
         &self.cold_feed
     }
 
+    pub fn temperature_hot_water_in_c(&self) -> f64 {
+        self.temperature_hot_water_in_c
+    }
+
     pub fn demand_hot_water(
         &mut self,
-        volume_demanded: f64,
+        volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let timestep = self.simulation_timestep;
         let return_temperature = 60.;
 
@@ -116,18 +122,28 @@ impl BoilerServiceWaterCombi {
             self.temperature_hot_water_in_c,
             self.cold_feed.temperature(simtime.index),
         );
+
+        let volume_demanded = volume_demanded_target
+            .get(&DemandVolTargetKey::TempHotWater)
+            .map(|volume_reference| volume_reference.warm_vol)
+            .unwrap_or(0.0);
+
         let mut energy_demand = volume_demanded * energy_content_kwh_per_litre;
 
         let combi_loss = self.boiler_combi_loss(energy_demand, timestep);
         energy_demand += combi_loss;
 
-        self.boiler.demand_energy(
-            &self.service_name,
-            ServiceType::WaterCombi,
-            energy_demand,
-            return_temperature,
-            simtime,
-        )
+        self.boiler
+            .demand_energy(
+                &self.service_name,
+                ServiceType::WaterCombi,
+                energy_demand,
+                return_temperature,
+                None,
+                None,
+                simtime,
+            )
+            .map(|res| res.0)
     }
 
     fn boiler_combi_loss(&mut self, energy_demand: f64, timestep: f64) -> f64 {
@@ -201,7 +217,7 @@ impl BoilerServiceWaterCombi {
 
     pub fn energy_output_max(&self) -> f64 {
         self.boiler
-            .energy_output_max(self.temperature_hot_water_in_c)
+            .energy_output_max(self.temperature_hot_water_in_c, None)
     }
 
     pub fn is_on(&self) -> bool {
@@ -215,7 +231,6 @@ pub struct BoilerServiceWaterRegular {
     boiler: Boiler,
     service_name: String,
     temperature_hot_water_in_c: f64,
-    temperature_return: f64,
     control: Option<Arc<Control>>,
 }
 
@@ -224,39 +239,53 @@ impl BoilerServiceWaterRegular {
         boiler: Boiler,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        temperature_return: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
         Self {
             boiler,
             service_name,
             temperature_hot_water_in_c,
-            temperature_return,
             control,
         }
     }
 
-    pub fn demand_energy(&mut self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
+    pub fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        temp_return: f64,
+        hybrid_service_bool: Option<bool>,
+        time_elapsed_hp: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
+
         if !self.is_on(simtime) {
-            return 0.;
+            return Ok((0., None));
         }
 
         self.boiler.demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
-            self.temperature_return,
+            temp_return,
+            Some(hybrid_service_bool),
+            time_elapsed_hp,
             simtime,
         )
     }
 
-    pub fn energy_output_max(&mut self, simtime: SimulationTimeIteration) -> f64 {
+    pub fn energy_output_max(
+        &mut self,
+        _temp_return: f64,
+        time_elapsed_hp: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
         if !self.is_on(simtime) {
             return 0.;
         }
 
         self.boiler
-            .energy_output_max(self.temperature_hot_water_in_c)
+            .energy_output_max(self.temperature_hot_water_in_c, time_elapsed_hp)
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
@@ -296,18 +325,28 @@ impl BoilerServiceSpace {
         &mut self,
         energy_demand: f64,
         _temp_flow: f64,
-        temperature_return: f64,
+        temp_return: f64,
+        hybrid_service_bool: Option<bool>,
+        time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
+
         if !self.is_on(simtime) {
-            return 0.;
+            return Ok(if !hybrid_service_bool {
+                (0.0, None)
+            } else {
+                (0.0, Some(0.0))
+            });
         }
 
         self.boiler.demand_energy(
             &self.service_name,
             ServiceType::Space,
             energy_demand,
-            temperature_return,
+            temp_return,
+            Some(hybrid_service_bool),
+            time_elapsed_hp,
             simtime,
         )
     }
@@ -363,6 +402,7 @@ impl Boiler {
                 efficiency_full_load: full_load_gross,
                 efficiency_part_load: part_load_gross,
                 boiler_location,
+                // NB. there is a validation check in the Python here that modulation_load <= 1 - in this project the value has already been validated on the way in
                 modulation_load: min_modulation_load,
                 electricity_circ_pump: power_circ_pump,
                 electricity_part_load: power_part_load,
@@ -434,7 +474,7 @@ impl Boiler {
                     service_results: Default::default(),
                 })
             }
-            _ => bail!("Expected boiler data"),
+            _ => unreachable!("Expected boiler data"),
         }
     }
 
@@ -557,7 +597,6 @@ impl Boiler {
         &mut self,
         service_name: String,
         temperature_hot_water_in_c: f64,
-        temperature_return: f64,
         control: Option<Arc<Control>>,
     ) -> BoilerServiceWaterRegular {
         self.create_service_connection(service_name.clone().into())
@@ -566,7 +605,6 @@ impl Boiler {
             (*self).clone(),
             service_name,
             temperature_hot_water_in_c,
-            temperature_return,
             control,
         )
     }
@@ -610,6 +648,121 @@ impl Boiler {
         )
     }
 
+    fn calc_current_boiler_power(&self, energy_output_provided: f64, time_available: f64) -> f64 {
+        if time_available <= 0. {
+            return 0.0;
+        }
+
+        let min_power = self.boiler_power * self.min_modulation_load;
+
+        max_of_2(energy_output_provided / time_available, min_power)
+    }
+
+    fn calc_boiler_eff(
+        &self,
+        service_type: ServiceType,
+        temp_return_feed: f64,
+        energy_output_required: f64,
+        time_elapsed_hp: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let time_available = self.time_available(time_elapsed_hp);
+        let energy_output_provided =
+            self.calc_energy_output_provided(energy_output_required, time_available);
+
+        let current_boiler_power =
+            self.calc_current_boiler_power(energy_output_provided, time_available);
+
+        // The efficiency of the boiler depends on whether it cycles on/off.
+        // If this occurs, an adjustment is calculated for the calculation
+        // timestep as follows (when the boiler is firing continuously no
+        // adjustment is necessary so cycling_adjustment=0).
+        let prop_of_timestep_at_min_rate = if time_available <= 0. {
+            0.0
+        } else {
+            min_of_2(
+                energy_output_required
+                    / (self.boiler_power * self.min_modulation_load * time_available),
+                1.0,
+            )
+        };
+
+        // Default value for the stand-by heat losses as a function of the current boiler power
+        // Equation 5 in EN15316-4-1
+        // fgen = (c5*(Pn)^c6)/100
+        // where c5 = 4.0, c6 = -0.4 and Pn is the current boiler power
+        let standing_loss = if current_boiler_power == 0.0 {
+            0.0
+        } else {
+            (4.0 * current_boiler_power.powf(0.4)) / 100.0
+        };
+
+        // use weather temperature at timestep
+        let outside_temp = self.external_conditions.air_temp(&simtime);
+
+        // A boiler’s efficiency reduces when installed outside due to an increase in case heat loss.
+        // The following adjustment is made when the boiler is located outside
+        // (when installed inside no adjustment is necessary so location_adjustment=0)
+        let temp_boiler_loc = match self.boiler_location {
+            HeatSourceLocation::External => outside_temp,
+            HeatSourceLocation::Internal => self.room_temperature,
+        };
+
+        // Calculate location adjustment
+        let location_adjustment = if let HeatSourceLocation::External = self.boiler_location {
+            self.location_adjustment(temp_return_feed, standing_loss, temp_boiler_loc)
+        } else {
+            0.0
+        };
+
+        // Calculate cycling adjustment
+        let cycling_adjustment = if 0.0 < prop_of_timestep_at_min_rate
+            && prop_of_timestep_at_min_rate < 1.0
+            && !matches!(service_type, ServiceType::WaterCombi)
+        {
+            self.cycling_adjustment(
+                temp_return_feed,
+                standing_loss,
+                prop_of_timestep_at_min_rate,
+                temp_boiler_loc,
+            )
+        } else {
+            0.0
+        };
+
+        // Calculate combined cyclic and location adjustment
+        let cyclic_location_adjustment = cycling_adjustment + location_adjustment;
+
+        // Calculate boiler efficiency based on the return temperature and offset
+        // If boiler starts cycling use the corrected full load efficiency
+        // as the boiler eff before cycling adjustment is applied.
+        let boiler_eff = if cycling_adjustment > 0.0 {
+            self.corrected_full_load_gross
+        } else {
+            self.boiler_efficiency_over_return_temperatures(
+                temp_return_feed,
+                self.ebv_curve_offset,
+            )?
+        };
+
+        Ok(1.0 / ((1.0 / boiler_eff) + cyclic_location_adjustment))
+    }
+
+    fn calc_energy_output_provided(&self, energy_output_required: f64, time_available: f64) -> f64 {
+        let energy_output_max_power = self.boiler_power * time_available;
+
+        min_of_2(energy_output_required, energy_output_max_power)
+    }
+
+    fn time_available(&self, time_elapsed_hp: Option<f64>) -> f64 {
+        let timestep = self.simulation_timestep;
+
+        match time_elapsed_hp {
+            Some(time_elapsed) => timestep - time_elapsed,
+            None => timestep - self.total_time_running_current_timestep,
+        }
+    }
+
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
     pub fn demand_energy(
         &mut self,
@@ -617,128 +770,70 @@ impl Boiler {
         service_type: ServiceType,
         energy_output_required: f64,
         temperature_return_feed: f64,
+        hybrid_service_bool: Option<bool>,
+        time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
-        let timestep = self.simulation_timestep;
-        // use weather temperature at timestep
-        let outside_temp = self.external_conditions.air_temp(&simtime);
+    ) -> anyhow::Result<(f64, Option<f64>)> {
+        let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
 
-        let energy_output_max_power =
-            self.boiler_power * (timestep - self.total_time_running_current_timestep);
-        let energy_output_provided = min_of_2(energy_output_required, energy_output_max_power);
-        // if there is no demand on the boiler or no remaining time then no energy should be provided
-        if energy_output_required == 0.
-            || (timestep - self.total_time_running_current_timestep) == 0.
-        {
-            let energy_output_provided = 0.;
-            let fuel_demand = 0.;
+        // Account for time control where present. If no control present, assume
+        // system is always active (except for basic thermostatic control, which
+        // is implicit in demand calculation).
+        let time_available = self.time_available(time_elapsed_hp);
+
+        // If there is no demand on the boiler or no remaining time then no energy should be provided
+        if energy_output_required <= 0.0 || time_available <= 0.0 {
             self.energy_supply_connections
                 .get_mut(service_name)
                 .unwrap()
-                .demand_energy(fuel_demand, simtime.index)
-                .unwrap();
-            return energy_output_provided;
+                .demand_energy(0.0, simtime.index)?;
         }
 
-        let current_boiler_power = if self.min_modulation_load < 1. {
-            let min_power = self.boiler_power * self.min_modulation_load;
-            max_of_2(
-                energy_output_provided / (timestep - self.total_time_running_current_timestep),
-                min_power,
-            )
-        } else {
-            self.boiler_power
-        };
+        let blr_eff_final = self.calc_boiler_eff(
+            service_type,
+            temperature_return_feed,
+            energy_output_required,
+            time_elapsed_hp,
+            simtime,
+        )?;
 
-        // Default value for the stand-by heat losses as a function of the current boiler power
-        // Equation 5 in EN15316-4-1
-        // fgen = (c5*(Pn)^c6)/100
-        // where c5 = 4.0, c6 = -0.4 and Pn is the current boiler power
-        let standing_loss = (4. * current_boiler_power.powf(-0.4)) / 100.;
-
-        // The efficiency of the boiler depends on whether it cycles on/off.
-        // If this occurs, an adjustment is calculated for the calculation
-        // timestep as follows (when the boiler is firing continuously no
-        // adjustment is necessary so cycling_adjustment=0).
-        let prop_of_timestep_at_min_rate = min_of_2(
-            energy_output_required
-                / (self.boiler_power
-                    * self.min_modulation_load
-                    * (timestep - self.total_time_running_current_timestep)),
-            1.0,
-        );
-
-        // A boiler’s efficiency reduces when installed outside due to an increase in case heat loss.
-        // The following adjustment is made when the boiler is located outside
-        // (when installed inside no adjustment is necessary so location_adjustment=0)
-        let temperature_boiler_loc = match self.boiler_location {
-            HeatSourceLocation::External => outside_temp,
-            HeatSourceLocation::Internal => self.room_temperature,
-        };
-
-        let location_adjustment = match self.boiler_location {
-            HeatSourceLocation::External => self.location_adjustment(
-                temperature_return_feed,
-                standing_loss,
-                temperature_boiler_loc,
-            ),
-            _ => 0.,
-        };
-
-        let cycling_adjustment = if (0.0 < prop_of_timestep_at_min_rate
-            && prop_of_timestep_at_min_rate < 1.0)
-            && !matches!(service_type, ServiceType::WaterCombi)
-        {
-            self.cycling_adjustment(
-                temperature_return_feed,
-                standing_loss,
-                prop_of_timestep_at_min_rate,
-                temperature_boiler_loc,
-            )
-        } else {
-            0.
-        };
-
-        let cyclic_location_adjustment = cycling_adjustment + location_adjustment;
-
-        // If boiler starts cycling use the corrected full load efficiency
-        // as the boiler eff before cycling adjustment is applied.
-        let boiler_eff = if cycling_adjustment > 0. {
-            self.corrected_full_load_gross
-        } else {
-            Self::efficiency_over_return_temperatures(
-                self.energy_supply_type,
-                temperature_return_feed,
-                self.ebv_curve_offset,
-            )
-            .expect("Boiler efficiency was expected to be calculable.")
-        };
-
-        let blr_eff_final = 1. / ((1. / boiler_eff) + cyclic_location_adjustment);
+        let energy_output_provided =
+            self.calc_energy_output_provided(energy_output_required, time_available);
+        let current_boiler_power =
+            self.calc_current_boiler_power(energy_output_provided, time_available);
 
         let fuel_demand = energy_output_provided / blr_eff_final;
 
         self.energy_supply_connections
             .get_mut(service_name)
             .unwrap()
-            .demand_energy(fuel_demand, simtime.index)
-            .unwrap();
+            .demand_energy(fuel_demand, simtime.index)?;
 
         // Calculate running time of boiler
-        let time_running_current_service = min_of_2(
-            energy_output_provided / current_boiler_power,
-            timestep - self.total_time_running_current_timestep,
-        );
-
+        let time_running_current_service = if current_boiler_power <= 0.0 {
+            0.0
+        } else {
+            min_of_2(
+                energy_output_provided / current_boiler_power,
+                time_available,
+            )
+        };
         self.total_time_running_current_timestep += time_running_current_service;
 
+        // Save results that are needed later (in the timestep_end function)
+        let mut result_service_name = ArrayString::<32>::new(); // ArrayStrings are a pain, therefore this small song and dance
+        result_service_name.push_str(service_name);
         self.service_results.push(ServiceResult {
-            _service_name: service_name.try_into().unwrap(),
+            _service_name: result_service_name,
             time_running: time_running_current_service,
             current_boiler_power,
         });
 
-        energy_output_provided
+        Ok(if hybrid_service_bool {
+            (energy_output_provided, Some(time_running_current_service))
+        } else {
+            (energy_output_provided, None)
+        })
     }
 
     /// Calculation of boiler electrical consumption
@@ -782,9 +877,8 @@ impl Boiler {
         self.service_results = Default::default();
     }
 
-    pub fn energy_output_max(&self, _temp_output: f64) -> f64 {
-        let timestep = self.simulation_timestep;
-        let time_available = timestep - self.total_time_running_current_timestep;
+    pub fn energy_output_max(&self, _temp_output: f64, time_elapsed_hp: Option<f64>) -> f64 {
+        let time_available = self.time_available(time_elapsed_hp);
 
         self.boiler_power * time_available
     }
@@ -962,13 +1056,18 @@ mod tests {
         let (mut boiler, energy_supply) = boiler;
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_ulps_eq!(
-                boiler.demand_energy(
-                    "boiler_test",
-                    ServiceType::WaterCombi,
-                    boiler_energy_output_required[t_idx],
-                    temp_return_feed[t_idx],
-                    t_it,
-                ),
+                boiler
+                    .demand_energy(
+                        "boiler_test",
+                        ServiceType::WaterCombi,
+                        boiler_energy_output_required[t_idx],
+                        temp_return_feed[t_idx],
+                        None,
+                        None,
+                        t_it,
+                    )
+                    .unwrap()
+                    .0,
                 [2.0, 10.0][t_idx],
             );
             assert_relative_eq!(
@@ -1120,20 +1219,69 @@ mod tests {
     }
 
     #[fixture]
-    pub fn volume_demanded() -> [f64; 2] {
-        [10., 2.]
+    pub fn volume_demanded() -> [IndexMap<DemandVolTargetKey, VolumeReference>; 2] {
+        [
+            IndexMap::from([
+                (
+                    41.0.into(),
+                    VolumeReference {
+                        warm_temp: 41.0,
+                        warm_vol: 48.0,
+                    },
+                ),
+                (
+                    43.0.into(),
+                    VolumeReference {
+                        warm_temp: 43.0,
+                        warm_vol: 100.0,
+                    },
+                ),
+                (
+                    40.0.into(),
+                    VolumeReference {
+                        warm_temp: 40.0,
+                        warm_vol: 0.0,
+                    },
+                ),
+                (
+                    DemandVolTargetKey::TempHotWater,
+                    VolumeReference {
+                        warm_temp: 55.0,
+                        warm_vol: 110.59194954841298,
+                    },
+                ),
+            ]),
+            IndexMap::from([
+                (
+                    41.0.into(),
+                    VolumeReference {
+                        warm_temp: 41.0,
+                        warm_vol: 48.0,
+                    },
+                ),
+                (
+                    DemandVolTargetKey::TempHotWater,
+                    VolumeReference {
+                        warm_temp: 55.0,
+                        warm_vol: 32.60190808710678,
+                    },
+                ),
+            ]),
+        ]
     }
 
     #[rstest]
     pub fn combi_boiler_should_provide_demand_hot_water(
         mut combi_boiler: BoilerServiceWaterCombi,
         simulation_time: SimulationTime,
-        volume_demanded: [f64; 2],
+        volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
     ) {
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                combi_boiler.demand_hot_water(volume_demanded[idx], t_it),
-                [0.7241412, 0.1748878][idx],
+                combi_boiler
+                    .demand_hot_water(volume_demanded[idx].clone(), t_it)
+                    .unwrap(),
+                [7.624602058956146, 2.267017951167212][idx],
                 max_relative = 1e-6
             );
         }
@@ -1196,13 +1344,7 @@ mod tests {
 
     #[fixture]
     pub fn regular_boiler<'a>(boiler_for_regular: Boiler) -> BoilerServiceWaterRegular {
-        BoilerServiceWaterRegular::new(
-            boiler_for_regular,
-            "boiler_test".to_string(),
-            60.,
-            60.,
-            None,
-        )
+        BoilerServiceWaterRegular::new(boiler_for_regular, "boiler_test".to_string(), 60., None)
     }
 
     #[rstest]
@@ -1210,9 +1352,19 @@ mod tests {
         mut regular_boiler: BoilerServiceWaterRegular,
         simulation_time: SimulationTime,
     ) {
+        let temp_return_feed = [51.05, 60.00];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                regular_boiler.demand_energy([0.7241412, 0.1748878][idx], t_it),
+                regular_boiler
+                    .demand_energy(
+                        [0.7241412, 0.1748878][idx],
+                        temp_return_feed[idx],
+                        None,
+                        None,
+                        t_it
+                    )
+                    .unwrap()
+                    .0,
                 [0.7241412, 0.1748878][idx],
                 max_relative = 1e-7
             );
@@ -1318,12 +1470,17 @@ mod tests {
         let temp_return_feed = [50.0, 60.0, 60.0];
         for (idx, t_it) in simulation_time_for_service_space.iter().enumerate() {
             assert_ulps_eq!(
-                service_space_boiler.demand_energy(
-                    energy_demanded[idx],
-                    temp_flow[idx],
-                    temp_return_feed[idx],
-                    t_it,
-                ),
+                service_space_boiler
+                    .demand_energy(
+                        energy_demanded[idx],
+                        temp_flow[idx],
+                        temp_return_feed[idx],
+                        None,
+                        None,
+                        t_it,
+                    )
+                    .unwrap()
+                    .0,
                 [10.0, 2.0, 0.0][idx]
             );
         }

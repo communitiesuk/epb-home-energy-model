@@ -6,6 +6,7 @@ use indexmap::{Equivalent, IndexMap};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Value};
+use serde_valid::Validate;
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
@@ -1737,7 +1738,7 @@ pub enum WaterHeatingSchedule {
 
 pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSourceWetDetails {
@@ -1787,6 +1788,7 @@ pub enum HeatSourceWetDetails {
         efficiency_full_load: f64,
         efficiency_part_load: f64,
         boiler_location: HeatSourceLocation,
+        #[validate(maximum = 1.)]
         modulation_load: f64,
         electricity_circ_pump: f64,
         electricity_part_load: f64,
