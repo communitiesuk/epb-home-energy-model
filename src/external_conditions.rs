@@ -43,9 +43,9 @@ pub struct ShadingObject {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct WindowShadingObject {
     #[serde(rename(deserialize = "type"))]
-    object_type: WindowShadingObjectType,
-    depth: f64,
-    distance: f64,
+    pub object_type: WindowShadingObjectType,
+    pub depth: f64,
+    pub distance: f64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]

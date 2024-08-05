@@ -3135,7 +3135,9 @@ fn on_site_generation_from_input(
                     height,
                     width,
                     energy_supply,
-                    ..
+                    shading,
+                    inverter_peak_power,
+                    inverter_is_inside,
                 } = generation_details;
                 let energy_supply = energy_supplies
                     .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
@@ -3151,6 +3153,9 @@ fn on_site_generation_from_input(
                     external_conditions.clone(),
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
+                    shading.clone(),
+                    *inverter_peak_power,
+                    *inverter_is_inside,
                 )
             }))
         })

@@ -1,7 +1,8 @@
+use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::projected_height;
 use crate::core::units::WATTS_PER_KILOWATT;
-use crate::external_conditions::ExternalConditions;
+use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::OnSiteGenerationVentilationStrategy;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
@@ -41,6 +42,9 @@ pub struct PhotovoltaicSystem {
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
+    shading: Vec<WindowShadingObject>,
+    inverter_peak_power: f64,
+    inverter_is_inside: bool,
 }
 
 impl PhotovoltaicSystem {
@@ -72,6 +76,9 @@ impl PhotovoltaicSystem {
     /// * `external_conditions` - reference to ExternalConditions object
     /// * `energy_supply_connection` - an EnergySupplyConnection value
     /// * `simulation_timestep` - reference to step length of a SimulationTime object in the context
+    /// * `shading`
+    /// * `inverter_peak_power` - Peak power in kW; represents the peak electrical power input to the inverter
+    /// * `inverter_is_inside` - tells us that the inverter is considered inside the building
     pub fn new(
         peak_power: f64,
         ventilation_strategy: OnSiteGenerationVentilationStrategy,
@@ -83,6 +90,9 @@ impl PhotovoltaicSystem {
         external_conditions: Arc<ExternalConditions>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
+        shading: Vec<WindowShadingObject>,
+        inverter_peak_power: f64,
+        inverter_is_inside: bool,
     ) -> Self {
         Self {
             peak_power,
@@ -106,12 +116,20 @@ impl PhotovoltaicSystem {
             external_conditions,
             energy_supply_connection,
             simulation_timestep,
+            shading,
+            inverter_peak_power,
+            inverter_is_inside,
         }
+    }
+
+    /// Return whether this unit is considered inside the building or not
+    pub fn inverter_is_inside(&self) -> bool {
+        self.inverter_is_inside
     }
 
     /// Produce electrical energy (in kWh) from the PV system
     /// according to BS EN 15316-4-3:2017
-    pub fn produce_energy(&self, simulation_time_iteration: SimulationTimeIteration) {
+    pub fn produce_energy(&self, simulation_time_iteration: SimulationTimeIteration) -> (f64, f64) {
         // solar irradiance in W/m2
         let (i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions
@@ -134,13 +152,46 @@ impl PhotovoltaicSystem {
         // E.el.pv.out.h = E.sol.pv.h * P.pk * f.perf / I.ref
         // energy_produced = solar_irradiation * peak_power * system_performance_factor
         //                     / reference_solar_irradiance
-        // energy produced in kWh
-        let energy_produced =
-            solar_irradiation * self.peak_power * self.f_perf / ref_solar_irradiance;
 
+        // energy input in kWh; now need to calculate total energy produce taking into account inverter efficiency
+        let energy_input =
+            solar_irradiation * self.peak_power * self.f_perf / 0.92 / ref_solar_irradiance;
+        // f_perf is divided by 0.92 to avoid double-applying the inverter efficiency,
+        // which is applied separately below via 'inverter_dc_ac_efficiency', since
+        // inverter efficiency was inherently included in the factors taken
+        // from BS EN 15316-4-3:2017.
+
+        // power output from PV panel in kW used to calculate ratio for efficiency loss of inverters from DC to AC
+        let power_input_inverter = energy_input / self.simulation_timestep;
+
+        // Calculate Ratio of Rated Power
+        let ratio_of_rated_output =
+            min_of_2(power_input_inverter, self.inverter_peak_power) / self.inverter_peak_power;
+
+        // Using Ratio of Rated Power, calculate Inverter DC to AC efficiency
+        // equation was estimated based on graph from
+        // https://www.researchgate.net/publication/260286647_Performance_of_PV_inverters figure 9
+        let inverter_dc_ac_efficiency = if ratio_of_rated_output == 0. {
+            0.
+        } else {
+            0.92 * (4.67375 * ratio_of_rated_output).tanh().powf(0.137951)
+        };
+
+        // Calculate energy produced output taking into account peak power of inverter + array
+        // and inverter DC to AC efficiency
+        let energy_produced = min_of_2(
+            energy_input,
+            self.inverter_peak_power * self.simulation_timestep,
+        ) * inverter_dc_ac_efficiency;
+
+        // Add energy produced to the applicable energy supply connection (this will reduce demand)
         self.energy_supply_connection
             .supply_energy(energy_produced, simulation_time_iteration.index)
             .unwrap();
+
+        let energy_lost = energy_input - energy_produced;
+
+        (energy_produced, energy_lost)
     }
 
     fn shading_factors_direct_diffuse(
@@ -154,7 +205,7 @@ impl PhotovoltaicSystem {
                 self.width,
                 self.pitch,
                 self.orientation,
-                &vec![],
+                &self.shading,
                 simulation_time_iteration,
             )
             .unwrap()
@@ -167,6 +218,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
+        WindowShadingObjectType,
     };
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -185,8 +237,8 @@ mod tests {
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
             vec![3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-            vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![220., 230., 240., 250., 260., 270., 270., 280.],
+            vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![11., 25., 42., 52., 60., 44., 28., 15.],
             vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
             51.42,
@@ -284,7 +336,8 @@ mod tests {
             None,
         )));
         let energy_supply_conn =
-            EnergySupply::connection(energy_supply.clone(), "pv generation").unwrap();
+            EnergySupply::connection(energy_supply.clone(), "pv generation without shading")
+                .unwrap();
         let pv = PhotovoltaicSystem::new(
             2.5,
             OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
@@ -296,32 +349,162 @@ mod tests {
             Arc::new(external_conditions),
             energy_supply_conn,
             simulation_time.step,
+            vec![],
+            2.5,
+            false,
+        );
+        (pv, energy_supply)
+    }
+
+    #[fixture]
+    pub fn pv_with_shading(
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
+        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
+            FuelType::Electricity,
+            simulation_time.total_steps(),
+            None,
+            None,
+            None,
+        )));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "pv generation with shading").unwrap();
+        let pv = PhotovoltaicSystem::new(
+            2.5,
+            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            30.,
+            0.,
+            10.,
+            2.,
+            3.,
+            Arc::new(external_conditions),
+            energy_supply_conn,
+            simulation_time.step,
+            vec![
+                WindowShadingObject {
+                    object_type: WindowShadingObjectType::Overhang,
+                    depth: 0.5,
+                    distance: 0.5,
+                },
+                WindowShadingObject {
+                    object_type: WindowShadingObjectType::SideFinLeft,
+                    depth: 0.25,
+                    distance: 0.1,
+                },
+                WindowShadingObject {
+                    object_type: WindowShadingObjectType::SideFinRight,
+                    depth: 0.25,
+                    distance: 0.1,
+                },
+            ],
+            2.5,
+            true,
         );
         (pv, energy_supply)
     }
 
     #[rstest]
-    #[ignore = "to update while migrating to 0.30"]
+    pub fn test_is_inside(
+        pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+        pv_with_shading: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (pv, _) = pv;
+        let (pv_with_shading, _) = pv_with_shading;
+        assert!(!pv.inverter_is_inside());
+        assert!(pv_with_shading.inverter_is_inside());
+    }
+
+    #[rstest]
+    // #[ignore = "to update while migrating to 0.30"]
     pub fn test_produce_energy(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
         let (pv, energy_supply) = pv;
         let expected_generation_results = [
-            -0.019039734375,
-            -0.04586317375,
-            -0.072234285625,
-            -0.08283324375,
-            -0.089484801875,
-            -0.074557144375,
-            -0.05198861375,
-            -0.040747119375,
+            -0.012155950159829848,
+            -0.033046009462695744,
+            -0.05538065916905987,
+            -0.06469759901250412,
+            -0.07062640777214597,
+            -0.057408001837834045,
+            -0.038108732702294035,
+            -0.028886972604485958,
         ];
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             pv.produce_energy(t_it);
             assert_relative_eq!(
-                energy_supply.read().results_by_end_user()["pv generation"][t_idx],
+                energy_supply.read().results_by_end_user()["pv generation without shading"][t_idx],
                 expected_generation_results[t_idx],
+                max_relative = 1e-6
+            );
+        }
+    }
+
+    #[rstest]
+    // #[ignore = "to update while migrating to 0.30"]
+    pub fn test_produce_energy_with_shading(
+        pv_with_shading: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (pv, energy_supply) = pv_with_shading;
+        let expected_generation_results = [
+            -0.006675561797598833,
+            -0.01815144206200631,
+            -0.030430978364590064,
+            -0.035557634328444936,
+            -0.03882148986837187,
+            -0.03154628950205703,
+            -0.02093382593171027,
+            -0.01916405808037656,
+        ];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            pv.produce_energy(t_it);
+            assert_relative_eq!(
+                energy_supply.read().results_by_end_user()["pv generation with shading"][t_idx],
+                expected_generation_results[t_idx],
+                max_relative = 1e-6
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_energy_produced_and_energy_lost(
+        pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (pv, _) = pv;
+        let expected_energy_produced = [
+            0.012155950159829848,
+            0.033046009462695744,
+            0.05538065916905987,
+            0.06469759901250412,
+            0.07062640777214597,
+            0.057408001837834045,
+            0.038108732702294035,
+            0.028886972604485958,
+        ];
+        let expected_energy_lost = [
+            0.008539417678140976,
+            0.01680527481710961,
+            0.02313487715438004,
+            0.02533854258544363,
+            0.02663969095724275,
+            0.023632380772525823,
+            0.018400631461166272,
+            0.015403377364203018,
+        ];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let (energy_produced, energy_lost) = pv.produce_energy(t_it);
+            assert_relative_eq!(
+                energy_produced,
+                expected_energy_produced[t_idx],
+                max_relative = 1e-6
+            );
+            assert_relative_eq!(
+                energy_lost,
+                expected_energy_lost[t_idx],
                 max_relative = 1e-6
             );
         }
