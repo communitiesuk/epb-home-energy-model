@@ -3,7 +3,7 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::MaterialProperties;
-use crate::core::pipework::Pipework;
+use crate::core::pipework::{Pipework, Pipeworkesque};
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::corpus::{HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
@@ -126,7 +126,8 @@ impl StorageTank {
 
         let input_energy_adj_prev_timestep = 0.;
 
-        let primary_pipework: Option<Pipework> = primary_pipework.map(|pipework| pipework.into());
+        let primary_pipework: Option<Pipework> =
+            primary_pipework.map(|pipework| pipework.try_into().unwrap());
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()

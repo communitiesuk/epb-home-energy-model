@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
-use crate::core::pipework::Pipework;
+use crate::core::pipework::{Pipework, Pipeworkesque};
 use crate::core::schedule::ScheduleEvent;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::bath::Bath;
@@ -228,12 +228,12 @@ impl DomesticHotWaterDemand {
                 .hot_water_distribution_pipework
                 .get("internal")
                 .expect("Internal pipework is expected to be defined at this point.")
-                .volume_in_litres()
+                .volume_litres()
                 + self
                     .hot_water_distribution_pipework
                     .get("external")
                     .expect("External pipework is expected to be defined at this point.")
-                    .volume_in_litres();
+                    .volume_litres();
             hw_demand_vol += all_events as f64 * vol_hot_water_left_in_pipework;
         }
 
