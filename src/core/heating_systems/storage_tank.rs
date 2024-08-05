@@ -1348,6 +1348,8 @@ mod tests {
             FuelType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_conns = (
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap(),
@@ -1579,6 +1581,8 @@ mod tests {
                     FuelType::MainsGas,
                     simulation_time_for_immersion_heater.total_steps(),
                     None,
+                    None,
+                    None,
                 ))),
                 "shower",
             )
@@ -1628,6 +1632,8 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn =

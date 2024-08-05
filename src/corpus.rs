@@ -1628,6 +1628,8 @@ fn energy_supplies_from_input(
             FuelType::UnmetDemand,
             simulation_time_iterator.total_steps(),
             Default::default(),
+            Default::default(),
+            Default::default(),
         ))),
         bottled_lpg: None,
         condition_11f_lpg: None,
@@ -1644,11 +1646,13 @@ fn energy_supply_from_input(
             details.fuel,
             simulation_time_iterator.total_steps(),
             None,
-            // use None for now while migrating to 0.30
+            // None while migrating to 0.30
             // details
             //     .electric_battery
             //     .as_ref()
             //     .map(ElectricBattery::from_input),
+            details.priority.as_ref().cloned(),
+            details.is_export_capable,
         )))
     })
 }

@@ -392,6 +392,8 @@ mod tests {
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary".to_string();
         let energy_supply_conn_name_building_level_distribution_losses =
@@ -481,6 +483,8 @@ mod tests {
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary".to_string();
         let energy_supply_conn_name_building_level_distribution_losses =
@@ -541,6 +545,8 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             two_len_simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary".to_string();
@@ -604,6 +610,8 @@ mod tests {
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Custom,
             three_len_simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary".to_string();

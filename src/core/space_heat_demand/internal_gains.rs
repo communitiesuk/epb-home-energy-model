@@ -155,6 +155,8 @@ mod tests {
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "lighting").unwrap();

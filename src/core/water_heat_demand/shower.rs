@@ -208,6 +208,8 @@ mod tests {
             FuelType::Electricity,
             simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
         let mut instant_shower =

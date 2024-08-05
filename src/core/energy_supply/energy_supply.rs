@@ -3,6 +3,7 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
 use crate::input::{
     EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType, FuelType,
+    SecondarySupplyType,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
@@ -27,16 +28,16 @@ pub struct EnergySupplies {
 impl EnergySupplies {
     pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
         if let Some(ref mut supply) = self.mains_electricity {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.mains_gas {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         if let Some(ref mut supply) = self.bulk_lpg {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply.write().calc_energy_import_export_betafactor(simtime);
         }
         self.unmet_demand
-            .read()
+            .write()
             .calc_energy_import_export_betafactor(simtime);
     }
 
@@ -62,6 +63,8 @@ impl EnergySupplies {
             None => Ok(Arc::new(RwLock::new(EnergySupply::new(
                 energy_supply_type.try_into()?,
                 timesteps,
+                None,
+                None,
                 None,
             )))),
         }
@@ -165,6 +168,8 @@ pub struct EnergySupply {
     simulation_timesteps: usize,
     electric_battery: Option<ElectricBattery>,
     diverter: Option<Arc<RwLock<PVDiverter>>>,
+    priority: Option<Vec<SecondarySupplyType>>,
+    is_export_capable: bool,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
     energy_out_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -182,16 +187,22 @@ impl EnergySupply {
     /// * `fuel_type` - string denoting type of fuel
     /// * `simulation_timesteps` - the number of steps in the simulation time being used
     /// * `electric_battery` - reference to an ElectricBattery object
+    /// * `priority`
+    /// * `is_export_capable` - denotes that this Energy Supply can export its surplus supply
     pub fn new(
         fuel_type: FuelType,
         simulation_timesteps: usize,
         electric_battery: Option<ElectricBattery>,
+        priority: Option<Vec<SecondarySupplyType>>,
+        is_export_capable: Option<bool>,
     ) -> Self {
         Self {
             fuel_type,
             simulation_timesteps,
             electric_battery,
             diverter: None,
+            priority,
+            is_export_capable: is_export_capable.unwrap_or(true),
             demand_total: init_demand_list(simulation_timesteps),
             demand_by_end_user: Default::default(),
             energy_out_by_end_user: Default::default(),
@@ -400,7 +411,7 @@ impl EnergySupply {
 
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
-    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
+    pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -441,36 +452,74 @@ impl EnergySupply {
         let mut supply_surplus = supplies_sum * (1. - current_beta_factor);
         // Elec demand not met by PV (kWh) - ie amount to be imported from the grid or batteries
         let mut demand_not_met = demands_sum + supply_consumed;
-        // See if there is a net supply/demand for the timestep
-        if let Some(ref battery) = &self.electric_battery {
-            // See if the battery can deal with excess supply/demand for this timestep
-            // supply_surplus is -ve by convention and demand_not_met is +ve
-            let energy_out_of_battery = battery.charge_discharge_battery(supply_surplus, simtime);
-            supply_surplus -= energy_out_of_battery;
-            self.energy_into_battery
-                .get(timestep_idx)
-                .unwrap()
-                .store(-energy_out_of_battery, Ordering::SeqCst);
-            let energy_out_of_battery = battery.charge_discharge_battery(demand_not_met, simtime);
-            demand_not_met -= energy_out_of_battery;
-            self.energy_out_of_battery
-                .get(timestep_idx)
-                .unwrap()
-                .store(-energy_out_of_battery, Ordering::SeqCst);
+
+        match &self.priority {
+            None => {
+                if let Some(ref battery) = &self.electric_battery {
+                    // See if the battery can deal with excess supply/demand for this timestep
+                    // supply_surplus is -ve by convention and demand_not_met is +ve
+                    let energy_out_of_battery =
+                        battery.charge_discharge_battery(supply_surplus, simtime);
+                    supply_surplus -= energy_out_of_battery;
+                    self.energy_into_battery
+                        .get(timestep_idx)
+                        .unwrap()
+                        .store(-energy_out_of_battery, Ordering::SeqCst);
+                    let energy_out_of_battery =
+                        battery.charge_discharge_battery(demand_not_met, simtime);
+                    demand_not_met -= energy_out_of_battery;
+                    self.energy_out_of_battery
+                        .get(timestep_idx)
+                        .unwrap()
+                        .store(-energy_out_of_battery, Ordering::SeqCst);
+                }
+
+                if let Some(ref diverter) = &self.diverter {
+                    self.energy_diverted.get(timestep_idx).unwrap().store(
+                        diverter.read().divert_surplus(supply_surplus, simtime),
+                        Ordering::SeqCst,
+                    );
+                    supply_surplus += self.energy_diverted[timestep_idx].load(Ordering::SeqCst);
+                }
+            }
+            Some(priority) => {
+                for item in priority {
+                    if matches!(item, SecondarySupplyType::ElectricBattery)
+                        && self.electric_battery.is_some()
+                    {
+                        let electric_battery = self.electric_battery.as_ref().unwrap();
+                        let energy_out_of_battery =
+                            electric_battery.charge_discharge_battery(supply_surplus, simtime);
+                        supply_surplus -= energy_out_of_battery;
+                        self.energy_into_battery
+                            .insert(simtime.index, AtomicF64::new(-energy_out_of_battery));
+                        let energy_out_of_battery =
+                            electric_battery.charge_discharge_battery(demand_not_met, simtime);
+                        demand_not_met -= energy_out_of_battery;
+                        self.energy_out_of_battery
+                            .insert(simtime.index, AtomicF64::new(-energy_out_of_battery));
+                    } else if matches!(item, SecondarySupplyType::Diverter)
+                        && self.diverter.is_some()
+                    {
+                        let diverter = self.diverter.as_ref().unwrap();
+                        self.energy_diverted.insert(
+                            simtime.index,
+                            AtomicF64::new(diverter.read().divert_surplus(supply_surplus, simtime)),
+                        );
+                        supply_surplus +=
+                            self.energy_diverted[simtime.index].load(Ordering::SeqCst);
+                    }
+                }
+            }
         }
 
-        if let Some(ref diverter) = &self.diverter {
-            self.energy_diverted.get(timestep_idx).unwrap().store(
-                diverter.read().divert_surplus(supply_surplus, simtime),
-                Ordering::SeqCst,
-            );
-            supply_surplus += self.energy_diverted[timestep_idx].load(Ordering::SeqCst);
+        if self.is_export_capable {
+            self.supply_surplus
+                .get(timestep_idx)
+                .unwrap()
+                .fetch_add(supply_surplus, Ordering::SeqCst);
         }
 
-        self.supply_surplus
-            .get(timestep_idx)
-            .unwrap()
-            .fetch_add(supply_surplus, Ordering::SeqCst);
         self.demand_not_met
             .get(timestep_idx)
             .unwrap()
@@ -540,6 +589,8 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
             FuelType::UnmetDemand,
             simulation_timesteps,
             Default::default(),
+            Default::default(),
+            Default::default(),
         ))),
         custom: None,
         condition_11f_lpg: None,
@@ -562,6 +613,8 @@ fn supply_from_details(
         fuel_type,
         simulation_timesteps,
         electric_battery,
+        energy_supply_details.priority.as_ref().cloned(),
+        energy_supply_details.is_export_capable,
     )))
 }
 
@@ -579,8 +632,13 @@ mod tests {
 
     #[fixture]
     pub fn energy_supply<'a>(simulation_time: SimulationTimeIterator) -> EnergySupply {
-        let mut energy_supply =
-            EnergySupply::new(FuelType::MainsGas, simulation_time.total_steps(), None);
+        let mut energy_supply = EnergySupply::new(
+            FuelType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+            None,
+            None,
+        );
         energy_supply.register_end_user_name("shower".to_string());
         energy_supply.register_end_user_name("bath".to_string());
 
@@ -730,7 +788,7 @@ mod tests {
                 .supply_energy(t_idx as f64 * t_idx as f64 * 80., t_idx)
                 .unwrap();
 
-            let energy_supply = energy_supply.read();
+            let mut energy_supply = energy_supply.write();
             energy_supply.calc_energy_import_export_betafactor(t_it);
 
             assert_eq!(
@@ -747,6 +805,36 @@ mod tests {
                 energy_supply.get_energy_import()[t_idx],
                 EXPECTED_DEMANDS_NOT_MET[t_idx],
                 "incorrect energy import returned"
+            );
+        }
+    }
+
+    #[rstest]
+    pub fn test_energy_supply_without_export(simulation_time: SimulationTimeIterator) {
+        let energy_supply = EnergySupply::new(
+            FuelType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+            None,
+            Some(false),
+        );
+        let shared_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_connection_1 = EnergySupplyConnection {
+            energy_supply: shared_supply.clone(),
+            end_user_name: "shower".to_string(),
+        };
+        let energy_connection_2 = EnergySupplyConnection {
+            energy_supply: shared_supply.clone(),
+            end_user_name: "bath".to_string(),
+        };
+        for t_it in simulation_time {
+            let t_idx = t_it.index;
+            energy_connection_1.demand_energy(((t_idx + 1) * 50) as f64, t_idx);
+            energy_connection_2.demand_energy((t_idx * 20) as f64, t_idx);
+            assert_eq!(
+                shared_supply.read().get_energy_export()[t_idx],
+                0.,
+                "incorrect energy export returned"
             );
         }
     }

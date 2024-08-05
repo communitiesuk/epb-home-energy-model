@@ -924,10 +924,14 @@ mod tests {
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_aux =
@@ -1045,10 +1049,14 @@ mod tests {
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_aux =
@@ -1158,10 +1166,14 @@ mod tests {
             FuelType::MainsGas,
             simulation_time.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_aux =
@@ -1239,10 +1251,14 @@ mod tests {
             FuelType::MainsGas,
             simulation_time_for_service_space.total_steps(),
             None,
+            None,
+            None,
         )));
         let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time_for_service_space.total_steps(),
+            None,
+            None,
             None,
         )));
         let energy_supply_conn_aux =

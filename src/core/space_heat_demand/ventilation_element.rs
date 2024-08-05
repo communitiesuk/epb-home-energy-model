@@ -1186,6 +1186,8 @@ mod tests {
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
             None,
+            None,
+            None,
         )
     }
 
