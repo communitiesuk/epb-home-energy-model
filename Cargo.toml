@@ -39,7 +39,7 @@ strum_macros = "0.26.3"
 [dev-dependencies]
 approx = "0.5.1"
 pretty_assertions = "1.4.0"
-rstest = "0.21.0"
+rstest = "0.22.0"
 walkdir = "2.5.0"
 
 [lib]
