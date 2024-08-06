@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{Pipework, Pipeworkesque};
-use crate::core::schedule::ScheduleEvent;
+use crate::core::schedule::{ScheduleEvent, TypedScheduleEvent};
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::bath::Bath;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
@@ -116,7 +116,7 @@ impl DomesticHotWaterDemand {
         let mut vol_hot_water_equiv_elec_shower = 0.;
 
         for (name, shower) in self.showers.iter_mut() {
-            let usage_events: Option<Vec<ScheduleEvent>> = self
+            let usage_events: Option<Vec<TypedScheduleEvent>> = self
                 .event_schedules
                 .shower
                 .get(name)
@@ -156,7 +156,7 @@ impl DomesticHotWaterDemand {
 
         for (name, other) in &self.other {
             // Get all other use events for the current timestep
-            let usage_events: Option<Vec<ScheduleEvent>> = self
+            let usage_events: Option<Vec<TypedScheduleEvent>> = self
                 .event_schedules
                 .other
                 .get(name)
@@ -185,7 +185,7 @@ impl DomesticHotWaterDemand {
         }
 
         for (name, bath) in &self.baths {
-            let usage_events: Option<Vec<ScheduleEvent>> = self
+            let usage_events: Option<Vec<TypedScheduleEvent>> = self
                 .event_schedules
                 .bath
                 .get(name)

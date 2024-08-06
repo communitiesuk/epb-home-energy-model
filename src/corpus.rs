@@ -26,7 +26,8 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_numeric_schedule, expand_water_heating_events, ScheduleEvent,
+    expand_boolean_schedule, expand_events, expand_events_from_json_values,
+    expand_numeric_schedule, ScheduleEvent, ScheduleEventType, TypedScheduleEvent,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
@@ -2016,7 +2017,7 @@ fn get_cold_water_source_ref_for_type(
     }
 }
 
-pub type EventSchedule = Vec<Option<Vec<ScheduleEvent>>>;
+pub type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
 
 #[derive(Clone)]
 pub struct HotWaterEventSchedules {
@@ -2033,12 +2034,21 @@ fn event_schedules_from_input(
     let shower_events = &events.shower;
     shower_schedules.insert(
         "IES".to_string(),
-        schedule_event_from_input(shower_events.ies.iter().collect(), simulation_time_iterator),
+        schedule_event_from_input(
+            shower_events.ies.iter().collect(),
+            "IES",
+            ScheduleEventType::Shower,
+            None,
+            simulation_time_iterator,
+        ),
     );
     shower_schedules.insert(
         "mixer".to_string(),
         schedule_event_from_input(
             shower_events.mixer.iter().collect(),
+            "mixer",
+            ScheduleEventType::Shower,
+            None,
             simulation_time_iterator,
         ),
     );
@@ -2049,6 +2059,9 @@ fn event_schedules_from_input(
         "medium".to_string(),
         schedule_event_from_input(
             bath_events.medium.iter().collect(),
+            "medium",
+            ScheduleEventType::Bath,
+            None,
             simulation_time_iterator,
         ),
     );
@@ -2059,6 +2072,9 @@ fn event_schedules_from_input(
         "other".to_string(),
         schedule_event_from_input(
             other_events.other.iter().collect(),
+            "other",
+            ScheduleEventType::Other,
+            None,
             simulation_time_iterator,
         ),
     );
@@ -2072,11 +2088,31 @@ fn event_schedules_from_input(
 
 fn schedule_event_from_input(
     events_input: Vec<&WaterHeatingEvent>,
+    name: &str,
+    event_type: ScheduleEventType,
+    existing_schedule: Option<Vec<Option<Vec<TypedScheduleEvent>>>>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> EventSchedule {
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
-    expand_water_heating_events(events_input, sim_timestep, total_timesteps)
+
+    let schedule = if let Some(existing_schedule) = existing_schedule {
+        existing_schedule
+    } else {
+        vec![None; total_timesteps]
+    };
+
+    expand_events(
+        events_input
+            .iter()
+            .map(|event| ScheduleEvent::from(*event))
+            .collect::<Vec<_>>(),
+        sim_timestep,
+        total_timesteps,
+        name,
+        event_type,
+        schedule,
+    )
 }
 
 fn ductwork_from_ventilation_input(_ventilation: &Option<Ventilation>) -> Option<Ductwork> {
