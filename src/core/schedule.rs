@@ -115,6 +115,43 @@ pub struct ScheduleEvent {
     pub temperature: Option<f64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScheduleEventType {
+    Shower,
+    Bath,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypedScheduleEvent {
+    pub start: f64,
+    pub duration: Option<f64>,
+    pub temperature: Option<f64>,
+    pub name: String,
+    pub event_type: ScheduleEventType,
+}
+
+impl TypedScheduleEvent {
+    pub fn from_simple_event(
+        event: ScheduleEvent,
+        name: String,
+        event_type: ScheduleEventType,
+    ) -> Self {
+        let ScheduleEvent {
+            start,
+            duration,
+            temperature,
+        } = event;
+        Self {
+            start,
+            duration,
+            temperature,
+            name,
+            event_type,
+        }
+    }
+}
+
 impl From<Value> for ScheduleEvent {
     fn from(value: Value) -> Self {
         match value {
@@ -128,12 +165,25 @@ impl From<Value> for ScheduleEvent {
     }
 }
 
+/// Construct or update a schedule from a list of events, appending the event type to each event and
+/// ensuring events are ordered by 'start' time within each timestep.
+///
+/// Arguments:
+/// * `event_list` - list of event dictionaries, where the 'start' element gives
+///                  the start time of the event, in hours from the start of the simulation
+/// * `sim_timestep` - length of simulation timestep, in hours
+/// * `tot_timesteps` - total number of timesteps in the simulation
+/// * `name`
+/// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
+/// * `schedule` - the existing schedule dictionary to update
 pub fn expand_events(
     events: Vec<Value>,
     simulation_timestep: f64,
     total_timesteps: usize,
-) -> Vec<Option<Vec<ScheduleEvent>>> {
-    let mut schedule: Vec<Option<Vec<ScheduleEvent>>> = vec![None; total_timesteps];
+    name: &str,
+    event_type: ScheduleEventType,
+    mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
+) -> Vec<Option<Vec<TypedScheduleEvent>>> {
     for event in events {
         let starting_timestep = (event
             .as_object()
@@ -144,10 +194,27 @@ pub fn expand_events(
             .unwrap()
             / simulation_timestep)
             .floor() as usize;
-        match schedule.get_mut(starting_timestep).unwrap() {
-            Some(events) => events.push(event.into()),
-            None => {
-                schedule[starting_timestep] = Some(vec![event.into()]);
+
+        if starting_timestep < total_timesteps {
+            let event_with_type_name =
+                TypedScheduleEvent::from_simple_event(event.into(), name.to_string(), event_type);
+
+            match schedule.get_mut(starting_timestep).unwrap() {
+                Some(events) => {
+                    // Insert the event into the correct position to maintain order by 'start' time
+                    let mut inserted = false;
+                    for (i, existing_event) in events.iter().enumerate() {
+                        if existing_event.start > event_with_type_name.start {
+                            events.insert(i, event_with_type_name.clone());
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if !inserted {
+                        events.push(event_with_type_name);
+                    }
+                }
+                None => schedule[starting_timestep] = Some(vec![event_with_type_name]),
             }
         }
     }
@@ -352,29 +419,35 @@ mod tests {
     }
 
     #[fixture]
-    pub fn events_schedule() -> Vec<Option<Vec<ScheduleEvent>>> {
+    pub fn events_schedule() -> Vec<Option<Vec<TypedScheduleEvent>>> {
         vec![
             None,
             None,
             None,
             None,
             Some(vec![
-                ScheduleEvent {
+                TypedScheduleEvent {
                     start: 2.0,
                     duration: Some(6.0),
                     temperature: None,
+                    name: "name".to_string(),
+                    event_type: ScheduleEventType::Shower,
                 },
-                ScheduleEvent {
+                TypedScheduleEvent {
                     start: 2.1,
                     duration: Some(6.0),
                     temperature: None,
+                    name: "name".to_string(),
+                    event_type: ScheduleEventType::Shower,
                 },
             ]),
             None,
-            Some(vec![ScheduleEvent {
+            Some(vec![TypedScheduleEvent {
                 start: 3.0,
                 duration: Some(6.0),
                 temperature: None,
+                name: "name".to_string(),
+                event_type: ScheduleEventType::Shower,
             }]),
             None,
             None,
@@ -383,14 +456,22 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_expand_events_correctly(
+    pub fn test_expand_events(
         events: Vec<Value>,
         simulation_timestep: f64,
         total_timesteps: usize,
-        events_schedule: Vec<Option<Vec<ScheduleEvent>>>,
+        events_schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
     ) {
+        let schedule_to_test = vec![None; total_timesteps];
         assert_eq!(
-            expand_events(events, simulation_timestep, total_timesteps),
+            expand_events(
+                events,
+                simulation_timestep,
+                total_timesteps,
+                "name",
+                ScheduleEventType::Shower,
+                schedule_to_test
+            ),
             events_schedule,
             "incorrect expansion of event list to schedule"
         );
