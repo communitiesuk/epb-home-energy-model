@@ -45,13 +45,7 @@ impl DomesticHotWaterDemand {
                 input.0.iter().map(|(name, shower)| {
                     (
                         name.clone(),
-                        shower_from_input(
-                            &name,
-                            shower,
-                            cold_water_sources,
-                            energy_supplies,
-                            wwhrs,
-                        ),
+                        shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs),
                     )
                 })
             })
