@@ -1,4 +1,5 @@
 use crate::input::{Schedule, WaterHeatingEvent};
+use anyhow::{anyhow, bail};
 use serde_json::Value;
 
 pub type BooleanSchedule = Vec<bool>;
@@ -152,15 +153,21 @@ impl TypedScheduleEvent {
     }
 }
 
-impl From<Value> for ScheduleEvent {
-    fn from(value: Value) -> Self {
+impl TryFrom<Value> for ScheduleEvent {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Value) -> anyhow::Result<Self> {
         match value {
-            Value::Object(event_map) => ScheduleEvent {
-                start: event_map.get("start").unwrap().as_f64().unwrap(),
+            Value::Object(event_map) => Ok(ScheduleEvent {
+                start: event_map
+                    .get("start")
+                    .ok_or_else(|| anyhow!("Start key was not found in an event."))?
+                    .as_f64()
+                    .ok_or_else(|| anyhow!("Start value in event was expected to be numeric"))?,
                 duration: event_map.get("duration").map(|d| d.as_f64().unwrap()),
                 temperature: event_map.get("temperature").map(|t| t.as_f64().unwrap()),
-            },
-            _ => panic!("Expected a JSON object when transforming into a schedule event"),
+            }),
+            _ => bail!("Expected a JSON object when transforming into a schedule event"),
         }
     }
 }
@@ -183,7 +190,7 @@ pub fn expand_events(
     name: &str,
     event_type: ScheduleEventType,
     mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
-) -> Vec<Option<Vec<TypedScheduleEvent>>> {
+) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
     for event in events {
         let starting_timestep = (event
             .as_object()
@@ -196,8 +203,11 @@ pub fn expand_events(
             .floor() as usize;
 
         if starting_timestep < total_timesteps {
-            let event_with_type_name =
-                TypedScheduleEvent::from_simple_event(event.into(), name.to_string(), event_type);
+            let event_with_type_name = TypedScheduleEvent::from_simple_event(
+                event.try_into()?,
+                name.to_string(),
+                event_type,
+            );
 
             match schedule.get_mut(starting_timestep).unwrap() {
                 Some(events) => {
@@ -219,7 +229,7 @@ pub fn expand_events(
         }
     }
 
-    schedule
+    Ok(schedule)
 }
 
 impl From<&WaterHeatingEvent> for ScheduleEvent {
@@ -471,7 +481,8 @@ mod tests {
                 "name",
                 ScheduleEventType::Shower,
                 schedule_to_test
-            ),
+            )
+            .unwrap(),
             events_schedule,
             "incorrect expansion of event list to schedule"
         );
