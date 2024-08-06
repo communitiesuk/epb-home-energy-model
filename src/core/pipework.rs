@@ -147,12 +147,6 @@ impl Pipework {
         let simple_pipework =
             PipeworkSimple::new(location, internal_diameter_in_m, length_in_m, contents)?;
 
-        let volume_in_litres = PI
-            * (internal_diameter_in_m / 2f64)
-            * (internal_diameter_in_m / 2f64)
-            * length_in_m
-            * LITRES_PER_CUBIC_METRE as f64;
-
         // Set the heat transfer coefficient inside the pipe, in W / m^2 K
         let internal_htc = match contents {
             WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
