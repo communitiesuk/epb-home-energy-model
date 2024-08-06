@@ -379,6 +379,7 @@ mod tests {
         .is_err());
     }
 
+    #[rstest]
     fn test_get_location(
         internal_simple_pipe: PipeworkSimple,
         external_simple_pipe: PipeworkSimple,
