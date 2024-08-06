@@ -819,18 +819,17 @@ mod tests {
             Some(false),
         );
         let shared_supply = Arc::new(RwLock::new(energy_supply));
-        let energy_connection_1 = EnergySupplyConnection {
-            energy_supply: shared_supply.clone(),
-            end_user_name: "shower".to_string(),
-        };
-        let energy_connection_2 = EnergySupplyConnection {
-            energy_supply: shared_supply.clone(),
-            end_user_name: "bath".to_string(),
-        };
+        let energy_connection_1 =
+            EnergySupply::connection(shared_supply.clone(), "shower").unwrap();
+        let energy_connection_2 = EnergySupply::connection(shared_supply.clone(), "bath").unwrap();
         for t_it in simulation_time {
             let t_idx = t_it.index;
-            energy_connection_1.demand_energy(((t_idx + 1) * 50) as f64, t_idx);
-            energy_connection_2.demand_energy((t_idx * 20) as f64, t_idx);
+            energy_connection_1
+                .demand_energy(((t_idx + 1) * 50) as f64, t_idx)
+                .unwrap();
+            energy_connection_2
+                .demand_energy((t_idx * 20) as f64, t_idx)
+                .unwrap();
             assert_eq!(
                 shared_supply.read().get_energy_export()[t_idx],
                 0.,
