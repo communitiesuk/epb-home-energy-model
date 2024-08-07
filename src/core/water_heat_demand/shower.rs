@@ -24,15 +24,25 @@ impl Shower {
     pub fn hot_water_demand(
         &mut self,
         temp_target: f64,
+        temp_hot_water: f64,
         total_shower_duration: f64,
         timestep_idx: usize,
     ) -> f64 {
         match self {
-            Shower::MixerShower(s) => {
-                s.hot_water_demand(temp_target, total_shower_duration, timestep_idx)
-            }
+            Shower::MixerShower(s) => s.hot_water_demand(
+                temp_target,
+                total_shower_duration,
+                temp_hot_water,
+                timestep_idx,
+            ),
             Shower::InstantElectricShower(s) => {
-                s.hot_water_demand(temp_target, total_shower_duration, timestep_idx)
+                s.hot_water_demand(
+                    temp_target,
+                    total_shower_duration,
+                    temp_hot_water,
+                    timestep_idx,
+                )
+                .0
             }
         }
     }
@@ -42,7 +52,6 @@ pub struct MixerShower {
     flowrate: f64,
     cold_water_source: ColdWaterSource,
     wwhrs: Option<Arc<Mutex<Wwhrs>>>,
-    temp_hot: f64,
 }
 
 impl MixerShower {
@@ -55,16 +64,11 @@ impl MixerShower {
             flowrate,
             cold_water_source,
             wwhrs,
-            temp_hot: 52.0, // TODO Python (intent is to not hard-code this)
         }
     }
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
         &self.cold_water_source
-    }
-
-    pub fn get_temp_hot(&self) -> f64 {
-        self.temp_hot
     }
 
     /// Calculate volume of hot water required
@@ -78,6 +82,7 @@ impl MixerShower {
     pub fn hot_water_demand(
         &mut self,
         temp_target: f64,
+        temp_hot_water: f64,
         total_shower_duration: f64,
         timestep_idx: usize,
     ) -> f64 {
@@ -85,7 +90,7 @@ impl MixerShower {
 
         let vol_warm_water = self.flowrate * total_shower_duration;
         let mut vol_hot_water =
-            vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold);
+            vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
 
         if let Some(wwhrs) = &mut self.wwhrs {
             let mut wwhrs = wwhrs.lock();
@@ -98,7 +103,7 @@ impl MixerShower {
             match wwhrs.deref_mut() {
                 Wwhrs::WWHRSInstantaneousSystemB(_) => {
                     vol_hot_water = vol_warm_water
-                        * frac_hot_water(temp_target, self.temp_hot, wwhrs_return_temperature);
+                        * frac_hot_water(temp_target, temp_hot_water, wwhrs_return_temperature);
                 }
                 Wwhrs::WWHRSInstantaneousSystemC(ref mut system_c) => {
                     system_c.set_temperature_for_return(wwhrs_return_temperature)
@@ -107,7 +112,7 @@ impl MixerShower {
                     system_a.set_temperature_for_return(wwhrs_return_temperature);
 
                     vol_hot_water = vol_warm_water
-                        * frac_hot_water(temp_target, self.temp_hot, wwhrs_return_temperature);
+                        * frac_hot_water(temp_target, temp_hot_water, wwhrs_return_temperature);
                 }
             }
         }
@@ -149,24 +154,25 @@ impl InstantElectricShower {
     pub fn hot_water_demand(
         &mut self,
         temp_target: f64,
+        temp_hot_water: f64,
         total_shower_duration: f64,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let temp_cold = self.cold_water_source.temperature(timestep_idx);
 
         let elec_demand =
             self.power_in_kilowatts * (total_shower_duration / MINUTES_PER_HOUR as f64);
         let vol_warm_water =
             elec_demand / WATER.volumetric_energy_content_kwh_per_litre(temp_target, temp_cold);
-        let temp_hot = 52f64; // TODO note in Python to change source of this instead of hard-coding
 
-        let vol_hot_water_equiv = vol_warm_water * frac_hot_water(temp_target, temp_hot, temp_cold);
+        let vol_hot_water_equiv =
+            vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
 
         self.energy_supply_connection
             .demand_energy(elec_demand, timestep_idx)
             .unwrap();
 
-        vol_hot_water_equiv
+        (vol_hot_water_equiv, vol_warm_water)
     }
 }
 
@@ -191,7 +197,7 @@ mod tests {
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
-                mixer_shower.hot_water_demand(40.0, 5.0, idx),
+                mixer_shower.hot_water_demand(40.0, 52.0, 5.0, idx),
                 expected_demands[idx],
                 "incorrect volume of hot water returned"
             );
@@ -217,14 +223,16 @@ mod tests {
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
         for (idx, _) in simulation_time.iter().enumerate() {
-            instant_shower.hot_water_demand(40.0, ((idx + 1) * 6) as f64, idx);
+            instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, idx);
             assert_eq!(
                 energy_supply.read().results_by_end_user()["shower"][idx],
                 expected_results_by_end_user[idx],
                 "correct electricity demand not returned"
             );
             assert_eq!(
-                instant_shower.hot_water_demand(40.0, ((idx + 1) * 6) as f64, idx),
+                instant_shower
+                    .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, idx)
+                    .0,
                 expected_demands[idx]
             );
         }

@@ -133,7 +133,7 @@ impl DomesticHotWaterDemand {
                     .duration
                     .expect("This usage event is expected to have an associated duration.");
                 let hw_demand_i =
-                    shower.hot_water_demand(shower_temp, shower_duration, timestep_idx);
+                    shower.hot_water_demand(shower_temp, 52.0, shower_duration, timestep_idx);
                 match &shower {
                     Shower::InstantElectricShower(_) => {
                         vol_hot_water_equiv_elec_shower += hw_demand_i;
@@ -142,11 +142,8 @@ impl DomesticHotWaterDemand {
                     Shower::MixerShower(s) => {
                         // don't add hw demand and pipework loss from electric shower
                         hw_demand_vol += hw_demand_i;
-                        hw_energy_demand += water_demand_to_kwh(
-                            hw_demand_i,
-                            s.get_temp_hot(),
-                            cold_water_temperature,
-                        );
+                        hw_energy_demand +=
+                            water_demand_to_kwh(hw_demand_i, 52.0, cold_water_temperature);
                         hw_duration += shower_duration;
                         all_events += 1;
                     }
@@ -173,10 +170,14 @@ impl DomesticHotWaterDemand {
                 let other_duration = event
                     .duration
                     .expect("This usage event is expected to have an associated duration.");
-                hw_demand_vol += other.hot_water_demand(other_temp, other_duration, timestep_idx);
+                hw_demand_vol += other
+                    .hot_water_demand(other_temp, 52.0, other_duration, timestep_idx)
+                    .0;
                 hw_energy_demand += water_demand_to_kwh(
-                    other.hot_water_demand(other_temp, other_duration, timestep_idx),
-                    other.get_temp_hot(),
+                    other
+                        .hot_water_demand(other_temp, 52.0, other_duration, timestep_idx)
+                        .0,
+                    52.0,
                     cold_water_temperature,
                 );
                 hw_duration += other_duration;
@@ -203,11 +204,11 @@ impl DomesticHotWaterDemand {
                 let bath_temp = event
                     .temperature
                     .expect("This usage event is expected to have an associated temperature.");
-                hw_demand_vol += bath.hot_water_demand(bath_temp, timestep_idx);
+                hw_demand_vol += bath.hot_water_demand(bath_temp, 52.0, timestep_idx).0;
                 let bath_duration = bath.get_size() / peak_flowrate;
                 hw_energy_demand += water_demand_to_kwh(
-                    bath.hot_water_demand(bath_temp, timestep_idx),
-                    bath.get_temp_hot(),
+                    bath.hot_water_demand(bath_temp, 52.0, timestep_idx).0,
+                    52.0,
                     cold_water_temperature,
                 );
                 hw_duration += bath_duration;

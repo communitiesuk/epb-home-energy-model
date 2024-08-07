@@ -4,7 +4,6 @@ use crate::core::water_heat_demand::misc::frac_hot_water;
 pub struct OtherHotWater {
     flowrate: f64,
     cold_water_source: ColdWaterSource,
-    temp_hot: f64,
 }
 
 impl OtherHotWater {
@@ -12,7 +11,6 @@ impl OtherHotWater {
         Self {
             flowrate,
             cold_water_source,
-            temp_hot: 52.0, // TODO Python code intends to get this temp from somewhere rather than hard-coding
         }
     }
 
@@ -23,10 +21,6 @@ impl OtherHotWater {
 
     pub fn get_cold_water_source(&self) -> &ColdWaterSource {
         &self.cold_water_source
-    }
-
-    pub fn get_temp_hot(&self) -> f64 {
-        self.temp_hot
     }
 
     /// Calculate volume of hot water required
@@ -40,16 +34,19 @@ impl OtherHotWater {
     pub fn hot_water_demand(
         &self,
         temp_target: f64,
+        temp_hot_water: f64,
         total_demand_duration: f64,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let temp_cold = self.cold_water_source.temperature(timestep_idx);
 
         // TODO (from Python) Account for behavioural variation factor fbeh (sic)
         let vol_warm_water = self.flowrate * total_demand_duration;
         // ^^^ litres = litres/minute * minutes
 
-        vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold)
+        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
+
+        (vol_hot_water, vol_warm_water)
     }
 }
 
@@ -94,7 +91,7 @@ mod tests {
         let expected_demands = [15.2, 15.102, 15.0];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                other_water.hot_water_demand(40.0, 4.0, idx),
+                other_water.hot_water_demand(40.0, 52.0, 4.0, idx).0,
                 expected_demands[idx],
                 max_relative = 1e-3
             );

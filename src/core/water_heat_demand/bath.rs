@@ -5,7 +5,6 @@ pub struct Bath {
     size_in_litres: f64,
     cold_water_source: ColdWaterSource,
     flowrate: f64,
-    temp_hot: f64,
 }
 
 impl Bath {
@@ -14,7 +13,6 @@ impl Bath {
             size_in_litres,
             cold_water_source,
             flowrate,
-            temp_hot: 52.0, // TODO Python code has note to get this from somewhere not hard-coded
         }
     }
 
@@ -30,22 +28,25 @@ impl Bath {
         self.flowrate
     }
 
-    pub fn get_temp_hot(&self) -> f64 {
-        self.temp_hot
-    }
-
     /// Calculate volume of hot water required
     /// (and volume of warm water draining to WWHRS, if applicable)
     ///
     /// Arguments:
     /// * `temp_target` - temperature of warm water delivered at tap, in Celsius
     /// * `timestep_idx` - the index of the timestep for which we are querying the hot water demand
-    pub fn hot_water_demand(&self, temp_target: f64, timestep_idx: usize) -> f64 {
+    pub fn hot_water_demand(
+        &self,
+        temp_target: f64,
+        temp_hot_water: f64,
+        timestep_idx: usize,
+    ) -> (f64, f64) {
         let temp_cold = self.cold_water_source.temperature(timestep_idx);
 
         let vol_warm_water = self.size_in_litres; // may wish to modify the volume of water compared to size of bath
 
-        vol_warm_water * frac_hot_water(temp_target, self.temp_hot, temp_cold)
+        let vol_hot_water = vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
+
+        (vol_hot_water, vol_warm_water)
     }
 }
 
@@ -96,8 +97,8 @@ mod tests {
         let expected_demands = [76.0, 75.510, 75.0];
         for idx in 0..simulation_time.total_steps() {
             assert_relative_eq!(
-                bath.hot_water_demand(40.0, idx),
-                expected_demands[idx as usize],
+                bath.hot_water_demand(40.0, 52.0, idx).0,
+                expected_demands[idx],
                 max_relative = 1e-2
             );
         }
