@@ -3,7 +3,10 @@
 
 use crate::core::material_properties::AIR;
 use crate::core::units::SECONDS_PER_HOUR;
-use crate::input::{CombustionApplianceType, CombustionFuelType, FuelType};
+use crate::input::{
+    CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
+    FlueGasExhaustSituation,
+};
 
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
@@ -70,6 +73,26 @@ fn get_fuel_flow_factor(
         (CombustionFuelType::Oil, CombustionApplianceType::ClosedFire) => 0.32,
         (CombustionFuelType::Coal, CombustionApplianceType::ClosedFire) => 0.52,
         (_, _) => panic!("Invalid combination of fuel and appliance types ({fuel_type:?} and {appliance_type:?}."),
+    }
+}
+
+/// Interpreted from Table B.2 from BS EN 16798-7, get the appliance system factor
+///     for a combustion appliance.
+///
+///     Arguments:
+///     supply_situation -- Combustion air supply situation: 'room_air' or 'outside'
+///     exhaust_situation -- flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
+fn get_appliance_system_factor(
+    supply_situation: CombustionAirSupplySituation,
+    exhaust_situation: FlueGasExhaustSituation,
+) -> f64 {
+    match (supply_situation, exhaust_situation) {
+        (CombustionAirSupplySituation::Outside, _) => 0.,
+        (CombustionAirSupplySituation::RoomAir, FlueGasExhaustSituation::IntoRoom) => 0.,
+        (CombustionAirSupplySituation::RoomAir, FlueGasExhaustSituation::IntoSeparateDuct) => 1.,
+        (CombustionAirSupplySituation::RoomAir, FlueGasExhaustSituation::IntoMechVent) => {
+            panic!("Invalid combination of supply situation ({supply_situation:?}) and exhaust situation ({exhaust_situation:?})")
+        }
     }
 }
 
