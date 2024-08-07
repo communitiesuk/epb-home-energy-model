@@ -104,6 +104,14 @@ fn adjust_air_density_for_altitude(h_alt: f64) -> f64 {
     p_a_ref() * ((1. - ((0.00651 * h_alt) / 293.)) as f64).powf(4.255)
 }
 
+/// Recalculate air density based on the current temperature
+///     Arguments:
+///     temperature -- temperature to adjust (K)
+///     air_density_adjusted_for_alt - The air density after adjusting for altitude (Kg/m3)
+fn air_density_at_temp(temperature: f64, air_density_adjusted_for_alt: f64) -> f64 {
+    T_E_REF / temperature * air_density_adjusted_for_alt
+}
+
 // TODO:
 // WIP: a bunch of top level functions (called from other parts of ventilation.py)
 // a Window class
