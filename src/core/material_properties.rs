@@ -1,4 +1,4 @@
-use crate::core::units::JOULES_PER_KILOWATT_HOUR;
+use crate::core::units::{JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE};
 use lazy_static::lazy_static;
 
 /// This module contains data on the properties of materials, and classes to
@@ -22,6 +22,10 @@ impl MaterialProperties {
 
     pub fn density(&self) -> f64 {
         self.density
+    }
+
+    pub fn density_kg_per_m3(&self) -> f64 {
+        self.density * LITRES_PER_CUBIC_METRE as f64
     }
 
     pub fn specific_heat_capacity(&self) -> f64 {
@@ -62,6 +66,7 @@ impl MaterialProperties {
 
 lazy_static! {
     pub static ref WATER: MaterialProperties = MaterialProperties::new(1.0, 4184.0);
+    pub static ref AIR: MaterialProperties = MaterialProperties::new(0.001204, 1006.0);
 }
 
 #[cfg(test)]
