@@ -27,7 +27,7 @@ impl Shower {
         temp_hot_water: f64,
         total_shower_duration: f64,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> (f64, f64) {
         match self {
             Shower::MixerShower(s) => s.hot_water_demand(
                 temp_target,
@@ -35,15 +35,12 @@ impl Shower {
                 temp_hot_water,
                 timestep_idx,
             ),
-            Shower::InstantElectricShower(s) => {
-                s.hot_water_demand(
-                    temp_target,
-                    total_shower_duration,
-                    temp_hot_water,
-                    timestep_idx,
-                )
-                .0
-            }
+            Shower::InstantElectricShower(s) => s.hot_water_demand(
+                temp_target,
+                total_shower_duration,
+                temp_hot_water,
+                timestep_idx,
+            ),
         }
     }
 }
@@ -76,6 +73,7 @@ impl MixerShower {
     ///
     /// Arguments:
     /// * `temp_target` - temperature of warm water delivered at shower head, in Celcius
+    /// * `temp_hot_water`
     /// * `total_shower_duration` - cumulative running time of this shower during the current
     ///                             timestep, in minutes
     /// * `timestep_idx` - the index of the timestep for which we are querying the hot water demand
@@ -85,7 +83,7 @@ impl MixerShower {
         temp_hot_water: f64,
         total_shower_duration: f64,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let temp_cold = self.cold_water_source.temperature(timestep_idx);
 
         let vol_warm_water = self.flowrate * total_shower_duration;
@@ -117,7 +115,7 @@ impl MixerShower {
             }
         }
 
-        vol_hot_water
+        (vol_hot_water, vol_warm_water)
     }
 }
 
@@ -197,7 +195,7 @@ mod tests {
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
-                mixer_shower.hot_water_demand(40.0, 52.0, 5.0, idx),
+                mixer_shower.hot_water_demand(40.0, 52.0, 5.0, idx).0,
                 expected_demands[idx],
                 "incorrect volume of hot water returned"
             );

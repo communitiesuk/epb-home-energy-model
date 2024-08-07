@@ -33,6 +33,7 @@ impl Bath {
     ///
     /// Arguments:
     /// * `temp_target` - temperature of warm water delivered at tap, in Celsius
+    /// * `temp_hot_water`
     /// * `timestep_idx` - the index of the timestep for which we are querying the hot water demand
     pub fn hot_water_demand(
         &self,

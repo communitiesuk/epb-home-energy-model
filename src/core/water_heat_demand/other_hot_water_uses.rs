@@ -28,6 +28,7 @@ impl OtherHotWater {
     ///
     /// Arguments:
     /// * `temp_target` - temperature of warm water delivered at tap/outlet head, in Celcius
+    /// * `temp_hot_water`
     /// * `total_demand_duration` - cumulative running time of this event during the current
     ///                             timestep, in minutes
     /// * `timestep_idx` - the index of the timestep for which we are querying the hot water demand

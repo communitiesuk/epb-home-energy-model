@@ -132,8 +132,9 @@ impl DomesticHotWaterDemand {
                 let shower_duration = event
                     .duration
                     .expect("This usage event is expected to have an associated duration.");
-                let hw_demand_i =
-                    shower.hot_water_demand(shower_temp, 52.0, shower_duration, timestep_idx);
+                let hw_demand_i = shower
+                    .hot_water_demand(shower_temp, 52.0, shower_duration, timestep_idx)
+                    .0;
                 match &shower {
                     Shower::InstantElectricShower(_) => {
                         vol_hot_water_equiv_elec_shower += hw_demand_i;
