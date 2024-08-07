@@ -36,7 +36,6 @@ const T_0_ABS: f64 = 273.15;
 /// * `t_e` - external air temperature (K)
 /// * `t_z` - thermal zone air temperature (K)
 /// * `p_z_ref` - internal reference pressure (Pa)
-///
 fn calculate_pressure_difference_at_an_airflow_path(
     h_path: f64,
     c_p_path: f64,
@@ -77,11 +76,10 @@ fn get_fuel_flow_factor(
 }
 
 /// Interpreted from Table B.2 from BS EN 16798-7, get the appliance system factor
-///     for a combustion appliance.
-///
-///     Arguments:
-///     supply_situation -- Combustion air supply situation: 'room_air' or 'outside'
-///     exhaust_situation -- flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
+/// for a combustion appliance.
+/// Arguments:
+/// supply_situation -- Combustion air supply situation: 'room_air' or 'outside'
+/// exhaust_situation -- flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
 fn get_appliance_system_factor(
     supply_situation: CombustionAirSupplySituation,
     exhaust_situation: FlueGasExhaustSituation,
@@ -97,19 +95,47 @@ fn get_appliance_system_factor(
 }
 
 /// Adjust air density for altitude above sea level.
-///
-///     Arguments:
-///     h_alt -- altitude above sea level (m)
+/// Arguments:
+/// h_alt -- altitude above sea level (m)
 fn adjust_air_density_for_altitude(h_alt: f64) -> f64 {
     p_a_ref() * ((1. - ((0.00651 * h_alt) / 293.)) as f64).powf(4.255)
 }
 
 /// Recalculate air density based on the current temperature
-///     Arguments:
-///     temperature -- temperature to adjust (K)
-///     air_density_adjusted_for_alt - The air density after adjusting for altitude (Kg/m3)
+/// Arguments:
+/// temperature -- temperature to adjust (K)
+/// air_density_adjusted_for_alt - The air density after adjusting for altitude (Kg/m3)
 fn air_density_at_temp(temperature: f64, air_density_adjusted_for_alt: f64) -> f64 {
     T_E_REF / temperature * air_density_adjusted_for_alt
+}
+
+/// Converts volume air flow rate (qv) to mass air flow rate (qm).
+/// (Equations 65 & 66 from BS EN 16798-7)
+/// Arguments:
+/// qv_in -- volume flow rate of air entering the dwelling
+/// qv_out -- volume flow rate of air leaving the dwelling
+/// T_e -- External air temperature (K)
+/// T_e -- Thermal zone air temperature (K)
+/// p_a_alt -- The air density after adjusting for altitude (Kg/m3)
+fn convert_to_mass_air_flow_rate(
+    qv_in: f64,
+    qv_out: f64,
+    t_e: f64,
+    t_z: f64,
+    p_a_alt: f64,
+) -> (f64, f64) {
+    let qm_in = convert_volume_flow_rate_to_mass_flow_rate(qv_in, t_e, p_a_alt);
+    let qm_out = convert_volume_flow_rate_to_mass_flow_rate(qv_out, t_z, p_a_alt);
+    (qm_in, qm_out)
+}
+
+/// Convert volume flow rate in m3/hr to mass flow rate in kg/hr, at temperature in Kelvin
+/// Arguments:
+/// qv -- volume flow rate (m3/h)
+/// temperature -- air temperature (K)
+/// p_a_alt -- The air density after adjusting for altitude (Kg/m3)
+fn convert_volume_flow_rate_to_mass_flow_rate(qv: f64, temperature: f64, p_a_alt: f64) -> f64 {
+    qv * air_density_at_temp(temperature, p_a_alt)
 }
 
 // TODO:
