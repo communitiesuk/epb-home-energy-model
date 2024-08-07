@@ -52,7 +52,7 @@ fn calculate_pressure_difference_at_an_airflow_path(
 
 /// Convert infiltration rate from ach to m^3/s
 fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
-    air_change_rate * zone_volume / f64::from(SECONDS_PER_HOUR)
+    air_change_rate * zone_volume / SECONDS_PER_HOUR as f64
 }
 
 /// Table B.3 fuel flow factors
@@ -94,6 +94,14 @@ fn get_appliance_system_factor(
             panic!("Invalid combination of supply situation ({supply_situation:?}) and exhaust situation ({exhaust_situation:?})")
         }
     }
+}
+
+/// Adjust air density for altitude above sea level.
+///
+///     Arguments:
+///     h_alt -- altitude above sea level (m)
+fn adjust_air_density_for_altitude(h_alt: f64) -> f64 {
+    p_a_ref() * ((1. - ((0.00651 * h_alt) / 293.)) as f64).powf(4.255)
 }
 
 // TODO:
