@@ -1167,11 +1167,11 @@ pub type WaterDistribution = Vec<WaterPipeworkSimple>;
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct WaterHeatingEvents {
     #[serde(default)]
-    pub shower: ShowerEvents,
+    pub shower: IndexMap<String, Vec<WaterHeatingEvent>>,
     #[serde(default)]
-    pub bath: BathEvents,
+    pub bath: IndexMap<String, Vec<WaterHeatingEvent>>,
     #[serde(default)]
-    pub other: OtherWaterHeatingEvents,
+    pub other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
 impl WaterHeatingEvents {
@@ -1183,13 +1183,13 @@ impl WaterHeatingEvents {
     ) {
         match event_type {
             WaterHeatingEventType::Shower => {
-                self.shower.add_event_for_name(name, event);
+                self.shower.entry(name.to_string()).or_default().push(event);
             }
             WaterHeatingEventType::Bath => {
-                self.bath.add_event_for_name(name, event);
+                self.bath.entry(name.to_string()).or_default().push(event);
             }
             WaterHeatingEventType::Other => {
-                self.other.add_event_for_name(name, event);
+                self.other.entry(name.to_string()).or_default().push(event);
             }
         }
     }
@@ -1209,61 +1209,6 @@ pub enum WaterHeatingEventType {
     Shower,
     Bath,
     Other,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct ShowerEvents {
-    #[serde(alias = "IES")]
-    pub ies: Vec<WaterHeatingEvent>,
-    pub mixer: Vec<WaterHeatingEvent>,
-}
-
-impl ShowerEvents {
-    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
-        match name {
-            "IES" => {
-                self.ies.push(event);
-            }
-            "mixer" => {
-                self.mixer.push(event);
-            }
-            _ => {}
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct BathEvents {
-    pub medium: Vec<WaterHeatingEvent>,
-}
-
-impl BathEvents {
-    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
-        if name != "medium" {
-            return;
-        }
-        self.medium.push(event);
-    }
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct OtherWaterHeatingEvents {
-    pub other: Vec<WaterHeatingEvent>,
-}
-
-impl OtherWaterHeatingEvents {
-    fn add_event_for_name(&mut self, name: &str, event: WaterHeatingEvent) {
-        if name != "other" {
-            return;
-        }
-        self.other.push(event);
-    }
 }
 
 pub type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;

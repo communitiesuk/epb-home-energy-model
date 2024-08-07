@@ -2032,52 +2032,48 @@ fn event_schedules_from_input(
 ) -> HotWaterEventSchedules {
     let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
     let shower_events = &events.shower;
-    shower_schedules.insert(
-        "IES".to_string(),
-        schedule_event_from_input(
-            shower_events.ies.iter().collect(),
-            "IES",
-            ScheduleEventType::Shower,
-            None,
-            simulation_time_iterator,
-        ),
-    );
-    shower_schedules.insert(
-        "mixer".to_string(),
-        schedule_event_from_input(
-            shower_events.mixer.iter().collect(),
-            "mixer",
-            ScheduleEventType::Shower,
-            None,
-            simulation_time_iterator,
-        ),
-    );
+    for (name, events) in shower_events {
+        shower_schedules.insert(
+            name.to_owned(),
+            schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                ScheduleEventType::Shower,
+                None,
+                simulation_time_iterator,
+            ),
+        );
+    }
 
     let mut bath_schedules: HashMap<String, EventSchedule> = Default::default();
     let bath_events = &events.bath;
-    bath_schedules.insert(
-        "medium".to_string(),
-        schedule_event_from_input(
-            bath_events.medium.iter().collect(),
-            "medium",
-            ScheduleEventType::Bath,
-            None,
-            simulation_time_iterator,
-        ),
-    );
+    for (name, events) in bath_events {
+        bath_schedules.insert(
+            name.to_owned(),
+            schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                ScheduleEventType::Bath,
+                None,
+                simulation_time_iterator,
+            ),
+        );
+    }
 
     let mut other_schedules: HashMap<String, EventSchedule> = Default::default();
     let other_events = &events.other;
-    other_schedules.insert(
-        "other".to_string(),
-        schedule_event_from_input(
-            other_events.other.iter().collect(),
-            "other",
-            ScheduleEventType::Other,
-            None,
-            simulation_time_iterator,
-        ),
-    );
+    for (name, events) in other_events {
+        other_schedules.insert(
+            name.to_owned(),
+            schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                ScheduleEventType::Other,
+                None,
+                simulation_time_iterator,
+            ),
+        );
+    }
 
     HotWaterEventSchedules {
         shower: shower_schedules,
