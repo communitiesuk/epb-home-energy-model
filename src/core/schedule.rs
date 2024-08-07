@@ -130,6 +130,8 @@ pub struct TypedScheduleEvent {
     pub temperature: Option<f64>,
     pub name: String,
     pub event_type: ScheduleEventType,
+    pub warm_volume: Option<f64>,
+    pub pipework_volume: Option<f64>,
 }
 
 impl TypedScheduleEvent {
@@ -149,6 +151,8 @@ impl TypedScheduleEvent {
             temperature,
             name,
             event_type,
+            warm_volume: None,
+            pipework_volume: None,
         }
     }
 }
@@ -446,6 +450,8 @@ mod tests {
                     temperature: None,
                     name: "name".to_string(),
                     event_type: ScheduleEventType::Shower,
+                    warm_volume: None,
+                    pipework_volume: None,
                 },
                 TypedScheduleEvent {
                     start: 2.1,
@@ -453,6 +459,8 @@ mod tests {
                     temperature: None,
                     name: "name".to_string(),
                     event_type: ScheduleEventType::Shower,
+                    warm_volume: None,
+                    pipework_volume: None,
                 },
             ]),
             None,
@@ -462,6 +470,8 @@ mod tests {
                 temperature: None,
                 name: "name".to_string(),
                 event_type: ScheduleEventType::Shower,
+                warm_volume: None,
+                pipework_volume: None,
             }]),
             None,
             None,
