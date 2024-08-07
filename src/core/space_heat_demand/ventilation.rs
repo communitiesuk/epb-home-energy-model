@@ -3,6 +3,7 @@
 
 use crate::core::material_properties::AIR;
 use crate::core::units::SECONDS_PER_HOUR;
+use crate::input::{CombustionApplianceType, CombustionFuelType, FuelType};
 
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
@@ -49,6 +50,27 @@ fn calculate_pressure_difference_at_an_airflow_path(
 /// Convert infiltration rate from ach to m^3/s
 fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
     air_change_rate * zone_volume / f64::from(SECONDS_PER_HOUR)
+}
+
+/// Table B.3 fuel flow factors
+/// Arguments:
+/// fuel_type -- options are 'wood', 'gas', 'oil' or 'coal'.
+/// appliance_type -- options are 'open_fireplace', 'closed_with_fan',
+/// open_gas_flue_balancer', 'open_gas_kitchen_stove', 'open_gas_fire' or 'closed_fire'
+fn get_fuel_flow_factor(
+    fuel_type: CombustionFuelType,
+    appliance_type: CombustionApplianceType,
+) -> f64 {
+    match (fuel_type, appliance_type) {
+        (CombustionFuelType::Wood, CombustionApplianceType::OpenFireplace) => 2.8,
+        (CombustionFuelType::Gas, CombustionApplianceType::ClosedWithFan) => 0.38,
+        (CombustionFuelType::Gas, CombustionApplianceType::OpenGasFlueBalancer) => 0.78,
+        (CombustionFuelType::Gas, CombustionApplianceType::OpenGasKitchenStove) => 3.35,
+        (CombustionFuelType::Gas, CombustionApplianceType::OpenGasFire) => 3.35,
+        (CombustionFuelType::Oil, CombustionApplianceType::ClosedFire) => 0.32,
+        (CombustionFuelType::Coal, CombustionApplianceType::ClosedFire) => 0.52,
+        (_, _) => panic!("Invalid combination of fuel and appliance types ({fuel_type:?} and {appliance_type:?}."),
+    }
 }
 
 // TODO:
