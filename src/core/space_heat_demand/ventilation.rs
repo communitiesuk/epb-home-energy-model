@@ -5,7 +5,7 @@ use crate::core::material_properties::AIR;
 use crate::core::units::SECONDS_PER_HOUR;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation,
+    FlueGasExhaustSituation, TerrainClass,
 };
 
 fn p_a_ref() -> f64 {
@@ -136,6 +136,27 @@ fn convert_to_mass_air_flow_rate(
 /// p_a_alt -- The air density after adjusting for altitude (Kg/m3)
 fn convert_volume_flow_rate_to_mass_flow_rate(qv: f64, temperature: f64, p_a_alt: f64) -> f64 {
     qv * air_density_at_temp(temperature, p_a_alt)
+}
+
+/// Convert mass flow rate in kg/hr to volume flow rate in m3/hr, at temperature in Kelvin
+/// Arguments:
+/// qm -- mass flow rate (Kg/h)
+/// temperature -- air temperature (K)
+/// p_a_alt -- The air density after adjusting for altitude (Kg/m3)
+fn convert_mass_flow_rate_to_volume_flow_rate(qm: f64, temperature: f64, p_a_alt: f64) -> f64 {
+    qm / air_density_at_temp(temperature, p_a_alt)
+}
+
+/// Interpreted from Table B.13 in BS EN 16798-7.
+/// Terrain Class input to roughness coefficient at building site at 10m
+/// Arguments:
+/// TER_CLASS -- Terrain class, one of 'Open terrain', 'Country' or 'Urban'
+fn ter_class_to_roughness_coeff(terrain: TerrainClass) -> f64 {
+    match terrain {
+        TerrainClass::OpenTerrain => 1.0,
+        TerrainClass::Country => 0.9,
+        TerrainClass::Urban => 0.8,
+    }
 }
 
 // TODO:
