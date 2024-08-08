@@ -5,8 +5,9 @@ use crate::core::material_properties::AIR;
 use crate::core::units::SECONDS_PER_HOUR;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, TerrainClass,
+    DiverterHeatSourceType, FlueGasExhaustSituation, StorageTankType, TerrainClass,
 };
+use rand_distr::num_traits::abs;
 
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
@@ -156,6 +157,83 @@ fn ter_class_to_roughness_coeff(terrain: TerrainClass) -> f64 {
         TerrainClass::OpenTerrain => 1.0,
         TerrainClass::Country => 0.9,
         TerrainClass::Urban => 0.8,
+    }
+}
+
+/// Meteorological wind speed at 10 m corrected to reference wind speed at zone level of the dwelling
+/// Arguments:
+/// C_rgh_site -- roughness coefficient at building site
+/// u_10 -- wind velocity at 10m (m/s)
+/// C_top_site -- topography coefficient at building site
+/// C_rgh_met -- roughness coefficient at 10m depending on meteorological station
+/// C_top_met -- topography coefficient at building height depending on meteorological station
+fn wind_speed_at_zone_level(
+    c_rgh_site: f64,
+    u_10: f64,
+    c_top_site: f64,
+    c_rgh_met: f64,
+    c_top_met: f64,
+) -> f64 {
+    ((c_rgh_site * c_top_site) / (c_rgh_met * c_top_met)) * u_10
+}
+
+/// Determine orientation of other windows relative to largest
+fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
+    let op_rel_orientation = abs(orientation1 - orientation2);
+
+    if op_rel_orientation > 360. {
+        return op_rel_orientation - 360.;
+    }
+    op_rel_orientation
+}
+
+enum FacadeDirection {
+    Roof,
+    Roof10,
+    Roof10_30,
+    Roof30,
+    Windward,
+    Leeward,
+}
+
+/// Gets direction of the facade from pitch and orientation
+/// Arguments:
+/// f_cross -- boolean, dependant on if cross ventilation is possible or not
+/// orientation -- orientation of the facade (degrees)
+/// pitch -- pitch of the facade (degrees)
+/// wind_direction -- direction the wind is blowing (degrees)
+fn get_facade_direction(
+    f_cross: bool,
+    orientation: f64,
+    pitch: f64,
+    wind_direction: f64,
+) -> FacadeDirection {
+    if f_cross {
+        if pitch < 10. {
+            FacadeDirection::Roof10
+        } else if pitch <= 30. {
+            FacadeDirection::Roof10_30
+        } else if pitch < 60. {
+            FacadeDirection::Roof30
+        } else {
+            let orientation_diff = orientation_difference(orientation, wind_direction);
+            if orientation_diff < 90. {
+                FacadeDirection::Windward
+            } else {
+                FacadeDirection::Leeward
+            }
+        }
+    } else {
+        if pitch > 60. {
+            FacadeDirection::Roof
+        } else {
+            let orientation_diff = orientation_difference(orientation, wind_direction);
+            if orientation_diff < 90. {
+                FacadeDirection::Windward
+            } else {
+                FacadeDirection::Leeward
+            }
+        }
     }
 }
 
