@@ -27,7 +27,7 @@ use crate::core::heating_systems::wwhrs::{
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_events_from_json_values,
-    expand_numeric_schedule, ScheduleEvent, ScheduleEventType, TypedScheduleEvent,
+    expand_numeric_schedule, ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
@@ -143,7 +143,7 @@ impl Corpus {
         let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
             simulation_time_iterator.as_ref(),
-        );
+        )?;
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
             input.hot_water_demand.shower.clone(),
@@ -156,8 +156,9 @@ impl Corpus {
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,
-            event_schedules.clone(),
-        );
+            // event_schedules.clone(),
+            vec![], // use empty while migrating to 0.30
+        )?;
 
         let infiltration = infiltration_from_input(input.infiltration.as_ref().unwrap());
 
@@ -939,8 +940,18 @@ impl Corpus {
 
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
-            let (hw_demand_vol, hw_vol_at_tapping_points, hw_duration, no_events, hw_energy_demand) =
-                self.domestic_hot_water_demand.hot_water_demand(t_it.index);
+            let (
+                hw_demand_vol,
+                _,
+                hw_vol_at_tapping_points,
+                hw_duration,
+                no_events,
+                hw_energy_demand,
+                _,
+                _,
+            ) = self
+                .domestic_hot_water_demand
+                .hot_water_demand(t_it.index, 52.0); // temporary value to be changed to hot water temp from hw cylinder source while migrating to 0.30
 
             // Convert from litres to kWh
             let cold_water_source = self.hot_water_sources["hw cylinder"]
@@ -1561,6 +1572,14 @@ pub struct ColdWaterSources {
 }
 
 impl ColdWaterSources {
+    #[cfg(test)]
+    pub fn new(mains_water: Option<ColdWaterSource>, header_tank: Option<ColdWaterSource>) -> Self {
+        Self {
+            mains_water,
+            header_tank,
+        }
+    }
+
     pub fn ref_for_mains_water(&self) -> Option<ColdWaterSource> {
         self.mains_water.clone()
     }
@@ -2029,7 +2048,7 @@ pub struct HotWaterEventSchedules {
 fn event_schedules_from_input(
     events: &WaterHeatingEvents,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> HotWaterEventSchedules {
+) -> anyhow::Result<HotWaterEventSchedules> {
     let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
     let shower_events = &events.shower;
     for (name, events) in shower_events {
@@ -2038,10 +2057,10 @@ fn event_schedules_from_input(
             schedule_event_from_input(
                 events.iter().collect(),
                 name,
-                ScheduleEventType::Shower,
+                WaterScheduleEventType::Shower,
                 None,
                 simulation_time_iterator,
-            ),
+            )?,
         );
     }
 
@@ -2053,10 +2072,10 @@ fn event_schedules_from_input(
             schedule_event_from_input(
                 events.iter().collect(),
                 name,
-                ScheduleEventType::Bath,
+                WaterScheduleEventType::Bath,
                 None,
                 simulation_time_iterator,
-            ),
+            )?,
         );
     }
 
@@ -2068,27 +2087,27 @@ fn event_schedules_from_input(
             schedule_event_from_input(
                 events.iter().collect(),
                 name,
-                ScheduleEventType::Other,
+                WaterScheduleEventType::Other,
                 None,
                 simulation_time_iterator,
-            ),
+            )?,
         );
     }
 
-    HotWaterEventSchedules {
+    Ok(HotWaterEventSchedules {
         shower: shower_schedules,
         bath: bath_schedules,
         other: other_schedules,
-    }
+    })
 }
 
 fn schedule_event_from_input(
     events_input: Vec<&WaterHeatingEvent>,
     name: &str,
-    event_type: ScheduleEventType,
+    event_type: WaterScheduleEventType,
     existing_schedule: Option<Vec<Option<Vec<TypedScheduleEvent>>>>,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> EventSchedule {
+) -> anyhow::Result<EventSchedule> {
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
 

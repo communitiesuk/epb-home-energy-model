@@ -117,7 +117,7 @@ pub struct ScheduleEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ScheduleEventType {
+pub enum WaterScheduleEventType {
     Shower,
     Bath,
     Other,
@@ -127,9 +127,9 @@ pub enum ScheduleEventType {
 pub struct TypedScheduleEvent {
     pub start: f64,
     pub duration: Option<f64>,
-    pub temperature: Option<f64>,
+    pub temperature: f64,
     pub name: String,
-    pub event_type: ScheduleEventType,
+    pub event_type: WaterScheduleEventType,
     pub warm_volume: Option<f64>,
     pub pipework_volume: Option<f64>,
 }
@@ -138,22 +138,23 @@ impl TypedScheduleEvent {
     pub fn from_simple_event(
         event: ScheduleEvent,
         name: String,
-        event_type: ScheduleEventType,
-    ) -> Self {
+        event_type: WaterScheduleEventType,
+    ) -> anyhow::Result<Self> {
         let ScheduleEvent {
             start,
             duration,
             temperature,
         } = event;
-        Self {
+        Ok(Self {
             start,
             duration,
-            temperature,
+            temperature: temperature
+                .ok_or_else(|| anyhow!("Temperature was expected to be set on a water event."))?,
             name,
             event_type,
             warm_volume: None,
             pipework_volume: None,
-        }
+        })
     }
 }
 
@@ -192,10 +193,10 @@ pub fn expand_events_from_json_values(
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
-    event_type: ScheduleEventType,
+    event_type: WaterScheduleEventType,
     schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
 ) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
-    Ok(expand_events(
+    expand_events(
         events
             .iter()
             .map(|json| -> anyhow::Result<ScheduleEvent> { Ok(ScheduleEvent::try_from(json)?) })
@@ -205,7 +206,7 @@ pub fn expand_events_from_json_values(
         name,
         event_type,
         schedule,
-    ))
+    )
 }
 
 /// Construct or update a schedule from a list of events, appending the event type to each event and
@@ -224,15 +225,15 @@ pub fn expand_events(
     simulation_timestep: f64,
     total_timesteps: usize,
     name: &str,
-    event_type: ScheduleEventType,
+    event_type: WaterScheduleEventType,
     mut schedule: Vec<Option<Vec<TypedScheduleEvent>>>,
-) -> Vec<Option<Vec<TypedScheduleEvent>>> {
+) -> anyhow::Result<Vec<Option<Vec<TypedScheduleEvent>>>> {
     for event in events {
         let starting_timestep = (event.start / simulation_timestep).floor() as usize;
 
         if starting_timestep < total_timesteps {
             let event_with_type_name =
-                TypedScheduleEvent::from_simple_event(event, name.to_string(), event_type);
+                TypedScheduleEvent::from_simple_event(event, name.to_string(), event_type)?;
 
             match schedule.get_mut(starting_timestep).unwrap() {
                 Some(events) => {
@@ -254,7 +255,7 @@ pub fn expand_events(
         }
     }
 
-    schedule
+    Ok(schedule)
 }
 
 impl From<&WaterHeatingEvent> for ScheduleEvent {
@@ -417,9 +418,9 @@ mod tests {
     #[fixture]
     pub fn events() -> Vec<Value> {
         json!([
-            {"start": 2, "duration": 6},
-            {"start": 2.1, "duration": 6},
-            {"start": 3, "duration": 6},
+            {"start": 2, "duration": 6, "temperature": 52},
+            {"start": 2.1, "duration": 6, "temperature": 52},
+            {"start": 3, "duration": 6, "temperature": 52},
         ])
         .as_array()
         .unwrap()
@@ -447,18 +448,18 @@ mod tests {
                 TypedScheduleEvent {
                     start: 2.0,
                     duration: Some(6.0),
-                    temperature: None,
+                    temperature: 52.0,
                     name: "name".to_string(),
-                    event_type: ScheduleEventType::Shower,
+                    event_type: WaterScheduleEventType::Shower,
                     warm_volume: None,
                     pipework_volume: None,
                 },
                 TypedScheduleEvent {
                     start: 2.1,
                     duration: Some(6.0),
-                    temperature: None,
+                    temperature: 52.0,
                     name: "name".to_string(),
-                    event_type: ScheduleEventType::Shower,
+                    event_type: WaterScheduleEventType::Shower,
                     warm_volume: None,
                     pipework_volume: None,
                 },
@@ -467,9 +468,9 @@ mod tests {
             Some(vec![TypedScheduleEvent {
                 start: 3.0,
                 duration: Some(6.0),
-                temperature: None,
+                temperature: 52.0,
                 name: "name".to_string(),
-                event_type: ScheduleEventType::Shower,
+                event_type: WaterScheduleEventType::Shower,
                 warm_volume: None,
                 pipework_volume: None,
             }]),
@@ -493,7 +494,7 @@ mod tests {
                 simulation_timestep,
                 total_timesteps,
                 "name",
-                ScheduleEventType::Shower,
+                WaterScheduleEventType::Shower,
                 schedule_to_test
             )
             .unwrap(),

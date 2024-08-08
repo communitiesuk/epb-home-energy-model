@@ -31,14 +31,14 @@ impl Shower {
         match self {
             Shower::MixerShower(s) => s.hot_water_demand(
                 temp_target,
-                total_shower_duration,
                 temp_hot_water,
+                total_shower_duration,
                 timestep_idx,
             ),
             Shower::InstantElectricShower(s) => s.hot_water_demand(
                 temp_target,
-                total_shower_duration,
                 temp_hot_water,
+                total_shower_duration,
                 timestep_idx,
             ),
         }
