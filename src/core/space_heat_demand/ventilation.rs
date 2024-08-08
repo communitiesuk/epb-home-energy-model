@@ -170,10 +170,16 @@ fn ter_class_to_roughness_coeff(terrain: TerrainClass) -> f64 {
 fn wind_speed_at_zone_level(
     c_rgh_site: f64,
     u_10: f64,
-    c_top_site: f64,
-    c_rgh_met: f64,
-    c_top_met: f64,
+    c_top_site: Option<f64>,
+    c_rgh_met: Option<f64>,
+    c_top_met: Option<f64>,
 ) -> f64 {
+    let (c_top_site, c_rgh_met, c_top_met) = (
+        c_top_site.unwrap_or(1.),
+        c_rgh_met.unwrap_or(1.),
+        c_top_met.unwrap_or(1.),
+    );
+
     ((c_rgh_site * c_top_site) / (c_rgh_met * c_top_met)) * u_10
 }
 
