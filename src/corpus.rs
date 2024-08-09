@@ -6,7 +6,6 @@ use crate::core::controls::time_control::{
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
-use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
     EnergySupplies, EnergySupply, EnergySupplyConnection,
 };
@@ -26,7 +25,7 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events, expand_events_from_json_values,
+    expand_boolean_schedule, expand_events,
     expand_numeric_schedule, ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
@@ -2674,7 +2673,7 @@ fn heat_source_from_input(
                         *solar_loop_piping_hlc,
                         external_conditions.clone(),
                         simulation_time.step_in_hours(),
-                        WATER.clone(),
+                        *WATER,
                     ),
                 )))),
                 name.into(),
@@ -2909,7 +2908,7 @@ fn hot_water_source_from_input(
                         .unwrap(),
                 ),
                 ctrl_hold_at_setpoint,
-                WATER.clone(),
+                *WATER,
             )));
             for (heat_source_name, hs) in heat_source {
                 let energy_supply_type = hs.energy_supply_type();

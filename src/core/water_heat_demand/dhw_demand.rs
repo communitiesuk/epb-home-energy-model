@@ -105,7 +105,7 @@ impl DomesticHotWaterDemand {
             .iter()
             .flat_map(|input| {
                 input.iter().map(|input| {
-                    input_to_water_distribution_pipework(&input, total_number_tapping_points)
+                    input_to_water_distribution_pipework(input, total_number_tapping_points)
                 })
             })
             .collect::<anyhow::Result<Vec<PipeworkSimple>>>()?;

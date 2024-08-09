@@ -104,7 +104,7 @@ fn get_appliance_system_factor(
 /// Arguments:
 /// h_alt -- altitude above sea level (m)
 fn adjust_air_density_for_altitude(h_alt: f64) -> f64 {
-    p_a_ref() * ((1. - ((0.00651 * h_alt) / 293.)) as f64).powf(4.255)
+    p_a_ref() * (1. - ((0.00651 * h_alt) / 293.)).powf(4.255)
 }
 
 /// Recalculate air density based on the current temperature
@@ -235,16 +235,14 @@ fn get_facade_direction(
                 FacadeDirection::Leeward
             }
         }
+    } else if pitch > 60. {
+        FacadeDirection::Roof
     } else {
-        if pitch > 60. {
-            FacadeDirection::Roof
+        let orientation_diff = orientation_difference(orientation, wind_direction);
+        if orientation_diff < 90. {
+            FacadeDirection::Windward
         } else {
-            let orientation_diff = orientation_difference(orientation, wind_direction);
-            if orientation_diff < 90. {
-                FacadeDirection::Windward
-            } else {
-                FacadeDirection::Leeward
-            }
+            FacadeDirection::Leeward
         }
     }
 }
@@ -305,7 +303,7 @@ fn get_c_p_path(
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
             }
-        } else if 15. <= h_path && h_path < 50. {
+        } else if (15. ..50.).contains(&h_path) {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::Windward => 0.65,
@@ -718,12 +716,11 @@ impl Leaks {
             p_z_ref,
         );
 
-        let c_leak_path = Self::calculate_flow_coeff_for_leak(&self);
+        let c_leak_path = Self::calculate_flow_coeff_for_leak(self);
 
         // Airflow through leaks based on Equation 62
-        let qv_leak_path =
-            (c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path)).powf(N_LEAK);
-        qv_leak_path
+        
+        (c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path)).powf(N_LEAK)
     }
 
     fn calculate_flow_from_internal_p(

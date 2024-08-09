@@ -199,7 +199,7 @@ pub fn expand_events_from_json_values(
     expand_events(
         events
             .iter()
-            .map(|json| -> anyhow::Result<ScheduleEvent> { Ok(ScheduleEvent::try_from(json)?) })
+            .map(|json| -> anyhow::Result<ScheduleEvent> { ScheduleEvent::try_from(json) })
             .collect::<anyhow::Result<Vec<_>>>()?,
         simulation_timestep,
         total_timesteps,

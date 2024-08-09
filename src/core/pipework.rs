@@ -1,4 +1,3 @@
-use crate::compare_floats::min_of_2;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::input::{WaterPipeContentsType, WaterPipework, WaterPipeworkLocation};
@@ -62,7 +61,7 @@ impl PipeworkSimple {
             * length
             * LITRES_PER_CUBIC_METRE as f64;
         let contents_properties = match contents {
-            WaterPipeContentsType::Water => WATER.clone(),
+            WaterPipeContentsType::Water => *WATER,
             _ => bail!("No properties available for specified pipe content"),
         };
         Ok(Self {

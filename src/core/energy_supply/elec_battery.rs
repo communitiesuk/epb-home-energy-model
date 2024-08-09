@@ -1,6 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{BatteryLocation, ElectricBattery as ElectricBatteryInput};
+use crate::input::BatteryLocation;
 use crate::simulation_time::SimulationTimeIteration;
 use atomic_float::AtomicF64;
 use std::sync::atomic::Ordering;
