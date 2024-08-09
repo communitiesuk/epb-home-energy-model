@@ -25,8 +25,8 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events,
-    expand_numeric_schedule, ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
+    expand_boolean_schedule, expand_events, expand_numeric_schedule, ScheduleEvent,
+    TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::area_for_building_element_input;
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
@@ -2401,7 +2401,7 @@ impl HeatSource {
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
-                    h.demand_energy(energy_demand, &simulation_time_iteration)
+                    h.demand_energy(energy_demand, temp_return, &simulation_time_iteration)
                 }
                 HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
                     h.demand_energy(energy_demand, temp_return, simulation_time_iteration)
@@ -2818,7 +2818,7 @@ impl HotWaterSource {
                 source.demand_hot_water(vol_demanded, &simulation_time_iteration)
             }
             HotWaterSource::HeatNetwork(ref mut source) => {
-                source.demand_hot_water(vol_demanded, simulation_time_iteration.index)
+                source.demand_hot_water(vol_demand_target, simulation_time_iteration.index)
             }
             HotWaterSource::HeatBattery(_) => Default::default(),
         }

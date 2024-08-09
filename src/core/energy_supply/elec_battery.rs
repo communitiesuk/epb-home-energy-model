@@ -211,7 +211,6 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::ApplianceReference::Default;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use rstest::*;
