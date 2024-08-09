@@ -1,15 +1,18 @@
 // This module provides objects to represent Infiltration and Ventilation.
 // The calculations are based on Method 1 of BS EN 16798-7.
 
+use crate::compare_floats::max_of_2;
+use crate::core::controls::time_control::Control;
 use crate::core::material_properties::AIR;
 use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, TerrainClass, VentilationShieldClass,
+    FlueGasExhaustSituation, TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{self, SimulationTimeIteration};
+use crate::simulation_time::{SimulationTimeIteration};
 use rand_distr::num_traits::abs;
+use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
@@ -365,6 +368,251 @@ fn sign(value: f64) -> i8 {
     }
 }
 
+// TODO a Window class
+struct Window {
+    h_w_fa: f64,
+    h_w_path: f64,
+    a_w_max: f64,
+    c_d_w: f64,
+    n_w: f64,
+    orientation: f64,
+    pitch: f64,
+    external_conditions: Arc<ExternalConditions>,
+    n_w_div: f64,
+    on_off_ctrl_obj: Option<Arc<Control>>,
+    _altitude: f64,
+    p_a_alt: f64,
+    window_parts: Vec<WindowPart>,
+}
+
+impl Window {
+    fn new(
+        external_conditions: Arc<ExternalConditions>,
+        h_w_fa: f64,
+        h_w_path: f64,
+        a_w_max: f64,
+        window_part_list: Vec<WindowPartInput>,
+        orientation: f64,
+        pitch: f64,
+        altitude: f64,
+        on_off_ctrl_obj: Option<Arc<Control>>,
+    ) -> Self {
+        let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
+        Self {
+            h_w_fa,
+            h_w_path,
+            a_w_max,
+            c_d_w: 0.67,
+            n_w: 0.5,
+            orientation,
+            pitch,
+            external_conditions,
+            n_w_div,
+            on_off_ctrl_obj,
+            _altitude: altitude,
+            p_a_alt: adjust_air_density_for_altitude(altitude),
+            window_parts: window_part_list
+                .iter()
+                .enumerate()
+                .map(|(window_part_number, window_part_input)| {
+                    WindowPart::new(
+                        window_part_input.mid_height_air_flow_path,
+                        h_w_fa,
+                        n_w_div,
+                        window_part_number + 1,
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// The window opening free area A_w for a window
+    /// Equation 40 in BS EN 16798-7.
+    /// Arguments:
+    ///     R_w_arg -- ratio of window opening (0-1)
+    fn calculate_window_opening_free_area(
+        &self,
+        r_w_arg: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        // Assume windows are shut if the control object is empty
+        match &self.on_off_ctrl_obj {
+            None => 0.,
+            Some(ctrl) => {
+                if ctrl.is_on(simulation_time_iteration) {
+                    r_w_arg * self.a_w_max
+                } else {
+                    0.
+                }
+            }
+        }
+    }
+
+    /// The C_w_path flow coefficient for a window
+    /// Equation 54 from BS EN 16798-7
+    /// Arguments:
+    ///     R_w_arg -- ratio of window opening (0-1)
+    fn calculate_flow_coeff_for_window(
+        &self,
+        r_w_arg: f64,
+        simulation_time: SimulationTimeIteration,
+    ) -> f64 {
+        // Assume windows are shut if the control object is empty
+        match &self.on_off_ctrl_obj {
+            None => 0.,
+            Some(ctrl) => {
+                if ctrl.is_on(simulation_time) {
+                    let a_w = self.calculate_window_opening_free_area(r_w_arg, simulation_time);
+                    3600. * self.c_d_w * a_w * (2. / p_a_ref()).powf(self.n_w)
+                } else {
+                    0.
+                }
+            }
+        }
+    }
+
+    /// Calculate the airflow through window opening based on the how open the window is and internal pressure
+    /// Arguments:
+    /// u_site -- wind velocity at zone level (m/s)
+    /// T_z -- thermal zone air temperature (K)
+    /// p_z_ref -- internal reference pressure (Pa)
+    /// f_cross -- boolean, dependant on if cross ventilation is possible or not
+    /// shield_class -- indicates exposure to wind
+    /// R_w_arg -- ratio of window opening (0-1)
+    fn calculate_flow_from_internal_p(
+        &self,
+        u_site: f64,
+        t_z: f64,
+        p_z_ref: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
+        r_w_arg: Option<f64>,
+        simulation_time: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        let wind_direction = self.external_conditions.wind_direction(simulation_time);
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time));
+        // Assume windows are shut if the control object is empty
+        let r_w_arg = match &self.on_off_ctrl_obj {
+            None => 0.,
+            Some(control) => {
+                if !control.is_on(simulation_time) {
+                    0.
+                } else {
+                    r_w_arg.expect("r_w_arg was None")
+                }
+            }
+        };
+        // Wind pressure coefficient for the window
+        let c_p_path = get_c_p_path_from_pitch_and_orientation(
+            f_cross,
+            shield_class,
+            self.h_w_path,
+            wind_direction,
+            self.orientation,
+            self.pitch,
+        );
+
+        // Airflow coefficient of the window
+        let c_w_path = self.calculate_flow_coeff_for_window(r_w_arg, simulation_time);
+
+        //  Sum airflow through each window part entering and leaving - based on Equation 56 and 57
+        let mut qv_in_through_window_opening = 0.;
+        let mut qv_out_through_window_opening = 0.;
+        for window_part in &self.window_parts {
+            let air_flow = window_part.calculate_ventilation_through_windows_using_internal_p(
+                u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path,
+            );
+            if air_flow >= 0. {
+                qv_in_through_window_opening += air_flow;
+            } else {
+                qv_out_through_window_opening += air_flow;
+            }
+        }
+
+        //  Convert volume air flow rate to mass air flow rate
+        convert_to_mass_air_flow_rate(
+            qv_in_through_window_opening,
+            qv_out_through_window_opening,
+            t_e,
+            t_z,
+            self.p_a_alt,
+        )
+    }
+}
+
+// TODO a WindowPart class
+struct WindowPart {
+    h_w_path: f64,
+    h_w_fa: f64,
+    n_w_div: f64,
+    h_w_div_path: f64,
+    n_w: f64,
+}
+
+impl WindowPart {
+    fn new(h_w_path: f64, h_w_fa: f64, n_w_div: f64, window_part_number: usize) -> Self {
+        Self {
+            h_w_path,
+            h_w_fa,
+            n_w_div,
+            h_w_div_path: Self::calculate_height_for_delta_p_w_div_path(
+                h_w_path,
+                h_w_fa,
+                n_w_div,
+                window_part_number,
+            ),
+            n_w: 0.5,
+        }
+    }
+
+    /// Calculate the airflow through window parts from internal pressure
+    /// Arguments:
+    /// u_site -- wind velocity at zone level (m/s)
+    /// T_e -- external air temperature (K)    
+    /// T_z -- thermal zone air temperature (K)
+    /// C_w_path -- wind pressure coefficient at height of the window
+    /// p_z_ref -- internal reference pressure (Pa)
+    /// C_p_path -- wind pressure coefficient at the height of the window part
+    fn calculate_ventilation_through_windows_using_internal_p(
+        &self,
+        u_site: f64,
+        t_e: f64,
+        t_z: f64,
+        c_w_path: f64,
+        p_z_ref: f64,
+        c_p_path: f64,
+    ) -> f64 {
+        let delta_p_path = calculate_pressure_difference_at_an_airflow_path(
+            self.h_w_div_path,
+            c_p_path,
+            u_site,
+            t_e,
+            t_z,
+            p_z_ref,
+        );
+
+        // Based on Equation 53
+        c_w_path / (self.n_w_div + 1.)
+            * f64::from(sign(delta_p_path))
+            * abs(delta_p_path).powf(self.n_w)
+    }
+
+    /// The height to be considered for delta_p_w_div_path
+    /// Equation 55 from BS EN 16798-7
+    fn calculate_height_for_delta_p_w_div_path(
+        h_w_path: f64,
+        h_w_fa: f64,
+        n_w_div: f64,
+        window_part_number: usize,
+    ) -> f64 {
+        h_w_path - h_w_fa / 2.
+            + h_w_fa / (2. * (n_w_div + 1.))
+            + (h_w_fa / (n_w_div + 1.)) * (window_part_number - 1) as f64
+    }
+}
+
+// TODO a Vent class
+
 // NOTE - In the python implementation this is a property of Leaks
 // low exponent through leaks based on value in B.3.3.14
 const N_LEAK: f64 = 0.667;
@@ -380,9 +628,10 @@ struct Leaks {
     facade_direction: FacadeDirection,
     altitude: f64,
     external_conditions: ExternalConditions,
-    p_a_alt: f64, // In Python there are extra properties:
-                  // n_leak - this is now N_LEAK as it is constant
-                  // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
+    p_a_alt: f64,
+    // In Python there are extra properties:
+    // n_leak - this is now N_LEAK as it is constant
+    // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
 }
 
 impl Leaks {
@@ -424,8 +673,7 @@ impl Leaks {
     fn calculate_flow_coeff_for_leak(&self) -> f64 {
         //  c_leak - Leakage coefficient of ventilation zone
 
-        let c_leak =
-            (self.qv_delta_p_leak_ref * self.a_leak / (self.delta_p_leak_ref)).powf(N_LEAK);
+        let c_leak = self.qv_delta_p_leak_ref * self.a_leak / (self.delta_p_leak_ref).powf(N_LEAK);
 
         // Leakage coefficient of roof, estimated to be proportional to ratio
         // of surface area of the facades to that of the facades plus the roof.
@@ -520,11 +768,6 @@ impl Leaks {
 }
 
 // TODO:
-// WIP: a bunch of top level functions (called from other parts of ventilation.py)
-// a Window class
-// a WindowPart class
-// a Vent class
-// a Leaks class
 // a AirTerminalDevices class
 // a Cowls class
 // a CombustionAppliances class

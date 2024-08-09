@@ -1619,7 +1619,7 @@ pub enum MassDistributionClass {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WindowPart {
-    mid_height_air_flow_path: f64,
+    pub mid_height_air_flow_path: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
