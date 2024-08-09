@@ -203,6 +203,7 @@ impl Pipework {
     /// * `inside_temp` - temperature of water (or air) inside the pipe, in degrees C
     /// * `outside_temp` - temperature outside the pipe, in degrees C
     pub fn temperature_drop(&self, inside_temp: f64, outside_temp: f64) -> f64 {
+        use crate::compare_floats::min_of_2;
         use crate::core::units::{JOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
         let heat_loss_kwh = (SECONDS_PER_HOUR as f64 * self.heat_loss(inside_temp, outside_temp))
             / WATTS_PER_KILOWATT as f64; // heat loss for the one hour timestep in kWh
