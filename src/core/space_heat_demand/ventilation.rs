@@ -5,12 +5,12 @@ use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::AIR;
 use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
-use crate::external_conditions::ExternalConditions;
+use crate::external_conditions::{ExternalConditions};
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{ SimulationTimeIteration};
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -253,8 +253,8 @@ fn get_c_p_path_from_pitch_and_orientation(
     shield_class: VentilationShieldClass,
     h_path: f64,
     wind_direction: f64,
-    pitch: f64,
     orientation: f64,
+    pitch: f64,
 ) -> f64 {
     let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction);
     get_c_p_path(f_cross, shield_class, h_path, facade_direction)
@@ -609,7 +609,164 @@ impl WindowPart {
     }
 }
 
-// TODO a Vent class
+struct Vent {
+    external_conditions: ExternalConditions,
+    h_path: f64,
+    a_vent: f64,
+    delta_p_vent_ref: f64,
+    orientation: f64,
+    pitch: f64,
+    altitude: f64,
+    n_vent: f64,
+    c_d_vent: f64,
+    p_a_alt: f64, // NOTE - in Python we have C_vent_path as an instance variable
+                  // but here we calculate it when needed instead
+}
+
+impl Vent {
+    /// Construct a Vent object
+    ///
+    /// Arguments:
+    ///    external_conditions -- reference to ExternalConditions object
+    ///    h_path -- mid height of air flow path relative to ventilation zone (m)
+    ///    A_vent - Equivalent area of a vent (m2)
+    ///    delta_p_vent_ref -- reference pressure difference for vent (Pa)
+    ///    orientation -- The orientation of the vent (degrees)
+    ///    pitch -- The pitch of the vent (degrees)
+    ///    altitude -- altitude of dwelling above sea level (m)
+    ///
+    /// Method:
+    ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
+    fn new(
+        external_conditions: ExternalConditions,
+        h_path: f64,
+        a_vent: f64,
+        delta_p_vent_ref: f64,
+        orientation: f64,
+        pitch: f64,
+        altitude: f64,
+    ) -> Self {
+        Self {
+            h_path,
+            a_vent,
+            delta_p_vent_ref,
+            orientation,
+            pitch,
+            altitude,
+            external_conditions,
+            n_vent: 0.5, // Flow exponent for vents based on Section B.3.2.2 from BS EN 16798-7
+            c_d_vent: 0.6, // Discharge coefficient of vents based on B.3.2.1 from BS EN 16798-7
+            p_a_alt: adjust_air_density_for_altitude(altitude),
+        }
+    }
+
+    /// The airflow coefficient of the vent calculated from equivalent area A_vent_i
+    /// according to EN 13141-1 and EN 13141-2.
+    /// Based on Equation 59 from BS EN 16798-7.
+    fn calculate_flow_coeff_for_vent(&self) -> f64 {
+        // #NOTE: The standard does not define what the below 3600 and 10000 are.
+
+        (3600. / 10000.)
+            * self.c_d_vent
+            * self.a_vent
+            * (2. / p_a_ref()).powf(0.5)
+            * (1. / self.delta_p_vent_ref).powf(self.n_vent - 0.5)
+    }
+
+    /// Calculate the airflow through vents from internal pressure
+    /// Arguments:
+    /// u_site -- wind velocity at zone level (m/s)
+    /// T_e -- external air temperature (K)
+    /// T_z -- thermal zone air temperature (K)
+    /// C_vent_path -- wind pressure coefficient at height of the vent
+    /// C_p_path -- wind pressure coefficient at the height of the window part
+    /// p_z_ref -- internal reference pressure (Pa)
+    fn calculate_ventilation_through_vents_using_internal_p(
+        &self,
+        u_site: f64,
+        t_e: f64,
+        t_z: f64,
+        c_vent_path: f64,
+        c_p_path: f64,
+        p_z_ref: f64,
+    ) -> f64 {
+        // Pressure_difference at the vent level
+        let delta_p_path = calculate_pressure_difference_at_an_airflow_path(
+            self.h_path,
+            c_p_path,
+            u_site,
+            t_e,
+            t_z,
+            p_z_ref,
+        );
+
+        // Air flow rate for each couple of height and wind pressure coeficient associated with vents.
+        // Based on Equation 58
+        c_vent_path * sign(delta_p_path) as f64 * abs(delta_p_path).powf(self.n_vent)
+    }
+
+    /// Calculate the airflow through vents from internal pressure
+    ///
+    ///     Arguments:
+    ///     u_site -- wind velocity at zone level (m/s)
+    ///     T_z -- thermal zone air temperature (K)
+    ///     p_z_ref -- internal reference pressure (Pa)
+    ///     f_cross -- boolean, dependant on if cross ventilation is possible or not
+    ///     shield_class -- indicates exposure to wind
+    fn calculate_flow_from_internal_p(
+        &self,
+        u_site: f64,
+        t_z: f64,
+        p_z_ref: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
+        simulation_time: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        let wind_direction = self.external_conditions.wind_direction(simulation_time);
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time));
+
+        // Wind pressure coefficient for the air flow path
+        let c_p_path = get_c_p_path_from_pitch_and_orientation(
+            f_cross,
+            shield_class,
+            self.h_path,
+            wind_direction,
+            self.orientation,
+            self.pitch,
+        );
+
+        // Calculate airflow through each vent
+
+        let c_vent_path = self.calculate_flow_coeff_for_vent();
+        let air_flow = self.calculate_ventilation_through_vents_using_internal_p(
+            u_site,
+            t_e,
+            t_z,
+            c_vent_path,
+            c_p_path,
+            p_z_ref,
+        );
+
+        // Sum airflows entering and leaving - based on Equation 60 and 61
+        let mut qv_in_through_vent = 0.;
+        let mut qv_out_through_vent = 0.;
+
+        if air_flow >= 0. {
+            qv_in_through_vent += air_flow
+        } else {
+            qv_out_through_vent += air_flow
+        }
+
+        // Convert volume air flow rate to mass air flow rate
+        convert_to_mass_air_flow_rate(
+            qv_in_through_vent,
+            qv_out_through_vent,
+            t_e,
+            t_z,
+            self.p_a_alt,
+        )
+    }
+}
 
 // NOTE - In the python implementation this is a property of Leaks
 // low exponent through leaks based on value in B.3.3.14
@@ -719,7 +876,7 @@ impl Leaks {
         let c_leak_path = Self::calculate_flow_coeff_for_leak(self);
 
         // Airflow through leaks based on Equation 62
-        
+
         (c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path)).powf(N_LEAK)
     }
 
