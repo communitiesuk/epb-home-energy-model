@@ -10,7 +10,7 @@ use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{SimulationTimeIteration};
+use crate::simulation_time::SimulationTimeIteration;
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -695,9 +695,9 @@ impl Leaks {
     /// Calculate the airflow through leaks from internal pressure
     /// Arguments:
     ///      u_site -- wind velocity at zone level (m/s)
-    ///      T_e -- external air temperature (K)
-    ///      T_z -- thermal zone air temperature (K)
-    ///      C_p_path -- wind pressure coefficient at the height of the window part
+    ///      t_e -- external air temperature (K)
+    ///      t_z -- thermal zone air temperature (K)
+    ///      c_p_path -- wind pressure coefficient at the height of the window part
     ///      p_z_ref -- internal reference pressure (Pa)
     fn calculate_ventilation_through_leaks_using_internal_p(
         &self,
@@ -707,7 +707,7 @@ impl Leaks {
         c_p_path: f64,
         p_z_ref: f64,
     ) -> f64 {
-        // For each couple of height and wind pressure coeficient associated with vents,
+        // For each couple of height and wind pressure coefficient associated with vents,
         // the air flow rate.
         let delta_p_path = calculate_pressure_difference_at_an_airflow_path(
             self.h_path,
@@ -749,9 +749,9 @@ impl Leaks {
 
         // Add airflow entering and leaving through leak
         if air_flow >= 0. {
-            qv_in_through_leak += air_flow
+            qv_in_through_leak += air_flow;
         } else {
-            qv_out_through_leak += air_flow
+            qv_out_through_leak += air_flow;
         }
 
         // Convert volume air flow rate to mass air flow rate
