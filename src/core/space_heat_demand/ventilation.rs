@@ -5,7 +5,7 @@ use crate::core::material_properties::AIR;
 use crate::core::units::SECONDS_PER_HOUR;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    DiverterHeatSourceType, FlueGasExhaustSituation, StorageTankType, TerrainClass,
+    FlueGasExhaustSituation, TerrainClass, VentilationShieldClass,
 };
 use rand_distr::num_traits::abs;
 
@@ -239,6 +239,113 @@ fn get_facade_direction(
             } else {
                 FacadeDirection::Leeward
             }
+        }
+    }
+}
+
+// we split the python get_c_p_path method into two methods below:
+fn get_c_p_path_from_pitch_and_orientation(
+    f_cross: bool,
+    shield_class: VentilationShieldClass,
+    h_path: f64,
+    wind_direction: f64,
+    pitch: f64,
+    orientation: f64,
+) -> f64 {
+    let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction);
+    get_c_p_path(f_cross, shield_class, h_path, facade_direction)
+}
+
+/// Interpreted from Table B.7 for determining dimensionless wind pressure coefficients
+/// Arguments:
+/// f_cross -- boolean, dependant on if cross ventilation is possible or not
+/// shield_class -- indicates exposure to wind
+/// h_path - height of flow path (m)
+/// wind_direction -- direction the wind is blowing (degrees)
+/// orientation -- orientation of the facade (degrees)
+/// pitch -- pitch of the facade (degrees)
+/// facade_direction -- direction of the facade (from get_facade_direction or manual entry)
+fn get_c_p_path(
+    f_cross: bool,
+    shield_class: VentilationShieldClass,
+    h_path: f64,
+    facade_direction: FacadeDirection,
+) -> f64 {
+    if f_cross {
+        if h_path < 15. {
+            match shield_class {
+                VentilationShieldClass::Open => match facade_direction {
+                    FacadeDirection::Windward => 0.50,
+                    FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Roof10 => -0.70,
+                    FacadeDirection::Roof10_30 => -0.60,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+                VentilationShieldClass::Normal => match facade_direction {
+                    FacadeDirection::Windward => 0.25,
+                    FacadeDirection::Leeward => -0.50,
+                    FacadeDirection::Roof10 => -0.60,
+                    FacadeDirection::Roof10_30 => -0.50,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+                VentilationShieldClass::Shielded => match facade_direction {
+                    FacadeDirection::Windward => 0.05,
+                    FacadeDirection::Leeward => -0.30,
+                    FacadeDirection::Roof10 => -0.50,
+                    FacadeDirection::Roof10_30 => -0.40,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+            }
+        } else if 15. <= h_path && h_path < 50. {
+            match shield_class {
+                VentilationShieldClass::Open => match facade_direction {
+                    FacadeDirection::Windward => 0.65,
+                    FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Roof10 => -0.70,
+                    FacadeDirection::Roof10_30 => -0.60,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+                VentilationShieldClass::Normal => match facade_direction {
+                    FacadeDirection::Windward => 0.45,
+                    FacadeDirection::Leeward => -0.50,
+                    FacadeDirection::Roof10 => -0.60,
+                    FacadeDirection::Roof10_30 => -0.50,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+                VentilationShieldClass::Shielded => match facade_direction {
+                    FacadeDirection::Windward => 0.25,
+                    FacadeDirection::Leeward => -0.30,
+                    FacadeDirection::Roof10 => -0.50,
+                    FacadeDirection::Roof10_30 => -0.40,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+            }
+        } else {
+            // In python this is an elif h_path >= 50.
+            match shield_class {
+                VentilationShieldClass::Open => match facade_direction {
+                    FacadeDirection::Windward => 0.80,
+                    FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Roof10 => -0.70,
+                    FacadeDirection::Roof10_30 => -0.60,
+                    FacadeDirection::Roof30 => -0.20,
+                    _ => panic!("Invalid combination of shield_class and facade_direction"),
+                },
+                _ => panic!("Invalid combination of shield_class and facade_direction"),
+            }
+        }
+    } else {
+        match facade_direction {
+            FacadeDirection::Windward => 0.05,
+            FacadeDirection::Leeward => -0.05,
+            FacadeDirection::Roof => 0.,
+            _ => panic!("Invalid combination of shield_class and facade_direction"),
         }
     }
 }

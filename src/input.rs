@@ -2035,7 +2035,7 @@ pub struct InfiltrationVentilation {
     combustion_appliances: IndexMap<String, CombustionAppliance>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum VentilationShieldClass {
     Open,
