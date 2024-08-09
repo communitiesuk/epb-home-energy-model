@@ -2,11 +2,13 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::core::material_properties::AIR;
-use crate::core::units::SECONDS_PER_HOUR;
+use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
+use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, TerrainClass, VentilationShieldClass,
 };
+use crate::simulation_time::{self, SimulationTimeIteration};
 use rand_distr::num_traits::abs;
 
 fn p_a_ref() -> f64 {
@@ -193,6 +195,7 @@ fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
     op_rel_orientation
 }
 
+#[derive(Clone, Copy, PartialEq)]
 enum FacadeDirection {
     Roof,
     Roof10,
@@ -347,6 +350,172 @@ fn get_c_p_path(
             FacadeDirection::Roof => 0.,
             _ => panic!("Invalid combination of shield_class and facade_direction"),
         }
+    }
+}
+
+/// this is our implementation of the numpy sign function
+/// we might get precision issues with numbers really close to 0
+fn sign(value: f64) -> i8 {
+    if value < 0. {
+        -1
+    } else if value == 0. {
+        0
+    } else {
+        1
+    }
+}
+
+// NOTE - In the python implementation this is a property of Leaks
+// low exponent through leaks based on value in B.3.3.14
+const N_LEAK: f64 = 0.667;
+
+/// An object to represent Leaks
+struct Leaks {
+    h_path: f64,
+    delta_p_leak_ref: f64,
+    a_roof: f64,
+    a_facades: f64,
+    a_leak: f64,
+    qv_delta_p_leak_ref: f64,
+    facade_direction: FacadeDirection,
+    altitude: f64,
+    external_conditions: ExternalConditions,
+    p_a_alt: f64, // In Python there are extra properties:
+                  // n_leak - this is now N_LEAK as it is constant
+                  // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
+}
+
+impl Leaks {
+    /// Arguments:
+    ///      extcond -- reference to ExternalConditions object
+    ///      h_path -- mid height of the air flow path relative to ventlation zone floor level
+    ///      delta_p_leak_ref -- Reference pressure difference (From pressure test e.g blower door = 50Pa)
+    ///      qv_delta_p_leak_ref -- flow rate through
+    ///      facade_direction -- The direction of the facade the leak is on.
+    ///      A_roof -- Surface area of the roof of the ventilation zone (m2)
+    ///      A_facades -- Surface area of facades (m2)
+    ///      A_leak - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
+    ///      altitude -- altitude of dwelling above sea level (m)
+    fn new(
+        extcond: ExternalConditions,
+        h_path: f64,
+        delta_p_leak_ref: f64,
+        qv_delta_p_leak_ref: f64,
+        facade_direction: FacadeDirection,
+        a_roof: f64,
+        a_facades: f64,
+        a_leak: f64,
+        altitude: f64,
+    ) -> Self {
+        Self {
+            h_path,
+            delta_p_leak_ref,
+            a_roof,
+            a_facades,
+            a_leak,
+            qv_delta_p_leak_ref,
+            facade_direction,
+            altitude,
+            external_conditions: extcond,
+            p_a_alt: adjust_air_density_for_altitude(altitude),
+        }
+    }
+
+    fn calculate_flow_coeff_for_leak(&self) -> f64 {
+        //  c_leak - Leakage coefficient of ventilation zone
+
+        let c_leak =
+            (self.qv_delta_p_leak_ref * self.a_leak / (self.delta_p_leak_ref)).powf(N_LEAK);
+
+        // Leakage coefficient of roof, estimated to be proportional to ratio
+        // of surface area of the facades to that of the facades plus the roof.
+        if self.facade_direction != FacadeDirection::Windward
+            && self.facade_direction != FacadeDirection::Leeward
+        {
+            // leak in roof
+
+            let c_leak_roof = c_leak * self.a_roof / (self.a_facades + self.a_roof);
+            return c_leak_roof;
+        }
+
+        // Leakage coefficient of facades, estimated to be proportional to ratio
+        // of surface area of the roof to that of the facades plus the roof.
+        let c_leak_facades = c_leak * self.a_facades / (self.a_facades + self.a_roof);
+        0.25 * c_leak_facades // Table B.12
+    }
+
+    /// Calculate the airflow through leaks from internal pressure
+    /// Arguments:
+    ///      u_site -- wind velocity at zone level (m/s)
+    ///      T_e -- external air temperature (K)
+    ///      T_z -- thermal zone air temperature (K)
+    ///      C_p_path -- wind pressure coefficient at the height of the window part
+    ///      p_z_ref -- internal reference pressure (Pa)
+    fn calculate_ventilation_through_leaks_using_internal_p(
+        &self,
+        u_site: f64,
+        t_e: f64,
+        t_z: f64,
+        c_p_path: f64,
+        p_z_ref: f64,
+    ) -> f64 {
+        // For each couple of height and wind pressure coeficient associated with vents,
+        // the air flow rate.
+        let delta_p_path = calculate_pressure_difference_at_an_airflow_path(
+            self.h_path,
+            c_p_path,
+            u_site,
+            t_e,
+            t_z,
+            p_z_ref,
+        );
+
+        let c_leak_path = Self::calculate_flow_coeff_for_leak(&self);
+
+        // Airflow through leaks based on Equation 62
+        let qv_leak_path =
+            (c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path)).powf(N_LEAK);
+        qv_leak_path
+    }
+
+    fn calculate_flow_from_internal_p(
+        &self,
+        u_site: f64,
+        t_z: f64,
+        p_z_ref: f64,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
+        simtime: SimulationTimeIteration,
+    ) -> (f64, f64) {
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime));
+
+        // Wind pressure coefficient for the air flow path
+        let c_p_path = get_c_p_path(f_cross, shield_class, self.h_path, self.facade_direction); // #TABLE from annex B
+
+        // Calculate airflow through each leak
+        let mut qv_in_through_leak = 0.;
+        let mut qv_out_through_leak = 0.;
+        let air_flow = self.calculate_ventilation_through_leaks_using_internal_p(
+            u_site, t_e, t_z, c_p_path, p_z_ref,
+        );
+
+        // Add airflow entering and leaving through leak
+        if air_flow >= 0. {
+            qv_in_through_leak += air_flow
+        } else {
+            qv_out_through_leak += air_flow
+        }
+
+        // Convert volume air flow rate to mass air flow rate
+        let (qm_in_through_leak, qm_out_through_leak) = convert_to_mass_air_flow_rate(
+            qv_in_through_leak,
+            qv_out_through_leak,
+            t_e,
+            t_z,
+            self.p_a_alt,
+        );
+
+        (qm_in_through_leak, qm_out_through_leak)
     }
 }
 
