@@ -26,7 +26,6 @@ pub struct HeatBatteryServiceWaterRegular {
     service_name: String,
     control: Option<Arc<Control>>,
     temp_hot_water: f64,
-    temp_return: f64,
 }
 
 impl HeatBatteryServiceWaterRegular {
@@ -34,7 +33,6 @@ impl HeatBatteryServiceWaterRegular {
         heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,
         temp_hot_water: f64,
-        temp_return: f64,
         control: Option<Arc<Control>>,
     ) -> Self {
         Self {
@@ -42,7 +40,6 @@ impl HeatBatteryServiceWaterRegular {
             service_name,
             control,
             temp_hot_water,
-            temp_return,
         }
     }
 
@@ -50,6 +47,7 @@ impl HeatBatteryServiceWaterRegular {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
+        temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         let service_on = self.is_on(simulation_time_iteration);
@@ -59,12 +57,16 @@ impl HeatBatteryServiceWaterRegular {
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
-            self.temp_return,
+            temp_return,
             simulation_time_iteration.index,
         )
     }
 
-    pub fn energy_output_max(&mut self, simulation_time_iteration: SimulationTimeIteration) -> f64 {
+    pub fn energy_output_max(
+        &mut self,
+        _temp_return: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
         let service_on = self.is_on(simulation_time_iteration);
         if !service_on {
             return 0.0;
@@ -346,7 +348,6 @@ impl HeatBattery {
         heat_battery: Arc<Mutex<Self>>,
         service_name: &str,
         temp_hot_water: f64,
-        temp_return: f64,
         control: Option<Arc<Control>>,
     ) -> HeatBatteryServiceWaterRegular {
         Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
@@ -354,7 +355,6 @@ impl HeatBattery {
             heat_battery,
             service_name.to_string(),
             temp_hot_water,
-            temp_return,
             control,
         )
     }

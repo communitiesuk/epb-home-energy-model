@@ -2405,7 +2405,7 @@ impl HeatSource {
                     h.demand_energy(energy_demand, &simulation_time_iteration)
                 }
                 HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
-                    h.demand_energy(energy_demand, simulation_time_iteration)
+                    h.demand_energy(energy_demand, temp_return, simulation_time_iteration)
                 }
                 HeatSourceWet::HeatPumpWater(ref mut h) => {
                     h.demand_energy(energy_demand, simulation_time_iteration)
@@ -2742,7 +2742,6 @@ fn heat_source_from_input(
                                 Arc::new(Mutex::new(battery)),
                                 &energy_supply_conn_name,
                                 temp_setpoint,
-                                55.,
                                 source_control,
                             ),
                         )))
