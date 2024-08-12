@@ -969,6 +969,39 @@ impl AirTerminalDevices {
     }
 }
 
+/// An object to represent Cowls
+struct Cowls {
+    c_p_cowl_roof: f64,
+    height: f64,
+    // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
+}
+
+impl Cowls {
+    /// Construct a Cowls object
+    /// Arguments:
+    /// height - height Between the top of the roof and the roof outlet in m (m)
+    fn new(height: f64) -> Self {
+        Self {
+            c_p_cowl_roof: 0., // Default B.3.3.5
+            height,
+        }
+    }
+
+    /// Interpreted Table B.9 from BS EN 16798-7
+    /// Get values for delta_C_cowl_height.
+    /// Arguments:
+    /// height - height Between the top of the roof and the roof outlet in m (m)
+    fn get_delta_cowl_height(&self) -> f64 {
+        if self.height < 0.5 {
+            -0.0
+        } else if (0.5..=1.).contains(&self.height) {
+            -0.1
+        } else {
+            0.2
+        }
+    }
+}
+
 /// An object to represent CombustionAppliances
 struct CombustionAppliances {
     f_as: f64,
@@ -982,7 +1015,7 @@ impl CombustionAppliances {
     /// supply_situation - Combustion air supply situation: 'room_air' or 'outside'
     /// exhaust_situation - flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
     /// f_ff -- combustion air flow factor
-    /// P_h_fi - Combustion appliance heating fuel input power (kW)
+    /// p_h_fi - Combustion appliance heating fuel input power (kW)
     fn new(
         supply_situation: CombustionAirSupplySituation,
         exhaust_situation: FlueGasExhaustSituation,
@@ -1015,6 +1048,5 @@ impl CombustionAppliances {
 }
 
 // TODO:
-// a Cowls class
 // a MechanicalVentilation class
 // InfiltrationVentilation class
