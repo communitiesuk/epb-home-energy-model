@@ -969,8 +969,52 @@ impl AirTerminalDevices {
     }
 }
 
+/// An object to represent CombustionAppliances
+struct CombustionAppliances {
+    f_as: f64,
+    f_ff: f64,
+}
+
+impl CombustionAppliances {
+    /// Construct a CombustionAppliances object
+    /// Arguments:
+    /// f_op_comp -- Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
+    /// supply_situation - Combustion air supply situation: 'room_air' or 'outside'
+    /// exhaust_situation - flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
+    /// f_ff -- combustion air flow factor
+    /// P_h_fi - Combustion appliance heating fuel input power (kW)
+    fn new(
+        supply_situation: CombustionAirSupplySituation,
+        exhaust_situation: FlueGasExhaustSituation,
+        fuel_type: CombustionFuelType,
+        appliance_type: CombustionApplianceType,
+    ) -> Self {
+        Self {
+            f_as: get_appliance_system_factor(supply_situation, exhaust_situation), // Combustion appliance system factor (0 or 1)
+            f_ff: get_fuel_flow_factor(fuel_type, appliance_type), // Fuel flow factor (0-5)
+        }
+    }
+
+    /// Calculate additional air flow rate required for the operation of
+    /// combustion appliance q_v_comb.
+    /// Arguments:
+    /// f_op_comp --  Operation requirement signal (combustion appliance) (0 =  OFF ; 1 = ON)
+    /// p_h_fi -- Combustion appliance heating fuel input power (kW)
+    fn calculate_air_flow_req_for_comb_appliance(&self, f_op_comp: f64, p_h_fi: f64) -> (f64, f64) {
+        // TODO (from the Python) flue is considered as vertical passive duct, standard formulas in CIBSE guide.
+        let q_v_in_through_comb = 0.; // (37)
+        let mut q_v_out_through_comb = 0.; // (38)
+
+        if f_op_comp == 1. {
+            let q_v_comb = 3.6 * f_op_comp * self.f_as * self.f_ff * p_h_fi; // (35)
+            q_v_out_through_comb = -q_v_comb; // temp associated with q_v_out_through_comb is ventilation zone temperature tz
+        }
+
+        (q_v_in_through_comb, q_v_out_through_comb)
+    }
+}
+
 // TODO:
 // a Cowls class
-// a CombustionAppliances class
 // a MechanicalVentilation class
 // InfiltrationVentilation class
