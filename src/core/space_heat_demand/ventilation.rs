@@ -5,12 +5,12 @@ use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::Control;
 use crate::core::material_properties::AIR;
 use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
-use crate::external_conditions::{ExternalConditions};
+use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{ SimulationTimeIteration};
+use crate::simulation_time::SimulationTimeIteration;
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -366,7 +366,6 @@ fn sign(value: f64) -> i8 {
     }
 }
 
-// TODO a Window class
 struct Window {
     h_w_fa: f64,
     h_w_path: f64,
@@ -538,7 +537,6 @@ impl Window {
     }
 }
 
-// TODO a WindowPart class
 struct WindowPart {
     h_w_path: f64,
     h_w_fa: f64,
@@ -619,8 +617,8 @@ struct Vent {
     altitude: f64,
     n_vent: f64,
     c_d_vent: f64,
-    p_a_alt: f64, // NOTE - in Python we have C_vent_path as an instance variable
-                  // but here we calculate it when needed instead
+    p_a_alt: f64,
+    // NOTE - in Python we have C_vent_path as an instance variable but here we calculate it when needed instead
 }
 
 impl Vent {
@@ -664,7 +662,7 @@ impl Vent {
     /// according to EN 13141-1 and EN 13141-2.
     /// Based on Equation 59 from BS EN 16798-7.
     fn calculate_flow_coeff_for_vent(&self) -> f64 {
-        // #NOTE: The standard does not define what the below 3600 and 10000 are.
+        // NOTE: The standard does not define what the below 3600 and 10000 are.
 
         (3600. / 10000.)
             * self.c_d_vent
@@ -921,8 +919,57 @@ impl Leaks {
     }
 }
 
+/// An object to represent AirTerminalDevices
+struct AirTerminalDevices {
+    c_d_atd: f64,
+    n_atd: f64,
+    a_atd: f64,
+    delta_p_atd_ref: f64,
+    // NOTE - in Python we have c_atd_path as an instance variable but here we calculate it when needed instead
+}
+
+impl AirTerminalDevices {
+    /// Construct a AirTerminalDevices object
+    /// Arguments:
+    /// a_atd -- equivalent area of the air terminal device (m2)
+    /// delta_p_atd_ref -- Reference pressure difference for an air terminal device (Pa)
+    /// Method: Based on Section 6.4.3.2.2 from BS EN 16798-7
+    fn new(a_atd: f64, delta_p_atd_ref: f64) -> Self {
+        Self {
+            c_d_atd: 0.6, // Discharge coefficient for air terminal devices based on B.3.2.1
+            n_atd: 0.5,   // Flow exponent of air terminal devices based on B.3.2.2
+            a_atd,
+            delta_p_atd_ref,
+        }
+    }
+
+    /// The airflow coefficient of the ATD is calculated
+    /// from the equivalent area A_vent value, according to
+    /// EN 13141-1 and EN 13141-2.
+    /// Equation 26 from BS EN 16798-7.
+    fn calculate_flow_coeff_for_atd(&self) -> f64 {
+        // NOTE: The standard does not define what the below 3600 and 10000 are.
+        (3600. / 10000.)
+            * self.c_d_atd
+            * self.a_atd
+            * (2. / p_a_ref()).powf(0.5)
+            * (1. / self.delta_p_atd_ref).powf(self.n_atd - 0.5)
+    }
+
+    /// The pressure loss at internal air terminal devices is calculated from
+    /// the total air flow rate passing through the device.
+    /// Equation 25 from BS EN 16798-7.
+    /// Solving for qv_pdu.
+    /// Arguments:
+    /// qv_pdu - volume flow rate through passive and hybrid ducts.
+    fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
+        let c_atd_path = self.calculate_flow_coeff_for_atd();
+
+        -(f64::from(sign(qv_pdu))) * (abs(qv_pdu) / c_atd_path).powf(1. / self.n_atd)
+    }
+}
+
 // TODO:
-// a AirTerminalDevices class
 // a Cowls class
 // a CombustionAppliances class
 // a MechanicalVentilation class
