@@ -3,12 +3,14 @@
 
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::Control;
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
 use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, TerrainClass, VentilationShieldClass, WindowPart as WindowPartInput,
+    FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
+    TerrainClass, VentType, VentilationShieldClass, WindowPart as WindowPartInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use rand_distr::num_traits::abs;
@@ -1044,6 +1046,95 @@ impl CombustionAppliances {
         }
 
         (q_v_in_through_comb, q_v_out_through_comb)
+    }
+}
+
+/// An object to represent Mechanical Ventilation
+struct MechanicalVentilation {
+    f_ctrl: f64,
+    f_sys: f64,
+    e_v: f64,
+    theta_z_t: f64,
+    sup_air_flw_ctrl: SupplyAirFlowRateControlType,
+    sup_air_temp_ctrl: SupplyAirTemperatureControlType,
+    external_conditions: ExternalConditions,
+    q_h_des: f64,
+    q_c_des: f64,
+    theta_ctrl_sys: Option<f64>,
+    vent_type: VentType,
+    total_volume: f64,
+    ctrl_intermittent_mev: Option<Arc<Control>>,
+    sfp: f64,
+    simtime: SimulationTimeIteration,
+    energy_supply_conn: EnergySupplyConnection,
+    altitude: f64,
+    design_outdoor_air_flow_rate_m3_h: f64,
+    mvhr_eff: f64,
+}
+
+impl MechanicalVentilation {
+    /// Construct a Mechanical Ventilation object
+    /// Arguments:
+    /// external_conditions -- reference to ExternalConditions object
+    /// sup_air_flw_ctrl -- supply air flow rate control
+    /// sup_air_temp_ctrl --supply air temperature control
+    /// q_h_des -- design zone heating need to be covered by the mechanical ventilation system
+    /// q_c_des -- design zone cooling need to be covered by the mechanical ventilation system
+    /// vent_type -- ventilation system type
+    /// specific_fan_power -- in W / (litre / second), inclusive of any in use factors
+    /// design_outdoor_air_flow_rate -- design outdoor air flow rate in m3/h
+    /// simulation_time -- reference to Simulation time object
+    /// energy_supply_conn -- Energy supply connection
+    /// total_volume  -- Total zone volume (m3)
+    /// altitude -- altitude of dwelling above sea level (m)
+    /// ctrl_intermittent_MEV -- reference to Control object with boolean schedule
+    /// defining when the MechVent should be on.
+    /// mvhr_eff -- MVHR efficiency
+    /// theta_ctrl_sys -- Temperature variation based on control system (K)
+    fn new(
+        extcond: ExternalConditions,
+        sup_air_flw_ctrl: SupplyAirFlowRateControlType,
+        sup_air_temp_ctrl: SupplyAirTemperatureControlType,
+        q_h_des: f64,
+        q_c_des: f64,
+        vent_type: VentType,
+        specific_fan_power: f64,
+        design_outdoor_air_flow_rate: f64,
+        simulation_time: SimulationTimeIteration,
+        energy_supply_conn: EnergySupplyConnection,
+        total_volume: f64,
+        altitude: f64,
+        ctrl_intermittent_mev: Option<Arc<Control>>,
+        mvhr_eff: Option<f64>,
+        theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
+    ) -> Self {
+        Self {
+            // Hard coded variables
+            f_ctrl: 1.,    // From table B.4, for residential buildings, default f_ctrl = 1
+            f_sys: 1.1,    // From table B.5, f_sys = 1.1
+            e_v: 1., // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
+            theta_z_t: 0., // TODO get Thermal zone temperature - used for LOAD
+            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO currently hard coded until load comp implemented
+            sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO currently hard coded until load comp implemented
+            // Arguments
+            external_conditions: extcond,
+            q_h_des,
+            q_c_des,
+            theta_ctrl_sys,
+            vent_type,
+            total_volume,
+            ctrl_intermittent_mev,
+            sfp: specific_fan_power,
+            simtime: simulation_time,
+            energy_supply_conn,
+            altitude,
+            design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
+            mvhr_eff: mvhr_eff.unwrap_or(0.0),
+        }
+    }
+
+    pub fn vent_type(&self) -> VentType {
+        self.vent_type
     }
 }
 
