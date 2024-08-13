@@ -45,6 +45,19 @@ impl Control {
     }
 }
 
+impl ControlBehaviour for Control {
+    fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        per_control!(self, c => { c.in_required_period(simulation_time_iteration) })
+    }
+
+    fn setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
+        per_control!(self, c => { c.setpnt(simulation_time_iteration) })
+    }
+}
+
 pub enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),

@@ -2,7 +2,7 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::compare_floats::max_of_2;
-use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
 use crate::core::units::{
@@ -15,9 +15,8 @@ use crate::input::{
     TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
     WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{self, SimulationTimeIteration};
+use crate::simulation_time::SimulationTimeIteration;
 use rand_distr::num_traits::abs;
-use std::slice::Windows;
 use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
@@ -1188,9 +1187,12 @@ impl MechanicalVentilation {
     fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> f64 {
         match &self.vent_type {
             VentType::IntermittentMev => {
-                // TODO - Python defaults this to None.
-                // what should the behaviour be in that case
-                let f_op_v = per_control!(self.ctrl_intermittent_mev.clone().unwrap().as_ref(), ctrl => { ctrl.setpnt(&simulation_time) }).unwrap();
+                let f_op_v = self
+                    .ctrl_intermittent_mev
+                    .as_ref()
+                    .expect("ctrl_intermittent_mev was expected to be set")
+                    .setpnt(&simulation_time)
+                    .expect("A setpoint was expected to be derivable for a control.");
 
                 if f_op_v < 0. || f_op_v > 1. {
                     panic!("Error f_op_v is not between 0 and 1")
@@ -1206,7 +1208,7 @@ impl MechanicalVentilation {
             }
             // NOTE - this will happen for VentType::Piv
             // same behaviour as Python
-            _ => panic!("Unknown mechanical ventlation system type"),
+            _ => panic!("Unknown mechanical ventilation system type"),
         }
     }
 
