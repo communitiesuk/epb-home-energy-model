@@ -12,10 +12,12 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
-    TerrainClass, VentType, VentilationShieldClass, WindowPart as WindowPartInput,
+    TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
+    WindowPart as WindowPartInput,
 };
 use crate::simulation_time::{self, SimulationTimeIteration};
 use rand_distr::num_traits::abs;
+use std::slice::Windows;
 use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
@@ -784,7 +786,7 @@ struct Leaks {
     qv_delta_p_leak_ref: f64,
     facade_direction: FacadeDirection,
     altitude: f64,
-    external_conditions: ExternalConditions,
+    external_conditions: Arc<ExternalConditions>,
     p_a_alt: f64,
     // In Python there are extra properties:
     // n_leak - this is now N_LEAK as it is constant
@@ -803,7 +805,7 @@ impl Leaks {
     ///      A_leak - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
     ///      altitude -- altitude of dwelling above sea level (m)
     fn new(
-        extcond: ExternalConditions,
+        extcond: Arc<ExternalConditions>,
         h_path: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
@@ -1315,5 +1317,159 @@ impl MechanicalVentilation {
     }
 }
 
-// TODO:
-// InfiltrationVentilation class
+/// A class to represent Infiltration and Ventilation object
+struct InfiltrationVentilation {
+    external_conditions: Arc<ExternalConditions>,
+    f_cross: bool,
+    shield_class: VentilationShieldClass,
+    terrain_class: TerrainClass,
+    c_rgh_site: f64,
+    ventilation_zone_height: f64,
+    windows: Vec<Window>,
+    vents: Vec<Vent>,
+    leaks: Vec<Leaks>,
+    combustion_appliances: Vec<CombustionAppliances>,
+    air_terminal_devices: Vec<AirTerminalDevices>,
+    mech_vents: Vec<MechanicalVentilation>,
+    detailed_output_heating_cooling: bool,
+    p_a_alt: f64,
+    total_volume: f64,
+}
+
+///Constructs a InfiltrationVentilation object
+///
+///         Arguments:
+///             external_conditions -- reference to ExternalConditions object
+///             simulation_time -- reference to SimulationTime object
+///             f_cross -- cross-ventilation factor
+///             shield_class -- indicates the exposure to wind of an air flow path on a facade
+///                 (can can be open, normal and shielded)
+///             ventilation_zone_height -- height of ventilation zone (m)
+///             windows -- list of windows
+///             vents -- list of vents
+///             leaks -- required inputs for leaks
+///             ATDs -- list of air terminal devices
+///             mech_vents -- list of mech vents
+///             altitude -- altitude of dwelling above sea level (m)
+///             total_volume -- total zone volume
+impl InfiltrationVentilation {
+    fn new(
+        external_conditions: Arc<ExternalConditions>,
+        f_cross: bool,
+        shield_class: VentilationShieldClass,
+        terrain_class: TerrainClass,
+        average_roof_pitch: f64,
+        windows: Vec<Window>,
+        vents: Vec<Vent>,
+        leaks: VentilationLeaks,
+        combustion_appliances: Vec<CombustionAppliances>,
+        air_terminal_devices: Vec<AirTerminalDevices>,
+        mech_vents: Vec<MechanicalVentilation>,
+        detailed_output_heating_cooling: bool,
+        altitude: f64,
+        total_volume: f64,
+    ) -> Self {
+        Self {
+            external_conditions: external_conditions.clone(),
+            f_cross,
+            shield_class,
+            terrain_class,
+            c_rgh_site: ter_class_to_roughness_coeff(terrain_class),
+            ventilation_zone_height: leaks.ventilation_zone_height,
+            windows,
+            vents,
+            leaks: Self::make_leak_objects(leaks, average_roof_pitch, external_conditions),
+            combustion_appliances,
+            air_terminal_devices,
+            mech_vents,
+            detailed_output_heating_cooling,
+            p_a_alt: adjust_air_density_for_altitude(altitude),
+            total_volume,
+        }
+    }
+
+    /// Calculate supply temperature of the air flow element
+    pub fn temp_supply(&self, simtime: SimulationTimeIteration) -> f64 {
+        // NOTE: Technically, the MVHR system supplies air at a higher temperature
+        // than the outside air, i.e.:
+        //     temp_supply = self.__efficiency * temp_int_air \
+        //                 + (1 - self.__efficiency) * self.__external_conditions.air_temp()
+        // However, calculating this requires the internal air temperature, which
+        // has not been calculated yet. Calculating this properly would require
+        // the equation above to be added to the heat balance solver. Therefore,
+        // it is simpler to adjust the heat transfer coefficient h_ve to account
+        // for the heat recovery effect using an "equivalent" flow rate of
+        // external air, which is done elsewhere
+        self.external_conditions.air_temp(&simtime)
+    }
+
+    /// Calculate total volume air flow rate entering ventilation zone
+    /// Equation 68 from BS EN 16798-7
+    fn calculate_total_volume_air_flow_rate_in(qm_in: f64, external_air_density: f64) -> f64 {
+        qm_in / external_air_density // from weather file?
+    }
+
+    /// Calculate total volume air flow rate leaving ventilation zone
+    /// Equation 69 from BS EN 16798-7
+    fn calculate_total_volume_air_flow_rate_out(qm_out: f64, zone_air_density: f64) -> f64 {
+        qm_out / zone_air_density
+    }
+
+    /// Distribute leaks around the dwelling according to Table B.12 from BS EN 16798-7.
+    /// Create 5 leak objects:
+    ///     At 0.25*Height of the Ventilation Zone in the Windward facade
+    ///     At 0.25*Height of the Ventilation Zone in the Leeward facade
+    ///     At 0.75*Height of the Ventilation Zone in the Windward facade
+    ///     At 0.75*Height of the Ventilation Zone in the Leeward facade
+    ///     At the Height of the Ventilation Zone in the roof
+    /// Arguments:
+    /// leak - dict of leaks input data from JSON file
+    /// average_roof_pitch - calculated in project.py, average pitch of all roof elements weighted by area (degrees)
+    fn make_leak_objects(
+        leaks: VentilationLeaks,
+        average_roof_pitch: f64,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Vec<Leaks> {
+        let h_path1_2 = 0.25 * leaks.ventilation_zone_height;
+        let h_path3_4 = 0.75 * leaks.ventilation_zone_height;
+        let h_path5 = leaks.ventilation_zone_height;
+        let h_path_list = [h_path1_2, h_path1_2, h_path3_4, h_path3_4, h_path5];
+
+        let roof_pitch = match average_roof_pitch {
+            ..10.0 => FacadeDirection::Roof10,
+            10.0..=30.0 => FacadeDirection::Roof10_30,
+            30.0..60.0 => FacadeDirection::Roof30,
+            _ => panic!("Average roof pitch was not expected to be greater than 60 degrees."),
+        };
+
+        let facade_direction = [
+            FacadeDirection::Windward,
+            FacadeDirection::Leeward,
+            FacadeDirection::Windward,
+            FacadeDirection::Leeward,
+            roof_pitch,
+        ];
+
+        (0..5)
+            .map(|i| {
+                Leaks::new(
+                    external_conditions.clone(),
+                    h_path_list[i],
+                    leaks.test_pressure,
+                    leaks.test_result,
+                    facade_direction[i],
+                    leaks
+                        .area_roof
+                        .expect("VentilationLeaks did not have an area_roof defined"),
+                    leaks
+                        .area_facades
+                        .expect("VentilationLeaks did not have an area_facades defined"),
+                    leaks.env_area,
+                    leaks
+                        .altitude
+                        .expect("VentilationLeaks did not have an altitude defined"),
+                )
+            })
+            .collect()
+    }
+}

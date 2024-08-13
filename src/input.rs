@@ -2045,7 +2045,7 @@ pub enum VentilationShieldClass {
     Shielded,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum TerrainClass {
     #[serde(rename = "Open terrain")]
@@ -2071,12 +2071,13 @@ pub struct Vent {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VentilationLeaks {
-    ventilation_zone_height: f64,
-    test_pressure: f64,
-    test_result: f64,
-    area_roof: Option<f64>,
-    area_facades: Option<f64>,
-    env_area: f64,
+    pub ventilation_zone_height: f64,
+    pub test_pressure: f64,
+    pub test_result: f64,
+    pub area_roof: Option<f64>,
+    pub area_facades: Option<f64>,
+    pub env_area: f64,
+    pub altitude: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
