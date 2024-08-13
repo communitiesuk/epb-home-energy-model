@@ -1256,7 +1256,6 @@ impl MechanicalVentilation {
         )
     }
 
-    // TODO is this needed?
     pub fn vent_type(&self) -> VentType {
         self.vent_type
     }
