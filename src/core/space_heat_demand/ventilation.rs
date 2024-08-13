@@ -1067,7 +1067,7 @@ struct MechanicalVentilation {
     total_volume: f64,
     ctrl_intermittent_mev: Option<Arc<Control>>,
     sfp: f64,
-    simtime: SimulationTimeIteration,
+    simulation_timestep: f64,
     energy_supply_conn: EnergySupplyConnection,
     altitude: f64,
     design_outdoor_air_flow_rate_m3_h: f64,
@@ -1097,14 +1097,15 @@ impl MechanicalVentilation {
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
     fn new(
         extcond: ExternalConditions,
-        sup_air_flw_ctrl: SupplyAirFlowRateControlType,
-        sup_air_temp_ctrl: SupplyAirTemperatureControlType,
+        _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
+        _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
         q_h_des: f64,
         q_c_des: f64,
         vent_type: VentType,
         specific_fan_power: f64,
         design_outdoor_air_flow_rate: f64,
-        simulation_time: SimulationTimeIteration,
+        // NOTE - in Python this is simtime
+        simulation_timestep: f64,
         energy_supply_conn: EnergySupplyConnection,
         total_volume: f64,
         altitude: f64,
@@ -1133,7 +1134,7 @@ impl MechanicalVentilation {
             total_volume,
             ctrl_intermittent_mev,
             sfp: specific_fan_power,
-            simtime: simulation_time,
+            simulation_timestep,
             energy_supply_conn,
             altitude,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
@@ -1164,7 +1165,7 @@ impl MechanicalVentilation {
     /// Calculate required outdoor air flow rates at the air terminal devices
     /// Equations 10-17 from BS EN 16798-7
     /// Adjusted to be based on ventilation type instead of vent_sys_op.
-    fn calc_req_ODA_flow_rates_at_ATDs(&self) -> (f64, f64) {
+    fn calc_req_oda_flow_rates_at_atds(&self) -> (f64, f64) {
         match &self.vent_type {
             VentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
             VentType::IntermittentMev
@@ -1217,7 +1218,7 @@ impl MechanicalVentilation {
         let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time));
 
         // Required air flow at air terminal devices
-        let (qv_sup_req, qv_eta_req) = self.calc_req_ODA_flow_rates_at_ATDs();
+        let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
 
         // Amount of air flow depends on controls
         let (f_op_v, qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
@@ -1270,13 +1271,14 @@ impl MechanicalVentilation {
         throughput_factor: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
-        let throughput_factor = throughput_factor.unwrap_or(1.0);
+        let _throughput_factor = throughput_factor.unwrap_or(1.0);
         // Calculate energy use by fans
-        let fan_power_w =
-            (self.sfp * (self.qv_oda_req_design / SECONDS_PER_HOUR) * LITRES_PER_CUBIC_METRE)
-                * (zone_volume / total_volume);
-        let fan_energy_use_kwh = (fan_power_w / WATTS_PER_KILOWATT)
-            * self.simtime.timestep()
+        let fan_power_w = (self.sfp
+            * (self.qv_oda_req_design / f64::from(SECONDS_PER_HOUR))
+            * f64::from(LITRES_PER_CUBIC_METRE))
+            * (zone_volume / total_volume);
+        let fan_energy_use_kwh = (fan_power_w / f64::from(WATTS_PER_KILOWATT))
+            * self.simulation_timestep
             * self.f_op_v(simulation_time_iteration);
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
@@ -1296,13 +1298,16 @@ impl MechanicalVentilation {
             }
         };
         self.energy_supply_conn
-            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration)
+            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration.index)
             .unwrap();
         self.energy_supply_conn
-            .demand_energy(extract_fan_energy_use_in_kwh, simulation_time_iteration)
+            .demand_energy(
+                extract_fan_energy_use_in_kwh,
+                simulation_time_iteration.index,
+            )
             .unwrap();
 
-        supply_fan_energy_use_kwh / (WATTS_PER_KILOWATT * self.simtime.timestep())
+        supply_fan_energy_use_kwh / (f64::from(WATTS_PER_KILOWATT) * self.simulation_timestep)
     }
 
     pub fn vent_type(&self) -> VentType {
