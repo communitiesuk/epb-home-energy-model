@@ -2,7 +2,7 @@
 // The calculations are based on Method 1 of BS EN 16798-7.
 
 use crate::compare_floats::max_of_2;
-use crate::core::controls::time_control::Control;
+use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
 use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
@@ -12,7 +12,7 @@ use crate::input::{
     FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
     TerrainClass, VentType, VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{self, SimulationTimeIteration};
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -1070,6 +1070,8 @@ struct MechanicalVentilation {
     altitude: f64,
     design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
+    qv_oda_req_design: f64,
+    p_a_alt: f64,
 }
 
 impl MechanicalVentilation {
@@ -1108,11 +1110,15 @@ impl MechanicalVentilation {
         mvhr_eff: Option<f64>,
         theta_ctrl_sys: Option<f64>, // Only required if sup_air_temp_ctrl = LOAD_COM
     ) -> Self {
+        let f_ctrl = 1.; // From table B.4, for residential buildings, default f_ctrl = 1
+        let f_sys = 1.1; // From table B.5, f_sys = 1.1
+        let e_v = 1.; // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
+
         Self {
             // Hard coded variables
-            f_ctrl: 1.,    // From table B.4, for residential buildings, default f_ctrl = 1
-            f_sys: 1.1,    // From table B.5, f_sys = 1.1
-            e_v: 1., // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
+            f_ctrl,
+            f_sys,
+            e_v,
             theta_z_t: 0., // TODO get Thermal zone temperature - used for LOAD
             sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO currently hard coded until load comp implemented
             sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO currently hard coded until load comp implemented
@@ -1130,9 +1136,127 @@ impl MechanicalVentilation {
             altitude,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
             mvhr_eff: mvhr_eff.unwrap_or(0.0),
+            // Calculated variables
+            qv_oda_req_design: Self::calculate_required_outdoor_air_flow_rate(
+                f_ctrl,
+                f_sys,
+                e_v,
+                design_outdoor_air_flow_rate,
+            ),
+            p_a_alt: adjust_air_density_for_altitude(altitude),
         }
     }
 
+    /// Calculate required outdoor ventilation air flow rates.
+    /// Equation 9 from BS EN 16798-7.
+    fn calculate_required_outdoor_air_flow_rate(
+        f_ctrl: f64,
+        f_sys: f64,
+        e_v: f64,
+        design_outdoor_air_flow_rate_m3_h: f64,
+    ) -> f64 {
+        // Required outdoor air flow rate in m3/h
+        ((f_ctrl * f_sys) / e_v) * design_outdoor_air_flow_rate_m3_h
+    }
+
+    /// Calculate required outdoor air flow rates at the air terminal devices
+    /// Equations 10-17 from BS EN 16798-7
+    /// Adjusted to be based on ventilation type instead of vent_sys_op.
+    fn calc_req_ODA_flow_rates_at_ATDs(&self) -> (f64, f64) {
+        match &self.vent_type {
+            VentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
+            VentType::IntermittentMev
+            | VentType::CentralisedContinuousMev
+            | VentType::DecentralisedContinuousMev => {
+                // NOTE: Calculation of effective flow rate of external air (in func
+                // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
+                // supply and extract are perfectly balanced (as defined above), so
+                // any future change to this assumption will need to be considered
+                // with that in mind
+                (0., -self.qv_oda_req_design)
+            }
+            VentType::Piv => (self.qv_oda_req_design, 0.),
+        }
+    }
+
+    /// Returns the fraction of the timestep for which the ventilation is running
+    fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> f64 {
+        match &self.vent_type {
+            VentType::IntermittentMev => {
+                // TODO - Python defaults this to None.
+                // what should the behaviour be in that case
+                let f_op_v = per_control!(self.ctrl_intermittent_mev.clone().unwrap().as_ref(), ctrl => { ctrl.setpnt(&simulation_time) }).unwrap();
+
+                if f_op_v < 0. || f_op_v > 1. {
+                    panic!("Error f_op_v is not between 0 and 1")
+                }
+
+                f_op_v
+            }
+            VentType::DecentralisedContinuousMev
+            | VentType::CentralisedContinuousMev
+            | VentType::Mvhr => {
+                // Assumed to operate continuously
+                1.
+            }
+            // NOTE - this will happen for VentType::Piv
+            // same behaviour as Python
+            _ => panic!("Unknown mechanical ventlation system type"),
+        }
+    }
+
+    /// Calculate the air flow rates to and from the ventilation zone required from mechanical ventilation.
+    /// T_z -- thermal zone temperature (K)
+    fn calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+        &self,
+        t_z: f64,
+        simulation_time: &SimulationTimeIteration,
+    ) -> (f64, f64, f64) {
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time));
+
+        // Required air flow at air terminal devices
+        let (qv_sup_req, qv_eta_req) = self.calc_req_ODA_flow_rates_at_ATDs();
+
+        // Amount of air flow depends on controls
+        let (f_op_v, qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
+            SupplyAirFlowRateControlType::ODA => {
+                let f_op_v = self.f_op_v(simulation_time);
+                let qv_sup_dis_req = f_op_v * qv_sup_req;
+                let qv_eta_dis_req = f_op_v * qv_eta_req;
+
+                (f_op_v, qv_sup_dis_req, qv_eta_dis_req)
+            }
+            SupplyAirFlowRateControlType::Load => {
+                // NOTE - this is not currently implemented in the Python code
+                unimplemented!("calc_mech_vent_air_flw_rates_req_to_supply_vent_zone is not implemented for SupplyAirFlowRateControlType::Load")
+            }
+        };
+
+        // Calculate effective flow rate of external air
+        // NOTE: Technically, the MVHR system supplies air at a higher
+        // temperature than the outside air. However, it is simpler to
+        // account for the heat recovery effect using an "equivalent" or
+        // "effective" flow rate of external air
+        let qv_effective_heat_recovery_saving = qv_sup_dis_req * self.mvhr_eff;
+
+        // Convert volume air flow rate to mass air flow rate
+        let (qm_sup_dis_req, qm_eta_dis_req) =
+            convert_to_mass_air_flow_rate(qv_sup_dis_req, qv_eta_dis_req, t_e, t_z, self.p_a_alt);
+
+        let qm_in_effective_heat_recovery_saving = convert_volume_flow_rate_to_mass_flow_rate(
+            qv_effective_heat_recovery_saving,
+            t_e,
+            self.p_a_alt,
+        );
+
+        (
+            qm_sup_dis_req,
+            qm_eta_dis_req,
+            qm_in_effective_heat_recovery_saving,
+        )
+    }
+
+    // TODO is this needed?
     pub fn vent_type(&self) -> VentType {
         self.vent_type
     }
