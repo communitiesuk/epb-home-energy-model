@@ -5,7 +5,9 @@ use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
-use crate::core::units::{celsius_to_kelvin, SECONDS_PER_HOUR};
+use crate::core::units::{
+    celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
+};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
@@ -1256,11 +1258,57 @@ impl MechanicalVentilation {
         )
     }
 
+    /// Calculate gains and energy use due to fans
+    /// zone_volume -- volume of the zone (m3)
+    /// total_volume -- volume of the dwelling (m3)
+    /// vent_type -- one of "Intermittent MEV", "Centralised continuous MEV",
+    /// "Decentralised continuous MEV", "MVHR" or "PIV".
+    fn fans(
+        &self,
+        zone_volume: f64,
+        total_volume: f64,
+        throughput_factor: Option<f64>,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> f64 {
+        let throughput_factor = throughput_factor.unwrap_or(1.0);
+        // Calculate energy use by fans
+        let fan_power_w =
+            (self.sfp * (self.qv_oda_req_design / SECONDS_PER_HOUR) * LITRES_PER_CUBIC_METRE)
+                * (zone_volume / total_volume);
+        let fan_energy_use_kwh = (fan_power_w / WATTS_PER_KILOWATT)
+            * self.simtime.timestep()
+            * self.f_op_v(simulation_time_iteration);
+
+        let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
+            VentType::IntermittentMev
+            | VentType::CentralisedContinuousMev
+            | VentType::DecentralisedContinuousMev => {
+                // Fan energy use = 0
+                (0.0, fan_energy_use_kwh)
+            }
+            VentType::Mvhr => {
+                // Balanced, therefore split power between extract and supply fans
+                (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
+            }
+            VentType::Piv => {
+                // Positive input, supply fans only
+                (fan_energy_use_kwh, 0.)
+            }
+        };
+        self.energy_supply_conn
+            .demand_energy(supply_fan_energy_use_kwh, simulation_time_iteration)
+            .unwrap();
+        self.energy_supply_conn
+            .demand_energy(extract_fan_energy_use_in_kwh, simulation_time_iteration)
+            .unwrap();
+
+        supply_fan_energy_use_kwh / (WATTS_PER_KILOWATT * self.simtime.timestep())
+    }
+
     pub fn vent_type(&self) -> VentType {
         self.vent_type
     }
 }
 
 // TODO:
-// a MechanicalVentilation class
 // InfiltrationVentilation class
