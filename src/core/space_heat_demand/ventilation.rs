@@ -1801,3 +1801,31 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
     // Stub implementation for the timebeing
     x0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::{assert_relative_eq, assert_ulps_eq};
+    #[test]
+    fn test_calculate_pressure_difference_at_an_airflow_path() {
+        let h_path: f64 = 0.4;
+        let c_p_path: f64 = 0.45;
+        let u_site: f64 = 1.;
+        let t_e: f64 = 294.95;
+        let t_z: f64 = 299.15;
+        let p_z_ref: f64 = 2.5;
+
+        let result = calculate_pressure_difference_at_an_airflow_path(
+            h_path, c_p_path, u_site, t_e, t_z, p_z_ref,
+        );
+        assert_relative_eq!(result, -2.2966793114, max_relative = 1e-3); // Use spreadsheet to find answer.
+    }
+
+    #[test]
+    fn test_wind_speed_at_zone_level() {
+        let c_rgh_site = 0.8;
+        let u_10 = 10.;
+        let result = wind_speed_at_zone_level(c_rgh_site, u_10, None, None, None);
+        assert_eq!(result, 8.)
+    }
+}
