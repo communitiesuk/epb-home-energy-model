@@ -1851,6 +1851,85 @@ mod tests {
         #[case] appliance_type: CombustionApplianceType,
         #[case] expected: f64,
     ) {
-        assert_eq!(get_fuel_flow_factor(fuel_type, appliance_type), expected)
+        assert_eq!(get_fuel_flow_factor(fuel_type, appliance_type), expected);
+    }
+
+    #[rstest]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::ClosedWithFan)]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFlueBalancer)]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasKitchenStove)]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::ClosedFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::OpenFireplace)]
+    #[should_panic]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenFireplace)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::ClosedWithFan)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFlueBalancer)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasKitchenStove)]
+    #[should_panic]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFire)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenFireplace)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::ClosedWithFan)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFlueBalancer)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasKitchenStove)]
+    #[should_panic]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFire)]
+    fn test_get_fuel_flow_factor_with_invalid_combination(
+        #[case] fuel_type: CombustionFuelType,
+        #[case] appliance_type: CombustionApplianceType,
+    ) {
+        get_fuel_flow_factor(fuel_type, appliance_type);
+    }
+
+    #[rstest]
+    #[case(
+        CombustionAirSupplySituation::Outside,
+        FlueGasExhaustSituation::IntoRoom,
+        0.
+    )]
+    #[case(
+        CombustionAirSupplySituation::Outside,
+        FlueGasExhaustSituation::IntoSeparateDuct,
+        0.
+    )]
+    #[case(
+        CombustionAirSupplySituation::Outside,
+        FlueGasExhaustSituation::IntoMechVent,
+        0.
+    )]
+    #[case(
+        CombustionAirSupplySituation::RoomAir,
+        FlueGasExhaustSituation::IntoRoom,
+        0.
+    )]
+    #[case(
+        CombustionAirSupplySituation::RoomAir,
+        FlueGasExhaustSituation::IntoSeparateDuct,
+        1.
+    )]
+    fn test_get_appliance_system_factor(
+        #[case] supply_situation: CombustionAirSupplySituation,
+        #[case] exhaust_situation: FlueGasExhaustSituation,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(
+            get_appliance_system_factor(supply_situation, exhaust_situation),
+            expected
+        );
     }
 }
