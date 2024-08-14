@@ -1879,4 +1879,21 @@ mod tests {
             expected
         );
     }
+
+    #[test]
+    #[should_panic]
+    fn test_get_appliance_system_factor_with_invalid_combination() {
+        get_appliance_system_factor(
+            CombustionAirSupplySituation::RoomAir,
+            FlueGasExhaustSituation::IntoMechVent,
+        );
+    }
+
+    #[test]
+    fn test_adjust_air_density_for_altitude() {
+        let h_alt = 10.; // meters
+        let expected = 1.2028621569154314; // Pa
+        let result = adjust_air_density_for_altitude(h_alt);
+        assert_relative_eq!(result, 1.2028621569154314); // Use spreadsheet to find answer.
+    }
 }
