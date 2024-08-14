@@ -1805,6 +1805,8 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rstest::rstest;
+
     #[test]
     fn test_calculate_pressure_difference_at_an_airflow_path() {
         let h_path: f64 = 0.4;
@@ -1826,5 +1828,29 @@ mod tests {
         let u_10 = 10.;
         let result = wind_speed_at_zone_level(c_rgh_site, u_10, None, None, None);
         assert_eq!(result, 8.)
+    }
+
+    #[rstest]
+    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenFireplace, 2.8)]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedWithFan, 0.38)]
+    #[case(
+        CombustionFuelType::Gas,
+        CombustionApplianceType::OpenGasFlueBalancer,
+        0.78
+    )]
+    #[case(
+        CombustionFuelType::Gas,
+        CombustionApplianceType::OpenGasKitchenStove,
+        3.35
+    )]
+    #[case(CombustionFuelType::Gas, CombustionApplianceType::OpenGasFire, 3.35)]
+    #[case(CombustionFuelType::Oil, CombustionApplianceType::ClosedFire, 0.32)]
+    #[case(CombustionFuelType::Coal, CombustionApplianceType::ClosedFire, 0.52)]
+    fn test_get_fuel_flow_factor(
+        #[case] fuel_type: CombustionFuelType,
+        #[case] appliance_type: CombustionApplianceType,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(get_fuel_flow_factor(fuel_type, appliance_type), expected)
     }
 }
