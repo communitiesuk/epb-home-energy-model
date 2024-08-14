@@ -15,9 +15,8 @@ use crate::input::{
     TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
     WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{self, SimulationTimeIteration};
+use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
-use core::panic;
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -1805,7 +1804,7 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::{assert_relative_eq, assert_ulps_eq};
+    use approx::assert_relative_eq;
     #[test]
     fn test_calculate_pressure_difference_at_an_airflow_path() {
         let h_path: f64 = 0.4;
