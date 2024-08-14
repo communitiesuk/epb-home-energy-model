@@ -15,7 +15,9 @@ use crate::input::{
     TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
     WindowPart as WindowPartInput,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{self, SimulationTimeIteration};
+use anyhow::Error;
+use core::panic;
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
@@ -37,6 +39,9 @@ const G: f64 = 9.81;
 const T_E_REF: f64 = 293.15;
 //Absolute zero in degrees K
 const T_0_ABS: f64 = 273.15;
+
+// In Python this is defined in InfiltrationVentilation.calculate_internal_reference_pressure
+const INTERVAL_EXPANSION_LIST: [f64; 9] = [1., 5., 10., 15., 20., 40., 50., 100., 200.];
 
 /// Calculate pressure difference between the exterior and the interior of the dwelling
 /// for a flow path (at it's elevavation above the vent zone floor)
@@ -1123,9 +1128,9 @@ impl MechanicalVentilation {
             f_ctrl,
             f_sys,
             e_v,
-            theta_z_t: 0., // TODO get Thermal zone temperature - used for LOAD
-            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO currently hard coded until load comp implemented
-            sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO currently hard coded until load comp implemented
+            theta_z_t: 0., // (From Python) TODO get Thermal zone temperature - used for LOAD
+            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // (From Python) TODO currently hard coded until load comp implemented
+            sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
             // Arguments
             external_conditions: extcond,
             q_h_des,
@@ -1474,4 +1479,325 @@ impl InfiltrationVentilation {
             })
             .collect()
     }
+
+    /// Implicit solver for qv_pdu
+    fn calculate_qv_pdu(
+        &self,
+        qv_pdu: f64,
+        p_z_ref: f64,
+        t_z: f64,
+        h_z: f64,
+        simtime: &SimulationTimeIteration,
+    ) -> f64 {
+        let func = |qv_pdu, p_z_ref, t_z, h_z| {
+            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, h_z, simtime)
+        };
+
+        fsolve(func, qv_pdu, (p_z_ref, t_z, h_z)) // returns qv_pdu
+    }
+
+    /// Implicit formula solving for qv_pdu as unknown.
+    /// Equation 30 from BS EN 16798-7
+    /// Arguments:
+    /// qv_pdu -- volume flow rate from passive and hybrid ducts (m3/h)
+    /// p_z_ref -- internal reference pressure (Pa)
+    /// T_z -- thermal zone temperature (K)
+    /// h_z -- height of ventilation zone (m)
+    fn implicit_formula_for_qv_pdu(
+        &self,
+        qv_pdu: f64,
+        p_z_ref: f64,
+        t_z: f64,
+        h_z: f64,
+        simtime: &SimulationTimeIteration,
+    ) -> f64 {
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simtime));
+        let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
+        let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
+
+        // (From Python) TODO Standard isn't clear if delta_p_ATD can be totalled or not.
+        let delta_p_atd_list: Vec<f64> = self
+            .air_terminal_devices
+            .iter()
+            .map(|atd| atd.calculate_pressure_difference_atd(qv_pdu))
+            .collect();
+
+        let delta_p_atd: f64 = delta_p_atd_list.iter().sum();
+
+        // Stack effect in passive and hybrid duct. As there is no air transfer
+        // between levels of the ventilation zone Equation B.1 is used.
+        let h_pdu_stack = h_z + 2.;
+
+        // (From Python) TODO include delta_p_dpu and delta_p_cowl in the return.
+        delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
+    }
+
+    /// The root scalar function will iterate until it finds a value of p_z_ref
+    /// that satisfies the mass balance equation.
+    /// The root scalar solver allows a range of intervals to be entered.
+    /// The loop begins with a small interval to start with and if no solution is
+    /// found or the boundary is too small for to cause a sign change then a wider
+    /// interval is used until a solution is found.
+    fn calculate_internal_reference_pressure(
+        &self,
+        intial_p_z_ref_guess: f64,
+        temp_int_air: f64,
+        r_w_arg: Option<f64>,
+        simtime: &SimulationTimeIteration,
+    ) -> f64 {
+        let func = |qv_pdu, p_z_ref: f64, t_z: f64, h_z: f64| {
+            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, h_z, simtime)
+        };
+
+        for interval_expansion in INTERVAL_EXPANSION_LIST {
+            let result = root_scalar(
+                func,
+                [
+                    intial_p_z_ref_guess - interval_expansion,
+                    intial_p_z_ref_guess + interval_expansion,
+                ],
+                (temp_int_air, r_w_arg),
+                "brentq",
+            );
+
+            match result {
+                Ok(sol) => {
+                    let p_z_ref = sol.root;
+                    return p_z_ref;
+                }
+                Err(_) => {}
+            }
+        }
+
+        panic!("Solver failed");
+    }
+
+    /// Used in calculate_internal_reference_pressure function for p_z_ref solve
+    fn implicit_mass_balance_for_internal_reference_pressure(
+        self,
+        p_z_ref: f64,
+        temp_int_air: f64,
+        r_w_arg_min_max: f64,
+        // flag = None,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        let (qm_in, qm_out, _) = self
+            .implicit_mass_balance_for_internal_reference_pressure_components(
+                p_z_ref,
+                temp_int_air,
+                r_w_arg_min_max,
+                // flag,
+                simtime,
+            );
+        qm_in + qm_out
+    }
+
+    /// Calculate incoming air flow, in m3/hr, at specified conditions
+    fn incoming_air_flow(
+        self,
+        p_z_ref: f64,
+        temp_int_air: f64,
+        r_w_arg_min_max: f64,
+        // reporting_flag = None,
+        report_effective_flow_rate: bool,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        let (mut qm_in, _, qm_effective_flow_rate) = self
+            .implicit_mass_balance_for_internal_reference_pressure_components(
+                p_z_ref,
+                temp_int_air,
+                r_w_arg_min_max,
+                //reporting_flag,
+                simtime,
+            );
+
+        if report_effective_flow_rate {
+            qm_in -= qm_effective_flow_rate
+        }
+        convert_mass_flow_rate_to_volume_flow_rate(
+            qm_in,
+            celsius_to_kelvin(self.external_conditions.air_temp(&simtime)),
+            self.p_a_alt,
+        )
+    }
+
+    /// Implicit mass balance for calculation of the internal reference pressure
+    /// Equation 67 from BS EN 16798-7.
+    ///
+    /// Arguments:
+    /// p_z_ref -- internal reference pressure (Pa)
+    /// temp_int_air -- temperature of the intake air (K)
+    /// reporting_flag -- flag used to give more detailed ventilation outputs (None = no additional reporting)
+    ///
+    /// Key Variables:
+    /// qm_SUP_to_vent_zone - Supply air mass flow rate going to ventilation zone
+    /// qm_ETA_from_vent_zone - Extract air mass flow rate from a ventilation zone
+    /// qm_in_through_comb - Air mass flow rate entering through combustion appliances
+    /// qm_out_through_comb - Air mass flow rate leaving through combustion appliances
+    /// qm_in_through_passive_hybrid_ducts - Air mass flow rate entering through passive or hybrid duct
+    /// qm_out_through_passive_hybrid_ducts - Air mass flow rate leaving through passive or hybrid duct
+    /// qm_in_through_window_opening - Air mass flow rate entering through window opening
+    /// qm_out_through_window_opening - Air mass flow rate leaving through window opening
+    /// qm_in_through_vents - Air mass flow rate entering through vents (openings in the external envelope)
+    /// qm_out_through_vents - Air mass flow rate leaving through vents (openings in the external envelope)
+    /// qm_in_through_leaks - Air mass flow rate entering through envelope leakage
+    /// qm_out_through_leaks - Air mass flow rate leaving through envelope leakage
+    fn implicit_mass_balance_for_internal_reference_pressure_components(
+        &self,
+        p_z_ref: f64,
+        temp_int_air: f64,
+        r_w_arg_min_max: f64,
+        // reporting_flag: bool,
+        simtime: SimulationTimeIteration,
+    ) -> (f64, f64, f64) {
+        let wind_speed = self.external_conditions.wind_speed(&simtime);
+        let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime));
+        let t_z = celsius_to_kelvin(temp_int_air);
+        let mut qm_in_through_window_opening = 0.;
+        let mut qm_out_through_window_opening = 0.;
+        let mut qm_in_through_vents = 0.;
+        let mut qm_out_through_vents = 0.;
+        let mut qm_in_through_leaks = 0.;
+        let mut qm_out_through_leaks = 0.;
+        let mut qm_in_through_comb = 0.;
+        let mut qm_out_through_comb = 0.;
+        let mut qm_in_through_passive_hybrid_ducts = 0.;
+        let mut qm_out_through_passive_hybrid_ducts = 0.;
+        let mut qm_sup_to_vent_zone = 0.;
+        let mut qm_eta_from_vent_zone = 0.;
+        let mut qm_in_effective_heat_recovery_saving_total = 0.0;
+
+        for window in &self.windows {
+            let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
+                u_site,
+                t_z,
+                p_z_ref,
+                self.f_cross,
+                self.shield_class,
+                Some(r_w_arg_min_max),
+                simtime,
+            );
+            qm_in_through_window_opening += qm_in;
+            qm_out_through_window_opening += qm_out;
+        }
+
+        for vent in &self.vents {
+            let (qm_in, qm_out) = vent.calculate_flow_from_internal_p(
+                u_site,
+                t_z,
+                p_z_ref,
+                self.f_cross,
+                self.shield_class,
+                simtime,
+            );
+            qm_in_through_vents += qm_in;
+            qm_out_through_vents += qm_out;
+        }
+
+        for leak in &self.leaks {
+            let (qm_in, qm_out) = leak.calculate_flow_from_internal_p(
+                u_site,
+                t_z,
+                p_z_ref,
+                self.f_cross,
+                self.shield_class,
+                simtime,
+            );
+            qm_in_through_leaks += qm_in;
+            qm_out_through_leaks += qm_out;
+        }
+
+        for atd in &self.air_terminal_devices {
+            let qv_pdu_initial = 0.; // (From Python) TODO get from prev timestep
+            let h_z = self.ventilation_zone_height;
+            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, h_z, &simtime);
+
+            let (qv_pdu_in, qv_pdu_out) = if qv_pdu >= 0. {
+                (qv_pdu, 0.)
+            } else {
+                (0., qv_pdu)
+            };
+
+            let (qm_in_through_phds, qm_out_through_phds) =
+                convert_to_mass_air_flow_rate(qv_pdu_in, qv_pdu_out, t_e, t_z, self.p_a_alt);
+
+            qm_in_through_passive_hybrid_ducts += qm_in_through_phds;
+            qm_out_through_passive_hybrid_ducts += qm_out_through_phds;
+        }
+
+        for combustion_appliance in &self.combustion_appliances {
+            let p_h_fi = 0.; // (From Python) TODO to work out from previous zone temperature? - Combustion appliance heating fuel input power
+            let f_op_comb = 1.; // (From Python) TODO work out what turns the appliance on or off. Schedule or Logic?
+            let (qv_in, qv_out) =
+                combustion_appliance.calculate_air_flow_req_for_comb_appliance(f_op_comb, p_h_fi);
+            let (qm_in_comb, qm_out_comb) =
+                convert_to_mass_air_flow_rate(qv_in, qv_out, t_e, t_z, self.p_a_alt);
+            qm_in_through_comb += qm_in_comb;
+            qm_out_through_comb += qm_out_comb;
+        }
+
+        for mech_vent in &self.mech_vents {
+            let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) =
+                mech_vent.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, &simtime);
+            qm_sup_to_vent_zone += qm_sup;
+            qm_eta_from_vent_zone += qm_eta;
+            qm_in_effective_heat_recovery_saving_total += qm_in_effective_heat_recovery_saving;
+        }
+
+        let qm_in = qm_in_through_window_opening
+            + qm_in_through_vents
+            + qm_in_through_leaks
+            + qm_in_through_comb
+            + qm_in_through_passive_hybrid_ducts
+            + qm_sup_to_vent_zone;
+
+        let qm_out = qm_out_through_window_opening
+            + qm_out_through_vents
+            + qm_out_through_leaks
+            + qm_out_through_comb
+            + qm_out_through_passive_hybrid_ducts
+            + qm_eta_from_vent_zone;
+
+        // Output detailed ventilation file
+        if self.detailed_output_heating_cooling {
+            let incoming_air_flow = convert_mass_flow_rate_to_volume_flow_rate(
+                qm_in,
+                celsius_to_kelvin(self.external_conditions.air_temp(&simtime)),
+                self.p_a_alt,
+            );
+            let air_changes_per_hour = incoming_air_flow / self.total_volume;
+
+            // Python has optional reporting
+            // currently not implemented here
+
+            // if reporting_flag {
+            //      ...
+            // }
+        }
+
+        (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total)
+    }
+}
+
+// TODO this is from scipy.
+// Find equivalent function in a Rust library or implement
+fn root_scalar(
+    func: impl FnOnce(f64, f64, f64, f64) -> f64,
+    bracket: [f64; 2],
+    args: (f64, Option<f64>),
+    method: &str,
+) -> Result<RootScalarResult, Error> {
+    todo!()
+}
+
+struct RootScalarResult {
+    pub root: f64,
+}
+
+// TODO this is from scipy
+// Find equivalent function in a Rust library or implement
+fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64, f64)) -> f64 {
+    // Stub implementation for the timebeing
+    x0
 }
