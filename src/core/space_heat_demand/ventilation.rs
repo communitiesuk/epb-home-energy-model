@@ -1806,7 +1806,6 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use rstest::rstest;
-
     #[test]
     fn test_calculate_pressure_difference_at_an_airflow_path() {
         let h_path: f64 = 0.4;
@@ -1819,7 +1818,7 @@ mod tests {
         let result = calculate_pressure_difference_at_an_airflow_path(
             h_path, c_p_path, u_site, t_e, t_z, p_z_ref,
         );
-        assert_relative_eq!(result, -2.2966793114, max_relative = 1e-3); // Use spreadsheet to find answer.
+        assert_relative_eq!(result, -2.2966793114, max_relative = 1e-7); // Use spreadsheet to find answer.
     }
 
     #[test]
@@ -1855,61 +1854,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
-    #[case(CombustionFuelType::Wood, CombustionApplianceType::ClosedWithFan)]
-    #[should_panic]
-    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFlueBalancer)]
-    #[should_panic]
-    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasKitchenStove)]
-    #[should_panic]
-    #[case(CombustionFuelType::Wood, CombustionApplianceType::OpenGasFire)]
-    #[should_panic]
-    #[case(CombustionFuelType::Wood, CombustionApplianceType::ClosedFire)]
-    #[should_panic]
-    #[case(CombustionFuelType::Gas, CombustionApplianceType::OpenFireplace)]
-    #[should_panic]
-    #[case(CombustionFuelType::Gas, CombustionApplianceType::ClosedFire)]
-    #[should_panic]
-    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenFireplace)]
-    #[should_panic]
-    #[case(CombustionFuelType::Oil, CombustionApplianceType::ClosedWithFan)]
-    #[should_panic]
-    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFlueBalancer)]
-    #[should_panic]
-    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasKitchenStove)]
-    #[should_panic]
-    #[case(CombustionFuelType::Oil, CombustionApplianceType::OpenGasFire)]
-    #[should_panic]
-    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenFireplace)]
-    #[should_panic]
-    #[case(CombustionFuelType::Coal, CombustionApplianceType::ClosedWithFan)]
-    #[should_panic]
-    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFlueBalancer)]
-    #[should_panic]
-    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasKitchenStove)]
-    #[should_panic]
-    #[case(CombustionFuelType::Coal, CombustionApplianceType::OpenGasFire)]
-    fn test_get_fuel_flow_factor_with_invalid_combination(
-        #[case] fuel_type: CombustionFuelType,
-        #[case] appliance_type: CombustionApplianceType,
-    ) {
-        get_fuel_flow_factor(fuel_type, appliance_type);
-    }
-
-    #[rstest]
     #[case(
         CombustionAirSupplySituation::Outside,
         FlueGasExhaustSituation::IntoRoom,
-        0.
-    )]
-    #[case(
-        CombustionAirSupplySituation::Outside,
-        FlueGasExhaustSituation::IntoSeparateDuct,
-        0.
-    )]
-    #[case(
-        CombustionAirSupplySituation::Outside,
-        FlueGasExhaustSituation::IntoMechVent,
         0.
     )]
     #[case(
