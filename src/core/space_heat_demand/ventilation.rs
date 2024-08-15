@@ -2162,9 +2162,9 @@ mod tests {
         ];
         ExternalConditions::new(
             &simulation_time_iterator,
+            air_temps,
             wind_speeds,
             wind_directions,
-            air_temps,
             diffuse_horizontal_radiations,
             direct_beam_radiations,
             vec![0.2; 8760],
@@ -2275,5 +2275,36 @@ mod tests {
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
             expected_flow_coeff
         )
+    }
+
+    #[rstest]
+    fn test_calculate_flow_from_internal_p(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let u_site = 5.0;
+        let p_a_alt = p_a_ref();
+        let t_e = 290.15;
+        let t_z = 293.15;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+        let r_w_arg = 0.5;
+        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let window = create_window(external_conditions, ctrl);
+
+        let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
+            u_site,
+            t_z,
+            p_z_ref,
+            f_cross,
+            shield_class,
+            Some(r_w_arg),
+            simulation_time_iterator.current_iteration(),
+        );
+
+        // qm_in returns 0.0 and qm_out returns -20707.309683335046
+        assert_relative_eq!(qm_in, 0.);
+        assert_relative_eq!(qm_out, -20707.309683335, max_relative = 1e-7);
     }
 }
