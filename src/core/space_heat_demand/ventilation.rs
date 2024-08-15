@@ -1805,8 +1805,12 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
+    use crate::input::{InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType};
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
+
     #[test]
     fn test_calculate_pressure_difference_at_an_airflow_path() {
         let h_path: f64 = 0.4;
@@ -2091,5 +2095,106 @@ mod tests {
             ),
             0.00
         );
+    }
+
+    #[fixture]
+    fn simulation_time_iterator() -> SimulationTimeIterator {
+        SimulationTime::new(0.0, 2.0, 1.0).iter()
+    }
+
+    #[fixture]
+    fn external_conditions(simulation_time_iterator: SimulationTimeIterator) -> ExternalConditions {
+        let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
+        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
+        let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
+        let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
+        let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 4,
+                start: 45.,
+                end: 0.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 5,
+                start: 0.,
+                end: -45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 6,
+                start: -45.,
+                end: -90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 7,
+                start: -90.,
+                end: -135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 8,
+                start: -135.,
+                end: -180.,
+                objects: None,
+            },
+        ];
+        ExternalConditions::new(
+            &simulation_time_iterator,
+            wind_speeds,
+            wind_directions,
+            air_temps,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
+            0,
+            0,
+            None,
+            1.0,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            shading_segments,
+        )
+    }
+
+    #[fixture]
+    pub fn window(external_conditions: ExternalConditions) -> Window {
+        Window::new(
+            Arc::new(external_conditions),
+            1.6,
+            1.5,
+            3.,
+            vec![WindowPartInput {
+                mid_height_air_flow_path: 1.5,
+            }],
+            0.,
+            90.,
+            0.,
+            None, // in Python this value is set to true and changed to a mock ctrl in each test
+        )
     }
 }
