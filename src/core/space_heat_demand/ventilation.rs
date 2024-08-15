@@ -1767,8 +1767,9 @@ impl InfiltrationVentilation {
             );
             let air_changes_per_hour = incoming_air_flow / self.total_volume;
 
-            // Python has optional reporting
-            // currently not implemented here
+            // TODO implement detailed reporting if
+            // Python has optional detailed reporting
+            // which is currently not implemented here
 
             // if reporting_flag {
             //      ...
