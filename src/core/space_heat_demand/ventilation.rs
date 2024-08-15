@@ -207,7 +207,7 @@ fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
     op_rel_orientation
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum FacadeDirection {
     Roof,
     Roof10,
@@ -244,7 +244,7 @@ fn get_facade_direction(
                 FacadeDirection::Leeward
             }
         }
-    } else if pitch > 60. {
+    } else if pitch < 60. {
         FacadeDirection::Roof
     } else {
         let orientation_diff = orientation_difference(orientation, wind_direction);
@@ -1937,5 +1937,55 @@ mod tests {
         let (qm_in, qm_out) = convert_to_mass_air_flow_rate(qv_in, qv_out, t_e, t_z, p_a_alt);
         assert_relative_eq!(qm_in, expected_qm_in);
         assert_relative_eq!(qm_out, expected_qm_out);
+    }
+
+    #[test]
+    fn test_ter_class_to_roughness_coeff() {
+        assert_eq!(ter_class_to_roughness_coeff(TerrainClass::OpenTerrain), 1.0);
+        assert_eq!(ter_class_to_roughness_coeff(TerrainClass::Country), 0.9);
+        assert_eq!(ter_class_to_roughness_coeff(TerrainClass::Urban), 0.8);
+    }
+
+    #[test]
+    fn test_orientation_difference() {
+        assert_eq!(orientation_difference(0., 90.), 90.);
+        assert_eq!(orientation_difference(0., 450.), 90.); // 450 - 360 = 90
+        assert_eq!(orientation_difference(180., 540.), 360.);
+    }
+
+    #[test]
+    fn test_get_facade_direction() {
+        assert_eq!(
+            get_facade_direction(true, 0., 5., 0.),
+            FacadeDirection::Roof10
+        );
+        assert_eq!(
+            get_facade_direction(true, 0., 20., 0.),
+            FacadeDirection::Roof10_30
+        );
+        assert_eq!(
+            get_facade_direction(true, 0., 45., 0.),
+            FacadeDirection::Roof30
+        );
+        assert_eq!(
+            get_facade_direction(true, 0., 70., 0.),
+            FacadeDirection::Windward
+        );
+        assert_eq!(
+            get_facade_direction(true, 180., 70., 0.),
+            FacadeDirection::Leeward
+        );
+        assert_eq!(
+            get_facade_direction(false, 0., 45., 0.),
+            FacadeDirection::Roof
+        );
+        assert_eq!(
+            get_facade_direction(false, 0., 70., 0.),
+            FacadeDirection::Windward
+        );
+        assert_eq!(
+            get_facade_direction(false, 180., 70., 0.),
+            FacadeDirection::Leeward
+        );
     }
 }
