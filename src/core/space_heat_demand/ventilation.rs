@@ -1805,6 +1805,7 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::OnOffTimeControl;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::{InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
@@ -2181,8 +2182,7 @@ mod tests {
         )
     }
 
-    #[fixture]
-    pub fn window(external_conditions: ExternalConditions) -> Window {
+    pub fn create_window(external_conditions: ExternalConditions, ctrl: Control) -> Window {
         Window::new(
             Arc::new(external_conditions),
             1.6,
@@ -2194,7 +2194,39 @@ mod tests {
             0.,
             90.,
             0.,
-            None, // in Python this value is set to true and changed to a mock ctrl in each test
+            Some(Arc::new(ctrl)),
         )
+    }
+
+    pub fn ctrl_that_is_on(simulation_time_iterator: SimulationTimeIterator) -> Control {
+        Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![true],
+            simulation_time_iterator.current_day(),
+            1.
+        ))
+    }
+
+    pub fn ctrl_that_is_off(simulation_time_iterator: SimulationTimeIterator) -> Control {
+        Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![false],
+            simulation_time_iterator.current_day(),
+            1.
+        ))
+    }
+
+    #[rstest]
+    fn test_calculate_window_opening_free_area_ctrl_off(external_conditions: ExternalConditions, simulation_time_iterator: SimulationTimeIterator)
+    {
+        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let window = create_window(external_conditions, ctrl);
+        assert_eq!(window.calculate_window_opening_free_area(0.5, simulation_time_iterator.current_iteration()), 0.)
+    }
+
+    #[rstest]
+    fn test_calculate_window_opening_free_area_ctrl_on(external_conditions: ExternalConditions, simulation_time_iterator: SimulationTimeIterator)
+    {
+        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let window = create_window(external_conditions, ctrl);
+        assert_eq!(window.calculate_window_opening_free_area(0.5, simulation_time_iterator.current_iteration()), 1.5)
     }
 }
