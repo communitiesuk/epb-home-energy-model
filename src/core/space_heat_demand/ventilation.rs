@@ -1814,7 +1814,6 @@ mod tests {
         let t_e: f64 = 294.95;
         let t_z: f64 = 299.15;
         let p_z_ref: f64 = 2.5;
-
         let result = calculate_pressure_difference_at_an_airflow_path(
             h_path, c_p_path, u_site, t_e, t_z, p_z_ref,
         );
@@ -1894,6 +1893,49 @@ mod tests {
         let h_alt = 10.; // meters
         let expected = 1.2028621569154314; // Pa
         let result = adjust_air_density_for_altitude(h_alt);
-        assert_relative_eq!(result, 1.2028621569154314); // Use spreadsheet to find answer.
+        assert_relative_eq!(result, expected); // Use spreadsheet to find answer.
+    }
+
+    #[test]
+    fn test_air_density_at_temp() {
+        let temperature = 300.; // K
+        let air_density_adjusted_for_alt = 1.2; // kg/m^3
+        let expected = 1.1725999999999999; // kg/m^3
+        let result = air_density_at_temp(temperature, air_density_adjusted_for_alt);
+        assert_relative_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_convert_volume_flow_rate_to_mass_flow_rate() {
+        let qv = 1000.; // m ^ 3 / h
+        let temperature = 300.; // K
+        let p_a_alt = p_a_ref();
+        let expected = 1176.5086666666666; // kg / h
+        let result = convert_volume_flow_rate_to_mass_flow_rate(qv, temperature, p_a_alt);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_convert_mass_flow_rate_to_volume_flow_rate() {
+        let qm = 1200.; // kg / h
+        let temperature = 300.; // K
+        let p_a_alt = p_a_ref();
+        let expected = 1019.9669870685186; // m ^ 3 / h
+        let result = convert_mass_flow_rate_to_volume_flow_rate(qm, temperature, p_a_alt);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_convert_to_mass_air_flow_rate() {
+        let qv_in = 30.; // m ^ 3 / h
+        let qv_out = 40.; // m ^ 3 / h
+        let t_e = 300.; // K
+        let t_z = 295.; // K
+        let p_a_alt = p_a_ref();
+        let expected_qm_in = 35.29526; // kg / h
+        let expected_qm_out = 47.85797966101694; // kg / h
+        let (qm_in, qm_out) = convert_to_mass_air_flow_rate(qv_in, qv_out, t_e, t_z, p_a_alt);
+        assert_relative_eq!(qm_in, expected_qm_in);
+        assert_relative_eq!(qm_out, expected_qm_out);
     }
 }
