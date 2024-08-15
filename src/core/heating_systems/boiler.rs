@@ -1,6 +1,6 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
-use crate::core::controls::time_control::Control;
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+#[derive(Clone, Copy, PartialEq)]
 pub enum ServiceType {
     WaterCombi,
     WaterRegular,
@@ -301,11 +302,11 @@ impl BoilerServiceWaterRegular {
 pub struct BoilerServiceSpace {
     boiler: Boiler,
     service_name: String,
-    control: Control,
+    control: Arc<Control>,
 }
 
 impl BoilerServiceSpace {
-    pub fn new(boiler: Boiler, service_name: String, control: Control) -> Self {
+    pub fn new(boiler: Boiler, service_name: String, control: Arc<Control>) -> Self {
         Self {
             boiler,
             service_name,
@@ -313,12 +314,12 @@ impl BoilerServiceSpace {
         }
     }
 
-    pub fn temp_setpnt(&self) -> f64 {
-        todo!()
+    pub fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> Option<f64> {
+        self.control.setpnt(&simtime)
     }
 
-    pub fn in_required_period(&self) -> bool {
-        todo!()
+    pub fn in_required_period(&self, simtime: SimulationTimeIteration) -> Option<bool> {
+        self.control.in_required_period(&simtime)
     }
 
     pub fn demand_energy(
@@ -349,6 +350,20 @@ impl BoilerServiceSpace {
             time_elapsed_hp,
             simtime,
         )
+    }
+
+    pub fn energy_output_max(
+        &self,
+        temp_output: f64,
+        _temp_return_feed: f64,
+        time_elapsed_hp: Option<f64>,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        if !self.is_on(simtime) {
+            0.0
+        } else {
+            self.boiler.energy_output_max(temp_output, time_elapsed_hp)
+        }
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
@@ -612,7 +627,7 @@ impl Boiler {
     pub fn create_service_space_heating(
         &mut self,
         service_name: String,
-        control: Control,
+        control: Arc<Control>,
     ) -> BoilerServiceSpace {
         self.create_service_connection(service_name.clone().into())
             .unwrap();
@@ -658,9 +673,9 @@ impl Boiler {
         max_of_2(energy_output_provided / time_available, min_power)
     }
 
-    fn calc_boiler_eff(
+    pub fn calc_boiler_eff(
         &self,
-        service_type: ServiceType,
+        service_type_is_water_combi: bool,
         temp_return_feed: f64,
         energy_output_required: f64,
         time_elapsed_hp: Option<f64>,
@@ -718,7 +733,7 @@ impl Boiler {
         // Calculate cycling adjustment
         let cycling_adjustment = if 0.0 < prop_of_timestep_at_min_rate
             && prop_of_timestep_at_min_rate < 1.0
-            && !matches!(service_type, ServiceType::WaterCombi)
+            && !service_type_is_water_combi
         {
             self.cycling_adjustment(
                 temp_return_feed,
@@ -790,7 +805,7 @@ impl Boiler {
         }
 
         let blr_eff_final = self.calc_boiler_eff(
-            service_type,
+            service_type == ServiceType::WaterCombi,
             temperature_return_feed,
             energy_output_required,
             time_elapsed_hp,
@@ -1456,7 +1471,7 @@ mod tests {
         BoilerServiceSpace::new(
             boiler_for_service_space,
             "boiler_test".to_string(),
-            control_for_service_space,
+            Arc::new(control_for_service_space),
         )
     }
 

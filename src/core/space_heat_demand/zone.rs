@@ -32,6 +32,7 @@ const F_SOL_C: f64 = 0.1;
 // (default value from BS EN ISO 52016-1:2017, Table B.17)
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
 
+#[derive(Debug)]
 pub struct Zone {
     useful_area: f64,
     volume: f64,

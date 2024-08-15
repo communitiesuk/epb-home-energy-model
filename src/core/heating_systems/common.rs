@@ -46,7 +46,7 @@ impl SpaceHeatSystem {
         energy_demand: f64,
         space_heat_running_time_cumulative: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         match self {
             SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
@@ -61,15 +61,15 @@ impl SpaceHeatSystem {
         &mut self,
         energy_demand: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
-        match self {
+    ) -> anyhow::Result<f64> {
+        Ok(match self {
             SpaceHeatSystem::Instant(ref mut instant) => {
                 instant.demand_energy(energy_demand, simulation_time_iteration)
             }
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
-                warm_air.demand_energy(energy_demand, simulation_time_iteration)
+                warm_air.demand_energy(energy_demand, simulation_time_iteration)?
             }
-        }
+        })
     }
 
     pub fn in_required_period(

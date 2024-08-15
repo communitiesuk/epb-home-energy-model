@@ -882,14 +882,14 @@ impl StorageTank {
         heat_source: Arc<Mutex<HeatSource>>,
         input_energy_adj: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         match &mut *(heat_source.clone().lock()) {
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => Ok(immersion
                 .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration),
-            HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => solar
+                .demand_energy(input_energy_adj, simulation_time_iteration)),
+            HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => Ok(solar
                 .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration.index),
+                .demand_energy(input_energy_adj, simulation_time_iteration.index)),
             _ => {
                 // TODO need to be able to call demand_energy on the other heat sources
                 let (primary_pipework_losses_kwh, primary_gains) =
@@ -900,11 +900,11 @@ impl StorageTank {
                     input_energy_adj,
                     self.temp_set_on,
                     simulation_time_iteration,
-                ) - primary_pipework_losses_kwh;
+                )? - primary_pipework_losses_kwh;
                 self.input_energy_adj_prev_timestep = input_energy_adj;
                 self.primary_gains = primary_gains;
 
-                heat_source_output
+                Ok(heat_source_output)
             }
         }
     }

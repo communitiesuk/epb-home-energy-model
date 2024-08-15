@@ -61,7 +61,7 @@ use crate::input::{
     ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
@@ -90,7 +90,7 @@ pub struct Corpus {
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
     pub ventilation: Option<Arc<Mutex<VentilationElement>>>,
     pub space_heating_ductwork: Option<Ductwork>,
-    pub zones: IndexMap<String, Zone>,
+    pub zones: Arc<IndexMap<String, Zone>>,
     pub energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
     pub heat_system_name_for_zone: IndexMap<String, String>,
     pub cool_system_name_for_zone: IndexMap<String, String>,
@@ -211,6 +211,7 @@ impl Corpus {
                 })
             })
             .collect();
+        let zones = Arc::new(zones);
 
         if !has_unique_values(&heat_system_name_for_zone)
             || !has_unique_values(&cool_system_name_for_zone)
@@ -254,6 +255,11 @@ impl Corpus {
                     simulation_time_iterator.clone(),
                     ventilation.map(|v| (*v).clone()),
                     input.ventilation.as_ref().map(|v| v.req_ach()),
+                    zones.len(),
+                    TempInternalAirAccessor {
+                        zones: zones.clone(),
+                        total_volume,
+                    },
                     total_volume,
                     &controls,
                     &mut energy_supplies,
@@ -303,10 +309,8 @@ impl Corpus {
                     simulation_time_iterator.as_ref(),
                     &Default::default(),
                     &mut heat_system_names_requiring_overvent,
-                    heat_system_name_for_zone
-                        .values()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
+                    &heat_system_name_for_zone,
+                    &zones,
                 )?)
             })
             .transpose()?
@@ -388,7 +392,7 @@ impl Corpus {
 
         // Calculate the total fabric heat loss, total heat capacity, total ventilation heat
         // loss and total heat transfer coeffient for thermal bridges across all zones
-        for (z_name, zone) in &self.zones {
+        for (z_name, zone) in self.zones.iter() {
             let fabric_heat_loss = zone.total_fabric_heat_loss();
             let thermal_bridges = zone.total_thermal_bridges();
             let vent_heat_loss = zone.total_vent_heat_loss(self.external_conditions.as_ref());
@@ -435,13 +439,7 @@ impl Corpus {
     }
 
     pub fn temp_internal_air(&self) -> f64 {
-        let internal_air_temperature = self
-            .zones
-            .values()
-            .map(|zone| zone.temp_internal_air() * zone.volume())
-            .sum::<f64>();
-
-        internal_air_temperature / self.total_volume
+        temp_internal_air_for_zones(self.zones.clone(), self.total_volume)
     }
 
     /// Return:
@@ -592,7 +590,7 @@ impl Corpus {
         let mut gains_internal_zone: HashMap<&str, f64> = Default::default();
         let mut gains_solar_zone: HashMap<&str, f64> = Default::default();
 
-        for (z_name, zone) in &self.zones {
+        for (z_name, zone) in self.zones.iter() {
             // Initialise to dhw internal gains split proportionally to zone floor area
             let mut gains_internal_zone_inner =
                 gains_internal_dhw * zone.area() / self.total_floor_area;
@@ -650,12 +648,14 @@ impl Corpus {
                 .heat_system_names_requiring_overvent
                 .contains(heat_system_name)
             {
-                (space_heat_running_time_cumulative, throughput_factor) =
-                    heat_system.lock().running_time_throughput_factor(
+                (space_heat_running_time_cumulative, throughput_factor) = heat_system
+                    .lock()
+                    .running_time_throughput_factor(
                         space_heat_demand_system[heat_system_name],
                         space_heat_running_time_cumulative,
                         simulation_time_iteration,
-                    );
+                    )
+                    .unwrap();
             }
         }
 
@@ -674,7 +674,7 @@ impl Corpus {
         //                    merits of iterating over this calculation until converging on
         //                    a solution should be considered in the future.
         if throughput_factor > 1.0 {
-            for (z_name, zone) in &self.zones {
+            for (z_name, zone) in self.zones.iter() {
                 // Add additional gains from ventilation fans
                 match &self.ventilation {
                     None => {}
@@ -720,10 +720,13 @@ impl Corpus {
         for (heat_system_name, heat_system) in &self.space_heat_systems {
             space_heat_provided.insert(
                 heat_system_name.as_str(),
-                heat_system.lock().demand_energy(
-                    space_heat_demand_system[heat_system_name.as_str()],
-                    simulation_time_iteration,
-                ),
+                heat_system
+                    .lock()
+                    .demand_energy(
+                        space_heat_demand_system[heat_system_name.as_str()],
+                        simulation_time_iteration,
+                    )
+                    .unwrap(),
             );
         }
 
@@ -745,7 +748,7 @@ impl Corpus {
         let mut internal_air_temp: HashMap<&str, f64> = Default::default();
         let mut operative_temp: HashMap<&str, f64> = Default::default();
         let mut heat_balance_map: HashMap<&str, Option<HeatBalance>> = Default::default(); // using unit type here as placeholder
-        for (z_name, zone) in &self.zones {
+        for (z_name, zone) in self.zones.iter() {
             // Look up names of relevant heating and cooling systems for this zone
             let h_name = self.heat_system_name_for_zone.get(z_name.as_str());
             let c_name = self.cool_system_name_for_zone.get(z_name.as_str());
@@ -1396,7 +1399,7 @@ impl Corpus {
         let mut space_heat_demand_zone: HashMap<String, f64> = Default::default();
         let mut space_cool_demand_zone: HashMap<String, f64> = Default::default();
         let mut h_ve_cool_extra_zone: HashMap<String, f64> = Default::default();
-        for (z_name, zone) in &self.zones {
+        for (z_name, zone) in self.zones.iter() {
             // Look up names of relevant heating and cooling systems for this zone
             let h_name = self.heat_system_name_for_zone.get(z_name);
             let c_name = self.cool_system_name_for_zone.get(z_name);
@@ -1982,6 +1985,29 @@ fn wwhr_system_from_details(
     }
 }
 
+fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume: f64) -> f64 {
+    let internal_air_temperature = zones
+        .values()
+        .map(|zone| zone.temp_internal_air() * zone.volume())
+        .sum::<f64>();
+
+    internal_air_temperature / total_volume
+}
+
+/// This is a struct that encapsulates a shared part of the corpus, just enough to be able to provide temperature of internal air
+/// as an equivalent to Corpus::temp_internal_air
+#[derive(Clone, Debug)]
+pub struct TempInternalAirAccessor {
+    zones: Arc<IndexMap<String, Zone>>,
+    total_volume: f64,
+}
+
+impl TempInternalAirAccessor {
+    pub fn call(&self) -> f64 {
+        temp_internal_air_for_zones(self.zones.clone(), self.total_volume)
+    }
+}
+
 pub type KeyString = ArrayString<64>;
 
 pub type RunResults = (
@@ -2366,23 +2392,23 @@ impl HeatSource {
         energy_demand: f64,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         match self {
             HeatSource::Storage(ref mut storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(imm) => imm
+                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm
                     .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration),
-                HeatSourceWithStorageTank::Solar(ref solar) => solar
+                    .demand_energy(energy_demand, simulation_time_iteration)),
+                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar
                     .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration.index),
+                    .demand_energy(energy_demand, simulation_time_iteration.index)),
             },
             HeatSource::Wet(ref mut wet) => match wet.as_mut() {
                 HeatSourceWet::WaterCombi(_) => {
                     unimplemented!("not expected? this value does not have a demand_energy method")
                     // the Python uses duck-typing here but there is no method for this type
                 }
-                HeatSourceWet::WaterRegular(ref mut r) => {
-                    r.demand_energy(
+                HeatSourceWet::WaterRegular(ref mut r) => Ok(r
+                    .demand_energy(
                         energy_demand,
                         temp_return,
                         None,
@@ -2390,23 +2416,22 @@ impl HeatSource {
                         simulation_time_iteration,
                     )
                     .expect("Regular water boiler could not register energy demand")
-                    .0
-                }
+                    .0),
                 HeatSourceWet::Space(_) => {
                     unimplemented!("not expected? this value does not have a demand_energy method")
                     // the Python uses duck-typing here but there is no method for this type
                 }
                 HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
-                    h.demand_energy(energy_demand, temp_return, &simulation_time_iteration)
+                    Ok(h.demand_energy(energy_demand, temp_return, &simulation_time_iteration))
                 }
                 HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
-                    h.demand_energy(energy_demand, temp_return, simulation_time_iteration)
+                    Ok(h.demand_energy(energy_demand, temp_return, simulation_time_iteration))
                 }
                 HeatSourceWet::HeatPumpWater(ref mut h) => {
-                    h.demand_energy(energy_demand, simulation_time_iteration)
+                    h.demand_energy(energy_demand, temp_return, simulation_time_iteration)
                 }
                 HeatSourceWet::HeatPumpWaterOnly(h) => {
-                    h.demand_energy(energy_demand, simulation_time_iteration)
+                    Ok(h.demand_energy(energy_demand, temp_return, simulation_time_iteration))
                 }
             },
         }
@@ -2455,6 +2480,8 @@ fn heat_source_wet_from_input(
     simulation_time: Arc<SimulationTimeIterator>,
     ventilation: Option<VentilationElement>,
     ventilation_req_ach: Option<f64>,
+    number_of_zones: usize,
+    temp_internal_air_accessor: TempInternalAirAccessor,
     total_volume: f64,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
@@ -2507,11 +2534,14 @@ fn heat_source_wet_from_input(
                     &energy_supply_conn_name_auxiliary,
                     simulation_time.step_in_hours(),
                     external_conditions.clone(),
+                    number_of_zones,
                     throughput_exhaust_air,
                     energy_supply_hn,
                     DETAILED_OUTPUT_HEATING_COOLING,
-                )
-                .unwrap(),
+                    None,
+                    None, // temporary during migrating to 0.30
+                    temp_internal_air_accessor,
+                )?,
             ))))
         }
         HeatSourceWetDetails::Boiler {
@@ -2525,8 +2555,7 @@ fn heat_source_wet_from_input(
                 .ensured_get_for_type(*energy_supply_auxiliary, simulation_time.total_steps())?;
             let aux_supply_name = format!("Boiler_auxiliary: {energy_supply_name}");
             let energy_supply_conn_aux =
-                EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())
-                    .unwrap();
+                EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())?;
 
             Ok(WetHeatSource::Boiler(
                 Boiler::new(
@@ -2597,6 +2626,9 @@ fn heat_source_from_input(
     name: &str,
     input: &HeatSourceInput,
     temp_setpoint: f64,
+    volume: f64,
+    daily_losses: f64,
+    heat_exchanger_surface_area: Option<f64>,
     wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
@@ -2648,7 +2680,7 @@ fn heat_source_from_input(
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
-            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
+            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
@@ -2706,7 +2738,6 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             energy_supply_conn_name.clone(),
-                            temp_setpoint,
                             55.,
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
@@ -2748,16 +2779,20 @@ fn heat_source_from_input(
         HeatSourceInput::HeatPumpHotWaterOnly {
             power_max,
             vol_hw_daily_average,
+            tank_volume_declared,
+            heat_exchanger_surface_area_declared,
+            daily_losses_declared,
             ref test_data,
             energy_supply,
             control,
+            in_use_factor_mismatch,
             ..
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name = name;
             let energy_supply_connection =
-                EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name).unwrap();
+                EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
 
             Ok((
                 HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
@@ -2766,6 +2801,13 @@ fn heat_source_from_input(
                         energy_supply_connection,
                         test_data,
                         *vol_hw_daily_average,
+                        volume,
+                        daily_losses,
+                        heat_exchanger_surface_area.ok_or(anyhow!("A heat exchanger surface_area is expected for a HeatPumpHotWaterOnly heat source"))?,
+                        *in_use_factor_mismatch,
+                        *tank_volume_declared,
+                        *heat_exchanger_surface_area_declared,
+                        *daily_losses_declared,
                         simulation_time.step_in_hours(),
                         controls.get(control),
                     ),
@@ -2840,13 +2882,13 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::StorageTank {
             volume,
             daily_losses,
+            heat_exchanger_surface_area,
             min_temp,
             setpoint_temp,
             control_hold_at_setpoint,
             cold_water_source: cold_water_source_type,
             primary_pipework,
             heat_source,
-            ..
         } => {
             let mut cold_water_source: WaterSourceWithTemperature =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
@@ -2862,10 +2904,22 @@ fn hot_water_source_from_input(
             for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
+
+                //heat exchanger area
+                let heat_exchanger_surface_area =
+                    if let HeatSourceInput::HeatPumpHotWaterOnly { .. } = hs {
+                        *heat_exchanger_surface_area
+                    } else {
+                        None
+                    };
+
                 let (heat_source, energy_supply_conn_name) = heat_source_from_input(
                     name.as_str(),
                     hs,
                     *setpoint_temp,
+                    *volume,
+                    *daily_losses,
+                    heat_exchanger_surface_area,
                     wet_heat_sources,
                     simulation_time,
                     controls,
@@ -2982,7 +3036,7 @@ fn hot_water_source_from_input(
             let energy_supply_conn_name = source_name;
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let energy_supply_conn =
-                EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name).unwrap();
+                EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name)?;
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             HotWaterSource::PointOfUse(PointOfUse::new(
@@ -3055,12 +3109,13 @@ fn space_heat_systems_from_input(
     simulation_time: &SimulationTimeIterator,
     heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
-    heat_system_names_for_zone: Vec<&str>,
+    heat_system_name_for_zone: &IndexMap<String, String>,
+    zones: &Arc<IndexMap<String, Zone>>,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
         .iter()
-        .filter(|(system_name, _)| heat_system_names_for_zone.contains(&system_name.as_str()))
+        .filter(|(system_name, _)| heat_system_name_for_zone.values().any(|heat_system_name| heat_system_name == system_name.as_str()))
         .map(|(system_name, space_heat_system_details)| {
             Ok((
                 (*system_name).clone(),
@@ -3103,9 +3158,10 @@ fn space_heat_systems_from_input(
                                 if heat_pump.lock().source_is_exhaust_air() {
                                     heat_system_names_requiring_overvent.push((*system_name).clone());
                                 }
+                                let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, system_name);
                                 SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control
                                     .as_ref()
-                                    .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system"), *frac_convective).unwrap())
+                                    .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system"), *frac_convective, volume_heated).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
@@ -3217,4 +3273,21 @@ fn on_site_generation_from_input(
             }))
         })
         .collect::<anyhow::Result<IndexMap<_, _>>>()
+}
+
+fn total_volume_heated_by_system(
+    zones: &Arc<IndexMap<String, Zone>>,
+    heat_system_name_for_zone: &IndexMap<String, String>,
+    heat_system_name: &str,
+) -> f64 {
+    zones
+        .iter()
+        .filter_map(|(z_name, zone)| {
+            if let Some(system_name) = heat_system_name_for_zone.get(z_name) {
+                (system_name == heat_system_name).then_some(zone.volume())
+            } else {
+                None
+            }
+        })
+        .sum::<f64>()
 }

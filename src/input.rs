@@ -1845,7 +1845,7 @@ pub enum HeatPumpSinkType {
     Air,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum HeatPumpBackupControlType {
     None,
@@ -1857,10 +1857,10 @@ pub enum HeatPumpBackupControlType {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBufferTank {
-    daily_losses: f64,
-    volume: f64,
-    pump_fixed_flow_rate: f64,
-    pump_power_at_flow_rate: f64,
+    pub daily_losses: f64,
+    pub volume: f64,
+    pub pump_fixed_flow_rate: f64,
+    pub pump_power_at_flow_rate: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1878,6 +1878,8 @@ pub struct HeatPumpTestDatum {
     pub temp_source: f64,
     pub temp_test: f64,
     pub eahp_mixed_ext_air_ratio: Option<f64>,
+    #[serde(skip)]
+    pub ext_air_ratio: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1904,10 +1906,10 @@ pub struct HeatPumpBoiler {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct BoilerCostScheduleHybrid {
-    cost_schedule_start_day: u32,
-    cost_schedule_time_series_step: f64,
-    cost_schedule_hp: Schedule,
-    cost_schedule_boiler: Schedule,
+    pub cost_schedule_start_day: u32,
+    pub cost_schedule_time_series_step: f64,
+    pub cost_schedule_hp: Schedule,
+    pub cost_schedule_boiler: Schedule,
 }
 
 pub type TestLetter = ArrayString<2>;

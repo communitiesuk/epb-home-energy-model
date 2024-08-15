@@ -1,4 +1,4 @@
-// location for defining common traits and enums defined across sub-modules
+// location for defining common traits and enums defined across submodules
 
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;

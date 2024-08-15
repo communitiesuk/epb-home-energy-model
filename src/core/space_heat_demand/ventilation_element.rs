@@ -48,7 +48,7 @@ pub trait VentilationElementBehaviour {
     ) -> f64;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum VentilationElement {
     Infiltration(VentilationElementInfiltration),
     Mvhr(MechanicalVentilationHeatRecovery),
@@ -146,7 +146,7 @@ impl VentilationElement {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VentilationElementInfiltration {
     infiltration_rate_from_openings: f64,
     q50_divisor: f64,
@@ -405,7 +405,7 @@ const P_A: f64 = 1.204;
 // Air density at 20 degrees C, in kg/m^3 , BS EN ISO 52016-1:2017, Section 6.3.6
 const C_A: f64 = 1006.0; // Specific heat of air at constant pressure, in J/(kg K), BS EN ISO 52016-1:2017, Section 6.3.6
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MechanicalVentilationHeatRecovery {
     air_change_rate: f64,
     specific_fan_power: f64,
@@ -505,7 +505,7 @@ impl VentilationElementBehaviour for MechanicalVentilationHeatRecovery {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WholeHouseExtractVentilation {
     air_change_rate: f64,
     specific_fan_power: f64,
@@ -619,7 +619,7 @@ impl VentilationElementBehaviour for WholeHouseExtractVentilation {
 }
 
 //tbc
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NaturalVentilation {
     pub required_air_change_rate: f64,
     pub infiltration_rate: f64,
@@ -688,6 +688,7 @@ const C_D: f64 = 0.62;
 // discharge coefficient
 const DC_P: f64 = 0.2 - (-0.25); // Difference in wind pressure coeff from CIBSE Guide A Table 4.12 for urban environment
 
+#[derive(Debug)]
 pub struct WindowOpeningForCooling {
     window_area_equivalent: f64,
     external_conditions: Arc<ExternalConditions>,
