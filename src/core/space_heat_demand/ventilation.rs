@@ -2202,7 +2202,7 @@ mod tests {
         Control::OnOffTimeControl(OnOffTimeControl::new(
             vec![true],
             simulation_time_iterator.current_day(),
-            1.
+            1.,
         ))
     }
 
@@ -2210,23 +2210,70 @@ mod tests {
         Control::OnOffTimeControl(OnOffTimeControl::new(
             vec![false],
             simulation_time_iterator.current_day(),
-            1.
+            1.,
         ))
     }
 
     #[rstest]
-    fn test_calculate_window_opening_free_area_ctrl_off(external_conditions: ExternalConditions, simulation_time_iterator: SimulationTimeIterator)
-    {
+    fn test_calculate_window_opening_free_area_ctrl_off(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
         let window = create_window(external_conditions, ctrl);
-        assert_eq!(window.calculate_window_opening_free_area(0.5, simulation_time_iterator.current_iteration()), 0.)
+        assert_eq!(
+            window.calculate_window_opening_free_area(
+                0.5,
+                simulation_time_iterator.current_iteration()
+            ),
+            0.
+        )
     }
 
     #[rstest]
-    fn test_calculate_window_opening_free_area_ctrl_on(external_conditions: ExternalConditions, simulation_time_iterator: SimulationTimeIterator)
-    {
+    fn test_calculate_window_opening_free_area_ctrl_on(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
         let window = create_window(external_conditions, ctrl);
-        assert_eq!(window.calculate_window_opening_free_area(0.5, simulation_time_iterator.current_iteration()), 1.5)
+        assert_eq!(
+            window.calculate_window_opening_free_area(
+                0.5,
+                simulation_time_iterator.current_iteration()
+            ),
+            1.5
+        )
+    }
+
+    #[rstest]
+    fn test_calculate_flow_coeff_for_window_ctrl_off(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
+        let window = create_window(external_conditions, ctrl);
+        assert_relative_eq!(
+            window
+                .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
+            0.
+        )
+    }
+
+    #[rstest]
+    fn test_calculate_flow_coeff_for_window_ctrl_on(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let window = create_window(external_conditions, ctrl);
+        let expected_a_w = 1.5;
+        let expected_flow_coeff =
+            3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
+        assert_relative_eq!(
+            window
+                .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
+            expected_flow_coeff
+        )
     }
 }
