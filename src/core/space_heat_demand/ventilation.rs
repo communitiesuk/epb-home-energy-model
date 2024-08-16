@@ -2409,6 +2409,73 @@ mod tests {
         );
 
         assert_relative_eq!(qm_in_through_vent, 0.);
-        assert_relative_eq!(qm_out_through_vent, -95.136404151646, max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(
+            qm_out_through_vent,
+            -95.136404151646,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[fixture]
+    fn leaks(external_conditions: ExternalConditions) -> Leaks {
+        Leaks::new(
+            Arc::new(external_conditions),
+            1.,
+            50.,
+            1.2,
+            FacadeDirection::Leeward,
+            100.,
+            120.,
+            220.,
+            0.,
+        )
+    }
+
+    #[rstest]
+    fn test_calculate_flow_coeff_for_leak(leaks: Leaks) {
+        let expected_result = 2.6490460494125543;
+        assert_relative_eq!(leaks.calculate_flow_coeff_for_leak(), expected_result)
+    }
+
+    #[rstest]
+    fn test_calculate_ventilation_through_leaks_using_internal_p(leaks: Leaks) {
+        let u_site = 3.7;
+        let t_e = 273.15;
+        let t_z = 293.15;
+        let c_p_path = -0.7;
+        let p_z_ref = 1.;
+        let expected_output = -10.6531458050959;
+
+        assert_relative_eq!(
+            leaks.calculate_ventilation_through_leaks_using_internal_p(
+                u_site, t_e, t_z, c_p_path, p_z_ref
+            ),
+            expected_output
+        );
+    }
+
+    #[rstest]
+    // in Python this test is named test_calculate_flow_from_internal_p
+    fn test_calculate_flow_from_internal_p_for_leaks(
+        leaks: Leaks,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let u_site = 3.7;
+        let t_z = 293.15;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+
+        let (qm_in_through_leaks, qm_out_through_leaks) = leaks.calculate_flow_from_internal_p(
+            u_site,
+            t_z,
+            p_z_ref,
+            f_cross,
+            shield_class,
+            simulation_time_iterator.current_iteration(),
+        );
+
+        assert_relative_eq!(qm_in_through_leaks, 0.);
+        assert_relative_eq!(qm_out_through_leaks, -12.826387549335472);
     }
 }
