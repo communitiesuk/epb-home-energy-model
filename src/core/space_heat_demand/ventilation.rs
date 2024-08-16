@@ -18,7 +18,6 @@ use crate::input::{
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::Error;
 use rand_distr::num_traits::abs;
-use rstest::fixture;
 use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
