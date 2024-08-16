@@ -11,9 +11,9 @@ use crate::core::units::{
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, SupplyAirFlowRateControlType,
-    SupplyAirTemperatureControlType, TerrainClass, VentType, VentilationLeaks,
-    VentilationShieldClass, WindowPart as WindowPartInput,
+    FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
+    TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
+    WindowPart as WindowPartInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
@@ -1789,11 +1789,9 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    
+
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::
-        FuelType
-    ;
+    use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;

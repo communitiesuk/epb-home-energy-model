@@ -2815,7 +2815,7 @@ impl HotWaterSource {
                 .demand_hot_water(vol_demand_target, simulation_time_iteration)
                 .expect("Combi boiler could not calc demand hot water."),
             HotWaterSource::PointOfUse(ref mut source) => {
-                source.demand_hot_water(vol_demanded, &simulation_time_iteration)
+                source.demand_hot_water(vol_demand_target, &simulation_time_iteration)
             }
             HotWaterSource::HeatNetwork(ref mut source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration.index)
@@ -2979,7 +2979,7 @@ fn hot_water_source_from_input(
             efficiency,
             cold_water_source: cold_water_source_type,
             energy_supply,
-            ..
+            setpoint_temp,
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
@@ -2993,6 +2993,7 @@ fn hot_water_source_from_input(
                 *efficiency,
                 energy_supply_conn,
                 cold_water_source,
+                *setpoint_temp,
             ))
         }
         HotWaterSourceDetails::Hiu {
