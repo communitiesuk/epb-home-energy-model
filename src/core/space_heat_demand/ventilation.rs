@@ -2549,4 +2549,28 @@ mod tests {
         let expected_result = 0.55;
         assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result)
     }
+
+    #[rstest]
+    fn test_calc_req_oda_flow_rates_at_atds(mechanical_ventilation: MechanicalVentilation) {
+        let (qv_sup_req, qv_eta_req) = mechanical_ventilation.calc_req_oda_flow_rates_at_atds();
+        assert_relative_eq!(qv_sup_req, 0.55);
+        assert_relative_eq!(qv_eta_req, -0.55);
+    }
+
+    #[rstest]
+    fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+        mechanical_ventilation: MechanicalVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
+            mechanical_ventilation.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                293.15,
+                &simulation_time_iterator.current_iteration(),
+            );
+        assert_relative_eq!(qm_sup_dis_req, 0.7106861797547136);
+        assert_relative_eq!(qm_eta_dis_req, -0.6622);
+        assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
+    }
+
+    // TODO Python has a commented out test here
 }
