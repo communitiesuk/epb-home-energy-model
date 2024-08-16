@@ -77,3 +77,113 @@ impl PointOfUse {
         fuel_demand
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{
+        core::{
+            energy_supply::energy_supply::EnergySupply,
+            water_heat_demand::cold_water_source::ColdWaterSource,
+        },
+        input::FuelType,
+        simulation_time::{self, SimulationTime, SimulationTimeIterator},
+    };
+
+    use super::*;
+    use approx::assert_relative_eq;
+    use parking_lot::lock_api::RwLock;
+    use rstest::{fixture, rstest};
+
+    #[fixture]
+    fn simtime() -> SimulationTime {
+        SimulationTime::new(0.0, 2.0, 1.0)
+    }
+
+    #[fixture]
+    fn simulation_time_iterator(simtime: SimulationTime) -> SimulationTimeIterator {
+        simtime.iter()
+    }
+
+    #[fixture]
+    pub fn energy_supply(simtime: SimulationTime) -> EnergySupply {
+        EnergySupply::new(
+            FuelType::Electricity,
+            simtime.total_steps(),
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[fixture]
+    pub fn point_of_use(energy_supply: EnergySupply, simtime: SimulationTime) -> PointOfUse {
+        let efficiency = 1.;
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "electricity").unwrap();
+        let cold_water_temps = vec![15., 20., 25.];
+        let coldfeed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
+            cold_water_temps,
+            &simtime,
+            1.,
+        )));
+        let temp_hot_water = 55.;
+
+        PointOfUse::new(
+            efficiency,
+            energy_supply_connection,
+            coldfeed,
+            temp_hot_water,
+        )
+    }
+
+    #[rstest]
+    fn test_demand_hot_water(
+        point_of_use: PointOfUse,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        // Test when temp_hot_water is set
+        let volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference> =
+            IndexMap::from([(
+                DemandVolTargetKey::TempHotWater,
+                VolumeReference {
+                    warm_temp: 0.0, // warm_temp not used in this test
+                    warm_vol: 60.0,
+                },
+            )]);
+
+        assert_relative_eq!(
+            point_of_use.demand_hot_water(
+                volume_demanded_target,
+                &simulation_time_iterator.current_iteration()
+            ),
+            2.7893333333333334
+        );
+
+        // Test when temp_hot_water is not set
+        let volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference> =
+            IndexMap::from([]);
+
+        assert_relative_eq!(
+            point_of_use.demand_hot_water(
+                volume_demanded_target,
+                &simulation_time_iterator.current_iteration()
+            ),
+            0.
+        );
+    }
+
+    fn test_demand_energy(
+        point_of_use: PointOfUse,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let energy_demand = 2.0;
+        assert_relative_eq!(
+            point_of_use
+                .demand_energy(energy_demand, &simulation_time_iterator.current_iteration()),
+            2.0
+        )
+    }
+}
