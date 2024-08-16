@@ -1812,6 +1812,8 @@ mod tests {
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
 
+    const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
+
     #[test]
     fn test_calculate_pressure_difference_at_an_airflow_path() {
         let h_path: f64 = 0.4;
@@ -1823,7 +1825,8 @@ mod tests {
         let result = calculate_pressure_difference_at_an_airflow_path(
             h_path, c_p_path, u_site, t_e, t_z, p_z_ref,
         );
-        assert_relative_eq!(result, -2.2966793114, max_relative = 1e-7); // Use spreadsheet to find answer.
+        assert_relative_eq!(result, -2.2966793114, max_relative = EIGHT_DECIMAL_PLACES);
+        // Use spreadsheet to find answer.
     }
 
     #[test]
@@ -2305,6 +2308,107 @@ mod tests {
 
         // qm_in returns 0.0 and qm_out returns -20707.309683335046
         assert_relative_eq!(qm_in, 0.);
-        assert_relative_eq!(qm_out, -20707.309683335, max_relative = 1e-7);
+        assert_relative_eq!(
+            qm_out,
+            -20707.309683335,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[fixture]
+    fn window_part() -> WindowPart {
+        WindowPart::new(1., 1.6, 0., 1)
+    }
+
+    #[rstest]
+    fn test_calculate_ventilation_through_windows_using_internal_p(window_part: WindowPart) {
+        let u_site = 3.7;
+        let t_e = 273.15;
+        let t_z = 293.15;
+        let c_w_path = 4663.05;
+        let c_p_path = -0.7;
+        let p_z_ref = 1.;
+        let expected_output = -13235.33116157;
+
+        assert_relative_eq!(
+            window_part.calculate_ventilation_through_windows_using_internal_p(
+                u_site, t_e, t_z, c_w_path, p_z_ref, c_p_path
+            ),
+            expected_output,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[test]
+    fn test_calculate_height_for_delta_p_w_div_path() {
+        let expected_output = 1.;
+        assert_relative_eq!(
+            WindowPart::calculate_height_for_delta_p_w_div_path(1., 1.6, 0., 1usize),
+            expected_output
+        );
+    }
+
+    #[fixture]
+    fn vent(external_conditions: ExternalConditions) -> Vent {
+        Vent::new(external_conditions, 1., 100., 20., 0., 90., 0.)
+    }
+
+    #[rstest]
+    fn test_calculate_flow_coeff_for_vent(vent: Vent) {
+        let expected_output = 27.8391201602292;
+        assert_relative_eq!(
+            vent.calculate_flow_coeff_for_vent(),
+            expected_output,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_ventilation_through_vents_using_internal_p(vent: Vent) {
+        let u_site = 3.7;
+        let t_e = 273.15;
+        let t_z = 293.15;
+        let c_vent_path = 27.8391201602292;
+        let c_p_path = -0.7;
+        let p_z_ref = 1.;
+        let expected_output = -79.01694696980;
+
+        assert_relative_eq!(
+            vent.calculate_ventilation_through_vents_using_internal_p(
+                u_site,
+                t_e,
+                t_z,
+                c_vent_path,
+                c_p_path,
+                p_z_ref
+            ),
+            expected_output,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    // in Python this is test_calculate_flow_from_internal_p
+    fn test_calculate_flow_from_internal_p_for_vents(
+        vent: Vent,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let u_site = 3.7;
+        let t_z = 293.15;
+        let p_z_ref = 1.;
+        let f_cross = true;
+        let shield_class = VentilationShieldClass::Open;
+
+        let (qm_in_through_vent, qm_out_through_vent) = vent.calculate_flow_from_internal_p(
+            u_site,
+            t_z,
+            p_z_ref,
+            f_cross,
+            shield_class,
+            simulation_time_iterator.current_iteration(),
+        );
+
+        assert_relative_eq!(qm_in_through_vent, 0.);
+        assert_relative_eq!(qm_out_through_vent, -95.136404151646, max_relative = EIGHT_DECIMAL_PLACES);
     }
 }
