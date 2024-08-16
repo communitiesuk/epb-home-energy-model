@@ -3,7 +3,7 @@
 
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
-use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -11,11 +11,11 @@ use crate::core::units::{
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, FuelType, SupplyAirFlowRateControlType,
+    FlueGasExhaustSituation, SupplyAirFlowRateControlType,
     SupplyAirTemperatureControlType, TerrainClass, VentType, VentilationLeaks,
     VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
 use rand_distr::num_traits::abs;
 use std::sync::Arc;
@@ -1324,7 +1324,7 @@ struct InfiltrationVentilation {
     external_conditions: Arc<ExternalConditions>,
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    terrain_class: TerrainClass,
+    _terrain_class: TerrainClass,
     c_rgh_site: f64,
     ventilation_zone_height: f64,
     windows: Vec<Window>,
@@ -1334,7 +1334,7 @@ struct InfiltrationVentilation {
     air_terminal_devices: Vec<AirTerminalDevices>,
     mech_vents: Vec<MechanicalVentilation>,
     p_a_alt: f64,
-    total_volume: f64,
+    _total_volume: f64,
 }
 
 ///Constructs a InfiltrationVentilation object
@@ -1373,7 +1373,7 @@ impl InfiltrationVentilation {
             external_conditions: external_conditions.clone(),
             f_cross,
             shield_class,
-            terrain_class,
+            _terrain_class: terrain_class,
             c_rgh_site: ter_class_to_roughness_coeff(terrain_class),
             ventilation_zone_height: leaks.ventilation_zone_height,
             windows,
@@ -1383,7 +1383,7 @@ impl InfiltrationVentilation {
             air_terminal_devices,
             mech_vents,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            total_volume,
+            _total_volume: total_volume,
         }
     }
 
@@ -1765,10 +1765,10 @@ impl InfiltrationVentilation {
 // TODO this is from scipy.
 // Find equivalent function in a Rust library or implement
 fn root_scalar(
-    func: impl FnOnce(f64, f64, f64, f64) -> f64,
-    bracket: [f64; 2],
-    args: (f64, Option<f64>),
-    method: &str,
+    _func: impl FnOnce(f64, f64, f64, f64) -> f64,
+    _bracket: [f64; 2],
+    _args: (f64, Option<f64>),
+    _method: &str,
 ) -> Result<RootScalarResult, Error> {
     todo!()
 }
@@ -1779,7 +1779,7 @@ struct RootScalarResult {
 
 // TODO this is from scipy
 // Find equivalent function in a Rust library or implement
-fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64, f64)) -> f64 {
+fn fsolve(_func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, _args: (f64, f64, f64)) -> f64 {
     // Stub implementation for the timebeing
     x0
 }
@@ -1789,11 +1789,11 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
-    use crate::core::space_heat_demand::ventilation;
+    
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{
-        FuelType, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
-    };
+    use crate::input::
+        FuelType
+    ;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
@@ -2277,8 +2277,8 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let u_site = 5.0;
-        let p_a_alt = p_a_ref();
-        let t_e = 290.15;
+        let _p_a_alt = p_a_ref();
+        let _t_e = 290.15;
         let t_z = 293.15;
         let p_z_ref = 1.;
         let f_cross = true;
