@@ -1333,7 +1333,6 @@ struct InfiltrationVentilation {
     combustion_appliances: Vec<CombustionAppliances>,
     air_terminal_devices: Vec<AirTerminalDevices>,
     mech_vents: Vec<MechanicalVentilation>,
-    detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
 }
@@ -1367,7 +1366,6 @@ impl InfiltrationVentilation {
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
         mech_vents: Vec<MechanicalVentilation>,
-        detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
     ) -> Self {
@@ -1384,7 +1382,6 @@ impl InfiltrationVentilation {
             combustion_appliances,
             air_terminal_devices,
             mech_vents,
-            detailed_output_heating_cooling,
             p_a_alt: adjust_air_density_for_altitude(altitude),
             total_volume,
         }
@@ -1754,23 +1751,12 @@ impl InfiltrationVentilation {
             + qm_out_through_passive_hybrid_ducts
             + qm_eta_from_vent_zone;
 
+        // TODO implement detailed reporting if required
         // Output detailed ventilation file
-        if self.detailed_output_heating_cooling {
-            let incoming_air_flow = convert_mass_flow_rate_to_volume_flow_rate(
-                qm_in,
-                celsius_to_kelvin(self.external_conditions.air_temp(&simtime)),
-                self.p_a_alt,
-            );
-            let air_changes_per_hour = incoming_air_flow / self.total_volume;
-
-            // TODO implement detailed reporting if required
-            // Python has optional detailed reporting
-            // which is currently not implemented here
-
-            // if reporting_flag {
-            //      ...
-            // }
-        }
+        // if self.detailed_output_heating_cooling {
+        //      Python has optional detailed reporting
+        //      which is currently not implemented here
+        // }
 
         (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total)
     }
@@ -2186,7 +2172,11 @@ mod tests {
         )
     }
 
-    pub fn create_window(external_conditions: ExternalConditions, ctrl: Control) -> Window {
+    pub fn create_window(
+        external_conditions: ExternalConditions,
+        ctrl: Control,
+        altitude: f64,
+    ) -> Window {
         Window::new(
             Arc::new(external_conditions),
             1.6,
@@ -2197,7 +2187,7 @@ mod tests {
             }],
             0.,
             90.,
-            0.,
+            altitude,
             Some(Arc::new(ctrl)),
         )
     }
@@ -2224,7 +2214,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl);
+        let window = create_window(external_conditions, ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2240,7 +2230,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl);
+        let window = create_window(external_conditions, ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2256,7 +2246,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl);
+        let window = create_window(external_conditions, ctrl, 0.);
         assert_relative_eq!(
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
@@ -2270,7 +2260,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl);
+        let window = create_window(external_conditions, ctrl, 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
             3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
@@ -2295,7 +2285,7 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl);
+        let window = create_window(external_conditions, ctrl, 0.);
 
         let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
             u_site,
@@ -2572,5 +2562,155 @@ mod tests {
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);
     }
 
-    // TODO Python has a commented out test here
+    // NOTE - Python has a commented out test here
+
+    #[fixture]
+    fn infiltration_ventilation(
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: SimulationTimeIterator,
+        combustion_appliances: CombustionAppliances,
+        mechanical_ventilation: MechanicalVentilation,
+    ) -> InfiltrationVentilation {
+        let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
+        let windows = vec![create_window(external_conditions.clone(), ctrl, 30.)];
+        let vents = vec![Vent::new(
+            external_conditions.clone(),
+            1.5,
+            100.,
+            20.,
+            0.,
+            90.,
+            30.,
+        )];
+        let leaks = VentilationLeaks {
+            ventilation_zone_height: 6.,
+            test_pressure: 50.,
+            test_result: 1.2,
+            area_roof: Some(25.),
+            area_facades: Some(85.),
+            env_area: 220.,
+            altitude: Some(30.),
+        };
+        let combustion_appliances_list = vec![combustion_appliances];
+        let air_terminal_devices = Vec::<AirTerminalDevices>::new();
+        let mechanical_ventilations = vec![mechanical_ventilation];
+
+        InfiltrationVentilation::new(
+            Arc::from(external_conditions),
+            true,
+            VentilationShieldClass::Open,
+            TerrainClass::Country,
+            20.0,
+            windows,
+            vents,
+            leaks,
+            combustion_appliances_list,
+            air_terminal_devices,
+            mechanical_ventilations,
+            0.,
+            250.,
+        )
+    }
+
+    #[rstest]
+    fn test_temp_supply(
+        infiltration_ventilation: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let air_temp =
+            infiltration_ventilation.temp_supply(simulation_time_iterator.current_iteration());
+        assert_relative_eq!(air_temp, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_total_volume_air_flow_rate_in() {
+        let qm_in = 0.5;
+        let external_air_density = 1.;
+        assert_relative_eq!(
+            InfiltrationVentilation::calculate_total_volume_air_flow_rate_in(
+                qm_in,
+                external_air_density
+            ),
+            0.5
+        );
+    }
+
+    #[test]
+    fn test_calculate_total_volume_air_flow_rate_out() {
+        let qm_out = 0.5;
+        let zone_air_density = 1.;
+        assert_relative_eq!(
+            InfiltrationVentilation::calculate_total_volume_air_flow_rate_out(
+                qm_out,
+                zone_air_density
+            ),
+            0.5
+        )
+    }
+
+    // Python has a make_leaks_object test here which isn't required for Rust
+
+    // NOTE - Python has a commented out test here for test_calculate_qv_pdu
+    // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
+
+    #[ignore]
+    #[rstest]
+    fn test_calculate_internal_reference_pressure(
+        infiltration_ventilation: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let intial_p_z_ref_guess = 0.;
+        let temp_int_air = 20.;
+        let r_w_arg = 0.5;
+        assert_relative_eq!(
+            infiltration_ventilation.calculate_internal_reference_pressure(
+                intial_p_z_ref_guess,
+                temp_int_air,
+                Some(r_w_arg),
+                &simulation_time_iterator.current_iteration()
+            ),
+            -6.312225965701547,
+            max_relative = EIGHT_DECIMAL_PLACES
+        )
+    }
+
+    #[rstest]
+    fn test_implicit_mass_balance_for_internal_reference_pressure(
+        infiltration_ventilation: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let p_z_ref = 1.;
+        let temp_int_air = 20.;
+        let r_w_arg_min_max = 1.;
+        assert_relative_eq!(
+            infiltration_ventilation.implicit_mass_balance_for_internal_reference_pressure(
+                p_z_ref,
+                temp_int_air,
+                r_w_arg_min_max,
+                simulation_time_iterator.current_iteration()
+            ),
+            -30430.689049309116
+        )
+    }
+
+    #[rstest]
+    fn test_incoming_air_flow(
+        infiltration_ventilation: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let p_z_ref = 1.;
+        let temp_int_air = 20.;
+        let r_w_arg_min_max = 1.;
+
+        assert_relative_eq!(
+            infiltration_ventilation.incoming_air_flow(
+                p_z_ref,
+                temp_int_air,
+                r_w_arg_min_max,
+                false,
+                simulation_time_iterator.current_iteration()
+            ),
+            4.973297477194108
+        )
+    }
 }
