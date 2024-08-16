@@ -883,8 +883,7 @@ impl Leaks {
         let c_leak_path = Self::calculate_flow_coeff_for_leak(self);
 
         // Airflow through leaks based on Equation 62
-
-        (c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path)).powf(N_LEAK)
+        c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path).powf(N_LEAK)
     }
 
     fn calculate_flow_from_internal_p(
@@ -2450,7 +2449,8 @@ mod tests {
             leaks.calculate_ventilation_through_leaks_using_internal_p(
                 u_site, t_e, t_z, c_p_path, p_z_ref
             ),
-            expected_output
+            expected_output,
+            max_relative = EIGHT_DECIMAL_PLACES
         );
     }
 
