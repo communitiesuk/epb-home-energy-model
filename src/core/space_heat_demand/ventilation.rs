@@ -3,7 +3,7 @@
 
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
-use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -11,13 +11,14 @@ use crate::core::units::{
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
-    FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
-    TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
-    WindowPart as WindowPartInput,
+    FlueGasExhaustSituation, FuelType, SupplyAirFlowRateControlType,
+    SupplyAirTemperatureControlType, TerrainClass, VentType, VentilationLeaks,
+    VentilationShieldClass, WindowPart as WindowPartInput,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::Error;
 use rand_distr::num_traits::abs;
+use rstest::fixture;
 use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
@@ -1071,7 +1072,6 @@ struct MechanicalVentilation {
     total_volume: f64,
     ctrl_intermittent_mev: Option<Arc<Control>>,
     sfp: f64,
-    simulation_timestep: f64,
     energy_supply_conn: EnergySupplyConnection,
     altitude: f64,
     design_outdoor_air_flow_rate_m3_h: f64,
@@ -1108,8 +1108,6 @@ impl MechanicalVentilation {
         vent_type: VentType,
         specific_fan_power: f64,
         design_outdoor_air_flow_rate: f64,
-        // NOTE - in Python this is simtime
-        simulation_timestep: f64,
         energy_supply_conn: EnergySupplyConnection,
         total_volume: f64,
         altitude: f64,
@@ -1138,7 +1136,6 @@ impl MechanicalVentilation {
             total_volume,
             ctrl_intermittent_mev,
             sfp: specific_fan_power,
-            simulation_timestep,
             energy_supply_conn,
             altitude,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
@@ -1285,7 +1282,7 @@ impl MechanicalVentilation {
             * f64::from(LITRES_PER_CUBIC_METRE))
             * (zone_volume / total_volume);
         let fan_energy_use_kwh = (fan_power_w / f64::from(WATTS_PER_KILOWATT))
-            * self.simulation_timestep
+            * simulation_time_iteration.timestep
             * self.f_op_v(simulation_time_iteration);
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
@@ -1314,7 +1311,8 @@ impl MechanicalVentilation {
             )
             .unwrap();
 
-        supply_fan_energy_use_kwh / (f64::from(WATTS_PER_KILOWATT) * self.simulation_timestep)
+        supply_fan_energy_use_kwh
+            / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep)
     }
 
     pub fn vent_type(&self) -> VentType {
@@ -1805,10 +1803,15 @@ fn fsolve(func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, args: (f64, f64
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::space_heat_demand::ventilation;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType};
+    use crate::input::{
+        FuelType, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
+    };
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
+    use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
@@ -2477,5 +2480,74 @@ mod tests {
 
         assert_relative_eq!(qm_in_through_leaks, 0.);
         assert_relative_eq!(qm_out_through_leaks, -12.826387549335472);
+    }
+
+    #[fixture]
+    fn combustion_appliances() -> CombustionAppliances {
+        CombustionAppliances::new(
+            CombustionAirSupplySituation::RoomAir,
+            FlueGasExhaustSituation::IntoSeparateDuct,
+            CombustionFuelType::Wood,
+            CombustionApplianceType::OpenFireplace,
+        )
+    }
+
+    #[rstest]
+    fn test_calculate_air_flow_req_for_comb_appliance(combustion_appliances: CombustionAppliances) {
+        let f_op_comp = 1.;
+        let p_h_fi = 1.;
+        let (q_in_comb, q_out_comb) =
+            combustion_appliances.calculate_air_flow_req_for_comb_appliance(f_op_comp, p_h_fi);
+
+        assert_relative_eq!(q_in_comb, 0.);
+        assert_relative_eq!(q_out_comb, -10.08);
+    }
+
+    #[fixture]
+    pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
+        EnergySupply::new(
+            FuelType::Electricity,
+            simulation_time_iterator.total_steps(),
+            None,
+            None,
+            None,
+        )
+    }
+    #[fixture]
+    fn mechanical_ventilation(
+        external_conditions: ExternalConditions,
+        energy_supply: EnergySupply,
+    ) -> MechanicalVentilation {
+        let energy_supply = Arc::new(RwLock::new(energy_supply));
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
+
+        MechanicalVentilation::new(
+            external_conditions,
+            SupplyAirFlowRateControlType::ODA,
+            SupplyAirTemperatureControlType::Constant,
+            1.,
+            3.4,
+            VentType::Mvhr,
+            1.5,
+            0.5,
+            energy_supply_connection,
+            250.,
+            0.,
+            None,
+            Some(0.),
+            None,
+        )
+    }
+
+    #[rstest]
+    // In Python this tests calls 'calculate_required_outdoor_air_flow_rate' in the assertion,
+    // we've implemented the 'new' function on MechanicalVentilation so that it sets
+    // qv_oda_req_design by calling 'calculate_required_outdoor_air_flow_rate'
+    fn test_calculate_required_outdoor_air_flow_rate(
+        mechanical_ventilation: MechanicalVentilation,
+    ) {
+        let expected_result = 0.55;
+        assert_relative_eq!(mechanical_ventilation.qv_oda_req_design, expected_result)
     }
 }
