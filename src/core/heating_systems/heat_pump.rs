@@ -1972,8 +1972,7 @@ impl HeatPump {
             if source_type == HeatPumpSourceType::ExhaustAirMixed {
                 let ext_air_ratio_list: Vec<_> = test_data
                     .iter()
-                    .map(|datum| datum.ext_air_ratio)
-                    .flatten()
+                    .filter_map(|datum| datum.ext_air_ratio)
                     .collect();
                 let same_ext_air_ratio = ext_air_ratio_list
                     .iter()
@@ -2055,7 +2054,7 @@ impl HeatPump {
                 tank.pump_power_at_flow_rate,
                 number_of_zones,
                 simulation_timestep,
-                WATER.clone(),
+                *WATER,
                 Some(output_detailed_results),
             )
         });

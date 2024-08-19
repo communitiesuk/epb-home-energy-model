@@ -1190,10 +1190,10 @@ impl MechanicalVentilation {
                     .ctrl_intermittent_mev
                     .as_ref()
                     .expect("ctrl_intermittent_mev was expected to be set")
-                    .setpnt(&simulation_time)
+                    .setpnt(simulation_time)
                     .expect("A setpoint was expected to be derivable for a control.");
 
-                if f_op_v < 0. || f_op_v > 1. {
+                if !(0. ..=1.).contains(&f_op_v) {
                     panic!("Error f_op_v is not between 0 and 1")
                 }
 
@@ -1552,12 +1552,9 @@ impl InfiltrationVentilation {
                 "brentq",
             );
 
-            match result {
-                Ok(sol) => {
-                    let p_z_ref = sol.root;
-                    return p_z_ref;
-                }
-                Err(_) => {}
+            if let Ok(sol) = result {
+                let p_z_ref = sol.root;
+                return p_z_ref;
             }
         }
 
