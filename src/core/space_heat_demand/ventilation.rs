@@ -1224,13 +1224,13 @@ impl MechanicalVentilation {
         let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
 
         // Amount of air flow depends on controls
-        let (f_op_v, qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
+        let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
             SupplyAirFlowRateControlType::ODA => {
                 let f_op_v = self.f_op_v(simulation_time);
                 let qv_sup_dis_req = f_op_v * qv_sup_req;
                 let qv_eta_dis_req = f_op_v * qv_eta_req;
 
-                (f_op_v, qv_sup_dis_req, qv_eta_dis_req)
+                (qv_sup_dis_req, qv_eta_dis_req)
             }
             SupplyAirFlowRateControlType::Load => {
                 // NOTE - this is not currently implemented in the Python code
@@ -1697,7 +1697,7 @@ impl InfiltrationVentilation {
             qm_out_through_leaks += qm_out;
         }
 
-        for atd in &self.air_terminal_devices {
+        for _atd in &self.air_terminal_devices {
             let qv_pdu_initial = 0.; // (From Python) TODO get from prev timestep
             let h_z = self.ventilation_zone_height;
             let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, h_z, &simtime);
