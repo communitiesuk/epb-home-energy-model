@@ -7,7 +7,6 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
 
 pub struct PointOfUse {
-    power_in_kw: f64,
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,
     cold_feed: WaterSourceWithTemperature,
@@ -22,7 +21,6 @@ impl PointOfUse {
         temp_hot_water: f64,
     ) -> Self {
         Self {
-            power_in_kw: 1., // NB. temporary value until this module is migrated to 0.30
             efficiency,
             energy_supply_connection,
             cold_feed,
