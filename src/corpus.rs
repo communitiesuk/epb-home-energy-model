@@ -92,8 +92,8 @@ pub struct Corpus {
     pub space_heating_ductwork: Option<Ductwork>,
     pub zones: IndexMap<String, Zone>,
     pub energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
-    pub heat_system_name_for_zone: IndexMap<String, Option<String>>,
-    pub cool_system_name_for_zone: IndexMap<String, Option<String>>,
+    pub heat_system_name_for_zone: IndexMap<String, String>,
+    pub cool_system_name_for_zone: IndexMap<String, String>,
     pub total_floor_area: f64,
     pub total_volume: f64,
     pub wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>>,
@@ -181,8 +181,8 @@ impl Corpus {
 
         let opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
 
-        let mut heat_system_name_for_zone: IndexMap<String, Option<String>> = Default::default();
-        let mut cool_system_name_for_zone: IndexMap<String, Option<String>> = Default::default();
+        let mut heat_system_name_for_zone: IndexMap<String, String> = Default::default();
+        let mut cool_system_name_for_zone: IndexMap<String, String> = Default::default();
 
         let zones: IndexMap<String, Zone> = input
             .zone
@@ -200,16 +200,20 @@ impl Corpus {
                         &infiltration,
                         simulation_time_iterator.clone().as_ref(),
                     );
-                    heat_system_name_for_zone.insert((*i).clone(), heat_system_name);
-                    cool_system_name_for_zone.insert((*i).clone(), cool_system_name);
+                    if let Some(heat_system_name) = heat_system_name {
+                        heat_system_name_for_zone.insert((*i).clone(), heat_system_name);
+                    }
+                    if let Some(cool_system_name) = cool_system_name {
+                        cool_system_name_for_zone.insert((*i).clone(), cool_system_name);
+                    }
 
                     zone_for_corpus
                 })
             })
             .collect();
 
-        if !has_unique_some_values(&heat_system_name_for_zone)
-            || !has_unique_some_values(&cool_system_name_for_zone)
+        if !has_unique_values(&heat_system_name_for_zone)
+            || !has_unique_values(&cool_system_name_for_zone)
         {
             bail!("the heat or cool systems do not have unique names in the inputs");
         }
@@ -301,7 +305,6 @@ impl Corpus {
                     &mut heat_system_names_requiring_overvent,
                     heat_system_name_for_zone
                         .values()
-                        .flatten()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>(),
                 )?)
@@ -317,7 +320,6 @@ impl Corpus {
                     system,
                     cool_system_name_for_zone
                         .values()
-                        .flatten()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>(),
                     &controls,
@@ -745,8 +747,8 @@ impl Corpus {
         let mut heat_balance_map: HashMap<&str, Option<HeatBalance>> = Default::default(); // using unit type here as placeholder
         for (z_name, zone) in &self.zones {
             // Look up names of relevant heating and cooling systems for this zone
-            let h_name = self.heat_system_name_for_zone[z_name.as_str()].as_ref();
-            let c_name = self.cool_system_name_for_zone[z_name.as_str()].as_ref();
+            let h_name = self.heat_system_name_for_zone.get(z_name.as_str());
+            let c_name = self.cool_system_name_for_zone.get(z_name.as_str());
 
             // If zone is unheated or there was no demand on heating system,
             // set heating gains for zone to zero, else calculate
@@ -907,13 +909,13 @@ impl Corpus {
             }
         }
 
-        for h_name in self.heat_system_name_for_zone.values().flatten() {
+        for h_name in self.heat_system_name_for_zone.values() {
             let h_name = h_name.as_str().try_into().unwrap();
             space_heat_demand_system_dict.insert(h_name, vec_capacity());
             space_heat_provided_dict.insert(h_name, vec_capacity());
         }
 
-        for c_name in self.cool_system_name_for_zone.values().flatten() {
+        for c_name in self.cool_system_name_for_zone.values() {
             let c_name = c_name.as_str().try_into().unwrap();
             space_cool_demand_system_dict.insert(c_name, vec_capacity());
             space_cool_provided_dict.insert(c_name, vec_capacity());
@@ -1396,14 +1398,8 @@ impl Corpus {
         let mut h_ve_cool_extra_zone: HashMap<String, f64> = Default::default();
         for (z_name, zone) in &self.zones {
             // Look up names of relevant heating and cooling systems for this zone
-            let h_name = self
-                .heat_system_name_for_zone
-                .get(z_name)
-                .and_then(|h| h.as_ref());
-            let c_name = self
-                .cool_system_name_for_zone
-                .get(z_name)
-                .and_then(|c| c.as_ref());
+            let h_name = self.heat_system_name_for_zone.get(z_name);
+            let c_name = self.cool_system_name_for_zone.get(z_name);
 
             // Look up convective fraction for heating/cooling for this zone
             let (frac_convective_heat, temp_setpnt_heat) = match h_name {
@@ -1506,10 +1502,10 @@ type NumberMap = HashMap<String, f64>;
 
 pub type ResultsEndUser = IndexMap<KeyString, IndexMap<String, Vec<f64>>>;
 
-fn has_unique_some_values<K, V: Eq + Hash>(map: &IndexMap<K, Option<V>>) -> bool {
-    let some_values: Vec<&V> = map.values().flat_map(|v| v.iter()).collect();
-    let value_set: HashSet<&&V> = some_values.iter().collect();
-    some_values.len() == value_set.len()
+fn has_unique_values<K, V: Eq + Hash>(map: &IndexMap<K, V>) -> bool {
+    let values: Vec<&V> = map.values().collect();
+    let value_set: HashSet<&&V> = values.iter().collect();
+    values.len() == value_set.len()
 }
 
 fn external_conditions_from_input(
