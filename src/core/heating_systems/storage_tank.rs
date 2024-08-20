@@ -373,7 +373,7 @@ impl StorageTank {
     }
 
     /// When the temperature of the volume i is higher than the one of the upper volume,
-    /// then the 2 volumes are melted. This iterative process is maintained until the temperature
+    /// then the 2 volumes are melded. This iterative process is maintained until the temperature
     /// of the volume i is lower or equal to the temperature of the volume i+1.
     fn rearrange_temperatures(
         &self,
@@ -428,28 +428,23 @@ impl StorageTank {
 
     /// Thermal losses are calculated with respect to the impact of the temperature set point
     pub fn thermal_losses(
-        &self,
-        temp_s7_n: [f64; STORAGE_TANK_NB_VOL],
-        q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
-        q_h_sto_s7: [f64; STORAGE_TANK_NB_VOL],
+        &mut self,
+        temp_s7_n: Vec<f64>,
+        q_x_in_n: Vec<f64>,
+        q_h_sto_s7: Vec<f64>,
         heater_layer: usize,
-        q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
-    ) -> (
-        f64,
-        f64,
-        [f64; STORAGE_TANK_NB_VOL],
-        [f64; STORAGE_TANK_NB_VOL],
-    ) {
-        // standby losses coefficient - kW/K
+        q_ls_n_prev_heat_source: Vec<f64>,
+    ) -> (f64, f64, Vec<f64>, Vec<f64>) {
+        // standby losses coefficient - W/K
         let h_sto_ls = self.stand_by_losses_coefficient();
 
         // standby losses correction factor - dimensionless
         // note from Python code: "do not think these are applicable so used: f_sto_dis_ls = 1, f_sto_bac_acc = 1"
 
         // initialise list of thermal losses in kWh
-        let mut q_ls_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut q_ls_n: Vec<f64> = Default::default();
         // initialise list of final temperature of layers after thermal losses in degrees
-        let mut temp_s8_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut temp_s8_n: Vec<f64> = Default::default();
 
         // Thermal losses
         // Note: Eqn 13 from BS EN 15316-5:2017 does not explicitly multiply by
@@ -466,6 +461,8 @@ impl StorageTank {
 
         // total thermal losses kWh
         let q_ls = q_ls_n.iter().sum();
+
+        self.storage_losses_kwh = q_ls;
 
         // the final value of the temperature is reduced due to the effect of the thermal losses.
         // check temperature compared to set point
@@ -514,6 +511,8 @@ impl StorageTank {
 
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
+
+    // NB. there is a toreport() function here in the Python - seems to be used for debugging? // TODO: confirm this
 
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
