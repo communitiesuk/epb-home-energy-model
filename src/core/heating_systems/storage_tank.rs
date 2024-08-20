@@ -19,21 +19,22 @@ use std::sync::Arc;
 
 // BS EN 15316-5:2017 Appendix B default input data
 // Model Information
-// number of volumes the storage is modelled with
-// see App.C (C.1.2 selection of the number of volumes to model the storage unit)
-// for more details if this wants to be changed.
-const STORAGE_TANK_NB_VOL: usize = 4;
+const STORAGE_TANK_NB_VOL: usize = 4; // TODO as part of migration 0.28 to 0.30: refactor this const out
 
 // Product Description Data
 // factors for energy recovery Table B.3
 // part of the auxiliary energy transmitted to the medium
 const STORAGE_TANK_F_RVD_AUX: f64 = 0.25;
 
-// part of the thermal losses transmitted to the room
+// part of the thermal losses transmitted to the room. Note same approach in BufferTank if this is
+// modified in future
 const STORAGE_TANK_F_STO_M: f64 = 0.75;
 
 // ambient temperature - degrees
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
+
+// Time of finalisation of the previous hot water event
+const TIME_END_PREVIOUS_EVENT: f64 = 0.0;
 
 #[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {
