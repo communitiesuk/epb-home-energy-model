@@ -192,10 +192,35 @@ impl StorageTank {
         }
     }
 
+    fn temp_surrounding_primary_pipework(
+        &self,
+        pipework_data: Pipework,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        match pipework_data.location() {
+            PipeworkLocation::External => self
+                .external_conditions
+                .air_temp(&simulation_time_iteration),
+            PipeworkLocation::Internal => self.temp_internal_air,
+        }
+    }
+
     pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
 
+    /// This is only used to calculate the equivalent volume of water for IES showers
+    /// in order to get the energy content for the internal gains.
+    /// Therefore the actual value used is not critical.
+    /// It has been suggested/considered the use of the top layer of the storage tank
+    /// but this could be similar to the cold feed temperature after big draw-offs
+    /// To avoid any issues in those situations we use the setpoing temperature of the
+    /// tank.
+    fn get_temp_hot_water(&self) -> f64 {
+        self.temp_set_on
+    }
+
+    /// Return temp_out_W_min unless tank is being held at setpnt, in which case return that
     fn get_setpoint_min(&self, simtime: SimulationTimeIteration) -> f64 {
         match &self.control_hold_at_setpoint {
             Some(control) if control.is_on(simtime) => self.temp_set_on,
@@ -207,7 +232,9 @@ impl StorageTank {
     /// a 24h period. Formula (B.2) allows the calculation of _sto_stbl_ls_tot based on a reference
     /// value of the daily thermal energy losses.
     ///
-    /// h_sto_ls is the stand-by losses, in kW/K
+    /// h_sto_ls is the stand-by losses, in W/K
+    ///
+    /// TODO there are alternative methods listed in App B (B.2.8) which are not included here.
     pub fn stand_by_losses_coefficient(&self) -> f64 {
         // BS EN 12897:2016 appendix B B.2.2
         // temperature of the water in the storage for the standardized conditions - degrees
