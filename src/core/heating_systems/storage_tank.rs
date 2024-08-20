@@ -319,12 +319,12 @@ impl StorageTank {
     pub fn storage_tank_potential_effect(
         &self,
         energy_proposed: f64,
-        temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
+        temp_s3_n: Vec<f64>,
     ) -> (f64, f64) {
         // assuming initially no water draw-off
 
         // initialise list of potential energy input for each layer
-        let mut q_x_in_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut q_x_in_n = Vec::with_capacity(self.nb_vol);
 
         // TODO (from Python) - ensure we are feeding in the correct volume
         q_x_in_n[0] = energy_proposed;
@@ -335,7 +335,7 @@ impl StorageTank {
         let (_q_h_sto_s7, temp_s7_n) = self.rearrange_temperatures(temp_s6_n);
 
         // TODO (from Python) Check [0] is bottom layer temp and that solar thermal inlet is top layer NB_VOL-1
-        (temp_s7_n[0], temp_s7_n[STORAGE_TANK_NB_VOL - 1])
+        (temp_s7_n[0], temp_s7_n[self.nb_vol - 1])
     }
 
     /// The input of energy(s) is (are) allocated to the specific location(s)
@@ -345,17 +345,13 @@ impl StorageTank {
     /// For step 6, the addition of the temperature of volume 'i' and theoretical variation of
     /// temperature calculated according to formula (10) can exceed the set temperature defined
     /// by the control system of the storage unit.
-    fn energy_input(
-        &self,
-        temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
-        q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
-    ) -> (f64, [f64; STORAGE_TANK_NB_VOL]) {
+    fn energy_input(&self, temp_s3_n: Vec<f64>, q_x_in_n: Vec<f64>) -> (f64, Vec<f64>) {
         // initialise list of theoretical variation of temperature of layers in degrees
-        let mut delta_temp_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut delta_temp_n = Vec::with_capacity(self.nb_vol);
         // initialise list of theoretical temperature of layers after input in degrees
-        let mut temp_s6_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut temp_s6_n = Vec::with_capacity(self.nb_vol);
         // output energy delivered by the storage in kWh - timestep dependent
-        let q_sto_h_out_n: [f64; STORAGE_TANK_NB_VOL] = Default::default();
+        let q_sto_h_out_n: Vec<f64> = Vec::with_capacity(self.nb_vol);
 
         for i in 0..self.vol_n.len() {
             delta_temp_n[i] =
@@ -375,12 +371,9 @@ impl StorageTank {
     /// When the temperature of the volume i is higher than the one of the upper volume,
     /// then the 2 volumes are melded. This iterative process is maintained until the temperature
     /// of the volume i is lower or equal to the temperature of the volume i+1.
-    fn rearrange_temperatures(
-        &self,
-        temp_s6_n: [f64; STORAGE_TANK_NB_VOL],
-    ) -> ([f64; STORAGE_TANK_NB_VOL], [f64; STORAGE_TANK_NB_VOL]) {
+    fn rearrange_temperatures(&self, temp_s6_n: Vec<f64>) -> (Vec<f64>, Vec<f64>) {
         // set list of flags for which layers need mixing
-        let mut mix_layer_n: [u8; STORAGE_TANK_NB_VOL] = Default::default();
+        let mut mix_layer_n: Vec<u8> = Vec::with_capacity(self.nb_vol);
         let mut temp_s7_n = temp_s6_n;
 
         // loop through layers from bottom to top, without including top layer;
@@ -411,7 +404,7 @@ impl StorageTank {
             }
         }
 
-        let q_h_sto_end: [f64; STORAGE_TANK_NB_VOL] = (0..self.vol_n.len())
+        let q_h_sto_end = (0..self.vol_n.len())
             .map(|i| self.rho * self.cp * self.vol_n[i] * temp_s7_n[i])
             .collect::<Vec<f64>>()
             .try_into()
@@ -490,7 +483,7 @@ impl StorageTank {
         //       heat source currently being considered is capable of heating,
         //       i.e. excluding those below the heater position.
         let energy_surplus = if temp_s7_n[heater_layer] > self.temp_set_on {
-            (heater_layer..STORAGE_TANK_NB_VOL).fold(0., |acc, i| {
+            (heater_layer..self.nb_vol).fold(0., |acc, i| {
                 acc + q_h_sto_s7[i]
                     - q_ls_n[i]
                     - (self.rho * self.cp * self.vol_n[i] * self.temp_set_on)
@@ -518,18 +511,18 @@ impl StorageTank {
 
     fn run_heat_sources(
         &mut self,
-        temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
+        temp_s3_n: Vec<f64>,
         heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         heater_layer: usize,
         thermostat_layer: usize,
-        q_ls_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
+        q_ls_prev_heat_source: Vec<f64>,
         simulation_time: SimulationTimeIteration,
     ) -> TemperatureCalculation {
         // 6.4.3.8 STEP 6 Energy input into the storage
         // input energy delivered to the storage in kWh - timestep dependent
         let q_x_in_n = self.potential_energy_input(
-            temp_s3_n,
+            temp_s3_n.clone(),
             heat_source.clone(),
             heat_source_name,
             heater_layer,
@@ -549,22 +542,22 @@ impl StorageTank {
 
     fn calculate_temperatures(
         &mut self,
-        temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
+        temp_s3_n: Vec<f64>,
         heat_source: Arc<Mutex<HeatSource>>,
-        q_x_in_n: [f64; STORAGE_TANK_NB_VOL],
+        q_x_in_n: Vec<f64>,
         heater_layer: usize,
-        q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
+        q_ls_n_prev_heat_source: Vec<f64>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> TemperatureCalculation {
-        let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, q_x_in_n);
+        let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, q_x_in_n.clone());
 
         // 6.4.3.9 STEP 7 Re-arrange the temperatures in the storage after energy input
-        let (q_h_sto_s7, temp_s7_n) = self.rearrange_temperatures(temp_s6_n);
+        let (q_h_sto_s7, temp_s7_n) = self.rearrange_temperatures(temp_s6_n.clone());
 
         // STEP 8 Thermal losses and final temperature
         let (q_in_h_w, q_ls, temp_s8_n, q_ls_n) = self.thermal_losses(
-            temp_s7_n,
-            q_x_in_n,
+            temp_s7_n.clone(),
+            q_x_in_n.clone(),
             q_h_sto_s7,
             heater_layer,
             q_ls_n_prev_heat_source,
@@ -838,14 +831,14 @@ impl StorageTank {
 }
 
 type TemperatureCalculation = (
-    [f64; STORAGE_TANK_NB_VOL],
-    [f64; STORAGE_TANK_NB_VOL],
+    Vec<f64>,
+    Vec<f64>,
     f64,
-    [f64; STORAGE_TANK_NB_VOL],
-    [f64; STORAGE_TANK_NB_VOL],
+    Vec<f64>,
+    Vec<f64>,
     f64,
     f64,
-    [f64; STORAGE_TANK_NB_VOL],
+    Vec<f64>,
 );
 
 #[derive(Clone, Debug)]
