@@ -245,17 +245,21 @@ impl StorageTank {
         (1000. * self.q_std_ls_ref) / (24. * (temp_set_ref - temp_amb_ref))
     }
 
+    /// Energy input for the storage from the generation system
+    /// (expressed per energy carrier X)
+    /// Heat Source = energy carrier
     pub fn potential_energy_input(
+        // Heat source. Addition of temp_s3_n as an argument
         &mut self,
-        temp_s3_n: [f64; STORAGE_TANK_NB_VOL],
+        temp_s3_n: Vec<f64>,
         heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         heater_layer: usize,
         thermostat_layer: usize,
         simulation_time: SimulationTimeIteration,
-    ) -> [f64; STORAGE_TANK_NB_VOL] {
+    ) -> Vec<f64> {
         // initialise list of potential energy input for each layer
-        let mut q_x_in_n = [0.; STORAGE_TANK_NB_VOL];
+        let mut q_x_in_n = iter::repeat(0.).take(self.nb_vol).collect_vec();
 
         let heat_source = &mut *(heat_source.lock());
 
@@ -277,11 +281,13 @@ impl StorageTank {
                             *e = true;
                         });
                 }
-
                 if self.heating_active[heat_source_name] {
-                    let mut energy_potential = immersion_heater
-                        .lock()
-                        .energy_output_max(simulation_time, false);
+                    let mut energy_potential = immersion_heater.lock().energy_output_max(
+                        simulation_time,
+                        self.temp_set_on,
+                        false,
+                    );
+                    // TODO Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
                         heat_source,
@@ -905,6 +911,7 @@ impl ImmersionHeater {
     pub fn energy_output_max(
         &self,
         simtime: SimulationTimeIteration,
+        _return_temp: f64, // TODO as part of migration v0.28 to 0.30
         ignore_standard_control: bool,
     ) -> f64 {
         // Account for time control where present. If no control present, assume
