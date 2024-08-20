@@ -59,13 +59,18 @@ pub struct StorageTank {
     simulation_timestep: f64,
     energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
+    nb_vol: usize,
+    temp_internal_air: f64,
+    external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
     vol_n: [f64; STORAGE_TANK_NB_VOL],
     cp: f64,  // contents (usually water) specific heat in kWh/kg.K
     rho: f64, // volumic mass in kg/litre
     temp_n: [f64; STORAGE_TANK_NB_VOL],
     input_energy_adj_prev_timestep: f64,
-    primary_pipework: Option<Pipework>,
+    primary_pipework_lst: Option<Vec<Pipework>>,
+    primary_pipework_losses_kwh: f64,
+    storage_losses_kwh: f64,
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: HashMap<String, bool>,
     q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
@@ -85,6 +90,9 @@ impl StorageTank {
     /// * `cold_feed` - reference to ColdWaterSource object
     /// * `simulation_timestep` - the timestep for the simulation time being used in the calculation
     /// * `heat_sources`     -- hashmap of names and heat source objects
+    /// *  `nb_vol` -number of volumes the storage is modelled with
+    ///              see App.C (C.1.2 selection of the number of volumes to model the storage unit)
+    ///              for more details if this wants to be changed.
     /// * `primary_pipework` - optional reference to pipework
     /// * `energy_supply_connection_unmet_demand` - an energy supply connection representing unmet demand
     /// * `control_hold_at_setpnt` - reference to Control object with Boolean schedule
@@ -100,7 +108,10 @@ impl StorageTank {
         cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
-        primary_pipework: Option<WaterPipework>,
+        temp_internal_air: f64, // In Python this is "project" but only temp_internal_air is accessed from it
+        external_conditions: &Arc<ExternalConditions>,
+        nb_vol: Option<usize>,
+        primary_pipework_lst: Option<&Vec<WaterPipework>>,
         energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
         control_hold_at_setpoint: Option<Arc<Control>>,
         contents: MaterialProperties,
@@ -110,8 +121,9 @@ impl StorageTank {
         let temp_set_on = setpoint_temp;
 
         let volume_total_in_litres = volume;
+        let nb_vol = nb_vol.unwrap_or(STORAGE_TANK_NB_VOL);
         // list of volume of layers in litres
-        let vol_n = [volume_total_in_litres / STORAGE_TANK_NB_VOL as f64; STORAGE_TANK_NB_VOL];
+        let vol_n = [volume_total_in_litres / nb_vol as f64; STORAGE_TANK_NB_VOL];
         // water specific heat in kWh/kg.K
         let cp = contents.specific_heat_capacity_kwh();
         let rho = contents.density();
@@ -125,10 +137,22 @@ impl StorageTank {
         #[cfg(test)]
         let energy_demand_test = 0.;
 
+        // primary_pipework_losses_kwh added for reporting
+        let primary_pipework_losses_kwh = 0.;
+        let storage_losses_kwh = 0.;
+
         let input_energy_adj_prev_timestep = 0.;
 
-        let primary_pipework: Option<Pipework> =
-            primary_pipework.map(|pipework| pipework.try_into().unwrap());
+        let primary_pipework_lst: Option<Vec<Pipework>> = if primary_pipework_lst.is_some() {
+            primary_pipework_lst
+                .unwrap()
+                .into_iter()
+                .map(|pipework| pipework.to_owned().try_into().unwrap())
+                .collect::<Vec<Pipework>>()
+                .into()
+        } else {
+            None
+        };
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
@@ -143,13 +167,18 @@ impl StorageTank {
             simulation_timestep,
             energy_supply_connection_unmet_demand,
             control_hold_at_setpoint,
+            nb_vol,
+            temp_internal_air,
+            external_conditions: Arc::from(external_conditions.clone()),
             volume_total_in_litres,
             vol_n,
             cp,
             rho,
             temp_n,
             input_energy_adj_prev_timestep,
-            primary_pipework,
+            primary_pipework_lst,
+            primary_pipework_losses_kwh,
+            storage_losses_kwh,
             heat_source_data: heat_sources,
             heating_active,
             q_ls_n_prev_heat_source: Default::default(),
