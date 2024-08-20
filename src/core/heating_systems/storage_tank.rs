@@ -11,9 +11,10 @@ use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
-use std::iter::zip;
+use std::iter;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -63,17 +64,17 @@ pub struct StorageTank {
     temp_internal_air: f64,
     external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
-    vol_n: [f64; STORAGE_TANK_NB_VOL],
+    vol_n: Vec<f64>,
     cp: f64,  // contents (usually water) specific heat in kWh/kg.K
     rho: f64, // volumic mass in kg/litre
-    temp_n: [f64; STORAGE_TANK_NB_VOL],
+    temp_n: Vec<f64>,
     input_energy_adj_prev_timestep: f64,
     primary_pipework_lst: Option<Vec<Pipework>>,
     primary_pipework_losses_kwh: f64,
     storage_losses_kwh: f64,
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: HashMap<String, bool>,
-    q_ls_n_prev_heat_source: [f64; STORAGE_TANK_NB_VOL],
+    q_ls_n_prev_heat_source: Vec<f64>,
     q_sto_h_ls_rbl: Option<f64>, // total recoverable heat losses for heating in kWh, memoised between steps
     primary_gains: f64,          // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
@@ -121,9 +122,11 @@ impl StorageTank {
         let temp_set_on = setpoint_temp;
 
         let volume_total_in_litres = volume;
-        let nb_vol = nb_vol.unwrap_or(STORAGE_TANK_NB_VOL);
+        let nb_vol = nb_vol.unwrap_or(4);
         // list of volume of layers in litres
-        let vol_n = [volume_total_in_litres / nb_vol as f64; STORAGE_TANK_NB_VOL];
+        let vol_n = iter::repeat(volume_total_in_litres / nb_vol as f64)
+            .take(nb_vol)
+            .collect_vec();
         // water specific heat in kWh/kg.K
         let cp = contents.specific_heat_capacity_kwh();
         let rho = contents.density();
@@ -132,7 +135,7 @@ impl StorageTank {
         //   for initial conditions all temperatures in the thermal storage unit(s)
         //   are equal to the set point temperature in degrees.
         //   We are expecting to run a "warm-up" period for the main calculation so this doesn't matter.
-        let temp_n = [temp_set_on; STORAGE_TANK_NB_VOL];
+        let temp_n = iter::repeat(temp_set_on).take(nb_vol).collect_vec();
 
         #[cfg(test)]
         let energy_demand_test = 0.;
