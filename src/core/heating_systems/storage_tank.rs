@@ -3,7 +3,7 @@ use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::Control;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::MaterialProperties;
-use crate::core::pipework::{Pipework, Pipeworkesque};
+use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::corpus::{HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
@@ -876,33 +876,56 @@ impl StorageTank {
     fn primary_pipework_losses(&self, input_energy_adj: f64) -> (f64, f64) {
         let mut primary_pipework_losses_kwh = Default::default();
         let mut primary_gains_w = Default::default();
+        let primary_pipework_lst = self.primary_pipework_lst.as_ref().expect(
+            "primary pipeworks are expected to have been set on the storage tank at this point",
+        );
 
         // start of heating event
         if input_energy_adj > 0. && self.input_energy_adj_prev_timestep == 0. {
-            primary_pipework_losses_kwh += self.primary_pipework.as_ref().expect("primary pipework is expected to have been set on the storage tank at this point").cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB);
+            for pipework_data in primary_pipework_lst {
+                // TODO as part of migration 0.28 to 0.30: update cool_down_loss interface
+                primary_pipework_losses_kwh +=
+                    pipework_data.cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB)
+            }
         }
 
         // during heating event
         if input_energy_adj > 0. {
-            // primary losses for the timestep calculated from temperature difference
-            let primary_pipework_losses_w = self
-                .primary_pipework
-                .as_ref()
-                .expect("pipework expected to have been set")
-                .heat_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB);
-            primary_gains_w += primary_pipework_losses_w;
-            primary_pipework_losses_kwh +=
-                primary_pipework_losses_w * self.simulation_timestep / WATTS_PER_KILOWATT as f64;
+            for pipework_data in primary_pipework_lst {
+                // Primary losses for the timestep calculated from temperature difference
+                let primary_pipework_losses_w =
+                    pipework_data.heat_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB); // TODO as part of migration 0.28 to 0.30: update heat_loss interface
+
+                // Check if pipework location is internal
+                let location = pipework_data.location();
+                match location {
+                    PipeworkLocation::Internal => primary_gains_w += primary_pipework_losses_w,
+                    PipeworkLocation::External => {
+                        primary_pipework_losses_kwh += primary_pipework_losses_w
+                            * self.simulation_timestep
+                            / WATTS_PER_KILOWATT as f64
+                    }
+                }
+            }
         }
 
         // end of heating event
         if input_energy_adj == 0. && self.input_energy_adj_prev_timestep > 0. {
-            primary_gains_w += self
-                .primary_pipework
-                .as_ref()
-                .expect("pipework expected")
-                .cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB);
+            for pipework_data in primary_pipework_lst {
+                let location = pipework_data.location();
+                match location {
+                    PipeworkLocation::External => {}
+                    PipeworkLocation::Internal => {
+                        primary_gains_w +=
+                            pipework_data.cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB)
+                    }
+                }
+            }
         }
+
+        // TODO as part of migration 0.28 to 0.30: review if below needed from Python
+        // keeping primary_pipework_losses_kWh for reporting as part of investigation of issue #31225: FDEV A082
+        // self.primary_pipework_losses_kwh = primary_pipework_losses_kwh;
 
         (primary_pipework_losses_kwh, primary_gains_w)
     }
