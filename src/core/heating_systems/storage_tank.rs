@@ -234,7 +234,7 @@ impl StorageTank {
     ///
     /// h_sto_ls is the stand-by losses, in W/K
     ///
-    /// TODO there are alternative methods listed in App B (B.2.8) which are not included here.
+    /// TODO (from Python) there are alternative methods listed in App B (B.2.8) which are not included here.
     pub fn stand_by_losses_coefficient(&self) -> f64 {
         // BS EN 12897:2016 appendix B B.2.2
         // temperature of the water in the storage for the standardized conditions - degrees
@@ -287,7 +287,7 @@ impl StorageTank {
                         self.temp_set_on,
                         false,
                     );
-                    // TODO Consolidate checks for systems with/without primary pipework
+                    // TODO (from Python) Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
                         heat_source,
@@ -512,7 +512,7 @@ impl StorageTank {
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
 
-    // NB. there is a toreport() function here in the Python - seems to be used for debugging? // TODO: confirm this
+    // NB. there is a toreport() function here in the Python - seems to be used for debugging? // TODO: confirm this as part of migration 0.28 to 0.30
 
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
