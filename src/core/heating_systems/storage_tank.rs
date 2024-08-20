@@ -109,7 +109,7 @@ impl StorageTank {
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
         temp_internal_air: f64, // In Python this is "project" but only temp_internal_air is accessed from it
-        external_conditions: &Arc<ExternalConditions>,
+        external_conditions: Arc<ExternalConditions>,
         nb_vol: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
         energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
@@ -169,7 +169,7 @@ impl StorageTank {
             control_hold_at_setpoint,
             nb_vol,
             temp_internal_air,
-            external_conditions: Arc::from(external_conditions.clone()),
+            external_conditions,
             volume_total_in_litres,
             vol_n,
             cp,

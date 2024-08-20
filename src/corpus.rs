@@ -3222,9 +3222,10 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                pipework
-                    .cloned()
-                    .and_then(|pipework| pipework.first().map(|pipework| (*pipework).clone())),
+                20., // TODO as part of migration 0.28 to 0.30: pass in internal air temp
+                external_conditions,
+                Some(24),
+                pipework, // TODO as part of migration 0.28 to 0.30: double check
                 Some(
                     EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
                         .unwrap(),
