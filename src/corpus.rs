@@ -28,7 +28,11 @@ use crate::core::material_properties::WATER;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_numeric_schedule, expand_water_heating_events, ScheduleEvent,
 };
-use crate::core::space_heat_demand::building_element::area_for_building_element_input;
+use crate::core::space_heat_demand::building_element::{
+    area_for_building_element_input, convert_uvalue_to_resistance, BuildingElement,
+    BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
+    BuildingElementOpaque, BuildingElementTransparent, NamedBuildingElementTransparent,
+};
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation_element::{
@@ -36,7 +40,7 @@ use crate::core::space_heat_demand::ventilation_element::{
     VentilationElement, VentilationElementInfiltration, WholeHouseExtractVentilation,
     WindowOpeningForCooling,
 };
-use crate::core::space_heat_demand::zone::{HeatBalance, NamedBuildingElement, Zone};
+use crate::core::space_heat_demand::zone::{HeatBalance, Zone};
 use crate::core::units::{
     kelvin_to_celsius, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
     WATTS_PER_KILOWATT,
@@ -46,22 +50,22 @@ use crate::core::water_heat_demand::dhw_demand::DomesticHotWaterDemand;
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails, BuildingElement,
-    ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput,
-    ControlDetails, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey,
-    EnergySupplyType, ExternalConditionsInput, FuelType, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
-    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
-    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
-    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
-    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
-    ZoneDictionary, ZoneInput,
+    ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
+    BuildingElement as BuildingElementInput, ColdWaterSourceDetails, ColdWaterSourceInput,
+    ColdWaterSourceType, Control as ControlInput, ControlDetails, EnergyDiverter,
+    EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
+    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControl as HeatSourceControlInput, HeatSourceControlType, HeatSourceWetDetails,
+    HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
+    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
+    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
+    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
@@ -186,9 +190,9 @@ impl Corpus {
         let zones: IndexMap<String, Zone> = input
             .zone
             .iter()
-            .map(|(i, zone)| {
+            .map(|(i, zone)| -> anyhow::Result<(String, Zone)> {
                 let ventilation = ventilation.as_ref().map(|ventilation| ventilation.lock());
-                ((*i).clone(), {
+                Ok(((*i).clone(), {
                     let (zone_for_corpus, heat_system_name, cool_system_name) = zone_from_input(
                         zone,
                         opening_area_total_from_zones,
@@ -198,7 +202,7 @@ impl Corpus {
                         external_conditions.clone(),
                         &infiltration,
                         simulation_time_iterator.clone().as_ref(),
-                    );
+                    )?;
                     if let Some(heat_system_name) = heat_system_name {
                         heat_system_name_for_zone.insert((*i).clone(), heat_system_name);
                     }
@@ -207,9 +211,9 @@ impl Corpus {
                     }
 
                     zone_for_corpus
-                })
+                }))
             })
-            .collect();
+            .collect::<anyhow::Result<_>>()?;
 
         if !has_unique_values(&heat_system_name_for_zone)
             || !has_unique_values(&cool_system_name_for_zone)
@@ -613,10 +617,7 @@ impl Corpus {
                     }
                 }
             }
-            gains_solar_zone.insert(
-                z_name,
-                zone.gains_solar(self.external_conditions.as_ref(), simulation_time_iteration),
-            );
+            gains_solar_zone.insert(z_name, zone.gains_solar(simulation_time_iteration));
         }
 
         // Calculate space heating and cooling demand for each zone and sum
@@ -2146,7 +2147,7 @@ fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
             zone.building_elements
                 .iter()
                 .map(|(_, building_element)| match building_element {
-                    BuildingElement::Transparent { height, width, .. } => height * width,
+                    BuildingElementInput::Transparent { height, width, .. } => height * width,
                     _ => 0.,
                 })
         })
@@ -2191,55 +2192,65 @@ fn zone_from_input<'a>(
     external_conditions: Arc<ExternalConditions>,
     infiltration: &'a VentilationElementInfiltration,
     simulation_time_iterator: &'a SimulationTimeIterator,
-) -> (Zone, Option<String>, Option<String>) {
+) -> anyhow::Result<(Zone, Option<String>, Option<String>)> {
     let ventilation = ventilation.as_ref();
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
 
-    let vent_cool_extra = window_opening_for_cooling.as_ref().map(|opening| {
-        let openings: HashMap<&String, &BuildingElement> = input
-            .building_elements
-            .iter()
-            .filter(|(_, el)| matches!(el, BuildingElement::Transparent { .. }))
-            .collect();
-        let opening_area_zone: f64 = openings
-            .values()
-            .map(|op| area_for_building_element_input(op))
-            .sum();
-        let opening_area_equivalent =
-            opening.equivalent_area * opening_area_zone / opening_area_total;
-        let control = input
-            .control_window_opening
-            .as_ref()
-            .and_then(|opening_control| {
-                controls
-                    .get(opening_control)
-                    .and_then(|c| match c.as_ref() {
-                        Control::SetpointTimeControl(ctrl) => Some((*ctrl).clone()),
-                        _ => None,
-                    })
+    let vent_cool_extra: Option<anyhow::Result<WindowOpeningForCooling>> =
+        window_opening_for_cooling.as_ref().map(|opening| {
+            let openings: HashMap<&String, &BuildingElementInput> = input
+                .building_elements
+                .iter()
+                .filter(|(_, el)| matches!(el, BuildingElementInput::Transparent { .. }))
+                .collect();
+            let opening_area_zone: f64 = openings
+                .values()
+                .map(|op| area_for_building_element_input(op))
+                .sum();
+            let opening_area_equivalent =
+                opening.equivalent_area * opening_area_zone / opening_area_total;
+            let control = input
+                .control_window_opening
+                .as_ref()
+                .and_then(|opening_control| {
+                    controls
+                        .get(opening_control)
+                        .and_then(|c| match c.as_ref() {
+                            Control::SetpointTimeControl(ctrl) => Some((*ctrl).clone()),
+                            _ => None,
+                        })
+                });
+            let natvent = ventilation.and_then(|v| match v {
+                VentilationElement::Natural(natural_ventilation) => {
+                    Some((*natural_ventilation).clone())
+                }
+                _ => None,
             });
-        let natvent = ventilation.and_then(|v| match v {
-            VentilationElement::Natural(natural_ventilation) => {
-                Some((*natural_ventilation).clone())
-            }
-            _ => None,
+            Ok(WindowOpeningForCooling::new(
+                opening_area_equivalent,
+                external_conditions.clone(),
+                openings
+                    .iter()
+                    .map(
+                        |(name, el)| -> anyhow::Result<NamedBuildingElementTransparent> {
+                            match building_element_from_input(el, external_conditions.clone())? {
+                                BuildingElement::Transparent(transparent) => {
+                                    Ok(NamedBuildingElementTransparent {
+                                        name: name.to_owned().to_owned(),
+                                        window: transparent,
+                                    })
+                                }
+                                _ => unreachable!(),
+                            }
+                        },
+                    )
+                    .collect::<anyhow::Result<Vec<NamedBuildingElementTransparent>>>()?,
+                control,
+                natvent,
+            ))
         });
-        let named_openings: Vec<NamedBuildingElement> = openings
-            .iter()
-            .map(|(name, element)| NamedBuildingElement {
-                name: name.to_string(),
-                element: (*element).clone(),
-            })
-            .collect::<Vec<_>>();
-        WindowOpeningForCooling::new(
-            opening_area_equivalent,
-            external_conditions.clone(),
-            named_openings,
-            control,
-            natvent,
-        )
-    });
+    let vent_cool_extra = vent_cool_extra.transpose()?;
 
     let infiltration_ventilation = VentilationElement::Infiltration((*infiltration).clone());
     let mut vent_elements: Vec<VentilationElement> = vec![infiltration_ventilation];
@@ -2248,11 +2259,20 @@ fn zone_from_input<'a>(
         vent_elements.push((*v).clone());
     }
 
-    (
+    Ok((
         Zone::new(
             input.area,
             input.volume,
-            input.building_elements.clone(),
+            input
+                .building_elements
+                .iter()
+                .map(|(element_name, el)| {
+                    Ok((
+                        element_name.to_owned(),
+                        building_element_from_input(el, external_conditions.clone())?,
+                    ))
+                })
+                .collect::<anyhow::Result<IndexMap<String, BuildingElement>>>()?,
             thermal_bridging_from_input(&input.thermal_bridging),
             vent_elements,
             vent_cool_extra,
@@ -2263,7 +2283,140 @@ fn zone_from_input<'a>(
         ),
         heat_system_name,
         cool_system_name,
-    )
+    ))
+}
+
+fn building_element_from_input(
+    input: &BuildingElementInput,
+    external_conditions: Arc<ExternalConditions>,
+) -> anyhow::Result<BuildingElement> {
+    Ok(match input {
+        BuildingElementInput::Opaque {
+            area,
+            pitch,
+            a_sol,
+            r_c,
+            k_m,
+            mass_distribution_class,
+            orientation,
+            base_height,
+            height,
+            width,
+            u_value,
+            ..
+        } => BuildingElement::Opaque(BuildingElementOpaque::new(
+            *area,
+            *pitch,
+            *a_sol,
+            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            *k_m,
+            *mass_distribution_class,
+            *orientation,
+            *base_height,
+            *height,
+            *width,
+            external_conditions,
+        )),
+        BuildingElementInput::Transparent {
+            u_value,
+            r_c,
+            pitch,
+            orientation,
+            g_value,
+            frame_area_fraction,
+            base_height,
+            height,
+            width,
+            shading,
+            ..
+        } => BuildingElement::Transparent(BuildingElementTransparent::new(
+            *pitch,
+            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            *orientation,
+            *g_value,
+            *frame_area_fraction,
+            *base_height,
+            *height,
+            *width,
+            shading.clone(),
+            external_conditions,
+        )),
+        BuildingElementInput::Ground {
+            area,
+            pitch,
+            u_value,
+            r_f,
+            k_m,
+            mass_distribution_class,
+            h_pi,
+            h_pe,
+            perimeter,
+            psi_wall_floor_junc,
+        } => BuildingElement::Ground(BuildingElementGround::new(
+            *area,
+            *pitch,
+            *u_value,
+            *r_f,
+            *k_m,
+            *mass_distribution_class,
+            *h_pi,
+            *h_pe,
+            *perimeter,
+            *psi_wall_floor_junc,
+            external_conditions,
+        )?),
+        BuildingElementInput::AdjacentZTC {
+            area,
+            pitch,
+            u_value,
+            r_c,
+            k_m,
+            mass_distribution_class,
+        } => BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
+            *area,
+            *pitch,
+            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            *k_m,
+            *mass_distribution_class,
+            external_conditions,
+        )),
+        BuildingElementInput::AdjacentZTUSimple {
+            area,
+            pitch,
+            u_value,
+            r_c,
+            r_u,
+            k_m,
+            mass_distribution_class,
+        } => BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
+            *area,
+            *pitch,
+            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            *r_u,
+            *k_m,
+            *mass_distribution_class,
+            external_conditions,
+        )),
+    })
+}
+
+fn init_r_c_for_building_element(
+    r_c: Option<f64>,
+    u_value: Option<f64>,
+    pitch: f64,
+) -> anyhow::Result<f64> {
+    Ok(if let Some(r_c) = r_c {
+        r_c
+    } else {
+        convert_uvalue_to_resistance(
+            u_value.ok_or_else(|| {
+                anyhow!(
+                    "Neither r_c nor u_value were provided for one of the building element inputs."
+                )
+            })?,
+            pitch,
+        )
+    })
 }
 
 fn set_up_energy_supply_unmet_demand_zones(

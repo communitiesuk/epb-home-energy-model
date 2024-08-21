@@ -1,11 +1,10 @@
-use anyhow::bail;
-
-use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::{BuildingElement as BuildingElementInput, MassDistributionClass};
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::bail;
 use std::f64::consts::PI;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 // Difference between external air temperature and sky temperature
@@ -32,6 +31,7 @@ const R_SE: f64 = 1.0 / (H_CE + H_RE);
 const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
 const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
+#[derive(Clone, Debug)]
 pub enum BuildingElement {
     Opaque(BuildingElementOpaque),
     AdjacentZTC(BuildingElementAdjacentZTC),
@@ -54,6 +54,12 @@ macro_rules! per_element {
 }
 
 pub trait BuildingElementBehaviour {
+    fn area(&self) -> f64;
+
+    fn a_sol(&self) -> f64;
+
+    fn therm_rad_to_sky(&self) -> f64;
+
     /// Determine direction of heat flow for a surface
     fn heat_flow_direction(&self, temp_int_air: f64, temp_int_surface: f64) -> HeatFlowDirection {
         let pitch = self.pitch();
@@ -158,8 +164,24 @@ pub(crate) use per_element;
 
 /// Implement common interface on BuildingElement wrapper to delegate down to specialised building element struct types
 impl BuildingElementBehaviour for BuildingElement {
+    fn area(&self) -> f64 {
+        per_element!(self, el => { el.area() })
+    }
+
+    fn a_sol(&self) -> f64 {
+        per_element!(self, el => { el.a_sol() })
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        per_element!(self, el => { el.therm_rad_to_sky() })
+    }
+
     fn heat_flow_direction(&self, temp_int_air: f64, temp_int_surface: f64) -> HeatFlowDirection {
         per_element!(self, el => { el.heat_flow_direction(temp_int_air, temp_int_surface) })
+    }
+
+    fn pitch(&self) -> f64 {
+        per_element!(self, el => { el.pitch() })
     }
 
     fn r_si(&self) -> f64 {
@@ -198,10 +220,6 @@ impl BuildingElementBehaviour for BuildingElement {
         per_element!(self, el => { el.shading_factors_direct_diffuse(simtime) })
     }
 
-    fn pitch(&self) -> f64 {
-        per_element!(self, el => { el.pitch() })
-    }
-
     fn k_pli(&self) -> &[f64] {
         per_element!(self, el => { el.k_pli() })
     }
@@ -237,6 +255,7 @@ fn init_therm_rad_to_sky(f_sky: f64) -> f64 {
 }
 
 /// A struct to represent opaque building elements (walls, roofs, etc.)
+#[derive(Clone, Debug)]
 pub struct BuildingElementOpaque {
     base_height: f64,
     width: f64,
@@ -328,16 +347,20 @@ impl BuildingElementOpaque {
 }
 
 impl BuildingElementBehaviour for BuildingElementOpaque {
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
     fn pitch(&self) -> f64 {
         self.pitch
-    }
-
-    fn k_pli(&self) -> &[f64] {
-        &self.k_pli
-    }
-
-    fn h_pli(&self) -> &[f64] {
-        &self.h_pli
     }
 
     fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
@@ -366,6 +389,14 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
             )
     }
 
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
         self.external_conditions.air_temp(&simtime)
     }
@@ -381,6 +412,7 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
 }
 
 /// A struct to represent building elements adjacent to a thermally conditioned zone (ZTC)
+#[derive(Clone, Debug)]
 pub struct BuildingElementAdjacentZTC {
     area: f64,
     pitch: f64,
@@ -457,16 +489,20 @@ impl BuildingElementAdjacentZTC {
 }
 
 impl BuildingElementBehaviour for BuildingElementAdjacentZTC {
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
     fn pitch(&self) -> f64 {
         self.pitch
-    }
-
-    fn k_pli(&self) -> &[f64] {
-        &self.k_pli
-    }
-
-    fn h_pli(&self) -> &[f64] {
-        &self.h_pli
     }
 
     fn h_ce(&self) -> f64 {
@@ -481,6 +517,14 @@ impl BuildingElementBehaviour for BuildingElementAdjacentZTC {
         // therefore according to BS EN ISO 52016-1:2017, section 6.5.6.3.6,
         // external heat transfer coefficients are zero
         0.0
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
     }
 
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
@@ -498,6 +542,7 @@ impl BuildingElementBehaviour for BuildingElementAdjacentZTC {
 }
 
 /// A struct to represent building elements adjacent to a thermally unconditioned zone (ZTU)
+#[derive(Clone, Debug)]
 pub struct BuildingElementAdjacentZTUSimple {
     area: f64,
     pitch: f64,
@@ -581,16 +626,20 @@ impl BuildingElementAdjacentZTUSimple {
 }
 
 impl BuildingElementBehaviour for BuildingElementAdjacentZTUSimple {
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
     fn pitch(&self) -> f64 {
         self.pitch
-    }
-
-    fn k_pli(&self) -> &[f64] {
-        &self.k_pli
-    }
-
-    fn h_pli(&self) -> &[f64] {
-        &self.h_pli
     }
 
     fn h_ce(&self) -> f64 {
@@ -610,6 +659,14 @@ impl BuildingElementBehaviour for BuildingElementAdjacentZTUSimple {
         0.0
     }
 
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
         self.external_conditions.air_temp(&simtime)
     }
@@ -625,6 +682,7 @@ impl BuildingElementBehaviour for BuildingElementAdjacentZTUSimple {
 }
 
 /// A struct to represent ground building elements
+#[derive(Clone, Debug)]
 pub struct BuildingElementGround {
     area: f64,
     pitch: f64,
@@ -749,16 +807,20 @@ impl BuildingElementGround {
 }
 
 impl BuildingElementBehaviour for BuildingElementGround {
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
     fn pitch(&self) -> f64 {
         self.pitch
-    }
-
-    fn k_pli(&self) -> &[f64] {
-        &self.k_pli
-    }
-
-    fn h_pli(&self) -> &[f64] {
-        &self.h_pli
     }
 
     fn h_ce(&self) -> f64 {
@@ -767,6 +829,14 @@ impl BuildingElementBehaviour for BuildingElementGround {
 
     fn h_re(&self) -> f64 {
         self.h_re
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
     }
 
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
@@ -806,6 +876,7 @@ impl BuildingElementBehaviour for BuildingElementGround {
 }
 
 /// A class to represent transparent building elements (windows etc.)
+#[derive(Clone, Debug)]
 pub struct BuildingElementTransparent {
     area: f64,
     r_c: f64,
@@ -845,7 +916,7 @@ impl BuildingElementTransparent {
         let f_sky = sky_view_factor(&pitch);
 
         Self {
-            area: BuildingElementInput::calculate_area(height, width),
+            area: height * width,
             r_c,
             pitch,
             orientation,
@@ -895,29 +966,20 @@ impl BuildingElementTransparent {
 }
 
 impl BuildingElementBehaviour for BuildingElementTransparent {
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
     fn pitch(&self) -> f64 {
         self.pitch
-    }
-
-    fn k_pli(&self) -> &[f64] {
-        &self.k_pli
-    }
-
-    fn h_pli(&self) -> &[f64] {
-        &self.h_pli
-    }
-
-    fn shading_factors_direct_diffuse(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
-        self.external_conditions
-            .shading_reduction_factor_direct_diffuse(
-                self.base_height,
-                self.projected_height,
-                self.width,
-                self.pitch,
-                self.orientation,
-                &self.shading,
-                simtime,
-            )
     }
 
     fn solar_gains(&self, simtime: SimulationTimeIteration) -> f64 {
@@ -936,6 +998,27 @@ impl BuildingElementBehaviour for BuildingElementTransparent {
             * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
             * self.area
             * (1. - self.frame_area_fraction)
+    }
+
+    fn shading_factors_direct_diffuse(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+        self.external_conditions
+            .shading_reduction_factor_direct_diffuse(
+                self.base_height,
+                self.projected_height,
+                self.width,
+                self.pitch,
+                self.orientation,
+                &self.shading,
+                simtime,
+            )
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
     }
 
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
@@ -957,134 +1040,31 @@ impl BuildingElementBehaviour for BuildingElementTransparent {
     }
 }
 
-impl BuildingElementInput {
-    pub fn fabric_heat_loss(&self) -> f64 {
-        match *self {
-            BuildingElementInput::Opaque {
-                u_value,
-                r_c,
-                area,
-                pitch,
-                ..
-            } => {
-                let u_value =
-                    u_value.unwrap_or_else(|| 1. / (r_c.unwrap() + R_SE + r_si_for_pitch(pitch)));
-                area * u_value
-            }
-            BuildingElementInput::AdjacentZTC { .. } => 0.0, // no heat loss to thermally conditioned zones
-            BuildingElementInput::AdjacentZTUSimple {
-                u_value,
-                r_c,
-                area,
-                pitch,
-                ..
-            } => {
-                let u_value =
-                    u_value.unwrap_or_else(|| 1. / (r_c.unwrap() + R_SE + r_si_for_pitch(pitch)));
-                area * u_value
-            }
-            BuildingElementInput::Ground { u_value, area, .. } => u_value * area,
-            BuildingElementInput::Transparent {
-                u_value,
-                r_c,
-                pitch,
-                ..
-            } => {
-                // Effective window U-value includes assumed use of curtains/blinds, see
-                // SAP10.2 spec, paragraph 3.2
-                // TODO Confirm this is still the desired approach for SAP 11
-                let r_curtains_blinds = 0.04;
-                let u_value = u_value.unwrap_or_else(|| {
-                    1. / ((r_c.unwrap() + r_si_for_pitch(pitch) + R_SE) + r_curtains_blinds)
-                });
-                area_for_building_element_input(self) * u_value
-            }
-        }
+pub struct NamedBuildingElementTransparent {
+    pub name: String,
+    pub window: BuildingElementTransparent,
+}
+
+// equality and hashing based on name for identity
+
+impl PartialEq for NamedBuildingElementTransparent {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
     }
+}
 
-    pub fn heat_capacity(&self) -> f64 {
-        match *self {
-            BuildingElementInput::Opaque { area, k_m, .. } => {
-                area * (k_m / JOULES_PER_KILOJOULE as f64)
-            }
-            BuildingElementInput::AdjacentZTC { area, k_m, .. } => {
-                area * (k_m / JOULES_PER_KILOJOULE as f64)
-            }
-            BuildingElementInput::AdjacentZTUSimple { area, k_m, .. } => {
-                area * (k_m / JOULES_PER_KILOJOULE as f64)
-            }
-            BuildingElementInput::Ground { area, k_m, .. } => {
-                area * (k_m / JOULES_PER_KILOJOULE as f64)
-            }
-            BuildingElementInput::Transparent { .. } => 0.0, // Set to zero as not included in heat loss calculations
-        }
-    }
+impl Eq for NamedBuildingElementTransparent {}
 
-    /// Return calculated solar gains using pitch and orientation of element
-    pub fn solar_gains(
-        &self,
-        external_conditions: &ExternalConditions,
-        simulation_time: SimulationTimeIteration,
-    ) -> f64 {
-        match *self {
-            BuildingElementInput::Transparent {
-                height,
-                width,
-                pitch,
-                orientation,
-                g_value,
-                frame_area_fraction,
-                ..
-            } => {
-                let (i_sol_dir, i_sol_dif, _, _) = external_conditions
-                    .calculated_direct_diffuse_total_irradiance(
-                        pitch,
-                        orientation,
-                        false,
-                        &simulation_time,
-                    );
-                let g_value = Self::convert_g_value(g_value);
-
-                let (f_sh_dir, f_sh_dif) =
-                    shading_factors_direct_diffuse_for(self, external_conditions, simulation_time);
-                g_value
-                    * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
-                    * Self::calculate_area(height, width)
-                    * (1. - frame_area_fraction)
-            }
-            _ => 0.,
-        }
-    }
-
-    /// Utility function, expected to only be needed temporarily before refactor to build out BuildingElement instance methods
-    fn calculate_area(height: f64, width: f64) -> f64 {
-        height * width
-    }
-
-    /// return g_value corrected for angle of solar radiation
-    fn convert_g_value(g_value: f64) -> f64 {
-        // TODO (from Python) for windows with scattering glazing or solar shading provisions
-        // there is a different, more complex method for conversion that depends on
-        // timestep (via solar altitude).
-        // suggest this is implemented at the same time as window shading (devices
-        // rather than fixed features) as will also need to link to shading schedule.
-        // see ISO 52016 App E. Page 177
-        // How do we know whether a window has "scattering glazing"?
-        //
-        // g_value = agl * g_alt + (1 - agl) * g_dif
-
-        let fw = 0.90;
-        // default from ISO 52016 App B Table B.22
-        fw * g_value
+impl Hash for NamedBuildingElementTransparent {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
     }
 }
 
 pub fn area_for_building_element_input(element: &BuildingElementInput) -> f64 {
     match *element {
         BuildingElementInput::Opaque { area: a, .. } => a,
-        BuildingElementInput::Transparent { height, width, .. } => {
-            BuildingElementInput::calculate_area(height, width)
-        }
+        BuildingElementInput::Transparent { height, width, .. } => height * width,
         BuildingElementInput::Ground { area: a, .. } => a,
         BuildingElementInput::AdjacentZTC { area: a, .. } => a,
         BuildingElementInput::AdjacentZTUSimple { area: a, .. } => a,
@@ -1105,180 +1085,7 @@ pub fn projected_height(tilt: f64, height: f64) -> f64 {
     ph
 }
 
-/// Calculate the number of nodes for a building element
-/// (this is a shortcut to properly implementing building elements!)
-pub fn number_of_building_element_nodes(element: &BuildingElementInput) -> u32 {
-    k_pli_for(element).len() as u32
-}
-
-/// Return number of nodes excluding external and internal layers
-pub fn number_of_inside_nodes(element: &BuildingElementInput) -> u32 {
-    number_of_building_element_nodes(element) - 2
-}
-
-/// Calculate node heat capacities (k_pli)
-/// according to BS EN ISO 52016-1:2017, section 6.5.7.3
-pub fn k_pli_for(element: &BuildingElementInput) -> Vec<f64> {
-    match element {
-        BuildingElementInput::Opaque {
-            mass_distribution_class: dist_class,
-            k_m,
-            ..
-        } => match dist_class {
-            MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
-            MassDistributionClass::E => vec![*k_m, 0.0, 0.0, 0.0, 0.0],
-            MassDistributionClass::IE => {
-                let k_ie = k_m / 2.0;
-                vec![k_ie, 0.0, 0.0, 0.0, k_ie]
-            }
-            MassDistributionClass::D => {
-                let k_inner = *k_m / 4.0;
-                let k_outer = *k_m / 8.0;
-                vec![k_outer, k_inner, k_inner, k_inner, k_outer]
-            }
-            MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
-        },
-        BuildingElementInput::AdjacentZTC {
-            mass_distribution_class: dist_class,
-            k_m,
-            ..
-        } => match dist_class {
-            MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
-            MassDistributionClass::E => vec![*k_m, 0.0, 0.0, 0.0, 0.0],
-            MassDistributionClass::IE => {
-                let k_ie = *k_m / 2.0;
-                vec![k_ie, 0.0, 0.0, 0.0, k_ie]
-            }
-            MassDistributionClass::D => {
-                let k_inner = *k_m / 4.0;
-                let k_outer = *k_m / 8.0;
-                vec![k_outer, k_inner, k_inner, k_inner, k_outer]
-            }
-            MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
-        },
-        BuildingElementInput::AdjacentZTUSimple {
-            mass_distribution_class: dist_class,
-            k_m,
-            ..
-        } => match dist_class {
-            MassDistributionClass::I => vec![0.0, 0.0, 0.0, 0.0, *k_m],
-            MassDistributionClass::E => vec![*k_m, 0.0, 0.0, 0.0, 0.0],
-            MassDistributionClass::IE => {
-                let k_ie = k_m / 2.0;
-                vec![k_ie, 0.0, 0.0, 0.0, k_ie]
-            }
-            MassDistributionClass::D => {
-                let k_inner = *k_m / 4.0;
-                let k_outer = *k_m / 8.0;
-                vec![k_outer, k_inner, k_inner, k_inner, k_outer]
-            }
-            MassDistributionClass::M => vec![0.0, 0.0, *k_m, 0.0, 0.0],
-        },
-        BuildingElementInput::Ground {
-            mass_distribution_class: dist_class,
-            k_m,
-            ..
-        } => {
-            let k_gr = K_GR_FOR_GROUND;
-            match dist_class {
-                MassDistributionClass::I => vec![0.0, k_gr, 0.0, 0.0, *k_m],
-                MassDistributionClass::E => vec![0.0, k_gr, *k_m, 0.0, 0.0],
-                MassDistributionClass::IE => {
-                    let k_ie = *k_m / 2.0;
-                    vec![0.0, k_gr, k_ie, 0.0, k_ie]
-                }
-                MassDistributionClass::D => {
-                    let k_inner = *k_m / 2.0;
-                    let k_outer = *k_m / 4.0;
-                    vec![0.0, k_gr, k_outer, k_inner, k_outer]
-                }
-                MassDistributionClass::M => vec![0.0, k_gr, 0.0, *k_m, 0.0],
-            }
-        }
-        &BuildingElementInput::Transparent { .. } => vec![0.0, 0.0],
-    }
-}
-
-/// Calculate node conductances (h_pli)
-/// according to BS EN ISO 52016-1:2017, section 6.5.7.3
-pub fn h_pli_for(element: &BuildingElementInput) -> Vec<f64> {
-    match element {
-        BuildingElementInput::Opaque { .. }
-        | BuildingElementInput::AdjacentZTC { .. }
-        | BuildingElementInput::AdjacentZTUSimple { .. } => {
-            let r_c = r_c_for(element);
-            let h_outer = 6.0 / r_c;
-            let h_inner = 3.0 / r_c;
-
-            vec![h_outer, h_inner, h_inner, h_outer]
-        }
-        BuildingElementInput::Ground { u_value, .. } => {
-            let r_c = 1.0 / u_value;
-            let r_gr = R_GR_FOR_GROUND;
-
-            vec![
-                2.0 / r_gr,
-                1.0 / (r_c / 4.0 + r_gr / 2.0),
-                2.0 / r_c,
-                4.0 / r_c,
-            ]
-        }
-        BuildingElementInput::Transparent { .. } => vec![1.0 / r_c_for(element)],
-    }
-}
-
-// this is based on __init_resistance_or_uvalue in project.py
-fn r_c_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque {
-            r_c,
-            u_value,
-            pitch,
-            ..
-        } => match (r_c, u_value) {
-            (Some(r_c), _) => *r_c,
-            (None, Some(u_value)) => convert_uvalue_to_resistance(*u_value, *pitch),
-            _ => panic!("either r_c or uvalue needed to be provided for this element and this should have been caught at input validation")
-        },
-        BuildingElementInput::Transparent {
-            r_c,
-            u_value,
-            pitch,
-            ..
-        } => match (r_c, u_value) {
-            (Some(r_c), _) => *r_c,
-            (None, Some(u_value)) => convert_uvalue_to_resistance(*u_value, *pitch),
-            _ => panic!("either r_c or uvalue needed to be provided for this element and this should have been caught at input validation")
-        },
-        BuildingElementInput::Ground {
-            u_value,
-            pitch,
-            ..
-        } => convert_uvalue_to_resistance(*u_value, *pitch),
-        BuildingElementInput::AdjacentZTC {
-            r_c,
-            u_value,
-            pitch,
-            ..
-        } => match (r_c, u_value) {
-            (Some(r_c), _) => *r_c,
-            (None, Some(u_value)) => convert_uvalue_to_resistance(*u_value, *pitch),
-            _ => panic!("either r_c or uvalue needed to be provided for this element and this should have been caught at input validation")
-        },
-        BuildingElementInput::AdjacentZTUSimple {
-            r_c,
-            u_value,
-            pitch,
-            ..
-        } => match (r_c, u_value) {
-            (Some(r_c), _) => *r_c,
-            (None, Some(u_value)) => convert_uvalue_to_resistance(*u_value, *pitch),
-            _ => panic!("either r_c or uvalue needed to be provided for this element and this should have been caught at input validation")
-        },
-    }
-}
-
-fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
+pub fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
     (1.0 / u_value) - r_si_for_pitch(pitch) - R_SE
 }
 
@@ -1293,181 +1100,6 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
     }
 }
 
-/// Return external convective heat transfer coefficient, in W / (m2.K)
-pub fn h_ce_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque { .. } => H_CE,
-        BuildingElementInput::AdjacentZTC { .. } => {
-            // Element is adjacent to another building / thermally conditioned zone
-            // therefore according to BS EN ISO 52016-1:2017, section 6.5.6.3.6,
-            // external heat transfer coefficients are zero
-            0.0
-        }
-        BuildingElementInput::AdjacentZTUSimple { r_u, .. } => {
-            // Add an additional thermal resistance to the outside of the wall and
-            // incorporate this in the values for the external surface heat transfer
-            // coefficient.
-            // As this is an adjusted figure in this class, and the split between
-            // h_ce and h_re does not affect the calculation results, assign entire
-            // effective surface heat transfer to h_ce and set h_re to zero.
-            1.0 / ((1.0 / (H_CE + H_RE)) + r_u)
-        }
-        BuildingElementInput::Ground { u_value, r_f, .. } => {
-            // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
-            let r_vi = (1.0 / u_value) - R_SI_FOR_GROUND - r_f - R_GR_FOR_GROUND; // in m2.K/W
-            assert!(r_vi > 0.0, "r_vi should be greater than zero. check u-value and r_f inputs for floors - this should be checked at input validation");
-
-            1.0 / r_vi
-        }
-        BuildingElementInput::Transparent { .. } => H_CE,
-    }
-}
-
-/// Return external radiative heat transfer coefficient, in W / (m2.K)
-pub fn h_re_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque { .. } => H_RE,
-        BuildingElementInput::AdjacentZTC { .. } => {
-            // Element is adjacent to another building / thermally conditioned zone
-            // therefore according to BS EN ISO 52016-1:2017, section 6.5.6.3.6,
-            // external heat transfer coefficients are zero
-            0.0
-        }
-        BuildingElementInput::AdjacentZTUSimple { .. } => {
-            // As this is an adjusted figure in this class (=variant of building element),
-            // and the split between h_ce and h_re does not affect the calculation results,
-            // assign entire effective surface heat transfer to h_ce and set h_re to zero.
-            0.0
-        }
-        BuildingElementInput::Ground { .. } => 0.0,
-        BuildingElementInput::Transparent { .. } => H_RE,
-    }
-}
-
-pub fn i_sol_dir_dif_for(
-    element: &BuildingElementInput,
-    external_conditions: &ExternalConditions,
-    simulation_time: &SimulationTimeIteration,
-) -> (f64, f64) {
-    match element {
-        BuildingElementInput::Opaque {
-            pitch, orientation, ..
-        } => {
-            let (i_sol_dir, i_sol_dif, _, _) = external_conditions
-                .calculated_direct_diffuse_total_irradiance(
-                    *pitch,
-                    *orientation,
-                    false,
-                    simulation_time,
-                );
-
-            (i_sol_dir, i_sol_dif)
-        }
-        _ => (0.0, 0.0),
-    }
-}
-
-pub fn shading_factors_direct_diffuse_for(
-    element: &BuildingElementInput,
-    external_conditions: &ExternalConditions,
-    simulation_time: SimulationTimeIteration,
-) -> (f64, f64) {
-    match element {
-        BuildingElementInput::Opaque {
-            base_height,
-            height,
-            pitch,
-            width,
-            orientation,
-            ..
-        } => external_conditions.shading_reduction_factor_direct_diffuse(
-            *base_height,
-            projected_height(*pitch, *height),
-            *width,
-            *pitch,
-            *orientation,
-            &Default::default(),
-            simulation_time,
-        ),
-        BuildingElementInput::Transparent {
-            base_height,
-            height,
-            width,
-            pitch,
-            orientation,
-            shading,
-            ..
-        } => external_conditions.shading_reduction_factor_direct_diffuse(
-            *base_height,
-            projected_height(*pitch, *height),
-            *width,
-            *pitch,
-            *orientation,
-            shading,
-            simulation_time,
-        ),
-        _ => (1.0, 1.0),
-    }
-}
-
-/// Return the temperature on the other side of the building element
-pub fn temp_ext_for(
-    element: &BuildingElementInput,
-    external_conditions: &ExternalConditions,
-    simulation_time: &SimulationTimeIteration,
-) -> f64 {
-    match element {
-        BuildingElementInput::Ground {
-            perimeter,
-            psi_wall_floor_junc,
-            u_value,
-            area,
-            h_pi,
-            h_pe,
-            ..
-        } => {
-            let temp_ext_annual = external_conditions
-                .air_temp_annual()
-                .expect("no annual air temp available");
-            let temp_ext_month = external_conditions
-                .air_temp_monthly(simulation_time.current_month_start_end_hours());
-
-            let current_month = simulation_time.current_month().unwrap_or(0);
-            let temp_int_month = TEMP_INT_MONTHLY_FOR_GROUND[current_month as usize];
-
-            let temp_int_annual = average_monthly_to_annual(TEMP_INT_MONTHLY_FOR_GROUND);
-
-            // BS EN ISO 13370:2017 Eqn C.4
-            let heat_flow_month = u_value * area * (temp_int_annual - temp_ext_annual)
-                + perimeter * psi_wall_floor_junc * (temp_int_month - temp_ext_month)
-                - h_pi * (temp_int_annual - temp_int_month)
-                + h_pe * (temp_ext_annual - temp_ext_month);
-
-            // BS EN ISO 13370:2017 Eqn F.2
-            temp_int_month
-                - (heat_flow_month
-                    - (perimeter * psi_wall_floor_junc * (temp_int_annual - temp_ext_annual)))
-                    / (area * u_value)
-        }
-        _ => external_conditions.air_temp(simulation_time),
-    }
-}
-
-pub fn a_sol_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque { a_sol, .. } => *a_sol,
-        _ => 0.0,
-    }
-}
-
-fn f_sky_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque { pitch, .. } => sky_view_factor(pitch),
-        BuildingElementInput::Transparent { pitch, .. } => sky_view_factor(pitch),
-        _ => 0.0,
-    }
-}
-
 /// Calculate longwave sky view factor from pitch in degrees
 fn sky_view_factor(pitch: &f64) -> f64 {
     // # TODO account for shading
@@ -1477,99 +1109,11 @@ fn sky_view_factor(pitch: &f64) -> f64 {
     0.5 * (1.0 + pitch_rads.cos())
 }
 
-pub fn therm_rad_to_sky_for(element: &BuildingElementInput) -> f64 {
-    f_sky_for(element) * h_re_for(element) * TEMP_DIFF_SKY
-}
-
-/// Return internal convective heat transfer coefficient, in W / (m2.K)
-pub fn h_ci_for(element: &BuildingElementInput, temp_int_air: f64, temp_int_surface: f64) -> f64 {
-    match heat_flow_direction_for(element, temp_int_air, temp_int_surface) {
-        HeatFlowDirection::Horizontal => H_CI_HORIZONTAL,
-        HeatFlowDirection::Upwards => H_CI_UPWARDS,
-        HeatFlowDirection::Downwards => H_CI_DOWNWARDS,
-    }
-}
-
-/// Determine direction of heat flow for a surface
-fn heat_flow_direction_for(
-    element: &BuildingElementInput,
-    temp_int_air: f64,
-    temp_int_surface: f64,
-) -> HeatFlowDirection {
-    let pitch = pitch_for(element);
-    if (PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR).contains(&pitch) {
-        HeatFlowDirection::Horizontal
-    } else {
-        let inwards_heat_flow = temp_int_air < temp_int_surface;
-        let is_floor = pitch > PITCH_LIMIT_HORIZ_FLOOR;
-        let is_ceiling = pitch < PITCH_LIMIT_HORIZ_CEILING;
-        let upwards_heat_flow =
-            (is_floor && inwards_heat_flow) || (is_ceiling && !inwards_heat_flow);
-        if upwards_heat_flow {
-            HeatFlowDirection::Upwards
-        } else {
-            HeatFlowDirection::Downwards
-        }
-    }
-}
-
-fn pitch_for(element: &BuildingElementInput) -> f64 {
-    match element {
-        BuildingElementInput::Opaque { pitch, .. } => *pitch,
-        BuildingElementInput::AdjacentZTC { pitch, .. } => *pitch,
-        BuildingElementInput::AdjacentZTUSimple { pitch, .. } => *pitch,
-        BuildingElementInput::Ground { pitch, .. } => *pitch,
-        BuildingElementInput::Transparent { pitch, .. } => *pitch,
-    }
-}
-
-/// Return internal radiative heat transfer coefficient, in W / (m2.K)
-pub fn h_ri_for(_: &BuildingElementInput) -> f64 {
-    H_RI
-}
-
-pub fn mid_height_for(element: &BuildingElementInput) -> Option<f64> {
-    match element {
-        BuildingElementInput::Transparent {
-            base_height,
-            height,
-            ..
-        } => Some(base_height + height / 2.0),
-        _ => None,
-    }
-}
-
-pub fn orientation_for(element: &BuildingElementInput) -> Option<f64> {
-    match element {
-        BuildingElementInput::Transparent { orientation, .. } => Some(*orientation),
-        _ => None,
-    }
-}
-
-pub fn projected_height_for_transparent_element(element: &BuildingElementInput) -> Option<f64> {
-    match element {
-        BuildingElementInput::Transparent { pitch, height, .. } => {
-            Some(projected_height(*pitch, *height))
-        }
-        _ => None,
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum HeatFlowDirection {
     Horizontal,
     Upwards,
     Downwards,
-}
-
-pub fn element_from_named(named_element: &NamedBuildingElement) -> &BuildingElementInput {
-    let NamedBuildingElement { element, .. } = named_element;
-    element
-}
-
-pub fn cloned_element_from_named(named_element: &NamedBuildingElement) -> BuildingElementInput {
-    let NamedBuildingElement { element, .. } = named_element;
-    (*element).clone()
 }
 
 // Thermal properties of ground from BS EN ISO 13370:2017 Table 7
@@ -1757,7 +1301,7 @@ mod tests {
         let area_inc = 2.5;
         for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
-                be.area,
+                be.area(),
                 20.0 + i as f64 * area_inc,
                 "incorrect area returned"
             );
@@ -1837,7 +1381,7 @@ mod tests {
         let a_sol_inc = 0.01;
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_relative_eq!(be.a_sol, 0.6 + i as f64 * a_sol_inc,);
+            assert_relative_eq!(be.a_sol(), 0.6 + i as f64 * a_sol_inc,);
         }
     }
 
@@ -1846,7 +1390,7 @@ mod tests {
         let results = [0.0, 6.6691785923823135, 22.77, 38.87082140761768, 45.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_relative_eq!(be.therm_rad_to_sky, results[i],);
+            assert_relative_eq!(be.therm_rad_to_sky(), results[i],);
         }
     }
 
@@ -1987,7 +1531,7 @@ mod tests {
         let area_inc = 2.5;
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
-            assert_relative_eq!(be.area, 20.0 + i as f64 * area_inc,);
+            assert_relative_eq!(be.area(), 20.0 + i as f64 * area_inc,);
         }
     }
 
@@ -2070,7 +1614,7 @@ mod tests {
         adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(be.a_sol, 0.0, "incorrect a_sol returned");
+            assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
         }
     }
 
@@ -2079,7 +1623,7 @@ mod tests {
         adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
-            assert_eq!(be.therm_rad_to_sky, 0.0, "incorrect a_sol returned");
+            assert_eq!(be.therm_rad_to_sky(), 0.0, "incorrect a_sol returned");
         }
     }
 
@@ -2322,7 +1866,7 @@ mod tests {
         let area_inc = 2.5;
 
         for (i, be) in ground_building_elements.iter().enumerate() {
-            assert_eq!(be.area, 20.0 + i as f64 * area_inc,);
+            assert_eq!(be.area(), 20.0 + i as f64 * area_inc,);
         }
     }
 
@@ -2401,7 +1945,7 @@ mod tests {
     #[rstest]
     pub fn test_a_sol_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
-            assert_eq!(be.a_sol, 0.0, "incorrect a_sol returned");
+            assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
         }
     }
 
@@ -2409,7 +1953,8 @@ mod tests {
     pub fn test_therm_rad_to_sky_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
             assert_eq!(
-                be.therm_rad_to_sky, 0.0,
+                be.therm_rad_to_sky(),
+                0.0,
                 "incorrect therm_rad_to_sky returned"
             );
         }
@@ -2521,7 +2066,8 @@ mod tests {
     #[rstest]
     pub fn test_area_for_transparent(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
-            transparent_building_element.area, 5.0,
+            transparent_building_element.area(),
+            5.0,
             "incorrect area returned"
         );
     }
@@ -2591,7 +2137,8 @@ mod tests {
     #[rstest]
     pub fn test_a_sol_for_transparent(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
-            transparent_building_element.a_sol, 0.0,
+            transparent_building_element.a_sol(),
+            0.0,
             "incorrect a_sol returned"
         );
     }
@@ -2601,7 +2148,8 @@ mod tests {
         transparent_building_element: BuildingElementTransparent,
     ) {
         assert_eq!(
-            transparent_building_element.therm_rad_to_sky, 22.77,
+            transparent_building_element.therm_rad_to_sky(),
+            22.77,
             "incorrect therm_rad_to_sky returned"
         );
     }
