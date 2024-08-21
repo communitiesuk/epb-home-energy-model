@@ -1557,8 +1557,6 @@ pub enum BuildingElement {
         thermal_resistance_of_insulation: Option<f64>,
         area_per_perimeter_vent: Option<f64>,
         shield_fact_location: Option<WindShieldLocation>,
-        h_pi: Option<f64>, // (need to make a separate definition for building elements that contain h_pi and h_pe)
-        h_pe: Option<f64>,
         thickness_walls: f64,
         depth_basement_floor: Option<f64>,
         #[serde(rename = "thermal_resist_walls_base")]
@@ -1622,7 +1620,7 @@ pub struct WindowPart {
     pub mid_height_air_flow_path: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum FloorType {
     #[serde(rename = "Slab_no_edge_insulation")]

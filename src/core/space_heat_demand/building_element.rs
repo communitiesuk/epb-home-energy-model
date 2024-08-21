@@ -1,8 +1,11 @@
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
-use crate::input::{BuildingElement as BuildingElementInput, MassDistributionClass};
+use crate::input::{
+    BuildingElement as BuildingElementInput, EdgeInsulation, FloorType, MassDistributionClass,
+    WindShieldLocation,
+};
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -28,7 +31,7 @@ const R_SE: f64 = 1.0 / (H_CE + H_RE);
 
 // From BR 443: The values under "horizontal" apply to heat flow
 // directions +/- 30 degrees from horizontal plane.
-const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
+pub const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
 const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[derive(Clone, Debug)]
@@ -272,6 +275,7 @@ pub struct BuildingElementOpaque {
     r_c: f64,
     k_m: f64,
     pub a_sol: f64,
+    external_pitch: f64,
     pitch: f64,
     pub therm_rad_to_sky: f64,
     h_pli: [f64; 4],
@@ -280,6 +284,7 @@ pub struct BuildingElementOpaque {
 
 /// Arguments (names based on those in BS EN ISO 52016-1:2017):
 /// * `area` - net area of the opaque building element (i.e. minus any windows / doors / etc.)
+/// * `is_unheated_pitched_roof`
 /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
 ///          where 0 means the external surface is facing up, 90 means the external
 ///          surface is vertical and 180 means the external surface is facing down
@@ -303,6 +308,7 @@ pub struct BuildingElementOpaque {
 impl BuildingElementOpaque {
     pub fn new(
         area: f64,
+        is_unheated_pitched_roof: bool,
         pitch: f64,
         a_sol: f64,
         r_c: f64,
@@ -314,6 +320,13 @@ impl BuildingElementOpaque {
         width: f64,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
+        // To determine if element is an unheated pitched roof
+        let (external_pitch, internal_pitch) = if is_unheated_pitched_roof {
+            (pitch, 0.)
+        } else {
+            (pitch, pitch)
+        };
+
         Self {
             base_height,
             width,
@@ -324,8 +337,9 @@ impl BuildingElementOpaque {
             r_c,
             k_m,
             a_sol,
-            pitch,
-            therm_rad_to_sky: init_therm_rad_to_sky(sky_view_factor(&pitch)),
+            pitch: internal_pitch,
+            external_pitch,
+            therm_rad_to_sky: init_therm_rad_to_sky(sky_view_factor(&external_pitch)),
             // Calculate node conductances (h_pli) and node heat capacities (k_pli)
             // according to BS EN ISO 52016-1:2017, section 6.5.7.2
             h_pli: {
@@ -373,7 +387,7 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
         let (i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions
             .calculated_direct_diffuse_total_irradiance(
-                self.pitch,
+                self.external_pitch,
                 self.orientation,
                 false,
                 &simtime,
@@ -391,7 +405,7 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
                 self.base_height,
                 self.projected_height,
                 self.width,
-                self.pitch,
+                self.external_pitch,
                 self.orientation,
                 &Default::default(),
                 simtime,
@@ -713,12 +727,17 @@ pub struct BuildingElementGround {
 
 impl BuildingElementGround {
     /// Arguments (names based on those in BS EN ISO 52016-1:2017):
-    /// * `area`     - area (in m2) of this building element
+    /// * `total_area` - total area (in m2) of the building element across entire dwelling.
+    ///                  If the Floor is divided among several zones,
+    ///                  this is the total area across all zones.
+    /// * `area`     - area (in m2) of this building element within the zone
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
     /// * `u_value`  - steady-state thermal transmittance of floor, including the
     ///             effect of the ground, in W / (m2.K)
+    ///             Calculated for the entire ground floor,
+    ///             even if it is distributed among several zones.
     /// * `r_f`      - total thermal resistance of all layers in the floor construction, in (m2.K) / W
     /// * `k_m`      - areal heat capacity of the ground floor element, in J / (m2.K)
     /// * `mass_distribution_class`
@@ -728,23 +747,56 @@ impl BuildingElementGround {
     ///             - 'IE': mass divided over internal and external side
     ///             - 'D':  mass equally distributed
     ///             - 'M':  mass concentrated inside
-    /// * `h_pi`     - internal periodic heat transfer coefficient, as defined in
-    ///             BS EN ISO 13370:2017 Annex H, in W / K
-    /// * `h_pe`     - internal periodic heat transfer coefficient, as defined in
-    ///             BS EN ISO 13370:2017 Annex H, in W / K
-    /// * `perimeter` - perimeter of the floor, in metres
+    /// * `perimeter` - perimeter of the floor, in metres. Calculated for the entire ground floor,
+    ///                 even if it is distributed among several zones.
     /// * `psi_wall_floor_junc` - linear thermal transmittance of the junction
     ///                        between the floor and the walls, in W / (m.K)
     /// * `external_conditions` - reference to ExternalConditions object
+    /// * `floor_type`
+    ///        - Slab_no_edge_insulation
+    ///        - Slab_edge_insulation
+    ///        - Suspended_floor
+    ///        - Heated_basement
+    ///        - Unheated_basement
+    /// * `edge_insulation`
+    ///          - horizontal edge insulation
+    ///          - vertical or external edge insulation
+    /// * `h_upper` - height of the floor upper surface, in m
+    ///             average value is used if h varies
+    /// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
+    ///         in accordance with ISO 6946
+    /// * `u_f_s` - thermal transmittance of floor above basement), in W/(m2·K)
+    ///           in accordance with ISO 6946
+    /// * `area_per_perimeter_vent` -  area of ventilation openings per perimeter, in m2/m
+    /// * `shield_fact_location` - wind shielding factor
+    ///         - Sheltered
+    ///         - Average
+    ///         - Exposed
+    /// * `d_we` - thickness of the walls, in m
+    /// * `r_f_ins` - thermal resistance of insulation on base of underfloor space, in m2·K/W
+    /// * `z_b` - depth of basement floor below ground level, in m
+    /// * `r_w_b` - thermal resistance of walls of the basement, in m2·K/W
+    /// * `h_w` - height of the basement walls above ground level, in m
     pub fn new(
+        total_area: f64,
         area: f64,
         pitch: f64,
         u_value: f64,
         r_f: f64,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
-        h_pi: f64,
-        h_pe: f64,
+        floor_type: FloorType,
+        edge_insulation: Option<&[EdgeInsulation]>,
+        h_upper: Option<f64>,
+        u_f_s: Option<f64>,
+        u_w: Option<f64>,
+        area_per_perimeter_vent: Option<f64>,
+        shield_fact_location: Option<WindShieldLocation>,
+        d_we: f64,
+        r_f_ins: Option<f64>,
+        z_b: Option<f64>,
+        r_w_b: Option<f64>,
+        h_w: Option<f64>,
         perimeter: f64,
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
@@ -755,6 +807,27 @@ impl BuildingElementGround {
 
         // View factor to the sky is zero because element is in contact with the ground
         let f_sky = 0.0;
+
+        let d_eq = Self::total_equiv_thickness(d_we, r_f);
+        let (h_pi, h_pe) = Self::init_periodic_heat_transfer(
+            floor_type,
+            total_area,
+            d_eq,
+            perimeter,
+            r_f,
+            d_we,
+            r_f_ins,
+            h_upper,
+            u_w,
+            h_w,
+            z_b,
+            u_f_s,
+            r_w_b,
+            area_per_perimeter_vent,
+            shield_fact_location,
+            external_conditions.as_ref(),
+            edge_insulation,
+        )?;
 
         Ok(Self {
             area,
@@ -783,15 +856,20 @@ impl BuildingElementGround {
             therm_rad_to_sky: init_therm_rad_to_sky(f_sky),
             // Calculate node conductances (h_pli) and node heat capacities (k_pli)
             // according to BS EN ISO 52016-1:2017, section 6.5.7.2
+            //
+            // BS EN ISO 52016:2017 states that the r_c (resistance including the
+            // effect of the ground) should be used in the equations below. However,
+            // this leads to double-counting of r_si, r_gr and r_vi as these are already
+            // accounted for separately, so we have used r_f (resistance of the floor
+            // construction only) here instead
             h_pli: {
-                let r_c = 1.0 / u_value;
                 let r_gr = R_GR_FOR_GROUND;
 
                 [
                     2.0 / r_gr,
-                    1.0 / (r_c / 4.0 + r_gr / 2.0),
-                    2.0 / r_c,
-                    4.0 / r_c,
+                    1.0 / (r_f / 4.0 + r_gr / 2.0),
+                    2.0 / r_f,
+                    4.0 / r_f,
                 ]
             },
             k_pli: {
@@ -812,6 +890,409 @@ impl BuildingElementGround {
                 }
             },
         })
+    }
+
+    fn total_equiv_thickness(d_we: f64, r_f: f64) -> f64 {
+        d_we + THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_f + R_SE)
+    }
+
+    /// Return the periodic heat transfer coefficient for the building element
+    ///             h_pi     -- Internal periodic heat transfer coefficient, in W / K
+    ///                         BS EN ISO 13370:2017 Annex H
+    ///             h_pe     -- external periodic heat transfer coefficient, in W / K
+    ///                         BS EN ISO 13370:2017 Annex H
+    fn init_periodic_heat_transfer(
+        floor_type: FloorType,
+        total_area: f64,
+        d_eq: f64,
+        perimeter: f64,
+        r_f: f64,
+        d_we: f64,
+        r_f_ins: Option<f64>,
+        h_upper: Option<f64>,
+        u_w: Option<f64>,
+        h_w: Option<f64>,
+        z_b: Option<f64>,
+        u_f_s: Option<f64>,
+        r_w_b: Option<f64>,
+        area_vent: Option<f64>,
+        shield_fact_location: Option<WindShieldLocation>,
+        external_conditions: &ExternalConditions,
+        edge_insulation: Option<&[EdgeInsulation]>,
+    ) -> anyhow::Result<(f64, f64)> {
+        Ok(match floor_type {
+            FloorType::SlabNoEdgeInsulation => {
+                Self::init_slab_on_ground_floor_uninsulated_or_all_insulation(
+                    total_area, d_eq, perimeter,
+                )
+            }
+            FloorType::SlabEdgeInsulation => Self::init_slab_on_ground_floor_edge_insulated(
+                total_area,
+                d_eq,
+                perimeter,
+                edge_insulation,
+            )?,
+            FloorType::SuspendedFloor => Self::init_suspended_floor(
+                r_f,
+                d_we,
+                r_f_ins,
+                total_area,
+                perimeter,
+                h_upper,
+                u_w,
+                area_vent,
+                shield_fact_location,
+                external_conditions,
+            )?,
+            FloorType::HeatedBasement => {
+                Self::init_heated_basement(total_area, z_b, perimeter, d_eq, r_w_b)?
+            }
+            FloorType::UnheatedBasement => {
+                Self::init_unheated_basement(total_area, h_w, z_b, u_f_s, u_w, perimeter, d_eq)?
+            }
+        })
+    }
+
+    fn internal_temp_variation(total_area: f64, d_eq: f64) -> f64 {
+        // H.4.1., H.5.1. Internal temperature variation
+        total_area
+            * (THERMAL_CONDUCTIVITY_OF_GROUND / d_eq)
+            * (2. / ((1. + PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq).powi(2) + 1.))
+                .powf(0.5)
+    }
+
+    /// Slab-on-ground floor uninsulated or with all-over insulated
+    fn init_slab_on_ground_floor_uninsulated_or_all_insulation(
+        total_area: f64,
+        d_eq: f64,
+        perimeter: f64,
+    ) -> (f64, f64) {
+        // H.4.1. Internal temperature variation
+        let h_pi = Self::internal_temp_variation(total_area, d_eq);
+
+        // H.4.2. External temperature variation
+        // 0.37 is constant in the standard but not labelled
+        let h_pe = 0.37
+            * perimeter
+            * THERMAL_CONDUCTIVITY_OF_GROUND
+            * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq + 1.).ln();
+
+        (h_pi, h_pe)
+    }
+
+    /// Slab-on-ground-with-edge-insulation
+    fn init_slab_on_ground_floor_edge_insulated(
+        total_area: f64,
+        d_eq: f64,
+        perimeter: f64,
+        edge_insulation: Option<&[EdgeInsulation]>,
+    ) -> anyhow::Result<(f64, f64)> {
+        // H.5.1. Internal temperature variation
+        let h_pi = Self::internal_temp_variation(total_area, d_eq);
+
+        // edge insulation (vertically or horizontally)
+        let h_pe = Self::edge_type(
+            edge_insulation.ok_or_else(|| {
+                anyhow!(
+                    "Edge insulation was expected to be provided for this ground building element."
+                )
+            })?,
+            d_eq,
+            perimeter,
+        )?;
+
+        Ok((h_pi, h_pe))
+    }
+
+    fn h_pe_h(d_h: f64, r_n: f64, d_eq: f64, perimeter: f64) -> f64 {
+        // horizontal edge insulation
+        // 0.37 is constant in the standard but not labelled
+        let eq_thick_additional = Self::add_eq_thickness(d_h, r_n);
+
+        0.37 * perimeter
+            * THERMAL_CONDUCTIVITY_OF_GROUND
+            * ((1. - (-d_h / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp())
+                * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / (d_eq + eq_thick_additional)
+                    + 1.)
+                    .ln()
+                + (-d_h / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp()
+                    * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq + 1.).ln())
+    }
+
+    fn h_pe_v(d_v: f64, r_n: f64, d_eq: f64, perimeter: f64) -> f64 {
+        // vertical edge insulation
+        // 0.37 is constant in the standard but not labelled
+        let eq_thick_additional = Self::add_eq_thickness(d_v, r_n);
+
+        0.37 * perimeter
+            * THERMAL_CONDUCTIVITY_OF_GROUND
+            * ((1. - (-2. * d_v / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp())
+                * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / (d_eq + eq_thick_additional)
+                    + 1.)
+                    .ln()
+                + (-2. * d_v / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp()
+                    * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq + 1.).ln())
+    }
+
+    /// Additional equivalent thickness
+    fn add_eq_thickness(d_n: f64, r_n: f64) -> f64 {
+        // m2·K/W, thermal resistance
+        let r_add_eq = r_n - d_n / THERMAL_CONDUCTIVITY_OF_GROUND;
+        // m, thickness_edge-insulation or foundation
+        r_add_eq * THERMAL_CONDUCTIVITY_OF_GROUND
+    }
+
+    /// edge insulation vertically or horizontally
+    fn edge_type(
+        edge_insulation: &[EdgeInsulation],
+        d_eq: f64,
+        perimeter: f64,
+    ) -> anyhow::Result<f64> {
+        // Initialise edge width and depth
+        let mut h_pe_list = vec![];
+        for edge in edge_insulation {
+            match edge {
+                EdgeInsulation::Horizontal {
+                    width,
+                    edge_thermal_resistance,
+                } => {
+                    h_pe_list.push(Self::h_pe_h(
+                        *width,
+                        *edge_thermal_resistance,
+                        d_eq,
+                        perimeter,
+                    ));
+                }
+                EdgeInsulation::Vertical {
+                    depth,
+                    edge_thermal_resistance,
+                } => {
+                    h_pe_list.push(Self::h_pe_v(
+                        *depth,
+                        *edge_thermal_resistance,
+                        d_eq,
+                        perimeter,
+                    ));
+                }
+            }
+        }
+
+        h_pe_list
+            .iter()
+            .min_by(|a, b| a.total_cmp(b))
+            .ok_or_else(|| {
+                anyhow!("There was no edge insulation provided for a ground building element.")
+            })
+            .copied()
+    }
+
+    /// Suspended floor periodic coefficients
+    fn init_suspended_floor(
+        r_f: f64,
+        d_we: f64,
+        r_f_ins: Option<f64>,
+        total_area: f64,
+        perimeter: f64,
+        h_upper: Option<f64>,
+        u_w: Option<f64>,
+        area_vent: Option<f64>,
+        shield_fact_location: Option<WindShieldLocation>,
+        external_conditions: &ExternalConditions,
+    ) -> anyhow::Result<(f64, f64)> {
+        // H.6.1.
+        // thermal transmittance of suspended part of floor, in W/(m2·K)
+        let u_f = Self::thermal_transmittance_sus_floor(r_f, R_SI_FOR_GROUND);
+
+        // equivalent thermal transmittance, in W/(m2·K)
+        let u_x = Self::equiv_therma_trans(
+            total_area,
+            perimeter,
+            h_upper,
+            u_w,
+            area_vent,
+            shield_fact_location,
+            external_conditions,
+        )?;
+
+        // equivalent thickness, in m
+        let d_g = Self::total_equiv_thickness_sus(d_we, r_f_ins)?;
+
+        // H.6.2. Internal temperature variation
+        let h_pi = total_area
+            * (1. / u_f
+                + 1. / (THERMAL_CONDUCTIVITY_OF_GROUND
+                    / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES
+                    + u_x));
+
+        // H.6.3. External temperature variation
+        // 0.37 is constant in the standard but not labelled
+        let h_pe = u_f
+            * ((0.37
+                * perimeter
+                * THERMAL_CONDUCTIVITY_OF_GROUND
+                * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_g + 1.).ln()
+                + u_x * total_area)
+                / (THERMAL_CONDUCTIVITY_OF_GROUND
+                    / (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES + u_x + u_f)));
+
+        Ok((h_pi, h_pe))
+    }
+
+    /// thermal transmittance of suspended part of floor
+    fn thermal_transmittance_sus_floor(r_f: f64, r_si: f64) -> f64 {
+        1. / (r_f + 2. * r_si)
+    }
+
+    /// equivalent thermal transmittance between the underfloor space and the outside
+    fn equiv_therma_trans(
+        total_area: f64,
+        perimeter: f64,
+        h_upper: Option<f64>,
+        u_w: Option<f64>,
+        area_vent: Option<f64>,
+        shield_fact_location: Option<WindShieldLocation>,
+        external_conditions: &ExternalConditions,
+    ) -> anyhow::Result<f64> {
+        let h_upper = h_upper.ok_or_else(|| anyhow!("A value for the height of the floor upper surface was needed for a ground building element."))?;
+        let u_w = u_w.ok_or_else(|| anyhow!("A value for the thermal transmittance of walls above ground was needed for a ground building element."))?;
+        let area_vent = area_vent.ok_or_else(|| {
+            anyhow!("An area per perimeter vent value was needed for a ground building element.")
+        })?;
+        let shield_fact_location = shield_fact_location.ok_or_else(|| {
+            anyhow!("A wind shielding factor indicator was needed for a ground building element.")
+        })?;
+
+        // Characteristic dimension of floor
+        let char_dimen = Self::charac_dimen_floor(total_area, perimeter);
+
+        // 1450 is constant in the standard but not labelled
+        Ok(2. * (h_upper * u_w / char_dimen)
+            + 1450.
+                * (area_vent
+                    * Self::wind_speed(external_conditions)?
+                    * Self::wind_shield_fact(shield_fact_location))
+                / char_dimen)
+    }
+
+    /// Equivalent thickness for the ground
+    fn total_equiv_thickness_sus(d_we: f64, r_f_ins: Option<f64>) -> anyhow::Result<f64> {
+        Ok(d_we + THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_f_ins.ok_or_else(|| anyhow!("A value for thermal resistance of insulation was expected to be given for a ground building element."))? + R_SE))
+    }
+
+    /// Characteristic dimension of floor, in metres
+    fn charac_dimen_floor(total_area: f64, perimeter: f64) -> f64 {
+        total_area / (0.5 * perimeter)
+    }
+
+    fn wind_speed(external_conditions: &ExternalConditions) -> anyhow::Result<f64> {
+        external_conditions.wind_speed_annual().ok_or_else(|| anyhow!("Annual wind speed was expected to be available when instantiating a ground building element for a calculation."))
+    }
+
+    /// wind shielding factor
+    fn wind_shield_fact(shield_fact_location: WindShieldLocation) -> f64 {
+        // Values from BS EN ISO 13370:2017 Table 8
+        match shield_fact_location {
+            WindShieldLocation::Sheltered => 0.02,
+            WindShieldLocation::Average => 0.05,
+            WindShieldLocation::Exposed => 0.10,
+        }
+    }
+
+    /// Heated basement periodic coefficients
+    fn init_heated_basement(
+        total_area: f64,
+        z_b: Option<f64>,
+        perimeter: f64,
+        d_eq: f64,
+        r_w_b: Option<f64>,
+    ) -> anyhow::Result<(f64, f64)> {
+        let z_b = z_b.ok_or_else(|| anyhow!("A value for the depth of the basement floor below ground level was needed for this ground building element."))?;
+
+        // total equivalent thickness
+        let d_w_b = Self::equiv_thick_base_wall(r_w_b)?;
+
+        // H.7.1. Internal temperature variation
+        let h_pi = total_area
+            * ((THERMAL_CONDUCTIVITY_OF_GROUND / d_eq)
+                * (2. / (1. + PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq).powi(2)
+                    + 1.)
+                    .powf(0.5))
+            + z_b
+                * perimeter
+                * (THERMAL_CONDUCTIVITY_OF_GROUND / d_w_b)
+                * (2.
+                    / ((1. + PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_w_b).powi(2)
+                        + 1.))
+                    .powf(0.5);
+
+        // H.7.2. External temperature variation
+        // 0.37 is constant in the standard but not labelled
+        let h_pe = 0.37
+            * perimeter
+            * THERMAL_CONDUCTIVITY_OF_GROUND
+            * ((-z_b / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp()
+                * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq + 1.).ln()
+                + 2. * (1. - (-z_b / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp())
+                    * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_w_b + 1.).ln());
+
+        Ok((h_pi, h_pe))
+    }
+
+    /// Equivalent thickness for the basement walls
+    fn equiv_thick_base_wall(r_w_b: Option<f64>) -> anyhow::Result<f64> {
+        // r_w_b is the thermal resistance of the walls
+        Ok(THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_w_b.ok_or_else(|| anyhow!("A value for thermal resistance of walls for the basement is needed for this ground building element."))? + R_SE))
+    }
+
+    /// Unheated basement
+    fn init_unheated_basement(
+        total_area: f64,
+        h_w: Option<f64>,
+        z_b: Option<f64>,
+        u_f_s: Option<f64>,
+        u_w: Option<f64>,
+        perimeter: f64,
+        d_eq: f64,
+    ) -> anyhow::Result<(f64, f64)> {
+        let h_w = h_w.ok_or_else(|| anyhow!("A value for the height of the basement walls above ground level was needed for this ground building element."))?;
+        let z_b = z_b.ok_or_else(|| anyhow!("A value for the depth of the basement floor below ground level was needed for this ground building element."))?;
+        let u_f_s = u_f_s.ok_or_else(|| anyhow!("A value for thermal transmittance of floor above basement was needed for this ground building element."))?;
+        let u_w = u_w.ok_or_else(|| anyhow!("A value for the thermal transmittance of walls above ground was needed for this ground building element."))?;
+
+        // Wh/(m3·K)
+        let thermal_capacity_air = 0.33;
+        let air_vol_base = total_area * (h_w + z_b);
+
+        // air changes per hour
+        // From BS EN ISO 13370:2017 section 7.4
+        let vent_rate_base = 0.3;
+
+        // H.8.1. Internal temperature variation
+        let h_pi = (1. / (total_area * u_f_s)
+            + 1. / ((total_area + z_b * perimeter) * THERMAL_CONDUCTIVITY_OF_GROUND
+                / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES
+                + h_w * perimeter * u_w
+                + thermal_capacity_air * vent_rate_base * air_vol_base))
+            .powi(-1);
+
+        // H.8.2. External temperature variation
+        // 0.37 is constant in the standard but not labelled
+        let h_pe = total_area
+            * u_f_s
+            * (0.37
+                * perimeter
+                * THERMAL_CONDUCTIVITY_OF_GROUND
+                * (2. - (-z_b / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp())
+                * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_eq + 1.).ln()
+                + h_w * perimeter * u_w
+                + thermal_capacity_air * vent_rate_base * air_vol_base)
+            / ((total_area + z_b * perimeter) * THERMAL_CONDUCTIVITY_OF_GROUND
+                / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES
+                + h_w * perimeter * u_w
+                + thermal_capacity_air * vent_rate_base * air_vol_base
+                + total_area * u_f_s);
+
+        Ok((h_pi, h_pe))
     }
 }
 
@@ -1133,6 +1614,11 @@ pub enum HeatFlowDirection {
 const THERMAL_CONDUCTIVITY_OF_GROUND: f64 = 1.5;
 // in W/(m.K)
 const HEAT_CAPACITY_PER_VOLUME_OF_GROUND: f64 = 3_000_000.;
+
+// Periodic penetration depth of ground from BS EN ISO 13370:2017 Table H.1
+// Use values for clay or silt (same as BR 443 and SAP 10)
+const PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES: f64 = 2.2;
+
 // in J/(m3.K)
 const THICKNESS_GROUND_LAYER: f64 = 0.5; // in m. Specified in BS EN ISO 52016-1:2017 section 6.5.8.2
 
@@ -1204,6 +1690,7 @@ mod tests {
     pub fn be_i(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             20.,
+            false,
             180.,
             0.60,
             0.25,
@@ -1221,6 +1708,7 @@ mod tests {
     pub fn be_e(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             22.5,
+            false,
             135.,
             0.61,
             0.50,
@@ -1238,6 +1726,7 @@ mod tests {
     pub fn be_ie(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             25.,
+            false,
             90.,
             0.62,
             0.75,
@@ -1255,6 +1744,7 @@ mod tests {
     pub fn be_d(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             27.5,
+            true,
             45.,
             0.63,
             0.80,
@@ -1272,6 +1762,7 @@ mod tests {
     pub fn be_m(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             30.,
+            false,
             0.,
             0.64,
             0.40,
@@ -1706,13 +2197,24 @@ mod tests {
     ) -> [BuildingElementGround; 5] {
         let be_i = BuildingElementGround::new(
             20.0,
+            20.0,
             180.,
             1.5,
             0.1,
             19000.0,
             MassDistributionClass::I,
-            2.0,
-            2.5,
+            FloorType::SuspendedFloor,
+            None,
+            Some(0.5),
+            None,
+            Some(0.5),
+            Some(0.01),
+            Some(WindShieldLocation::Sheltered),
+            0.3,
+            Some(7.),
+            None,
+            None,
+            None,
             18.0,
             0.5,
             external_conditions_for_ground.clone(),
@@ -1720,27 +2222,59 @@ mod tests {
         .unwrap();
         let be_e = BuildingElementGround::new(
             22.5,
+            22.5,
             135.,
             1.4,
             0.2,
             18000.0,
             MassDistributionClass::E,
-            2.1,
-            2.6,
+            FloorType::SlabNoEdgeInsulation,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.3,
+            None,
+            None,
+            None,
+            None,
             19.0,
             0.6,
             external_conditions_for_ground.clone(),
         )
         .unwrap();
+        let edge_insulation_ie = [
+            EdgeInsulation::Horizontal {
+                width: 3.0,
+                edge_thermal_resistance: 2.0,
+            },
+            EdgeInsulation::Vertical {
+                depth: 1.0,
+                edge_thermal_resistance: 2.0,
+            },
+        ];
         let be_ie = BuildingElementGround::new(
+            25.0,
             25.0,
             90.,
             1.33,
             0.2,
             17000.0,
             MassDistributionClass::IE,
-            2.2,
-            2.7,
+            FloorType::SlabEdgeInsulation,
+            Some(&edge_insulation_ie),
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.3,
+            None,
+            None,
+            None,
+            None,
             20.0,
             0.7,
             external_conditions_for_ground.clone(),
@@ -1748,13 +2282,24 @@ mod tests {
         .unwrap();
         let be_d = BuildingElementGround::new(
             27.5,
+            27.5,
             45.,
             1.25,
             0.2,
             16000.0,
             MassDistributionClass::D,
-            2.3,
-            2.8,
+            FloorType::HeatedBasement,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.3,
+            None,
+            Some(2.3),
+            Some(6.),
+            None,
             21.0,
             0.8,
             external_conditions_for_ground.clone(),
@@ -1762,13 +2307,24 @@ mod tests {
         .unwrap();
         let be_m = BuildingElementGround::new(
             30.0,
+            30.0,
             0.,
             1.0,
             0.3,
             15000.0,
             MassDistributionClass::M,
-            2.4,
-            2.9,
+            FloorType::UnheatedBasement,
+            None,
+            None,
+            Some(1.2),
+            Some(0.5),
+            None,
+            None,
+            0.3,
+            None,
+            Some(2.3),
+            Some(0.15),
+            Some(2.3),
             22.0,
             0.9,
             external_conditions_for_ground,
@@ -1977,11 +2533,16 @@ mod tests {
     #[rstest]
     pub fn test_h_pli_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
         let results = [
-            [6.0, 3.0, 3.0, 6.0],
-            [6.0, 2.896551724137931, 2.8, 5.6],
-            [6.0, 2.8197879858657244, 2.66, 5.32],
-            [6.0, 2.727272727272727, 2.5, 5.0],
-            [6.0, 2.4000000000000004, 2.0, 4.0],
+            [6.0, 5.217391304347826, 20.0, 40.0],
+            [6.0, 4.615384615384615, 10.0, 20.0],
+            [6.0, 4.615384615384615, 10.0, 20.0],
+            [6.0, 4.615384615384615, 10.0, 20.0],
+            [
+                6.0,
+                4.137931034482759,
+                6.666666666666667,
+                13.333333333333334,
+            ],
         ];
         for (i, be) in ground_building_elements.iter().enumerate() {
             assert_eq!(be.h_pli(), &results[i], "incorrect h_pli list returned");
@@ -2011,14 +2572,41 @@ mod tests {
         simulation_time_for_ground: SimulationTime,
     ) {
         let results = [
-            8.474795225438358,
-            8.474795225438358,
-            8.988219392771693,
-            8.988219392771693,
+            [
+                -0.6471789638993641,
+                -0.6471789638993641,
+                2.505131315506123,
+                2.505131315506123,
+            ],
+            [
+                7.428039862980361,
+                7.428039862980361,
+                8.234778286483786,
+                8.234778286483786,
+            ],
+            [
+                7.732888552541917,
+                7.732888552541917,
+                8.448604706949336,
+                8.448604706949336,
+            ],
+            [
+                8.366361777378224,
+                8.366361777378224,
+                8.86671506616569,
+                8.86671506616569,
+            ],
+            [
+                6.293446005722892,
+                6.293446005722892,
+                7.413004622032444,
+                7.413004622032444,
+            ],
         ];
-        for be in ground_building_elements.iter() {
-            for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
-                assert_relative_eq!(be.temp_ext(t_it), results[t_idx],);
+
+        for (t_idx, t_it) in simulation_time_for_ground.iter().enumerate() {
+            for (i, be) in ground_building_elements.iter().enumerate() {
+                assert_eq!(be.temp_ext(t_it), results[i][t_idx],);
             }
         }
     }

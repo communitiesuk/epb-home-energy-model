@@ -1372,7 +1372,8 @@ mod tests {
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType, MassDistributionClass,
+        FloorType, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
+        MassDistributionClass, WindShieldLocation,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
@@ -1548,6 +1549,7 @@ mod tests {
         // Create objects for the different building elements in the zone
         let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
+            false,
             180.,
             0.60,
             0.25,
@@ -1561,7 +1563,8 @@ mod tests {
         ));
         let be_opaque_d = BuildingElement::Opaque(BuildingElementOpaque::new(
             26.,
-            180.,
+            true,
+            45.,
             0.55,
             0.33,
             16000.0,
@@ -1583,13 +1586,24 @@ mod tests {
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(
                 25.0,
+                25.0,
                 90.,
                 1.33,
                 0.2,
                 17000.0,
                 MassDistributionClass::IE,
-                2.2,
-                2.7,
+                FloorType::SuspendedFloor,
+                None,
+                Some(0.5),
+                None,
+                Some(0.5),
+                Some(0.01),
+                Some(WindShieldLocation::Sheltered),
+                0.3,
+                Some(7.),
+                None,
+                None,
+                None,
                 20.0,
                 0.7,
                 external_conditions.clone(),
@@ -1702,7 +1716,11 @@ mod tests {
 
     #[rstest]
     pub fn should_have_correct_total_fabric_heat_loss(zone: Zone) {
-        assert_relative_eq!(zone.total_fabric_heat_loss(), 174.58, max_relative = 1e-2);
+        assert_relative_eq!(
+            zone.total_fabric_heat_loss(),
+            181.99557093947166,
+            max_relative = 1e-2
+        );
     }
 
     #[rstest]

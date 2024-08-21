@@ -32,6 +32,7 @@ use crate::core::space_heat_demand::building_element::{
     area_for_building_element_input, convert_uvalue_to_resistance, BuildingElement,
     BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
     BuildingElementOpaque, BuildingElementTransparent, NamedBuildingElementTransparent,
+    PITCH_LIMIT_HORIZ_CEILING,
 };
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
@@ -54,15 +55,16 @@ use crate::input::{
     BuildingElement as BuildingElementInput, ColdWaterSourceDetails, ColdWaterSourceInput,
     ColdWaterSourceType, Control as ControlInput, ControlDetails, EnergyDiverter,
     EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
-    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
-    HeatSourceControl as HeatSourceControlInput, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails, Infiltration, Input,
-    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
-    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
+    ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
+    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
+    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
+    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
+    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
+    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
+    ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -2345,6 +2347,7 @@ fn building_element_from_input(
 ) -> anyhow::Result<BuildingElement> {
     Ok(match input {
         BuildingElementInput::Opaque {
+            is_unheated_pitched_roof,
             area,
             pitch,
             a_sol,
@@ -2357,19 +2360,29 @@ fn building_element_from_input(
             width,
             u_value,
             ..
-        } => BuildingElement::Opaque(BuildingElementOpaque::new(
-            *area,
-            *pitch,
-            *a_sol,
-            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
-            *k_m,
-            *mass_distribution_class,
-            *orientation,
-            *base_height,
-            *height,
-            *width,
-            external_conditions,
-        )),
+        } => {
+            let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
+                is_unheated_pitched_roof
+                    .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
+            } else {
+                false
+            };
+
+            BuildingElement::Opaque(BuildingElementOpaque::new(
+                *area,
+                is_unheated_pitched_roof,
+                *pitch,
+                *a_sol,
+                init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+                *k_m,
+                *mass_distribution_class,
+                *orientation,
+                *base_height,
+                *height,
+                *width,
+                external_conditions,
+            ))
+        }
         BuildingElementInput::Transparent {
             u_value,
             r_c,
@@ -2396,29 +2409,134 @@ fn building_element_from_input(
         )),
         BuildingElementInput::Ground {
             area,
+            total_area,
             pitch,
             u_value,
             r_f,
             k_m,
             mass_distribution_class,
-            h_pi,
-            h_pe,
+            floor_type,
+            height_upper_surface,
+            thermal_transmission_walls,
+            thermal_resistance_of_insulation,
+            area_per_perimeter_vent,
+            shield_fact_location,
+            thickness_walls,
+            depth_basement_floor,
+            thermal_resistance_of_basement_walls,
+            thermal_transmittance_of_floor_above_basement,
+            height_basement_walls,
             perimeter,
             psi_wall_floor_junc,
-            ..
-        } => BuildingElement::Ground(BuildingElementGround::new(
-            *area,
-            *pitch,
-            *u_value,
-            *r_f,
-            *k_m,
-            *mass_distribution_class,
-            h_pi.expect("Expecting this is set while migrating to 0.30"),
-            h_pe.expect("Expecting this is set while migrating to 0.30"),
-            *perimeter,
-            *psi_wall_floor_junc,
-            external_conditions,
-        )?),
+            edge_insulation,
+        } => {
+            let (
+                edge_insulation,
+                height_upper_surface,
+                thermal_transm_envi_base,
+                thermal_transm_walls,
+                area_per_perimeter_vent,
+                shield_fact_location,
+                thickness_walls,
+                thermal_resist_insul,
+                depth_basement_floor,
+                thermal_resist_walls_base,
+                height_basement_walls,
+            ) = match floor_type {
+                FloorType::SlabNoEdgeInsulation => (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    *thickness_walls,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                FloorType::SlabEdgeInsulation => (
+                    edge_insulation
+                        .as_ref()
+                        .map(|insulation| insulation.as_slice()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    *thickness_walls,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                FloorType::SuspendedFloor => (
+                    None,
+                    *height_upper_surface,
+                    None,
+                    *thermal_transmission_walls,
+                    *area_per_perimeter_vent,
+                    *shield_fact_location,
+                    *thickness_walls,
+                    *thermal_resistance_of_insulation,
+                    None,
+                    None,
+                    None,
+                ),
+                FloorType::HeatedBasement => (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    *thickness_walls,
+                    None,
+                    *depth_basement_floor,
+                    *thermal_resistance_of_basement_walls,
+                    None,
+                ),
+                FloorType::UnheatedBasement => (
+                    None,
+                    None,
+                    *thermal_transmittance_of_floor_above_basement,
+                    *thermal_transmission_walls,
+                    None,
+                    None,
+                    *thickness_walls,
+                    None,
+                    *depth_basement_floor,
+                    *thermal_resistance_of_basement_walls,
+                    *height_basement_walls,
+                ),
+            };
+
+            BuildingElement::Ground(BuildingElementGround::new(
+                *total_area,
+                *area,
+                *pitch,
+                *u_value,
+                *r_f,
+                *k_m,
+                *mass_distribution_class,
+                *floor_type,
+                edge_insulation,
+                height_upper_surface,
+                thermal_transm_envi_base,
+                thermal_transm_walls,
+                area_per_perimeter_vent,
+                shield_fact_location,
+                thickness_walls,
+                thermal_resist_insul,
+                depth_basement_floor,
+                thermal_resist_walls_base,
+                height_basement_walls,
+                *perimeter,
+                *psi_wall_floor_junc,
+                external_conditions,
+            )?)
+        }
         BuildingElementInput::AdjacentZTC {
             area,
             pitch,
