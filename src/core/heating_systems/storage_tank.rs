@@ -4,7 +4,9 @@ use crate::core::controls::time_control::Control;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::MaterialProperties;
 use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
+use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
+use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::corpus::{HeatSource, PositionedHeatSource};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
@@ -77,6 +79,9 @@ pub struct StorageTank {
     primary_gains: f64,          // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
     energy_demand_test: f64,
+    temp_final_drawoff: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
+    temp_average_drawoff_volweighted: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
+    total_volume_drawoff: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
 }
 
 impl StorageTank {
@@ -187,6 +192,9 @@ impl StorageTank {
             primary_gains: Default::default(),
             #[cfg(test)]
             energy_demand_test,
+            temp_final_drawoff: None,
+            temp_average_drawoff_volweighted: None,
+            total_volume_drawoff: None,
         }
     }
 
@@ -578,6 +586,144 @@ impl StorageTank {
 
         (
             temp_s8_n, q_x_in_n, q_s6, temp_s6_n, temp_s7_n, q_in_h_w, q_ls, q_ls_n,
+        )
+    }
+
+    /// Allocate hot water layers to meet a single temperature demand.
+    ///
+    /// Arguments:
+    /// event -- Dictionary containing information about the draw-off event
+    ///          (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
+    fn allocate_hot_water(
+        &mut self,
+        event: TypedScheduleEvent,
+        simulation_time: SimulationTimeIteration,
+    ) -> (f64, TemperatureCalculation, f64, f64) {
+        // Make a copy of the volume list to keep track of remaining volumes
+        // Remaining volume of water in storage tank layers
+        let remaining_vols = self.vol_n.clone();
+
+        // Extract the temperature and required warm volume from the event
+        let warm_temp = event.temperature;
+        let warm_volume = event.warm_volume;
+        // Remaining volume of warm water to be satisfied for current event
+        let mut remaining_demanded_warm_volume = warm_volume.unwrap();
+
+        // Initialize the unmet and met energies
+        let mut energy_unmet = 0.0;
+        let mut energy_withdrawn = 0.0;
+        let pipework_temp = self.cold_feed.temperature(simulation_time.index); // This value set to initialise, but is never used - overwritten later.
+
+        let pipework_considered = if event.pipework_volume.unwrap() <= 0.0 {
+            true
+        } else {
+            false
+        };
+
+        let temp_average_drawoff_volweighted: f64 = Default::default();
+        let total_volume_drawoff: f64 = Default::default();
+
+        //  Loop through storage layers (starting from the top)
+        for mut layer_index in (0..self.temp_n.len()).rev() {
+            let layer_temp = self.temp_n[layer_index];
+            let layer_vol = remaining_vols[layer_index];
+
+            if remaining_demanded_warm_volume <= 0. {
+                if pipework_considered {
+                    // Event inclusive of pipework is completed at this layer temp
+                    self.temp_final_drawoff = Some(pipework_temp);
+                    break;
+                } else {
+                    let remaining_demanded_warm_volume = event.pipework_volume;
+                    let warm_temp = layer_temp;
+                    let pipework_considered = true;
+                }
+            }
+            // If event is finished and we are serving the pipework, this is the temperature
+            // of the water stranded
+            let pipework_temp = layer_temp;
+
+            // Skip this layer if its remaining volume is already zero
+            if remaining_vols[layer_index] <= 0.0 {
+                continue;
+            }
+
+            // Skip this layer if its temperature is lower than the target temperature
+            if layer_temp < warm_temp {
+                break;
+            }
+
+            // Calculate the fraction of hot water required
+            let fraction = frac_hot_water(
+                warm_temp,
+                layer_temp,
+                self.cold_feed.temperature(simulation_time.index),
+            );
+
+            let mut required_vol: f64 = Default::default();
+            // Volume of hot water required at this layer
+            if layer_vol <= remaining_demanded_warm_volume * fraction {
+                // This is the case where layer cannot meet all remaining demand for this event
+                required_vol = layer_vol;
+                let warm_vol_removed = layer_vol / fraction;
+                // Deduct the required volume from the remaining demand and update the layer's volume
+                remaining_vols[layer_index] -= layer_vol;
+                remaining_demanded_warm_volume -= warm_vol_removed;
+            } else {
+                //This is the case where layer can meet all remaining demand for this event
+                required_vol = remaining_demanded_warm_volume * fraction;
+                let warm_vol_removed = remaining_demanded_warm_volume;
+                // Deduct the required volume from the remaining demand and update the layer's volume
+                remaining_vols[layer_index] -= required_vol;
+                remaining_demanded_warm_volume = 0.0;
+            }
+
+            temp_average_drawoff_volweighted += required_vol * layer_temp;
+            total_volume_drawoff += required_vol;
+
+            // Record the met volume demand for the current temperature target
+            // warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
+            energy_withdrawn +=
+                // Calculation with event water parameters
+                // self.__rho * self.__Cp * warm_vol_removed * (warm_temp - self.__cold_feed.temperature())
+                // Calculation with layer water parameters
+                self.rho
+                    * self.cp
+                    * required_vol
+                    * (layer_temp - self.cold_feed.temperature(simulation_time.index))
+        }
+
+        self.temp_average_drawoff_volweighted = Some(temp_average_drawoff_volweighted);
+        self.total_volume_drawoff = Some(total_volume_drawoff);
+
+        // When the event has not been fully met or has been exactly met with the last of the hot water
+        // in the tank, there's only cold water from the feed left to fill the pipework after the event.
+        // TODO as part of migration 0.28 to 0.30: review layer_index not in scope, python bug to report?, agree on approach
+        // if !pipework_considered {
+        //     self.temp_final_drawoff = self.temp_n[layer_index];
+        // }
+
+        // Record the unmet energy for the current event
+        energy_unmet += self.rho
+            * self.cp
+            * remaining_demanded_warm_volume
+            * (warm_temp - self.cold_feed.temperature(simulation_time.index));
+
+        //  Calculate the remaining total volume
+        let remaining_total_volume = remaining_vols.iter().sum();
+
+        //  Calculate the total volume used
+        let volume_used = self.volume_total_in_litres - remaining_total_volume;
+
+        //  Determine the new temperature distribution after displacement
+        let new_temp_distribution = self.calculate_new_temperatures(remaining_vols);
+
+        //  Return the remaining storage volumes, volume used, new temperature distribution, and the met/unmet targets
+        (
+            volume_used,
+            new_temp_distribution,
+            energy_withdrawn,
+            energy_unmet,
         )
     }
 
