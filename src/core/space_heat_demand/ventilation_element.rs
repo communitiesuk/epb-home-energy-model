@@ -1,17 +1,13 @@
 use crate::core::controls::time_control::{ControlBehaviour, SetpointTimeControl};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::{
-    area_for_building_element_input, cloned_element_from_named, element_from_named, mid_height_for,
-    orientation_for, projected_height_for_transparent_element,
+    BuildingElementBehaviour, BuildingElementTransparent, NamedBuildingElementTransparent,
 };
-use crate::core::space_heat_demand::zone::NamedBuildingElement;
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::external_conditions::ExternalConditions;
-use crate::input::{
-    BuildingElement, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
-};
+use crate::input::{InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType};
 use crate::simulation_time::SimulationTimeIteration;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -693,7 +689,7 @@ pub struct WindowOpeningForCooling {
     window_area_equivalent: f64,
     external_conditions: Arc<ExternalConditions>,
     // actually only meaningfully contains BuildingElement::Transparent
-    openings: Option<Vec<BuildingElement>>,
+    openings: Option<Vec<BuildingElementTransparent>>,
     control: Option<SetpointTimeControl>,
     natural_ventilation: Option<NaturalVentilation>,
     a_b: Option<f64>,
@@ -714,19 +710,16 @@ impl WindowOpeningForCooling {
     pub fn new(
         window_area_equivalent: f64,
         external_conditions: Arc<ExternalConditions>,
-        named_openings: Vec<NamedBuildingElement>,
+        openings: Vec<NamedBuildingElementTransparent>,
         control: Option<SetpointTimeControl>,
         natural_ventilation: Option<NaturalVentilation>,
     ) -> Self {
-        let openings = named_openings
-            .iter()
-            .map(cloned_element_from_named)
-            .collect::<Vec<BuildingElement>>();
+        // let openings = named_openings
+        //     .iter()
+        //     .map(cloned_element_from_named)
+        //     .collect::<Vec<BuildingElement>>();
         // Assign equivalent areas to each window/group in proportion to actual area
-        let opening_area_total = openings
-            .iter()
-            .map(area_for_building_element_input)
-            .sum::<f64>();
+        let opening_area_total = openings.iter().map(|nel| nel.window.area()).sum::<f64>();
         let opening_area_equiv_total_ratio = window_area_equivalent / opening_area_total;
 
         // Find orientation of largest window
@@ -735,28 +728,27 @@ impl WindowOpeningForCooling {
         let mut highest_op = &openings[0];
         let mut lowest_op = &openings[0];
         for op in openings[1..].iter() {
-            if area_for_building_element_input(op) > area_for_building_element_input(largest_op) {
+            if op.window.area() > largest_op.window.area() {
                 largest_op = op;
             }
-            if mid_height_for(op) > mid_height_for(highest_op) {
+            if op.window.mid_height() > highest_op.window.mid_height() {
                 highest_op = op;
             }
-            if mid_height_for(op) < mid_height_for(lowest_op) {
+            if op.window.mid_height() < lowest_op.window.mid_height() {
                 lowest_op = op;
             }
         }
-        let largest_op_orientation = orientation_for(largest_op).unwrap();
+        let largest_op_orientation = largest_op.window.orientation();
         let op_height_threshold =
-            (mid_height_for(highest_op).unwrap() - mid_height_for(lowest_op).unwrap()) / 2.0;
+            (highest_op.window.mid_height() - lowest_op.window.mid_height()) / 2.0;
 
         let mut openings_same_side = vec![];
         let mut openings_opp_side = vec![];
         let mut openings_low = vec![];
         let mut openings_high = vec![];
-        for op in named_openings.iter() {
+        for op in openings.iter() {
             // Determine orientation of other windows relative to largest
-            let mut op_rel_orientation =
-                (orientation_for(element_from_named(op)).unwrap() - largest_op_orientation).abs();
+            let mut op_rel_orientation = (op.window.orientation() - largest_op_orientation).abs();
             if op_rel_orientation > 360.0 {
                 op_rel_orientation -= 360.0;
             }
@@ -769,7 +761,7 @@ impl WindowOpeningForCooling {
             // Else opening is on adjacent side, so ignore
 
             // Assign windows to high and low groups based on which they are closest to
-            if mid_height_for(element_from_named(op)).unwrap() < op_height_threshold {
+            if op.window.mid_height() < op_height_threshold {
                 openings_low.push(op);
             } else {
                 openings_high.push(op);
@@ -807,22 +799,22 @@ impl WindowOpeningForCooling {
             let a1 = opening_area_equiv_total_ratio
                 * openings_same_side_high
                     .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                    .map(|nel| nel.window.area())
                     .sum::<f64>();
             let a2 = opening_area_equiv_total_ratio
                 * openings_same_side_low
                     .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                    .map(|nel| nel.window.area())
                     .sum::<f64>();
             let a3 = opening_area_equiv_total_ratio
                 * openings_opp_side_high
                     .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                    .map(|nel| nel.window.area())
                     .sum::<f64>();
             let a4 = opening_area_equiv_total_ratio
                 * openings_opp_side_low
                     .iter()
-                    .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                    .map(|nel| nel.window.area())
                     .sum::<f64>();
             a_w = Some((1.0 / ((1.0 / ((a1 + a3).powi(2))) + 1.0 / ((a2 + a4).powi(2)))).sqrt());
             if a2 + a4 == 0.0 {
@@ -835,47 +827,35 @@ impl WindowOpeningForCooling {
                 // Calculate area-weighted average height of windows in high and low groups
                 let opening_mid_height_ave_upper = (openings_same_side_high
                     .iter()
-                    .map(|nel| {
-                        let el = element_from_named(nel);
-                        mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                    })
+                    .map(|nel| nel.window.mid_height() * nel.window.area())
                     .sum::<f64>()
                     + openings_opp_side_high
                         .iter()
-                        .map(|nel| {
-                            let el = element_from_named(nel);
-                            mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                        })
+                        .map(|nel| nel.window.mid_height() * nel.window.area())
                         .sum::<f64>())
                     / (openings_same_side_high
                         .iter()
-                        .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                        .map(|nel| nel.window.area())
                         .sum::<f64>()
                         + openings_opp_side_high
                             .iter()
-                            .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                            .map(|nel| nel.window.area())
                             .sum::<f64>());
                 let opening_mid_height_ave_lower = (openings_same_side_low
                     .iter()
-                    .map(|nel| {
-                        let el = element_from_named(nel);
-                        mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                    })
+                    .map(|nel| nel.window.mid_height() * nel.window.area())
                     .sum::<f64>()
                     + openings_opp_side_low
                         .iter()
-                        .map(|nel| {
-                            let el = element_from_named(nel);
-                            mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                        })
+                        .map(|nel| nel.window.mid_height() * nel.window.area())
                         .sum::<f64>())
                     / (openings_same_side_low
                         .iter()
-                        .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                        .map(|nel| nel.window.area())
                         .sum::<f64>()
                         + openings_opp_side_low
                             .iter()
-                            .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                            .map(|nel| nel.window.area())
                             .sum::<f64>());
                 opening_height_diff = opening_mid_height_ave_upper - opening_mid_height_ave_lower;
             }
@@ -883,11 +863,11 @@ impl WindowOpeningForCooling {
             stack_vent = true;
             let opening_area_upper = openings_high
                 .iter()
-                .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                .map(|nel| nel.window.area())
                 .sum::<f64>();
             let opening_area_lower = openings_low
                 .iter()
-                .map(|nel| area_for_building_element_input(element_from_named(nel)))
+                .map(|nel| nel.window.area())
                 .sum::<f64>();
 
             // Calculate opening area ratio
@@ -895,18 +875,12 @@ impl WindowOpeningForCooling {
 
             let opening_mid_height_ave_upper = openings_high
                 .iter()
-                .map(|nel| {
-                    let el = element_from_named(nel);
-                    mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                })
+                .map(|nel| nel.window.mid_height() * nel.window.area())
                 .sum::<f64>()
                 / opening_area_upper;
             let opening_mid_height_ave_lower = openings_low
                 .iter()
-                .map(|nel| {
-                    let el = element_from_named(nel);
-                    mid_height_for(el).unwrap() * area_for_building_element_input(el)
-                })
+                .map(|nel| nel.window.mid_height() * nel.window.area())
                 .sum::<f64>()
                 / opening_area_lower;
             // Calculate opening height difference
@@ -919,7 +893,8 @@ impl WindowOpeningForCooling {
         Self {
             window_area_equivalent,
             external_conditions,
-            openings: openings_for_struct,
+            openings: openings_for_struct
+                .map(|openings| openings.into_iter().map(|nel| nel.window).collect()),
             control,
             natural_ventilation,
             a_b,
@@ -984,11 +959,7 @@ impl WindowOpeningForCooling {
                 if let Some(openings) = &self.openings {
                     for op in openings.iter() {
                         q_v_stack += C_D * self.window_area_equivalent / 3.0
-                            * ((temp_diff
-                                * projected_height_for_transparent_element(op).unwrap()
-                                * G)
-                                / temp_average_k)
-                                .powf(0.5);
+                            * ((temp_diff * op.projected_height() * G) / temp_average_k).powf(0.5);
                     }
                 }
             }

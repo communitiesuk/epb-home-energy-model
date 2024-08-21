@@ -1,8 +1,4 @@
-use crate::core::space_heat_demand::building_element::{
-    a_sol_for, area_for_building_element_input, h_ce_for, h_ci_for, h_pli_for, h_re_for, h_ri_for,
-    i_sol_dir_dif_for, k_pli_for, number_of_building_element_nodes, number_of_inside_nodes,
-    shading_factors_direct_diffuse_for, temp_ext_for, therm_rad_to_sky_for,
-};
+use crate::core::space_heat_demand::building_element::{BuildingElement, BuildingElementBehaviour};
 use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
 };
@@ -12,7 +8,6 @@ use crate::core::space_heat_demand::ventilation_element::{
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
-use crate::input::BuildingElement;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
@@ -62,7 +57,7 @@ pub struct Zone {
     /// number of unknown temperatures (each node in each
     ///                      building element + 1 for internal air) to be
     ///                      solved for
-    no_of_temps: u32,
+    no_of_temps: usize,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
@@ -110,7 +105,7 @@ impl Zone {
 
         let area_el_total = building_elements
             .values()
-            .map(area_for_building_element_input)
+            .map(BuildingElementBehaviour::area)
             .sum::<f64>();
         let c_int = K_M_INT * area;
 
@@ -123,9 +118,9 @@ impl Zone {
         let mut named_building_elements = vec![];
         for (name, building_element) in building_elements.iter() {
             let start_idx = n;
-            n += number_of_building_element_nodes(building_element);
+            n += building_element.number_of_nodes();
             let end_idx = n - 1;
-            element_positions.push((start_idx as usize, end_idx as usize));
+            element_positions.push((start_idx, end_idx));
             named_building_elements.push(NamedBuildingElement {
                 name: name.clone(),
                 element: building_element.clone(),
@@ -178,14 +173,10 @@ impl Zone {
 
     /// sum solar gains for all elements in the zone
     /// only transparent elements will have solar gains > 0
-    pub fn gains_solar(
-        &self,
-        external_conditions: &ExternalConditions,
-        simulation_time: SimulationTimeIteration,
-    ) -> f64 {
+    pub fn gains_solar(&self, simulation_time: SimulationTimeIteration) -> f64 {
         self.building_elements
             .iter()
-            .map(|el| el.element.solar_gains(external_conditions, simulation_time))
+            .map(|el| el.element.solar_gains(simulation_time).unwrap())
             .sum::<f64>()
     }
 
@@ -216,7 +207,7 @@ impl Zone {
                         | BuildingElement::Ground { .. }
                         | BuildingElement::AdjacentZTUSimple { .. }
                 ) {
-                    Some(area_for_building_element_input(&el.element))
+                    Some(el.element.area())
                 } else {
                     None
                 }
@@ -353,7 +344,7 @@ impl Zone {
 pub fn init_node_temps(
     temp_ext_air_init: f64,
     temp_setpnt_init: f64,
-    no_of_temps: u32,
+    no_of_temps: usize,
     area_el_total: f64,
     area: f64,
     volume: f64,
@@ -368,7 +359,6 @@ pub fn init_node_temps(
     tb_heat_trans_coeff: f64,
 ) -> Vec<f64> {
     let simulation_time = simulation_time.peek().unwrap();
-    let no_of_temps = no_of_temps as usize;
     // Set starting point for all node temperatures (elements of
     //                                               # self.__temp_prev) as average of external air temp and setpoint. This
     // is somewhat arbitrary, but of all options for a uniform initial
@@ -876,13 +866,13 @@ fn calc_temperatures(
 
         // load in k_pli, h_pli, h_ce and h_re for this element
         let (k_pli, h_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
-            k_pli_for(eli),
-            h_pli_for(eli),
-            h_ce_for(eli),
-            h_re_for(eli),
-            h_ri_for(eli),
-            a_sol_for(eli),
-            therm_rad_to_sky_for(eli),
+            eli.k_pli(),
+            eli.h_pli(),
+            eli.h_ce(),
+            eli.h_re(),
+            eli.h_ri(),
+            eli.a_sol(),
+            eli.therm_rad_to_sky(),
         );
 
         // Coeff for temperature of this node
@@ -890,16 +880,17 @@ fn calc_temperatures(
         // Coeff for temperature of next node
         matrix_a[(idx, idx + 1)] = -h_pli[i];
         // RHS of heat balance eqn for this node
-        let (i_sol_dir, i_sol_dif) = i_sol_dir_dif_for(eli, external_conditions, simulation_time);
-        let (f_sh_dir, f_sh_dif) =
-            shading_factors_direct_diffuse_for(eli, external_conditions, *simulation_time).unwrap();
+        let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(*simulation_time);
+        let (f_sh_dir, f_sh_dif) = eli
+            .shading_factors_direct_diffuse(*simulation_time)
+            .unwrap();
         vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
-            + (h_ce + h_re) * temp_ext_for(eli, external_conditions, simulation_time)
+            + (h_ce + h_re) * eli.temp_ext(*simulation_time)
             + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
             - therm_rad_to_sky;
 
         // Inside node(s), if any (eqn 40)
-        for _ in 1..(number_of_inside_nodes(eli) + 1) {
+        for _ in 1..(eli.number_of_inside_nodes() + 1) {
             i += 1;
             idx += 1;
             // Coeff for temperature of prev node
@@ -916,11 +907,11 @@ fn calc_temperatures(
         idx += 1;
         assert_eq!(idx, element_positions[eli_idx].1);
         i += 1;
-        assert_eq!(i as u32, number_of_building_element_nodes(eli) - 1);
+        assert_eq!(i, eli.number_of_nodes() - 1);
         // Get internal convective surface heat transfer coefficient, which
-        // depends on direction of heat flow, which depends in temperature of
+        // depends on direction of heat flow, which depends on temperature of
         // zone and internal surface
-        let h_ci = h_ci_for(eli, temp_prev[passed_zone_idx], temp_prev[idx]);
+        let h_ci = eli.h_ci(temp_prev[passed_zone_idx], temp_prev[idx]);
         // Coeff for temperature of prev node
         matrix_a[(idx, idx - 1)] = -h_pli[i - 1];
         // Coeff for temperature of this node
@@ -936,7 +927,7 @@ fn calc_temperatures(
             // to handle the case where col = idx (i.e. where we have
             // already partially set the value of the matrix element above
             // (before this loop) and do not want to overwrite it)
-            matrix_a[(idx, col)] -= (area_for_building_element_input(elk) / area_el_total) * h_ri;
+            matrix_a[(idx, col)] -= (elk.area() / area_el_total) * h_ri;
         }
         // Coeff for temperature of thermal zone
         matrix_a[(idx, passed_zone_idx)] = -h_ci;
@@ -974,9 +965,8 @@ fn calc_temperatures(
             .enumerate()
             .map(|(eli_idx, nel)| {
                 let NamedBuildingElement { element: eli, .. } = nel;
-                area_for_building_element_input(eli)
-                    * h_ci_for(
-                        eli,
+                eli.area()
+                    * eli.h_ci(
                         temp_prev[passed_zone_idx],
                         temp_prev[element_positions[eli_idx].1],
                     )
@@ -991,9 +981,8 @@ fn calc_temperatures(
     for (eli_idx, NamedBuildingElement { element: eli, .. }) in building_elements.iter().enumerate()
     {
         let col = element_positions[eli_idx].1; // Column for internal surface node temperature
-        matrix_a[(passed_zone_idx, col)] = -area_for_building_element_input(eli)
-            * h_ci_for(
-                eli,
+        matrix_a[(passed_zone_idx, col)] = -eli.area()
+            * eli.h_ci(
                 temp_prev[passed_zone_idx],
                 temp_prev[element_positions[eli_idx].1],
             );
@@ -1283,7 +1272,7 @@ fn temp_operative(
         .enumerate()
         .map(|(eli_idx, nel)| {
             let NamedBuildingElement { element: eli, .. } = nel;
-            area_for_building_element_input(eli) * temp_vector[element_positions[eli_idx].1]
+            eli.area() * temp_vector[element_positions[eli_idx].1]
         })
         .sum::<f64>()
         / area_el_total;
@@ -1374,13 +1363,16 @@ pub struct HeatBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::space_heat_demand::building_element::{
+        BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
+        BuildingElementOpaque, BuildingElementTransparent,
+    };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
     use crate::core::units::DAYS_IN_MONTH;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        FloorType, InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType,
-        MassDistributionClass, WindShieldLocation,
+        InfiltrationBuildType, InfiltrationShelterType, InfiltrationTestType, MassDistributionClass,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
@@ -1554,105 +1546,77 @@ mod tests {
         infiltration_ventilation_element: VentilationElement,
     ) -> Zone {
         // Create objects for the different building elements in the zone
-        let be_opaque_i = BuildingElement::Opaque {
-            is_unheated_pitched_roof: Some(false),
-            area: 20.0,
-            pitch: 180.,
-            a_sol: 0.6,
-            r_c: Some(0.25),
-            k_m: 19000.,
-            mass_distribution_class: MassDistributionClass::I,
-            is_external_door: None,
-            orientation: 0.,
-            base_height: 0.,
-            height: 2.,
-            width: 10.,
-            u_value: None,
-            h_ci: None,
-            h_ri: None,
-            h_ce: None,
-            h_re: None,
-        };
-        let be_opaque_d = BuildingElement::Opaque {
-            is_unheated_pitched_roof: Some(true),
-            area: 26.0,
-            pitch: 180.,
-            a_sol: 0.55,
-            r_c: Some(0.33),
-            k_m: 16000.,
-            mass_distribution_class: MassDistributionClass::D,
-            is_external_door: None,
-            orientation: 0.,
-            base_height: 0.,
-            height: 2.,
-            width: 10.,
-            u_value: None,
-            h_ci: None,
-            h_ri: None,
-            h_ce: None,
-            h_re: None,
-        };
-        let be_ztc = BuildingElement::AdjacentZTC {
-            area: 22.5,
-            pitch: 135.,
-            r_c: Some(0.5),
-            k_m: 18000.,
-            mass_distribution_class: MassDistributionClass::E,
-            u_value: None,
-        };
-        let be_ground = BuildingElement::Ground {
-            area: 25.0,
-            total_area: 25.0,
-            pitch: 90.,
-            u_value: 1.33,
-            r_f: 0.2,
-            k_m: 17000.,
-            mass_distribution_class: MassDistributionClass::IE,
-            floor_type: FloorType::SuspendedFloor,
-            height_upper_surface: Some(0.5),
-            edge_insulation: None,
-            thermal_transmission_walls: Some(0.5),
-            thermal_resistance_of_insulation: Some(7.),
-            area_per_perimeter_vent: Some(0.01),
-            shield_fact_location: Some(WindShieldLocation::Sheltered),
-            h_pi: Some(2.2),
-            h_pe: Some(2.7),
-            thickness_walls: 0.2,
-            depth_basement_floor: None,
-            thermal_resistance_of_basement_walls: None,
-            thermal_transmittance_of_floor_above_basement: None,
-            height_basement_walls: None,
-            perimeter: 20.0,
-            psi_wall_floor_junc: 0.7,
-        };
-        let be_transparent = BuildingElement::Transparent {
-            pitch: 90.,
-            window_openable_control: None,
-            r_c: Some(0.4),
-            orientation: 180.,
-            g_value: 0.75,
-            frame_area_fraction: 0.25,
-            base_height: 1.0,
-            height: 1.25,
-            width: 4.0,
-            free_area_height: None,
-            mid_height: None,
-            max_window_open_area: None,
-            security_risk: None,
-            window_part_list: None,
-            shading: vec![],
-            u_value: None,
-            _area: None,
-        };
-        let be_ztu = BuildingElement::AdjacentZTUSimple {
-            area: 30.0,
-            pitch: 130.,
-            r_c: Some(0.5),
-            r_u: 0.6,
-            k_m: 18000.,
-            mass_distribution_class: MassDistributionClass::E,
-            u_value: None,
-        };
+        let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
+            20.,
+            180.,
+            0.60,
+            0.25,
+            19000.0,
+            MassDistributionClass::I,
+            0.,
+            0.,
+            2.,
+            10.,
+            external_conditions.clone(),
+        ));
+        let be_opaque_d = BuildingElement::Opaque(BuildingElementOpaque::new(
+            26.,
+            180.,
+            0.55,
+            0.33,
+            16000.0,
+            MassDistributionClass::D,
+            0.,
+            0.,
+            2.,
+            10.,
+            external_conditions.clone(),
+        ));
+        let be_ztc = BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
+            22.5,
+            135.,
+            0.50,
+            18000.0,
+            MassDistributionClass::E,
+            external_conditions.clone(),
+        ));
+        let be_ground = BuildingElement::Ground(
+            BuildingElementGround::new(
+                25.0,
+                90.,
+                1.33,
+                0.2,
+                17000.0,
+                MassDistributionClass::IE,
+                2.2,
+                2.7,
+                20.0,
+                0.7,
+                external_conditions.clone(),
+            )
+            .unwrap(),
+        );
+        let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
+            90.,
+            0.4,
+            180.,
+            0.75,
+            0.25,
+            1.,
+            1.25,
+            4.,
+            vec![],
+            external_conditions.clone(),
+        ));
+        let be_ztu = BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
+            30.,
+            130.,
+            0.50,
+            0.6,
+            18000.0,
+            MassDistributionClass::E,
+            external_conditions.clone(),
+        ));
 
         // Put building element objects in a list that can be iterated over
         let be_objs = IndexMap::from([
