@@ -20,8 +20,6 @@ use std::sync::Arc;
 
 // BS EN 15316-5:2017 Appendix B default input data
 // Model Information
-const STORAGE_TANK_NB_VOL: usize = 4; // TODO as part of migration 0.28 to 0.30: refactor this const out
-
 // Product Description Data
 // factors for energy recovery Table B.3
 // part of the auxiliary energy transmitted to the medium
@@ -623,9 +621,9 @@ impl StorageTank {
         let mut heat_source_data = self.heat_source_data.clone(); // TODO see if we can avoid this allocation
         for (heat_source_name, positioned_heat_source) in heat_source_data.iter_mut() {
             let heater_layer =
-                (positioned_heat_source.heater_position * STORAGE_TANK_NB_VOL as f64) as usize;
+                (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
-                (positioned_heat_source.thermostat_position * STORAGE_TANK_NB_VOL as f64) as usize;
+                (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
 
             let (
                 temp_s8_n_step,
@@ -698,9 +696,9 @@ impl StorageTank {
 
         let heat_source_data = &self.heat_source_data[heat_source_name];
 
-        let heater_layer = (heat_source_data.heater_position * STORAGE_TANK_NB_VOL as f64) as usize;
+        let heater_layer = (heat_source_data.heater_position * self.nb_vol as f64) as usize;
         let _thermostat_layer =
-            (heat_source_data.thermostat_position * STORAGE_TANK_NB_VOL as f64) as usize;
+            (heat_source_data.thermostat_position * self.nb_vol as f64) as usize;
 
         let mut q_x_in_n = Vec::with_capacity(self.nb_vol);
         q_x_in_n[heater_layer] = energy_input;
@@ -1220,10 +1218,7 @@ mod tests {
         (precision * src).round() / precision
     }
 
-    fn round_each_by_precision(
-        src: Vec<[f64; STORAGE_TANK_NB_VOL]>,
-        precision: f64,
-    ) -> Vec<[f64; STORAGE_TANK_NB_VOL]> {
+    fn round_each_by_precision(src: Vec<Vec<f64>>, precision: f64) -> Vec<Vec<f64>> {
         src.iter()
             .map(|timestep_values| {
                 timestep_values
@@ -1445,42 +1440,42 @@ mod tests {
     ) {
         let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
         //collect all values for steps and compare at the same time
-        let mut temp_n_values_1: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
-        let mut temp_n_values_2: Vec<[f64; STORAGE_TANK_NB_VOL]> = vec![];
-        let expected_temp_n_values_1 = vec![
-            [
+        let mut temp_n_values_1: Vec<Vec<f64>> = vec![];
+        let mut temp_n_values_2: Vec<Vec<f64>> = vec![];
+        let expected_temp_n_values_1: Vec<Vec<f64>> = vec![
+            vec![
                 43.5117037037037,
                 54.595555555555556,
                 54.595555555555556,
                 54.595555555555556,
             ],
-            [
+            vec![
                 34.923351362284535,
                 51.44088940589104,
                 54.19530534979424,
                 54.19530534979424,
             ],
-            [
+            vec![
                 25.428671888696492,
                 44.86111831060492,
                 52.763271736704276,
                 53.79920588690749,
             ],
-            [
+            vec![
                 17.778914378539547,
                 34.731511258769736,
                 48.38455458241966,
                 52.883165319588585,
             ],
-            [55., 55., 55., 55.],
-            [
+            vec![55., 55., 55., 55.],
+            vec![
                 32.955654320987655,
                 54.595555555555556,
                 54.595555555555556,
                 54.595555555555556,
             ],
-            [55., 55., 55., 55.],
-            [
+            vec![55., 55., 55., 55.],
+            vec![
                 33.53623703703703,
                 54.595555555555556,
                 54.595555555555556,
@@ -1497,45 +1492,45 @@ mod tests {
             2.0255553251028573,
             0.0,
         ];
-        let expected_temp_n_values_2 = vec![
-            [
+        let expected_temp_n_values_2: Vec<Vec<f64>> = vec![
+            vec![
                 51.74444444444445,
                 59.687654320987654,
                 59.687654320987654,
                 59.687654320987654,
             ],
-            [
+            vec![
                 44.83576096913369,
                 58.10817048730805,
                 59.37752591068435,
                 59.37752591068435,
             ],
-            [
+            vec![
                 36.279411505184825,
                 54.60890513377094,
                 58.76352191705448,
                 59.06959902921961,
             ],
-            [
+            vec![
                 27.803758539213316,
                 48.41088769491589,
                 57.11721566595131,
                 58.66493643832885,
             ],
-            [
+            vec![
                 22.115012458237494,
                 41.46704433740872,
                 53.98882801141131,
                 57.857823384416925,
             ],
-            [18.392953648519935, 34.88146733500239, 60.0, 60.0],
-            [
+            vec![18.392953648519935, 34.88146733500239, 60.0, 60.0],
+            vec![
                 16.198781370486113,
                 29.539425498912564,
                 51.75379869179794,
                 59.687654320987654,
             ],
-            [14.889587258686573, 25.21241834280409, 60.0, 60.0],
+            vec![14.889587258686573, 25.21241834280409, 60.0, 60.0],
         ];
         let expected_energy_supply_results_2 = [
             0.0,
@@ -1552,7 +1547,7 @@ mod tests {
                 [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
                 iteration,
             );
-            temp_n_values_1.push(storage_tank1.temp_n);
+            temp_n_values_1.push(storage_tank1.temp_n.clone());
             assert_relative_eq!(
                 energy_supply.read().results_by_end_user()["immersion"][t_idx],
                 expected_energy_supply_results_1[t_idx],
@@ -1563,7 +1558,7 @@ mod tests {
                 [10.0, 10.0, 15.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
                 iteration,
             );
-            temp_n_values_2.push(storage_tank2.temp_n);
+            temp_n_values_2.push(storage_tank2.temp_n.clone());
             assert_relative_eq!(
                 energy_supply.read().results_by_end_user()["immersion2"][t_idx],
                 expected_energy_supply_results_2[t_idx],
