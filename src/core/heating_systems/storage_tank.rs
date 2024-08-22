@@ -58,7 +58,7 @@ pub struct StorageTank {
     temp_set_on: f64,  // set point temperature
     cold_feed: WaterSourceWithTemperature,
     simulation_timestep: f64,
-    energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
+    energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
     nb_vol: usize,
     temp_internal_air: f64,
@@ -80,6 +80,7 @@ pub struct StorageTank {
     #[cfg(test)]
     energy_demand_test: f64,
     temp_final_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
+    temp_average_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
     temp_average_drawoff_volweighted: Option<f64>, // In Python this is created from inside allocate_hot_water()
     total_volume_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
 }
@@ -116,7 +117,7 @@ impl StorageTank {
         external_conditions: Arc<ExternalConditions>,
         nb_vol: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
-        energy_supply_connection_unmet_demand: Option<EnergySupplyConnection>,
+        energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
         control_hold_at_setpoint: Option<Arc<Control>>,
         contents: MaterialProperties,
     ) -> Self {
@@ -171,7 +172,7 @@ impl StorageTank {
             temp_set_on,
             cold_feed,
             simulation_timestep,
-            energy_supply_connection_unmet_demand,
+            energy_supply_conn_unmet_demand,
             control_hold_at_setpoint,
             nb_vol,
             temp_internal_air,
@@ -193,6 +194,7 @@ impl StorageTank {
             #[cfg(test)]
             energy_demand_test,
             temp_final_drawoff: None,
+            temp_average_drawoff: None,
             temp_average_drawoff_volweighted: None,
             total_volume_drawoff: None,
         }
@@ -802,99 +804,85 @@ impl StorageTank {
     /// * `usage_events` -- All draw off events for the timestep
     pub fn demand_hot_water(
         &mut self,
-        volume_demanded: f64,
+        usage_events: Vec<TypedScheduleEvent>,
+        // TODO migration to 0_30
+        // we're now passing in simulation time - could we just pass in one TypedScheduleEvent
         simulation_time: SimulationTimeIteration,
-    ) -> f64 {
-        // 6.4.3.3 STEP 1 Calculate energy stored
-        // energy stored for domestic hot water - kWh
-        let q_out_w_n = self.energy_stored(simulation_time.index);
+    ) -> (f64,f64,f64,f64,f64) {
+        let mut q_use_w = 0.;
+        let mut q_unmet_w = 0.;
+        let mut volume_demanded = 0.;
 
-        // 6.4.3.4 STEP 2 Volume (and energy) to be withdrawn from the storage (for DHW)
-        // energy required for domestic hot water in kWh
-        let q_out_w_dis_req = self.energy_required(volume_demanded, simulation_time.index);
-        // energy withdrawn, unmet energy required, volume withdrawn
-        let (q_use_w_n, q_out_w_dis_req_rem, vol_use_w_n) =
-            self.energy_withdrawn(q_out_w_dis_req, q_out_w_n, simulation_time.index);
+        let temp_s3_n = self.temp_n.clone();
+        
+        // TODO migration to 0_30
+        // does all of these need to be Option types?
+        self.temp_final_drawoff = Some(self.get_temp_hot_water());
+        self.temp_average_drawoff_volweighted = Some(0.);
+        self.total_volume_drawoff = Some(0.);
+        self.temp_average_drawoff = Some(self.get_temp_hot_water());
 
-        // if tank cannot provide enough hot water report unmet demand
-        if let Some(energy_supply) = &self.energy_supply_connection_unmet_demand {
-            energy_supply
-                .demand_energy(q_out_w_dis_req_rem, simulation_time.index)
-                .unwrap();
+        // Filtering out IES events that don't get added a 'warm_volume' when processing 
+        // the dhw_demand calculation
+        let filtered_events = usage_events.into_iter().filter(|e| { e.warm_volume.is_some() }).collect_vec();
+        
+        for mut event in filtered_events {
+            // Check if 'pipework_volume' key exists in the event dictionary
+            if event.pipework_volume.is_none() {
+                // If 'pipework_volume' is not found, add it with a default value of 0.0
+                event.pipework_volume = Some(0.0);
+            }
+
+            // Decision no to include yet the overlapping of events for pipework losses
+            // even if applying pipework losses to all events might be overstimating
+            // the following overlapping processing could be understimating for multiple
+            // branches of the pipework system
+            // TODO (from Python) Improve approach for avoiding double counting of genuine overlapping
+            // events
+            // Avoid double counting pipework loses when events overlap
+            // time_start_current_event = event['start']
+            // if self.__time_end_previous_event >= time_start_current_event:
+            // event['pipework_volume'] = 0.0
+            // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
+            // self.__time_end_previous_event = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
+
+            let (volume_used, temp_s3_n, energy_withdrawn, energy_unmet) = self.allocate_hot_water(event.clone(), simulation_time);
+            
+            self.temp_n = temp_s3_n.clone();
+                
+            volume_demanded += volume_used;
+            q_unmet_w += energy_unmet;
+            q_use_w += energy_withdrawn;
         }
 
-        // 6.4.3.5 STEP 3 Temperature of the storage after volume withdrawn (for DHW)
-        let temp_s3_n = self.volume_withdrawn_replaced(vol_use_w_n, simulation_time.index);
+        if self.energy_supply_conn_unmet_demand.is_some()
+        {
+            self.energy_supply_conn_unmet_demand.as_ref().unwrap().demand_energy(q_unmet_w, simulation_time.index);
+        }
+        
+        // TODO migration to 0_30
+        // once we have a passing test change this to a match statement
+        if self.total_volume_drawoff.is_some() && self.total_volume_drawoff.unwrap() != 0. {
+            let temp_average_drawoff_volweighted = self.temp_average_drawoff_volweighted.expect("temp_average_drawoff_volweighted was not set");
+            self.temp_average_drawoff = Some(temp_average_drawoff_volweighted / self.total_volume_drawoff.unwrap());
+        }
+        else
+        {
+            self.temp_average_drawoff = temp_s3_n.last().copied();
+        }
+
+        // TODO (from Python) 6.4.3.6 STEP 4 Volume to be withdrawn from the storage (for Heating)
+        // TODO (from Python) - 6.4.3.7 STEP 5 Temperature of the storage after volume withdrawn (for Heating)
 
         // Run over multiple heat sources
-        let mut temp_after_prev_heat_source = temp_s3_n;
-        let mut q_ls: f64 = Default::default();
-        self.q_ls_n_prev_heat_source = Default::default();
-        // we need the last value of temp_s8_n after the loop for later in the function
-        let mut temp_s8_n = Vec::with_capacity(self.nb_vol);
-        let mut heat_source_data = self.heat_source_data.clone(); // TODO see if we can avoid this allocation
-        for (heat_source_name, positioned_heat_source) in heat_source_data.iter_mut() {
-            let heater_layer =
-                (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
-            let thermostat_layer =
-                (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
+        let temp_after_prev_heat_source = temp_s3_n;
+        let q_ls = 0.0;
 
-            let (
-                temp_s8_n_step,
-                _q_x_in_n,
-                _q_s6,
-                _temp_s6_n,
-                _temp_s7_n,
-                _q_in_h_w,
-                q_ls_this_heat_source,
-                q_ls_n_this_heat_source,
-            ) = self.run_heat_sources(
-                temp_after_prev_heat_source,
-                positioned_heat_source.heat_source.clone(),
-                heat_source_name,
-                heater_layer,
-                thermostat_layer,
-                &self.q_ls_n_prev_heat_source,
-                simulation_time,
-            );
+        // TODO review other places that initialise vecs
+        // with nb_vol
+        self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
+        todo!()
 
-            temp_after_prev_heat_source = &temp_s8_n_step;
-            q_ls += q_ls_this_heat_source;
-            for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
-                self.q_ls_n_prev_heat_source[i] += *q_ls_n;
-            }
-
-            // Trigger heating to stop when setpoint is reached
-            if temp_s8_n_step[thermostat_layer] >= self.temp_set_on {
-                self.heating_active
-                    .entry(heat_source_name.to_string())
-                    .and_modify(|e| {
-                        *e = false;
-                    });
-            }
-
-            temp_s8_n = temp_s8_n_step;
-        }
-
-        // Additional calculations
-        // 6.4.6 Calculation of the auxiliary energy
-        // accounted for elsewhere so not included here
-        let w_sto_aux = 0.;
-
-        // 6.4.7 Recoverable, recovered thermal losses
-        // recovered auxiliary energy to the heating medium - kWh
-        let _q_sto_h_aux_rvd = w_sto_aux * STORAGE_TANK_F_RVD_AUX;
-        // recoverable auxiliary energy transmitted to the heated space - kWh
-        let q_sto_h_rbl_aux = w_sto_aux * STORAGE_TANK_F_STO_M * (1. - STORAGE_TANK_F_RVD_AUX);
-        // recoverable heat losses (storage) - kWh
-        let q_sto_h_rbl_env = q_ls * STORAGE_TANK_F_STO_M;
-        // total recoverable heat losses for heating - kWh
-        self.q_sto_h_ls_rbl = Some(q_sto_h_rbl_env + q_sto_h_rbl_aux);
-
-        // set temperatures calculated to be initial temperatures of volumes for the next timestep
-        self.temp_n = temp_s8_n;
-
-        q_use_w_n.iter().sum()
     }
 
     fn additional_energy_input(
