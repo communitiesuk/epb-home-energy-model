@@ -1,10 +1,9 @@
-use indexmap::IndexMap;
-
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
+use indexmap::IndexMap;
 
 pub struct PointOfUse {
     efficiency: f64,

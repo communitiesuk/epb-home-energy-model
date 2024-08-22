@@ -126,7 +126,7 @@ impl Zone {
                 element: building_element.clone(),
             })
         }
-        let zone_idx = n as usize;
+        let zone_idx = n;
         let no_of_temps = n + 1;
 
         let temp_prev = Arc::new(Mutex::new(init_node_temps(
@@ -269,7 +269,7 @@ impl Zone {
             &simulation_time_iteration,
             external_conditions,
             &self.temp_prev.lock(),
-            self.no_of_temps as usize,
+            self.no_of_temps,
             self.area_el_total,
             self.area(),
             self.volume,
@@ -302,7 +302,7 @@ impl Zone {
             frac_convective,
             vent_extra_h_ve,
             throughput_factor,
-            self.no_of_temps as usize,
+            self.no_of_temps,
             &self.building_elements,
             &self.element_positions,
             external_conditions,

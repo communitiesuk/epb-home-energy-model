@@ -66,7 +66,7 @@ pub trait BuildingElementBehaviour {
     /// Determine direction of heat flow for a surface
     fn heat_flow_direction(&self, temp_int_air: f64, temp_int_surface: f64) -> HeatFlowDirection {
         let pitch = self.pitch();
-        if pitch >= PITCH_LIMIT_HORIZ_CEILING && pitch <= PITCH_LIMIT_HORIZ_FLOOR {
+        if (PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR).contains(&pitch) {
             HeatFlowDirection::Horizontal
         } else {
             let inwards_heat_flow = temp_int_air < temp_int_surface;
