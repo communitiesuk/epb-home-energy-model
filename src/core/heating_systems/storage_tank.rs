@@ -729,6 +729,67 @@ impl StorageTank {
         )
     }
 
+    /// Calculate the new temperature distribution after displacement.
+    /// Arguments:
+    /// remaining_vols -- List of remaining volumes for each storage layer after draw-off
+    /// temp_cold     -- Temperature of the cold water being added
+    fn calculate_new_temperatures(
+        &self,
+        mut remaining_vols: Vec<f64>,
+        simulation_time: SimulationTimeIteration,
+    ) -> Vec<f64> {
+        let mut new_temps = self.temp_n.clone();
+
+        // Iterate from the top layer downwards
+        for i in (0..self.vol_n.len()).rev() {
+            // Determine how much volume needs to be added to this layer
+            let mut needed_volume = self.vol_n[i] - remaining_vols[i];
+            // If this layer is already full, continue to the next
+            if needed_volume <= 0. {
+                break;
+            }
+
+            // Initialize the variables for mixing temperatures
+            let mut total_volume = remaining_vols[i];
+            let mut volume_weighted_temperature = remaining_vols[i] * self.temp_n[i];
+
+            // Add water from the layers below to this layer
+            for j in (0..=i - 1).rev() {
+                // TODO as part of migration 0.28 to 0.30: double check range matches Python
+                let available_volume = remaining_vols[j];
+                if available_volume > 0. {
+                    // Determine the volume to move up from this layer
+                    let move_volume = f64::min(needed_volume, available_volume);
+                    remaining_vols[j] -= move_volume;
+
+                    // Adjust the temperature by mixing in the moved volume
+                    total_volume += move_volume;
+                    volume_weighted_temperature += move_volume * self.temp_n[j];
+
+                    // Decrease the amount of volume needed for the current layer
+                    needed_volume -= move_volume;
+                    if needed_volume <= 0. {
+                        break;
+                    }
+                }
+            }
+
+            // If not enough water is available from the lower layers, use the cold supply
+            if needed_volume > 0. {
+                total_volume += needed_volume;
+                volume_weighted_temperature +=
+                    needed_volume * self.cold_feed.temperature(simulation_time.index);
+            }
+
+            // Calculate the new temperature for the current layer
+            // Round to 2 decimals to match instrumentation limits and significant figures,
+            // ensuring practical accuracy, computational efficiency, and avoiding minute e-18 differences.
+            new_temps[i] = (100. * (volume_weighted_temperature / total_volume)).round() / 100.;
+            remaining_vols[i] = total_volume;
+        }
+        new_temps
+    }
+
     /// Draw off hot water from the tank
     /// Energy calculation as per BS EN 15316-5:2017 Method A sections 6.4.3, 6.4.6, 6.4.7
     ///
