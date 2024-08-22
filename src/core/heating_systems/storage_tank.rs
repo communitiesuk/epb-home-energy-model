@@ -598,13 +598,13 @@ impl StorageTank {
         &mut self,
         event: TypedScheduleEvent,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, TemperatureCalculation, f64, f64) {
+    ) -> (f64, Vec<f64>, f64, f64) {
         // Make a copy of the volume list to keep track of remaining volumes
         // Remaining volume of water in storage tank layers
-        let remaining_vols = self.vol_n.clone();
+        let mut remaining_vols = self.vol_n.clone();
 
         // Extract the temperature and required warm volume from the event
-        let warm_temp = event.temperature;
+        let mut warm_temp = event.temperature;
         let warm_volume = event.warm_volume;
         // Remaining volume of warm water to be satisfied for current event
         let mut remaining_demanded_warm_volume = warm_volume.unwrap();
@@ -612,19 +612,19 @@ impl StorageTank {
         // Initialize the unmet and met energies
         let mut energy_unmet = 0.0;
         let mut energy_withdrawn = 0.0;
-        let pipework_temp = self.cold_feed.temperature(simulation_time.index); // This value set to initialise, but is never used - overwritten later.
+        let mut pipework_temp = self.cold_feed.temperature(simulation_time.index); // This value set to initialise, but is never used - overwritten later.
 
-        let pipework_considered = if event.pipework_volume.unwrap() <= 0.0 {
+        let mut pipework_considered = if event.pipework_volume.unwrap() <= 0.0 {
             true
         } else {
             false
         };
 
-        let temp_average_drawoff_volweighted: f64 = Default::default();
-        let total_volume_drawoff: f64 = Default::default();
+        let mut temp_average_drawoff_volweighted: f64 = Default::default();
+        let mut total_volume_drawoff: f64 = Default::default();
 
         //  Loop through storage layers (starting from the top)
-        for mut layer_index in (0..self.temp_n.len()).rev() {
+        for layer_index in (0..self.temp_n.len()).rev() {
             let layer_temp = self.temp_n[layer_index];
             let layer_vol = remaining_vols[layer_index];
 
@@ -634,14 +634,14 @@ impl StorageTank {
                     self.temp_final_drawoff = Some(pipework_temp);
                     break;
                 } else {
-                    let remaining_demanded_warm_volume = event.pipework_volume;
-                    let warm_temp = layer_temp;
-                    let pipework_considered = true;
+                    remaining_demanded_warm_volume = event.pipework_volume.unwrap();
+                    warm_temp = layer_temp;
+                    pipework_considered = true;
                 }
             }
             // If event is finished and we are serving the pipework, this is the temperature
             // of the water stranded
-            let pipework_temp = layer_temp;
+            pipework_temp = layer_temp;
 
             // Skip this layer if its remaining volume is already zero
             if remaining_vols[layer_index] <= 0.0 {
@@ -660,19 +660,20 @@ impl StorageTank {
                 self.cold_feed.temperature(simulation_time.index),
             );
 
-            let mut required_vol: f64 = Default::default();
+            let warm_vol_removed: f64;
+            let required_vol: f64;
             // Volume of hot water required at this layer
             if layer_vol <= remaining_demanded_warm_volume * fraction {
                 // This is the case where layer cannot meet all remaining demand for this event
                 required_vol = layer_vol;
-                let warm_vol_removed = layer_vol / fraction;
+                warm_vol_removed = layer_vol / fraction;
                 // Deduct the required volume from the remaining demand and update the layer's volume
                 remaining_vols[layer_index] -= layer_vol;
                 remaining_demanded_warm_volume -= warm_vol_removed;
             } else {
                 //This is the case where layer can meet all remaining demand for this event
                 required_vol = remaining_demanded_warm_volume * fraction;
-                let warm_vol_removed = remaining_demanded_warm_volume;
+                warm_vol_removed = remaining_demanded_warm_volume;
                 // Deduct the required volume from the remaining demand and update the layer's volume
                 remaining_vols[layer_index] -= required_vol;
                 remaining_demanded_warm_volume = 0.0;
@@ -710,13 +711,14 @@ impl StorageTank {
             * (warm_temp - self.cold_feed.temperature(simulation_time.index));
 
         //  Calculate the remaining total volume
-        let remaining_total_volume = remaining_vols.iter().sum();
+        let remaining_total_volume: f64 = remaining_vols.iter().sum();
 
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
 
         //  Determine the new temperature distribution after displacement
-        let new_temp_distribution = self.calculate_new_temperatures(remaining_vols);
+        let new_temp_distribution =
+            self.calculate_new_temperatures(remaining_vols, simulation_time);
 
         //  Return the remaining storage volumes, volume used, new temperature distribution, and the met/unmet targets
         (
