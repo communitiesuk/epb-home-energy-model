@@ -79,9 +79,9 @@ pub struct StorageTank {
     primary_gains: f64,          // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
     energy_demand_test: f64,
-    temp_final_drawoff: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
-    temp_average_drawoff_volweighted: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
-    total_volume_drawoff: Option<f64>, // TODO as part of migration 0.28 to 0.30: review approach to add it as field
+    temp_final_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
+    temp_average_drawoff_volweighted: Option<f64>, // In Python this is created from inside allocate_hot_water()
+    total_volume_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
 }
 
 impl StorageTank {
@@ -200,7 +200,7 @@ impl StorageTank {
 
     fn temp_surrounding_primary_pipework(
         &self,
-        pipework_data: Pipework,
+        pipework_data: &Pipework,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match pipework_data.location() {
@@ -300,7 +300,7 @@ impl StorageTank {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
                         let (primary_pipework_losses_kwh, _) =
-                            self.primary_pipework_losses(energy_potential);
+                            self.primary_pipework_losses(energy_potential, simulation_time);
                         energy_potential -= primary_pipework_losses_kwh;
                     }
 
@@ -511,7 +511,10 @@ impl StorageTank {
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
 
-    // NB. there is a toreport() function here in the Python - seems to be used for debugging? // TODO: confirm this as part of migration 0.28 to 0.30
+    /// Send more intermediate output parameters to report
+    fn toreport(&self) -> (f64, f64) {
+        (self.primary_pipework_losses_kwh, self.storage_losses_kwh)
+    }
 
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
@@ -622,9 +625,10 @@ impl StorageTank {
 
         let mut temp_average_drawoff_volweighted: f64 = Default::default();
         let mut total_volume_drawoff: f64 = Default::default();
-
+        let mut last_layer_index: usize = Default::default();
         //  Loop through storage layers (starting from the top)
         for layer_index in (0..self.temp_n.len()).rev() {
+            last_layer_index = layer_index;
             let layer_temp = self.temp_n[layer_index];
             let layer_vol = remaining_vols[layer_index];
 
@@ -699,10 +703,9 @@ impl StorageTank {
 
         // When the event has not been fully met or has been exactly met with the last of the hot water
         // in the tank, there's only cold water from the feed left to fill the pipework after the event.
-        // TODO as part of migration 0.28 to 0.30: review layer_index not in scope, python bug to report?, agree on approach
-        // if !pipework_considered {
-        //     self.temp_final_drawoff = self.temp_n[layer_index];
-        // }
+        if !pipework_considered {
+            self.temp_final_drawoff = Some(self.temp_n[last_layer_index]);
+        }
 
         // Record the unmet energy for the current event
         energy_unmet += self.rho
@@ -754,8 +757,7 @@ impl StorageTank {
             let mut volume_weighted_temperature = remaining_vols[i] * self.temp_n[i];
 
             // Add water from the layers below to this layer
-            for j in (0..=i - 1).rev() {
-                // TODO as part of migration 0.28 to 0.30: double check range matches Python
+            for j in (0..i).rev() {
                 let available_volume = remaining_vols[j];
                 if available_volume > 0. {
                     // Determine the volume to move up from this layer
@@ -950,7 +952,11 @@ impl StorageTank {
             + primary_gains_timestep
     }
 
-    fn primary_pipework_losses(&self, input_energy_adj: f64) -> (f64, f64) {
+    fn primary_pipework_losses(
+        &mut self,
+        input_energy_adj: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (f64, f64) {
         let mut primary_pipework_losses_kwh = Default::default();
         let mut primary_gains_w = Default::default();
         let primary_pipework_lst = self.primary_pipework_lst.as_ref().expect(
@@ -960,9 +966,13 @@ impl StorageTank {
         // start of heating event
         if input_energy_adj > 0. && self.input_energy_adj_prev_timestep == 0. {
             for pipework_data in primary_pipework_lst {
-                // TODO as part of migration 0.28 to 0.30: update cool_down_loss interface
-                primary_pipework_losses_kwh +=
-                    pipework_data.cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB)
+                primary_pipework_losses_kwh += pipework_data.cool_down_loss(
+                    self.temp_set_on,
+                    self.temp_surrounding_primary_pipework(
+                        pipework_data,
+                        simulation_time_iteration,
+                    ),
+                )
             }
         }
 
@@ -970,8 +980,13 @@ impl StorageTank {
         if input_energy_adj > 0. {
             for pipework_data in primary_pipework_lst {
                 // Primary losses for the timestep calculated from temperature difference
-                let primary_pipework_losses_w =
-                    pipework_data.heat_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB); // TODO as part of migration 0.28 to 0.30: update heat_loss interface
+                let primary_pipework_losses_w = pipework_data.heat_loss(
+                    self.temp_set_on,
+                    self.temp_surrounding_primary_pipework(
+                        pipework_data,
+                        simulation_time_iteration,
+                    ),
+                );
 
                 // Check if pipework location is internal
                 let location = pipework_data.location();
@@ -1000,9 +1015,8 @@ impl StorageTank {
             }
         }
 
-        // TODO as part of migration 0.28 to 0.30: review if below needed from Python
         // keeping primary_pipework_losses_kWh for reporting as part of investigation of issue #31225: FDEV A082
-        // self.primary_pipework_losses_kwh = primary_pipework_losses_kwh;
+        self.primary_pipework_losses_kwh = primary_pipework_losses_kwh;
 
         (primary_pipework_losses_kwh, primary_gains_w)
     }
@@ -1023,7 +1037,7 @@ impl StorageTank {
             _ => {
                 // TODO need to be able to call demand_energy on the other heat sources
                 let (primary_pipework_losses_kwh, primary_gains) =
-                    self.primary_pipework_losses(input_energy_adj);
+                    self.primary_pipework_losses(input_energy_adj, simulation_time_iteration);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;
 
                 let heat_source_output = heat_source.lock().demand_energy(
