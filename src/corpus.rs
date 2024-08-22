@@ -36,11 +36,12 @@ use crate::core::space_heat_demand::building_element::{
 };
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
+use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::space_heat_demand::ventilation_element::{
     air_change_rate_to_flow_rate, NaturalVentilation, VentilationElement,
     VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
 };
-use crate::core::space_heat_demand::zone::{HeatBalance, Zone};
+use crate::core::space_heat_demand::zone::{AirChangesPerHourArgument, HeatBalance, Zone};
 use crate::core::units::{
     kelvin_to_celsius, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
@@ -61,10 +62,10 @@ use crate::input::{
     Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
     OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
     SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
-    SpaceHeatSystemDetails, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
-    Ventilation, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType,
-    ZoneDictionary, ZoneInput,
+    SpaceHeatSystemDetails, TerrainClass, ThermalBridging as ThermalBridgingInput,
+    ThermalBridgingDetails, Ventilation, VentilationLeaks, VentilationShieldClass,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -401,7 +402,7 @@ impl Corpus {
         for (z_name, zone) in self.zones.iter() {
             let fabric_heat_loss = zone.total_fabric_heat_loss();
             let thermal_bridges = zone.total_thermal_bridges();
-            let vent_heat_loss = zone.total_vent_heat_loss(self.external_conditions.as_ref());
+            let vent_heat_loss = zone.total_vent_heat_loss();
 
             // Calculate the heat transfer coefficent (HTC), in W / K
             // TODO (from Python) check ventilation losses are correct
@@ -631,7 +632,7 @@ impl Corpus {
             mut space_cool_demand_system,
             mut space_heat_demand_zone,
             mut space_cool_demand_zone,
-            mut h_ve_cool_extra_zone,
+            mut _h_ve_cool_extra_zone,
         ) = self.space_heat_cool_demand_by_system_and_zone(
             delta_t_h,
             temp_ext_air,
@@ -699,7 +700,7 @@ impl Corpus {
                 space_cool_demand_system,
                 space_heat_demand_zone,
                 space_cool_demand_zone,
-                h_ve_cool_extra_zone,
+                _h_ve_cool_extra_zone,
             ) = self.space_heat_cool_demand_by_system_and_zone(
                 delta_t_h,
                 temp_ext_air,
@@ -831,10 +832,9 @@ impl Corpus {
                     gains_solar_zone[z_name.as_str()],
                     gains_heat_cool,
                     frac_convective,
-                    h_ve_cool_extra_zone.get(z_name.as_str()).copied(),
-                    Some(throughput_factor),
+                    Default::default(),
+                    Default::default(), // temporary defaults during migrating to 0.30
                     simulation_time_iteration,
-                    self.external_conditions.as_ref(),
                 ),
             );
 
@@ -1386,7 +1386,7 @@ impl Corpus {
         temp_ext_air: f64,
         gains_internal_zone: &HashMap<&str, f64>,
         gains_solar_zone: &HashMap<&str, f64>,
-        throughput_factor: Option<f64>,
+        _throughput_factor: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (NumberMap, NumberMap, NumberMap, NumberMap, NumberMap) {
         let mut space_heat_demand_system: HashMap<String, f64> = Default::default();
@@ -1441,19 +1441,24 @@ impl Corpus {
                 space_heat_demand_zone_current,
                 space_cool_demand_zone_current,
                 h_ve_cool_extra_zone_current,
-            ) = zone.space_heat_cool_demand(
-                delta_t_h,
-                temp_ext_air,
-                gains_internal_zone[z_name.as_str()],
-                gains_solar_zone[z_name.as_str()],
-                frac_convective_heat,
-                frac_convective_cool,
-                temp_setpnt_heat,
-                temp_setpnt_cool,
-                throughput_factor,
-                simulation_time_iteration,
-                self.external_conditions.as_ref(),
-            );
+                _,
+            ) = zone
+                .space_heat_cool_demand(
+                    delta_t_h,
+                    temp_ext_air,
+                    gains_internal_zone[z_name.as_str()],
+                    gains_solar_zone[z_name.as_str()],
+                    frac_convective_heat,
+                    frac_convective_cool,
+                    temp_setpnt_heat,
+                    temp_setpnt_cool,
+                    0.0,
+                    None, // temporary nones while migrating to 0.30
+                    None,
+                    AirChangesPerHourArgument::from_ach_target_windows_open(0.0, 0.0), // temporary arg while migrating to 0.30
+                    simulation_time_iteration,
+                )
+                .unwrap();
 
             space_heat_demand_zone.insert((*z_name).clone(), space_heat_demand_zone_current);
             space_cool_demand_zone.insert((*z_name).clone(), space_cool_demand_zone_current);
@@ -2305,7 +2310,7 @@ fn zone_from_input<'a>(
                 natvent,
             ))
         });
-    let vent_cool_extra = vent_cool_extra.transpose()?;
+    let _vent_cool_extra = vent_cool_extra.transpose()?;
 
     let infiltration_ventilation = VentilationElement::Infiltration((*infiltration).clone());
     let mut vent_elements: Vec<VentilationElement> = vec![infiltration_ventilation];
@@ -2329,13 +2334,35 @@ fn zone_from_input<'a>(
                 })
                 .collect::<anyhow::Result<IndexMap<String, BuildingElement>>>()?,
             thermal_bridging_from_input(&input.thermal_bridging),
-            vent_elements,
-            vent_cool_extra,
+            // stub infiltration ventilation element temporarily provided while migrating to 0.30
+            Arc::new(InfiltrationVentilation::new(
+                external_conditions.clone(),
+                false,
+                VentilationShieldClass::Normal,
+                TerrainClass::Country,
+                45.,
+                vec![],
+                vec![],
+                VentilationLeaks {
+                    ventilation_zone_height: 0.0,
+                    test_pressure: 0.0,
+                    test_result: 0.0,
+                    area_roof: None,
+                    area_facades: None,
+                    env_area: 0.0,
+                    altitude: None,
+                },
+                vec![],
+                vec![],
+                vec![],
+                0.0,
+                0.0,
+            )),
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
-            external_conditions.clone(),
+            None, //
             simulation_time_iterator,
-        ),
+        )?,
         heat_system_name,
         cool_system_name,
     ))

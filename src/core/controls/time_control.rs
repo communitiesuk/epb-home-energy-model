@@ -1,6 +1,7 @@
 // This module provides structs to model time controls
 
 use crate::simulation_time::{SimulationTimeIteration, HOURS_IN_DAY};
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -26,7 +27,7 @@ macro_rules! per_control {
 use crate::input::HeatSourceControlType;
 pub(crate) use per_control;
 
-pub trait ControlBehaviour {
+pub trait ControlBehaviour: Send + Sync {
     fn in_required_period(
         &self,
         _simulation_time_iteration: &SimulationTimeIteration,
@@ -36,6 +37,13 @@ pub trait ControlBehaviour {
 
     fn setpnt(&self, _simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
         None
+    }
+}
+
+impl Debug for dyn ControlBehaviour {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // if we can downcast self to e.g. Control (if it is one), which we know is Debug, this would be better
+        write!(f, "A control object")
     }
 }
 

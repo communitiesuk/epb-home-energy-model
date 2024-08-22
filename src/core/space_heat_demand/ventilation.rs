@@ -375,7 +375,8 @@ fn sign(value: f64) -> i8 {
     }
 }
 
-struct Window {
+#[derive(Debug)]
+pub(crate) struct Window {
     h_w_fa: f64,
     h_w_path: f64,
     a_w_max: f64,
@@ -392,7 +393,7 @@ struct Window {
 }
 
 impl Window {
-    fn new(
+    pub(crate) fn new(
         external_conditions: Arc<ExternalConditions>,
         h_w_fa: f64,
         h_w_path: f64,
@@ -546,6 +547,7 @@ impl Window {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct WindowPart {
     h_w_path: f64,
     h_w_fa: f64,
@@ -573,7 +575,7 @@ impl WindowPart {
     /// Calculate the airflow through window parts from internal pressure
     /// Arguments:
     /// u_site -- wind velocity at zone level (m/s)
-    /// T_e -- external air temperature (K)    
+    /// T_e -- external air temperature (K)
     /// T_z -- thermal zone air temperature (K)
     /// C_w_path -- wind pressure coefficient at height of the window
     /// p_z_ref -- internal reference pressure (Pa)
@@ -616,8 +618,9 @@ impl WindowPart {
     }
 }
 
-struct Vent {
-    external_conditions: ExternalConditions,
+#[derive(Debug)]
+pub(crate) struct Vent {
+    external_conditions: Arc<ExternalConditions>,
     h_path: f64,
     a_vent: f64,
     delta_p_vent_ref: f64,
@@ -644,8 +647,8 @@ impl Vent {
     ///
     /// Method:
     ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
-    fn new(
-        external_conditions: ExternalConditions,
+    pub(crate) fn new(
+        external_conditions: Arc<ExternalConditions>,
         h_path: f64,
         a_vent: f64,
         delta_p_vent_ref: f64,
@@ -780,6 +783,7 @@ impl Vent {
 const N_LEAK: f64 = 0.667;
 
 /// An object to represent Leaks
+#[derive(Debug)]
 struct Leaks {
     h_path: f64,
     delta_p_leak_ref: f64,
@@ -798,9 +802,9 @@ struct Leaks {
 
 impl Leaks {
     /// Arguments:
-    ///      extcond -- reference to ExternalConditions object
-    ///      h_path -- mid height of the air flow path relative to ventlation zone floor level
-    ///      delta_p_leak_ref -- Reference pressure difference (From pressure test e.g blower door = 50Pa)
+    ///      external_conditions -- reference to ExternalConditions object
+    ///      h_path -- mid height of the air flow path relative to ventilation zone floor level
+    ///      delta_p_leak_ref -- Reference pressure difference (From pressure test e.g. blower door = 50Pa)
     ///      qv_delta_p_leak_ref -- flow rate through
     ///      facade_direction -- The direction of the facade the leak is on.
     ///      A_roof -- Surface area of the roof of the ventilation zone (m2)
@@ -808,7 +812,7 @@ impl Leaks {
     ///      A_leak - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
     ///      altitude -- altitude of dwelling above sea level (m)
     fn new(
-        extcond: Arc<ExternalConditions>,
+        external_conditions: Arc<ExternalConditions>,
         h_path: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
@@ -827,7 +831,7 @@ impl Leaks {
             qv_delta_p_leak_ref,
             facade_direction,
             altitude,
-            external_conditions: extcond,
+            external_conditions,
             p_a_alt: adjust_air_density_for_altitude(altitude),
         }
     }
@@ -928,7 +932,8 @@ impl Leaks {
 }
 
 /// An object to represent AirTerminalDevices
-struct AirTerminalDevices {
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AirTerminalDevices {
     c_d_atd: f64,
     n_atd: f64,
     a_atd: f64,
@@ -1011,7 +1016,8 @@ impl Cowls {
 }
 
 /// An object to represent CombustionAppliances
-struct CombustionAppliances {
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CombustionAppliances {
     f_as: f64,
     f_ff: f64,
 }
@@ -1056,14 +1062,15 @@ impl CombustionAppliances {
 }
 
 /// An object to represent Mechanical Ventilation
-struct MechanicalVentilation {
+#[derive(Debug)]
+pub(crate) struct MechanicalVentilation {
     f_ctrl: f64,
     f_sys: f64,
     e_v: f64,
     theta_z_t: f64,
     sup_air_flw_ctrl: SupplyAirFlowRateControlType,
     sup_air_temp_ctrl: SupplyAirTemperatureControlType,
-    external_conditions: ExternalConditions,
+    external_conditions: Arc<ExternalConditions>,
     q_h_des: f64,
     q_c_des: f64,
     theta_ctrl_sys: Option<f64>,
@@ -1099,7 +1106,7 @@ impl MechanicalVentilation {
     /// mvhr_eff -- MVHR efficiency
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
     fn new(
-        extcond: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
         q_h_des: f64,
@@ -1127,7 +1134,7 @@ impl MechanicalVentilation {
             sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // (From Python) TODO currently hard coded until load comp implemented
             sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
             // Arguments
-            external_conditions: extcond,
+            external_conditions: external_conditions,
             q_h_des,
             q_c_des,
             theta_ctrl_sys,
@@ -1320,7 +1327,8 @@ impl MechanicalVentilation {
 }
 
 /// A class to represent Infiltration and Ventilation object
-struct InfiltrationVentilation {
+#[derive(Debug)]
+pub struct InfiltrationVentilation {
     external_conditions: Arc<ExternalConditions>,
     f_cross: bool,
     shield_class: VentilationShieldClass,
@@ -1354,7 +1362,7 @@ struct InfiltrationVentilation {
 ///             altitude -- altitude of dwelling above sea level (m)
 ///             total_volume -- total zone volume
 impl InfiltrationVentilation {
-    fn new(
+    pub(crate) fn new(
         external_conditions: Arc<ExternalConditions>,
         f_cross: bool,
         shield_class: VentilationShieldClass,
@@ -2089,7 +2097,9 @@ mod tests {
     }
 
     #[fixture]
-    fn external_conditions(simulation_time_iterator: SimulationTimeIterator) -> ExternalConditions {
+    fn external_conditions(
+        simulation_time_iterator: SimulationTimeIterator,
+    ) -> Arc<ExternalConditions> {
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
         let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
@@ -2145,7 +2155,7 @@ mod tests {
                 objects: None,
             },
         ];
-        ExternalConditions::new(
+        Arc::new(ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,
             wind_speeds,
@@ -2164,16 +2174,16 @@ mod tests {
             false,
             false,
             shading_segments,
-        )
+        ))
     }
 
     pub fn create_window(
-        external_conditions: ExternalConditions,
+        external_conditions: &Arc<ExternalConditions>,
         ctrl: Control,
         altitude: f64,
     ) -> Window {
         Window::new(
-            Arc::new(external_conditions),
+            external_conditions.clone(),
             1.6,
             1.5,
             3.,
@@ -2205,11 +2215,11 @@ mod tests {
 
     #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_off(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl, 0.);
+        let window = create_window(&external_conditions, ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2221,11 +2231,11 @@ mod tests {
 
     #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_on(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl, 0.);
+        let window = create_window(&external_conditions, ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2237,11 +2247,11 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_off(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl, 0.);
+        let window = create_window(&external_conditions, ctrl, 0.);
         assert_relative_eq!(
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
@@ -2251,11 +2261,11 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_on(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl, 0.);
+        let window = create_window(&external_conditions, ctrl, 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
             3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
@@ -2268,7 +2278,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_from_internal_p(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let u_site = 5.0;
@@ -2280,7 +2290,7 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(external_conditions, ctrl, 0.);
+        let window = create_window(&external_conditions, ctrl, 0.);
 
         let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
             u_site,
@@ -2335,7 +2345,7 @@ mod tests {
     }
 
     #[fixture]
-    fn vent(external_conditions: ExternalConditions) -> Vent {
+    fn vent(external_conditions: Arc<ExternalConditions>) -> Vent {
         Vent::new(external_conditions, 1., 100., 20., 0., 90., 0.)
     }
 
@@ -2403,9 +2413,9 @@ mod tests {
     }
 
     #[fixture]
-    fn leaks(external_conditions: ExternalConditions) -> Leaks {
+    fn leaks(external_conditions: Arc<ExternalConditions>) -> Leaks {
         Leaks::new(
-            Arc::new(external_conditions),
+            external_conditions,
             1.,
             50.,
             1.2,
@@ -2499,7 +2509,7 @@ mod tests {
     }
     #[fixture]
     fn mechanical_ventilation(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         energy_supply: EnergySupply,
     ) -> MechanicalVentilation {
         let energy_supply = Arc::new(RwLock::new(energy_supply));
@@ -2561,13 +2571,14 @@ mod tests {
 
     #[fixture]
     fn infiltration_ventilation(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
         combustion_appliances: CombustionAppliances,
         mechanical_ventilation: MechanicalVentilation,
     ) -> InfiltrationVentilation {
+        let external_conditions = Arc::from(external_conditions);
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let windows = vec![create_window(external_conditions.clone(), ctrl, 30.)];
+        let windows = vec![create_window(&external_conditions, ctrl, 30.)];
         let vents = vec![Vent::new(
             external_conditions.clone(),
             1.5,
