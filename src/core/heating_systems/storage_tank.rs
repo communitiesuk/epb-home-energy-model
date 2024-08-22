@@ -226,7 +226,7 @@ impl StorageTank {
         self.temp_set_on
     }
 
-    /// Return temp_out_W_min unless tank is being held at setpnt, in which case return that
+    /// Return temp_out_w_min unless tank is being held at setpnt, in which case return that
     fn get_setpoint_min(&self, simtime: SimulationTimeIteration) -> f64 {
         match &self.control_hold_at_setpoint {
             Some(control) if control.is_on(simtime) => self.temp_set_on,
@@ -592,8 +592,8 @@ impl StorageTank {
     /// Allocate hot water layers to meet a single temperature demand.
     ///
     /// Arguments:
-    /// event -- Dictionary containing information about the draw-off event
-    ///          (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
+    /// * `event` -- Dictionary containing information about the draw-off event
+    /// (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
     fn allocate_hot_water(
         &mut self,
         event: TypedScheduleEvent,
@@ -731,8 +731,8 @@ impl StorageTank {
 
     /// Calculate the new temperature distribution after displacement.
     /// Arguments:
-    /// remaining_vols -- List of remaining volumes for each storage layer after draw-off
-    /// temp_cold     -- Temperature of the cold water being added
+    /// * `remaining_vols` -- List of remaining volumes for each storage layer after draw-off
+    /// * `temp_cold` -- Temperature of the cold water being added
     fn calculate_new_temperatures(
         &self,
         mut remaining_vols: Vec<f64>,
@@ -792,9 +792,12 @@ impl StorageTank {
 
     /// Draw off hot water from the tank
     /// Energy calculation as per BS EN 15316-5:2017 Method A sections 6.4.3, 6.4.6, 6.4.7
-    ///
+    /// Modification of calculation based on volumes and actual temperatures for each layer of water in the tank
+    /// instead of the energy stored in the layer and a generic temperature (self.temp_out_w_min) = min_temp
+    /// to decide if the tank can satisfy the demand (this was producing unnecesary unmet demand for strict high
+    /// temp_out_w_min values
     /// Arguments:
-    /// * `volume_demanded` - volume of hot water required, in litres
+    /// * `usage_events` -- All draw off events for the timestep
     pub fn demand_hot_water(
         &mut self,
         volume_demanded: f64,
