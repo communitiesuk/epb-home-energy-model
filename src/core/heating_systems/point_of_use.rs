@@ -77,21 +77,19 @@ impl PointOfUse {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use super::*;
     use crate::{
         core::{
             energy_supply::energy_supply::EnergySupply,
             water_heat_demand::cold_water_source::ColdWaterSource,
         },
         input::FuelType,
-        simulation_time::{self, SimulationTime, SimulationTimeIterator},
+        simulation_time::{SimulationTime, SimulationTimeIterator},
     };
-
-    use super::*;
     use approx::assert_relative_eq;
     use parking_lot::lock_api::RwLock;
     use rstest::{fixture, rstest};
+    use std::sync::Arc;
 
     #[fixture]
     fn simtime() -> SimulationTime {
