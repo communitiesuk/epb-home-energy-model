@@ -72,6 +72,7 @@ use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
+use nalgebra::Storage;
 use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -446,6 +447,21 @@ impl Corpus {
 
     pub fn temp_internal_air(&self) -> f64 {
         temp_internal_air_for_zones(self.zones.clone(), self.total_volume)
+    }
+
+    fn pipework_losses_and_internal_gains_from_hw_storage_tank(
+        &self,
+        delta_t_h: f64,
+        volume_water_remove_from_tank: f64,
+        hw_duration: f64,
+        no_events: usize,
+        temp_final_drawoff: f64,
+        temp_average_drawoff: f64,
+        temp_hot_water: f64,
+        vol_hot_water_equiv_elec_shower: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (f64, f64, f64) {
+        todo!()
     }
 
     /// Return:
@@ -949,6 +965,14 @@ impl Corpus {
 
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
+            let temp_hot_water = 0.; // TODO as part of migration: implement hw_source.get_temp_hot_water()
+            let mut temp_final_drawoff = temp_hot_water;
+            let mut temp_average_drawoff = temp_hot_water;
+            let mut pw_losses_internal;
+            let mut pw_losses_external;
+            let mut gains_internal_dhw_use;
+            let mut hw_energy_output;
+
             let (
                 hw_demand_vol,
                 hw_demand_vol_target,
@@ -956,11 +980,59 @@ impl Corpus {
                 hw_duration,
                 no_events,
                 hw_energy_demand,
-                _,
-                _,
+                usage_events,
+                vol_hot_water_equiv_elec_shower,
             ) = self
                 .domestic_hot_water_demand
                 .hot_water_demand(t_it.index, 52.0); // temporary value to be changed to hot water temp from hw cylinder source while migrating to 0.30
+
+            let hw_source = self.hot_water_sources.get_mut("hw cylinder").unwrap();
+            match hw_source {
+                HotWaterSource::StorageTank(source) => {
+                    let volume_water_remove_from_tank;
+
+                    (
+                        hw_energy_output,
+                        _, // Python has an unused unmet_demand variable here
+                        temp_final_drawoff,
+                        temp_average_drawoff,
+                        volume_water_remove_from_tank,
+                    ) = source
+                        .lock()
+                        .demand_hot_water(usage_events.expect("usage_events was not set"), t_it);
+
+                    (
+                        pw_losses_internal,
+                        pw_losses_external,
+                        gains_internal_dhw_use,
+                    ) = self.pipework_losses_and_internal_gains_from_hw_storage_tank(
+                        t_it.timestep,
+                        volume_water_remove_from_tank,
+                        hw_duration,
+                        no_events,
+                        temp_final_drawoff,
+                        temp_average_drawoff,
+                        temp_hot_water,
+                        vol_hot_water_equiv_elec_shower,
+                        t_it,
+                    );
+                }
+                _ => {
+                    hw_energy_output = hw_source.demand_hot_water(hw_demand_vol_target, t_it);
+
+                    (
+                        pw_losses_internal,
+                        pw_losses_external,
+                        gains_internal_dhw_use,
+                    ) = self.pipework_losses_and_internal_gains_from_hw(
+                        t_it.timestep,
+                        hw_vol_at_tapping_points,
+                        hw_duration,
+                        no_events,
+                        t_it,
+                    );
+                }
+            }
 
             // Convert from litres to kWh
             let cold_water_source = self.hot_water_sources["hw cylinder"]
@@ -973,21 +1045,6 @@ impl Corpus {
                 52.0,
                 cold_water_temperature,
             );
-
-            let hw_energy_output = self
-                .hot_water_sources
-                .get_mut("hw cylinder")
-                .unwrap()
-                .demand_hot_water(hw_demand_vol, hw_demand_vol_target, t_it);
-
-            let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
-                .pipework_losses_and_internal_gains_from_hw(
-                    t_it.timestep,
-                    hw_vol_at_tapping_points,
-                    hw_duration,
-                    no_events,
-                    t_it,
-                );
 
             let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
                 * WATTS_PER_KILOWATT as f64
@@ -3113,14 +3170,14 @@ impl HotWaterSource {
 
     pub fn demand_hot_water(
         &mut self,
-        vol_demanded: f64,
         vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
-            HotWaterSource::StorageTank(ref mut source) => source
-                .lock()
-                .demand_hot_water(vol_demanded, simulation_time_iteration),
+            HotWaterSource::StorageTank(_) => {
+                // StorageTank does not match the same method signature or return type as as all other Hot Water sources
+                panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
+            }
             HotWaterSource::CombiBoiler(ref mut source) => source
                 .demand_hot_water(vol_demand_target, simulation_time_iteration)
                 .expect("Combi boiler could not calc demand hot water."),
