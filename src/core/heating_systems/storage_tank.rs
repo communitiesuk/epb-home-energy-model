@@ -332,7 +332,7 @@ impl StorageTank {
         // assuming initially no water draw-off
 
         // initialise list of potential energy input for each layer
-        let mut q_x_in_n = Vec::with_capacity(self.nb_vol);
+        let mut q_x_in_n = vec![0.; self.nb_vol];
 
         // TODO (from Python) - ensure we are feeding in the correct volume
         q_x_in_n[0] = energy_proposed;
@@ -355,11 +355,11 @@ impl StorageTank {
     /// by the control system of the storage unit.
     fn energy_input(&self, temp_s3_n: &[f64], q_x_in_n: &[f64]) -> (f64, Vec<f64>) {
         // initialise list of theoretical variation of temperature of layers in degrees
-        let mut delta_temp_n = Vec::with_capacity(self.nb_vol);
+        let mut delta_temp_n = vec![0.; self.nb_vol];
         // initialise list of theoretical temperature of layers after input in degrees
-        let mut temp_s6_n = Vec::with_capacity(self.nb_vol);
+        let mut temp_s6_n = vec![0.; self.nb_vol];
         // output energy delivered by the storage in kWh - timestep dependent
-        let q_sto_h_out_n: Vec<f64> = Vec::with_capacity(self.nb_vol);
+        let q_sto_h_out_n: Vec<f64> = vec![0.; self.nb_vol];
 
         for i in 0..self.vol_n.len() {
             delta_temp_n[i] =
@@ -381,7 +381,7 @@ impl StorageTank {
     /// of the volume i is lower or equal to the temperature of the volume i+1.
     fn rearrange_temperatures(&self, temp_s6_n: &[f64]) -> (Vec<f64>, Vec<f64>) {
         // set list of flags for which layers need mixing
-        let mut mix_layer_n: Vec<u8> = Vec::with_capacity(self.nb_vol);
+        let mut mix_layer_n: Vec<u8> = vec![0; self.nb_vol];
         let mut temp_s7_n = temp_s6_n.to_vec();
 
         // loop through layers from bottom to top, without including top layer;
@@ -808,13 +808,13 @@ impl StorageTank {
         // TODO migration to 0_30
         // we're now passing in simulation time - could we just pass in one TypedScheduleEvent
         simulation_time: SimulationTimeIteration,
-    ) -> (f64,f64,f64,f64,f64) {
+    ) -> (f64, f64, f64, f64, f64) {
         let mut q_use_w = 0.;
         let mut q_unmet_w = 0.;
         let mut volume_demanded = 0.;
 
         let temp_s3_n = self.temp_n.clone();
-        
+
         // TODO migration to 0_30
         // does all of these need to be Option types?
         self.temp_final_drawoff = Some(self.get_temp_hot_water());
@@ -822,10 +822,13 @@ impl StorageTank {
         self.total_volume_drawoff = Some(0.);
         self.temp_average_drawoff = Some(self.get_temp_hot_water());
 
-        // Filtering out IES events that don't get added a 'warm_volume' when processing 
+        // Filtering out IES events that don't get added a 'warm_volume' when processing
         // the dhw_demand calculation
-        let filtered_events = usage_events.into_iter().filter(|e| { e.warm_volume.is_some() }).collect_vec();
-        
+        let filtered_events = usage_events
+            .into_iter()
+            .filter(|e| e.warm_volume.is_some())
+            .collect_vec();
+
         for mut event in filtered_events {
             // Check if 'pipework_volume' key exists in the event dictionary
             if event.pipework_volume.is_none() {
@@ -846,28 +849,32 @@ impl StorageTank {
             // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
             // self.__time_end_previous_event = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
-            let (volume_used, temp_s3_n, energy_withdrawn, energy_unmet) = self.allocate_hot_water(event.clone(), simulation_time);
-            
+            let (volume_used, temp_s3_n, energy_withdrawn, energy_unmet) =
+                self.allocate_hot_water(event.clone(), simulation_time);
+
             self.temp_n = temp_s3_n.clone();
-                
+
             volume_demanded += volume_used;
             q_unmet_w += energy_unmet;
             q_use_w += energy_withdrawn;
         }
 
-        if self.energy_supply_conn_unmet_demand.is_some()
-        {
-            self.energy_supply_conn_unmet_demand.as_ref().unwrap().demand_energy(q_unmet_w, simulation_time.index);
+        if self.energy_supply_conn_unmet_demand.is_some() {
+            self.energy_supply_conn_unmet_demand
+                .as_ref()
+                .unwrap()
+                .demand_energy(q_unmet_w, simulation_time.index);
         }
-        
+
         // TODO migration to 0_30
         // once we have a passing test change this to a match statement
         if self.total_volume_drawoff.is_some() && self.total_volume_drawoff.unwrap() != 0. {
-            let temp_average_drawoff_volweighted = self.temp_average_drawoff_volweighted.expect("temp_average_drawoff_volweighted was not set");
-            self.temp_average_drawoff = Some(temp_average_drawoff_volweighted / self.total_volume_drawoff.unwrap());
-        }
-        else
-        {
+            let temp_average_drawoff_volweighted = self
+                .temp_average_drawoff_volweighted
+                .expect("temp_average_drawoff_volweighted was not set");
+            self.temp_average_drawoff =
+                Some(temp_average_drawoff_volweighted / self.total_volume_drawoff.unwrap());
+        } else {
             self.temp_average_drawoff = temp_s3_n.last().copied();
         }
 
@@ -882,7 +889,6 @@ impl StorageTank {
         // with nb_vol
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
         todo!()
-
     }
 
     fn additional_energy_input(
@@ -902,7 +908,7 @@ impl StorageTank {
         let _thermostat_layer =
             (heat_source_data.thermostat_position * self.nb_vol as f64) as usize;
 
-        let mut q_x_in_n = Vec::with_capacity(self.nb_vol);
+        let mut q_x_in_n = vec![0.; self.nb_vol];
         q_x_in_n[heater_layer] = energy_input;
         let (temp_s8_n, _, _, _, _, q_in_h_w, _, q_ls_n_this_heat_source) = self
             .calculate_temperatures(
