@@ -1423,6 +1423,7 @@ mod tests {
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::material_properties::WATER;
+    use crate::core::schedule::WaterScheduleEventType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
     use crate::external_conditions::{
@@ -1651,6 +1652,141 @@ mod tests {
         );
 
         (storage_tanks, energy_supply)
+    }
+
+    #[ignore = "TODO as part of migration 28 to 30"]
+    #[rstest]
+    pub fn test_demand_hot_water() {
+        let usage_events = vec![
+            vec![
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.0,
+                    name: "ies".to_string(),
+                    event_type: WaterScheduleEventType::Shower,
+                    warm_volume: None,
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.0,
+                    name: "mixer".to_string(),
+                    event_type: WaterScheduleEventType::Shower,
+                    warm_volume: Some(48.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(20.),
+                    temperature: 43.0,
+                    name: "medium".to_string(),
+                    event_type: WaterScheduleEventType::Bath,
+                    warm_volume: Some(100.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(1.),
+                    temperature: 40.0,
+                    name: "other".to_string(),
+                    event_type: WaterScheduleEventType::Other,
+                    warm_volume: Some(8.),
+                    pipework_volume: None,
+                },
+            ],
+            vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.0,
+                name: "mixer".to_string(),
+                event_type: WaterScheduleEventType::Shower,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }],
+            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.0,
+                name: "mixer".to_string(),
+                event_type: WaterScheduleEventType::Shower,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }],
+            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.0,
+                name: "mixer".to_string(),
+                event_type: WaterScheduleEventType::Shower,
+                warm_volume: Some(52.),
+                pipework_volume: None,
+            }],
+            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+        ];
+
+        //  Expected results for the unit test
+        let expected_temperatures_1 = [
+            [55.0, 55.0, 55.0, 55.0],
+            [
+                15.45,
+                54.595555555555556,
+                54.595555555555556,
+                54.595555555555556,
+            ],
+            [
+                15.45,
+                54.19530534979424,
+                54.19530534979424,
+                54.19530534979424,
+            ],
+            [10.5, 15.4, 53.38820740740741, 53.80385185185185],
+            [55.0, 55.0, 55.0, 55.0],
+            [
+                13.4,
+                54.595555555555556,
+                54.595555555555556,
+                54.595555555555556,
+            ],
+            [
+                13.4,
+                54.19530534979424,
+                54.19530534979424,
+                54.19530534979424,
+            ],
+            [
+                13.4,
+                53.79920588690749,
+                53.79920588690749,
+                53.79920588690749,
+            ],
+        ];
+
+        let expected_temperatures_2 = [
+            [10.0, 24.55880864197531, 60.0, 60.0],
+            [
+                10.06,
+                16.317728395061728,
+                39.76012654320988,
+                59.687654320987654,
+            ],
+            [
+                10.06,
+                16.315472915714068,
+                39.59145897824265,
+                59.37752591068435,
+            ],
+            [10.34, 12.28, 24.509163580246913, 46.392706790123455],
+            [10.34, 12.28, 60.0, 60.0],
+            [10.74, 11.1, 60.0, 60.0],
+            [10.74, 11.1, 59.687654320987654, 59.687654320987654],
+            [10.74, 11.1, 59.37752591068435, 59.37752591068435],
+        ];
+        todo!()
     }
 
     #[rstest]
@@ -1922,7 +2058,8 @@ mod tests {
     }
     #[ignore = "TODO as part of migration 28 to 30"]
     #[rstest]
-    pub fn test_demand_hot_water(
+    // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
+    pub fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
         storage_tank_with_solar_thermal: (
             StorageTank,
             Arc<Mutex<SolarThermalSystem>>,
