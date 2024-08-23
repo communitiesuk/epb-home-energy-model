@@ -2360,7 +2360,7 @@ fn zone_from_input<'a>(
             )),
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
-            None, //
+            None,
             simulation_time_iterator,
         )?,
         heat_system_name,
