@@ -229,3 +229,111 @@ impl WWHRSInstantaneousSystemA {
         self.stored_temperature
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::simulation_time::SimulationTime;
+    use approx::assert_relative_eq;
+    use rstest::*;
+
+    #[fixture]
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 2., 1.)
+    }
+
+    #[fixture]
+    fn wwhrs_b(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemB {
+        let cold_water_source = ColdWaterSource::new(vec![17.0, 17.0, 17.0], &simulation_time, 1.0);
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let utilisation_factor = 0.7;
+
+        WWHRSInstantaneousSystemB::new(
+            cold_water_source,
+            flow_rates,
+            efficiencies,
+            utilisation_factor,
+        )
+    }
+
+    #[rstest]
+    fn test_return_temperature_for_b(wwhrs_b: WWHRSInstantaneousSystemB) {
+        assert_relative_eq!(
+            wwhrs_b.return_temperature(35.0, 8.0, 0),
+            21.6557,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_get_efficiency_from_flowrate_for_b(wwhrs_b: WWHRSInstantaneousSystemB) {
+        assert_eq!(wwhrs_b.get_efficiency_from_flowrate(5.0), 44.8);
+    }
+
+    #[fixture]
+    fn wwhrs_c(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemC {
+        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 1.0);
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let utilisation_factor = 0.7;
+
+        WWHRSInstantaneousSystemC::new(
+            flow_rates,
+            efficiencies,
+            cold_water_source,
+            utilisation_factor,
+        )
+    }
+
+    #[rstest]
+    fn test_return_temperature_for_c(wwhrs_c: WWHRSInstantaneousSystemC) {
+        assert_relative_eq!(
+            wwhrs_c.return_temperature(35.0, 8.0, 0),
+            21.729835,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_get_efficiency_from_flowrate_for_c(wwhrs_c: WWHRSInstantaneousSystemC) {
+        assert_relative_eq!(
+            wwhrs_c.get_efficiency_from_flowrate(7.0),
+            39.1,
+            max_relative = 1e-7
+        );
+    }
+
+    #[fixture]
+    fn wwhrs_a(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemA {
+        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 1.0);
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let utilisation_factor = 0.7;
+
+        WWHRSInstantaneousSystemA::new(
+            flow_rates,
+            efficiencies,
+            cold_water_source,
+            utilisation_factor,
+        )
+    }
+
+    #[rstest]
+    fn test_return_temperature_for_a(wwhrs_a: WWHRSInstantaneousSystemA) {
+        assert_relative_eq!(
+            wwhrs_a.return_temperature(35.0, 8.0, 0),
+            21.729835,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_get_efficiency_from_flowrate_for_a(wwhrs_a: WWHRSInstantaneousSystemA) {
+        assert_relative_eq!(
+            wwhrs_a.get_efficiency_from_flowrate(8.0),
+            36.95,
+            max_relative = 1e-7
+        );
+    }
+}
