@@ -1236,8 +1236,7 @@ pub enum SpaceHeatSystemDetails {
         temp_charge_cut: f64,
         rated_power: f64,
         rated_power_instant: f64,
-        air_flow_type: String,
-        // don't know what the possible values are here yet
+        air_flow_type: AirFlowType,
         temp_dis_safe: f64,
         thermal_mass: f64,
         frac_convective: f64,
@@ -1332,6 +1331,14 @@ impl SpaceHeatSystemDetails {
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum AirFlowType {
+    FanAssisted,
+    DamperOnly,
 }
 
 #[derive(Debug, Deserialize)]
