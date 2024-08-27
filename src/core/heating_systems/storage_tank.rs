@@ -861,11 +861,13 @@ impl StorageTank {
             q_use_w += energy_withdrawn;
         }
 
+        // if tank cannot provide enough hot water report unmet demand
         if self.energy_supply_conn_unmet_demand.is_some() {
             self.energy_supply_conn_unmet_demand
                 .as_ref()
                 .unwrap()
-                .demand_energy(q_unmet_w, simulation_time.index);
+                .demand_energy(q_unmet_w, simulation_time.index)
+                .expect("expected to be able to demand energy");
         }
 
         // TODO migration to 0_30
@@ -890,32 +892,31 @@ impl StorageTank {
 
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
-
             let heater_layer =
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
                 (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
 
-                let (
-                    temp_s8_n_step,
-                    _q_x_in_n,
-                    _q_s6,
-                    _temp_s6_n,
-                    _temp_s7_n,
-                    _q_in_h_w,
-                    q_ls_this_heat_source,
-                    q_ls_n_this_heat_source,
-                ) = self.run_heat_sources(
-                    temp_after_prev_heat_source.clone(),
-                    positioned_heat_source.heat_source.clone(),
-                    &heat_source_name,
-                    heater_layer,
-                    thermostat_layer,
-                    &self.q_ls_n_prev_heat_source.clone(),
-                    simulation_time,
-                );
+            let (
+                temp_s8_n_step,
+                _q_x_in_n,
+                _q_s6,
+                _temp_s6_n,
+                _temp_s7_n,
+                _q_in_h_w,
+                q_ls_this_heat_source,
+                q_ls_n_this_heat_source,
+            ) = self.run_heat_sources(
+                temp_after_prev_heat_source.clone(),
+                positioned_heat_source.heat_source.clone(),
+                &heat_source_name,
+                heater_layer,
+                thermostat_layer,
+                &self.q_ls_n_prev_heat_source.clone(),
+                simulation_time,
+            );
 
-            temp_after_prev_heat_source = temp_s8_n_step;
+            temp_after_prev_heat_source = temp_s8_n_step.clone();
             q_ls += q_ls_this_heat_source;
 
             for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
@@ -923,7 +924,6 @@ impl StorageTank {
             }
 
             // Trigger heating to stop when setpoint is reached
-            
             if temp_s8_n_step[thermostat_layer] >= self.temp_set_on {
                 self.heating_active
                     .entry(heat_source_name.to_string())
@@ -953,7 +953,18 @@ impl StorageTank {
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
         self.temp_n = temp_s8_n;
 
-        q_use_w_n.iter().sum()
+        // TODO (from Python) recoverable heat losses for heating should impact heating
+
+        // Return total energy of hot water supplied and unmet
+        (
+            q_use_w,
+            q_unmet_w,
+            self.temp_final_drawoff.unwrap(),
+            self.temp_average_drawoff.unwrap(),
+            self.total_volume_drawoff.unwrap(),
+        )
+        // Sending temp_final_drawoff, temp_average_drawoff
+        // for pipework loss and internal gains calculations
     }
 
     fn additional_energy_input(
