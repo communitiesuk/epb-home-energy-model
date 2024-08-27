@@ -83,7 +83,7 @@ impl InstantElecHeater {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -98,8 +98,19 @@ mod tests {
 
     #[fixture]
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
-        let control =
-            Control::OnOffTimeControl(OnOffTimeControl::new(vec![true, true, false, true], 0, 1.));
+        let control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(
+                vec![Some(21.0), Some(21.0), None, Some(21.0)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                None,
+                simulation_time.step,
+            )
+            .unwrap(),
+        );
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
@@ -118,10 +129,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_demand_energy(
-        instant_elec_heater: InstantElecHeater,
-        simulation_time: SimulationTime,
-    ) {
+    fn test_demand_energy(instant_elec_heater: InstantElecHeater, simulation_time: SimulationTime) {
         let energy_input = [40.0, 100.0, 30.0, 20.0];
         let demand_expected = [40.0, 50.0, 0.0, 20.0];
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
@@ -130,5 +138,35 @@ mod tests {
                 demand_expected[t_idx]
             );
         }
+    }
+
+    #[rstest]
+    fn test_temp_setpnt(instant_elec_heater: InstantElecHeater, simulation_time: SimulationTime) {
+        let setpoint_expected = [Some(21.0), Some(21.0), None, Some(21.0)];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                instant_elec_heater.temp_setpnt(&t_it),
+                setpoint_expected[t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_in_required_period(
+        instant_elec_heater: InstantElecHeater,
+        simulation_time: SimulationTime,
+    ) {
+        let expected_whether = [true, true, false, true];
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                instant_elec_heater.in_required_period(&t_it),
+                Some(expected_whether[t_idx])
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_frac_convective(instant_elec_heater: InstantElecHeater) {
+        assert_eq!(instant_elec_heater.frac_convective(), 0.4);
     }
 }
