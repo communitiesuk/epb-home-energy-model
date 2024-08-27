@@ -113,6 +113,8 @@ impl StorageTank {
         cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
+
+        // TODO use the Accessor to get this
         temp_internal_air: f64, // In Python this is "project" but only temp_internal_air is accessed from it
         external_conditions: Arc<ExternalConditions>,
         nb_vol: Option<usize>,
@@ -882,13 +884,76 @@ impl StorageTank {
         // TODO (from Python) - 6.4.3.7 STEP 5 Temperature of the storage after volume withdrawn (for Heating)
 
         // Run over multiple heat sources
-        let temp_after_prev_heat_source = temp_s3_n;
-        let q_ls = 0.0;
+        let mut temp_after_prev_heat_source = temp_s3_n;
+        let mut q_ls = 0.0;
+        let mut temp_s8_n = vec![0.; self.nb_vol];
 
-        // TODO review other places that initialise vecs
-        // with nb_vol
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
-        todo!()
+        for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
+
+            let heater_layer =
+                (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
+            let thermostat_layer =
+                (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
+
+                let (
+                    temp_s8_n_step,
+                    _q_x_in_n,
+                    _q_s6,
+                    _temp_s6_n,
+                    _temp_s7_n,
+                    _q_in_h_w,
+                    q_ls_this_heat_source,
+                    q_ls_n_this_heat_source,
+                ) = self.run_heat_sources(
+                    temp_after_prev_heat_source.clone(),
+                    positioned_heat_source.heat_source.clone(),
+                    &heat_source_name,
+                    heater_layer,
+                    thermostat_layer,
+                    &self.q_ls_n_prev_heat_source.clone(),
+                    simulation_time,
+                );
+
+            temp_after_prev_heat_source = temp_s8_n_step;
+            q_ls += q_ls_this_heat_source;
+
+            for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
+                self.q_ls_n_prev_heat_source[i] += q_ls_n;
+            }
+
+            // Trigger heating to stop when setpoint is reached
+            
+            if temp_s8_n_step[thermostat_layer] >= self.temp_set_on {
+                self.heating_active
+                    .entry(heat_source_name.to_string())
+                    .and_modify(|e| {
+                        *e = false;
+                    });
+            }
+
+            temp_s8_n = temp_s8_n_step;
+        }
+
+        // Additional calculations
+        // 6.4.6 Calculation of the auxiliary energy
+        // accounted for elsewhere so not included here
+        let w_sto_aux = 0.;
+
+        // 6.4.7 Recoverable, recovered thermal losses
+        // recovered auxiliary energy to the heating medium - kWh
+        let _q_sto_h_aux_rvd = w_sto_aux * STORAGE_TANK_F_RVD_AUX;
+        // recoverable auxiliary energy transmitted to the heated space - kWh
+        let q_sto_h_rbl_aux = w_sto_aux * STORAGE_TANK_F_STO_M * (1. - STORAGE_TANK_F_RVD_AUX);
+        // recoverable heat losses (storage) - kWh
+        let q_sto_h_rbl_env = q_ls * STORAGE_TANK_F_STO_M;
+        // total recoverable heat losses for heating - kWh
+        self.q_sto_h_ls_rbl = Some(q_sto_h_rbl_env + q_sto_h_rbl_aux);
+
+        // set temperatures calculated to be initial temperatures of volumes for the next timestep
+        self.temp_n = temp_s8_n;
+
+        q_use_w_n.iter().sum()
     }
 
     fn additional_energy_input(
