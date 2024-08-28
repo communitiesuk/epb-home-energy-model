@@ -7,7 +7,7 @@ use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::corpus::{HeatSource, PositionedHeatSource};
+use crate::corpus::{HeatSource, PositionedHeatSource, TempInternalAirAccessor};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
@@ -1301,18 +1301,13 @@ pub struct SolarThermalSystem {
     solar_loop_piping_hlc: f64,
     external_conditions: Arc<ExternalConditions>,
     simulation_timestep: f64,
+    temp_internal_air_accessor: TempInternalAirAccessor,
     heat_output_collector_loop: f64,
     energy_supplied: f64,
     cp: f64,
     air_temp_coll_loop: f64, //mutating internally
     inlet_temp: f64,
 }
-
-// BS EN 15316-4-3:2017 Appendix B default input data
-// Model Information
-// Air temperature in a heated space in the building
-// Default taken from Table B20 of standard
-const AIR_TEMP_HEATED_ROOM: f64 = 20.;
 
 impl SolarThermalSystem {
     pub fn new(
@@ -1331,7 +1326,9 @@ impl SolarThermalSystem {
         orientation: f64,
         solar_loop_piping_hlc: f64,
         external_conditions: Arc<ExternalConditions>,
+        temp_internal_air_accessor: TempInternalAirAccessor,
         simulation_timestep: f64,
+
         contents: MaterialProperties,
     ) -> Self {
         Self {
@@ -1350,6 +1347,7 @@ impl SolarThermalSystem {
             solar_loop_piping_hlc,
             external_conditions,
             simulation_timestep,
+            temp_internal_air_accessor,
             heat_output_collector_loop: 0.0,
             energy_supplied: 0.0,
             // Water specific heat in J/kg.K
@@ -1368,12 +1366,16 @@ impl SolarThermalSystem {
         temp_storage_tank_s3_n: &[f64],
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
+        // Air temperature in a heated space in the building
+        let air_temp_heated_room = self.temp_internal_air_accessor.call();
+
         self.air_temp_coll_loop = match self.sol_loc {
-            SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time),
-            SolarCellLocation::Hs => AIR_TEMP_HEATED_ROOM,
+            
+            SolarCellLocation::Hs => air_temp_heated_room,
             SolarCellLocation::Nhs => {
-                (AIR_TEMP_HEATED_ROOM + self.external_conditions.air_temp(simulation_time)) / 2.
-            }
+                (air_temp_heated_room + self.external_conditions.air_temp(simulation_time)) / 2.
+            },
+            SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time)
         };
 
         // First estimation of average collector water temperature. Eq 51
