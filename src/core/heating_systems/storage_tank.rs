@@ -444,9 +444,9 @@ impl StorageTank {
         // note from Python code: "do not think these are applicable so used: f_sto_dis_ls = 1, f_sto_bac_acc = 1"
 
         // initialise list of thermal losses in kWh
-        let mut q_ls_n: Vec<f64> = vec![0.;self.vol_n.len()];
+        let mut q_ls_n: Vec<f64> = vec![0.; self.vol_n.len()];
         // initialise list of final temperature of layers after thermal losses in degrees
-        let mut temp_s8_n: Vec<f64> = vec![0.;self.vol_n.len()] ;
+        let mut temp_s8_n: Vec<f64> = vec![0.; self.vol_n.len()];
 
         // Thermal losses
         // Note: Eqn 13 from BS EN 15316-5:2017 does not explicitly multiply by
@@ -817,7 +817,7 @@ impl StorageTank {
         let mut q_unmet_w = 0.;
         let mut volume_demanded = 0.;
 
-        let temp_s3_n = self.temp_n.clone();
+        let mut temp_s3_n = self.temp_n.clone();
 
         // TODO migration to 0_30
         // does all of these need to be Option types?
@@ -853,9 +853,10 @@ impl StorageTank {
             // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
             // self.__time_end_previous_event = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
-            let (volume_used, temp_s3_n, energy_withdrawn, energy_unmet) =
+            let (volume_used, temp_s3_n_step, energy_withdrawn, energy_unmet) =
                 self.allocate_hot_water(event.clone(), simulation_time);
 
+            temp_s3_n = temp_s3_n_step;
             self.temp_n = temp_s3_n.clone();
 
             volume_demanded += volume_used;
@@ -918,8 +919,6 @@ impl StorageTank {
                 simulation_time,
             );
 
-            println!("#### temp_s8_n_step is {:?} for heat source {:?}", temp_s8_n_step, heat_source_name);
-
             temp_after_prev_heat_source = temp_s8_n_step.clone();
             q_ls += q_ls_this_heat_source;
 
@@ -956,9 +955,6 @@ impl StorageTank {
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
         self.temp_n = temp_s8_n;
-
-        println!("#### demand_hot_water set self.temp_n to {:?}", self.temp_n);
-
 
         // TODO (from Python) recoverable heat losses for heating should impact heating
 
@@ -1377,12 +1373,11 @@ impl SolarThermalSystem {
         let air_temp_heated_room = self.temp_internal_air_accessor.call();
 
         self.air_temp_coll_loop = match self.sol_loc {
-            
             SolarCellLocation::Hs => air_temp_heated_room,
             SolarCellLocation::Nhs => {
                 (air_temp_heated_room + self.external_conditions.air_temp(simulation_time)) / 2.
-            },
-            SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time)
+            }
+            SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time),
         };
 
         // First estimation of average collector water temperature. Eq 51
@@ -1650,23 +1645,26 @@ mod tests {
     }
 
     #[fixture]
-    pub fn temp_internal_air_accessor(external_conditions: Arc<ExternalConditions>, simulation_time_for_storage_tank: SimulationTime) -> TempInternalAirAccessor {
+    pub fn temp_internal_air_accessor(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_storage_tank: SimulationTime,
+    ) -> TempInternalAirAccessor {
         let be_objs = IndexMap::from([]);
         let ve_objs = vec![];
         let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
-        
-        let zone =  Zone::new(
-                500.,
-                125., // TODO may need to change this to get result matching Python test
-                be_objs,
-                thermal_bridging,
-                ve_objs,
-                None,
-                0., // any number
-                0., // any number
-                external_conditions,
-                &simulation_time_for_storage_tank.iter(),
-            );
+
+        let zone = Zone::new(
+            500.,
+            125., // TODO may need to change this to get result matching Python test
+            be_objs,
+            thermal_bridging,
+            ve_objs,
+            None,
+            0., // any number
+            0., // any number
+            external_conditions,
+            &simulation_time_for_storage_tank.iter(),
+        );
 
         let zones = IndexMap::from([("zone one".to_string(), zone)]).into();
         TempInternalAirAccessor {
@@ -1681,7 +1679,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         control_for_storage_tank: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor
+        temp_internal_air_accessor: TempInternalAirAccessor,
     ) -> ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>) {
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
@@ -1767,7 +1765,10 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_demand_hot_water(simulation_time_for_storage_tank: SimulationTime, storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>)) {
+    pub fn test_demand_hot_water(
+        simulation_time_for_storage_tank: SimulationTime,
+        storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>),
+    ) {
         let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
         let usage_events = vec![
             vec![
@@ -1775,7 +1776,7 @@ mod tests {
                     start: 6.,
                     duration: Some(6.),
                     temperature: 41.0,
-                    name: "ies".to_string(),
+                    name: "IES".to_string(),
                     event_type: WaterScheduleEventType::Shower,
                     warm_volume: None,
                     pipework_volume: None,
@@ -1898,14 +1899,17 @@ mod tests {
             [10.74, 11.1, 59.687654320987654, 59.687654320987654],
             [10.74, 11.1, 59.37752591068435, 59.37752591068435],
         ];
-        
+
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             let usage_events_for_iteration = usage_events[t_idx].clone();
             storage_tank1.demand_hot_water(usage_events_for_iteration, t_it);
 
             // Verify the temperatures against expected results
-            assert_eq!(storage_tank1.temp_n, expected_temperatures_1[t_idx], "incorrect temperatures returned")
+            assert_eq!(
+                storage_tank1.temp_n, expected_temperatures_1[t_idx],
+                "incorrect temperatures returned"
+            )
         }
     }
 
@@ -2106,7 +2110,7 @@ mod tests {
     #[fixture]
     pub fn storage_tank_with_solar_thermal(
         external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor
+        temp_internal_air_accessor: TempInternalAirAccessor,
     ) -> (
         StorageTank,
         Arc<Mutex<SolarThermalSystem>>,
