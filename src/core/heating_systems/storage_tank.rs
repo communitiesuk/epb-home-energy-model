@@ -981,8 +981,6 @@ impl StorageTank {
         let heat_source_data = &self.heat_source_data[heat_source_name];
 
         let heater_layer = (heat_source_data.heater_position * self.nb_vol as f64) as usize;
-        let _thermostat_layer =
-            (heat_source_data.thermostat_position * self.nb_vol as f64) as usize;
 
         let mut q_x_in_n = vec![0.; self.nb_vol];
         q_x_in_n[heater_layer] = energy_input;
