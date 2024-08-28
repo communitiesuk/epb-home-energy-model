@@ -61,7 +61,7 @@ pub struct StorageTank {
     energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
     nb_vol: usize,
-    temp_internal_air: f64,
+    temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
     vol_n: Vec<f64>,
@@ -113,9 +113,8 @@ impl StorageTank {
         cold_feed: WaterSourceWithTemperature,
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
-
-        // TODO use the Accessor to get this
-        temp_internal_air: f64, // In Python this is "project" but only temp_internal_air is accessed from it
+        // In Python this is "project" but only temp_internal_air is accessed from it
+        temp_internal_air_accessor: TempInternalAirAccessor,
         external_conditions: Arc<ExternalConditions>,
         nb_vol: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
@@ -177,7 +176,7 @@ impl StorageTank {
             energy_supply_conn_unmet_demand,
             control_hold_at_setpoint,
             nb_vol,
-            temp_internal_air,
+            temp_internal_air_accessor,
             external_conditions,
             volume_total_in_litres,
             vol_n,
@@ -211,7 +210,7 @@ impl StorageTank {
             PipeworkLocation::External => self
                 .external_conditions
                 .air_temp(&simulation_time_iteration),
-            PipeworkLocation::Internal => self.temp_internal_air,
+            PipeworkLocation::Internal => self.temp_internal_air_accessor.call(),
         }
     }
 

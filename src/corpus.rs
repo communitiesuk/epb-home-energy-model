@@ -3287,7 +3287,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                20., // TODO as part of migration 0.28 to 0.30: pass in internal air temp
+                temp_internal_air_accessor,
                 external_conditions,
                 Some(24),
                 pipework, // TODO as part of migration 0.28 to 0.30: double check
