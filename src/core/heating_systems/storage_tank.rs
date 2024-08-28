@@ -1515,10 +1515,12 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
+    // TODO (migration): still needed?
     fn round_by_precision(src: f64, precision: f64) -> f64 {
         (precision * src).round() / precision
     }
 
+    // TODO (migration): still needed?
     fn round_each_by_precision(src: Vec<Vec<f64>>, precision: f64) -> Vec<Vec<f64>> {
         src.iter()
             .map(|timestep_values| {
@@ -1986,7 +1988,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_demand_energy_for_immersion_heater(
+    pub fn test_demand_energy_for_immersion_heater(
         mut immersion_heater: ImmersionHeater,
         simulation_time_for_immersion_heater: SimulationTime,
     ) {
@@ -2004,8 +2006,113 @@ mod tests {
     // following tests are from a separate test file in the Python test_storage_tank_with_solar_thermal.py
 
     #[fixture]
+    fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
+        let simulation_time = SimulationTime::new(5088., 5112., 1.);
+
+        let air_temps = vec![
+            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+        ];
+        let wind_speeds = vec![
+            3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9,
+            3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+        ];
+        let wind_directions = vec![
+            30.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
+            190., 200., 320., 330., 340., 350., 355., 315., 5.,
+        ];
+        let diffuse_horizontal_radiations = vec![
+            0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225., 198.,
+            121., 68., 19., 0., 0., 0., 0., 0.,
+        ];
+        let direct_beam_radiations = vec![
+            0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285., 332.,
+            126., 7., 0., 0., 0., 0., 0.,
+        ];
+        let solar_reflectivity_of_ground = vec![
+            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        ];
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 4,
+                start: 45.,
+                end: 0.,
+                objects: Some(vec![ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 10.5,
+                    distance: 12.,
+                }]),
+            },
+            ShadingSegment {
+                number: 5,
+                start: 0.,
+                end: -45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 6,
+                start: -45.,
+                end: -90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 7,
+                start: -90.,
+                end: -135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 8,
+                start: -135.,
+                end: -180.,
+                objects: None,
+            },
+        ];
+
+        Arc::new(ExternalConditions::new(
+            &simulation_time.iter(),
+            air_temps,
+            wind_speeds,
+            wind_directions,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            solar_reflectivity_of_ground,
+            51.383,
+            -0.783,
+            0,
+            212,
+            Some(212),
+            1.0,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            shading_segments,
+        ))
+    }
+
+    #[fixture]
     pub fn storage_tank_with_solar_thermal(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions_for_solar_thermal: Arc<ExternalConditions>,
         temp_internal_air_accessor: TempInternalAirAccessor,
     ) -> (
         StorageTank,
@@ -2045,7 +2152,7 @@ mod tests {
             30.,
             0.,
             0.5,
-            external_conditions.clone(),
+            external_conditions_for_solar_thermal.clone(),
             temp_internal_air_accessor.clone(),
             simulation_time.step,
             WATER.clone(),
@@ -2069,7 +2176,7 @@ mod tests {
                 },
             )]),
             temp_internal_air_accessor.clone(),
-            external_conditions,
+            external_conditions_for_solar_thermal,
             None,
             None,
             None,
@@ -2079,7 +2186,7 @@ mod tests {
 
         (storage_tank, solar_thermal, simulation_time, energy_supply)
     }
-    #[ignore = "TODO as part of migration 28 to 30"]
+
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     pub fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
@@ -2092,10 +2199,7 @@ mod tests {
     ) {
         let (mut storage_tank, solar_thermal, simulation_time, energy_supply) =
             storage_tank_with_solar_thermal;
-        let demands = [
-            100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ];
+
         let expected_energy_demands = [
             0.0,
             0.0,
@@ -2105,14 +2209,14 @@ mod tests {
             0.0,
             0.0,
             0.0,
-            0.3944013153635651,
-            0.7205382866008986,
-            1.1792815529120688,
-            0.9563670953583516,
-            1.066201484260018,
-            0.2842009512268733,
-            0.07050814814814632,
-            0.07050814814814682,
+            0.3943936789277888,
+            0.8431700006423382,
+            1.3873931365189958,
+            1.0919832923582113,
+            1.1503273689665232,
+            1.484482745066628,
+            0.9003339693974624,
+            0.49807749362100157,
             0.0,
             0.0,
             0.0,
@@ -2123,86 +2227,184 @@ mod tests {
             0.0,
         ];
         let expected_energy_potentials = [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.3944013153635651,
-            0.7205382866008986,
-            1.1792815529120688,
-            0.9563670953583516,
-            1.066201484260018,
-            1.3754941274949404,
-            0.788682346923819,
-            0.4490991945005249,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.3943936789277888,
+            0.8431700006423382,
+            1.3873931365189958,
+            1.0919832923582113,
+            1.1503273689665232,
+            1.484482745066628,
+            0.9003339693974624,
+            0.49807749362100157,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
         ];
         let expected_energy_supplied = [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.3944013153635651,
-            0.7205382866008986,
-            1.1792815529120688,
-            0.9563670953583516,
-            1.066201484260018,
-            0.2842009512268733,
-            0.07050814814814632,
-            0.07050814814814682,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.3943936789277888,
+            0.8431700006423382,
+            1.3873931365189958,
+            1.0919832923582113,
+            1.1503273689665232,
+            1.484482745066628,
+            0.9003339693974624,
+            0.49807749362100157,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
         ];
         let expected_energy_supply_results = [
-            10, 10, 10, 10, 10, 10, 10, 10, 110, 110, 110, 110, 110, 110, 110, 110, 10, 10, 10, 10,
-            10, 10, 10, 10,
-        ]
-        .map(|x| x as f64);
+            10., 10., 10., 10., 10., 10., 10., 10., 110., 110., 110., 110., 110., 110., 110., 110.,
+            10., 10., 10., 10., 10., 10., 10., 10.,
+        ];
+
+        let usage_events: [Vec<TypedScheduleEvent>; 24] = [
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(52.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(52.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(48.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.0,
+                event_type: WaterScheduleEventType::Shower,
+                name: "mixer".to_owned(),
+                warm_volume: Some(52.0),
+                pipework_volume: None,
+            }],
+            vec![],
+            vec![],
+        ];
 
         // TODO implement for 0_30
-        // for (t_idx, t_it) in simulation_time.iter().enumerate() {
-        //     storage_tank.demand_hot_water(demands[t_idx], t_it);
-        //     assert_relative_eq!(
-        //         storage_tank.test_energy_demand(),
-        //         expected_energy_demands[t_idx],
-        //         max_relative = 1e-7
-        //     );
-        //     assert_relative_eq!(
-        //         solar_thermal.lock().test_energy_potential(),
-        //         expected_energy_potentials[t_idx],
-        //         max_relative = 1e-7
-        //     );
-        //     assert_relative_eq!(
-        //         solar_thermal.lock().test_energy_supplied(),
-        //         expected_energy_supplied[t_idx],
-        //         max_relative = 1e-7
-        //     );
-        //     assert_relative_eq!(
-        //         energy_supply.read().results_by_end_user()["solarthermal"][t_idx],
-        //         expected_energy_supply_results[t_idx],
-        //         max_relative = 1e-7
-        //     );
-        // }
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            storage_tank.demand_hot_water(usage_events.get(t_idx).unwrap().clone(), t_it);
+            assert_relative_eq!(
+                storage_tank.test_energy_demand(),
+                expected_energy_demands[t_idx],
+                max_relative = 1e-7
+            );
+            assert_relative_eq!(
+                solar_thermal.lock().test_energy_potential(),
+                expected_energy_potentials[t_idx],
+                max_relative = 1e-7
+            );
+            assert_relative_eq!(
+                solar_thermal.lock().test_energy_supplied(),
+                expected_energy_supplied[t_idx],
+                max_relative = 1e-7
+            );
+            assert_relative_eq!(
+                energy_supply.read().results_by_end_user()["solarthermal"][t_idx],
+                expected_energy_supply_results[t_idx],
+                max_relative = 1e-7
+            );
+        }
     }
 }
