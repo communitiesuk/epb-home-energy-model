@@ -296,6 +296,10 @@ impl Corpus {
             &mut energy_supplies,
             &diverter_types,
             &mut diverters,
+            TempInternalAirAccessor {
+                zones: zones.clone(),
+                total_volume,
+            },
             simulation_time_iterator.clone().as_ref(),
             external_conditions.clone(),
         )?;
@@ -2963,6 +2967,7 @@ fn heat_source_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     cold_water_sources: &ColdWaterSources,
+    temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
     // TODO add in all the stuff to do with energy supply
@@ -3029,6 +3034,7 @@ fn heat_source_from_input(
                         *orientation,
                         *solar_loop_piping_hlc,
                         external_conditions.clone(),
+                        temp_internal_air_accessor,
                         simulation_time.step_in_hours(),
                         *WATER,
                     ),
@@ -3202,6 +3208,7 @@ fn hot_water_source_from_input(
     energy_supplies: &mut EnergySupplies,
     diverter_types: &DiverterTypes,
     diverters: &mut Vec<Arc<RwLock<PVDiverter>>>,
+    temp_internal_air_accessor: TempInternalAirAccessor,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
@@ -3254,6 +3261,7 @@ fn hot_water_source_from_input(
                     controls,
                     energy_supplies,
                     cold_water_sources,
+                    temp_internal_air_accessor.clone(),
                     external_conditions.clone(),
                 )?;
                 let heat_source = Arc::new(Mutex::new(heat_source));
