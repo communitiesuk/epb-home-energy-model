@@ -1900,13 +1900,24 @@ mod tests {
             [10.74, 11.1, 59.37752591068435, 59.37752591068435],
         ];
 
-        let expected_energy_supplied = [
+        let expected_energy_supplied_1 = [
             5.913725648148166,
             0.0,
             0.0,
             0.0,
             3.858245898765432,
             0.0,
+            0.0,
+            0.0,
+        ];
+
+        let expected_energy_supplied_2 = [
+            0.6720797510288063,
+            0.0,
+            0.0,
+            0.0,
+            3.033920793930041,
+            1.8039389176954712,
             0.0,
             0.0,
         ];
@@ -1924,7 +1935,7 @@ mod tests {
 
             assert_relative_eq!(
                 energy_supply.read().results_by_end_user()["immersion"][t_idx],
-                expected_energy_supplied[t_idx],
+                expected_energy_supplied_1[t_idx],
                 max_relative = 1e-6
             );
 
@@ -1933,6 +1944,12 @@ mod tests {
             assert_eq!(
                 storage_tank2.temp_n, expected_temperatures_2[t_idx],
                 "incorrect temperatures returned"
+            );
+
+            assert_relative_eq!(
+                energy_supply.read().results_by_end_user()["immersion2"][t_idx],
+                expected_energy_supplied_2[t_idx],
+                max_relative = 1e-6
             );
         }
     }
