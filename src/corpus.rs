@@ -2062,8 +2062,8 @@ fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume:
 /// as an equivalent to Corpus::temp_internal_air
 #[derive(Clone, Debug)]
 pub struct TempInternalAirAccessor {
-    zones: Arc<IndexMap<String, Zone>>,
-    total_volume: f64,
+    pub zones: Arc<IndexMap<String, Zone>>,
+    pub total_volume: f64,
 }
 
 impl TempInternalAirAccessor {
