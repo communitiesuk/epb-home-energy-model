@@ -409,7 +409,7 @@ impl StorageTank {
                 }
             } else {
                 // reset mixing as lower levels now stabilised
-                mix_layer_n = Default::default();
+                mix_layer_n = vec![0; self.nb_vol];
             }
         }
 
@@ -1900,16 +1900,40 @@ mod tests {
             [10.74, 11.1, 59.37752591068435, 59.37752591068435],
         ];
 
+        let expected_energy_supplied = [
+            5.913725648148166,
+            0.0,
+            0.0,
+            0.0,
+            3.858245898765432,
+            0.0,
+            0.0,
+            0.0,
+        ];
+
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             let usage_events_for_iteration = usage_events[t_idx].clone();
-            storage_tank1.demand_hot_water(usage_events_for_iteration, t_it);
+            storage_tank1.demand_hot_water(usage_events_for_iteration.clone(), t_it);
 
             // Verify the temperatures against expected results
             assert_eq!(
                 storage_tank1.temp_n, expected_temperatures_1[t_idx],
                 "incorrect temperatures returned"
-            )
+            );
+
+            assert_relative_eq!(
+                energy_supply.read().results_by_end_user()["immersion"][t_idx],
+                expected_energy_supplied[t_idx],
+                max_relative = 1e-6
+            );
+
+            storage_tank2.demand_hot_water(usage_events_for_iteration, t_it);
+
+            assert_eq!(
+                storage_tank2.temp_n, expected_temperatures_2[t_idx],
+                "incorrect temperatures returned"
+            );
         }
     }
 
