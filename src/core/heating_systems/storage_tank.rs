@@ -1515,25 +1515,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
-    // TODO (migration): still needed?
-    fn round_by_precision(src: f64, precision: f64) -> f64 {
-        (precision * src).round() / precision
-    }
-
-    // TODO (migration): still needed?
-    fn round_each_by_precision(src: Vec<Vec<f64>>, precision: f64) -> Vec<Vec<f64>> {
-        src.iter()
-            .map(|timestep_values| {
-                timestep_values
-                    .iter()
-                    .map(|num| round_by_precision(*num, precision))
-                    .collect::<Vec<f64>>()
-                    .try_into()
-                    .unwrap()
-            })
-            .collect()
-    }
-
     #[fixture]
     pub fn simulation_time_for_storage_tank() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
@@ -1656,8 +1637,8 @@ mod tests {
         let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
 
         let zone = Zone::new(
-            500.,
-            125., // TODO may need to change this to get result matching Python test
+            500., // any number above 0
+            0.,   // any number
             be_objs,
             thermal_bridging,
             ve_objs,
@@ -1671,7 +1652,7 @@ mod tests {
         let zones = IndexMap::from([("zone one".to_string(), zone)]).into();
         TempInternalAirAccessor {
             zones,
-            total_volume: 1.,
+            total_volume: 0., // any number
         }
     }
 
@@ -1820,7 +1801,7 @@ mod tests {
                 warm_volume: Some(48.),
                 pipework_volume: None,
             }],
-            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![],
             vec![TypedScheduleEvent {
                 start: 9.,
                 duration: Some(6.),
@@ -1830,7 +1811,7 @@ mod tests {
                 warm_volume: Some(48.),
                 pipework_volume: None,
             }],
-            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![],
             vec![TypedScheduleEvent {
                 start: 11.,
                 duration: Some(6.5),
@@ -1840,8 +1821,8 @@ mod tests {
                 warm_volume: Some(52.),
                 pipework_volume: None,
             }],
-            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
-            vec![], // TODO (migration): Is this the best equivalent to None in Python ?
+            vec![],
+            vec![],
         ];
 
         //  Expected results for the unit test
@@ -2382,7 +2363,6 @@ mod tests {
             vec![],
         ];
 
-        // TODO implement for 0_30
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             storage_tank.demand_hot_water(usage_events.get(t_idx).unwrap().clone(), t_it);
             assert_relative_eq!(
