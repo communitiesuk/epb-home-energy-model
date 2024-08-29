@@ -34,8 +34,6 @@ const STORAGE_TANK_F_STO_M: f64 = 0.75;
 // ambient temperature - degrees
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
-// Time of finalisation of the previous hot water event
-const TIME_END_PREVIOUS_EVENT: f64 = 0.0;
 
 #[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {
@@ -293,7 +291,6 @@ impl StorageTank {
                 if self.heating_active[heat_source_name] {
                     let mut energy_potential = immersion_heater.lock().energy_output_max(
                         simulation_time,
-                        self.temp_set_on,
                         false,
                     );
                     // TODO (from Python) Consolidate checks for systems with/without primary pipework
@@ -518,11 +515,6 @@ impl StorageTank {
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
 
-    /// Send more intermediate output parameters to report
-    fn toreport(&self) -> (f64, f64) {
-        (self.primary_pipework_losses_kwh, self.storage_losses_kwh)
-    }
-
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
     fn run_heat_sources(
@@ -671,20 +663,20 @@ impl StorageTank {
                 self.cold_feed.temperature(simulation_time.index),
             );
 
-            let warm_vol_removed: f64;
+            let _warm_vol_removed: f64;
             let required_vol: f64;
             // Volume of hot water required at this layer
             if layer_vol <= remaining_demanded_warm_volume * fraction {
                 // This is the case where layer cannot meet all remaining demand for this event
                 required_vol = layer_vol;
-                warm_vol_removed = layer_vol / fraction;
+                _warm_vol_removed = layer_vol / fraction;
                 // Deduct the required volume from the remaining demand and update the layer's volume
                 remaining_vols[layer_index] -= layer_vol;
-                remaining_demanded_warm_volume -= warm_vol_removed;
+                remaining_demanded_warm_volume -= _warm_vol_removed;
             } else {
                 //This is the case where layer can meet all remaining demand for this event
                 required_vol = remaining_demanded_warm_volume * fraction;
-                warm_vol_removed = remaining_demanded_warm_volume;
+                _warm_vol_removed = remaining_demanded_warm_volume;
                 // Deduct the required volume from the remaining demand and update the layer's volume
                 remaining_vols[layer_index] -= required_vol;
                 remaining_demanded_warm_volume = 0.0;
@@ -810,18 +802,14 @@ impl StorageTank {
     pub fn demand_hot_water(
         &mut self,
         usage_events: Vec<TypedScheduleEvent>,
-        // TODO migration to 0_30
-        // we're now passing in simulation time - could we just pass in one TypedScheduleEvent
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64, f64, f64, f64) {
         let mut q_use_w = 0.;
         let mut q_unmet_w = 0.;
-        let mut volume_demanded = 0.;
+        let mut _volume_demanded = 0.;
 
         let mut temp_s3_n = self.temp_n.clone();
 
-        // TODO migration to 0_30
-        // does all of these need to be Option types?
         self.temp_final_drawoff = Some(self.get_temp_hot_water());
         self.temp_average_drawoff_volweighted = Some(0.);
         self.total_volume_drawoff = Some(0.);
@@ -860,7 +848,7 @@ impl StorageTank {
             temp_s3_n = temp_s3_n_step;
             self.temp_n = temp_s3_n.clone();
 
-            volume_demanded += volume_used;
+            _volume_demanded += volume_used;
             q_unmet_w += energy_unmet;
             q_use_w += energy_withdrawn;
         }
@@ -874,18 +862,18 @@ impl StorageTank {
                 .expect("expected to be able to demand energy");
         }
 
-        // TODO migration to 0_30
-        // once we have a passing test change this to a match statement
-        if self.total_volume_drawoff.is_some() && self.total_volume_drawoff.unwrap() != 0. {
-            let temp_average_drawoff_volweighted = self
-                .temp_average_drawoff_volweighted
-                .expect("temp_average_drawoff_volweighted was not set");
-            self.temp_average_drawoff =
-                Some(temp_average_drawoff_volweighted / self.total_volume_drawoff.unwrap());
-        } else {
-            self.temp_average_drawoff = temp_s3_n.last().copied();
-        }
-
+        self.temp_average_drawoff = match self.total_volume_drawoff {
+            Some(value) if value != 0. => {
+                let temp_average_drawoff_volweighted = self
+                    .temp_average_drawoff_volweighted
+                    .expect("temp_average_drawoff_volweighted was not set");
+                Some(temp_average_drawoff_volweighted / value)
+            },
+            _ => {
+                temp_s3_n.last().copied()
+            }
+        };
+        
         // TODO (from Python) 6.4.3.6 STEP 4 Volume to be withdrawn from the storage (for Heating)
         // TODO (from Python) - 6.4.3.7 STEP 5 Temperature of the storage after volume withdrawn (for Heating)
 
@@ -1120,6 +1108,7 @@ impl StorageTank {
                 self.input_energy_adj_prev_timestep = input_energy_adj;
                 self.primary_gains = primary_gains;
 
+                // TODO (from Python) - how are these gains reflected in the calculations? allocation by zone?
                 Ok(heat_source_output)
             }
         }
@@ -1199,7 +1188,6 @@ impl ImmersionHeater {
     pub fn energy_output_max(
         &self,
         simtime: SimulationTimeIteration,
-        _return_temp: f64, // TODO as part of migration v0.28 to 0.30
         ignore_standard_control: bool,
     ) -> f64 {
         // Account for time control where present. If no control present, assume
@@ -1261,7 +1249,7 @@ impl PVDiverter {
         let imm_heater_max_capacity_spare =
             self.immersion_heater
                 .lock()
-                .energy_output_max(simulation_time_iteration, 0., true)
+                .energy_output_max(simulation_time_iteration, true)
                 - self.capacity_already_in_use.load(Ordering::SeqCst);
 
         // Calculate the maximum energy that could be diverted
