@@ -579,7 +579,7 @@ impl StorageTank {
             q_ls_n_prev_heat_source,
         );
 
-        // TODO 6.4.3.11 Heat exchanger
+        // TODO (from Python) 6.4.3.11 Heat exchanger
 
         // demand adjusted energy from heat source (before was just using potential without taking it)
         let input_energy_adj = q_in_h_w;
