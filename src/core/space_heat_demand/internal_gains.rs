@@ -115,7 +115,7 @@ impl ApplianceGains {
 struct EventApplianceGains {
     energy_supply_conn: EnergySupplyConnection,
     gains_fraction: f64,
-    start_day: f64,
+    start_day: u32,
     time_series_step: f64,
     total_floor_area: f64,
     standby_power: f64,
@@ -151,9 +151,22 @@ impl EventApplianceGains {
         energy_supply_conn: EnergySupplyConnection,
         appliance_data: &ApplianceGainsDetails,
         total_floor_area: f64,
-    ) {
+    ) -> Self {
         // TODO implement constructor for EventApplianceGains
-        todo!()
+        Self {
+            energy_supply_conn: energy_supply_conn,
+            gains_fraction: appliance_data.gains_fraction,
+            start_day: appliance_data.start_day,
+            time_series_step: appliance_data.time_series_step,
+            total_floor_area: total_floor_area,
+            standby_power: todo!(),
+            usage_events: todo!(),
+            max_shift: todo!(),
+            demand_limit: todo!(),
+            weight_timeseries: todo!(),
+            otherdemand_timeseries: todo!()
+        }
+
     }
 }
 
