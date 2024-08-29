@@ -2647,14 +2647,17 @@ fn apply_appliance_gains_from_input(
                 .ensured_get_for_type(gains_details.energy_supply, simulation_timesteps)?,
             name.as_str(),
         )?;
-        internal_gains_collection.insert(
-            name.clone(),
-            Gains::Appliance(appliance_gains_from_single_input(
-                gains_details,
-                energy_supply_conn,
-                total_floor_area,
-            )),
-        );
+
+        // TODO create either an ApplianceGains or an EventApplianceGains here
+        // in Python this depends on whether the data (gains_details) includes
+        // keys for both "Events" and "Standby"
+        let gains = Gains::Appliance(appliance_gains_from_single_input(
+            gains_details,
+            energy_supply_conn,
+            total_floor_area,
+        ));
+
+        internal_gains_collection.insert(name.clone(), gains);
     }
 
     Ok(())

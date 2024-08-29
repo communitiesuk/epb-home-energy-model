@@ -1,5 +1,7 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
+use crate::input::ApplianceGainsDetails;
 // use crate::core::units::WATTS_PER_KILOWATT;
 use crate::simulation_time::SimulationTimeIteration;
 
@@ -18,6 +20,7 @@ pub struct InternalGains {
 pub enum Gains {
     Internal(InternalGains),
     Appliance(ApplianceGains),
+    Event(EventApplianceGains),
 }
 
 impl Gains {
@@ -29,6 +32,7 @@ impl Gains {
         match self {
             Gains::Internal(internal) => internal.total_internal_gain_in_w(zone_area, simtime),
             Gains::Appliance(appliance) => appliance.total_internal_gain_in_w(zone_area, simtime),
+            _ => todo!(), // TODO handle Gains::EventAppliance case
         }
     }
 }
@@ -103,6 +107,53 @@ impl ApplianceGains {
             .unwrap();
 
         total_energy_supplied_w * self.gains_fraction
+    }
+}
+
+/// An object to represent internal gains and energy consumption from appliances
+#[derive(Clone, Debug)]
+struct EventApplianceGains {
+    energy_supply_conn: EnergySupplyConnection,
+    gains_fraction: f64,
+    start_day: f64,
+    time_series_step: f64,
+    total_floor_area: f64,
+    standby_power: f64,
+    usage_events: Vec<TypedScheduleEvent>,
+    max_shift: f64,
+    demand_limit: Option<f64>,
+    weight_timeseries: Option<f64>,
+    otherdemand_timeseries: Option<f64>,
+}
+
+impl EventApplianceGains {
+    // Construct a InternalGains object
+
+    //     Arguments:
+    //     energy_supply_connection -- reference to EnergySupplyConnection object representing
+    //                                 the electricity supply attached to the appliance
+    //     simulation_time          -- reference to SimulationTime object
+    //     appliance_data           -- dictionary of appliance gains data from project dict, including:
+    //                                 gains_fraction    -- proportion of appliance demand turned into heat gains
+    //                                 start_day         -- first day of the time series, day of the year, 0 to 365 (single value)
+    //                                 time_series_step  -- timestep of the time series data, in hours
+    //                                 Standby           -- appliance power consumption when not in use in Watts
+    //                                 Events            -- list of appliance usage events, which are dictionaries,
+    //                                                      containing demand_W, start and duration,
+    //                                                      with start and duration in hours
+    //                                 loadshifting      -- (optional) dictionary definining loadshifting parameters
+    //                                                      max_shift_hrs
+    //                                                      demand_limit_weighted
+    //                                                      weight_timeseries
+    //                                                      demand_timeseries
+    //     TFA                      -- total floor area of dwelling
+    pub fn new(
+        energy_supply_conn: EnergySupplyConnection,
+        appliance_data: &ApplianceGainsDetails,
+        total_floor_area: f64,
+    ) {
+        // TODO implement constructor for EventApplianceGains
+        todo!()
     }
 }
 
