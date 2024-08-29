@@ -444,9 +444,9 @@ impl StorageTank {
         // note from Python code: "do not think these are applicable so used: f_sto_dis_ls = 1, f_sto_bac_acc = 1"
 
         // initialise list of thermal losses in kWh
-        let mut q_ls_n: Vec<f64> = vec![0.; self.vol_n.len()];
+        let mut q_ls_n: Vec<f64> = vec![];
         // initialise list of final temperature of layers after thermal losses in degrees
-        let mut temp_s8_n: Vec<f64> = vec![0.; self.vol_n.len()];
+        let mut temp_s8_n: Vec<f64> = vec![];
 
         // Thermal losses
         // Note: Eqn 13 from BS EN 15316-5:2017 does not explicitly multiply by
@@ -454,14 +454,14 @@ impl StorageTank {
         // necessary to convert the rate of heat loss to a total heat loss over
         // the time period
         for i in 0..self.vol_n.len() {
-            // TODO insert or initialise vec with size
-            // or could push since its in order
-
-            q_ls_n[i] = (h_sto_ls * self.rho * self.cp)
+            let q_ls_n_step = (h_sto_ls * self.rho * self.cp)
                 * (self.vol_n[i] / self.volume_total_in_litres)
                 * (min_of_2(temp_s7_n[i], self.temp_set_on) - STORAGE_TANK_TEMP_AMB)
                 * self.simulation_timestep;
-            q_ls_n[i] = max_of_2(0., q_ls_n[i] - q_ls_n_prev_heat_source[i]);
+
+            let q_ls_n_step = max_of_2(0., q_ls_n_step - q_ls_n_prev_heat_source[i]);
+
+            q_ls_n.push(q_ls_n_step);
         }
 
         // total thermal losses kWh
@@ -473,7 +473,7 @@ impl StorageTank {
         // check temperature compared to set point
         // the temperature for each volume are limited to the set point for any volume controlled
         for i in 0..self.vol_n.len() {
-            temp_s8_n[i] = if temp_s7_n[i] > self.temp_set_on {
+            let temp_s8_n_step = if temp_s7_n[i] > self.temp_set_on {
                 // Case 2 - Temperature exceeding the set point
                 self.temp_set_on
             } else {
@@ -485,6 +485,7 @@ impl StorageTank {
                 // and P instead of rho
                 temp_s7_n[i] - (q_ls_n[i] / (self.rho * self.cp * self.vol_n[i]))
             };
+            temp_s8_n.push(temp_s8_n_step);
         }
 
         // excess energy/ energy surplus
