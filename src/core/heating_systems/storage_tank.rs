@@ -34,7 +34,6 @@ const STORAGE_TANK_F_STO_M: f64 = 0.75;
 // ambient temperature - degrees
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
-
 #[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {
     Immersion(Arc<Mutex<ImmersionHeater>>),
@@ -289,10 +288,9 @@ impl StorageTank {
                         });
                 }
                 if self.heating_active[heat_source_name] {
-                    let mut energy_potential = immersion_heater.lock().energy_output_max(
-                        simulation_time,
-                        false,
-                    );
+                    let mut energy_potential = immersion_heater
+                        .lock()
+                        .energy_output_max(simulation_time, false);
                     // TODO (from Python) Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
@@ -868,12 +866,10 @@ impl StorageTank {
                     .temp_average_drawoff_volweighted
                     .expect("temp_average_drawoff_volweighted was not set");
                 Some(temp_average_drawoff_volweighted / value)
-            },
-            _ => {
-                temp_s3_n.last().copied()
             }
+            _ => temp_s3_n.last().copied(),
         };
-        
+
         // TODO (from Python) 6.4.3.6 STEP 4 Volume to be withdrawn from the storage (for Heating)
         // TODO (from Python) - 6.4.3.7 STEP 5 Temperature of the storage after volume withdrawn (for Heating)
 
@@ -1246,11 +1242,11 @@ impl PVDiverter {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         // check how much spare capacity the immersion heater has
-        let imm_heater_max_capacity_spare =
-            self.immersion_heater
-                .lock()
-                .energy_output_max(simulation_time_iteration, true)
-                - self.capacity_already_in_use.load(Ordering::SeqCst);
+        let imm_heater_max_capacity_spare = self
+            .immersion_heater
+            .lock()
+            .energy_output_max(simulation_time_iteration, true)
+            - self.capacity_already_in_use.load(Ordering::SeqCst);
 
         // Calculate the maximum energy that could be diverted
         // Note: supply_surplus argument is negative by convention, so negate it here
@@ -1492,13 +1488,14 @@ mod tests {
     use crate::core::material_properties::WATER;
     use crate::core::schedule::WaterScheduleEventType;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
+    use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
     use crate::core::space_heat_demand::zone::Zone;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::corpus::HeatSource;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::FuelType;
+    use crate::input::{FuelType, TerrainClass, VentilationLeaks, VentilationShieldClass};
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -1622,7 +1619,30 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
     ) -> TempInternalAirAccessor {
         let be_objs = IndexMap::from([]);
-        let ve_objs = vec![];
+        let leaks = VentilationLeaks {
+            ventilation_zone_height: 0.,
+            test_pressure: 0.,
+            test_result: 0.,
+            area_roof: Some(0.),
+            area_facades: Some(0.),
+            env_area: 0.,
+            altitude: Some(0.),
+        };
+        let ventilation = InfiltrationVentilation::new(
+            external_conditions,
+            true,
+            VentilationShieldClass::Open,
+            TerrainClass::Country,
+            0.,
+            vec![],
+            vec![],
+            leaks,
+            vec![],
+            vec![],
+            vec![],
+            0.,
+            0.,
+        );
         let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
 
         let zone = Zone::new(
@@ -1630,15 +1650,14 @@ mod tests {
             0.,   // any number
             be_objs,
             thermal_bridging,
-            ve_objs,
+            ventilation.into(),
+            0., // any number
+            0., // any number
             None,
-            0., // any number
-            0., // any number
-            external_conditions,
             &simulation_time_for_storage_tank.iter(),
         );
 
-        let zones = IndexMap::from([("zone one".to_string(), zone)]).into();
+        let zones = IndexMap::from([("zone one".to_string(), zone.unwrap())]).into();
         TempInternalAirAccessor {
             zones,
             total_volume: 0., // any number
