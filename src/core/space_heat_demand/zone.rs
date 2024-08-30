@@ -1504,6 +1504,7 @@ mod tests {
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
     use crate::core::units::DAYS_IN_MONTH;
+    use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         FloorType, MassDistributionClass, TerrainClass, VentilationLeaks, VentilationShieldClass,
@@ -1845,14 +1846,14 @@ mod tests {
         );
         let vents = HashMap::from([("vent 1".to_string(), vent)]);
 
-        let leaks = VentilationLeaks {
+        let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
             test_pressure: 50.,
             test_result: 1.2,
-            area_roof: Some(25.0),
-            area_facades: Some(85.0),
+            area_roof: 25.0,
+            area_facades: 85.0,
             env_area: 220.,
-            altitude: Some(30.),
+            altitude: 30.,
         };
 
         InfiltrationVentilation::new(

@@ -30,14 +30,16 @@ use crate::core::schedule::{
     TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
-    area_for_building_element_input, convert_uvalue_to_resistance, BuildingElement,
+    area_for_building_element_input, convert_uvalue_to_resistance, pitch_class, BuildingElement,
     BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
-    BuildingElementOpaque, BuildingElementTransparent, NamedBuildingElementTransparent,
-    PITCH_LIMIT_HORIZ_CEILING,
+    BuildingElementOpaque, BuildingElementTransparent, HeatFlowDirection,
+    NamedBuildingElementTransparent, PITCH_LIMIT_HORIZ_CEILING,
 };
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
-use crate::core::space_heat_demand::ventilation::{InfiltrationVentilation, Window};
+use crate::core::space_heat_demand::ventilation::{
+    AirTerminalDevices, InfiltrationVentilation, Vent, Window,
+};
 use crate::core::space_heat_demand::ventilation_element::{
     air_change_rate_to_flow_rate, NaturalVentilation, VentilationElement,
     VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
@@ -53,7 +55,7 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
+    init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ColdWaterSourceDetails, ColdWaterSourceInput,
     ColdWaterSourceType, Control as ControlInput, ControlDetails, EnergyDiverter,
     EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
@@ -75,7 +77,6 @@ use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
-use nalgebra::Storage;
 use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -184,7 +185,6 @@ impl Corpus {
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,
-            // event_schedules.clone(),
             vec![], // use empty while migrating to 0.30
         )?;
 
@@ -210,6 +210,15 @@ impl Corpus {
 
         let mut heat_system_name_for_zone: IndexMap<String, String> = Default::default();
         let mut cool_system_name_for_zone: IndexMap<String, String> = Default::default();
+
+        // infiltration ventilation
+        let (infiltration_ventilation, window_adjust_control) =
+            infiltration_ventilation_from_input(
+                &input.zone,
+                &input.infiltration_ventilation,
+                &controls,
+                external_conditions.clone(),
+            )?;
 
         let zones: IndexMap<String, Zone> = input
             .zone
@@ -239,10 +248,6 @@ impl Corpus {
             })
             .collect::<anyhow::Result<_>>()?;
         let zones = Arc::new(zones);
-
-        // infiltration ventilation
-        // let infiltration_ventilation =
-        //     infiltration_ventilation_from_input(zones.clone(), input.infiltration_ventilation);
 
         if !has_unique_values(&heat_system_name_for_zone)
             || !has_unique_values(&cool_system_name_for_zone)
@@ -2434,14 +2439,14 @@ fn zone_from_input<'a>(
                 45.,
                 vec![],
                 vec![],
-                VentilationLeaks {
+                CompletedVentilationLeaks {
                     ventilation_zone_height: 0.0,
                     test_pressure: 0.0,
                     test_result: 0.0,
-                    area_roof: None,
-                    area_facades: None,
+                    area_roof: 0.0,
+                    area_facades: 0.0,
                     env_area: 0.0,
-                    altitude: None,
+                    altitude: 0.0,
                 },
                 vec![],
                 vec![],
@@ -2459,13 +2464,214 @@ fn zone_from_input<'a>(
     ))
 }
 
-// fn infiltration_ventilation_from_input(
-//     zones: Arc<IndexMap<String, Zone>>,
-//     input: InfiltrationVentilationInput,
-// ) -> InfiltrationVentilation {
-//     // carry on from here!!
-//     let windows: IndexMap<String, Window> = zones.iter().map(||).flatten().collect();
-// }
+fn infiltration_ventilation_from_input(
+    zones: &ZoneDictionary,
+    input: &InfiltrationVentilationInput,
+    controls: &Controls,
+    external_conditions: Arc<ExternalConditions>,
+) -> anyhow::Result<(InfiltrationVentilation, Option<Arc<Control>>)> {
+    let windows: IndexMap<String, Window> = zones
+        .values()
+        .flat_map(|zone| {
+            zone.building_elements
+                .iter()
+                .filter_map(|(building_element_name, building_element)| {
+                    let window: Option<anyhow::Result<Window>> = if let BuildingElementInput::Transparent {
+                        window_openable_control,
+                        free_area_height,
+                        mid_height,
+                        max_window_open_area,
+                        window_part_list,
+                        orientation,
+                        pitch,
+                        ..
+                    } = building_element
+                    {
+                        // Check control for openable window
+                        let on_off_ctrl = window_openable_control.as_ref().and_then(|ctrl_name| {
+                            controls.get_with_string(ctrl_name)
+                        });
+
+                        let window_result_fn = || {
+                            Ok(Window::new(
+                                external_conditions.clone(),
+                                free_area_height.ok_or_else(|| anyhow!("A free_area_height value was expected for a transparent building element."))?,
+                                mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
+                                max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
+                                window_part_list.as_ref().unwrap_or(&vec![]).clone(),
+                                // running orientation through init_orientation again to convert it back to "orientation360" value, which is expected by the Python (possibly erroneously?)
+                                init_orientation(*orientation),
+                                *pitch,
+                                input.altitude,
+                                on_off_ctrl
+                            ))
+                        };
+
+                        Some(window_result_fn())
+                    } else {
+                        None
+                    };
+                    window.map(|window: anyhow::Result<Window>| anyhow::Ok((building_element_name.clone(), window?)))
+                })
+        })
+        .collect::<anyhow::Result<IndexMap<String, Window>>>()?;
+
+    let InfiltrationVentilationInput {
+        cross_vent_factor: f_cross,
+        shield_class,
+        terrain_class,
+        altitude,
+        ..
+    } = input;
+
+    let window_adjust_control = input
+        .window_adjust_control
+        .as_ref()
+        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+
+    let vents: IndexMap<String, Vent> = input
+        .vents
+        .iter()
+        .map(|(vent_name, vent)| {
+            (
+                vent_name.clone(),
+                Vent::new(
+                    external_conditions.clone(),
+                    vent.mid_height_air_flow_path,
+                    vent.area_cm2,
+                    vent.pressure_difference_ref,
+                    // Python uses "orientation360" value here
+                    init_orientation(vent.orientation),
+                    vent.pitch,
+                    *altitude,
+                ),
+            )
+        })
+        .collect();
+
+    let (pitches, areas): (Vec<f64>, Vec<f64>) = zones
+        .values()
+        .flat_map(|zone| {
+            zone.building_elements
+                .values()
+                .filter_map(|building_element| {
+                    if let BuildingElementInput::Opaque { pitch, area, .. } = building_element {
+                        (pitch_class(*pitch) == HeatFlowDirection::Upwards)
+                            .then_some((*pitch, *area))
+                    } else {
+                        None
+                    }
+                })
+        })
+        .unzip();
+    // Work out the average pitch, weighted by area
+    let area_total = areas.iter().sum::<f64>();
+    let average_pitch = if pitches.len() > 0 {
+        areas
+            .iter()
+            .map(|x| x / area_total)
+            .zip(pitches.iter())
+            .map(|(x, &y)| x * y)
+            .sum::<f64>()
+    } else {
+        // This case doesn't matter as if the area of roof = 0, the leakage coefficient = 0 anyway.
+        0.
+    };
+
+    let (surface_area_facades_list, surface_area_roof_list) = zones
+        .values()
+        .flat_map(|zone| zone.building_elements.values())
+        .fold((vec![], vec![]), |(mut facades, mut roofs), item| {
+            match pitch_class(item.pitch()) {
+                HeatFlowDirection::Horizontal => match item {
+                    BuildingElementInput::Opaque { area, .. } => {
+                        facades.push(*area);
+                    }
+                    BuildingElementInput::Transparent { height, width, .. } => {
+                        facades.push(*height * *width);
+                    }
+                    _ => {}
+                },
+                HeatFlowDirection::Upwards => match item {
+                    BuildingElementInput::Opaque { area, .. } => {
+                        roofs.push(*area);
+                    }
+                    BuildingElementInput::Transparent { height, width, .. } => {
+                        roofs.push(*height * *width)
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+
+            (facades, roofs)
+        });
+
+    let surface_area_facades = surface_area_facades_list.iter().sum::<f64>();
+    let surface_area_roof = surface_area_roof_list.iter().sum::<f64>();
+
+    let leaks =
+        CompletedVentilationLeaks::complete_input(input, surface_area_facades, surface_area_roof);
+
+    // Empty map for air terminal devices until passive ducts work
+    let atds: IndexMap<String, AirTerminalDevices> = Default::default();
+
+    // TODO: build up mechanical ventilation inputs
+
+    let ventilation = InfiltrationVentilation::new(
+        external_conditions.clone(),
+        *f_cross,
+        *shield_class,
+        *terrain_class,
+        average_pitch,
+        windows.into_values().collect(),
+        vents.into_values().collect(),
+        leaks,
+        vec![],
+        atds.into_values().collect(),
+        vec![],
+        *altitude,
+        zones.values().map(|zone| zone.area).sum::<f64>(),
+    );
+
+    Ok((ventilation, window_adjust_control))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CompletedVentilationLeaks {
+    pub(crate) ventilation_zone_height: f64,
+    pub(crate) test_pressure: f64,
+    pub(crate) test_result: f64,
+    pub(crate) area_roof: f64,
+    pub(crate) area_facades: f64,
+    pub(crate) env_area: f64,
+    pub(crate) altitude: f64,
+}
+
+impl CompletedVentilationLeaks {
+    fn complete_input(
+        input: &InfiltrationVentilationInput,
+        area_facades: f64,
+        area_roof: f64,
+    ) -> Self {
+        let VentilationLeaks {
+            ventilation_zone_height,
+            test_pressure,
+            test_result,
+            env_area,
+            ..
+        } = input.leaks;
+        Self {
+            ventilation_zone_height,
+            test_pressure,
+            test_result,
+            area_roof,
+            area_facades,
+            env_area,
+            altitude: input.altitude,
+        }
+    }
+}
 
 fn building_element_from_input(
     input: &BuildingElementInput,

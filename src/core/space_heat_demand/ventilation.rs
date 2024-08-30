@@ -8,6 +8,7 @@ use crate::core::material_properties::AIR;
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
+use crate::corpus::CompletedVentilationLeaks;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
@@ -1370,7 +1371,7 @@ impl InfiltrationVentilation {
         average_roof_pitch: f64,
         windows: Vec<Window>,
         vents: Vec<Vent>,
-        leaks: VentilationLeaks,
+        leaks: CompletedVentilationLeaks,
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
         mech_vents: Vec<MechanicalVentilation>,
@@ -1433,7 +1434,7 @@ impl InfiltrationVentilation {
     /// leak - dict of leaks input data from JSON file
     /// average_roof_pitch - calculated in project.py, average pitch of all roof elements weighted by area (degrees)
     fn make_leak_objects(
-        leaks: VentilationLeaks,
+        leaks: CompletedVentilationLeaks,
         average_roof_pitch: f64,
         external_conditions: Arc<ExternalConditions>,
     ) -> Vec<Leaks> {
@@ -1465,16 +1466,10 @@ impl InfiltrationVentilation {
                     leaks.test_pressure,
                     leaks.test_result,
                     facade_direction[i],
-                    leaks
-                        .area_roof
-                        .expect("VentilationLeaks did not have an area_roof defined"),
-                    leaks
-                        .area_facades
-                        .expect("VentilationLeaks did not have an area_facades defined"),
+                    leaks.area_roof,
+                    leaks.area_facades,
                     leaks.env_area,
-                    leaks
-                        .altitude
-                        .expect("VentilationLeaks did not have an altitude defined"),
+                    leaks.altitude,
                 )
             })
             .collect()
@@ -2588,14 +2583,14 @@ mod tests {
             90.,
             30.,
         )];
-        let leaks = VentilationLeaks {
+        let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
             test_pressure: 50.,
             test_result: 1.2,
-            area_roof: Some(25.),
-            area_facades: Some(85.),
+            area_roof: 25.,
+            area_facades: 85.,
             env_area: 220.,
-            altitude: Some(30.),
+            altitude: 30.,
         };
         let combustion_appliances_list = vec![combustion_appliances];
         let air_terminal_devices = Vec::<AirTerminalDevices>::new();

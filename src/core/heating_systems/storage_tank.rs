@@ -1491,7 +1491,7 @@ mod tests {
     use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
     use crate::core::space_heat_demand::zone::Zone;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::corpus::HeatSource;
+    use crate::corpus::{CompletedVentilationLeaks, HeatSource};
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
@@ -1619,14 +1619,14 @@ mod tests {
         simulation_time_for_storage_tank: SimulationTime,
     ) -> TempInternalAirAccessor {
         let be_objs = IndexMap::from([]);
-        let leaks = VentilationLeaks {
+        let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 0.,
             test_pressure: 0.,
             test_result: 0.,
-            area_roof: Some(0.),
-            area_facades: Some(0.),
+            area_roof: 0.,
+            area_facades: 0.,
             env_area: 0.,
-            altitude: Some(0.),
+            altitude: 0.,
         };
         let ventilation = InfiltrationVentilation::new(
             external_conditions,

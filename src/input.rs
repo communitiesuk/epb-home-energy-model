@@ -1605,6 +1605,18 @@ pub enum BuildingElement {
     },
 }
 
+impl BuildingElement {
+    pub(crate) fn pitch(&self) -> f64 {
+        *match self {
+            BuildingElement::Opaque { pitch, .. } => pitch,
+            BuildingElement::Transparent { pitch, .. } => pitch,
+            BuildingElement::Ground { pitch, .. } => pitch,
+            BuildingElement::AdjacentZTC { pitch, .. } => pitch,
+            BuildingElement::AdjacentZTUSimple { pitch, .. } => pitch,
+        }
+    }
+}
+
 // special deserialization logic so that orientations are normalized correctly on the way in
 pub fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
@@ -1614,7 +1626,7 @@ where
     Ok(init_orientation(orientation360_value))
 }
 
-fn init_orientation(value: f64) -> f64 {
+pub(crate) fn init_orientation(value: f64) -> f64 {
     // Convert orientation from 0-360 (clockwise) to -180 to +180 (anticlockwise)
     180. - value
 }
@@ -2030,17 +2042,17 @@ pub enum BuildType {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
-    cross_vent_factor: bool,
-    shield_class: VentilationShieldClass,
-    terrain_class: TerrainClass,
-    altitude: f64,
+    pub(crate) cross_vent_factor: bool,
+    pub(crate) shield_class: VentilationShieldClass,
+    pub(crate) terrain_class: TerrainClass,
+    pub(crate) altitude: f64,
     #[serde(rename = "Control_WindowAdjust")]
-    window_adjust_control: Option<String>, // don't know what this can be
+    pub(crate) window_adjust_control: Option<String>, // don't know what this can be
     noise_nuisance: Option<bool>,
     #[serde(rename = "Vents")]
-    vents: IndexMap<String, Vent>,
+    pub(crate) vents: IndexMap<String, Vent>,
     #[serde(rename = "Leaks")]
-    leaks: VentilationLeaks,
+    pub(crate) leaks: VentilationLeaks,
     #[serde(rename = "MechanicalVentilation")]
     mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
     #[serde(rename = "AirTerminalDevices")]
@@ -2074,13 +2086,13 @@ pub enum TerrainClass {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Vent {
-    mid_height_air_flow_path: f64,
-    area_cm2: f64,
-    pressure_difference_ref: f64,
+    pub(crate) mid_height_air_flow_path: f64,
+    pub(crate) area_cm2: f64,
+    pub(crate) pressure_difference_ref: f64,
     #[serde(rename = "orientation360")]
     #[serde(deserialize_with = "deserialize_orientation")]
-    orientation: f64,
-    pitch: f64,
+    pub(crate) orientation: f64,
+    pub(crate) pitch: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -2090,10 +2102,12 @@ pub struct VentilationLeaks {
     pub ventilation_zone_height: f64,
     pub test_pressure: f64,
     pub test_result: f64,
-    pub area_roof: Option<f64>,
-    pub area_facades: Option<f64>,
     pub env_area: f64,
-    pub altitude: Option<f64>,
+    // following values appear to be usually overridden
+    #[serde(rename = "area_roof")]
+    _area_roof: Option<f64>,
+    #[serde(rename = "area_facades")]
+    _area_facades: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
