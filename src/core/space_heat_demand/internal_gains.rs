@@ -3,7 +3,7 @@ use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent};
 // use crate::core::units::WATTS_PER_KILOWATT;
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -124,6 +124,7 @@ pub struct EventApplianceGains {
     demand_limit: Option<f64>,
     weight_timeseries: Option<Vec<f64>>,
     otherdemand_timeseries: Option<Vec<f64>>,
+    total_power_supply: Vec<f64>,
 }
 
 impl EventApplianceGains {
@@ -149,40 +150,94 @@ impl EventApplianceGains {
     //     TFA                      -- total floor area of dwelling
     pub fn new(
         energy_supply_conn: EnergySupplyConnection,
+        simulation_time: &SimulationTimeIterator,
         appliance_data: &ApplianceGainsDetails,
         total_floor_area: f64,
     ) -> Self {
+        let standby_power = appliance_data
+            .standby
+            .expect("standby is expected for EventApplianceGains");
+        let usage_events = appliance_data
+            .events
+            .clone()
+            .expect("events are expected for EventApplianceGains");
+        let weight_timeseries = match &appliance_data.load_shifting {
+            Some(value) => value.weight_timeseries.clone(),
+            None => None,
+        };
+        let demand_limit = match &appliance_data.load_shifting {
+            Some(value) => Some(value.demand_limit_weighted),
+            None => None,
+        };
+        let otherdemand_timeseries = match &appliance_data.load_shifting {
+            Some(value) => value.demand_timeseries.clone(),
+            None => None,
+        };
+        let time_series_step = appliance_data.time_series_step;
+        // TODO remove anything from self that is only used in total_power_supply
+        // TODO can any of the clone() calls be passed by reference instead
         Self {
             energy_supply_conn: energy_supply_conn,
             gains_fraction: appliance_data.gains_fraction,
             start_day: appliance_data.start_day,
-            time_series_step: appliance_data.time_series_step,
+            time_series_step,
             total_floor_area: total_floor_area,
-            standby_power: appliance_data
-                .standby
-                .expect("standby is expected for EventApplianceGains"),
-            usage_events: appliance_data
-                .events
-                .clone()
-                .expect("events are expected for EventApplianceGains"),
-
+            standby_power,
+            usage_events: usage_events.clone(),
             max_shift: match &appliance_data.load_shifting {
                 Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
                 None => 0.,
             },
-            demand_limit: match &appliance_data.load_shifting {
-                Some(value) => Some(value.demand_limit_weighted),
-                None => None,
-            },
-            weight_timeseries: match &appliance_data.load_shifting {
-                Some(value) => value.weight_timeseries.clone(),
-                None => None,
-            },
-            otherdemand_timeseries: match &appliance_data.load_shifting {
-                Some(value) => value.demand_timeseries.clone(),
-                None => None,
-            },
+            demand_limit,
+            weight_timeseries: weight_timeseries.clone(),
+            otherdemand_timeseries: otherdemand_timeseries.clone(),
+            total_power_supply: Self::total_power_supply(
+                simulation_time,
+                time_series_step,
+                standby_power,
+                usage_events,
+                otherdemand_timeseries,
+                weight_timeseries,
+            ),
         }
+    }
+
+    fn total_power_supply(
+        simulation_time: &SimulationTimeIterator,
+        time_series_step: f64,
+        standby_power: f64,
+        usage_events: Vec<ApplianceGainsDetailsEvent>,
+        otherdemand_timeseries: Option<Vec<f64>>,
+        weight_timeseries: Option<Vec<f64>>,
+    ) -> Vec<f64> {
+        // initialize list with standby power on all timesteps
+        let length = (simulation_time.total_steps() as f64 * simulation_time.step_in_hours()
+            / time_series_step)
+            .ceil();
+        let mut total_power_supply = vec![standby_power; length as usize];
+
+        // focus on 2 factors - per appliance shiftability
+        // and overall shifting
+        for event in usage_events {
+            let (s, a) = Self::shift_event(
+                event,
+                otherdemand_timeseries.clone(),
+                weight_timeseries.clone(),
+            );
+            for (i, x) in a.iter().enumerate() {
+                let index = (s + i as f64).floor() as usize % total_power_supply.len();
+                total_power_supply[index] += *x as f64;
+            }
+        }
+        total_power_supply
+    }
+
+    fn shift_event(
+        usage_events: ApplianceGainsDetailsEvent,
+        otherdemand_timeseries: Option<Vec<f64>>,
+        weight_timeseries: Option<Vec<f64>>,
+    ) -> (f64, Vec<u32>) {
+        todo!()
     }
 }
 
