@@ -55,9 +55,9 @@ impl DomesticHotWaterDemand {
     // __time_end_previous_event = 0.0
 
     pub fn new(
-        showers_input: Option<ShowersInput>,
-        bath_input: Option<BathInput>,
-        other_hot_water_input: Option<OtherWaterUseInput>,
+        showers_input: ShowersInput,
+        bath_input: BathInput,
+        other_hot_water_input: OtherWaterUseInput,
         water_distribution_input: Option<WaterDistributionInput>,
         cold_water_sources: &ColdWaterSources,
         wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
@@ -65,34 +65,28 @@ impl DomesticHotWaterDemand {
         event_schedules: EventSchedule,
     ) -> anyhow::Result<Self> {
         let showers: HashMap<String, Shower> = showers_input
+            .0
             .iter()
-            .flat_map(|input| {
-                input.0.iter().map(|(name, shower)| {
-                    (
-                        name.clone(),
-                        shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs),
-                    )
-                })
+            .map(|(name, shower)| {
+                (
+                    name.clone(),
+                    shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs),
+                )
             })
             .collect();
         let baths: HashMap<String, Bath> = bath_input
+            .0
             .iter()
-            .flat_map(|input| {
-                input
-                    .0
-                    .iter()
-                    .map(|(name, bath)| (name.clone(), input_to_bath(bath, cold_water_sources)))
-            })
+            .map(|(name, bath)| (name.clone(), input_to_bath(bath, cold_water_sources)))
             .collect();
         let other: HashMap<String, OtherHotWater> = other_hot_water_input
+            .0
             .iter()
-            .flat_map(|input| {
-                input.0.iter().map(|(name, other)| {
-                    (
-                        name.clone(),
-                        input_to_other_water_events(other, cold_water_sources),
-                    )
-                })
+            .map(|(name, other)| {
+                (
+                    name.clone(),
+                    input_to_other_water_events(other, cold_water_sources),
+                )
             })
             .collect();
         let mixer_shower_count = showers
@@ -535,7 +529,7 @@ mod tests {
             ))),
         };
 
-        let showers_input = Some(Showers(IndexMap::from([
+        let showers_input = Showers(IndexMap::from([
             (
                 "mixer".to_owned(),
                 ShowerInput::MixerShower {
@@ -552,24 +546,24 @@ mod tests {
                     energy_supply: EnergySupplyType::Electricity,
                 },
             ),
-        ])));
+        ]));
 
-        let baths_input = Some(Baths(IndexMap::from([(
+        let baths_input = Baths(IndexMap::from([(
             "medium".to_owned(),
             BathDetails {
                 size: 100.,
                 cold_water_source: ColdWaterSourceType::MainsWater,
                 flowrate: 8.0,
             },
-        )])));
+        )]));
 
-        let other_input = Some(OtherWaterUses(IndexMap::from([(
+        let other_input = OtherWaterUses(IndexMap::from([(
             "other".to_owned(),
             OtherWaterUseDetails {
                 flowrate: 8.0,
                 cold_water_source: ColdWaterSourceType::MainsWater,
             },
-        )])));
+        )]));
 
         let hw_pipework = Some(vec![
             WaterPipeworkSimple {

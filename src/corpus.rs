@@ -6,6 +6,7 @@ use crate::core::controls::time_control::{
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
+use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
     EnergySupplies, EnergySupply, EnergySupplyConnection,
 };
@@ -36,7 +37,7 @@ use crate::core::space_heat_demand::building_element::{
 };
 use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
-use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
+use crate::core::space_heat_demand::ventilation::{InfiltrationVentilation, Window};
 use crate::core::space_heat_demand::ventilation_element::{
     air_change_rate_to_flow_rate, NaturalVentilation, VentilationElement,
     VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
@@ -59,12 +60,13 @@ use crate::input::{
     ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    Infiltration, Input, InternalGains as InternalGainsInput, InternalGainsDetails,
-    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
-    SpaceCoolSystemDetails, SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput,
-    SpaceHeatSystemDetails, TerrainClass, ThermalBridging as ThermalBridgingInput,
-    ThermalBridgingDetails, Ventilation, VentilationLeaks, VentilationShieldClass,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    Infiltration, InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
+    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
+    SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    TerrainClass, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, Ventilation,
+    VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
+    WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
     WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
@@ -84,6 +86,18 @@ use std::sync::Arc;
 
 // TODO make this a runtime parameter?
 const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
+
+/// As of Rust 1.82 we'll be able to declare this using constants as it is due to support floating-point arithmetic at compile time
+fn temp_setpnt_heat_none() -> f64 {
+    kelvin_to_celsius(0.0)
+}
+
+fn temp_setpnt_cool_none() -> f64 {
+    kelvin_to_celsius(1.4e32)
+}
+
+// used for calculations re internal gains from pipework
+const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
 pub struct Corpus {
     pub simulation_time: Arc<SimulationTimeIterator>,
@@ -144,6 +158,7 @@ impl Corpus {
         let mut energy_supplies = energy_supplies_from_input(
             &input.energy_supply,
             simulation_time_iterator.clone().as_ref(),
+            external_conditions.clone(),
         );
 
         let controls =
@@ -155,9 +170,13 @@ impl Corpus {
         )?;
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.hot_water_demand.shower.clone(),
-            input.hot_water_demand.bath.clone(),
-            input.hot_water_demand.other_water_use.clone(),
+            input.hot_water_demand.shower.clone().unwrap_or_default(),
+            input.hot_water_demand.bath.clone().unwrap_or_default(),
+            input
+                .hot_water_demand
+                .other_water_use
+                .clone()
+                .unwrap_or_default(),
             match &input.hot_water_source.hot_water_cylinder {
                 HotWaterSourceDetails::PointOfUse { .. } => None,
                 _ => input.hot_water_demand.water_distribution.clone(),
@@ -220,6 +239,10 @@ impl Corpus {
             })
             .collect::<anyhow::Result<_>>()?;
         let zones = Arc::new(zones);
+
+        // infiltration ventilation
+        // let infiltration_ventilation =
+        //     infiltration_ventilation_from_input(zones.clone(), input.infiltration_ventilation);
 
         if !has_unique_values(&heat_system_name_for_zone)
             || !has_unique_values(&cool_system_name_for_zone)
@@ -1588,7 +1611,7 @@ fn external_conditions_from_input(
         simulation_time,
         input.air_temperatures.clone().unwrap_or_default(),
         input.wind_speeds.clone().unwrap_or_default(),
-        vec![], // empty vec for wind directions to be replaced while migrating to 0.30
+        input.wind_directions.clone().unwrap_or_default(),
         input
             .diffuse_horizontal_radiation
             .clone()
@@ -1695,23 +1718,28 @@ fn cold_water_source_from_input_details(
 fn energy_supplies_from_input(
     input: &EnergySupplyInput,
     simulation_time_iterator: &SimulationTimeIterator,
+    external_conditions: Arc<ExternalConditions>,
 ) -> EnergySupplies {
     EnergySupplies {
         mains_electricity: energy_supply_from_input(
             input.get(&EnergySupplyKey::MainsElectricity),
             simulation_time_iterator,
+            external_conditions.clone(),
         ),
         mains_gas: energy_supply_from_input(
             input.get(&EnergySupplyKey::MainsGas),
             simulation_time_iterator,
+            external_conditions.clone(),
         ),
         bulk_lpg: energy_supply_from_input(
             input.get(&EnergySupplyKey::BulkLpg),
             simulation_time_iterator,
+            external_conditions.clone(),
         ),
         heat_network: energy_supply_from_input(
             input.get(&EnergySupplyKey::HeatNetwork),
             simulation_time_iterator,
+            external_conditions,
         ),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
@@ -1729,17 +1757,19 @@ fn energy_supplies_from_input(
 fn energy_supply_from_input(
     input: Option<&EnergySupplyDetails>,
     simulation_time_iterator: &SimulationTimeIterator,
+    external_conditions: Arc<ExternalConditions>,
 ) -> Option<Arc<RwLock<EnergySupply>>> {
     input.map(|details| {
         Arc::new(RwLock::new(EnergySupply::new(
             details.fuel,
             simulation_time_iterator.total_steps(),
-            None,
-            // None while migrating to 0.30
-            // details
-            //     .electric_battery
-            //     .as_ref()
-            //     .map(ElectricBattery::from_input),
+            details.electric_battery.as_ref().map(|battery_input| {
+                ElectricBattery::from_input(
+                    battery_input,
+                    simulation_time_iterator.step_in_hours(),
+                    external_conditions,
+                )
+            }),
             details.priority.as_ref().cloned(),
             details.is_export_capable,
         )))
@@ -2428,6 +2458,14 @@ fn zone_from_input<'a>(
         cool_system_name,
     ))
 }
+
+// fn infiltration_ventilation_from_input(
+//     zones: Arc<IndexMap<String, Zone>>,
+//     input: InfiltrationVentilationInput,
+// ) -> InfiltrationVentilation {
+//     // carry on from here!!
+//     let windows: IndexMap<String, Window> = zones.iter().map(||).flatten().collect();
+// }
 
 fn building_element_from_input(
     input: &BuildingElementInput,

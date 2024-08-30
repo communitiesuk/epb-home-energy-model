@@ -71,6 +71,7 @@ pub struct Input {
 pub struct ExternalConditionsInput {
     pub air_temperatures: Option<Vec<f64>>,
     pub wind_speeds: Option<Vec<f64>>,
+    pub wind_directions: Option<Vec<f64>>,
     // check upstream whether anything uses this
     #[serde(rename = "ground_temperatures")]
     _ground_temperatures: Option<Vec<f64>>,
@@ -445,10 +446,10 @@ pub struct ElectricBattery {
     pub capacity: f64,
     pub charge_discharge_efficiency_round_trip: f64,
     pub battery_age: f64,
-    minimum_charge_rate_one_way_trip: f64,
-    maximum_charge_rate_one_way_trip: f64,
-    maximum_discharge_rate_one_way_trip: f64,
-    battery_location: BatteryLocation,
+    pub minimum_charge_rate_one_way_trip: f64,
+    pub maximum_charge_rate_one_way_trip: f64,
+    pub maximum_discharge_rate_one_way_trip: f64,
+    pub battery_location: BatteryLocation,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
@@ -1082,7 +1083,7 @@ pub struct HotWaterDemand {
     pub water_distribution: Option<WaterDistribution>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Showers(pub IndexMap<String, Shower>);
 
@@ -1120,7 +1121,7 @@ pub enum Shower {
     },
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Baths(pub IndexMap<String, BathDetails>);

@@ -1,6 +1,7 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::external_conditions::ExternalConditions;
 use crate::input::BatteryLocation;
+use crate::input::ElectricBattery as ElectricBatteryInput;
 use crate::simulation_time::SimulationTimeIteration;
 use atomic_float::AtomicF64;
 use std::sync::atomic::Ordering;
@@ -69,10 +70,32 @@ impl ElectricBattery {
         }
     }
 
-    // TODO restore while migrating to 0.30
-    // pub fn from_input(input: &ElectricBatteryInput) -> Self {
-    //     Self::new(input.capacity, input.charge_discharge_efficiency_round_trip)
-    // }
+    pub fn from_input(
+        input: &ElectricBatteryInput,
+        simulation_timestep: f64,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        let ElectricBatteryInput {
+            capacity,
+            charge_discharge_efficiency_round_trip,
+            battery_age,
+            minimum_charge_rate_one_way_trip,
+            maximum_charge_rate_one_way_trip,
+            maximum_discharge_rate_one_way_trip,
+            battery_location,
+        } = input;
+        Self::new(
+            *capacity,
+            *charge_discharge_efficiency_round_trip,
+            *battery_age,
+            *minimum_charge_rate_one_way_trip,
+            *maximum_charge_rate_one_way_trip,
+            *maximum_discharge_rate_one_way_trip,
+            *battery_location,
+            simulation_timestep,
+            external_conditions,
+        )
+    }
 
     /// Equation for charge rate as function of state of charge (used for calculating the maximum charge rate)
     /// We included this as a function in anticipation to the dependency between the charge/discharge rate with the
