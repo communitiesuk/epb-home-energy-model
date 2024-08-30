@@ -1,7 +1,7 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
-use crate::input::ApplianceGainsDetails;
+use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent};
 // use crate::core::units::WATTS_PER_KILOWATT;
 use crate::simulation_time::SimulationTimeIteration;
 
@@ -112,14 +112,14 @@ impl ApplianceGains {
 
 /// An object to represent internal gains and energy consumption from appliances
 #[derive(Clone, Debug)]
-struct EventApplianceGains {
+pub struct EventApplianceGains {
     energy_supply_conn: EnergySupplyConnection,
     gains_fraction: f64,
     start_day: u32,
     time_series_step: f64,
     total_floor_area: f64,
     standby_power: f64,
-    usage_events: Vec<TypedScheduleEvent>,
+    usage_events: Vec<ApplianceGainsDetailsEvent>,
     max_shift: f64,
     demand_limit: Option<f64>,
     weight_timeseries: Option<f64>,
@@ -152,21 +152,24 @@ impl EventApplianceGains {
         appliance_data: &ApplianceGainsDetails,
         total_floor_area: f64,
     ) -> Self {
-        // TODO implement constructor for EventApplianceGains
         Self {
             energy_supply_conn: energy_supply_conn,
             gains_fraction: appliance_data.gains_fraction,
             start_day: appliance_data.start_day,
             time_series_step: appliance_data.time_series_step,
             total_floor_area: total_floor_area,
-            standby_power: todo!(),
-            usage_events: todo!(),
+            standby_power: appliance_data
+                .standby
+                .expect("standby is expected for EventApplianceGains"),
+            usage_events: appliance_data
+                .events
+                .clone()
+                .expect("events are expected for EventApplianceGains"),
             max_shift: todo!(),
             demand_limit: todo!(),
             weight_timeseries: todo!(),
-            otherdemand_timeseries: todo!()
+            otherdemand_timeseries: todo!(),
         }
-
     }
 }
 

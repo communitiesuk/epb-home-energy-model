@@ -158,6 +158,20 @@ pub struct ApplianceGainsDetails {
     #[serde(alias = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
     pub schedule: Schedule,
+
+    // In the Python code these fields are
+    // set in the FHS wrapper
+    pub standby: Option<f64>,
+    pub events: Option<Vec<ApplianceGainsDetailsEvent>>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ApplianceGainsDetailsEvent {
+    pub start: f64,
+    pub duration: f64,
+    pub demand_w: f64,
 }
 
 #[derive(Debug, Deserialize)]
