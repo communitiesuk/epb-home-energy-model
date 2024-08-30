@@ -122,8 +122,8 @@ pub struct EventApplianceGains {
     usage_events: Vec<ApplianceGainsDetailsEvent>,
     max_shift: f64,
     demand_limit: Option<f64>,
-    weight_timeseries: Option<f64>,
-    otherdemand_timeseries: Option<f64>,
+    weight_timeseries: Option<Vec<f64>>,
+    otherdemand_timeseries: Option<Vec<f64>>,
 }
 
 impl EventApplianceGains {
@@ -165,10 +165,23 @@ impl EventApplianceGains {
                 .events
                 .clone()
                 .expect("events are expected for EventApplianceGains"),
-            max_shift: todo!(),
-            demand_limit: todo!(),
-            weight_timeseries: todo!(),
-            otherdemand_timeseries: todo!(),
+
+            max_shift: match &appliance_data.load_shifting {
+                Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
+                None => 0.,
+            },
+            demand_limit: match &appliance_data.load_shifting {
+                Some(value) => Some(value.demand_limit_weighted),
+                None => None,
+            },
+            weight_timeseries: match &appliance_data.load_shifting {
+                Some(value) => value.weight_timeseries.clone(),
+                None => None,
+            },
+            otherdemand_timeseries: match &appliance_data.load_shifting {
+                Some(value) => value.demand_timeseries.clone(),
+                None => None,
+            },
         }
     }
 }

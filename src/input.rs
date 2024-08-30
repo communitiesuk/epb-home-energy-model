@@ -164,6 +164,7 @@ pub struct ApplianceGainsDetails {
     // set in the FHS wrapper
     pub standby: Option<f64>,
     pub events: Option<Vec<ApplianceGainsDetailsEvent>>,
+    pub load_shifting: Option<ApplianceLoadShifting>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -2280,9 +2281,12 @@ pub struct Appliance {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceLoadShifting {
-    max_shift_hrs: f64,
-    demand_limit_weighted: f64,
+    pub max_shift_hrs: f64,
+    pub demand_limit_weighted: f64,
     weight: String, // not sure yet what these can be
+    // In Python these are set from the FHS wrapper
+    pub weight_timeseries: Option<Vec<f64>>,
+    pub demand_timeseries: Option<Vec<f64>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
