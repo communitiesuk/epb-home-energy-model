@@ -237,8 +237,53 @@ impl EventApplianceGains {
         otherdemand_timeseries: Option<Vec<f64>>,
         weight_timeseries: Option<Vec<f64>>,
     ) -> (f64, Vec<u32>) {
+        // #demand limit could also use ie a linear function instead of a hard limit...
+        // s, a = self.event_to_schedule(eventdict)
+        // if self.__max_shift > 0:
+        //     start_shift = self.shift_recursive(s, a, demand_timeseries, weight_timeseries, self.__demand_limit ,self.__max_shift,[], 0)
+        // else:
+        //     start_shift = 0
+        // return s + start_shift, a
+
         todo!()
     }
+
+    /// shifts an event forward in time one timestep at a time,
+    /// until either the total weighted demand on that timestep is below demandlimit
+    /// or the event has been shifted beyond the maximum allowed number of timesteps
+    /// away from its original position. In the latter case, move the event to the
+    /// most favourable time within the allowed window
+    fn shift_recursive(
+        s: f64,
+        a: &[f64],
+        demand_timeseries: Option<Vec<f64>>,
+        weight_timeseries: Option<Vec<f64>>,
+        demandlimit: Option<f64>,
+        max_shift: f64,
+        pos_list: Vec<f64>,
+        start_shift: f64,
+    ) -> f64 {
+        todo!()
+    }
+
+    // pos_list.append(0)
+    // for i, x in enumerate(a):
+    //     idx = (floor(s + i) +start_shift) % len(demand_timeseries)
+    //     otherdemand = demand_timeseries[idx] * weight_timeseries[idx]
+    //     newdemand = x * weight_timeseries[idx]
+    //     pos_list[-1] += newdemand + otherdemand
+    //     if newdemand + otherdemand > demandlimit:
+    //         #check if start shift is too high? and if its past limit look up results of
+    //         #each prev shift and choose the best one
+    //         start_shift += 1
+    //         if start_shift <= max_shift:
+    //             start_shift = self.shift_recursive(s, a, demand_timeseries, weight_timeseries, demandlimit, max_shift, pos_list, start_shift)
+    //         else:
+    //             #choose the timestep within the allowed window with the lowest demand.
+    //             #also add the entire length of the series - this will be removed again by the modulo operator,
+    //             #but prevents an infinite loop from occuring
+    //             start_shift = pos_list.index(min(pos_list)) + len(demand_timeseries)
+    // return start_shift
 }
 
 #[cfg(test)]
