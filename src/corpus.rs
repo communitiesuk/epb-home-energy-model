@@ -615,7 +615,7 @@ impl Corpus {
         delta_t_h: f64,
         gains_internal_dhw: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> SpaceHeatingCalculation {
+    ) -> anyhow::Result<SpaceHeatingCalculation> {
         let temp_ext_air = self
             .external_conditions
             .air_temp(&simulation_time_iteration);
@@ -651,7 +651,7 @@ impl Corpus {
                 gains_internal_dhw * zone.area() / self.total_floor_area;
             for gains in self.internal_gains.values() {
                 gains_internal_zone_inner +=
-                    gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration);
+                    gains.total_internal_gain_in_w(zone.area(), simulation_time_iteration)?;
             }
             let gains_internal_zone_entry = gains_internal_zone
                 .entry(z_name)
@@ -897,7 +897,7 @@ impl Corpus {
             operative_temp.insert(z_name.as_str(), zone.temp_operative());
         }
 
-        (
+        Ok((
             gains_internal_zone,
             gains_solar_zone,
             operative_temp,
@@ -910,7 +910,7 @@ impl Corpus {
             space_cool_provided,
             ductwork_losses,
             heat_balance_map,
-        )
+        ))
     }
 
     pub fn run(&mut self) -> RunResults {
@@ -1104,7 +1104,9 @@ impl Corpus {
                 space_cool_provided,
                 ductwork_gains,
                 heat_balance_dict,
-            ) = self.calc_space_heating(t_it.timestep, gains_internal_dhw, t_it);
+            ) = self
+                .calc_space_heating(t_it.timestep, gains_internal_dhw, t_it)
+                .expect("Expected a space heating calculation to be possible.");
 
             // Perform calculations that can only be done after all heating
             // services have been calculated

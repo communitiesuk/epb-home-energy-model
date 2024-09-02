@@ -28,11 +28,13 @@ impl Gains {
         &self,
         zone_area: f64,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         match self {
-            Gains::Internal(internal) => internal.total_internal_gain_in_w(zone_area, simtime),
+            Gains::Internal(internal) => Ok(internal.total_internal_gain_in_w(zone_area, simtime)),
             Gains::Appliance(appliance) => appliance.total_internal_gain_in_w(zone_area, simtime),
-            _ => todo!(), // TODO handle Gains::EventAppliance case
+            Gains::Event(event_appliance_gains) => {
+                event_appliance_gains.total_internal_gain_in_w(zone_area, simtime)
+            }
         }
     }
 }
@@ -95,7 +97,7 @@ impl ApplianceGains {
         &self,
         zone_area: f64,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let total_energy_supplied = self.total_energy_supply
             [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
@@ -103,10 +105,9 @@ impl ApplianceGains {
             total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
 
         self.energy_supply_connection
-            .demand_energy(total_energy_supplied_kwh, simtime.index)
-            .unwrap();
+            .demand_energy(total_energy_supplied_kwh, simtime.index)?;
 
-        total_energy_supplied_w * self.gains_fraction
+        Ok(total_energy_supplied_w * self.gains_fraction)
     }
 }
 
@@ -118,10 +119,6 @@ pub struct EventApplianceGains {
     start_day: u32,
     time_series_step: f64,
     total_floor_area: f64,
-    standby_power: f64,
-    usage_events: Vec<ApplianceGainsDetailsEvent>,
-    max_shift: f64,
-    load_shifting_metadata: Option<LoadShiftingMetadata>,
     total_power_supply: Vec<f64>,
 }
 
@@ -177,8 +174,6 @@ impl EventApplianceGains {
                         .unwrap_or(vec![]),
                 });
         let time_series_step = appliance_data.time_series_step;
-        // TODO remove anything from self that is only used in total_power_supply
-        // TODO can any of the clone() calls be passed by reference instead
         let max_shift = match &appliance_data.load_shifting {
             Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
             None => 0.,
@@ -188,10 +183,7 @@ impl EventApplianceGains {
             gains_fraction: appliance_data.gains_fraction,
             start_day: appliance_data.start_day,
             time_series_step,
-            total_floor_area: total_floor_area,
-            standby_power,
-            usage_events: usage_events.clone(),
-            max_shift,
+            total_floor_area,
             total_power_supply: Self::total_power_supply(
                 simulation_time,
                 time_series_step,
@@ -200,7 +192,6 @@ impl EventApplianceGains {
                 load_shifting_metadata.as_ref(),
                 max_shift,
             ),
-            load_shifting_metadata,
         }
     }
 
@@ -341,6 +332,25 @@ impl EventApplianceGains {
 
         (start, res)
     }
+
+    /// Return the total internal gain for the current timestep, in W
+    pub(crate) fn total_internal_gain_in_w(
+        &self,
+        zone_area: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        // Forward electricity demand (in kWh) to relevant EnergySupply object
+        let total_power_supplied =
+            self.total_power_supply[simtime.time_series_idx(self.start_day, self.time_series_step)];
+        let total_power_supplied_zone = total_power_supplied * zone_area / self.total_floor_area;
+        let total_energy_supplied_kwh =
+            total_power_supplied_zone / WATTS_PER_KILOWATT as f64 * simtime.timestep;
+
+        self.energy_supply_conn
+            .demand_energy(total_energy_supplied_kwh, simtime.index)?;
+
+        Ok(total_power_supplied_zone * self.gains_fraction)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -416,7 +426,9 @@ mod tests {
         };
         for iteration in simulation_time_iterator.clone() {
             assert_eq!(
-                appliance_gains.total_internal_gain_in_w(10.0, iteration),
+                appliance_gains
+                    .total_internal_gain_in_w(10.0, iteration)
+                    .unwrap(),
                 total_internal_gains[iteration.index]
             );
             assert_eq!(
