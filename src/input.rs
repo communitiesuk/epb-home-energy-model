@@ -2054,7 +2054,7 @@ pub struct InfiltrationVentilation {
     #[serde(rename = "Leaks")]
     pub(crate) leaks: VentilationLeaks,
     #[serde(rename = "MechanicalVentilation")]
-    mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
+    pub(crate) mechanical_ventilation: Option<IndexMap<String, MechanicalVentilation>>,
     #[serde(rename = "AirTerminalDevices")]
     air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
     #[serde(rename = "PDUs")]
@@ -2062,7 +2062,7 @@ pub struct InfiltrationVentilation {
     #[serde(rename = "Cowls")]
     cowls: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "CombustionAppliances")]
-    combustion_appliances: IndexMap<String, CombustionAppliance>,
+    pub(crate) combustion_appliances: IndexMap<String, CombustionAppliance>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -2116,27 +2116,27 @@ pub struct VentilationLeaks {
 pub struct MechanicalVentilation {
     vent_sys_op: Option<String>, // this seems useless/unreferenced
     #[serde(rename = "sup_air_flw_ctrl")]
-    supply_air_flow_rate_control: SupplyAirFlowRateControlType,
+    pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
-    supply_air_temperature_control_type: SupplyAirTemperatureControlType,
+    pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
     #[serde(rename = "design_zone_cooling_covered_by_mech_vent")]
     design_zone_cooling_covered_by_mechanical_vent: f64,
     #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
     design_zone_heating_covered_by_mechanical_vent: f64,
-    vent_type: VentType,
+    pub(crate) vent_type: VentType,
     #[serde(rename = "mvhr_eff")]
-    mvhr_efficiency: Option<f64>,
-    mvhr_location: Option<MVHRLocation>,
+    pub(crate) mvhr_efficiency: Option<f64>,
+    pub(crate) mvhr_location: Option<MVHRLocation>,
     #[serde(rename = "Control")]
-    control: Option<String>,
+    pub(crate) control: Option<String>,
     #[serde(rename = "SFP")]
-    sfp: Option<f64>,
+    pub(crate) sfp: Option<f64>,
     measured_fan_power: Option<f64>,
     measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
-    energy_supply: EnergySupplyType,
-    design_outdoor_air_flow_rate: f64,
-    ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
+    pub(crate) energy_supply: EnergySupplyType,
+    pub(crate) design_outdoor_air_flow_rate: f64,
+    pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -2158,7 +2158,7 @@ pub enum SupplyAirTemperatureControlType {
     LoadCom,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum VentType {
     #[serde(rename = "Intermittent MEV")]
@@ -2177,15 +2177,15 @@ pub enum VentType {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilationDuctwork {
-    cross_section_shape: DuctShape,
-    duct_perimeter_mm: Option<f64>,
-    internal_diameter_mm: Option<f64>,
-    external_diameter_mm: Option<f64>,
-    length: f64,
-    insulation_thermal_conductivity: f64,
-    insulation_thickness_mm: f64,
-    reflective: bool,
-    duct_type: DuctType,
+    pub(crate) cross_section_shape: DuctShape,
+    pub(crate) duct_perimeter_mm: Option<f64>,
+    pub(crate) internal_diameter_mm: Option<f64>,
+    pub(crate) external_diameter_mm: Option<f64>,
+    pub(crate) length: f64,
+    pub(crate) insulation_thermal_conductivity: f64,
+    pub(crate) insulation_thickness_mm: f64,
+    pub(crate) reflective: bool,
+    pub(crate) duct_type: DuctType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -2218,10 +2218,10 @@ pub struct AirTerminalDevice {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CombustionAppliance {
-    supply_situation: CombustionAirSupplySituation,
-    exhaust_situation: FlueGasExhaustSituation,
-    fuel_type: CombustionFuelType,
-    appliance_type: CombustionApplianceType,
+    pub(crate) supply_situation: CombustionAirSupplySituation,
+    pub(crate) exhaust_situation: FlueGasExhaustSituation,
+    pub(crate) fuel_type: CombustionFuelType,
+    pub(crate) appliance_type: CombustionApplianceType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]

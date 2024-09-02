@@ -1031,7 +1031,7 @@ impl CombustionAppliances {
     /// exhaust_situation - flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
     /// f_ff -- combustion air flow factor
     /// p_h_fi - Combustion appliance heating fuel input power (kW)
-    fn new(
+    pub(crate) fn new(
         supply_situation: CombustionAirSupplySituation,
         exhaust_situation: FlueGasExhaustSituation,
         fuel_type: CombustionFuelType,
@@ -1106,7 +1106,7 @@ impl MechanicalVentilation {
     /// defining when the MechVent should be on.
     /// mvhr_eff -- MVHR efficiency
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
-    fn new(
+    pub(crate) fn new(
         external_conditions: Arc<ExternalConditions>,
         _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
@@ -1135,7 +1135,7 @@ impl MechanicalVentilation {
             sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // (From Python) TODO currently hard coded until load comp implemented
             sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
             // Arguments
-            external_conditions: external_conditions,
+            external_conditions,
             q_h_des,
             q_c_des,
             theta_ctrl_sys,
