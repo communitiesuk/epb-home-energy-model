@@ -2,6 +2,10 @@ use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent};
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
+use statrs::statistics::Statistics;
+use std::ops::Index;
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -251,38 +255,46 @@ impl EventApplianceGains {
         demand_timeseries: &[f64],
         weight_timeseries: &[f64],
         demandlimit: f64,
-        max_shift: f64,
-        mut pos_list: Vec<f64>, // or use slice? &[f64],
-        start_shift: usize,
-    ) -> f64 {
+        max_shift: usize,
+        pos_list: &mut Vec<f64>,
+        mut start_shift: usize,
+    ) -> usize {
         pos_list.push(0.);
         for (i, x) in a.iter().enumerate() {
             let idx = ((s + i as f64).floor() as usize + start_shift) % demand_timeseries.len();
             let otherdemand = demand_timeseries[idx] * weight_timeseries[idx];
             let newdemand = x * weight_timeseries[idx];
             *pos_list.last_mut().unwrap() += newdemand + otherdemand;
+            if newdemand + otherdemand > demandlimit {
+                // check if start shift is too high? and if its past limit look up results of
+                // each prev shift and choose the best one
+                start_shift += 1;
+                if start_shift <= max_shift {
+                    start_shift = Self::shift_recursive(
+                        s,
+                        a,
+                        demand_timeseries,
+                        weight_timeseries,
+                        demandlimit,
+                        max_shift,
+                        pos_list,
+                        start_shift,
+                    )
+                } else {
+                    // choose the timestep within the allowed window with the lowest demand.
+                    // also add the entire length of the series - this will be removed again by the modulo operator,
+                    // but prevents an infinite loop from occuring
+                    let min_index = pos_list
+                        .iter()
+                        .map(|x| OrderedFloat(*x))
+                        .position_min()
+                        .unwrap();
+                    start_shift = min_index + demand_timeseries.len();
+                }
+            }
         }
-        todo!()
+        start_shift
     }
-
-    // pos_list.append(0)
-    // for i, x in enumerate(a):
-    //     idx = (floor(s + i) +start_shift) % len(demand_timeseries)
-    //     otherdemand = demand_timeseries[idx] * weight_timeseries[idx]
-    //     newdemand = x * weight_timeseries[idx]
-    //     pos_list[-1] += newdemand + otherdemand
-    //     if newdemand + otherdemand > demandlimit:
-    //         #check if start shift is too high? and if its past limit look up results of
-    //         #each prev shift and choose the best one
-    //         start_shift += 1
-    //         if start_shift <= max_shift:
-    //             start_shift = self.shift_recursive(s, a, demand_timeseries, weight_timeseries, demandlimit, max_shift, pos_list, start_shift)
-    //         else:
-    //             #choose the timestep within the allowed window with the lowest demand.
-    //             #also add the entire length of the series - this will be removed again by the modulo operator,
-    //             #but prevents an infinite loop from occuring
-    //             start_shift = pos_list.index(min(pos_list)) + len(demand_timeseries)
-    // return start_shift
 }
 
 #[derive(Clone, Debug)]
