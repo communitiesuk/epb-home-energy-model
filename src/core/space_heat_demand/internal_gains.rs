@@ -1,8 +1,6 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
-use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent};
-// use crate::core::units::WATTS_PER_KILOWATT;
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 
 /// Arguments:
@@ -121,9 +119,7 @@ pub struct EventApplianceGains {
     standby_power: f64,
     usage_events: Vec<ApplianceGainsDetailsEvent>,
     max_shift: f64,
-    demand_limit: Option<f64>,
-    weight_timeseries: Option<Vec<f64>>,
-    otherdemand_timeseries: Option<Vec<f64>>,
+    load_shifting_metadata: Option<LoadShiftingMetadata>,
     total_power_supply: Vec<f64>,
 }
 
@@ -161,18 +157,23 @@ impl EventApplianceGains {
             .events
             .clone()
             .expect("events are expected for EventApplianceGains");
-        let weight_timeseries = match &appliance_data.load_shifting {
-            Some(value) => value.weight_timeseries.clone(),
-            None => None,
-        };
-        let demand_limit = match &appliance_data.load_shifting {
-            Some(value) => Some(value.demand_limit_weighted),
-            None => None,
-        };
-        let otherdemand_timeseries = match &appliance_data.load_shifting {
-            Some(value) => value.demand_timeseries.clone(),
-            None => None,
-        };
+        let load_shifting_metadata =
+            appliance_data
+                .load_shifting
+                .as_ref()
+                .map(|load_shifting| LoadShiftingMetadata {
+                    weight_timeseries: load_shifting
+                        .weight_timeseries
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or(vec![]),
+                    demand_limit: load_shifting.demand_limit_weighted,
+                    otherdemand_timeseries: load_shifting
+                        .demand_timeseries
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or(vec![]),
+                });
         let time_series_step = appliance_data.time_series_step;
         // TODO remove anything from self that is only used in total_power_supply
         // TODO can any of the clone() calls be passed by reference instead
@@ -188,17 +189,14 @@ impl EventApplianceGains {
                 Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
                 None => 0.,
             },
-            demand_limit,
-            weight_timeseries: weight_timeseries.clone(),
-            otherdemand_timeseries: otherdemand_timeseries.clone(),
             total_power_supply: Self::total_power_supply(
                 simulation_time,
                 time_series_step,
                 standby_power,
                 usage_events,
-                otherdemand_timeseries,
-                weight_timeseries,
+                load_shifting_metadata.as_ref(),
             ),
+            load_shifting_metadata,
         }
     }
 
@@ -207,8 +205,7 @@ impl EventApplianceGains {
         time_series_step: f64,
         standby_power: f64,
         usage_events: Vec<ApplianceGainsDetailsEvent>,
-        otherdemand_timeseries: Option<Vec<f64>>,
-        weight_timeseries: Option<Vec<f64>>,
+        load_shifting_metadata: Option<&LoadShiftingMetadata>,
     ) -> Vec<f64> {
         // initialize list with standby power on all timesteps
         let length = (simulation_time.total_steps() as f64 * simulation_time.step_in_hours()
@@ -219,11 +216,7 @@ impl EventApplianceGains {
         // focus on 2 factors - per appliance shiftability
         // and overall shifting
         for event in usage_events {
-            let (s, a) = Self::shift_event(
-                event,
-                otherdemand_timeseries.clone(),
-                weight_timeseries.clone(),
-            );
+            let (s, a) = Self::shift_event(event, load_shifting_metadata);
             for (i, x) in a.iter().enumerate() {
                 let index = (s + i as f64).floor() as usize % total_power_supply.len();
                 total_power_supply[index] += *x as f64;
@@ -234,8 +227,7 @@ impl EventApplianceGains {
 
     fn shift_event(
         usage_events: ApplianceGainsDetailsEvent,
-        otherdemand_timeseries: Option<Vec<f64>>,
-        weight_timeseries: Option<Vec<f64>>,
+        load_shifting_metadata: Option<&LoadShiftingMetadata>,
     ) -> (f64, Vec<u32>) {
         // #demand limit could also use ie a linear function instead of a hard limit...
         // s, a = self.event_to_schedule(eventdict)
@@ -284,6 +276,13 @@ impl EventApplianceGains {
     //             #but prevents an infinite loop from occuring
     //             start_shift = pos_list.index(min(pos_list)) + len(demand_timeseries)
     // return start_shift
+}
+
+#[derive(Clone, Debug)]
+struct LoadShiftingMetadata {
+    weight_timeseries: Vec<f64>,
+    demand_limit: f64,
+    otherdemand_timeseries: Vec<f64>,
 }
 
 #[cfg(test)]
