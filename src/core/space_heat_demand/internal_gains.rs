@@ -1,11 +1,9 @@
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent};
-use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use statrs::statistics::Statistics;
-use std::ops::Index;
 
 /// Arguments:
 /// * `total_internal_gains` - list of internal gains, in W/m2 (one entry per hour)
@@ -181,6 +179,10 @@ impl EventApplianceGains {
         let time_series_step = appliance_data.time_series_step;
         // TODO remove anything from self that is only used in total_power_supply
         // TODO can any of the clone() calls be passed by reference instead
+        let max_shift = match &appliance_data.load_shifting {
+            Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
+            None => 0.,
+        };
         Self {
             energy_supply_conn: energy_supply_conn,
             gains_fraction: appliance_data.gains_fraction,
@@ -189,16 +191,14 @@ impl EventApplianceGains {
             total_floor_area: total_floor_area,
             standby_power,
             usage_events: usage_events.clone(),
-            max_shift: match &appliance_data.load_shifting {
-                Some(value) => value.max_shift_hrs / appliance_data.time_series_step,
-                None => 0.,
-            },
+            max_shift,
             total_power_supply: Self::total_power_supply(
                 simulation_time,
                 time_series_step,
                 standby_power,
                 usage_events,
                 load_shifting_metadata.as_ref(),
+                max_shift,
             ),
             load_shifting_metadata,
         }
@@ -210,6 +210,7 @@ impl EventApplianceGains {
         standby_power: f64,
         usage_events: Vec<ApplianceGainsDetailsEvent>,
         load_shifting_metadata: Option<&LoadShiftingMetadata>,
+        max_shift: f64,
     ) -> Vec<f64> {
         // initialize list with standby power on all timesteps
         let length = (simulation_time.total_steps() as f64 * simulation_time.step_in_hours()
@@ -220,7 +221,13 @@ impl EventApplianceGains {
         // focus on 2 factors - per appliance shiftability
         // and overall shifting
         for event in usage_events {
-            let (s, a) = Self::shift_event(event, load_shifting_metadata);
+            let (s, a) = Self::shift_event(
+                event,
+                load_shifting_metadata,
+                standby_power,
+                time_series_step,
+                max_shift,
+            );
             for (i, x) in a.iter().enumerate() {
                 let index = (s + i as f64).floor() as usize % total_power_supply.len();
                 total_power_supply[index] += *x as f64;
@@ -230,18 +237,28 @@ impl EventApplianceGains {
     }
 
     fn shift_event(
-        usage_events: ApplianceGainsDetailsEvent,
+        usage_event: ApplianceGainsDetailsEvent,
         load_shifting_metadata: Option<&LoadShiftingMetadata>,
-    ) -> (f64, Vec<u32>) {
-        // #demand limit could also use ie a linear function instead of a hard limit...
-        // s, a = self.event_to_schedule(eventdict)
-        // if self.__max_shift > 0:
-        //     start_shift = self.shift_recursive(s, a, demand_timeseries, weight_timeseries, self.__demand_limit ,self.__max_shift,[], 0)
-        // else:
-        //     start_shift = 0
-        // return s + start_shift, a
-
-        todo!()
+        standby_power: f64,
+        time_series_step: f64,
+        max_shift: f64,
+    ) -> (f64, Vec<f64>) {
+        // demand limit could also use ie a linear function instead of a hard limit...
+        let (s, a) = Self::event_to_schedule(usage_event, standby_power, time_series_step);
+        let start_shift = match load_shifting_metadata {
+            Some(load_shifting_metadata) if max_shift > 0. => Self::shift_recursive(
+                s,
+                &a,
+                &load_shifting_metadata.otherdemand_timeseries,
+                &load_shifting_metadata.weight_timeseries,
+                load_shifting_metadata.demand_limit,
+                max_shift,
+                &mut vec![],
+                0,
+            ),
+            _ => 0,
+        };
+        (s + start_shift as f64, a)
     }
 
     /// shifts an event forward in time one timestep at a time,
@@ -255,7 +272,7 @@ impl EventApplianceGains {
         demand_timeseries: &[f64],
         weight_timeseries: &[f64],
         demandlimit: f64,
-        max_shift: usize,
+        max_shift: f64,
         pos_list: &mut Vec<f64>,
         mut start_shift: usize,
     ) -> usize {
@@ -269,7 +286,7 @@ impl EventApplianceGains {
                 // check if start shift is too high? and if its past limit look up results of
                 // each prev shift and choose the best one
                 start_shift += 1;
-                if start_shift <= max_shift {
+                if start_shift as f64 <= max_shift {
                     start_shift = Self::shift_recursive(
                         s,
                         a,
@@ -294,6 +311,35 @@ impl EventApplianceGains {
             }
         }
         start_shift
+    }
+
+    fn event_to_schedule(
+        usage_event: ApplianceGainsDetailsEvent,
+        standby_power: f64,
+        time_series_step: f64,
+    ) -> (f64, Vec<f64>) {
+        let ApplianceGainsDetailsEvent {
+            start,
+            duration,
+            demand_w: demand_w_event,
+        } = usage_event;
+        let start_offset = start % time_series_step;
+
+        // if the event overruns the end of the timestep it starts in,
+        // power needs to be allocated to two (or more) timesteps
+        // according to the length of time within each timestep the appliance is being used for
+        let mut integralx = 0.0;
+        let mut res = vec![0.; (duration / time_series_step).ceil() as usize];
+        while integralx < duration {
+            let segment = (time_series_step - start_offset).min(duration - integralx);
+            let idx = (integralx / time_series_step).floor() as usize;
+            // subtract standby power from the added event power
+            // as it is already accounted for when the list is initialised
+            *res.get_mut(idx).unwrap() += (demand_w_event - standby_power) * segment;
+            integralx += segment;
+        }
+
+        (start, res)
     }
 }
 
