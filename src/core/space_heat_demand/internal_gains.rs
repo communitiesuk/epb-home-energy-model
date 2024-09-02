@@ -248,13 +248,20 @@ impl EventApplianceGains {
     fn shift_recursive(
         s: f64,
         a: &[f64],
-        demand_timeseries: Option<Vec<f64>>,
-        weight_timeseries: Option<Vec<f64>>,
-        demandlimit: Option<f64>,
+        demand_timeseries: &[f64],
+        weight_timeseries: &[f64],
+        demandlimit: f64,
         max_shift: f64,
-        pos_list: Vec<f64>,
-        start_shift: f64,
+        mut pos_list: Vec<f64>, // or use slice? &[f64],
+        start_shift: usize,
     ) -> f64 {
+        pos_list.push(0.);
+        for (i, x) in a.iter().enumerate() {
+            let idx = ((s + i as f64).floor() as usize + start_shift) % demand_timeseries.len();
+            let otherdemand = demand_timeseries[idx] * weight_timeseries[idx];
+            let newdemand = x * weight_timeseries[idx];
+            *pos_list.last_mut().unwrap() += newdemand + otherdemand;
+        }
         todo!()
     }
 
