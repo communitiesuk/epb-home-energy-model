@@ -26,8 +26,8 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events, expand_numeric_schedule, ScheduleEvent,
-    TypedScheduleEvent, WaterScheduleEventType,
+    expand_boolean_schedule, expand_events, expand_numeric_schedule, NumericSchedule,
+    ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
     area_for_building_element_input, convert_uvalue_to_resistance, pitch_class, BuildingElement,
@@ -128,6 +128,7 @@ pub struct Corpus {
     pub space_cool_systems: IndexMap<String, AirConditioning>,
     pub on_site_generation: IndexMap<String, PhotovoltaicSystem>,
     pub diverters: Vec<Arc<RwLock<PVDiverter>>>,
+    required_vent_data: Option<RequiredVentData>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
@@ -230,6 +231,8 @@ impl Corpus {
             total_volume,
             external_conditions.clone(),
         )?;
+
+        let required_vent_data = required_vent_data_from_input(&input.control);
 
         let zones: IndexMap<String, Zone> = input
             .zone
@@ -423,6 +426,7 @@ impl Corpus {
             space_cool_systems,
             on_site_generation,
             diverters,
+            required_vent_data,
             energy_supply_conn_names_for_hot_water_source,
             energy_supply_conn_names_for_heat_systems,
             timestep_end_calcs,
@@ -3998,4 +4002,22 @@ fn total_volume_heated_by_system(
             }
         })
         .sum::<f64>()
+}
+
+fn required_vent_data_from_input(input: &ControlInput) -> Option<RequiredVentData> {
+    input
+        .extra
+        .get("required_vent")
+        .map(|ctrl| RequiredVentData {
+            schedule: expand_numeric_schedule(ctrl.schedule(), true),
+            start_day: ctrl.start_day(),
+            time_series_step: ctrl.time_series_step(),
+        })
+}
+
+#[derive(Clone, Debug)]
+struct RequiredVentData {
+    schedule: NumericSchedule,
+    start_day: u32,
+    time_series_step: f64,
 }

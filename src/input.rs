@@ -595,6 +595,43 @@ pub enum ControlDetails {
     },
 }
 
+impl ControlDetails {
+    pub(crate) fn start_day(&self) -> u32 {
+        match self {
+            ControlDetails::OnOffTime { start_day, .. } => *start_day,
+            ControlDetails::OnOffCostMinimisingTime { start_day, .. } => *start_day,
+            ControlDetails::SetpointTime { start_day, .. } => *start_day,
+            ControlDetails::ToUCharge { start_day, .. } => *start_day,
+        }
+    }
+
+    pub(crate) fn time_series_step(&self) -> f64 {
+        match self {
+            ControlDetails::OnOffTime {
+                time_series_step, ..
+            } => *time_series_step,
+            ControlDetails::OnOffCostMinimisingTime {
+                time_series_step, ..
+            } => *time_series_step,
+            ControlDetails::SetpointTime {
+                time_series_step, ..
+            } => *time_series_step,
+            ControlDetails::ToUCharge {
+                time_series_step, ..
+            } => *time_series_step,
+        }
+    }
+
+    pub(crate) fn schedule(&self) -> &Schedule {
+        match self {
+            ControlDetails::OnOffTime { schedule, .. } => schedule,
+            ControlDetails::OnOffCostMinimisingTime { schedule, .. } => schedule,
+            ControlDetails::SetpointTime { schedule, .. } => schedule,
+            ControlDetails::ToUCharge { schedule, .. } => schedule,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ControlLogicType {
