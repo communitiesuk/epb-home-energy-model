@@ -123,7 +123,7 @@ impl HeatBatteryServiceSpace {
 
     /// Demand energy (in kWh) from the heat battery
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         _temp_flow: f64,
         temp_return: f64,
@@ -843,6 +843,41 @@ mod tests {
             first_scheduled_temp
         );
     }
+
+    #[rstest]
+    fn test_in_required_period(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
+        let timestep = 1.;
+        let ctrl: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![Some(21.)], 0, 1.0, None, None, None, None, timestep)
+                .unwrap(),
+        );
+        let heat_battery_space =
+            HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+
+        assert_eq!(
+            heat_battery_space.in_required_period(simulation_time_iterator.current_iteration()),
+            Some(true)
+        );
+    }
+
+    #[rstest]
+    fn test_demand_energy_service_off(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
+        let energy_demand = 10.;
+        let temp_return = 40.;
+        let temp_flow = 1.;
+        let timestep = 1.;
+        let ctrl: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![None], 0, 1.0, None, None, None, None, timestep)
+                .unwrap(),
+        );
+        let heat_battery_space =
+            HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+        let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iterator.current_iteration());
+        assert_eq!(result, 0.);
+    }
     // TODO check with team how we want to handle certain Python tests
-    // re tests - test_demand_energy, test_demand_energy_service_off, test_energy_output_max_service_on
+    // re tests - test_demand_energy (Space and Water), test_demand_energy_service_off, test_energy_output_max_service_on
 }
