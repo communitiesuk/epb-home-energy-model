@@ -235,6 +235,11 @@ impl Corpus {
         )?;
 
         let infiltration_ventilation = Arc::from(infiltration_ventilation);
+        let mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>> =
+            mechanical_ventilations
+                .into_iter()
+                .map(|(name, mech_vent)| (name.to_owned(), Arc::from(mech_vent)))
+                .collect();
 
         let required_vent_data = required_vent_data_from_input(&input.control);
 
@@ -303,6 +308,7 @@ impl Corpus {
                     simulation_time_iterator.clone(),
                     ventilation.map(|v| (*v).clone()),
                     input.ventilation.as_ref().map(|v| v.req_ach()),
+                    &mechanical_ventilations,
                     zones.len(),
                     TempInternalAirAccessor {
                         zones: zones.clone(),
@@ -3129,6 +3135,7 @@ fn heat_source_wet_from_input(
     simulation_time: Arc<SimulationTimeIterator>,
     ventilation: Option<VentilationElement>,
     ventilation_req_ach: Option<f64>,
+    mechanical_ventilations: &IndexMap<String, Arc<MechanicalVentilation>>,
     number_of_zones: usize,
     temp_internal_air_accessor: TempInternalAirAccessor,
     total_volume: f64,
@@ -3144,18 +3151,22 @@ fn heat_source_wet_from_input(
         } => {
             let throughput_exhaust_air = if source_type.is_exhaust_air() {
                 // Check that ventilation system is compatible with exhaust air HP
-                if ventilation.is_none()
-                    || !matches!(
-                        ventilation.unwrap(),
-                        VentilationElement::Mvhr(_) | VentilationElement::Whev(_)
-                    )
-                {
-                    panic!("Exhaust air heat pump requires ventilation to be MVHR or WHEV.")
+                // the Python code here will assign to throughput_exhaust_air on the last iteration, though mech vents collection is not ordered - this may be erroneous
+                let mut throughput_exhaust_air: Option<f64> = Default::default();
+                for mech_vent in mechanical_ventilations.values() {
+                    match mech_vent.vent_type() {
+                        VentType::IntermittentMev | VentType::DecentralisedContinuousMev => {
+                            bail!("Exhaust air heat pump does not work with Intermittent MEV or Decentralised continuous MEV.")
+                        }
+                        _ => {
+                            throughput_exhaust_air =
+                                Some(mech_vent.as_ref().design_outdoor_air_flow_rate_m3_h);
+                            // In Python code data is appended here to a project instance variable called __heat_source_wet_names_requiring_overvent
+                            // but this is never read, so we are leaving out the implementation here
+                        }
+                    }
                 }
-                Some(
-                    air_change_rate_to_flow_rate(ventilation_req_ach.unwrap(), total_volume)
-                        * LITRES_PER_CUBIC_METRE as f64,
-                )
+                throughput_exhaust_air
             } else {
                 None
             };

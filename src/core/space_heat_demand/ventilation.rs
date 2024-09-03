@@ -1081,7 +1081,7 @@ pub(crate) struct MechanicalVentilation {
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
     altitude: f64,
-    design_outdoor_air_flow_rate_m3_h: f64,
+    pub(crate) design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
     qv_oda_req_design: f64,
     p_a_alt: f64,
