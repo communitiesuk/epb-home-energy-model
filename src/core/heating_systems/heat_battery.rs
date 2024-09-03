@@ -63,7 +63,7 @@ impl HeatBatteryServiceWaterRegular {
     }
 
     pub fn energy_output_max(
-        &mut self,
+        &self,
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
@@ -736,7 +736,6 @@ mod tests {
     }
 
     #[rstest]
-    /// Test a HeatBatteryService object control
     fn test_service_is_on_with_control(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         heat_battery: Arc<Mutex<HeatBattery>>,
@@ -793,5 +792,46 @@ mod tests {
             true
         );
     }
-}
 
+    #[rstest]
+    fn test_energy_output_max_service_off(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
+        // TODO might want a fixture for this if many tests
+        // end up creating the same heat battery service
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                TEMP_HOT_WATER,
+                None,
+            );
+
+        let temp_return = 40.;
+        let result = heat_battery_service
+            .energy_output_max(temp_return, simulation_time_iterator.current_iteration());
+
+        assert_eq!(result, 0.);
+    }
+
+    #[rstest]
+    fn test_temp_setpnt(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
+        let timestep = 1.;
+        let first_scheduled_temp = Some(21.);
+        let ctrl: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![first_scheduled_temp], 0, 1.0, None, None, None, None, timestep).unwrap(),
+        );
+        let heat_battery_space = HeatBatteryServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            ctrl.into(),
+        );
+        
+        assert_eq!(heat_battery_space.temp_setpnt(simulation_time_iterator.current_iteration()), first_scheduled_temp);
+    }
+    // TODO check with team how we want to handle certain Python tests
+    // re tests - test_demand_energy, test_demand_energy_service_off, test_energy_output_max_service_on
+
+    
+}
