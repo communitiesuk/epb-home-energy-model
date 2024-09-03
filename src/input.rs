@@ -1888,6 +1888,24 @@ pub enum HeatSourceWetDetails {
     },
 }
 
+impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
+    fn from(value: &HeatPumpBoiler) -> Self {
+        HeatSourceWetDetails::Boiler {
+            energy_supply: value.energy_supply,
+            energy_supply_auxiliary: value.energy_supply_auxiliary,
+            rated_power: value.rated_power,
+            efficiency_full_load: value.efficiency_full_load,
+            efficiency_part_load: value.efficiency_part_load,
+            boiler_location: value.boiler_location,
+            modulation_load: value.modulation_load,
+            electricity_circ_pump: value.electricity_circ_pump,
+            electricity_part_load: value.electricity_part_load,
+            electricity_full_load: value.electricity_full_load,
+            electricity_standby: value.electricity_standby,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum HeatPumpSourceType {
@@ -1950,9 +1968,9 @@ pub struct HeatPumpTestDatum {
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
     #[serde(rename = "EnergySupply")]
-    energy_supply: EnergySupplyType,
+    pub(crate) energy_supply: EnergySupplyType,
     #[serde(rename = "EnergySupply_aux")]
-    energy_supply_auxiliary: EnergySupplyType,
+    pub(crate) energy_supply_auxiliary: EnergySupplyType,
     rated_power: f64,
     efficiency_full_load: f64,
     efficiency_part_load: f64,
@@ -1962,7 +1980,7 @@ pub struct HeatPumpBoiler {
     electricity_part_load: f64,
     electricity_full_load: f64,
     electricity_standby: f64,
-    cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
+    pub(crate) cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

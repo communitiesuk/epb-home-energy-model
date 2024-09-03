@@ -3147,6 +3147,7 @@ fn heat_source_wet_from_input(
             source_type,
             energy_supply_heat_network,
             energy_supply,
+            boiler,
             ..
         } => {
             let throughput_exhaust_air = if source_type.is_exhaust_air() {
@@ -3182,6 +3183,33 @@ fn heat_source_wet_from_input(
                 None
             };
 
+            let (boiler, cost_schedule_hybrid_hp) = if let Some(boiler) = boiler {
+                let energy_supply_boiler = energy_supplies
+                    .ensured_get_for_type(boiler.energy_supply, simulation_time.total_steps())?;
+                let energy_supply_aux_boiler = energy_supplies.ensured_get_for_type(
+                    boiler.energy_supply_auxiliary,
+                    simulation_time.total_steps(),
+                )?;
+                let energy_supply_conn_aux_boiler = EnergySupply::connection(
+                    energy_supply_aux_boiler,
+                    format!("Boiler_auxiliary: {energy_supply_name}").as_str(),
+                )?;
+
+                let cost_schedule_hybrid_hp = boiler.cost_schedule_hybrid.clone();
+
+                let boiler = Boiler::new(
+                    boiler.into(),
+                    energy_supply_boiler,
+                    energy_supply_conn_aux_boiler,
+                    external_conditions.clone(),
+                    simulation_time.step_in_hours(),
+                )?;
+
+                (Some(boiler), cost_schedule_hybrid_hp)
+            } else {
+                Default::default()
+            };
+
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
             let energy_supply_conn_name_auxiliary =
@@ -3198,8 +3226,8 @@ fn heat_source_wet_from_input(
                     throughput_exhaust_air,
                     energy_supply_hn,
                     DETAILED_OUTPUT_HEATING_COOLING,
-                    None,
-                    None, // temporary during migrating to 0.30
+                    boiler.map(|boiler: Boiler| Arc::new(Mutex::new(boiler))),
+                    cost_schedule_hybrid_hp,
                     temp_internal_air_accessor,
                 )?,
             ))))

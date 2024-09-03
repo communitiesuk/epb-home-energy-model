@@ -369,7 +369,7 @@ impl HeatBattery {
     }
 
     /// Converts power value supplied to the correct units
-    ///        
+    ///
     /// Arguments:
     /// * `power` - Power in watts
     /// * `timestep` - length of the timestep
@@ -380,7 +380,7 @@ impl HeatBattery {
     }
 
     /// Calculates power required for unit
-    ///        
+    ///
     /// Arguments
     /// * `time` - current time period that we are looking at
     /// * `simulation_time_iteration` - an iteration of the contextual simulation time
@@ -816,22 +816,33 @@ mod tests {
     }
 
     #[rstest]
-    fn test_temp_setpnt(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
+    fn test_temp_setpnt(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
         let timestep = 1.;
         let first_scheduled_temp = Some(21.);
         let ctrl: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![first_scheduled_temp], 0, 1.0, None, None, None, None, timestep).unwrap(),
+            SetpointTimeControl::new(
+                vec![first_scheduled_temp],
+                0,
+                1.0,
+                None,
+                None,
+                None,
+                None,
+                timestep,
+            )
+            .unwrap(),
         );
-        let heat_battery_space = HeatBatteryServiceSpace::new(
-            heat_battery,
-            SERVICE_NAME.into(),
-            ctrl.into(),
+        let heat_battery_space =
+            HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
+
+        assert_eq!(
+            heat_battery_space.temp_setpnt(simulation_time_iterator.current_iteration()),
+            first_scheduled_temp
         );
-        
-        assert_eq!(heat_battery_space.temp_setpnt(simulation_time_iterator.current_iteration()), first_scheduled_temp);
     }
     // TODO check with team how we want to handle certain Python tests
     // re tests - test_demand_energy, test_demand_energy_service_off, test_energy_output_max_service_on
-
-    
 }
