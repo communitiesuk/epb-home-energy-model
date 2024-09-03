@@ -1,8 +1,8 @@
 use crate::compare_floats::max_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    Control, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
-    ToUChargeControl,
+    Control, ControlBehaviour, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl,
+    SetpointTimeControl, ToUChargeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -35,7 +35,9 @@ use crate::core::space_heat_demand::building_element::{
     BuildingElementOpaque, BuildingElementTransparent, HeatFlowDirection,
     NamedBuildingElementTransparent, PITCH_LIMIT_HORIZ_CEILING,
 };
-use crate::core::space_heat_demand::internal_gains::{ApplianceGains, Gains, InternalGains};
+use crate::core::space_heat_demand::internal_gains::{
+    ApplianceGains, EventApplianceGains, Gains, InternalGains,
+};
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation::{
     AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
@@ -232,22 +234,20 @@ impl Corpus {
             external_conditions.clone(),
         )?;
 
+        let infiltration_ventilation = Arc::from(infiltration_ventilation);
+
         let required_vent_data = required_vent_data_from_input(&input.control);
 
         let zones: IndexMap<String, Zone> = input
             .zone
             .iter()
             .map(|(i, zone)| -> anyhow::Result<(String, Zone)> {
-                let ventilation = ventilation.as_ref().map(|ventilation| ventilation.lock());
                 Ok(((*i).clone(), {
                     let (zone_for_corpus, heat_system_name, cool_system_name) = zone_from_input(
                         zone,
-                        opening_area_total_from_zones,
-                        &input.window_opening_for_cooling,
-                        &controls,
-                        ventilation.map(|v| (*v).clone()),
                         external_conditions.clone(),
-                        &infiltration,
+                        infiltration_ventilation.clone(),
+                        window_adjust_control.clone(),
                         simulation_time_iterator.clone().as_ref(),
                     )?;
                     if let Some(heat_system_name) = heat_system_name {
@@ -277,14 +277,14 @@ impl Corpus {
 
         let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
 
-        let mut internal_gains = internal_gains_from_input(&input.internal_gains);
+        let mut internal_gains = internal_gains_from_input(&input.internal_gains, total_floor_area);
 
         apply_appliance_gains_from_input(
             &mut internal_gains,
             &input.appliance_gains,
             &mut energy_supplies,
             total_floor_area,
-            simulation_time_iterator.total_steps(),
+            simulation_time_iterator.as_ref(),
         )?;
 
         let mut timestep_end_calcs = vec![];
@@ -1846,7 +1846,10 @@ fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<E
 
 pub type InternalGainsCollection = IndexMap<String, Gains>;
 
-fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollection {
+fn internal_gains_from_input(
+    input: &InternalGainsInput,
+    total_floor_area: f64,
+) -> InternalGainsCollection {
     let mut gains_collection = InternalGainsCollection::from([]);
     input
         .total_internal_gains
@@ -1854,13 +1857,19 @@ fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollect
         .and_then(|internal_gains| {
             gains_collection.insert(
                 "total_internal_gains".to_string(),
-                Gains::Internal(internal_gains_from_details(internal_gains)),
+                Gains::Internal(internal_gains_from_details(
+                    internal_gains,
+                    total_floor_area,
+                )),
             )
         });
     input.metabolic_gains.as_ref().and_then(|internal_gains| {
         gains_collection.insert(
             "metabolic_gains".to_string(),
-            Gains::Internal(internal_gains_from_details(internal_gains)),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )),
         )
     });
     input
@@ -1869,29 +1878,45 @@ fn internal_gains_from_input(input: &InternalGainsInput) -> InternalGainsCollect
         .and_then(|internal_gains| {
             gains_collection.insert(
                 "evaporative_losses".to_string(),
-                Gains::Internal(internal_gains_from_details(internal_gains)),
+                Gains::Internal(internal_gains_from_details(
+                    internal_gains,
+                    total_floor_area,
+                )),
             )
         });
     input.other.as_ref().and_then(|internal_gains| {
         gains_collection.insert(
             "other".to_string(),
-            Gains::Internal(internal_gains_from_details(internal_gains)),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )),
         )
     });
 
     gains_collection
 }
 
-fn internal_gains_from_details(details: &InternalGainsDetails) -> InternalGains {
-    let schedule: IndexMap<String, Value> = (&details.schedule).into();
+fn internal_gains_from_details(
+    details: &InternalGainsDetails,
+    total_floor_area: f64,
+) -> InternalGains {
     InternalGains::new(
-        expand_numeric_schedule(&schedule, false)
-            .into_iter()
-            .flatten()
-            .collect(),
+        convert_energy_to_wm2(details, total_floor_area),
         details.start_day,
         details.time_series_step,
     )
+}
+
+fn convert_energy_to_wm2(
+    internal_gains_details: &InternalGainsDetails,
+    total_floor_area: f64,
+) -> Vec<f64> {
+    let schedule: IndexMap<String, Value> = (&internal_gains_details.schedule).into();
+    expand_numeric_schedule(&schedule, false)
+        .iter()
+        .map(|energy_data| energy_data.unwrap_or_default() / total_floor_area)
+        .collect()
 }
 
 pub struct Controls {
@@ -2356,79 +2381,13 @@ fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging 
 
 fn zone_from_input<'a>(
     input: &ZoneInput,
-    opening_area_total: f64,
-    window_opening_for_cooling: &Option<WindowOpeningForCoolingInput>,
-    controls: &'a Controls,
-    ventilation: Option<VentilationElement>,
     external_conditions: Arc<ExternalConditions>,
-    infiltration: &'a VentilationElementInfiltration,
-    simulation_time_iterator: &'a SimulationTimeIterator,
+    infiltration_ventilation: Arc<InfiltrationVentilation>,
+    window_adjust_control: Option<Arc<Control>>,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<(Zone, Option<String>, Option<String>)> {
-    let ventilation = ventilation.as_ref();
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
-
-    let vent_cool_extra: Option<anyhow::Result<WindowOpeningForCooling>> =
-        window_opening_for_cooling.as_ref().map(|opening| {
-            let openings: HashMap<&String, &BuildingElementInput> = input
-                .building_elements
-                .iter()
-                .filter(|(_, el)| matches!(el, BuildingElementInput::Transparent { .. }))
-                .collect();
-            let opening_area_zone: f64 = openings
-                .values()
-                .map(|op| area_for_building_element_input(op))
-                .sum();
-            let opening_area_equivalent =
-                opening.equivalent_area * opening_area_zone / opening_area_total;
-            let control = input
-                .control_window_opening
-                .as_ref()
-                .and_then(|opening_control| {
-                    controls
-                        .get(opening_control)
-                        .and_then(|c| match c.as_ref() {
-                            Control::SetpointTimeControl(ctrl) => Some((*ctrl).clone()),
-                            _ => None,
-                        })
-                });
-            let natvent = ventilation.and_then(|v| match v {
-                VentilationElement::Natural(natural_ventilation) => {
-                    Some((*natural_ventilation).clone())
-                }
-                _ => None,
-            });
-            Ok(WindowOpeningForCooling::new(
-                opening_area_equivalent,
-                external_conditions.clone(),
-                openings
-                    .iter()
-                    .map(
-                        |(name, el)| -> anyhow::Result<NamedBuildingElementTransparent> {
-                            match building_element_from_input(el, external_conditions.clone())? {
-                                BuildingElement::Transparent(transparent) => {
-                                    Ok(NamedBuildingElementTransparent {
-                                        name: name.to_owned().to_owned(),
-                                        window: transparent,
-                                    })
-                                }
-                                _ => unreachable!(),
-                            }
-                        },
-                    )
-                    .collect::<anyhow::Result<Vec<NamedBuildingElementTransparent>>>()?,
-                control,
-                natvent,
-            ))
-        });
-    let _vent_cool_extra = vent_cool_extra.transpose()?;
-
-    let infiltration_ventilation = VentilationElement::Infiltration((*infiltration).clone());
-    let mut vent_elements: Vec<VentilationElement> = vec![infiltration_ventilation];
-
-    if let Some(v) = ventilation {
-        vent_elements.push((*v).clone());
-    }
 
     Ok((
         Zone::new(
@@ -2445,33 +2404,10 @@ fn zone_from_input<'a>(
                 })
                 .collect::<anyhow::Result<IndexMap<String, BuildingElement>>>()?,
             thermal_bridging_from_input(&input.thermal_bridging),
-            // stub infiltration ventilation element temporarily provided while migrating to 0.30
-            Arc::new(InfiltrationVentilation::new(
-                external_conditions.clone(),
-                false,
-                VentilationShieldClass::Normal,
-                TerrainClass::Country,
-                45.,
-                vec![],
-                vec![],
-                CompletedVentilationLeaks {
-                    ventilation_zone_height: 0.0,
-                    test_pressure: 0.0,
-                    test_result: 0.0,
-                    area_roof: 0.0,
-                    area_facades: 0.0,
-                    env_area: 0.0,
-                    altitude: 0.0,
-                },
-                vec![],
-                vec![],
-                vec![],
-                0.0,
-                0.0,
-            )),
+            infiltration_ventilation,
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
-            None,
+            window_adjust_control,
             simulation_time_iterator,
         )?,
         heat_system_name,
@@ -3044,23 +2980,29 @@ fn apply_appliance_gains_from_input(
     input: &ApplianceGainsInput,
     energy_supplies: &mut EnergySupplies,
     total_floor_area: f64,
-    simulation_timesteps: usize,
+    simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     for (name, gains_details) in input {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies
-                .ensured_get_for_type(gains_details.energy_supply, simulation_timesteps)?,
+                .ensured_get_for_type(gains_details.energy_supply, simulation_time.total_steps())?,
             name.as_str(),
         )?;
 
-        // TODO create either an ApplianceGains or an EventApplianceGains here
-        // in Python this depends on whether the data (gains_details) includes
-        // keys for both "Events" and "Standby"
-        let gains = Gains::Appliance(appliance_gains_from_single_input(
-            gains_details,
-            energy_supply_conn,
-            total_floor_area,
-        ));
+        let gains = if gains_details.events.is_some() && gains_details.standby.is_some() {
+            Gains::Event(EventApplianceGains::new(
+                energy_supply_conn,
+                simulation_time,
+                gains_details,
+                total_floor_area,
+            ))
+        } else {
+            Gains::Appliance(appliance_gains_from_single_input(
+                gains_details,
+                energy_supply_conn,
+                total_floor_area,
+            ))
+        };
 
         internal_gains_collection.insert(name.clone(), gains);
     }

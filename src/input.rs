@@ -112,7 +112,7 @@ pub struct InternalGainsDetails {
     pub schedule: InternalGainsSchedule,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct InternalGainsSchedule {

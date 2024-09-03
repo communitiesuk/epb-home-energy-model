@@ -1,4 +1,4 @@
-use crate::core::controls::time_control::ControlBehaviour;
+use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::{BuildingElement, BuildingElementBehaviour};
 use crate::core::space_heat_demand::thermal_bridge::{
@@ -37,7 +37,7 @@ pub struct Zone {
     area_el_total: f64,
     /// internal thermal capacity of the zone, in J / K
     c_int: f64,
-    control: Option<Arc<Box<dyn ControlBehaviour>>>,
+    control: Option<Arc<Control>>,
     /// dictionary where key is building element (name) and
     ///                      values are 2-element tuples storing matrix row and
     ///                      column numbers (both same) where the first element
@@ -88,7 +88,7 @@ impl Zone {
         ventilation: Arc<InfiltrationVentilation>,
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
-        control: Option<Arc<Box<dyn ControlBehaviour>>>,
+        control: Option<Arc<Control>>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let tb_heat_trans_coeff = match thermal_bridging {
@@ -581,7 +581,7 @@ pub fn init_node_temps(
     passed_zone_idx: usize,
     c_int: f64,
     tb_heat_trans_coeff: f64,
-    control: Option<Arc<Box<dyn ControlBehaviour>>>,
+    control: Option<Arc<Control>>,
 ) -> anyhow::Result<Vec<f64>> {
     let simulation_time = simulation_time.peek().unwrap();
     // Set starting point for all node temperatures (elements of
@@ -714,7 +714,7 @@ pub fn space_heat_cool_demand(
     c_int: f64,
     tb_heat_trans_coeff: f64,
     passed_zone_idx: usize,
-    control: Option<Arc<Box<dyn ControlBehaviour>>>,
+    control: Option<Arc<Control>>,
 ) -> anyhow::Result<(f64, f64, f64, Option<f64>)> {
     let gains_heat_cool_convective = gains_heat_cool_convective.unwrap_or(0.0);
     let gains_heat_cool_radiative = gains_heat_cool_radiative.unwrap_or(0.0);
