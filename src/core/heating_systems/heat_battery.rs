@@ -666,6 +666,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
     use crate::core::heating_systems::heat_battery::HeatBattery;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
+    use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
     use crate::input::EnergySupplyType;
     use crate::input::FuelType;
     use crate::input::HeatSourceLocation;
@@ -675,21 +676,25 @@ mod tests {
     use rstest::fixture;
     use rstest::rstest;
 
+    const SERVICE_NAME: &str = "TestService";
+    const TEMP_HOT_WATER: f64 = 55.;
+
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
-    #[rstest]
-    /// Test a HeatBatteryService object control
-    fn test_service_is_on_with_control(simulation_time: SimulationTime) {
-        // Test when controlvent is provided and returns True
-        let timestep = 1.;
-        let ctrl_true: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![Some(21.0)], 0, 1.0, None, None, None, None, timestep)
-                .unwrap(),
-        );
+    #[fixture]
+    pub fn simulation_time_iterator(
+        simulation_time: SimulationTime,
+    ) -> Arc<SimulationTimeIterator> {
+        simulation_time.iter().into()
+    }
 
+    #[fixture]
+    pub fn heat_battery(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) -> Arc<Mutex<HeatBattery>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
             energy_supply: EnergySupplyType::Electricity,
             heat_battery_location: HeatSourceLocation::Internal,
@@ -719,44 +724,74 @@ mod tests {
         )));
         let energy_supply_connection: EnergySupplyConnection =
             EnergySupplyConnection::new(energy_supply.clone(), "WaterHeating".into());
-        let simulation_time_iterator: SimulationTimeIterator = simulation_time.iter();
 
         let heat_battery = HeatBattery::new(
             heat_battery_details,
             charge_control.into(),
             energy_supply,
             energy_supply_connection,
-            simulation_time_iterator.clone().into(),
+            simulation_time_iterator,
+        );
+        Mutex::new(heat_battery.into()).into()
+    }
+
+    #[rstest]
+    /// Test a HeatBatteryService object control
+    fn test_service_is_on_with_control(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
+        // Test when controlvent is provided and returns True
+        let timestep = 1.;
+        let ctrl_with_scheduled_temps: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![Some(21.0)], 0, 1.0, None, None, None, None, timestep)
+                .unwrap(),
         );
 
         let heat_battery_service = HeatBatteryServiceSpace::new(
-            Mutex::new(heat_battery).into(),
-            "TestService".into(),
-            ctrl_true.into(),
+            heat_battery.clone(),
+            SERVICE_NAME.into(),
+            ctrl_with_scheduled_temps.into(),
         );
 
         assert_eq!(
             heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
             true
-        )
+        );
+
+        let ctrl_with_no_scheduled_temps: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![None], 0, 1.0, None, None, None, None, timestep).unwrap(),
+        );
+
+        let heat_battery_service: HeatBatteryServiceSpace = HeatBatteryServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            ctrl_with_no_scheduled_temps.into(),
+        );
+
+        assert_eq!(
+            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            false
+        );
+    }
+
+    #[rstest]
+    fn test_service_is_on_without_control(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                TEMP_HOT_WATER,
+                None,
+            );
+
+        assert_eq!(
+            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            true
+        );
     }
 }
-/*
-        Still to do:
 
-        # Test when control is provided and returns False
-        self.ctrl_false = SetpointTimeControl([None],
-                                        self.simtime,
-                                        0, #start_day
-                                        1.0, #time_series_step
-                                        )
-
-        self.heat_battery_service = HeatBatteryService(
-                            heat_battery=self.mock_heat_battery,
-                            service_name=self.service_name,
-                            control=self.ctrl_false
-                            )
-
-        self.assertFalse(self.heat_battery_service.is_on())
-
- */
