@@ -3323,6 +3323,7 @@ fn heat_source_wet_from_input(
 fn heat_source_from_input(
     name: &str,
     input: &HeatSourceInput,
+    cold_water_source: &WaterSourceWithTemperature,
     temp_setpoint: f64,
     volume: f64,
     daily_losses: f64,
@@ -3346,7 +3347,7 @@ fn heat_source_from_input(
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
-            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name).unwrap();
+            let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
@@ -3414,12 +3415,6 @@ fn heat_source_from_input(
             temp_flow_limit_upper,
             ..
         } => {
-            let cold_water_source = cold_water_sources
-                .ref_for_type(
-                    cold_water_source_type
-                        .expect("Expect a cold water source to be defined on a wet heat source"),
-                )
-                .expect("Expected a cold water source to be available to a boiler heat source.");
             let energy_supply_conn_name = format!("{name}_water_heating");
             let heat_source_wet = wet_heat_sources
                 .get(name)
@@ -3441,7 +3436,7 @@ fn heat_source_from_input(
                             55.,
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
-                            Arc::new(cold_water_source),
+                            cold_water_source.as_cold_water_source()?,
                             source_control,
                         )),
                     )),
@@ -3600,6 +3595,7 @@ fn hot_water_source_from_input(
                 }
             }
             let pipework = primary_pipework.as_ref().and_then(|p| p.into());
+            let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
             let mut heat_source_for_diverter: Option<Arc<Mutex<HeatSource>>> = Default::default();
             for (name, hs) in heat_source {
@@ -3617,6 +3613,7 @@ fn hot_water_source_from_input(
                 let (heat_source, energy_supply_conn_name) = heat_source_from_input(
                     name.as_str(),
                     hs,
+                    &cold_water_source,
                     *setpoint_temp,
                     *volume,
                     *daily_losses,
@@ -3655,11 +3652,11 @@ fn hot_water_source_from_input(
                 temp_internal_air_accessor,
                 external_conditions,
                 Some(24),
-                pipework, // TODO as part of migration 0.28 to 0.30: double check
-                Some(
-                    EnergySupply::connection(energy_supplies.unmet_demand.clone(), &source_name)
-                        .unwrap(),
-                ),
+                primary_pipework_lst,
+                Some(EnergySupply::connection(
+                    energy_supplies.unmet_demand.clone(),
+                    &source_name,
+                )?),
                 ctrl_hold_at_setpoint,
                 *WATER,
             )));
@@ -3695,6 +3692,7 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::CombiBoiler {
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
+            setpoint_temp,
             ..
         } => {
             let cold_water_source =
@@ -3722,7 +3720,9 @@ fn hot_water_source_from_input(
                     .create_service_hot_water_combi(
                         cloned_input,
                         energy_supply_conn_name,
-                        60.,
+                        setpoint_temp.ok_or_else(|| {
+                            anyhow!("A setpoint temp was expected on a combi boiler input.")
+                        })?,
                         cold_water_source,
                     )
                     .expect("expected to be able to instantiate a combi boiler object"),
@@ -3752,6 +3752,7 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::Hiu {
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
+            setpoint_temp,
             ..
         } => {
             let energy_supply_conn_name = format!(
@@ -3777,7 +3778,7 @@ fn hot_water_source_from_input(
             HotWaterSource::HeatNetwork(HeatNetwork::create_service_hot_water_direct(
                 Arc::new(Mutex::new(heat_source_wet.clone())),
                 energy_supply_conn_name,
-                60.,
+                *setpoint_temp,
                 cold_water_source,
             ))
         }

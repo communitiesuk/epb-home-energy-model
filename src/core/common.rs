@@ -2,6 +2,7 @@
 
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+use anyhow::bail;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -19,5 +20,16 @@ impl WaterSourceWithTemperature {
             }
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
         }
+    }
+
+    pub fn as_cold_water_source(&self) -> anyhow::Result<Arc<ColdWaterSource>> {
+        Ok(match self {
+            WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
+                cold_water_source.clone()
+            }
+            WaterSourceWithTemperature::Wwhrs(_) => {
+                bail!("Water source is not a cold water source when it was expected to be.")
+            }
+        })
     }
 }
