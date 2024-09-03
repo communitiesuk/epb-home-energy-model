@@ -655,3 +655,108 @@ impl HeatBattery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::core::controls::time_control::Control;
+    use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::controls::time_control::ToUChargeControl;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+    use crate::core::heating_systems::heat_battery::HeatBattery;
+    use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
+    use crate::input::EnergySupplyType;
+    use crate::input::FuelType;
+    use crate::input::HeatSourceLocation;
+    use crate::input::HeatSourceWetDetails;
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use parking_lot::{Mutex, RwLock};
+    use rstest::fixture;
+    use rstest::rstest;
+
+    #[fixture]
+    pub fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 8., 1.)
+    }
+
+    #[rstest]
+    /// Test a HeatBatteryService object control
+    fn test_service_is_on_with_control(simulation_time: SimulationTime) {
+        // Test when controlvent is provided and returns True
+        let timestep = 1.;
+        let ctrl_true: Control = Control::SetpointTimeControl(
+            SetpointTimeControl::new(vec![Some(21.0)], 0, 1.0, None, None, None, None, timestep)
+                .unwrap(),
+        );
+
+        let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
+            energy_supply: EnergySupplyType::Electricity,
+            heat_battery_location: HeatSourceLocation::Internal,
+            electricity_circ_pump: 0.06,
+            electricity_standby: 0.0244,
+            rated_charge_power: 20.0,
+            heat_storage_capacity: 80.0,
+            max_rated_heat_output: 15.0,
+            max_rated_losses: 0.22,
+            number_of_units: 1,
+            control_charge: "hb_charge_control".into(),
+        };
+
+        let charge_control: Control = Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![false],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![0.2],
+        });
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(EnergySupply::new(
+            FuelType::MainsGas,
+            1,
+            None,
+            None,
+            None,
+        )));
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupplyConnection::new(energy_supply.clone(), "WaterHeating".into());
+        let simulation_time_iterator: SimulationTimeIterator = simulation_time.iter();
+
+        let heat_battery = HeatBattery::new(
+            heat_battery_details,
+            charge_control.into(),
+            energy_supply,
+            energy_supply_connection,
+            simulation_time_iterator.clone().into(),
+        );
+
+        let heat_battery_service = HeatBatteryServiceSpace::new(
+            Mutex::new(heat_battery).into(),
+            "TestService".into(),
+            ctrl_true.into(),
+        );
+
+        assert_eq!(
+            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            true
+        )
+    }
+}
+/*
+        Still to do:
+
+        # Test when control is provided and returns False
+        self.ctrl_false = SetpointTimeControl([None],
+                                        self.simtime,
+                                        0, #start_day
+                                        1.0, #time_series_step
+                                        )
+
+        self.heat_battery_service = HeatBatteryService(
+                            heat_battery=self.mock_heat_battery,
+                            service_name=self.service_name,
+                            control=self.ctrl_false
+                            )
+
+        self.assertFalse(self.heat_battery_service.is_on())
+
+ */
