@@ -293,6 +293,7 @@ impl Corpus {
         )?;
 
         let mut timestep_end_calcs = vec![];
+        let mut heat_sources_wet_with_buffer_tank = vec![];
 
         let wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>> = input
             .heat_source_wet
@@ -323,6 +324,15 @@ impl Corpus {
                     | WetHeatSource::Boiler(_)
                     | WetHeatSource::HeatBattery(_) => {
                         timestep_end_calcs.push(heat_source.clone());
+                    }
+                    _ => {}
+                }
+                match heat_source_wet_details {
+                    HeatSourceWetDetails::HeatPump {
+                        buffer_tank: Some(_),
+                        ..
+                    } => {
+                        heat_sources_wet_with_buffer_tank.push(name.clone());
                     }
                     _ => {}
                 }
