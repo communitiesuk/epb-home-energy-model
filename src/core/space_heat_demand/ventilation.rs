@@ -1275,7 +1275,7 @@ impl MechanicalVentilation {
     /// total_volume -- volume of the dwelling (m3)
     /// vent_type -- one of "Intermittent MEV", "Centralised continuous MEV",
     /// "Decentralised continuous MEV", "MVHR" or "PIV".
-    fn fans(
+    pub(crate) fn fans(
         &self,
         zone_volume: f64,
         total_volume: f64,

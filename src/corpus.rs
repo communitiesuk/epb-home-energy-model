@@ -30,10 +30,9 @@ use crate::core::schedule::{
     ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
-    area_for_building_element_input, convert_uvalue_to_resistance, pitch_class, BuildingElement,
-    BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
-    BuildingElementOpaque, BuildingElementTransparent, HeatFlowDirection,
-    NamedBuildingElementTransparent, PITCH_LIMIT_HORIZ_CEILING,
+    convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
+    BuildingElementAdjacentZTUSimple, BuildingElementGround, BuildingElementOpaque,
+    BuildingElementTransparent, HeatFlowDirection, PITCH_LIMIT_HORIZ_CEILING,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -44,13 +43,12 @@ use crate::core::space_heat_demand::ventilation::{
     Window,
 };
 use crate::core::space_heat_demand::ventilation_element::{
-    air_change_rate_to_flow_rate, NaturalVentilation, VentilationElement,
-    VentilationElementInfiltration, WholeHouseExtractVentilation, WindowOpeningForCooling,
+    NaturalVentilation, VentilationElement, VentilationElementInfiltration,
+    WholeHouseExtractVentilation, WindowOpeningForCooling,
 };
 use crate::core::space_heat_demand::zone::{AirChangesPerHourArgument, HeatBalance, Zone};
 use crate::core::units::{
-    kelvin_to_celsius, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::{
@@ -61,8 +59,8 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ColdWaterSourceDetails, ColdWaterSourceInput,
-    ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape, EnergyDiverter,
-    EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
+    ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape, DuctType,
+    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
     ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
@@ -70,10 +68,9 @@ use crate::input::{
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    TerrainClass, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType,
-    Ventilation, VentilationLeaks, VentilationShieldClass, WasteWaterHeatRecovery,
-    WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WindowOpeningForCooling as WindowOpeningForCoolingInput, WwhrsType, ZoneDictionary, ZoneInput,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType, Ventilation,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -87,6 +84,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+use std::ops::Deref;
 use std::sync::Arc;
 
 // TODO make this a runtime parameter?
@@ -116,7 +114,8 @@ pub struct Corpus {
     pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
     pub ventilation: Option<Arc<Mutex<VentilationElement>>>,
-    pub space_heating_ductwork: Option<Ductwork>,
+    mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
+    pub space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
     pub zones: Arc<IndexMap<String, Zone>>,
     pub energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
     pub heat_system_name_for_zone: IndexMap<String, String>,
@@ -126,6 +125,7 @@ pub struct Corpus {
     pub wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>>,
     pub hot_water_sources: IndexMap<String, HotWaterSource>,
     pub heat_system_names_requiring_overvent: Vec<String>,
+    pub heat_sources_wet_with_buffer_tank: Vec<String>,
     pub space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     pub space_cool_systems: IndexMap<String, AirConditioning>,
     pub on_site_generation: IndexMap<String, PhotovoltaicSystem>,
@@ -195,8 +195,6 @@ impl Corpus {
 
         let infiltration = infiltration_from_input(input.infiltration.as_ref().unwrap());
 
-        let space_heating_ductwork = ductwork_from_ventilation_input(&input.ventilation);
-
         let ventilation = input
             .ventilation
             .as_ref()
@@ -223,7 +221,7 @@ impl Corpus {
             infiltration_ventilation,
             window_adjust_control,
             mechanical_ventilations,
-            space_heating_ductwork_new,
+            space_heating_ductwork,
         ) = infiltration_ventilation_from_input(
             &input.zone,
             &input.infiltration_ventilation,
@@ -255,12 +253,10 @@ impl Corpus {
                         window_adjust_control.clone(),
                         simulation_time_iterator.clone().as_ref(),
                     )?;
-                    if let Some(heat_system_name) = heat_system_name {
-                        heat_system_name_for_zone.insert((*i).clone(), heat_system_name);
-                    }
-                    if let Some(cool_system_name) = cool_system_name {
-                        cool_system_name_for_zone.insert((*i).clone(), cool_system_name);
-                    }
+                    heat_system_name_for_zone
+                        .insert((*i).clone(), heat_system_name.unwrap_or_default());
+                    cool_system_name_for_zone
+                        .insert((*i).clone(), cool_system_name.unwrap_or_default());
 
                     zone_for_corpus
                 }))
@@ -428,6 +424,7 @@ impl Corpus {
             event_schedules,
             domestic_hot_water_demand,
             ventilation,
+            mechanical_ventilations,
             space_heating_ductwork,
             zones,
             energy_supply_conn_unmet_demand_zone,
@@ -438,6 +435,7 @@ impl Corpus {
             wet_heat_sources,
             hot_water_sources,
             heat_system_names_requiring_overvent,
+            heat_sources_wet_with_buffer_tank,
             space_heat_systems,
             space_cool_systems,
             on_site_generation,
@@ -516,14 +514,46 @@ impl Corpus {
         delta_t_h: f64,
         volume_water_remove_from_tank: f64,
         hw_duration: f64,
-        no_events: usize,
+        no_of_hw_events: usize,
         temp_final_drawoff: f64,
         temp_average_drawoff: f64,
         temp_hot_water: f64,
         vol_hot_water_equiv_elec_shower: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64, f64) {
-        todo!()
+        let (pw_losses_internal, pw_losses_external) = self.calc_pipework_losses(
+            delta_t_h,
+            hw_duration,
+            no_of_hw_events,
+            temp_final_drawoff,
+            simulation_time_iteration,
+        );
+        let gains_internal_dhw_use_storagetank = FRAC_DHW_ENERGY_INTERNAL_GAINS
+            * water_demand_to_kwh(
+                volume_water_remove_from_tank,
+                temp_average_drawoff,
+                self.temp_internal_air(),
+            );
+
+        let gains_internal_dhw_use_ies = FRAC_DHW_ENERGY_INTERNAL_GAINS
+            * water_demand_to_kwh(
+                vol_hot_water_equiv_elec_shower,
+                temp_hot_water,
+                self.temp_internal_air(),
+            );
+
+        let gains_internal_dhw_use =
+            gains_internal_dhw_use_storagetank + gains_internal_dhw_use_ies;
+
+        // Return:
+        // losses from internal distribution pipework (kWh)
+        // losses from external distribution pipework (kWh)
+        // internal gains due to hot water use (kWh)
+        (
+            pw_losses_internal,
+            pw_losses_external,
+            gains_internal_dhw_use,
+        )
     }
 
     /// Return:
@@ -536,21 +566,21 @@ impl Corpus {
         vol_hot_water_at_tapping_point: f64,
         hw_duration: f64,
         no_of_hw_events: usize,
+        temp_hot_water: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64, f64) {
-        let frac_dhw_energy_internal_gains = 0.25;
-
         let (pw_losses_internal, pw_losses_external) = self.calc_pipework_losses(
             delta_t_h,
             hw_duration,
             no_of_hw_events,
+            temp_hot_water,
             simulation_time_iteration,
         );
 
-        let gains_internal_dhw_use = frac_dhw_energy_internal_gains
+        let gains_internal_dhw_use = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * water_demand_to_kwh(
                 vol_hot_water_at_tapping_point,
-                52.,
+                temp_hot_water,
                 self.temp_internal_air(),
             );
 
@@ -566,9 +596,10 @@ impl Corpus {
         delta_t_h: f64,
         hw_duration: f64,
         no_of_hw_events: usize,
+        temp_hot_water: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let demand_water_temperature = 52.;
+        let demand_water_temperature = temp_hot_water;
         let internal_air_temperature = self.temp_internal_air();
         let external_air_temperature = self
             .external_conditions
@@ -582,6 +613,89 @@ impl Corpus {
             internal_air_temperature,
             external_air_temperature,
         )
+    }
+
+    /// Calculate the losses in the buffer tank
+    fn calc_internal_gains_buffer_tank(&self) -> f64 {
+        self.heat_sources_wet_with_buffer_tank
+            .iter()
+            .map(
+                |heat_source_name| match self.wet_heat_sources.get(heat_source_name) {
+                    Some(heat_source) => match heat_source.lock().deref() {
+                        WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().buffer_int_gains(),
+                        _ => unreachable!(),
+                    },
+                    None => 0.,
+                },
+            )
+            .sum::<f64>()
+    }
+
+    /// Calculate the losses/gains in the MVHR ductwork
+    fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
+        let mut internal_gains_ductwork_watts = 0.0;
+        for mvhr_ductwork in self.space_heating_ductwork.values() {
+            // assume MVHR unit is running 100% of the time
+            for duct in mvhr_ductwork {
+                match duct.duct_type() {
+                    DuctType::Intake | DuctType::Exhaust => {
+                        // Heat loss from intake or exhaust ducts is to zone, so add
+                        // to internal gains (may be negative gains)
+                        internal_gains_ductwork_watts += duct.total_duct_heat_loss(
+                            self.temp_internal_air(),
+                            self.external_conditions.air_temp(&simulation_time),
+                        );
+                    }
+                    DuctType::Supply | DuctType::Extract => {
+                        // Heat loss from supply and extract ducts is to outside, so
+                        // subtract from internal gains
+                        internal_gains_ductwork_watts -= duct.total_duct_heat_loss(
+                            self.temp_internal_air(),
+                            self.external_conditions.air_temp(&simulation_time),
+                        );
+                    }
+                }
+            }
+        }
+        internal_gains_ductwork_watts
+    }
+
+    fn space_heat_internal_gains_for_zone(
+        &self,
+        zone: &Zone,
+        gains_internal_dhw: f64,
+        internal_gains_ductwork_per_m3: f64,
+        gains_internal_buffer_tank: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        // Initialise to dhw internal gains split proportionally to zone floor area
+        let mut gains_internal_zone =
+            (gains_internal_buffer_tank + gains_internal_dhw) * zone.area() / self.total_floor_area;
+
+        for internal_gains in self.internal_gains.values() {
+            gains_internal_zone += internal_gains.total_internal_gain_in_w(zone.area(), simtime)?;
+        }
+
+        // Add gains from ventilation fans (also calculates elec demand from fans)
+        // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
+        for mech_vent in self.mechanical_ventilations.values() {
+            gains_internal_zone += mech_vent.fans(zone.volume(), self.total_volume, None, &simtime);
+            gains_internal_zone += internal_gains_ductwork_per_m3 * zone.volume();
+        }
+
+        Ok(gains_internal_zone)
+    }
+
+    // fn heat_cool_systems_for_zone() -> (Vec<String>, Vec<String>, ...)  {
+    //     todo!()
+    // }
+
+    fn setpoints_and_convective_fractions(
+        &self,
+        h_name_list: &[&str],
+        c_name_list: &[&str],
+    ) -> (IndexMap<String, Option<f64>>,) {
+        todo!()
     }
 
     fn calc_ductwork_losses(
@@ -599,39 +713,41 @@ impl Corpus {
         // Calculate heat loss from ducts when unit is inside
         // Air temp inside ducts increases, heat lost from dwelling
         let ductwork = &self.space_heating_ductwork;
-        match ductwork {
-            None => 0.,
-            Some(_ductwork) => {
-                // MVHR duct temperatures:
-                // extract_duct_temp - indoor air temperature
-                // intake_duct_temp - outside air temperature
+        // match ductwork {
+        //     None => 0.,
+        //     Some(_ductwork) => {
+        //         // MVHR duct temperatures:
+        //         // extract_duct_temp - indoor air temperature
+        //         // intake_duct_temp - outside air temperature
+        //
+        //         let intake_duct_temp = self
+        //             .external_conditions
+        //             .air_temp(&simulation_time_iteration);
+        //
+        //         let temp_diff = internal_air_temperature - intake_duct_temp;
+        //
+        //         // Supply duct contains what the MVHR could recover
+        //         let _supply_duct_temp = intake_duct_temp + (efficiency * temp_diff);
+        //
+        //         // Exhaust duct contans the heat that couldn't be recovered
+        //         let _exhaust_duct_temp = intake_duct_temp + ((1. - efficiency) * temp_diff);
+        //
+        //         // comment out for now while migrating to 0.30
+        //         // ductwork
+        //         //     .total_duct_heat_loss(
+        //         //         Some(internal_air_temperature),
+        //         //         Some(supply_duct_temp),
+        //         //         Some(internal_air_temperature),
+        //         //         Some(intake_duct_temp),
+        //         //         Some(exhaust_duct_temp),
+        //         //         efficiency,
+        //         //     )
+        //         //     .unwrap()
+        //         0.
+        //     }
+        // }
 
-                let intake_duct_temp = self
-                    .external_conditions
-                    .air_temp(&simulation_time_iteration);
-
-                let temp_diff = internal_air_temperature - intake_duct_temp;
-
-                // Supply duct contains what the MVHR could recover
-                let _supply_duct_temp = intake_duct_temp + (efficiency * temp_diff);
-
-                // Exhaust duct contans the heat that couldn't be recovered
-                let _exhaust_duct_temp = intake_duct_temp + ((1. - efficiency) * temp_diff);
-
-                // comment out for now while migrating to 0.30
-                // ductwork
-                //     .total_duct_heat_loss(
-                //         Some(internal_air_temperature),
-                //         Some(supply_duct_temp),
-                //         Some(internal_air_temperature),
-                //         Some(intake_duct_temp),
-                //         Some(exhaust_duct_temp),
-                //         efficiency,
-                //     )
-                //     .unwrap()
-                0.
-            }
-        }
+        0. // while migrating to 0.30
     }
 
     /// Calculate space heating demand, heating system output and temperatures
@@ -1090,6 +1206,7 @@ impl Corpus {
                         hw_vol_at_tapping_points,
                         hw_duration,
                         no_events,
+                        temp_hot_water,
                         t_it,
                     );
                 }
@@ -2313,10 +2430,6 @@ fn schedule_event_from_input(
         event_type,
         schedule,
     )
-}
-
-fn ductwork_from_ventilation_input(_ventilation: &Option<Ventilation>) -> Option<Ductwork> {
-    None
 }
 
 fn ventilation_from_input<'a>(
