@@ -45,7 +45,7 @@ impl HeatBatteryServiceWaterRegular {
 
     /// Demand energy (in kWh) from the heat_battery
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -730,23 +730,23 @@ mod tests {
             None,
             None,
         )));
-        let energy_supply_connection: EnergySupplyConnection =
-            EnergySupplyConnection::new(energy_supply.clone(), "WaterHeating".into());
+        let energy_supply_connection: EnergySupplyConnection = EnergySupply::connection(energy_supply.clone(), "WaterHeating".into()).unwrap();
 
-        let heat_battery = HeatBattery::new(
+        let heat_battery = Arc::new(Mutex::new(HeatBattery::new(
             heat_battery_details,
             charge_control.into(),
             energy_supply,
             energy_supply_connection,
             simulation_time_iterator,
-        );
-        Mutex::new(heat_battery.into()).into()
+        )));
+        HeatBattery::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
+
+        heat_battery
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
         Control::SetpointTimeControl(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, None, 1.)
-                .unwrap(),
+            SetpointTimeControl::new(schedule, 0, 1., None, None, None, None, 1.).unwrap(),
         )
     }
 
@@ -764,10 +764,7 @@ mod tests {
             ctrl_with_scheduled_temps.into(),
         );
 
-        assert_eq!(
-            heat_battery_service.is_on(simulation_time_iteration),
-            true
-        );
+        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
 
         let ctrl_with_no_scheduled_temps: Control = create_setpoint_time_control(vec![None]);
 
@@ -777,10 +774,7 @@ mod tests {
             ctrl_with_no_scheduled_temps.into(),
         );
 
-        assert_eq!(
-            heat_battery_service.is_on(simulation_time_iteration),
-            false
-        );
+        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), false);
     }
 
     #[rstest]
@@ -796,13 +790,31 @@ mod tests {
                 None,
             );
 
-        assert_eq!(
-            heat_battery_service.is_on(simulation_time_iteration),
-            true
-        );
+        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
     }
 
-    // TODO test_demand_energy_for_water_regular
+    #[rstest]
+    fn test_demand_energy_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
+        let energy_demand = 10.;
+        let temp_return = 40.;
+
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                TEMP_HOT_WATER,
+                None,
+            );
+
+        let result = heat_battery_service.demand_energy(energy_demand, temp_return, simulation_time_iteration);
+
+        // TODO configure heat battery to return non 0 result
+        assert_eq!(result, 0.);
+    }
+
     // TODO test_demand_energy_service_off_for_water_regular
     // TODO test_energy_output_max_service_on_for_water_regular
 
@@ -820,8 +832,7 @@ mod tests {
             );
 
         let temp_return = 40.;
-        let result = heat_battery_service
-            .energy_output_max(temp_return, simulation_time_iteration);
+        let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
 
         assert_eq!(result, 0.);
     }
@@ -860,19 +871,27 @@ mod tests {
     // TODO test_demand_energy_for_space
 
     #[rstest]
-    fn test_demand_energy_service_off_for_space(simulation_time_iteration: SimulationTimeIteration, heat_battery: Arc<Mutex<HeatBattery>>) {
+    fn test_demand_energy_service_off_for_space(
+        simulation_time_iteration: SimulationTimeIteration,
+        heat_battery: Arc<Mutex<HeatBattery>>,
+    ) {
         let energy_demand = 10.;
         let temp_return = 40.;
         let temp_flow = 1.;
         let ctrl: Control = create_setpoint_time_control(vec![None]);
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
-        let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iteration);
+        let result = heat_battery_space.demand_energy(
+            energy_demand,
+            temp_return,
+            temp_flow,
+            simulation_time_iteration,
+        );
         assert_eq!(result, 0.);
     }
-    
+
     // TODO in Rust we don't have energy_output_max on HeatBatteryServiceSpace
-    // confirm this is expected. Following tests affected: 
+    // confirm this is expected. Following tests affected:
     // test_energy_output_max_service_on_for_space
     // test_energy_output_max_service_off_for_space
 
@@ -884,5 +903,4 @@ mod tests {
         // TODO Python tests that the service_name is added to the energy_supply_connections
         // but this is private in Rust
     }
-
 }
