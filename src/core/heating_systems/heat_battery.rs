@@ -793,8 +793,12 @@ mod tests {
         );
     }
 
+    // TODO test_demand_energy_for_water_regular
+    // TODO test_demand_energy_service_off_for_water_regular
+    // TODO test_energy_output_max_service_on_for_water_regular
+
     #[rstest]
-    fn test_energy_output_max_service_off(
+    fn test_energy_output_max_service_off_for_water_regular(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
@@ -816,7 +820,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_temp_setpnt(
+    fn test_temp_setpnt_for_space(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
@@ -845,7 +849,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_in_required_period(
+    fn test_in_required_period_for_space(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
@@ -863,8 +867,10 @@ mod tests {
         );
     }
 
+    // TODO test_demand_energy_for_space
+
     #[rstest]
-    fn test_demand_energy_service_off(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
+    fn test_demand_energy_service_off_for_space(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
         let energy_demand = 10.;
         let temp_return = 40.;
         let temp_flow = 1.;
@@ -878,6 +884,9 @@ mod tests {
         let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iterator.current_iteration());
         assert_eq!(result, 0.);
     }
-    // TODO check with team how we want to handle certain Python tests
-    // re tests - test_demand_energy (Space and Water), test_demand_energy_service_off, test_energy_output_max_service_on
+    
+    // TODO in Rust we don't have energy_output_max on HeatBatteryServiceSpace
+    // confirm this is expected. Following tests affected: 
+    // test_energy_output_max_service_on_for_space
+    // test_energy_output_max_service_off_for_space
 }
