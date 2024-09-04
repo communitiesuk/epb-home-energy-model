@@ -74,7 +74,7 @@ pub fn run_project(
 
     let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
 
-    let (
+    let RunResults {
         timestep_array,
         results_totals,
         results_end_user,
@@ -96,7 +96,7 @@ pub fn run_project(
         heat_balance_dict,
         _heat_source_wet_results_dict,
         _heat_source_wet_results_annual_dict,
-    ) = corpus.run();
+    } = corpus.run();
 
     write_core_output_file(
         &output,

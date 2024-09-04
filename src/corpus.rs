@@ -1243,7 +1243,7 @@ impl Corpus {
         // Report detailed outputs from heat source wet objects, if requested and available
         // TODO implement once detailed_output_heating_cooling instance var implemented
 
-        (
+        RunResults {
             timestep_array,
             results_totals,
             results_end_user,
@@ -1261,11 +1261,11 @@ impl Corpus {
             heat_cop_dict,
             cool_cop_dict,
             dhw_cop_dict,
-            ductwork_gains_dict,
-            heat_balance_all_dict,
-            heat_source_wet_results_dict,
-            heat_source_wet_results_annual_dict,
-        )
+            ductwork_gains: ductwork_gains_dict,
+            heat_balance_dict: heat_balance_all_dict,
+            _heat_source_wet_results_dict: heat_source_wet_results_dict,
+            _heat_source_wet_results_annual_dict: heat_source_wet_results_annual_dict,
+        }
     }
 
     fn space_heat_systems_in_required_period(
@@ -1957,29 +1957,31 @@ fn wwhr_system_from_details(
 
 pub type KeyString = ArrayString<64>;
 
-pub type RunResults = (
-    Vec<f64>,
-    IndexMap<KeyString, Vec<f64>>,
-    ResultsEndUser,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
-    Vec<KeyString>,
-    IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
-    IndexMap<KeyString, HotWaterResultMap>,
-    IndexMap<KeyString, NumberOrDivisionByZero>,
-    IndexMap<KeyString, NumberOrDivisionByZero>,
-    IndexMap<KeyString, NumberOrDivisionByZero>,
-    IndexMap<KeyString, Vec<f64>>,
-    IndexMap<KeyString, IndexMap<KeyString, IndexMap<KeyString, f64>>>,
-    IndexMap<KeyString, f64>,
-    IndexMap<KeyString, f64>,
-);
+/// A struct definition to encapsulate results from a corpus run.
+pub struct RunResults {
+    pub(crate) timestep_array: Vec<f64>,
+    pub(crate) results_totals: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) results_end_user: ResultsEndUser,
+    pub(crate) energy_import: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) energy_export: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) energy_generated_consumed: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) energy_to_storage: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) energy_from_storage: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) energy_diverted: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) betafactor: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) zone_dict: IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
+    pub(crate) zone_list: Vec<KeyString>,
+    pub(crate) hc_system_dict: IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
+    pub(crate) hot_water_dict: IndexMap<KeyString, HotWaterResultMap>,
+    pub(crate) heat_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
+    pub(crate) cool_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
+    pub(crate) dhw_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
+    pub(crate) ductwork_gains: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) heat_balance_dict:
+        IndexMap<KeyString, IndexMap<KeyString, IndexMap<KeyString, f64>>>,
+    pub(crate) _heat_source_wet_results_dict: IndexMap<KeyString, f64>,
+    pub(crate) _heat_source_wet_results_annual_dict: IndexMap<KeyString, f64>,
+}
 
 type SpaceHeatingCalculation<'a> = (
     HashMap<&'a str, f64>,
