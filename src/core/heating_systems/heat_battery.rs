@@ -848,7 +848,7 @@ mod tests {
 
     // test_service_is_on_without_control
     #[rstest]
-    fn test_water_regular_service_with_no_service_control_is_always_on(
+    fn test_service_with_no_service_control_is_always_on_for_water_regular(
         simulation_time_iteration: SimulationTimeIteration,
         battery_control_off: Control,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
@@ -868,7 +868,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_demand_energy_for_water_regular(
+    fn test_demand_energy_when_service_control_on_for_water_regular(
         simulation_time_iteration: SimulationTimeIteration,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_on: Control,
@@ -926,7 +926,33 @@ mod tests {
         assert_eq!(result, 0.);
     }
 
-    // TODO test_energy_output_max_service_on_for_water_regular
+    // In Python this is test_energy_output_max_service_on
+    #[rstest]
+    fn test_energy_output_max_when_service_control_on_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let temp_return = 40.;
+        let battery_control_on = Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![true],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![1.5, 1.6], // these values change the result
+        });
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let service_control_on = None;
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                TEMP_HOT_WATER,
+                service_control_on,
+            );
+
+        let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
+
+        assert_relative_eq!(result, 5.637774816176471);
+    }
 
     #[rstest]
     fn test_energy_output_max_service_off_for_water_regular(
