@@ -671,6 +671,7 @@ mod tests {
     use crate::input::FuelType;
     use crate::input::HeatSourceLocation;
     use crate::input::HeatSourceWetDetails;
+    use crate::simulation_time::SimulationTimeIteration;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::{Mutex, RwLock};
     use rstest::fixture;
@@ -690,6 +691,14 @@ mod tests {
     ) -> Arc<SimulationTimeIterator> {
         simulation_time.iter().into()
     }
+
+    #[fixture]
+    pub fn simulation_time_iteration(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) -> SimulationTimeIteration {
+        simulation_time_iterator.current_iteration()
+    }
+
 
     #[fixture]
     pub fn heat_battery(
@@ -737,7 +746,7 @@ mod tests {
 
     #[rstest]
     fn test_service_is_on_with_control(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         // Test when controlvent is provided and returns True
@@ -754,7 +763,7 @@ mod tests {
         );
 
         assert_eq!(
-            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            heat_battery_service.is_on(simulation_time_iteration),
             true
         );
 
@@ -769,14 +778,14 @@ mod tests {
         );
 
         assert_eq!(
-            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            heat_battery_service.is_on(simulation_time_iteration),
             false
         );
     }
 
     #[rstest]
     fn test_service_is_on_without_control(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         let heat_battery_service: HeatBatteryServiceWaterRegular =
@@ -788,7 +797,7 @@ mod tests {
             );
 
         assert_eq!(
-            heat_battery_service.is_on(simulation_time_iterator.current_iteration()),
+            heat_battery_service.is_on(simulation_time_iteration),
             true
         );
     }
@@ -799,7 +808,7 @@ mod tests {
 
     #[rstest]
     fn test_energy_output_max_service_off_for_water_regular(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         // TODO might want a fixture for this if many tests
@@ -814,14 +823,14 @@ mod tests {
 
         let temp_return = 40.;
         let result = heat_battery_service
-            .energy_output_max(temp_return, simulation_time_iterator.current_iteration());
+            .energy_output_max(temp_return, simulation_time_iteration);
 
         assert_eq!(result, 0.);
     }
 
     #[rstest]
     fn test_temp_setpnt_for_space(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         let timestep = 1.;
@@ -843,14 +852,14 @@ mod tests {
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
         assert_eq!(
-            heat_battery_space.temp_setpnt(simulation_time_iterator.current_iteration()),
+            heat_battery_space.temp_setpnt(simulation_time_iteration),
             first_scheduled_temp
         );
     }
 
     #[rstest]
     fn test_in_required_period_for_space(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         let timestep = 1.;
@@ -862,7 +871,7 @@ mod tests {
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
         assert_eq!(
-            heat_battery_space.in_required_period(simulation_time_iterator.current_iteration()),
+            heat_battery_space.in_required_period(simulation_time_iteration),
             Some(true)
         );
     }
@@ -870,7 +879,7 @@ mod tests {
     // TODO test_demand_energy_for_space
 
     #[rstest]
-    fn test_demand_energy_service_off_for_space(simulation_time_iterator: Arc<SimulationTimeIterator>, heat_battery: Arc<Mutex<HeatBattery>>) {
+    fn test_demand_energy_service_off_for_space(simulation_time_iteration: SimulationTimeIteration, heat_battery: Arc<Mutex<HeatBattery>>) {
         let energy_demand = 10.;
         let temp_return = 40.;
         let temp_flow = 1.;
@@ -881,7 +890,7 @@ mod tests {
         );
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
-        let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iterator.current_iteration());
+        let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iteration);
         assert_eq!(result, 0.);
     }
     
