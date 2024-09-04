@@ -699,7 +699,6 @@ mod tests {
         simulation_time_iterator.current_iteration()
     }
 
-
     #[fixture]
     pub fn heat_battery(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
@@ -744,17 +743,20 @@ mod tests {
         Mutex::new(heat_battery.into()).into()
     }
 
+    fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
+        Control::SetpointTimeControl(
+            SetpointTimeControl::new(schedule, 0, 1., None, None, None, None, 1.)
+                .unwrap(),
+        )
+    }
+
     #[rstest]
     fn test_service_is_on_with_control(
         simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
         // Test when controlvent is provided and returns True
-        let timestep = 1.;
-        let ctrl_with_scheduled_temps: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![Some(21.0)], 0, 1.0, None, None, None, None, timestep)
-                .unwrap(),
-        );
+        let ctrl_with_scheduled_temps: Control = create_setpoint_time_control(vec![Some(21.0)]);
 
         let heat_battery_service = HeatBatteryServiceSpace::new(
             heat_battery.clone(),
@@ -767,9 +769,7 @@ mod tests {
             true
         );
 
-        let ctrl_with_no_scheduled_temps: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![None], 0, 1.0, None, None, None, None, timestep).unwrap(),
-        );
+        let ctrl_with_no_scheduled_temps: Control = create_setpoint_time_control(vec![None]);
 
         let heat_battery_service: HeatBatteryServiceSpace = HeatBatteryServiceSpace::new(
             heat_battery,
@@ -811,8 +811,6 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
-        // TODO might want a fixture for this if many tests
-        // end up creating the same heat battery service
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
@@ -833,21 +831,8 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
-        let timestep = 1.;
         let first_scheduled_temp = Some(21.);
-        let ctrl: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(
-                vec![first_scheduled_temp],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                None,
-                timestep,
-            )
-            .unwrap(),
-        );
+        let ctrl: Control = create_setpoint_time_control(vec![first_scheduled_temp]);
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
@@ -862,11 +847,7 @@ mod tests {
         simulation_time_iteration: SimulationTimeIteration,
         heat_battery: Arc<Mutex<HeatBattery>>,
     ) {
-        let timestep = 1.;
-        let ctrl: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![Some(21.)], 0, 1.0, None, None, None, None, timestep)
-                .unwrap(),
-        );
+        let ctrl: Control = create_setpoint_time_control(vec![Some(21.)]);
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
 
@@ -883,11 +864,7 @@ mod tests {
         let energy_demand = 10.;
         let temp_return = 40.;
         let temp_flow = 1.;
-        let timestep = 1.;
-        let ctrl: Control = Control::SetpointTimeControl(
-            SetpointTimeControl::new(vec![None], 0, 1.0, None, None, None, None, timestep)
-                .unwrap(),
-        );
+        let ctrl: Control = create_setpoint_time_control(vec![None]);
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
         let result = heat_battery_space.demand_energy(energy_demand, temp_return, temp_flow, simulation_time_iteration);
@@ -898,4 +875,14 @@ mod tests {
     // confirm this is expected. Following tests affected: 
     // test_energy_output_max_service_on_for_space
     // test_energy_output_max_service_off_for_space
+
+    #[rstest]
+    fn test_create_service_connection(heat_battery: Arc<Mutex<HeatBattery>>) {
+        let service_name = "new_service";
+        let result = HeatBattery::create_service_connection(heat_battery, service_name);
+
+        // TODO Python tests that the service_name is added to the energy_supply_connections
+        // but this is private in Rust
+    }
+
 }
