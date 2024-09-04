@@ -673,6 +673,7 @@ mod tests {
     use crate::input::HeatSourceWetDetails;
     use crate::simulation_time::SimulationTimeIteration;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
+    use approx::assert_relative_eq;
     use parking_lot::{Mutex, RwLock};
     use rstest::fixture;
     use rstest::rstest;
@@ -697,6 +698,67 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) -> SimulationTimeIteration {
         simulation_time_iterator.current_iteration()
+    }
+
+    #[fixture]
+    pub fn battery_control_off() -> Control {
+        Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![false],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![0.2],
+        })
+    }
+
+    #[fixture]
+    pub fn battery_control_on() -> Control {
+        Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![true],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![0.2],
+        })
+    }
+
+    pub fn create_heat_battery(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        charge_control: Control,
+    ) -> Arc<Mutex<HeatBattery>> {
+        let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
+            energy_supply: EnergySupplyType::Electricity,
+            heat_battery_location: HeatSourceLocation::Internal,
+            electricity_circ_pump: 0.06,
+            electricity_standby: 0.0244,
+            rated_charge_power: 20.0,
+            heat_storage_capacity: 80.0,
+            max_rated_heat_output: 15.0,
+            max_rated_losses: 0.22,
+            number_of_units: 1,
+            control_charge: "hb_charge_control".into(),
+        };
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(EnergySupply::new(
+            FuelType::MainsGas,
+            1,
+            None,
+            None,
+            None,
+        )));
+
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating".into()).unwrap();
+
+        let heat_battery = Arc::new(Mutex::new(HeatBattery::new(
+            heat_battery_details,
+            charge_control.into(),
+            energy_supply,
+            energy_supply_connection,
+            simulation_time_iterator,
+        )));
+
+        HeatBattery::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
+
+        heat_battery
     }
 
     #[fixture]
@@ -730,7 +792,9 @@ mod tests {
             None,
             None,
         )));
-        let energy_supply_connection: EnergySupplyConnection = EnergySupply::connection(energy_supply.clone(), "WaterHeating".into()).unwrap();
+
+        let energy_supply_connection: EnergySupplyConnection =
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating".into()).unwrap();
 
         let heat_battery = Arc::new(Mutex::new(HeatBattery::new(
             heat_battery_details,
@@ -739,6 +803,7 @@ mod tests {
             energy_supply_connection,
             simulation_time_iterator,
         )));
+
         HeatBattery::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
 
         heat_battery
@@ -750,44 +815,53 @@ mod tests {
         )
     }
 
+    // in Python this test is called test_service_is_on_with_control
     #[rstest]
-    fn test_service_is_on_with_control(
+    fn test_service_is_on_when_service_control_is_on(
         simulation_time_iteration: SimulationTimeIteration,
-        heat_battery: Arc<Mutex<HeatBattery>>,
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         // Test when controlvent is provided and returns True
-        let ctrl_with_scheduled_temps: Control = create_setpoint_time_control(vec![Some(21.0)]);
+        let service_control_on: Control = create_setpoint_time_control(vec![Some(21.0)]);
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
 
         let heat_battery_service = HeatBatteryServiceSpace::new(
             heat_battery.clone(),
             SERVICE_NAME.into(),
-            ctrl_with_scheduled_temps.into(),
+            service_control_on.into(),
         );
 
         assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
 
-        let ctrl_with_no_scheduled_temps: Control = create_setpoint_time_control(vec![None]);
+        let service_control_off: Control = create_setpoint_time_control(vec![None]);
 
         let heat_battery_service: HeatBatteryServiceSpace = HeatBatteryServiceSpace::new(
             heat_battery,
             SERVICE_NAME.into(),
-            ctrl_with_no_scheduled_temps.into(),
+            service_control_off.into(),
         );
 
         assert_eq!(heat_battery_service.is_on(simulation_time_iteration), false);
     }
 
+    // test_service_is_on_without_control
     #[rstest]
-    fn test_service_is_on_without_control(
+    fn test_water_regular_service_with_no_service_control_is_always_on(
         simulation_time_iteration: SimulationTimeIteration,
-        heat_battery: Arc<Mutex<HeatBattery>>,
+        battery_control_off: Control,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let service_control = None;
+
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
                 TEMP_HOT_WATER,
-                None,
+                service_control,
             );
 
         assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
@@ -796,26 +870,62 @@ mod tests {
     #[rstest]
     fn test_demand_energy_for_water_regular(
         simulation_time_iteration: SimulationTimeIteration,
-        heat_battery: Arc<Mutex<HeatBattery>>,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
     ) {
         let energy_demand = 10.;
         let temp_return = 40.;
 
+        let service_control_on = None; // service is always on when there is no control
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
                 TEMP_HOT_WATER,
-                None,
+                service_control_on,
             );
 
-        let result = heat_battery_service.demand_energy(energy_demand, temp_return, simulation_time_iteration);
+        let result = heat_battery_service.demand_energy(
+            energy_demand,
+            temp_return,
+            simulation_time_iteration,
+        );
 
-        // TODO configure heat battery to return non 0 result
+        assert_relative_eq!(result, 4.358566028225806);
+    }
+
+    // In Python this is test_demand_energy_service_off
+    #[rstest]
+    fn test_demand_energy_returns_zero_when_service_control_is_off_for_water_regular(
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) {
+        let energy_demand = 10.;
+        let temp_return = 40.;
+
+        let service_control_off = create_setpoint_time_control(vec![None]);
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                TEMP_HOT_WATER,
+                Some(service_control_off.into()),
+            );
+
+        let result = heat_battery_service.demand_energy(
+            energy_demand,
+            temp_return,
+            simulation_time_iteration,
+        );
+
         assert_eq!(result, 0.);
     }
 
-    // TODO test_demand_energy_service_off_for_water_regular
     // TODO test_energy_output_max_service_on_for_water_regular
 
     #[rstest]
