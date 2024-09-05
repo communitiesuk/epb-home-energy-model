@@ -405,6 +405,7 @@ impl HeatBattery {
             .iter()
             .map(|row| row[1])
             .collect::<Vec<_>>();
+
         interp(&x, &y, charge_level) * self.max_rated_heat_output
     }
 
@@ -1032,5 +1033,14 @@ mod tests {
         assert_relative_eq!(heat_battery.lock().electric_charge(10.), 20.0);
     }
 
-    
+    #[ignore = "there is currently a difference between our interp function and numpy's interp function"]
+    #[rstest]
+    fn test_lab_test_rated_output(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_off: Control,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+
+        assert_relative_eq!(heat_battery.lock().lab_test_rated_output(5.), 15.);
+    }
 }
