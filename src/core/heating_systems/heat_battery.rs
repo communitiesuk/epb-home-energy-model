@@ -3,8 +3,8 @@ use crate::core::controls::time_control::{per_control, Control, ControlBehaviour
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::statistics::np_interp;
 use anyhow::bail;
-use interp::interp;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -406,7 +406,7 @@ impl HeatBattery {
             .map(|row| row[1])
             .collect::<Vec<_>>();
 
-        interp(&x, &y, charge_level) * self.max_rated_heat_output
+        np_interp(charge_level, &x, &y) * self.max_rated_heat_output
     }
 
     fn lab_test_losses(&self, charge_level: f64) -> f64 {
@@ -418,7 +418,7 @@ impl HeatBattery {
             .iter()
             .map(|row| row[1])
             .collect::<Vec<_>>();
-        interp(&x, &y, charge_level) * self.max_rated_losses
+        np_interp(charge_level, &x, &y) * self.max_rated_losses
     }
 
     fn first_call(&mut self) {
@@ -1033,7 +1033,6 @@ mod tests {
         assert_relative_eq!(heat_battery.lock().electric_charge(10.), 20.0);
     }
 
-    #[ignore = "there is currently a difference between our interp function and numpy's interp function"]
     #[rstest]
     fn test_lab_test_rated_output(
         simulation_time_iterator: Arc<SimulationTimeIterator>,

@@ -20,10 +20,10 @@ use crate::input::{
     HeatSourceWetDetails, HotWaterSourceDetails, TestLetter,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use derivative::Derivative;
-use interp::interp;
 use itertools::{Either, Itertools};
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
@@ -180,22 +180,19 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 }
             }
 
-            let capacity = interp(
-                air_flow_rates_ordered,
+            let capacity = np_interp(
+            throughput_exhaust_air, air_flow_rates_ordered,
                 &capacity_list,
-                throughput_exhaust_air,
             );
-            let cop = interp(air_flow_rates_ordered, &cop_list, throughput_exhaust_air);
-            let degradation_coeff = interp(
+            let cop = np_interp(throughput_exhaust_air, air_flow_rates_ordered, &cop_list);
+            let degradation_coeff = np_interp(throughput_exhaust_air,
                 air_flow_rates_ordered,
-                &degradation_coeff_list,
-                throughput_exhaust_air,
+                &degradation_coeff_list
             );
             let ext_air_ratio =
-                (source_type == HeatPumpSourceType::ExhaustAirMixed).then_some(interp(
-                    air_flow_rates_ordered,
-                    &ext_air_ratio_list,
-                    throughput_exhaust_air,
+                (source_type == HeatPumpSourceType::ExhaustAirMixed).then_some(np_interp(
+                    throughput_exhaust_air, air_flow_rates_ordered,
+                    &ext_air_ratio_list
                 ));
 
             Ok(HeatPumpTestDatum {
@@ -727,14 +724,14 @@ impl HeatPumpTestData {
         }
 
         let flow_temp = kelvin_to_celsius(flow_temp);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.average_deg_coeff,
-            flow_temp,
         )
     }
 
@@ -748,14 +745,14 @@ impl HeatPumpTestData {
         }
 
         let flow_temp = kelvin_to_celsius(flow_temp);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.average_cap,
-            flow_temp,
         )
     }
 
@@ -769,14 +766,14 @@ impl HeatPumpTestData {
         }
 
         let flow_temp = kelvin_to_celsius(flow_temp);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.temp_spread_test_conditions,
-            flow_temp,
         )
     }
 
@@ -818,14 +815,14 @@ impl HeatPumpTestData {
             .collect::<Vec<_>>();
 
         let flow_temp = kelvin_to_celsius(flow_temp);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             data_list,
-            flow_temp,
         )
     }
 
@@ -884,14 +881,14 @@ impl HeatPumpTestData {
             })
             .collect::<Vec<_>>();
         let flow_temp = kelvin_to_celsius(flow_temp);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &lr_op_cond_list,
-            flow_temp,
         )
     }
 
@@ -965,12 +962,12 @@ impl HeatPumpTestData {
             .iter()
             .map(|temp| temp.0)
             .collect::<Vec<_>>();
-        let lr_below = interp(dsgn_temps_for_interp, &load_ratios_below, flow_temp);
-        let lr_above = interp(dsgn_temps_for_interp, &load_ratios_above, flow_temp);
-        let eff_below = interp(dsgn_temps_for_interp, &efficiencies_below, flow_temp);
-        let eff_above = interp(dsgn_temps_for_interp, &efficiencies_above, flow_temp);
-        let deg_below = interp(dsgn_temps_for_interp, &degradation_coeffs_below, flow_temp);
-        let deg_above = interp(dsgn_temps_for_interp, &degradation_coeffs_above, flow_temp);
+        let lr_below = np_interp(flow_temp, dsgn_temps_for_interp, &load_ratios_below);
+        let lr_above = np_interp(flow_temp, dsgn_temps_for_interp, &load_ratios_above);
+        let eff_below = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_below);
+        let eff_above = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_above);
+        let deg_below = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_below);
+        let deg_above = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_above);
 
         (
             lr_below, lr_above, eff_below, eff_above, deg_below, deg_above,
@@ -1021,14 +1018,14 @@ impl HeatPumpTestData {
 
         // Interpolate between the values found for the different design flow temperatures
         let flow_temp = kelvin_to_celsius(temp_output);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &cop_op_cond,
-            flow_temp,
         )
     }
 
@@ -1090,14 +1087,14 @@ impl HeatPumpTestData {
 
         // Interpolate between the values found for the different design flow temperatures
         let flow_temp = kelvin_to_celsius(temp_output);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &therm_cap_op_cond,
-            flow_temp,
         )
     }
 
@@ -1136,14 +1133,14 @@ impl HeatPumpTestData {
             .collect::<Vec<_>>();
 
         let flow_temp = kelvin_to_celsius(temp_output);
-        interp(
+        np_interp(
+            flow_temp,
             &self
                 .dsgn_flow_temps
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &temp_spread_correction_list,
-            flow_temp,
         )
     }
 }

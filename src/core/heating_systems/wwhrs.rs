@@ -1,5 +1,4 @@
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use interp::interp;
+use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
 
 /// This module provides types to model waste water heat recovery systems of different kinds.
 
@@ -91,7 +90,7 @@ impl WWHRSInstantaneousSystemB {
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
-        interp(&self.flow_rates, &self.efficiencies, flowrate)
+        np_interp(flowrate, &self.flow_rates, &self.efficiencies)
     }
 }
 
@@ -154,7 +153,7 @@ impl WWHRSInstantaneousSystemC {
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
-        interp(&self.flow_rates, &self.efficiencies, flowrate)
+        np_interp(flowrate, &self.flow_rates, &self.efficiencies)
     }
 
     pub fn temperature(&self) -> f64 {
@@ -222,7 +221,7 @@ impl WWHRSInstantaneousSystemA {
     }
 
     fn get_efficiency_from_flowrate(&self, flowrate: f64) -> f64 {
-        interp(&self.flow_rates, &self.efficiencies, flowrate)
+        np_interp(flowrate, &self.flow_rates, &self.efficiencies)
     }
 
     pub fn temperature(&self) -> f64 {

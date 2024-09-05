@@ -9,10 +9,10 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, HotWaterSourceDetails};
 use crate::input::{EnergySupplyType, HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
+use crate::statistics::np_interp;
 use anyhow::bail;
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
-use interp::interp;
 use parking_lot::RwLock;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -870,7 +870,7 @@ impl Boiler {
                 let x_axis = [0.3, 1.0];
                 let y_axis = [self.power_part_load, self.power_full_load];
 
-                let flue_fan_el = interp(&x_axis, &y_axis, modulation_ratio);
+                let flue_fan_el = np_interp(modulation_ratio, &x_axis, &y_axis);
                 let elec_energy_flue_fan = service_data.time_running * flue_fan_el;
                 energy_aux += elec_energy_flue_fan;
             }

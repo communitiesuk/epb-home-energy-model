@@ -1,5 +1,6 @@
+use interp::interp;
 /// A simple statistics module with some utility functions such as calculation of percentiles.
-use statrs::statistics::{Data, OrderStatistics};
+use statrs::statistics::{Data, OrderStatistics, Statistics};
 
 #[allow(dead_code)]
 pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
@@ -9,10 +10,25 @@ pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
     data.percentile(percentile)
 }
 
+/// This function matches the behaviour Numpy interp
+/// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
+pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
+    if input > x.max() {
+        return y.max();
+    }
+
+    if input < x.min() {
+        return y.min();
+    }
+
+    interp(&x, &y, input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::{assert_relative_eq, assert_ulps_eq};
+    use interp::interp;
     use rstest::*;
 
     #[fixture]
@@ -35,5 +51,50 @@ mod tests {
     #[rstest]
     fn test_percentile_with_other_cases(other_numbers: [f64; 10]) {
         assert_ulps_eq!(percentile(&other_numbers, 80), 16.88);
+    }
+
+    #[rstest]
+    #[case(0.)]
+    #[case(1.)]
+    #[case(1.5)]
+    #[case(5.)]
+    fn test_np_interp_given_number_in_expected_range(#[case] input: f64) {
+        let x = [0., 1., 2., 3., 4., 5.];
+        let y = [0., 10., 20., 30., 40., 50.];
+
+        let actual = np_interp(input, &x, &y);
+        let expected = interp(&x, &y, input);
+
+        assert_eq!(actual, expected)
+    }
+
+    #[rstest]
+    #[case(5.1, 50.)]
+    #[case(10., 50.)]
+    fn test_np_interp_given_number_above_expected_range_returns_maximum_y(
+        #[case] input: f64,
+        #[case] expected: f64,
+    ) {
+        let x = [0., 1., 2., 3., 4., 5.];
+        let y = [0., 10., 20., 30., 40., 50.];
+
+        let actual = np_interp(input, &x, &y);
+
+        assert_eq!(actual, expected)
+    }
+
+    #[rstest]
+    #[case(-0.1, 0.)]
+    #[case(-25., 0.)]
+    fn test_np_interp_given_number_below_expected_range_returns_minimum_y(
+        #[case] input: f64,
+        #[case] expected: f64,
+    ) {
+        let x = [0., 1., 2., 3., 4., 5.];
+        let y = [0., 10., 20., 30., 40., 50.];
+
+        let actual = np_interp(input, &x, &y);
+
+        assert_eq!(actual, expected)
     }
 }
