@@ -8,7 +8,7 @@ use crate::core::material_properties::AIR;
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
-use crate::corpus::CompletedVentilationLeaks;
+use crate::corpus::{CompletedVentilationLeaks, ReportingFlag};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
@@ -1533,9 +1533,9 @@ impl InfiltrationVentilation {
     /// The loop begins with a small interval to start with and if no solution is
     /// found or the boundary is too small for to cause a sign change then a wider
     /// interval is used until a solution is found.
-    fn calculate_internal_reference_pressure(
+    pub(crate) fn calculate_internal_reference_pressure(
         &self,
-        intial_p_z_ref_guess: f64,
+        initial_p_z_ref_guess: f64,
         temp_int_air: f64,
         r_w_arg: Option<f64>,
         simtime: &SimulationTimeIteration,
@@ -1548,8 +1548,8 @@ impl InfiltrationVentilation {
             let result = root_scalar(
                 func,
                 [
-                    intial_p_z_ref_guess - interval_expansion,
-                    intial_p_z_ref_guess + interval_expansion,
+                    initial_p_z_ref_guess - interval_expansion,
+                    initial_p_z_ref_guess + interval_expansion,
                 ],
                 (temp_int_air, r_w_arg),
                 "brentq",
@@ -1570,7 +1570,7 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         temp_int_air: f64,
         r_w_arg_min_max: f64,
-        // flag = None,
+        flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
         let (qm_in, qm_out, _) = self
@@ -1578,28 +1578,29 @@ impl InfiltrationVentilation {
                 p_z_ref,
                 temp_int_air,
                 r_w_arg_min_max,
-                // flag,
+                flag,
                 simtime,
             );
         qm_in + qm_out
     }
 
     /// Calculate incoming air flow, in m3/hr, at specified conditions
-    fn incoming_air_flow(
-        self,
+    pub(crate) fn incoming_air_flow(
+        &self,
         p_z_ref: f64,
         temp_int_air: f64,
         r_w_arg_min_max: f64,
-        // reporting_flag = None,
-        report_effective_flow_rate: bool,
+        reporting_flag: Option<ReportingFlag>,
+        report_effective_flow_rate: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
+        let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
         let (mut qm_in, _, qm_effective_flow_rate) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 p_z_ref,
                 temp_int_air,
                 r_w_arg_min_max,
-                //reporting_flag,
+                reporting_flag,
                 simtime,
             );
 
@@ -1639,7 +1640,7 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         temp_int_air: f64,
         r_w_arg_min_max: f64,
-        // reporting_flag: bool,
+        _reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> (f64, f64, f64) {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
@@ -2688,6 +2689,7 @@ mod tests {
                 p_z_ref,
                 temp_int_air,
                 r_w_arg_min_max,
+                None,
                 simulation_time_iterator.current_iteration()
             ),
             -30430.689049309116
@@ -2708,7 +2710,8 @@ mod tests {
                 p_z_ref,
                 temp_int_air,
                 r_w_arg_min_max,
-                false,
+                None,
+                Some(false),
                 simulation_time_iterator.current_iteration()
             ),
             4.973297477194108

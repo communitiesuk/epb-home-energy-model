@@ -78,6 +78,8 @@ use arrayvec::ArrayString;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_json::Value;
 use std::borrow::Cow;
@@ -113,7 +115,7 @@ pub struct Corpus {
     pub wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
     pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
-    pub ventilation: Option<Arc<Mutex<VentilationElement>>>,
+    pub ventilation: Arc<InfiltrationVentilation>,
     mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
     pub space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
     pub zones: Arc<IndexMap<String, Zone>>,
@@ -134,6 +136,8 @@ pub struct Corpus {
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
+    initial_loop: bool,
+    internal_pressure_window: HashMap<ReportingFlag, f64>,
 }
 
 impl Corpus {
@@ -423,7 +427,7 @@ impl Corpus {
             wwhrs,
             event_schedules,
             domestic_hot_water_demand,
-            ventilation,
+            ventilation: infiltration_ventilation,
             mechanical_ventilations,
             space_heating_ductwork,
             zones,
@@ -444,6 +448,8 @@ impl Corpus {
             energy_supply_conn_names_for_hot_water_source,
             energy_supply_conn_names_for_heat_systems,
             timestep_end_calcs,
+            initial_loop: false,
+            internal_pressure_window: Default::default(),
         })
     }
 
@@ -686,16 +692,177 @@ impl Corpus {
         Ok(gains_internal_zone)
     }
 
-    // fn heat_cool_systems_for_zone() -> (Vec<String>, Vec<String>, ...)  {
-    //     todo!()
-    // }
+    /// Look up relevant heating and cooling systems for the specified zone
+    fn heat_cool_systems_for_zone(
+        &self,
+        z_name: &str,
+        simtime: SimulationTimeIteration,
+    ) -> (
+        Vec<String>,
+        Vec<String>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+    ) {
+        // TODO (from Python) For now, the existing single system inputs are each added to a
+        //      list. This will eventually need to handle a list being specified
+        //      in the inputs.
+        let h_name_list = vec![self.heat_system_name_for_zone[z_name].clone()];
+        let c_name_list = vec![self.cool_system_name_for_zone[z_name].clone()];
+
+        let (
+            temp_setpnt_heat_system,
+            temp_setpnt_cool_system,
+            frac_convective_heat_system,
+            frac_convective_cool_system,
+        ) = self.setpoints_and_convective_fractions(
+            h_name_list.as_slice(),
+            c_name_list.as_slice(),
+            simtime,
+        );
+
+        // Sort heating and cooling systems by setpoint (highest first for
+        // heating, lowest first for cooling)
+        // TODO (from Python) In the event of two systems having the same setpoint, make
+        //      sure the one listed first by the user takes priority
+        let h_name_list_sorted: Vec<String> = temp_setpnt_heat_system
+            .iter()
+            .sorted_by(|a, b| OrderedFloat(*a.1).cmp(&OrderedFloat(*b.1)))
+            .rev()
+            .map(|x| x.0.to_owned())
+            .collect();
+        let c_name_list_sorted: Vec<String> = temp_setpnt_cool_system
+            .iter()
+            .sorted_by(|a, b| OrderedFloat(*a.1).cmp(&OrderedFloat(*b.1)))
+            .map(|x| x.0.to_owned())
+            .collect();
+
+        (
+            h_name_list_sorted,
+            c_name_list_sorted,
+            temp_setpnt_heat_system,
+            temp_setpnt_cool_system,
+            frac_convective_heat_system,
+            frac_convective_cool_system,
+        )
+    }
 
     fn setpoints_and_convective_fractions(
         &self,
-        h_name_list: &[&str],
-        c_name_list: &[&str],
-    ) -> (IndexMap<String, Option<f64>>,) {
-        todo!()
+        h_name_list: &[String],
+        c_name_list: &[String],
+        simtime: SimulationTimeIteration,
+    ) -> (
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+    ) {
+        let mut frac_convective_heat: IndexMap<String, f64> = Default::default();
+        let mut frac_convective_cool: IndexMap<String, f64> = Default::default();
+        let mut temp_setpnt_heat: IndexMap<String, f64> = Default::default();
+        let mut temp_setpnt_cool: IndexMap<String, f64> = Default::default();
+
+        for h_name in h_name_list {
+            match h_name.as_str() {
+                h_name @ "" => {
+                    frac_convective_heat.insert((*h_name).to_owned(), 1.0);
+                    temp_setpnt_heat.insert((*h_name).to_owned(), temp_setpnt_heat_none());
+                }
+                h_name => {
+                    let space_heat_system = self.space_heat_systems.get(h_name).unwrap().lock();
+                    frac_convective_heat
+                        .insert((*h_name).to_owned(), space_heat_system.frac_convective());
+                    temp_setpnt_heat.insert(
+                        (*h_name).to_owned(),
+                        space_heat_system
+                            .temp_setpnt(simtime)
+                            .unwrap_or_else(temp_setpnt_heat_none),
+                    );
+                }
+            }
+        }
+
+        for c_name in c_name_list {
+            match c_name.as_str() {
+                c_name @ "" => {
+                    frac_convective_cool.insert((*c_name).to_owned(), 1.0);
+                    temp_setpnt_cool.insert((*c_name).to_owned(), temp_setpnt_cool_none());
+                }
+                c_name => {
+                    let space_cool_system = self.space_cool_systems.get(c_name).unwrap();
+                    frac_convective_cool
+                        .insert((*c_name).to_owned(), space_cool_system.frac_convective());
+                    temp_setpnt_cool.insert(
+                        (*c_name).to_owned(),
+                        space_cool_system
+                            .temp_setpnt(&simtime)
+                            .unwrap_or_else(temp_setpnt_cool_none),
+                    );
+                }
+            }
+        }
+
+        (
+            temp_setpnt_heat,
+            temp_setpnt_cool,
+            frac_convective_heat,
+            frac_convective_cool,
+        )
+    }
+
+    fn gains_heat_cool(
+        &self,
+        delta_t_h: f64,
+        hc_output_convective: &IndexMap<String, f64>,
+        hc_output_radiative: &IndexMap<String, f64>,
+    ) -> (f64, f64) {
+        let gains_heat_cool_convective =
+            hc_output_convective.values().sum::<f64>() * WATTS_PER_KILOWATT as f64 / delta_t_h;
+        let gains_heat_cool_radiative =
+            hc_output_radiative.values().sum::<f64>() * WATTS_PER_KILOWATT as f64 / delta_t_h;
+
+        (gains_heat_cool_convective, gains_heat_cool_radiative)
+    }
+
+    /// Calculate the incoming air changes per hour
+    /// initial_p_z_ref_guess is used for calculation in first timestep.
+    /// Later timesteps use the previous timesteps p_z_ref of max and min ACH ,respective to calc.
+    fn calc_air_changes_per_hour(
+        &self,
+        temp_int_air: f64,
+        r_w_arg: f64,
+        initial_p_z_ref_guess: f64,
+        reporting_flag: ReportingFlag,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        let current_internal_pressure_window = if self.initial_loop {
+            self.ventilation.calculate_internal_reference_pressure(
+                initial_p_z_ref_guess,
+                temp_int_air,
+                Some(r_w_arg),
+                &simtime,
+            )
+        } else {
+            self.ventilation.calculate_internal_reference_pressure(
+                self.internal_pressure_window[&reporting_flag],
+                temp_int_air,
+                Some(r_w_arg),
+                &simtime,
+            )
+        };
+
+        let incoming_air_flow = self.ventilation.incoming_air_flow(
+            current_internal_pressure_window,
+            temp_int_air,
+            r_w_arg,
+            Some(reporting_flag),
+            Some(true),
+            simtime,
+        );
+
+        incoming_air_flow / self.total_volume
     }
 
     fn calc_ductwork_losses(
@@ -767,24 +934,25 @@ impl Corpus {
         // Calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
 
-        let (ductwork_losses, ductwork_losses_per_m3) = self
-            .ventilation
-            .as_ref()
-            .map(|ventilation| match &*ventilation.lock() {
-                VentilationElement::Mvhr(mvhr) => {
-                    let ductwork_losses = self.calc_ductwork_losses(
-                        0,
-                        delta_t_h,
-                        mvhr.efficiency(),
-                        simulation_time_iteration,
-                    );
-                    let ductwork_losses_per_m3 = ductwork_losses / self.total_volume;
-
-                    (ductwork_losses, ductwork_losses_per_m3)
-                }
-                _ => Default::default(),
-            })
-            .unwrap_or_default();
+        let ductwork_losses: f64 = Default::default();
+        // self
+        // .ventilation
+        // .as_ref()
+        // .map(|ventilation| match &*ventilation.lock() {
+        //     VentilationElement::Mvhr(mvhr) => {
+        //         let ductwork_losses = self.calc_ductwork_losses(
+        //             0,
+        //             delta_t_h,
+        //             mvhr.efficiency(),
+        //             simulation_time_iteration,
+        //         );
+        //         let ductwork_losses_per_m3 = ductwork_losses / self.total_volume;
+        //
+        //         (ductwork_losses, ductwork_losses_per_m3)
+        //     }
+        //     _ => Default::default(),
+        // })
+        // .unwrap_or_default();
 
         // Calculate internal and and solar gains for each zone
         let mut gains_internal_zone: HashMap<&str, f64> = Default::default();
@@ -804,14 +972,13 @@ impl Corpus {
             // Add gains from ventilation fans (also calculates elec demand from fans)
             // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
             match &self.ventilation {
-                None => {}
-                Some(ventilation) => {
-                    let mut ventilation = ventilation.lock();
-                    if !matches!(*ventilation, VentilationElement::Natural(_)) {
-                        *gains_internal_zone_entry +=
-                            ventilation.fans(zone.volume(), simulation_time_iteration.index, None)
-                                + ductwork_losses_per_m3 * zone.volume();
-                    }
+                _ventilation => {
+                    // let mut ventilation = ventilation.lock();
+                    // if !matches!(*ventilation, VentilationElement::Natural(_)) {
+                    //     *gains_internal_zone_entry +=
+                    //         ventilation.fans(zone.volume(), simulation_time_iteration.index, None)
+                    //             + ductwork_losses_per_m3 * zone.volume();
+                    // }
                 }
             }
             gains_solar_zone.insert(z_name, zone.gains_solar(simulation_time_iteration));
@@ -874,17 +1041,16 @@ impl Corpus {
             for (z_name, zone) in self.zones.iter() {
                 // Add additional gains from ventilation fans
                 match &self.ventilation {
-                    None => {}
-                    Some(ventilation) => {
-                        let mut ventilation = ventilation.lock();
-                        if !matches!(*ventilation, VentilationElement::Natural(_)) {
-                            *gains_internal_zone.get_mut(z_name.as_str()).unwrap() += ventilation
-                                .fans(
-                                    zone.volume(),
-                                    simulation_time_iteration.index,
-                                    Some(throughput_factor - 1.0),
-                                );
-                        }
+                    _ventilation => {
+                        // let mut ventilation = ventilation.lock();
+                        // if !matches!(*ventilation, VentilationElement::Natural(_)) {
+                        //     *gains_internal_zone.get_mut(z_name.as_str()).unwrap() += ventilation
+                        //         .fans(
+                        //             zone.volume(),
+                        //             simulation_time_iteration.index,
+                        //             Some(throughput_factor - 1.0),
+                        //         );
+                        // }
                     }
                 }
             }
@@ -2260,6 +2426,12 @@ fn wwhr_system_from_details(
             system.utilisation_factor,
         )),
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ReportingFlag {
+    Min,
+    Max,
 }
 
 fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume: f64) -> f64 {
