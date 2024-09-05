@@ -722,7 +722,7 @@ mod tests {
 
     pub fn create_heat_battery(
         simulation_time_iterator: Arc<SimulationTimeIterator>,
-        charge_control: Control,
+        control: Control,
     ) -> Arc<Mutex<HeatBattery>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
             energy_supply: EnergySupplyType::Electricity,
@@ -750,7 +750,7 @@ mod tests {
 
         let heat_battery = Arc::new(Mutex::new(HeatBattery::new(
             heat_battery_details,
-            charge_control.into(),
+            control.into(),
             energy_supply,
             energy_supply_connection,
             simulation_time_iterator,
@@ -1014,4 +1014,23 @@ mod tests {
         let result = heat_battery.lock().convert_to_energy(power, timestep);
         assert_relative_eq!(result, 2.5);
     }
+
+    #[rstest]
+    fn test_electric_charge(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_off: Control,
+        battery_control_on: Control,
+    ) {
+        // electric charge should be 0 when battery control is off
+        let heat_battery =
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_off);
+        assert_relative_eq!(heat_battery.lock().electric_charge(3600.), 0.0);
+
+        // electric charge should be calculated when battery control is on
+        let heat_battery =
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
+        assert_relative_eq!(heat_battery.lock().electric_charge(10.), 20.0);
+    }
+
+    
 }
