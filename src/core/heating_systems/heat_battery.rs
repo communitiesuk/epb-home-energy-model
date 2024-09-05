@@ -684,7 +684,7 @@ mod tests {
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 8., 1.)
+        SimulationTime::new(0., 2., 1.)
     }
 
     #[fixture]
@@ -740,7 +740,7 @@ mod tests {
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::MainsGas,
-            1,
+            simulation_time_iterator.total_steps(),
             None,
             None,
             None,
@@ -1041,5 +1041,24 @@ mod tests {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
 
         assert_relative_eq!(heat_battery.lock().lab_test_rated_output(5.), 15.);
+    }
+
+    #[rstest]
+    fn test_first_call(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+        simulation_time: SimulationTime,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            heat_battery.lock().first_call();
+
+            assert_eq!(heat_battery.lock().flag_first_call, false);
+            assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+            assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 4.358566028225806);
+            assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.031277812499999995);
+
+            heat_battery.lock().timestep_end(t_idx);
+        }
     }
 }
