@@ -81,6 +81,7 @@ use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use serde_json::value::Index;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -926,10 +927,10 @@ impl Corpus {
         let mut operative_temp: HashMap<&str, f64> = Default::default();
         let mut space_heat_demand_zone: HashMap<&str, f64> = Default::default();
         let mut space_cool_demand_zone: HashMap<&str, f64> = Default::default();
-        let mut space_heat_demand_system: HashMap<&str, f64> = Default::default();
-        let mut space_cool_demand_system: HashMap<&str, f64> = Default::default();
-        let mut space_heat_provided_system: HashMap<&str, f64> = Default::default();
-        let mut space_cool_provided_system: HashMap<&str, f64> = Default::default();
+        let mut space_heat_demand_system: HashMap<String, f64> = Default::default();
+        let mut space_cool_demand_system: HashMap<String, f64> = Default::default();
+        let mut space_heat_provided_system: HashMap<String, f64> = Default::default();
+        let mut space_cool_provided_system: HashMap<String, f64> = Default::default();
         let mut heat_balance_map: HashMap<&str, Option<HeatBalance>> = Default::default();
 
         let avg_air_supply_temp = self.ventilation.temp_supply(simtime);
@@ -1272,23 +1273,118 @@ impl Corpus {
                     space_heat_provided_zone_system[c_name] * (1.0 - frac_convective_heat),
                 );
             }
+            // Calculate unmet demand
+            self.unmet_demand(
+                delta_t_h,
+                temp_ext_air,
+                z_name,
+                zone,
+                gains_internal_zone[z_name],
+                gains_solar_zone[z_name],
+                &temp_setpnt_heat_zone_system[z_name],
+                &temp_setpnt_cool_zone_system[z_name],
+                &frac_convective_heat_zone_system[z_name],
+                &frac_convective_cool_zone_system[z_name],
+                &h_name_list_sorted_zone[z_name],
+                &c_name_list_sorted_zone[z_name],
+                space_heat_demand_zone[z_name],
+                space_cool_demand_zone[z_name],
+                &hc_output_convective,
+                &hc_output_radiative,
+                ach_windows_open,
+                ach_target,
+                avg_air_supply_temp,
+            );
+
+            // Sum heating gains (+ve) and cooling gains (-ve) and convert from kWh to W
+            let hc_output_convective_total = hc_output_convective.values().sum::<f64>();
+            let hc_output_radiative_total = hc_output_radiative.values().sum::<f64>();
+
+            let gains_heat_cool = (hc_output_convective_total + hc_output_radiative_total)
+                * WATTS_PER_KILOWATT as f64
+                / delta_t_h;
+            let frac_convective = if gains_heat_cool != 0.0 {
+                hc_output_convective_total
+                    / (hc_output_convective_total + hc_output_radiative_total)
+            } else {
+                1.0
+            };
+
+            // Calculate final temperatures achieved
+            heat_balance_map.insert(
+                z_name,
+                zone.update_temperatures(
+                    delta_t,
+                    temp_ext_air,
+                    gains_internal_zone[z_name],
+                    gains_solar_zone[z_name],
+                    gains_heat_cool,
+                    frac_convective,
+                    ach_cooling,
+                    avg_air_supply_temp,
+                    simtime,
+                ),
+            );
+            internal_air_temp.insert(z_name, zone.temp_internal_air());
+            operative_temp.insert(z_name, zone.temp_operative());
+
+            for h_name in h_name_list_sorted_zone[z_name].iter() {
+                *space_heat_demand_system
+                    .entry(h_name.to_owned())
+                    .or_insert(0.0) += space_heat_demand_zone_system[h_name.as_str()];
+                *space_heat_provided_system
+                    .entry(h_name.to_owned())
+                    .or_insert(0.0) += space_heat_provided_zone_system[h_name.as_str()];
+            }
+            for c_name in c_name_list_sorted_zone[z_name].iter() {
+                *space_cool_demand_system
+                    .entry(c_name.to_owned())
+                    .or_insert(0.0) += space_cool_demand_zone_system[c_name.as_str()];
+                *space_cool_provided_system
+                    .entry(c_name.to_owned())
+                    .or_insert(0.0) += space_cool_provided_zone_system[c_name.as_str()];
+            }
         }
 
-        todo!()
+        Ok(SpaceHeatingCalculation {
+            gains_internal_zone,
+            gains_solar_zone,
+            operative_temp,
+            internal_air_temp,
+            space_heat_demand_zone,
+            space_cool_demand_zone,
+            space_heat_demand_system,
+            space_cool_demand_system,
+            space_heat_provided_system,
+            space_cool_provided_system,
+            internal_gains_ductwork,
+            heat_balance_map,
+        })
+    }
 
-        // Ok((
-        //     gains_internal_zone,
-        //     gains_solar_zone,
-        //     operative_temp,
-        //     internal_air_temp,
-        //     space_heat_demand_zone,
-        //     space_cool_demand_zone,
-        //     space_heat_demand_system,
-        //     space_cool_demand_system,
-        //     space_heat_provided_system,
-        //     space_cool_provided_system,
-        //     heat_balance_map,
-        // ))
+    fn unmet_demand(
+        &self,
+        delta_t_h: f64,
+        temp_ext_air: f64,
+        z_name: &str,
+        zone: &Zone,
+        gains_internal: f64,
+        gains_solar: f64,
+        temp_setpnt_heat_system: &IndexMap<String, f64>,
+        temp_setpnt_cool_system: &IndexMap<String, f64>,
+        frac_convective_heat_system: &IndexMap<String, f64>,
+        frac_convective_cool_system: &IndexMap<String, f64>,
+        h_name_list_sorted: &[String],
+        c_name_list_sorted: &[String],
+        space_heat_demand: f64,
+        space_cool_demand: f64,
+        hc_output_convective: &IndexMap<&str, f64>,
+        hc_output_radiative: &IndexMap<&str, f64>,
+        ach_max: f64,
+        ach_target: f64,
+        avg_air_supply_temp: f64,
+    ) {
+        todo!()
     }
 
     pub fn run(&mut self) -> RunResults {
@@ -2551,19 +2647,20 @@ pub struct RunResults {
     pub(crate) _heat_source_wet_results_annual_dict: IndexMap<KeyString, f64>,
 }
 
-type SpaceHeatingCalculation<'a> = (
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<String, f64>,
-    HashMap<String, f64>,
-    HashMap<String, f64>,
-    HashMap<String, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, f64>,
-    HashMap<&'a str, Option<HeatBalance>>,
-);
+struct SpaceHeatingCalculation<'a> {
+    gains_internal_zone: HashMap<&'a str, f64>,
+    gains_solar_zone: HashMap<&'a str, f64>,
+    operative_temp: HashMap<&'a str, f64>,
+    internal_air_temp: HashMap<&'a str, f64>,
+    space_heat_demand_zone: HashMap<&'a str, f64>,
+    space_cool_demand_zone: HashMap<&'a str, f64>,
+    space_heat_demand_system: HashMap<String, f64>,
+    space_cool_demand_system: HashMap<String, f64>,
+    space_heat_provided_system: HashMap<String, f64>,
+    space_cool_provided_system: HashMap<String, f64>,
+    internal_gains_ductwork: f64,
+    heat_balance_map: HashMap<&'a str, Option<HeatBalance>>,
+}
 
 fn get_cold_water_source_ref_for_type(
     source_type: ColdWaterSourceType,
