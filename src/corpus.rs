@@ -1,4 +1,3 @@
-use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     Control, ControlBehaviour, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl,
@@ -81,7 +80,6 @@ use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use serde_json::value::Index;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -1294,7 +1292,8 @@ impl Corpus {
                 ach_windows_open,
                 ach_target,
                 avg_air_supply_temp,
-            );
+                simtime,
+            )?;
 
             // Sum heating gains (+ve) and cooling gains (-ve) and convert from kWh to W
             let hc_output_convective_total = hc_output_convective.values().sum::<f64>();
@@ -1362,6 +1361,36 @@ impl Corpus {
         })
     }
 
+    /// Determine highest-priority system that is in its required heating
+    /// or cooling period (and not just the setback period)
+    ///
+    /// Arguments:
+    /// * `hc_name_list_sorted` - list of heating or cooling systems (not combined
+    ///                                list), sorted in order of priority
+    /// * `space_heat_cool_systems` - dict of space heating or cooling system objects
+    ///                                   (not combined list)
+    fn highest_priority_required_system(
+        &self,
+        hc_name_list_sorted: &[String],
+        space_heat_cool_systems: SpaceHeatCoolSystems,
+        simtime: SimulationTimeIteration,
+    ) -> Option<String> {
+        let mut hc_name_highest_req = Default::default();
+        for hc_name in hc_name_list_sorted {
+            if hc_name != ""
+                && space_heat_cool_systems
+                    .in_required_period_for_name(hc_name, simtime)
+                    .unwrap_or(false)
+            {
+                hc_name_highest_req = Some(hc_name.to_owned());
+                break;
+            }
+        }
+
+        hc_name_highest_req
+    }
+
+    /// Calculate how much space heating / cooling demand is unmet
     fn unmet_demand(
         &self,
         delta_t_h: f64,
@@ -1383,8 +1412,127 @@ impl Corpus {
         ach_max: f64,
         ach_target: f64,
         avg_air_supply_temp: f64,
-    ) {
-        todo!()
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        // Note: Use demand calculated based on highest-priority systems
+        // Note: Demand is not considered unmet if it is outside the
+        //       required heating/cooling period (which does not include
+        //       times when the system is on due to setback or advanced
+        //       start). If different systems have different required
+        //       heating/cooling periods, unmet demand will be based on the
+        //       system with the highest setpoint, ignoring any systems that
+        //       are not in required periods (e.g. systems that are in
+        //       setback or advanced start periods).
+        // Note: Need to check that demand is non-zero, to avoid
+        //       reporting unmet demand when heating system is absorbing
+        //       energy from zone or cooling system is releasing energy
+        //       to zone, which may be the case in some timesteps for
+        //       systems with significant thermal mass.
+
+        // Determine highest-priority system that is in its required heating
+        // or cooling period (and not just the setback period)
+        let h_name_highest_req = self.highest_priority_required_system(
+            h_name_list_sorted,
+            SpaceHeatCoolSystems::Heat(&self.space_heat_systems),
+            simtime,
+        );
+        let c_name_highest_req = self.highest_priority_required_system(
+            c_name_list_sorted,
+            SpaceHeatCoolSystems::Cool(&self.space_cool_systems),
+            simtime,
+        );
+
+        let gains_heat = h_name_list_sorted
+            .iter()
+            .map(|h_name| {
+                hc_output_convective[h_name.as_str()] + hc_output_radiative[h_name.as_str()]
+            })
+            .sum::<f64>();
+        let gains_cool = h_name_list_sorted
+            .iter()
+            .map(|c_name| {
+                hc_output_convective[c_name.as_str()] + hc_output_radiative[c_name.as_str()]
+            })
+            .sum::<f64>();
+        let energy_shortfall_heat = 0.0f64.max(space_heat_demand - gains_heat);
+        let energy_shortfall_cool = 0.0f64.max(-(space_cool_demand - gains_cool));
+
+        if (h_name_highest_req.is_some() && space_heat_demand > 0.0 && energy_shortfall_heat > 0.0)
+            || (c_name_highest_req.is_some()
+                && space_cool_demand < 0.0
+                && energy_shortfall_cool > 0.0)
+        {
+            let (unmet_demand_heat, unmet_demand_cool) = if (energy_shortfall_heat > 0.0
+                && h_name_highest_req
+                    .as_ref()
+                    .is_some_and(|h_name| h_name != &h_name_list_sorted[0]))
+                || (energy_shortfall_cool > 0.0
+                    && c_name_highest_req
+                        .as_ref()
+                        .is_some_and(|c_name| c_name != &c_name_list_sorted[0]))
+            {
+                // If the highest-priority system is not in required heating
+                // period, but a lower-priority system is, calculate demand
+                // based on the highest-priority system that is in required
+                // heating period
+                //
+                // Handle case where no heating/cooling system is in required
+                // period. In this case, there will be no heat output anyway so
+                // the convective fraction doesn't matter
+                let (frac_convective_heat, temp_setpnt_heat) =
+                    if let Some(h_name) = h_name_highest_req.as_ref() {
+                        (
+                            frac_convective_heat_system[h_name],
+                            temp_setpnt_heat_system[h_name],
+                        )
+                    } else {
+                        (1.0, temp_setpnt_heat_none())
+                    };
+                let (frac_convective_cool, temp_setpnt_cool) =
+                    if let Some(c_name) = c_name_highest_req.as_ref() {
+                        (
+                            frac_convective_cool_system[c_name],
+                            temp_setpnt_cool_system[c_name],
+                        )
+                    } else {
+                        (1.0, temp_setpnt_cool_none())
+                    };
+
+                let (space_heat_demand_req, space_cool_demand_req, _, _) = zone
+                    .space_heat_cool_demand(
+                        delta_t_h,
+                        temp_ext_air,
+                        gains_internal,
+                        gains_solar,
+                        frac_convective_heat,
+                        frac_convective_cool,
+                        temp_setpnt_heat,
+                        temp_setpnt_cool,
+                        avg_air_supply_temp,
+                        None,
+                        None,
+                        AirChangesPerHourArgument::TargetAndWindowsOpen {
+                            ach_target,
+                            ach_windows_open: ach_max,
+                        },
+                        simtime,
+                    )?;
+
+                (
+                    0.0f64.max(space_heat_demand_req - gains_heat),
+                    0.0f64.max(-(space_cool_demand_req - gains_cool)),
+                )
+            } else {
+                // If highest-priority system is in required heating period,
+                // use the demand already calculated for the zone
+                (energy_shortfall_heat, energy_shortfall_cool)
+            };
+
+            self.energy_supply_conn_unmet_demand_zone[z_name]
+                .demand_energy(unmet_demand_heat + unmet_demand_cool, simtime.index)?;
+        }
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> RunResults {
@@ -2077,6 +2225,26 @@ impl Display for NumberOrDivisionByZero {
 type NumberMap = HashMap<String, f64>;
 
 pub type ResultsEndUser = IndexMap<KeyString, IndexMap<String, Vec<f64>>>;
+
+enum SpaceHeatCoolSystems<'a> {
+    Heat(&'a IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>),
+    Cool(&'a IndexMap<String, AirConditioning>),
+}
+
+impl<'a> SpaceHeatCoolSystems<'a> {
+    fn in_required_period_for_name(
+        &self,
+        system_name: &str,
+        simtime: SimulationTimeIteration,
+    ) -> Option<bool> {
+        match self {
+            SpaceHeatCoolSystems::Heat(heat) => {
+                heat[system_name].lock().in_required_period(simtime)
+            }
+            SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
+        }
+    }
+}
 
 fn has_unique_values<K, V: Eq + Hash>(map: &IndexMap<K, V>) -> bool {
     let values: Vec<&V> = map.values().collect();
