@@ -988,8 +988,8 @@ mod tests {
         assert_eq!(result, 0.);
     }
 
-    // TODO in Rust we don't have energy_output_max on HeatBatteryServiceSpace
-    // confirm this is expected. Following tests affected:
+    // NOTE - in Rust we don't have energy_output_max on the HeatBatteryServiceSpace
+    // so the following tests are not implemented here:
     // test_energy_output_max_service_on_for_space
     // test_energy_output_max_service_off_for_space
 
