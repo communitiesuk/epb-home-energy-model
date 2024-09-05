@@ -375,7 +375,7 @@ impl HeatBattery {
     /// * `timestep` - length of the timestep
     ///
     /// returns  -- Energy in kWH
-    fn _convert_to_energy(&self, power: f64, timestep: f64) -> f64 {
+    pub fn convert_to_energy(&self, power: f64, timestep: f64) -> f64 {
         power * timestep * self.n_units as f64
     }
 
@@ -998,7 +998,20 @@ mod tests {
     //     let service_name = "new_service";
     //     let result = HeatBattery::create_service_connection(heat_battery, service_name);
 
-        // TODO Python tests that the service_name is added to the energy_supply_connections
-        // but this is private in Rust
+    // TODO Python tests that the service_name is added to the energy_supply_connections
+    // but this is private in Rust
     // }
+
+    #[rstest]
+    fn test_convert_to_energy(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) {
+        let power = 10.;
+        let timestep = 0.25;
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let result = heat_battery.lock().convert_to_energy(power, timestep);
+        assert_relative_eq!(result, 2.5);
+    }
 }
