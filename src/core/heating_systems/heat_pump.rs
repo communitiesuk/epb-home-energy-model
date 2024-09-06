@@ -89,7 +89,7 @@ fn carnot_cop(temp_source: f64, temp_outlet: f64, temp_diff_limit_low: Option<f6
 }
 
 /// Interpolate between test data records for different air flow rates
-///    
+///
 /// Arguments:
 /// * `throughput_exhaust_air` - throughput (m3 / h) of exhaust air
 /// * `test_data`
@@ -1030,7 +1030,7 @@ impl HeatPumpTestData {
     }
 
     /// Calculate thermal capacity at operating conditions when heat pump is not air-source
-    ///        
+    ///
     /// Arguments:
     /// * `temp_source` - source temperature, in Kelvin
     /// * `temp_output` - output temperature, in Kelvin
@@ -4100,7 +4100,7 @@ mod tests {
     use rstest::*;
 
     #[rstest]
-    pub fn should_interpolate_exhaust_air_heat_pump_test_data() {
+    pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
         let data_eahp = vec![
             HeatPumpTestDatum {
                 air_flow_rate: Some(100.0),
@@ -4533,7 +4533,7 @@ mod tests {
         HeatPumpTestData::new(data_unsorted).unwrap()
     }
 
-    #[rstest]
+    #[rstest] // In Python this test is called `test_init`
     pub fn should_have_constructed_internal_data_structures(
         test_data: HeatPumpTestData,
         data_sorted: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
@@ -4594,7 +4594,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_populate_init_regression_coeffs(
+    pub fn test_init_regression_coeffs(
         test_data: HeatPumpTestData,
         expected_init_regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
     ) {
@@ -4613,7 +4613,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_degradation_coeff(test_data: HeatPumpTestData) {
+    pub fn test_average_degradation_coeff(test_data: HeatPumpTestData) {
         let results = [0.9125, 0.919375, 0.92625, 0.933125, 0.94];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_ulps_eq!(
@@ -4624,7 +4624,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_average_capacity(test_data: HeatPumpTestData) {
+    pub fn test_average_capacity(test_data: HeatPumpTestData) {
         let results = [8.3, 8.375, 8.45, 8.525, 8.6];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_ulps_eq!(
@@ -4635,7 +4635,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_temp_spread_test_conditions(test_data: HeatPumpTestData) {
+    pub fn test_temp_spread_test_conditions(test_data: HeatPumpTestData) {
         let results = [5.0, 5.75, 6.5, 7.25, 8.0];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_eq!(
@@ -4660,13 +4660,23 @@ mod tests {
             (45., "D", 11.243125),
             (45., "F", 7.643354072417485),
         ]
+        // TODO (from Python) Note that the result above for condition F is different to
+        // that for condition A, despite the source and outlet temps in
+        // the inputs being the same for both, because of the adjustment
+        // to the source temp applied in the HeatPumpTestData __init__
+        // function when duplicate records are found. This may not be
+        // the desired behaviour (see the TODO comment in that function)
+        // but in that case the problem is not with the function that
+        // is being tested here, so for now we set the result so that
+        // the test passes.
     }
 
     #[rstest]
-    pub fn should_calc_carnot_cop_at_test_condition(
+    pub fn test_carnot_cop_at_test_condition(
         test_data: HeatPumpTestData,
         carnot_cop_cases: Vec<(f64, &str, f64)>,
     ) {
+        // TODO (from Python) Test conditions other than just coldest
         for (flow_temp, test_condition, result) in carnot_cop_cases {
             assert_ulps_eq!(
                 test_data
@@ -4678,6 +4688,7 @@ mod tests {
 
     #[fixture]
     pub fn outlet_temp_cases() -> Vec<(f64, &'static str, f64)> {
+        // TODO (from Python) Test conditions other than just coldest
         vec![
             (35., "cld", 307.15),
             (40., "cld", 311.65),
@@ -4693,7 +4704,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_outlet_temp_at_test_condition(
+    pub fn test_outlet_temp_at_test_condition(
         test_data: HeatPumpTestData,
         outlet_temp_cases: Vec<(f64, &'static str, f64)>,
     ) {
@@ -4708,6 +4719,7 @@ mod tests {
 
     #[fixture]
     pub fn source_temp_cases() -> Vec<(f64, &'static str, f64)> {
+        // TODO (from Python) Test conditions other than just coldest
         vec![
             (35., "cld", 273.15),
             (40., "cld", 273.15),
@@ -4720,10 +4732,20 @@ mod tests {
             (45., "D", 273.15),
             (45., "F", 273.15000000009996),
         ]
+
+        // TODO Note that the result above for condition F is different to
+        // that for condition A, despite the source and outlet temps in
+        // the inputs being the same for both, because of the adjustment
+        // to the source temp applied in the HeatPumpTestData __init__
+        // function when duplicate records are found. This may not be
+        // the desired behaviour (see the TODO comment in that function)
+        // but in that case the problem is not with the function that
+        // is being tested here, so for now we set the result so that
+        // the test passes.
     }
 
     #[rstest]
-    pub fn should_calc_source_temp_at_test_condition(
+    pub fn test_source_temp_at_test_condition(
         test_data: HeatPumpTestData,
         source_temp_cases: Vec<(f64, &'static str, f64)>,
     ) {
@@ -4753,7 +4775,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_capacity_at_test_condition(
+    pub fn test_capacity_at_test_condition(
         test_data: HeatPumpTestData,
         capacity_cases: Vec<(f64, &'static str, f64)>,
     ) {
@@ -4777,7 +4799,8 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_load_ratio_under_operational_conditions(
+    // In Python this test is called `test_lr_op_cond`
+    pub fn test_load_ratio_under_operational_conditions(
         test_data: HeatPumpTestData,
         lr_op_cond_cases: Vec<[f64; 4]>,
     ) {
@@ -4794,8 +4817,8 @@ mod tests {
         }
     }
 
-    #[rstest]
-    pub fn should_calc_load_ratio_degcoeff_either_side_of_op_cond(test_data: HeatPumpTestData) {
+    #[rstest] // In Python this test is called `test_lr_eff_degcoeff_either_side_of_op_cond`
+    pub fn test_load_ratio_degcoeff_either_side_of_op_cond(test_data: HeatPumpTestData) {
         let results_lr_below = [
             1.1634388356892613,
             1.1225791267684564,
@@ -4876,7 +4899,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_cop_op_cond_if_not_air_source(test_data: HeatPumpTestData) {
+    pub fn test_cop_op_cond_if_not_air_source(test_data: HeatPumpTestData) {
         let results = [
             6.5629213163133,
             8.09149749487405,
