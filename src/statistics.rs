@@ -21,7 +21,7 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
         return y.min();
     }
 
-    interp(&x, &y, input)
+    interp(x, y, input)
 }
 
 #[cfg(test)]

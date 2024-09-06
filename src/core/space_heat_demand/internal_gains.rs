@@ -179,7 +179,7 @@ impl EventApplianceGains {
             None => 0.,
         };
         Self {
-            energy_supply_conn: energy_supply_conn,
+            energy_supply_conn,
             gains_fraction: appliance_data.gains_fraction,
             start_day: appliance_data.start_day,
             time_series_step,
@@ -221,7 +221,7 @@ impl EventApplianceGains {
             );
             for (i, x) in a.iter().enumerate() {
                 let index = (s + i as f64).floor() as usize % total_power_supply.len();
-                total_power_supply[index] += *x as f64;
+                total_power_supply[index] += { *x };
             }
         }
         total_power_supply

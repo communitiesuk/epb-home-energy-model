@@ -151,7 +151,7 @@ impl StorageTank {
         let primary_pipework_lst: Option<Vec<Pipework>> = if primary_pipework_lst.is_some() {
             primary_pipework_lst
                 .unwrap()
-                .into_iter()
+                .iter()
                 .map(|pipework| pipework.to_owned().try_into().unwrap())
                 .collect::<Vec<Pipework>>()
                 .into()
@@ -333,7 +333,7 @@ impl StorageTank {
         // TODO (from Python) - ensure we are feeding in the correct volume
         q_x_in_n[0] = energy_proposed;
 
-        let (_q_s6, temp_s6_n) = self.energy_input(&temp_s3_n, &q_x_in_n);
+        let (_q_s6, temp_s6_n) = self.energy_input(temp_s3_n, &q_x_in_n);
 
         // 6.4.3.9 STEP 7 Re-arrange the temperatures in the storage after energy input
         let (_q_h_sto_s7, temp_s7_n) = self.rearrange_temperatures(&temp_s6_n);
@@ -555,7 +555,7 @@ impl StorageTank {
         q_ls_n_prev_heat_source: &[f64],
         simulation_time_iteration: SimulationTimeIteration,
     ) -> TemperatureCalculation {
-        let (q_s6, temp_s6_n) = self.energy_input(&temp_s3_n, &q_x_in_n);
+        let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, &q_x_in_n);
 
         // 6.4.3.9 STEP 7 Re-arrange the temperatures in the storage after energy input
         let (q_h_sto_s7, temp_s7_n) = self.rearrange_temperatures(&temp_s6_n);
@@ -614,11 +614,7 @@ impl StorageTank {
         let mut energy_withdrawn = 0.0;
         let mut pipework_temp = self.cold_feed.temperature(simulation_time.index); // This value set to initialise, but is never used - overwritten later.
 
-        let mut pipework_considered = if event.pipework_volume.unwrap() <= 0.0 {
-            true
-        } else {
-            false
-        };
+        let mut pipework_considered = event.pipework_volume.unwrap() <= 0.0;
 
         let mut temp_average_drawoff_volweighted: f64 = Default::default();
         let mut total_volume_drawoff: f64 = Default::default();
@@ -821,7 +817,7 @@ impl StorageTank {
             .filter(|e| e.warm_volume.is_some())
             .collect_vec();
 
-        for mut event in filtered_events {
+        for event in filtered_events {
             // Check if 'pipework_volume' key exists in the event dictionary
             if event.pipework_volume.is_none() {
                 // If 'pipework_volume' is not found, add it with a default value of 0.0

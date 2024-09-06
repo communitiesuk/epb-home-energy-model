@@ -328,14 +328,11 @@ impl Corpus {
                     }
                     _ => {}
                 }
-                match heat_source_wet_details {
-                    HeatSourceWetDetails::HeatPump {
+                if let HeatSourceWetDetails::HeatPump {
                         buffer_tank: Some(_),
                         ..
-                    } => {
-                        heat_sources_wet_with_buffer_tank.push(name.clone());
-                    }
-                    _ => {}
+                    } = heat_source_wet_details {
+                    heat_sources_wet_with_buffer_tank.push(name.clone());
                 }
                 anyhow::Ok(((*name).clone(), heat_source))
             })
@@ -1047,7 +1044,7 @@ impl Corpus {
             // opening from across all the zones
             let mut ach_cooling = *ach_cooling_zone
                 .values()
-                .max_by(|a, b| a.total_cmp(&b))
+                .max_by(|a, b| a.total_cmp(b))
                 .unwrap();
 
             // Do not open windows to an extent where it would cause any zone
@@ -1059,7 +1056,7 @@ impl Corpus {
             if !ach_to_trigger_heating_list.is_empty() {
                 ach_cooling = ach_to_trigger_heating_list
                     .iter()
-                    .max_by(|a, b| a.total_cmp(&b).reverse())
+                    .max_by(|a, b| a.total_cmp(b).reverse())
                     .unwrap()
                     .min(ach_cooling);
             }
@@ -1235,7 +1232,7 @@ impl Corpus {
                 let h_name = h_name.as_str();
                 space_heat_provided_zone_system.insert(
                     h_name,
-                    if h_name != "" {
+                    if !h_name.is_empty() {
                         self.space_heat_systems[h_name]
                             .lock()
                             .demand_energy(0.0, simtime)?
@@ -1256,7 +1253,7 @@ impl Corpus {
                 let c_name = c_name.as_str();
                 space_heat_provided_zone_system.insert(
                     c_name,
-                    if c_name != "" {
+                    if !c_name.is_empty() {
                         self.space_heat_systems[c_name]
                             .lock()
                             .demand_energy(0.0, simtime)?
@@ -1379,7 +1376,7 @@ impl Corpus {
     ) -> Option<String> {
         let mut hc_name_highest_req = Default::default();
         for hc_name in hc_name_list_sorted {
-            if hc_name != ""
+            if !hc_name.is_empty()
                 && space_heat_cool_systems
                     .in_required_period_for_name(hc_name, simtime)
                     .unwrap_or(false)
@@ -1632,8 +1629,8 @@ impl Corpus {
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water();
-            let mut temp_final_drawoff = temp_hot_water;
-            let mut temp_average_drawoff = temp_hot_water;
+            let temp_final_drawoff = temp_hot_water;
+            let temp_average_drawoff = temp_hot_water;
 
             let (
                 hw_demand_vol,
@@ -3032,7 +3029,7 @@ fn infiltration_ventilation_from_input(
         .unzip();
     // Work out the average pitch, weighted by area
     let area_total = areas.iter().sum::<f64>();
-    let average_pitch = if pitches.len() > 0 {
+    let average_pitch = if !pitches.is_empty() {
         areas
             .iter()
             .map(|x| x / area_total)
@@ -3122,7 +3119,7 @@ fn infiltration_ventilation_from_input(
                         .ductwork
                         .as_ref()
                         .iter()
-                        .map(|ductworks| {
+                        .flat_map(|ductworks| {
                             ductworks.iter().map(|ductwork| -> anyhow::Result<Ductwork> {
                                 let (duct_perimeter, internal_diameter, external_diameter) =
                                     match ductwork.cross_section_shape {
@@ -3133,7 +3130,6 @@ fn infiltration_ventilation_from_input(
                                 Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, ductwork.insulation_thickness_mm, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
                             })
                         })
-                        .flatten()
                         .collect::<anyhow::Result<Vec<Ductwork>>>()?,
                 );
             }

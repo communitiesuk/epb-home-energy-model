@@ -13,7 +13,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
-    TerrainClass, VentType, VentilationLeaks, VentilationShieldClass,
+    TerrainClass, VentType, VentilationShieldClass,
     WindowPart as WindowPartInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
