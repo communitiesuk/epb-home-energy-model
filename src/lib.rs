@@ -96,6 +96,7 @@ pub fn run_project(
         heat_balance_dict,
         _heat_source_wet_results_dict,
         _heat_source_wet_results_annual_dict,
+        ..
     } = corpus.run()?;
 
     write_core_output_file(
@@ -257,18 +258,18 @@ fn external_conditions_from_input(
 }
 
 lazy_static! {
-    pub static ref UNITS_MAP: IndexMap<KeyString, &'static str> = IndexMap::from([
-        ("Internal gains".try_into().unwrap(), "[W]"),
-        ("Solar gains".try_into().unwrap(), "[W]"),
-        ("Operative temp".try_into().unwrap(), "[deg C]"),
-        ("Internal air temp".try_into().unwrap(), "[deg C]"),
-        ("Space heat demand".try_into().unwrap(), "[kWh]"),
-        ("Space cool demand".try_into().unwrap(), "[kWh]"),
-        ("Hot water demand".try_into().unwrap(), "[litres]"),
-        ("Hot water energy demand".try_into().unwrap(), "[kWh]"),
-        ("Hot water duration".try_into().unwrap(), "[mins]"),
-        ("Hot Water Events".try_into().unwrap(), "[count]"),
-        ("Pipework losses".try_into().unwrap(), "[kWh]")
+    pub static ref UNITS_MAP: IndexMap<&'static str, &'static str> = IndexMap::from([
+        ("Internal gains", "[W]"),
+        ("Solar gains", "[W]"),
+        ("Operative temp", "[deg C]"),
+        ("Internal air temp", "[deg C]"),
+        ("Space heat demand", "[kWh]"),
+        ("Space cool demand", "[kWh]"),
+        ("Hot water demand", "[litres]"),
+        ("Hot water energy demand", "[kWh]"),
+        ("Hot water duration", "[mins]"),
+        ("Hot Water Events", "[count]"),
+        ("Pipework losses", "[kWh]")
     ]);
 }
 
@@ -284,10 +285,10 @@ struct OutputFileArgs<'a> {
     energy_from_storage: &'a IndexMap<KeyString, Vec<f64>>,
     energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
     betafactor: &'a IndexMap<KeyString, Vec<f64>>,
-    zone_dict: &'a IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
+    zone_dict: &'a IndexMap<&'static str, IndexMap<KeyString, Vec<f64>>>,
     zone_list: &'a [KeyString],
-    hc_system_dict: IndexMap<KeyString, IndexMap<KeyString, Vec<f64>>>,
-    hot_water_dict: &'a IndexMap<KeyString, HotWaterResultMap>,
+    hc_system_dict: IndexMap<&'static str, IndexMap<String, Vec<f64>>>,
+    hot_water_dict: &'a IndexMap<&'static str, HotWaterResultMap>,
     ductwork_gains: IndexMap<KeyString, Vec<f64>>,
 }
 
@@ -532,9 +533,9 @@ struct SummaryOutputFileArgs<'a> {
     space_heat_demand_total: f64,
     space_cool_demand_total: f64,
     total_floor_area: f64,
-    heat_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
-    cool_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
-    dhw_cop_dict: IndexMap<KeyString, NumberOrDivisionByZero>,
+    heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     daily_hw_demand_75th_percentile: f64,
 }
 
@@ -831,15 +832,15 @@ fn write_core_output_file_summary(
 
     let heat_cop_rows = heat_cop_dict
         .iter()
-        .map(|(h_name, h_cop)| vec![StringOrNumber::String(*h_name), (*h_cop).into()])
+        .map(|(h_name, h_cop)| vec![StringOrNumber::from(h_name.as_str()), (*h_cop).into()])
         .collect::<Vec<_>>();
     let cool_cop_rows = cool_cop_dict
         .iter()
-        .map(|(c_name, c_cop)| vec![StringOrNumber::String(*c_name), (*c_cop).into()])
+        .map(|(c_name, c_cop)| vec![StringOrNumber::from(c_name.as_str()), (*c_cop).into()])
         .collect::<Vec<_>>();
     let mut dhw_cop_rows = dhw_cop_dict
         .iter()
-        .map(|(hw_name, hw_cop)| vec![StringOrNumber::String(*hw_name), (*hw_cop).into()])
+        .map(|(hw_name, hw_cop)| vec![hw_name.as_str().into(), (*hw_cop).into()])
         .collect::<Vec<_>>();
 
     let writer = output.writer_for_location_key(&output_key)?;
