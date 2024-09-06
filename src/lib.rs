@@ -96,7 +96,8 @@ pub fn run_project(
         heat_balance_dict,
         _heat_source_wet_results_dict,
         _heat_source_wet_results_annual_dict,
-        ..
+        emitters_output_dict,
+        vent_output_list,
     } = corpus.run()?;
 
     write_core_output_file(
@@ -132,11 +133,11 @@ pub fn run_project(
     }
 
     // Sum per-timestep figures as needed
-    let space_heat_demand_total = zone_dict["Space heat demand"]
+    let space_heat_demand_total = zone_dict["space heat demand"]
         .values()
         .map(|v| v.iter().sum::<f64>())
         .sum::<f64>();
-    let space_cool_demand_total = zone_dict["Space cool demand"]
+    let space_cool_demand_total = zone_dict["space cool demand"]
         .values()
         .map(|v| v.iter().sum::<f64>())
         .sum::<f64>();
@@ -259,17 +260,29 @@ fn external_conditions_from_input(
 
 lazy_static! {
     pub static ref UNITS_MAP: IndexMap<&'static str, &'static str> = IndexMap::from([
-        ("Internal gains", "[W]"),
-        ("Solar gains", "[W]"),
-        ("Operative temp", "[deg C]"),
-        ("Internal air temp", "[deg C]"),
-        ("Space heat demand", "[kWh]"),
-        ("Space cool demand", "[kWh]"),
-        ("Hot water demand", "[litres]"),
-        ("Hot water energy demand", "[kWh]"),
-        ("Hot water duration", "[mins]"),
-        ("Hot Water Events", "[count]"),
-        ("Pipework losses", "[kWh]")
+        ("internal gains", "[W]"),
+        ("solar gains", "[W]"),
+        ("operative temp", "[deg C]"),
+        ("internal air temp", "[deg C]"),
+        ("space heat demand", "[kWh]"),
+        ("space cool demand", "[kWh]"),
+        (
+            "DHW: demand volume (including distribution pipework losses)",
+            "[litres]"
+        ),
+        (
+            "DHW: demand energy (including distribution pipework losses)",
+            "[kWh]"
+        ),
+        (
+            "DHW: demand energy (excluding distribution pipework losses)",
+            "[kWh]"
+        ),
+        ("DHW: total event duration", "[mins]"),
+        ("DHW: number of events", "[count]"),
+        ("DHW: distribution pipework losses", "[kWh]"),
+        ("DHW: primary pipework losses", "[kWh]"),
+        ("DHW: storage losses", "[kWh]"),
     ]);
 }
 
@@ -342,9 +355,44 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         units_row.push("[kWh]");
     }
 
+    // hot_water_dict headings
+    for system in hot_water_dict.keys() {
+        let mut system = *system;
+        if system == "Hot water demand" {
+            system = "DHW: demand volume (including distribution pipework losses)";
+        }
+        if system == "Hot water energy demand" {
+            system = "DHW: demand energy (excluding distribution pipework losses)";
+        }
+        if system == "Hot water energy demand incl pipework_loss" {
+            system = "DHW: demand energy (including distribution pipework losses)";
+        }
+        if system == "Hot water duration" {
+            system = "DHW: total event duration";
+        }
+        if system == "Hot Water Events" {
+            system = "DHW: number of events";
+        }
+        if system == "Pipework losses" {
+            system = "DHW: distribution pipework losses";
+        }
+        if system == "Primary pipework losses" {
+            system = "DHW: primary pipework losses";
+        }
+        if system == "Storage losses" {
+            system = "DHW: storage losses";
+        }
+        headings.push(system.into());
+        if UNITS_MAP.contains_key(system) {
+            units_row.push(UNITS_MAP[system].into());
+        } else {
+            units_row.push("Unit not defined");
+        }
+    }
+
     for zone in zone_list.iter() {
         for zone_outputs in zone_dict.keys() {
-            let zone_headings = format!("{zone_outputs} {zone}");
+            let zone_headings = format!("{zone}: {zone_outputs}");
             headings.push(zone_headings.into());
             if UNITS_MAP.contains_key(zone_outputs) {
                 units_row.push(UNITS_MAP[zone_outputs]);
@@ -354,31 +402,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         }
     }
 
-    for system in hc_system_dict.keys() {
-        if hc_system_dict[system].keys().len() == 0 {
-            // edge case - if we don't have any hc systems keys use None
-            let none_heading = format!("{system} None");
-            headings.push(none_heading.into());
-            units_row.push("[kWh]");
-            continue;
-        }
-
-        for hc_name in hc_system_dict[system].keys() {
-            let hc_system_headings = format!("{system} {hc_name}");
-            headings.push(hc_system_headings.into());
-            units_row.push("[kWh]");
-        }
-    }
-
-    for system in hot_water_dict.keys() {
-        headings.push(system.to_string().into());
-
-        if UNITS_MAP.contains_key(system) {
-            units_row.push(UNITS_MAP[system]);
-        } else {
-            units_row.push("Unit not defined");
-        }
-    }
+    // TODO: complete from line 488 of hem.py/ line 11208 of the 0.28-0.30 diff file
 
     headings.push("Ductwork gains".into());
     units_row.push("[kWh]");
