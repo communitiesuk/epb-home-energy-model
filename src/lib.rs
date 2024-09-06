@@ -384,7 +384,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         }
         headings.push(system.into());
         if UNITS_MAP.contains_key(system) {
-            units_row.push(UNITS_MAP[system].into());
+            units_row.push(UNITS_MAP[system]);
         } else {
             units_row.push("Unit not defined");
         }

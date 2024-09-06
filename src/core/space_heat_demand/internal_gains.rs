@@ -221,7 +221,7 @@ impl EventApplianceGains {
             );
             for (i, x) in a.iter().enumerate() {
                 let index = (s + i as f64).floor() as usize % total_power_supply.len();
-                total_power_supply[index] += { *x };
+                total_power_supply[index] += *x;
             }
         }
         total_power_supply
