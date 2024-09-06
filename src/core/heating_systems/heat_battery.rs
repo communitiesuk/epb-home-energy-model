@@ -1006,14 +1006,19 @@ mod tests {
     // test_energy_output_max_service_on_for_space
     // test_energy_output_max_service_off_for_space
 
-    // #[rstest]
-    // fn test_create_service_connection() {
-    //     let service_name = "new_service";
-    //     let result = HeatBattery::create_service_connection(heat_battery, service_name);
-
-    // TODO Python tests that the service_name is added to the energy_supply_connections
-    // but this is private in Rust
-    // }
+    #[rstest]
+    fn test_create_service_connection(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        battery_control_on: Control,
+    ) {
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let create_connection_result =
+            HeatBattery::create_service_connection(heat_battery.clone(), "new service");
+        assert!(create_connection_result.is_ok());
+        let create_connection_result =
+            HeatBattery::create_service_connection(heat_battery, "new service");
+        assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
+    }
 
     #[rstest]
     fn test_convert_to_energy(
@@ -1190,5 +1195,30 @@ mod tests {
         assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
         assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 0.0);
         assert_eq!(heat_battery.lock().service_results.len(), 0);
+    }
+
+    #[rstest]
+    fn test_energy_output_max(
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time: SimulationTime,
+    ) {
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Control = Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![true, true, true],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![1.5, 1.6],
+        });
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                heat_battery.lock().energy_output_max(0.0),
+                [5.637774816176471, 11.13482970854502][t_idx]
+            );
+
+            heat_battery.lock().timestep_end(t_idx);
+        }
     }
 }
