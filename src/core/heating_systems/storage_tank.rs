@@ -799,7 +799,7 @@ impl StorageTank {
     /// * `usage_events` -- All draw off events for the timestep
     pub fn demand_hot_water(
         &mut self,
-        usage_events: Vec<TypedScheduleEvent>,
+        usage_events: &mut Option<Vec<TypedScheduleEvent>>,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64, f64, f64, f64) {
         let mut q_use_w = 0.;
@@ -816,7 +816,8 @@ impl StorageTank {
         // Filtering out IES events that don't get added a 'warm_volume' when processing
         // the dhw_demand calculation
         let filtered_events = usage_events
-            .into_iter()
+            .iter_mut()
+            .flatten()
             .filter(|e| e.warm_volume.is_some())
             .collect_vec();
 
@@ -1915,8 +1916,8 @@ mod tests {
 
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
-            let usage_events_for_iteration = usage_events[t_idx].clone();
-            storage_tank1.demand_hot_water(usage_events_for_iteration.clone(), t_it);
+            let mut usage_events_for_iteration = Some(usage_events[t_idx].clone());
+            storage_tank1.demand_hot_water(&mut usage_events_for_iteration, t_it);
 
             // Verify the temperatures against expected results
             assert_eq!(
@@ -1930,7 +1931,7 @@ mod tests {
                 max_relative = 1e-6
             );
 
-            storage_tank2.demand_hot_water(usage_events_for_iteration, t_it);
+            storage_tank2.demand_hot_water(&mut usage_events_for_iteration, t_it);
 
             assert_eq!(
                 storage_tank2.temp_n, expected_temperatures_2[t_idx],
@@ -2372,7 +2373,8 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
-            storage_tank.demand_hot_water(usage_events.get(t_idx).unwrap().clone(), t_it);
+            storage_tank
+                .demand_hot_water(&mut Some(usage_events.get(t_idx).unwrap().clone()), t_it);
             assert_relative_eq!(
                 storage_tank.test_energy_demand(),
                 expected_energy_demands[t_idx],
