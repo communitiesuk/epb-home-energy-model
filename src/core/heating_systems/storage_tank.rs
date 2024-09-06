@@ -222,7 +222,7 @@ impl StorageTank {
     /// but this could be similar to the cold feed temperature after big draw-offs
     /// To avoid any issues in those situations we use the setpoing temperature of the
     /// tank.
-    fn get_temp_hot_water(&self) -> f64 {
+    pub(crate) fn get_temp_hot_water(&self) -> f64 {
         self.temp_set_on
     }
 

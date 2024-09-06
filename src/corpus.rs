@@ -4151,6 +4151,16 @@ impl HotWaterSource {
         }
     }
 
+    pub(crate) fn temp_hot_water(&self) -> f64 {
+        match self {
+            HotWaterSource::StorageTank(storage_tank) => storage_tank.lock().get_temp_hot_water(),
+            HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
+            HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
+            HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
+            HotWaterSource::HeatBattery(_) => unimplemented!(),
+        }
+    }
+
     pub fn demand_hot_water(
         &mut self,
         vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
@@ -4158,7 +4168,7 @@ impl HotWaterSource {
     ) -> f64 {
         match self {
             HotWaterSource::StorageTank(_) => {
-                // StorageTank does not match the same method signature or return type as as all other Hot Water sources
+                // StorageTank does not match the same method signature or return type as all other Hot Water sources
                 panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
             }
             HotWaterSource::CombiBoiler(ref mut source) => source
@@ -4170,7 +4180,9 @@ impl HotWaterSource {
             HotWaterSource::HeatNetwork(ref mut source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration.index)
             }
-            HotWaterSource::HeatBattery(_) => Default::default(),
+            HotWaterSource::HeatBattery(_) => {
+                unreachable!("demand_hot_water is not expected to be called on a heat battery")
+            }
         }
     }
 }
@@ -4399,7 +4411,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
             ))
         }
-        HotWaterSourceDetails::HeatBattery { .. } => todo!(), // TODO is from Python
+        HotWaterSourceDetails::HeatBattery { .. } => unimplemented!(), // NB. Python here passes for now rather than erroring
     };
 
     Ok((hot_water_source, energy_supply_conn_names))
