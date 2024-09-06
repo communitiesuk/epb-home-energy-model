@@ -533,7 +533,7 @@ impl HeatBattery {
         _timestep: f64,
         time_remaining_current_timestep: f64,
         timestep_idx: usize,
-    ) -> f64 {
+    ) {
         // Energy used by circulation pump
         let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
 
@@ -543,7 +543,6 @@ impl HeatBattery {
         self.energy_supply_connection
             .demand_energy(energy_aux, timestep_idx)
             .unwrap();
-        energy_aux // TODO: decide if it is okay to return this just for a test (`test_calc_auxiliary_energy`) - it used to return nothing/()
     }
 
     /// Calculations to be done at the end of each timestep
@@ -665,6 +664,7 @@ mod tests {
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::ToUChargeControl;
+    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
     use crate::core::heating_systems::heat_battery::HeatBattery;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
@@ -1118,20 +1118,26 @@ mod tests {
         let heat_battery =
             create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
 
-        let energy_aux = heat_battery.lock().calc_auxiliary_energy(
+        heat_battery.lock().calc_auxiliary_energy(
             1.0,
             0.5,
             simulation_time_iterator.current_index(),
         );
 
-        // TODO decide what to do with this test
-        // Python asserts `calc_auxiliary_energy` calls `demand_energy` with the result of a calculation using 3 instance variables (total_time_running_current_timestep, power_circ_pump, power_standby)
-        // Option 1: have `calc_auxiliary_energy` return `energy_aux` (currently implemented)
-        // Option 2: add an `energy_aux` field to the HeatBattery struct and have `calc_auxiliary_energy` set it
-        // Option 3: do something similar but for the supply conntection (e.g. set an `energy_demanded` field)
-        // Option 4: skip this test
-        // Option 5: ??
-        // assert_eq!(heat_battery.lock().energy_aux, 0.0122);
-        assert_eq!(energy_aux, 0.0122); // got 0.0122 from running test in debug mode in Python
+        let results_by_end_user = heat_battery
+            .lock()
+            .energy_supply
+            .read()
+            .results_by_end_user();
+
+        let end_user_name = heat_battery
+            .lock()
+            .energy_supply_connection
+            .end_user_name
+            .clone();
+
+        let results_by_end_user = results_by_end_user.get(&end_user_name).unwrap();
+
+        assert_eq!(*results_by_end_user, vec![0.0122, 0.]);
     }
 }

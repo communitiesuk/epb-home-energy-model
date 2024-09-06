@@ -108,7 +108,7 @@ impl EnergySupplies {
 #[derive(Clone, Debug)]
 pub struct EnergySupplyConnection {
     energy_supply: Arc<RwLock<EnergySupply>>,
-    end_user_name: String,
+    pub(crate) end_user_name: String,
 }
 
 impl EnergySupplyConnection {
