@@ -4533,7 +4533,8 @@ mod tests {
         HeatPumpTestData::new(data_unsorted).unwrap()
     }
 
-    #[rstest] // In Python this test is called `test_init`
+    #[rstest]
+    // In Python this test is called `test_init`
     pub fn should_have_constructed_internal_data_structures(
         test_data: HeatPumpTestData,
         data_sorted: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
@@ -4733,7 +4734,7 @@ mod tests {
             (45., "F", 273.15000000009996),
         ]
 
-        // TODO Note that the result above for condition F is different to
+        // TODO (from Python) Note that the result above for condition F is different to
         // that for condition A, despite the source and outlet temps in
         // the inputs being the same for both, because of the adjustment
         // to the source temp applied in the HeatPumpTestData __init__
@@ -4817,7 +4818,8 @@ mod tests {
         }
     }
 
-    #[rstest] // In Python this test is called `test_lr_eff_degcoeff_either_side_of_op_cond`
+    #[rstest]
+    // In Python this test is called `test_lr_eff_degcoeff_either_side_of_op_cond`
     pub fn test_load_ratio_degcoeff_either_side_of_op_cond(test_data: HeatPumpTestData) {
         let results_lr_below = [
             1.1634388356892613,
@@ -4961,7 +4963,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_temp_spread_correction(test_data: HeatPumpTestData) {
+    pub fn test_temp_spread_correction(test_data: HeatPumpTestData) {
         let results = [
             1.1219512195122,
             1.08394607843137,
@@ -5021,6 +5023,7 @@ mod tests {
     }
 
     #[rstest]
+    // In Python this test is called `test_from_string` (inside the `TestSourceType` class)
     pub fn test_source_type_from_string() {
         let types = [
             ("Ground", HeatPumpSourceType::Ground),
@@ -5042,6 +5045,7 @@ mod tests {
     }
 
     #[rstest]
+    // In Python this test is called `test_is_exhaust_air` (inside the `TestSourceType` class)
     pub fn test_source_type_is_exhaust_air() {
         let exhaust_air_cases = [
             (HeatPumpSourceType::Ground, false),
@@ -5105,6 +5109,7 @@ mod tests {
     }
 
     #[rstest]
+    // In Python this test is called `test_from_string` (inside the `TestSinkType` class)
     pub fn test_sink_type_from_string() {
         let sink_types = [
             ("Air", HeatPumpSinkType::Air),
@@ -5138,6 +5143,7 @@ mod tests {
         )
     }
 
+    // TODO: find the equivalent test in Python (is it the one inside `test_buffer_tank`?)
     #[rstest]
     fn buffer_loss(mut buffer_tank: BufferTank, simulation_time: SimulationTime) {
         // emitters data needed to run buffer tank calculations
