@@ -771,6 +771,15 @@ mod tests {
         )
     }
 
+    fn get_service_names_from_results(heat_battery: Arc<Mutex<HeatBattery>>) -> Vec<String> {
+        heat_battery
+            .lock()
+            .service_results
+            .iter()
+            .map(|result| result.service_name.clone())
+            .collect_vec()
+    }
+
     // in Python this test is called test_service_is_on_with_control
     #[rstest]
     fn test_service_is_on_when_service_control_is_on(
@@ -1087,12 +1096,8 @@ mod tests {
 
             assert_relative_eq!(demand_energy_actual, 4.358566028225806);
 
-            let service_names_in_results = heat_battery
-                .lock()
-                .service_results
-                .iter()
-                .map(|result| result.service_name.clone())
-                .collect_vec();
+            let service_names_in_results = get_service_names_from_results(heat_battery.clone());
+
             assert_eq!(
                 service_names_in_results.contains(&service_name.into()),
                 true
@@ -1139,5 +1144,51 @@ mod tests {
         let results_by_end_user = results_by_end_user.get(&end_user_name).unwrap();
 
         assert_eq!(*results_by_end_user, vec![0.0122, 0.]);
+    }
+
+    #[rstest]
+    fn test_timestep_end(simulation_time_iterator: Arc<SimulationTimeIterator>) {
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Control = Control::ToUChargeControl(ToUChargeControl {
+            schedule: vec![true, true, true],
+            start_day: 0,
+            time_series_step: 1.,
+            charge_level: vec![1.0, 1.5],
+        });
+
+        let heat_battery =
+            create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
+        let service_name = "new_timestep_end_service";
+        HeatBattery::create_service_connection(heat_battery.clone(), service_name).unwrap();
+
+        let t_idx = 0;
+        heat_battery
+            .lock()
+            .demand_energy(service_name, ServiceType::WaterRegular, 5.0, 40., t_idx);
+
+        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
+        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.03929547794117647);
+        assert_relative_eq!(
+            heat_battery.lock().total_time_running_current_timestep,
+            0.8868747268254661
+        );
+
+        let service_names_in_results = get_service_names_from_results(heat_battery.clone());
+
+        assert_eq!(
+            service_names_in_results.contains(&service_name.into()),
+            true
+        );
+
+        heat_battery.lock().timestep_end(t_idx);
+
+        assert_eq!(heat_battery.lock().flag_first_call, false);
+        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
+        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
+        assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 0.0);
+        assert_eq!(heat_battery.lock().service_results.len(), 0);
     }
 }
