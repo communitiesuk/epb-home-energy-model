@@ -1734,7 +1734,7 @@ impl Corpus {
                 if let HotWaterSource::StorageTank(storage_tank) =
                     &self.hot_water_sources["hw cylinder"]
                 {
-                    // storage_tank.lock().to_report() // need implementation of to_report on storage tank
+                    // storage_tank.lock().to_report() // not implementing (for now at least) as this uses toreport() to investigate an upstream bug only
                     (0.0, 0.0)
                 } else {
                     (0.0, 0.0)
@@ -1869,23 +1869,72 @@ impl Corpus {
                 .get_mut("ductwork_gains")
                 .unwrap()
                 .push(ductwork_gains);
-        }
+            hot_water_primary_pipework_dict
+                .get_mut("primary_pw_losses")
+                .unwrap()
+                .push(primary_pw_losses);
+            hot_water_storage_losses_dict
+                .get_mut("storage_losses")
+                .unwrap()
+                .push(storage_losses);
 
-        //
-        //     // loop through on-site energy generation
-        //     for gen in self.on_site_generation.values() {
-        //         // Get energy produced for the current timestep
-        //         gen.produce_energy(t_it);
-        //     }
-        //
-        //     self.energy_supplies
-        //         .calc_energy_import_export_betafactor(t_it);
-        //
-        //     for diverter in &self.diverters {
-        //         diverter.write().timestep_end();
-        //     }
-        // }
-        //
+            self.energy_supplies
+                .calc_energy_import_export_betafactor(t_it);
+
+            for diverter in &self.diverters {
+                diverter.write().timestep_end();
+            }
+        }
+        let zone_dict = IndexMap::from([
+            ("internal gains", gains_internal_dict),
+            ("solar gains", gains_solar_dict),
+            ("operative temp", operative_temp_dict),
+            ("internal air temp", internal_air_temp_dict),
+            ("space heat demand", space_heat_demand_dict),
+            ("space cool demand", space_cool_demand_dict),
+        ]);
+
+        let hc_system_dict = IndexMap::from([
+            ("Heating system", space_heat_demand_system_dict),
+            ("Heating system output", space_heat_provided_dict),
+            ("Cooling system", space_cool_demand_system_dict),
+            ("Cooling system output", space_cool_provided_dict),
+        ]);
+        let hot_water_dict = IndexMap::from([
+            (
+                "Hot water demand",
+                HotWaterResultMap::Float(hot_water_demand_dict),
+            ),
+            (
+                "Hot water energy demand incl pipework_loss",
+                HotWaterResultMap::Float(hot_water_energy_demand_dict_incl_pipework),
+            ),
+            (
+                "Hot water energy demand",
+                HotWaterResultMap::Float(hot_water_energy_demand_dict),
+            ),
+            (
+                "Hot water duration",
+                HotWaterResultMap::Float(hot_water_duration_dict),
+            ),
+            (
+                "Hot Water Events",
+                HotWaterResultMap::Int(hot_water_no_events_dict),
+            ),
+            (
+                "Pipework losses",
+                HotWaterResultMap::Float(hot_water_pipework_dict),
+            ),
+            (
+                "Primary pipework losses",
+                HotWaterResultMap::Float(hot_water_primary_pipework_dict),
+            ),
+            (
+                "Storage losses",
+                HotWaterResultMap::Float(hot_water_storage_losses_dict),
+            ),
+        ]);
+
         // // Return results from all energy supplies
         // let mut results_totals: IndexMap<KeyString, Vec<f64>> = Default::default();
         // let mut results_end_user: IndexMap<KeyString, IndexMap<String, Vec<f64>>> =
@@ -1943,69 +1992,6 @@ impl Corpus {
         //         .collect(),
         // );
         //
-        // let zone_dict = IndexMap::from([
-        //     ("Internal gains".try_into().unwrap(), gains_internal_dict),
-        //     ("Solar gains".try_into().unwrap(), gains_solar_dict),
-        //     ("Operative temp".try_into().unwrap(), operative_temp_dict),
-        //     (
-        //         "Internal air temp".try_into().unwrap(),
-        //         internal_air_temp_dict,
-        //     ),
-        //     (
-        //         "Space heat demand".try_into().unwrap(),
-        //         space_heat_demand_dict,
-        //     ),
-        //     (
-        //         "Space cool demand".try_into().unwrap(),
-        //         space_cool_demand_dict,
-        //     ),
-        // ]);
-        // let hc_system_dict = IndexMap::from([
-        //     (
-        //         "Heating system".try_into().unwrap(),
-        //         space_heat_demand_system_dict,
-        //     ),
-        //     (
-        //         "Cooling system".try_into().unwrap(),
-        //         space_cool_demand_system_dict,
-        //     ),
-        //     (
-        //         "Heating system output".try_into().unwrap(),
-        //         space_heat_provided_dict,
-        //     ),
-        //     (
-        //         "Cooling system output".try_into().unwrap(),
-        //         space_cool_provided_dict,
-        //     ),
-        // ]);
-        // let hot_water_dict = IndexMap::from([
-        //     (
-        //         "Hot water demand".try_into().unwrap(),
-        //         HotWaterResultMap::Float(hot_water_demand_dict),
-        //     ),
-        //     (
-        //         "Hot water energy demand".try_into().unwrap(),
-        //         HotWaterResultMap::Float(hot_water_energy_demand_dict),
-        //     ),
-        //     (
-        //         "Hot water energy demand incl pipework_loss"
-        //             .try_into()
-        //             .unwrap(),
-        //         HotWaterResultMap::Float(hot_water_energy_demand_dict_incl_pipework),
-        //     ),
-        //     (
-        //         "Hot water duration".try_into().unwrap(),
-        //         HotWaterResultMap::Float(hot_water_duration_dict),
-        //     ),
-        //     (
-        //         "Hot Water Events".try_into().unwrap(),
-        //         HotWaterResultMap::Int(hot_water_no_events_dict),
-        //     ),
-        //     (
-        //         "Pipework losses".try_into().unwrap(),
-        //         HotWaterResultMap::Float(hot_water_pipework_dict),
-        //     ),
-        // ]);
 
         // Report detailed outputs from heat source wet objects, if requested and available
         // TODO implement once detailed_output_heating_cooling instance var implemented
