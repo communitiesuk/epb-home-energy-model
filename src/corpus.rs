@@ -53,7 +53,7 @@ use crate::core::units::{
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::{
-    DemandVolTargetKey, DomesticHotWaterDemand, VolumeReference,
+    DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
@@ -696,26 +696,19 @@ impl Corpus {
         &self,
         z_name: &str,
         simtime: SimulationTimeIteration,
-    ) -> (
-        Vec<String>,
-        Vec<String>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-    ) {
+    ) -> (Vec<String>, Vec<String>, SetpointsAndConvectiveFractions) {
         // TODO (from Python) For now, the existing single system inputs are each added to a
         //      list. This will eventually need to handle a list being specified
         //      in the inputs.
         let h_name_list = vec![self.heat_system_name_for_zone[z_name].clone()];
         let c_name_list = vec![self.cool_system_name_for_zone[z_name].clone()];
 
-        let (
-            temp_setpnt_heat_system,
-            temp_setpnt_cool_system,
-            frac_convective_heat_system,
-            frac_convective_cool_system,
-        ) = self.setpoints_and_convective_fractions(
+        let SetpointsAndConvectiveFractions {
+            temp_setpnt_heat: temp_setpnt_heat_system,
+            temp_setpnt_cool: temp_setpnt_cool_system,
+            frac_convective_heat: frac_convective_heat_system,
+            frac_convective_cool: frac_convective_cool_system,
+        } = self.setpoints_and_convective_fractions(
             h_name_list.as_slice(),
             c_name_list.as_slice(),
             simtime,
@@ -740,10 +733,12 @@ impl Corpus {
         (
             h_name_list_sorted,
             c_name_list_sorted,
-            temp_setpnt_heat_system,
-            temp_setpnt_cool_system,
-            frac_convective_heat_system,
-            frac_convective_cool_system,
+            SetpointsAndConvectiveFractions {
+                temp_setpnt_heat: temp_setpnt_heat_system,
+                temp_setpnt_cool: temp_setpnt_cool_system,
+                frac_convective_heat: frac_convective_heat_system,
+                frac_convective_cool: frac_convective_cool_system,
+            },
         )
     }
 
@@ -752,12 +747,7 @@ impl Corpus {
         h_name_list: &[String],
         c_name_list: &[String],
         simtime: SimulationTimeIteration,
-    ) -> (
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-    ) {
+    ) -> SetpointsAndConvectiveFractions {
         let mut frac_convective_heat: IndexMap<String, f64> = Default::default();
         let mut frac_convective_cool: IndexMap<String, f64> = Default::default();
         let mut temp_setpnt_heat: IndexMap<String, f64> = Default::default();
@@ -803,12 +793,12 @@ impl Corpus {
             }
         }
 
-        (
+        SetpointsAndConvectiveFractions {
             temp_setpnt_heat,
             temp_setpnt_cool,
             frac_convective_heat,
             frac_convective_cool,
-        )
+        }
     }
 
     fn gains_heat_cool(
@@ -952,10 +942,12 @@ impl Corpus {
             let (
                 h_name_list_sorted_zone_current,
                 c_name_list_sorted_zone_current,
-                temp_setpnt_heat_zone_system_current,
-                temp_setpnt_cool_zone_system_current,
-                frac_convective_heat_zone_system_current,
-                frac_convective_cool_zone_system_current,
+                SetpointsAndConvectiveFractions {
+                    temp_setpnt_heat: temp_setpnt_heat_zone_system_current,
+                    temp_setpnt_cool: temp_setpnt_cool_zone_system_current,
+                    frac_convective_heat: frac_convective_heat_zone_system_current,
+                    frac_convective_cool: frac_convective_cool_zone_system_current,
+                },
             ) = self.heat_cool_systems_for_zone(z_name, simtime);
 
             h_name_list_sorted_zone.insert(z_name, h_name_list_sorted_zone_current);
@@ -1633,16 +1625,16 @@ impl Corpus {
             let temp_final_drawoff = temp_hot_water;
             let temp_average_drawoff = temp_hot_water;
 
-            let (
+            let DomesticHotWaterDemandData {
                 hw_demand_vol,
                 hw_demand_vol_target,
                 hw_vol_at_tapping_points,
                 hw_duration,
-                no_events,
+                all_events: no_events,
                 hw_energy_demand,
                 mut usage_events,
                 vol_hot_water_equiv_elec_shower,
-            ) = self
+            } = self
                 .domestic_hot_water_demand
                 .hot_water_demand(t_it.index, temp_hot_water);
 
@@ -2065,6 +2057,13 @@ impl Corpus {
 
         cop_dict
     }
+}
+
+struct SetpointsAndConvectiveFractions {
+    temp_setpnt_heat: IndexMap<String, f64>,
+    temp_setpnt_cool: IndexMap<String, f64>,
+    frac_convective_heat: IndexMap<String, f64>,
+    frac_convective_cool: IndexMap<String, f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -2920,6 +2919,7 @@ fn zone_from_input(
     ))
 }
 
+#[allow(clippy::type_complexity)]
 fn infiltration_ventilation_from_input(
     zones: &ZoneDictionary,
     input: &InfiltrationVentilationInput,

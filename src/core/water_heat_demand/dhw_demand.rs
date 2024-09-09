@@ -117,16 +117,7 @@ impl DomesticHotWaterDemand {
         &mut self,
         timestep_idx: usize,
         temp_hot_water: f64,
-    ) -> (
-        f64,
-        IndexMap<DemandVolTargetKey, VolumeReference>,
-        f64,
-        f64,
-        usize,
-        f64,
-        Option<Vec<TypedScheduleEvent>>,
-        f64,
-    ) {
+    ) -> DomesticHotWaterDemandData {
         let mut hw_demand_vol = 0.;
         let mut hw_demand_vol_target: IndexMap<DemandVolTargetKey, VolumeReference> =
             Default::default();
@@ -319,16 +310,16 @@ impl DomesticHotWaterDemand {
         // - number of events in timestep
         // - hot water energy demand (kWh)
         // - usage_events updated to reflect pipework volumes and bath durations
-        (
+        DomesticHotWaterDemandData {
             hw_demand_vol,
             hw_demand_vol_target,
             hw_vol_at_tapping_points,
             hw_duration,
             all_events,
             hw_energy_demand,
-            usage_events.cloned(),
+            usage_events: usage_events.cloned(),
             vol_hot_water_equiv_elec_shower,
-        )
+        }
     }
 
     pub fn calc_pipework_losses(
@@ -365,6 +356,18 @@ impl DomesticHotWaterDemand {
 
         (pipework_heat_loss_internal, pipework_heat_loss_external)
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DomesticHotWaterDemandData {
+    pub(crate) hw_demand_vol: f64,
+    pub(crate) hw_demand_vol_target: IndexMap<DemandVolTargetKey, VolumeReference>,
+    pub(crate) hw_vol_at_tapping_points: f64,
+    pub(crate) hw_duration: f64,
+    pub(crate) all_events: usize,
+    pub(crate) hw_energy_demand: f64,
+    pub(crate) usage_events: Option<Vec<TypedScheduleEvent>>,
+    pub(crate) vol_hot_water_equiv_elec_shower: f64,
 }
 
 fn shower_from_input(
@@ -713,54 +716,54 @@ mod tests {
             assert_eq!(
                 dhw_demand.hot_water_demand(t_idx, 55.0),
                 [
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        29.783791734078537,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        Some(vec![
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 29.783791734078537,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 4.1,
                                 duration: Some(6.),
@@ -780,21 +783,21 @@ mod tests {
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
-                        29.783791734078537
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        81.141483189812,
-                        IndexMap::from([
+                        vol_hot_water_equiv_elec_shower: 29.783791734078537
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 81.141483189812,
+                        hw_demand_vol_target: IndexMap::from([
                             (
                                 41.0.into(),
                                 VolumeReference {
@@ -810,11 +813,11 @@ mod tests {
                                 }
                             )
                         ]),
-                        88.195822360114,
-                        12.5,
-                        1usize,
-                        4.532666666666667,
-                        Some(vec![
+                        hw_vol_at_tapping_points: 88.195822360114,
+                        hw_duration: 12.5,
+                        all_events: 1usize,
+                        hw_energy_demand: 4.532666666666667,
+                        usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 6.,
                                 duration: Some(6.),
@@ -834,11 +837,11 @@ mod tests {
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
-                        14.610916699736642
-                    ),
-                    (
-                        53.58989404060333,
-                        IndexMap::from([
+                        vol_hot_water_equiv_elec_shower: 14.610916699736642
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 53.58989404060333,
+                        hw_demand_vol_target: IndexMap::from([
                             (
                                 41.0.into(),
                                 VolumeReference {
@@ -854,11 +857,11 @@ mod tests {
                                 }
                             )
                         ]),
-                        38.47673898173404,
-                        7.0,
-                        2,
-                        2.325363096327197,
-                        Some(vec![
+                        hw_vol_at_tapping_points: 38.47673898173404,
+                        hw_duration: 7.0,
+                        all_events: 2,
+                        hw_energy_demand: 2.325363096327197,
+                        usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 7.,
                                 duration: Some(6.),
@@ -878,11 +881,11 @@ mod tests {
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
-                        0.0
-                    ),
-                    (
-                        39.92207133670446,
-                        IndexMap::from([
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 39.92207133670446,
+                        hw_demand_vol_target: IndexMap::from([
                             (
                                 41.0.into(),
                                 VolumeReference {
@@ -898,11 +901,11 @@ mod tests {
                                 }
                             ),
                         ]),
-                        32.365493807269814,
-                        6.0,
-                        1,
-                        1.9184107029362394,
-                        Some(vec![
+                        hw_vol_at_tapping_points: 32.365493807269814,
+                        hw_duration: 6.0,
+                        all_events: 1,
+                        hw_energy_demand: 1.9184107029362394,
+                        usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 8.,
                                 duration: Some(6.),
@@ -922,158 +925,158 @@ mod tests {
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    ),
-                    (
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        0.0,
-                        Default::default(),
-                        0.0,
-                        None,
-                        0.0
-                    )
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    },
+                    DomesticHotWaterDemandData {
+                        hw_demand_vol: 0.0,
+                        hw_demand_vol_target: Default::default(),
+                        hw_vol_at_tapping_points: 0.0,
+                        hw_duration: 0.0,
+                        all_events: Default::default(),
+                        hw_energy_demand: 0.0,
+                        usage_events: None,
+                        vol_hot_water_equiv_elec_shower: 0.0
+                    }
                 ][t_idx]
             );
         }

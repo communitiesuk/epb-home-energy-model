@@ -24,7 +24,7 @@ use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use derivative::Derivative;
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
@@ -1306,7 +1306,7 @@ impl HeatPumpServiceWater {
             temp_return_k,
             self.hybrid_boiler_service
                 .as_ref()
-                .map(|service| Either::Left(service.clone())),
+                .map(|service| HybridBoilerService::Regular(service.clone())),
             Some(Self::SERVICE_TYPE),
             None,
             None,
@@ -1344,7 +1344,7 @@ impl HeatPumpServiceWater {
             Some(temp_cold_water),
             self.hybrid_boiler_service
                 .as_ref()
-                .map(|service| Either::Left(service.clone())),
+                .map(|service| HybridBoilerService::Regular(service.clone())),
             None,
             simulation_time_iteration.index,
         )
@@ -1434,7 +1434,7 @@ impl HeatPumpServiceSpace {
             temp_return_feed,
             self.hybrid_boiler_service
                 .as_ref()
-                .map(|service| Either::Right(service.clone())),
+                .map(|service| HybridBoilerService::Space(service.clone())),
             Some(Self::SERVICE_TYPE),
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(),
@@ -1483,7 +1483,7 @@ impl HeatPumpServiceSpace {
             None,
             self.hybrid_boiler_service
                 .as_ref()
-                .map(|service| Either::Right(service.clone())),
+                .map(|service| HybridBoilerService::Space(service.clone())),
             emitters_data_for_buffer_tank,
             simulation_time_iteration.index,
         )
@@ -2358,9 +2358,7 @@ impl HeatPump {
         temp_output: f64,
         temp_return_feed: f64,
         time_available: f64,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
         let time_elapsed_hp = match self.backup_ctrl {
@@ -2371,19 +2369,21 @@ impl HeatPump {
         };
 
         match hybrid_boiler_service {
-            Some(Either::Left(service_water_regular)) => {
+            Some(HybridBoilerService::Regular(service_water_regular)) => {
                 service_water_regular.lock().energy_output_max(
                     kelvin_to_celsius(temp_return_feed),
                     time_elapsed_hp,
                     simtime,
                 )
             }
-            Some(Either::Right(service_space)) => service_space.lock().energy_output_max(
-                kelvin_to_celsius(temp_output),
-                kelvin_to_celsius(temp_return_feed),
-                time_elapsed_hp,
-                simtime,
-            ),
+            Some(HybridBoilerService::Space(service_space)) => {
+                service_space.lock().energy_output_max(
+                    kelvin_to_celsius(temp_output),
+                    kelvin_to_celsius(temp_return_feed),
+                    time_elapsed_hp,
+                    simtime,
+                )
+            }
             None => self.power_max_backup * time_available,
         }
     }
@@ -2396,9 +2396,7 @@ impl HeatPump {
         &mut self,
         temp_output: f64,
         temp_return_feed: f64,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         service_type: Option<ServiceType>,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
@@ -2666,9 +2664,7 @@ impl HeatPump {
         temp_output: f64,
         time_available: f64,
         temp_return_feed: f64,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
     ) -> bool {
         let timestep = self.simulation_timestep;
@@ -2728,9 +2724,7 @@ impl HeatPump {
         temp_output: f64,
         time_available: f64,
         temp_return_feed: f64,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> bool {
@@ -2788,9 +2782,7 @@ impl HeatPump {
         simtime: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
         additional_time_unavailable: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
@@ -3109,9 +3101,7 @@ impl HeatPump {
         simtime: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
-        hybrid_boiler_service: Option<
-            Either<Arc<Mutex<BoilerServiceWaterRegular>>, Arc<Mutex<BoilerServiceSpace>>>,
-        >,
+        hybrid_boiler_service: Option<HybridBoilerService>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
         timestep_idx: usize,
     ) -> anyhow::Result<f64> {
@@ -3150,14 +3140,16 @@ impl HeatPump {
             };
 
             let (energy_output_delivered_boiler, time_running_boiler) = match hybrid_boiler {
-                Either::Left(boiler_regular) => boiler_regular.lock().demand_energy(
-                    service_results.energy_output_required_boiler,
-                    kelvin_to_celsius(temp_return_feed),
-                    Some(hybrid_service_bool),
-                    time_elapsed_hp,
-                    simtime,
-                )?,
-                Either::Right(boiler_space) => boiler_space.lock().demand_energy(
+                HybridBoilerService::Regular(boiler_regular) => {
+                    boiler_regular.lock().demand_energy(
+                        service_results.energy_output_required_boiler,
+                        kelvin_to_celsius(temp_return_feed),
+                        Some(hybrid_service_bool),
+                        time_elapsed_hp,
+                        simtime,
+                    )?
+                }
+                HybridBoilerService::Space(boiler_space) => boiler_space.lock().demand_energy(
                     service_results.energy_output_required_boiler,
                     kelvin_to_celsius(temp_output),
                     kelvin_to_celsius(temp_return_feed),
@@ -3734,6 +3726,12 @@ impl Debug for TempSpreadCorrectionArg {
             }
         )
     }
+}
+
+#[derive(Clone)]
+pub(crate) enum HybridBoilerService {
+    Regular(Arc<Mutex<BoilerServiceWaterRegular>>),
+    Space(Arc<Mutex<BoilerServiceSpace>>),
 }
 
 #[derive(Debug)]
