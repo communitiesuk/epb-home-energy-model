@@ -425,7 +425,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
     // Loop over reorganised dictionary to add  column and unit headers
     // Check if the system name is set ,else add a designated empty 'None' string
     for system in reorganised_dict.keys() {
-        let system_label = if system != "" {
+        let system_label = if !system.is_empty() {
             system.as_str()
         } else {
             "None"

@@ -1803,6 +1803,7 @@ pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
 #[derive(Clone, Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSourceWetDetails {
     HeatPump {
@@ -1838,9 +1839,9 @@ pub enum HeatSourceWetDetails {
         #[serde(rename = "MechanicalVentilation")]
         mechanical_ventilation: Option<String>,
         #[serde(rename = "BufferTank")]
-        buffer_tank: Option<HeatPumpBufferTank>,
+        buffer_tank: Option<Box<HeatPumpBufferTank>>,
         test_data: Vec<HeatPumpTestDatum>,
-        boiler: Option<HeatPumpBoiler>,
+        boiler: Option<Box<HeatPumpBoiler>>,
     },
     Boiler {
         #[serde(rename = "EnergySupply")]

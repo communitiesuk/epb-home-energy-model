@@ -329,9 +329,10 @@ impl Corpus {
                     _ => {}
                 }
                 if let HeatSourceWetDetails::HeatPump {
-                        buffer_tank: Some(_),
-                        ..
-                    } = heat_source_wet_details {
+                    buffer_tank: Some(_),
+                    ..
+                } = heat_source_wet_details
+                {
                     heat_sources_wet_with_buffer_tank.push(name.clone());
                 }
                 anyhow::Ok(((*name).clone(), heat_source))
@@ -2883,7 +2884,7 @@ fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging 
     }
 }
 
-fn zone_from_input<'a>(
+fn zone_from_input(
     input: &ZoneInput,
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
@@ -3695,7 +3696,7 @@ fn heat_source_wet_from_input(
                 let cost_schedule_hybrid_hp = boiler.cost_schedule_hybrid.clone();
 
                 let boiler = Boiler::new(
-                    boiler.into(),
+                    boiler.as_ref().into(),
                     energy_supply_boiler,
                     energy_supply_conn_aux_boiler,
                     external_conditions.clone(),

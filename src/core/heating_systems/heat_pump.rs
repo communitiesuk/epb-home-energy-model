@@ -2043,7 +2043,7 @@ impl HeatPump {
             None
         };
 
-        let buffer_tank = buffer_tank.map(|tank| {
+        let buffer_tank = buffer_tank.as_ref().map(|tank| {
             BufferTank::new(
                 tank.daily_losses,
                 tank.volume,
@@ -3181,7 +3181,7 @@ impl HeatPump {
         // Save results that are needed later (in the timestep_end function)
         self.service_results
             .lock()
-            .push(ServiceResult::Full(service_results));
+            .push(ServiceResult::Full(Box::new(service_results)));
         self.total_time_running_current_timestep += time_running;
 
         self.energy_supply_connections[service_name]
@@ -3395,7 +3395,7 @@ impl HeatPump {
                     energy_delivered_hp,
                     energy_input_hp,
                     ..
-                } = service_data;
+                } = service_data.as_ref();
                 let energy_extracted_hp = energy_delivered_hp - energy_input_hp;
                 self.energy_supply_hn_connections[service_name.as_str()]
                     .demand_energy(energy_extracted_hp, timestep_idx)
@@ -3738,7 +3738,7 @@ impl Debug for TempSpreadCorrectionArg {
 
 #[derive(Debug)]
 pub enum ServiceResult {
-    Full(HeatPumpEnergyCalculation),
+    Full(Box<HeatPumpEnergyCalculation>),
     Aux(AuxiliaryParameters),
 }
 

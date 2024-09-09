@@ -148,16 +148,16 @@ impl StorageTank {
 
         let input_energy_adj_prev_timestep = 0.;
 
-        let primary_pipework_lst: Option<Vec<Pipework>> = if primary_pipework_lst.is_some() {
-            primary_pipework_lst
-                .unwrap()
-                .iter()
-                .map(|pipework| pipework.to_owned().try_into().unwrap())
-                .collect::<Vec<Pipework>>()
-                .into()
-        } else {
-            None
-        };
+        let primary_pipework_lst: Option<Vec<Pipework>> =
+            if let Some(primary_pipework_lst) = primary_pipework_lst {
+                primary_pipework_lst
+                    .iter()
+                    .map(|pipework| pipework.to_owned().try_into().unwrap())
+                    .collect::<Vec<Pipework>>()
+                    .into()
+            } else {
+                None
+            };
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
@@ -410,9 +410,7 @@ impl StorageTank {
 
         let q_h_sto_end = (0..self.vol_n.len())
             .map(|i| self.rho * self.cp * self.vol_n[i] * temp_s7_n[i])
-            .collect::<Vec<f64>>()
-            .try_into()
-            .unwrap();
+            .collect::<Vec<f64>>();
 
         let _q_h_sto_end_no = self.rho
             * self.cp
@@ -593,7 +591,7 @@ impl StorageTank {
     ///
     /// Arguments:
     /// * `event` -- Dictionary containing information about the draw-off event
-    /// (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
+    ///              (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
     fn allocate_hot_water(
         &mut self,
         event: TypedScheduleEvent,
