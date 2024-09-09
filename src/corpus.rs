@@ -3082,7 +3082,8 @@ fn infiltration_ventilation_from_input(
             let ctrl_intermittent_mev = mech_vents_data
                 .control
                 .as_ref()
-                .map(|ctrl_name| controls.get_with_string(ctrl_name));
+                .map(|ctrl_name| controls.get_with_string(ctrl_name))
+                .flatten();
 
             let energy_supply = energy_supplies.ensured_get_for_type(
                 mech_vents_data.energy_supply,
@@ -3093,7 +3094,7 @@ fn infiltration_ventilation_from_input(
 
             mechanical_ventilations.insert(
                 mech_vents_name.clone(),
-                MechanicalVentilation::new(external_conditions.clone(), mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, None, match mech_vents_data.vent_type {
+                MechanicalVentilation::new(external_conditions.clone(), mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
                     VentType::Mvhr => mech_vents_data.mvhr_efficiency,
                     VentType::IntermittentMev
                     | VentType::CentralisedContinuousMev
