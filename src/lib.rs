@@ -402,10 +402,72 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         }
     }
 
-    // TODO: complete from line 488 of hem.py/ line 11208 of the 0.28-0.30 diff file
+    // hc_system_dict holds heating demand and output as first level keys
+    // and the system name as second level keys.
+    // Reorganising this dictionary so system names can be grouped together
 
-    headings.push("Ductwork gains".into());
-    units_row.push("[kWh]");
+    // Initialize the reorganized dictionary for grouping systems in hc_system_dict
+    let mut reorganised_dict: IndexMap<String, IndexMap<&'static str, Vec<f64>>> =
+        Default::default();
+
+    // Iterate over the original map
+    for (key, value) in hc_system_dict {
+        // Iterate over the nested map
+        for (nested_key, nested_value) in value {
+            // Add the nested_value to the corresponding entry in reorganized_dict
+            reorganised_dict
+                .entry(nested_key)
+                .or_default()
+                .insert(key, nested_value);
+        }
+    }
+
+    // Loop over reorganised dictionary to add  column and unit headers
+    // Check if the system name is set ,else add a designated empty 'None' string
+    for system in reorganised_dict.keys() {
+        let system_label = if system != "" {
+            system.as_str()
+        } else {
+            "None"
+        };
+        for hc_name in reorganised_dict[system].keys() {
+            let hc_system = if ["Heating system", "Cooling system"].contains(hc_name) {
+                let alternate_name = "energy demand";
+                format!("{system_label}: {alternate_name}")
+            } else if ["Heating system output", "Cooling system output"].contains(hc_name) {
+                let alternate_name = "energy output";
+                format!("{system_label}: {alternate_name}")
+            } else {
+                format!("{system_label}: {hc_name}")
+            };
+            headings.push(hc_system.into());
+            units_row.push("[kWh]");
+        }
+    }
+
+    for totals_key in results_totals.keys() {
+        let totals_header = format!("{totals_key} total");
+        headings.push(totals_header.into());
+        units_row.push("[kWh]");
+        for end_user_key in results_end_user[totals_key].keys() {
+            headings.push(format!("{totals_key}: {end_user_key}").into());
+            units_row.push("[kWh]");
+        }
+        headings.push(format!("{totals_key} import").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key} export").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key} generated and consumed").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key} beta factor").into());
+        units_row.push("[ratio]");
+        headings.push(format!("{totals_key} to storage").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key} from storage").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key} diverted").into());
+        units_row.push("[kWh]");
+    }
 
     // Write headings and units to output file
     writer.write_record(headings.iter().map(|heading| heading.as_ref()))?;
@@ -417,9 +479,12 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         let mut hc_system_row = vec![];
         let mut hw_system_row = vec![];
         let mut hw_system_row_energy = vec![];
+        let mut hw_system_row_energy_with_pipework_losses = vec![];
         let mut hw_system_row_duration = vec![];
         let mut hw_system_row_events = vec![];
         let mut pw_losses_row = vec![];
+        let mut primary_pw_losses_row = vec![];
+        let mut storage_losses_row = vec![];
         let mut ductwork_row = vec![];
         let energy_shortfall: Vec<f64> = vec![];
         for totals_key in results_totals.keys() {
@@ -444,16 +509,13 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         }
 
         // Loop over heating and cooling system demand
-        for system in hc_system_dict.keys() {
-            // if we don't have any data for this system
-            // we still need to output 0s for the "{system} None" column
-            // Expect this to move into the calculation logic in future
-            if hc_system_dict[system].keys().len() == 0 {
+        for hc_system in reorganised_dict.values() {
+            if hc_system.keys().len() == 0 {
                 hc_system_row.push(0.);
             }
 
-            for hc_name in hc_system_dict[system].keys() {
-                hc_system_row.push(hc_system_dict[system][hc_name][t_idx]);
+            for hc_name in hc_system.keys() {
+                hc_system_row.push(hc_system[hc_name][t_idx]);
             }
         }
 
@@ -464,11 +526,23 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water energy demand"] {
             hw_system_row_energy.push(map["energy_demand"][t_idx]);
         }
+        if let HotWaterResultMap::Float(map) =
+            &hot_water_dict["Hot water energy demand incl pipework_loss"]
+        {
+            hw_system_row_energy_with_pipework_losses
+                .push(map["energy_demand_incl_pipework_loss"][t_idx]);
+        }
         if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water duration"] {
             hw_system_row_duration.push(map["duration"][t_idx]);
         }
         if let HotWaterResultMap::Float(map) = &hot_water_dict["Pipework losses"] {
             pw_losses_row.push(map["pw_losses"][t_idx]);
+        }
+        if let HotWaterResultMap::Float(map) = &hot_water_dict["Primary pipework losses"] {
+            primary_pw_losses_row.push(map["primary_pw_losses"][t_idx]);
+        }
+        if let HotWaterResultMap::Float(map) = &hot_water_dict["Storage losses"] {
+            storage_losses_row.push(map["storage_losses"][t_idx]);
         }
         if let HotWaterResultMap::Int(map) = &hot_water_dict["Hot Water Events"] {
             hw_system_row_events.push(map["no_events"][t_idx]);
@@ -479,20 +553,13 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         let mut row: Vec<String> = vec![];
         row.append(&mut vec![t_idx.to_string()]);
         row.append(
-            &mut energy_use_row
-                .into_iter()
-                .map(|val| val.to_string())
-                .collect(),
-        );
-        row.append(&mut zone_row.into_iter().map(|val| val.to_string()).collect());
-        row.append(
-            &mut hc_system_row
-                .into_iter()
-                .map(|val| val.to_string())
-                .collect(),
-        );
-        row.append(
             &mut hw_system_row
+                .into_iter()
+                .map(|val| val.to_string())
+                .collect(),
+        );
+        row.append(
+            &mut hw_system_row_energy_with_pipework_losses
                 .into_iter()
                 .map(|val| val.to_string())
                 .collect(),
@@ -522,6 +589,18 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
                 .collect(),
         );
         row.append(
+            &mut primary_pw_losses_row
+                .into_iter()
+                .map(|val| val.to_string())
+                .collect(),
+        );
+        row.append(
+            &mut storage_losses_row
+                .into_iter()
+                .map(|val| val.to_string())
+                .collect(),
+        );
+        row.append(
             &mut ductwork_row
                 .into_iter()
                 .map(|val| val.to_string())
@@ -529,6 +608,19 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         );
         row.append(
             &mut energy_shortfall
+                .into_iter()
+                .map(|val| val.to_string())
+                .collect(),
+        );
+        row.append(&mut zone_row.into_iter().map(|val| val.to_string()).collect());
+        row.append(
+            &mut hc_system_row
+                .into_iter()
+                .map(|val| val.to_string())
+                .collect(),
+        );
+        row.append(
+            &mut energy_use_row
                 .into_iter()
                 .map(|val| val.to_string())
                 .collect(),
@@ -913,7 +1005,7 @@ fn write_core_output_file_summary(
         elec_generated.to_string(),
     ])?;
     writer.write_record([
-        "Generation to consumption (immediate, excl. diverter)".to_string(),
+        "Generation to consumption (immediate excl. diverter)".to_string(),
         "kWh".to_string(),
         gen_to_consumption.to_string(),
     ])?;
@@ -968,7 +1060,7 @@ fn write_core_output_file_summary(
         writer.write_record([
             "Hot water system",
             "Overall CoP",
-            "Daily HW demand (kWh, 75th percentile)",
+            "Daily HW demand ([kWh] 75th percentile)",
             "HW cylinder volume (litres)",
         ])?;
         for row in dhw_cop_rows.iter_mut() {
