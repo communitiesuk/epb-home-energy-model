@@ -43,7 +43,6 @@ use crate::core::space_heat_demand::ventilation::{
     AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
     Window,
 };
-use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
 use crate::core::space_heat_demand::zone::{AirChangesPerHourArgument, HeatBalance, Zone};
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -105,7 +104,6 @@ const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 pub struct Corpus {
     pub simulation_time: Arc<SimulationTimeIterator>,
     pub external_conditions: Arc<ExternalConditions>,
-    pub infiltration: VentilationElementInfiltration,
     pub cold_water_sources: ColdWaterSources,
     pub energy_supplies: EnergySupplies,
     pub internal_gains: InternalGainsCollection,
@@ -194,8 +192,6 @@ impl Corpus {
             &energy_supplies,
             vec![], // use empty while migrating to 0.30
         )?;
-
-        let infiltration = infiltration_from_input(input.infiltration.as_ref().unwrap());
 
         let _opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
 
@@ -397,7 +393,6 @@ impl Corpus {
         Ok(Self {
             simulation_time: simulation_time_iterator,
             external_conditions,
-            infiltration,
             cold_water_sources,
             energy_supplies,
             internal_gains,
@@ -2128,29 +2123,6 @@ fn external_conditions_from_input(
         input.leap_day_included.unwrap_or(false),
         input.direct_beam_conversion_needed.unwrap_or(false),
         input.shading_segments.clone(),
-    )
-}
-
-fn infiltration_from_input(input: &Infiltration) -> VentilationElementInfiltration {
-    VentilationElementInfiltration::new(
-        input.storeys_in_building,
-        input.shelter,
-        input.build_type,
-        input.test_result,
-        input.test_type,
-        input.env_area,
-        input.volume,
-        input.sheltered_sides,
-        input.open_chimneys,
-        input.open_flues,
-        input.closed_fire,
-        input.flues_d,
-        input.flues_e,
-        input.blocked_chimneys,
-        input.extract_fans,
-        input.passive_vents,
-        input.gas_fires,
-        input.storey_of_dwelling,
     )
 }
 
