@@ -31,7 +31,7 @@ pub struct Zone {
     useful_area: f64,
     volume: f64,
     building_elements: Vec<NamedBuildingElement>,
-    ventilation: Arc<InfiltrationVentilation>,
+    _ventilation: Arc<InfiltrationVentilation>,
     tb_heat_trans_coeff: f64,
     /// total area of all building elements associated with this zone, in m2
     area_el_total: f64,
@@ -145,7 +145,7 @@ impl Zone {
             useful_area: area,
             volume,
             building_elements: named_building_elements,
-            ventilation,
+            _ventilation: ventilation,
             tb_heat_trans_coeff,
             area_el_total,
             c_int,

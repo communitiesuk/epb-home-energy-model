@@ -43,7 +43,6 @@ pub trait Pipeworkesque {
 pub struct PipeworkSimple {
     location: PipeworkLocation,
     length_in_m: f64,
-    internal_diameter_in_m: f64,
     volume_litres: f64,
     contents_properties: MaterialProperties,
 }
@@ -67,7 +66,6 @@ impl PipeworkSimple {
         Ok(Self {
             location,
             length_in_m: length,
-            internal_diameter_in_m: internal_diameter,
             volume_litres,
             contents_properties,
         })

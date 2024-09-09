@@ -113,7 +113,7 @@ impl DomesticHotWaterDemand {
         })
     }
 
-    pub fn hot_water_demand(
+    pub(crate) fn hot_water_demand(
         &mut self,
         timestep_idx: usize,
         temp_hot_water: f64,

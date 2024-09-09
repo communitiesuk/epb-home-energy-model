@@ -13,8 +13,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
-    TerrainClass, VentType, VentilationShieldClass,
-    WindowPart as WindowPartInput,
+    TerrainClass, VentType, VentilationShieldClass, WindowPart as WindowPartInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
@@ -24,20 +23,25 @@ use std::sync::Arc;
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
 }
+
+//referenced for unimplementable LOAD arm further down in module - remove following directive when this is implemented
+#[allow(dead_code)]
 fn c_a() -> f64 {
     AIR.specific_heat_capacity_kwh()
 }
 
 // (Default values from BS EN 16798-7, Table 11)
 // Coefficient to take into account stack effect in airing calculation in (m/s)/(m*K)
-const C_STACK: f64 = 0.0035;
+const _C_STACK: f64 = 0.0035;
 // Coefficient to take into account wind speed in airing calculation in 1/(m/s)
-const C_WND: f64 = 0.001;
+const _C_WND: f64 = 0.001;
 // Gravitational constant in m/s2
 const G: f64 = 9.81;
 //Room temperature in degrees K
 const T_E_REF: f64 = 293.15;
 //Absolute zero in degrees K
+//referenced for unimplementable LOAD arm further down in module - remove following directive when this is implemented
+#[allow(dead_code)]
 const T_0_ABS: f64 = 273.15;
 
 // In Python this is defined in InfiltrationVentilation.calculate_internal_reference_pressure
@@ -66,7 +70,7 @@ fn calculate_pressure_difference_at_an_airflow_path(
 }
 
 /// Convert infiltration rate from ach to m^3/s
-fn air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
+fn _air_change_rate_to_flow_rate(air_change_rate: f64, zone_volume: f64) -> f64 {
     air_change_rate * zone_volume / SECONDS_PER_HOUR as f64
 }
 
@@ -378,7 +382,6 @@ fn sign(value: f64) -> i8 {
 
 #[derive(Debug)]
 pub(crate) struct Window {
-    h_w_fa: f64,
     h_w_path: f64,
     a_w_max: f64,
     c_d_w: f64,
@@ -386,7 +389,6 @@ pub(crate) struct Window {
     orientation: f64,
     pitch: f64,
     external_conditions: Arc<ExternalConditions>,
-    n_w_div: f64,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
     p_a_alt: f64,
@@ -407,7 +409,6 @@ impl Window {
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
         Self {
-            h_w_fa,
             h_w_path,
             a_w_max,
             c_d_w: 0.67,
@@ -415,7 +416,6 @@ impl Window {
             orientation,
             pitch,
             external_conditions,
-            n_w_div,
             on_off_ctrl_obj,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
@@ -479,12 +479,12 @@ impl Window {
         }
     }
 
-    /// Calculate the airflow through window opening based on the how open the window is and internal pressure
+    /// Calculate the airflow through window opening based on how open the window is and internal pressure
     /// Arguments:
     /// u_site -- wind velocity at zone level (m/s)
     /// T_z -- thermal zone air temperature (K)
     /// p_z_ref -- internal reference pressure (Pa)
-    /// f_cross -- boolean, dependant on if cross ventilation is possible or not
+    /// f_cross -- boolean, dependent on if cross ventilation is possible or not
     /// shield_class -- indicates exposure to wind
     /// R_w_arg -- ratio of window opening (0-1)
     fn calculate_flow_from_internal_p(
@@ -550,8 +550,6 @@ impl Window {
 
 #[derive(Clone, Copy, Debug)]
 struct WindowPart {
-    h_w_path: f64,
-    h_w_fa: f64,
     n_w_div: f64,
     h_w_div_path: f64,
     n_w: f64,
@@ -560,8 +558,6 @@ struct WindowPart {
 impl WindowPart {
     fn new(h_w_path: f64, h_w_fa: f64, n_w_div: f64, window_part_number: usize) -> Self {
         Self {
-            h_w_path,
-            h_w_fa,
             n_w_div,
             h_w_div_path: Self::calculate_height_for_delta_p_w_div_path(
                 h_w_path,
@@ -627,7 +623,7 @@ pub(crate) struct Vent {
     delta_p_vent_ref: f64,
     orientation: f64,
     pitch: f64,
-    altitude: f64,
+    _altitude: f64,
     n_vent: f64,
     c_d_vent: f64,
     p_a_alt: f64,
@@ -639,7 +635,7 @@ impl Vent {
     ///
     /// Arguments:
     ///    external_conditions -- reference to ExternalConditions object
-    ///    h_path -- mid height of air flow path relative to ventilation zone (m)
+    ///    h_path -- mid-height of air flow path relative to ventilation zone (m)
     ///    A_vent - Equivalent area of a vent (m2)
     ///    delta_p_vent_ref -- reference pressure difference for vent (Pa)
     ///    orientation -- The orientation of the vent (degrees)
@@ -663,7 +659,7 @@ impl Vent {
             delta_p_vent_ref,
             orientation,
             pitch,
-            altitude,
+            _altitude: altitude,
             external_conditions,
             n_vent: 0.5, // Flow exponent for vents based on Section B.3.2.2 from BS EN 16798-7
             c_d_vent: 0.6, // Discharge coefficient of vents based on B.3.2.1 from BS EN 16798-7
@@ -793,7 +789,7 @@ struct Leaks {
     a_leak: f64,
     qv_delta_p_leak_ref: f64,
     facade_direction: FacadeDirection,
-    altitude: f64,
+    _altitude: f64,
     external_conditions: Arc<ExternalConditions>,
     p_a_alt: f64,
     // In Python there are extra properties:
@@ -804,7 +800,7 @@ struct Leaks {
 impl Leaks {
     /// Arguments:
     ///      external_conditions -- reference to ExternalConditions object
-    ///      h_path -- mid height of the air flow path relative to ventilation zone floor level
+    ///      h_path -- mid-height of the air flow path relative to ventilation zone floor level
     ///      delta_p_leak_ref -- Reference pressure difference (From pressure test e.g. blower door = 50Pa)
     ///      qv_delta_p_leak_ref -- flow rate through
     ///      facade_direction -- The direction of the facade the leak is on.
@@ -831,7 +827,7 @@ impl Leaks {
             a_leak,
             qv_delta_p_leak_ref,
             facade_direction,
-            altitude,
+            _altitude: altitude,
             external_conditions,
             p_a_alt: adjust_air_density_for_altitude(altitude),
         }
@@ -942,6 +938,8 @@ pub(crate) struct AirTerminalDevices {
     // NOTE - in Python we have c_atd_path as an instance variable but here we calculate it when needed instead
 }
 
+// remove following directive when things start referencing AirTerminalDevices (upstream is not fully implemented as of 0.30)
+#[allow(dead_code)]
 impl AirTerminalDevices {
     /// Construct a AirTerminalDevices object
     /// Arguments:
@@ -984,12 +982,16 @@ impl AirTerminalDevices {
 }
 
 /// An object to represent Cowls
+// remove following directive when something references Cowls type
+#[allow(dead_code)]
 struct Cowls {
     c_p_cowl_roof: f64,
     height: f64,
     // NOTE - in Python we have delta_cowl_height as an instance variable but here we calculate it when needed from the height
 }
 
+// remove following directive when something references Cowls type
+#[allow(dead_code)]
 impl Cowls {
     /// Construct a Cowls object
     /// Arguments:
@@ -1065,22 +1067,20 @@ impl CombustionAppliances {
 /// An object to represent Mechanical Ventilation
 #[derive(Debug)]
 pub(crate) struct MechanicalVentilation {
-    f_ctrl: f64,
-    f_sys: f64,
-    e_v: f64,
-    theta_z_t: f64,
+    // theta_z_t will be referenced once upstream reference is implementable
+    _theta_z_t: f64,
     sup_air_flw_ctrl: SupplyAirFlowRateControlType,
-    sup_air_temp_ctrl: SupplyAirTemperatureControlType,
+    _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
     external_conditions: Arc<ExternalConditions>,
-    q_h_des: f64,
-    q_c_des: f64,
-    theta_ctrl_sys: Option<f64>,
+    _q_h_des: f64,
+    _q_c_des: f64,
+    _theta_ctrl_sys: Option<f64>,
     vent_type: VentType,
-    total_volume: f64,
+    _total_volume: f64,
     ctrl_intermittent_mev: Option<Arc<Control>>,
     sfp: f64,
     energy_supply_conn: EnergySupplyConnection,
-    altitude: f64,
+    _altitude: f64,
     pub(crate) design_outdoor_air_flow_rate_m3_h: f64,
     mvhr_eff: f64,
     qv_oda_req_design: f64,
@@ -1127,24 +1127,20 @@ impl MechanicalVentilation {
         let e_v = 1.; // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
 
         Self {
-            // Hard coded variables
-            f_ctrl,
-            f_sys,
-            e_v,
-            theta_z_t: 0., // (From Python) TODO get Thermal zone temperature - used for LOAD
+            _theta_z_t: 0., // (From Python) TODO get Thermal zone temperature - used for LOAD
             sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // (From Python) TODO currently hard coded until load comp implemented
-            sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
+            _sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
             // Arguments
             external_conditions,
-            q_h_des,
-            q_c_des,
-            theta_ctrl_sys,
+            _q_h_des: q_h_des,
+            _q_c_des: q_c_des,
+            _theta_ctrl_sys: theta_ctrl_sys,
             vent_type,
-            total_volume,
+            _total_volume: total_volume,
             ctrl_intermittent_mev,
             sfp: specific_fan_power,
             energy_supply_conn,
-            altitude,
+            _altitude: altitude,
             design_outdoor_air_flow_rate_m3_h: design_outdoor_air_flow_rate, // in m3/h
             mvhr_eff: mvhr_eff.unwrap_or(0.0),
             // Calculated variables
@@ -1413,12 +1409,14 @@ impl InfiltrationVentilation {
 
     /// Calculate total volume air flow rate entering ventilation zone
     /// Equation 68 from BS EN 16798-7
+    #[cfg(test)]
     fn calculate_total_volume_air_flow_rate_in(qm_in: f64, external_air_density: f64) -> f64 {
         qm_in / external_air_density // from weather file?
     }
 
     /// Calculate total volume air flow rate leaving ventilation zone
     /// Equation 69 from BS EN 16798-7
+    #[cfg(test)]
     fn calculate_total_volume_air_flow_rate_out(qm_out: f64, zone_air_density: f64) -> f64 {
         qm_out / zone_air_density
     }
@@ -1565,6 +1563,8 @@ impl InfiltrationVentilation {
     }
 
     /// Used in calculate_internal_reference_pressure function for p_z_ref solve
+    // Remove following directive once this function is used
+    #[allow(dead_code)]
     fn implicit_mass_balance_for_internal_reference_pressure(
         self,
         p_z_ref: f64,

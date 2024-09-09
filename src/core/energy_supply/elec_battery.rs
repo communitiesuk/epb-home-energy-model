@@ -14,7 +14,6 @@ pub struct ElectricBattery {
     capacity: f64,
     /// charge/discharge round trip efficiency of battery system (between 0 & 1)
     charge_discharge_efficiency: f64,
-    battery_age: f64,
     minimum_charge_rate: f64,
     maximum_charge_rate: f64,
     maximum_discharge_rate: f64,
@@ -56,7 +55,6 @@ impl ElectricBattery {
         Self {
             capacity,
             charge_discharge_efficiency,
-            battery_age,
             minimum_charge_rate,
             maximum_charge_rate,
             maximum_discharge_rate,

@@ -96,8 +96,8 @@ pub fn run_project(
         heat_balance_dict,
         _heat_source_wet_results_dict,
         _heat_source_wet_results_annual_dict,
-        emitters_output_dict,
-        vent_output_list,
+        emitters_output_dict: _emitters_output_dict,
+        vent_output_list: _vent_output_list,
     } = corpus.run()?;
 
     write_core_output_file(

@@ -252,10 +252,10 @@ pub struct BufferTankEmittersDataWithResult {
 
 #[derive(Clone, Debug, Default)]
 pub struct BufferTankServiceResult {
-    service_name: String,
-    power_req_from_buffer_tank: f64,
-    temp_emitter_req: f64,
-    buffer_emitter_circ_flow_rate: f64,
+    _service_name: String,
+    _power_req_from_buffer_tank: f64,
+    _temp_emitter_req: f64,
+    _buffer_emitter_circ_flow_rate: f64,
     flow_temp_increase_due_to_buffer: f64,
     pump_power_at_flow_rate: f64,
     heat_loss_buffer_kwh: f64,
@@ -270,11 +270,11 @@ pub struct BufferTank {
     pump_power_at_flow_rate: f64,
     number_of_zones: usize,
     simulation_timestep: f64,
-    contents: MaterialProperties,
+    _contents: MaterialProperties,
     service_results: Vec<BufferTankServiceResult>,
-    buffer_emitter_circ_flow_rate: f64,
-    hp_buffer_circ_flow_rate: f64,
-    print_warning: bool,
+    _buffer_emitter_circ_flow_rate: f64,
+    _hp_buffer_circ_flow_rate: f64,
+    _print_warning: bool,
     cp: f64,
     rho: f64,
     q_heat_loss_buffer_rbl: f64,
@@ -304,11 +304,11 @@ impl BufferTank {
             pump_power_at_flow_rate,
             number_of_zones,
             simulation_timestep,
-            contents,
+            _contents: contents,
             service_results: Default::default(),
-            buffer_emitter_circ_flow_rate: 0.0,
-            hp_buffer_circ_flow_rate: 0.0,
-            print_warning: true,
+            _buffer_emitter_circ_flow_rate: 0.0,
+            _hp_buffer_circ_flow_rate: 0.0,
+            _print_warning: true,
             cp,
             rho,
             q_heat_loss_buffer_rbl: 0.0,
@@ -397,11 +397,11 @@ impl BufferTank {
 
             // If detailed results are to be output, save the results from the current timestep
             self.service_results.push(BufferTankServiceResult {
-                service_name: format!("{service_name}_buffer_tank"),
-                power_req_from_buffer_tank: emitters_data_for_buffer_tank
+                _service_name: format!("{service_name}_buffer_tank"),
+                _power_req_from_buffer_tank: emitters_data_for_buffer_tank
                     .power_req_from_buffer_tank,
-                temp_emitter_req,
-                buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
+                _temp_emitter_req: temp_emitter_req,
+                _buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
                 flow_temp_increase_due_to_buffer,
                 pump_power_at_flow_rate: self.pump_power_at_flow_rate,
                 heat_loss_buffer_kwh,
@@ -431,10 +431,10 @@ impl BufferTank {
             self.temp_ave_buffer = Some(new_temp_ave_buffer);
 
             self.service_results.push(BufferTankServiceResult {
-                service_name: format!("{service_name}_buffer_tank"),
-                power_req_from_buffer_tank: 0.0,
-                temp_emitter_req: emitters_data_for_buffer_tank.temp_emitter_req,
-                buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
+                _service_name: format!("{service_name}_buffer_tank"),
+                _power_req_from_buffer_tank: 0.0,
+                _temp_emitter_req: emitters_data_for_buffer_tank.temp_emitter_req,
+                _buffer_emitter_circ_flow_rate: self.pump_fixed_flow_rate,
                 flow_temp_increase_due_to_buffer: 0.0,
                 pump_power_at_flow_rate: 0.0,
                 heat_loss_buffer_kwh,
@@ -3088,7 +3088,7 @@ impl HeatPump {
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
     ///
     /// Note: Call via a HeatPumpService object, not directly.
-    pub fn demand_energy(
+    pub(crate) fn demand_energy(
         &mut self,
         service_name: &str,
         service_type: &ServiceType,

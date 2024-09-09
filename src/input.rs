@@ -61,7 +61,8 @@ pub struct Input {
     pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
     pub general: General,
     pub infiltration_ventilation: InfiltrationVentilation,
-    pub appliances: Option<IndexMap<String, ApplianceEntry>>,
+    #[serde(rename = "Appliances")]
+    pub _appliances: Option<IndexMap<String, ApplianceEntry>>,
     pub tariff: Option<Tariff>,
 }
 
@@ -2104,6 +2105,8 @@ pub struct InfiltrationVentilation {
     pub(crate) altitude: f64,
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) window_adjust_control: Option<String>, // don't know what this can be
+    // marking as known dead code until FHS code is complete when migrating to 0.30
+    #[allow(dead_code)]
     noise_nuisance: Option<bool>,
     #[serde(rename = "Vents")]
     pub(crate) vents: IndexMap<String, Vent>,
@@ -2112,11 +2115,11 @@ pub struct InfiltrationVentilation {
     #[serde(rename = "MechanicalVentilation")]
     pub(crate) mechanical_ventilation: Option<IndexMap<String, MechanicalVentilation>>,
     #[serde(rename = "AirTerminalDevices")]
-    air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
+    _air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
     #[serde(rename = "PDUs")]
-    pdus: IndexMap<String, ()>, // don't know what this looks like yet
+    _pdus: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "Cowls")]
-    cowls: IndexMap<String, ()>, // don't know what this looks like yet
+    _cowls: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "CombustionAppliances")]
     pub(crate) combustion_appliances: IndexMap<String, CombustionAppliance>,
 }
@@ -2170,15 +2173,16 @@ pub struct VentilationLeaks {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilation {
-    vent_sys_op: Option<String>, // this seems useless/unreferenced
+    #[serde(rename = "vent_sys_op")]
+    _vent_sys_op: Option<String>, // this seems useless/unreferenced
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
     #[serde(rename = "design_zone_cooling_covered_by_mech_vent")]
-    design_zone_cooling_covered_by_mechanical_vent: f64,
+    _design_zone_cooling_covered_by_mechanical_vent: f64,
     #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
-    design_zone_heating_covered_by_mechanical_vent: f64,
+    _design_zone_heating_covered_by_mechanical_vent: f64,
     pub(crate) vent_type: VentType,
     #[serde(rename = "mvhr_eff")]
     pub(crate) mvhr_efficiency: Option<f64>,
@@ -2187,8 +2191,10 @@ pub struct MechanicalVentilation {
     pub(crate) control: Option<String>,
     #[serde(rename = "SFP")]
     pub(crate) sfp: Option<f64>,
-    measured_fan_power: Option<f64>,
-    measured_air_flow_rate: Option<f64>,
+    #[serde(rename = "measured_fan_power")]
+    _measured_fan_power: Option<f64>,
+    #[serde(rename = "measured_air_flow_rate")]
+    _measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: EnergySupplyType,
     pub(crate) design_outdoor_air_flow_rate: f64,
@@ -2265,6 +2271,8 @@ pub enum DuctType {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+// type is not read in 0.30 version of code - please remove following once data is used
+#[allow(dead_code)]
 pub struct AirTerminalDevice {
     area_cm2: f64,
     pressure_difference_ref: f64,
@@ -2333,18 +2341,20 @@ pub enum ApplianceEntry {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+// following in place to remove from warnings during migrating to 0.30 as these fields are referenced by FHS code
+#[allow(dead_code)]
 pub struct Appliance {
     #[serde(rename = "kWh_per_100cycle")]
-    kwh_per_100_cycle: Option<f64>,
+    pub(crate) kwh_per_100_cycle: Option<f64>,
     #[serde(rename = "loadshifting")]
-    load_shifting: Option<ApplianceLoadShifting>,
-    kg_load: Option<f64>,
+    pub(crate) load_shifting: Option<ApplianceLoadShifting>,
+    pub(crate) kg_load: Option<f64>,
     #[serde(rename = "kWh_per_annum")]
-    kwh_per_annum: Option<f64>,
+    pub(crate) kwh_per_annum: Option<f64>,
     #[serde(rename = "Energysupply")]
-    energy_supply: Option<EnergySupplyType>,
+    pub(crate) energy_supply: Option<EnergySupplyType>,
     #[serde(rename = "kWh_per_cycle")]
-    kwh_per_cycle: Option<f64>,
+    pub(crate) kwh_per_cycle: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -2353,7 +2363,8 @@ pub struct Appliance {
 pub struct ApplianceLoadShifting {
     pub max_shift_hrs: f64,
     pub demand_limit_weighted: f64,
-    weight: String, // not sure yet what these can be
+    #[serde(rename = "weight")]
+    _weight: String, // not sure yet what these can be
     // In Python these are set from the FHS wrapper
     pub weight_timeseries: Option<Vec<f64>>,
     pub demand_timeseries: Option<Vec<f64>>,
@@ -2371,7 +2382,8 @@ pub enum ApplianceReference {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Tariff {
-    schedule: Schedule,
+    #[serde(rename = "schedule")]
+    _schedule: Schedule,
 }
 
 #[derive(Debug)]

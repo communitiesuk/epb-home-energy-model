@@ -2091,8 +2091,6 @@ impl Display for NumberOrDivisionByZero {
     }
 }
 
-type NumberMap = HashMap<String, f64>;
-
 pub type ResultsEndUser = IndexMap<KeyString, IndexMap<String, Vec<f64>>>;
 
 enum SpaceHeatCoolSystems<'a> {
