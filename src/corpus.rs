@@ -1696,7 +1696,7 @@ impl Corpus {
 
             // Addition of primary_pipework_losses_kWh for reporting as part of investigation of (upstream BRE) issue #31225: FDEV A082
             let (primary_pw_losses, storage_losses) =
-                if let HotWaterSource::StorageTank(storage_tank) =
+                if let HotWaterSource::StorageTank(_storage_tank) =
                     &self.hot_water_sources["hw cylinder"]
                 {
                     // storage_tank.lock().to_report() // not implementing (for now at least) as this uses toreport() to investigate an upstream bug only
@@ -3730,7 +3730,6 @@ fn heat_source_from_input(
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
-    cold_water_sources: &ColdWaterSources,
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
@@ -3808,7 +3807,6 @@ fn heat_source_from_input(
         }
         HeatSourceInput::Wet {
             name,
-            cold_water_source: cold_water_source_type,
             control,
             temp_flow_limit_upper,
             ..
@@ -4030,7 +4028,6 @@ fn hot_water_source_from_input(
                     simulation_time,
                     controls,
                     energy_supplies,
-                    cold_water_sources,
                     temp_internal_air_accessor.clone(),
                     external_conditions.clone(),
                 )?;
