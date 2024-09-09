@@ -1219,23 +1219,21 @@ impl Corpus {
             }
             for c_name in c_name_list_sorted_zone[z_name][c_idx..].iter() {
                 let c_name = c_name.as_str();
-                space_heat_provided_zone_system.insert(
+                space_cool_provided_zone_system.insert(
                     c_name,
                     if !c_name.is_empty() {
-                        self.space_heat_systems[c_name]
-                            .lock()
-                            .demand_energy(0.0, simtime)?
+                        self.space_cool_systems[c_name].demand_energy(0.0, simtime)
                     } else {
                         0.0
                     },
                 );
                 hc_output_convective.insert(
                     c_name,
-                    space_heat_provided_zone_system[c_name] * frac_convective_heat,
+                    space_cool_provided_zone_system[c_name] * frac_convective_cool,
                 );
                 hc_output_radiative.insert(
                     c_name,
-                    space_heat_provided_zone_system[c_name] * (1.0 - frac_convective_heat),
+                    space_cool_provided_zone_system[c_name] * (1.0 - frac_convective_cool),
                 );
             }
             // Calculate unmet demand
