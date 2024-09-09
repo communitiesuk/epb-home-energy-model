@@ -4093,9 +4093,16 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::material_properties::WATER;
+    use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
+    use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
+    use crate::core::space_heat_demand::zone::Zone;
+    use crate::corpus::CompletedVentilationLeaks;
+    use crate::external_conditions::DaylightSavingsConfig;
+    use crate::input::{EnergySupplyType, FuelType, TerrainClass, VentilationShieldClass};
     use crate::simulation_time::SimulationTime;
+    use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
     use approx::{assert_relative_eq, assert_ulps_eq};
+    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -5304,4 +5311,282 @@ mod tests {
             );
         }
     }
+
+    // The below tests correspond to the TestHeatPump class in Python
+
+    #[fixture]
+    fn simulation_time_for_heat_pump() -> SimulationTime {
+        SimulationTime::new(0., 2., 1.)
+    }
+
+    #[fixture]
+    fn external_conditions(
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> Arc<ExternalConditions> {
+        let simulation_time_iterator = simulation_time_for_heat_pump.iter();
+        let wind_speeds = vec![3.7, 3.8];
+        let wind_directions = vec![200., 220.];
+        let air_temps = vec![0.0, 2.5];
+        let diffuse_horizontal_radiations = vec![333., 610.];
+        let direct_beam_radiations = vec![420., 750.];
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                objects: None,
+            },
+        ];
+        Arc::new(ExternalConditions::new(
+            &simulation_time_iterator,
+            air_temps,
+            wind_speeds,
+            wind_directions,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
+            0,
+            0,
+            None,
+            1.0,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            shading_segments,
+        ))
+    }
+
+    #[fixture]
+    pub fn temp_internal_air_accessor(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> TempInternalAirAccessor {
+        let be_objs = IndexMap::from([]);
+        let leaks = CompletedVentilationLeaks {
+            ventilation_zone_height: 0.,
+            test_pressure: 0.,
+            test_result: 0.,
+            area_roof: 0.,
+            area_facades: 0.,
+            env_area: 0.,
+            altitude: 0.,
+        };
+        let ventilation = InfiltrationVentilation::new(
+            external_conditions,
+            true,
+            VentilationShieldClass::Open,
+            TerrainClass::Country,
+            0.,
+            vec![],
+            vec![],
+            leaks,
+            vec![],
+            vec![],
+            vec![],
+            0.,
+            0.,
+        );
+        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
+
+        let zone = Zone::new(
+            500., // any number above 0
+            0.,   // any number
+            be_objs,
+            thermal_bridging,
+            ventilation.into(),
+            0., // any number
+            0., // any number
+            None,
+            &simulation_time_for_heat_pump.iter(),
+        );
+
+        let zones = IndexMap::from([("zone one".to_string(), zone.unwrap())]).into();
+        TempInternalAirAccessor {
+            zones,
+            total_volume: 0., // any number
+        }
+    }
+
+    #[fixture]
+    fn heat_pump(
+        simulation_time_for_heat_pump: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        temp_internal_air_accessor: TempInternalAirAccessor,
+    ) -> HeatPump {
+        let test_data = vec![
+            HeatPumpTestDatum {
+                air_flow_rate: None,
+                test_letter: test_letter("A"),
+                capacity: 8.4,
+                cop: 4.6,
+                degradation_coefficient: 0.90,
+                design_flow_temp: 35.,
+                temp_outlet: 34.,
+                temp_source: 0.,
+                temp_test: -7.,
+                ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio: None,
+            },
+            HeatPumpTestDatum {
+                air_flow_rate: None,
+                test_letter: test_letter("B"),
+                capacity: 8.3,
+                cop: 4.9,
+                degradation_coefficient: 0.90,
+                design_flow_temp: 35.,
+                temp_outlet: 30.,
+                temp_source: 0.,
+                temp_test: 2.,
+                ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio: None,
+            },
+            HeatPumpTestDatum {
+                air_flow_rate: None,
+                test_letter: test_letter("C"),
+                capacity: 8.3,
+                cop: 5.1,
+                degradation_coefficient: 0.90,
+                design_flow_temp: 35.,
+                temp_outlet: 27.,
+                temp_source: 0.,
+                temp_test: 7.,
+                ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio: None,
+            },
+            HeatPumpTestDatum {
+                air_flow_rate: None,
+                test_letter: test_letter("D"),
+                capacity: 8.2,
+                cop: 5.4,
+                degradation_coefficient: 0.95,
+                design_flow_temp: 35.,
+                temp_outlet: 24.,
+                temp_source: 0.,
+                temp_test: 12.,
+                ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio: None,
+            },
+            HeatPumpTestDatum {
+                air_flow_rate: None,
+                test_letter: test_letter("F"),
+                capacity: 8.4,
+                cop: 4.6,
+                degradation_coefficient: 0.90,
+                design_flow_temp: 35.,
+                temp_outlet: 34.,
+                temp_source: 0.,
+                temp_test: -7.,
+                ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio: None,
+            },
+        ];
+
+        let heat_pump_input = HeatSourceWetDetails::HeatPump {
+            energy_supply: EnergySupplyType::MainsGas,
+            source_type: HeatPumpSourceType::OutsideAir,
+            energy_supply_heat_network: None,
+            temp_distribution_heat_network: None,
+            sink_type: HeatPumpSinkType::Water,
+            backup_control_type: HeatPumpBackupControlType::TopUp,
+            time_delay_backup: 1.0,
+            modulating_control: true,
+            min_modulation_rate_20: None,
+            min_modulation_rate_35: Some(0.35),
+            min_modulation_rate_55: Some(0.4),
+            time_constant_onoff_operation: 140.,
+            temp_return_feed_max: 70.,
+            temp_lower_operating_limit: -5.0,
+            min_temp_diff_flow_return_for_hp_to_operate: 0.0,
+            var_flow_temp_ctrl_during_test: false,
+            power_heating_warm_air_fan: None,
+            power_heating_circ_pump: 0.015,
+            power_source_circ_pump: 0.01,
+            power_standby: 0.015,
+            power_crankcase_heater: 0.01,
+            power_off: 0.015,
+            power_max_backup: Some(3.0),
+            eahp_mixed_max_temp: None,
+            eahp_mixed_min_temp: None,
+            mechanical_ventilation: None,
+            buffer_tank: None,
+            test_data,
+            boiler: None,
+        };
+
+        let energy_supply = EnergySupply::new(
+            FuelType::MainsGas,
+            simulation_time_for_heat_pump.iter().total_steps(),
+            None,
+            None,
+            None,
+        );
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+        let number_of_zones = 2;
+        let boiler = None;
+        let cost_schedule_hybrid_hp = None;
+
+        HeatPump::new(
+            &heat_pump_input,
+            Arc::from(RwLock::from(energy_supply)),
+            energy_supply_conn_name_auxiliary,
+            simulation_time_for_heat_pump.step,
+            external_conditions,
+            number_of_zones,
+            None,
+            None,
+            false,
+            boiler,
+            cost_schedule_hybrid_hp,
+            temp_internal_air_accessor,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    fn test_create_service_connection() {
+        let service_name = "new_service";
+
+        // Ensure the service name does not exist in energy_supply_connections
+        // TODO: rest of test
+    }
+
+    // def test_create_service_connection(self):
+    // ''' Test creation of EnergySupplyConnection for the service name given'''
+    // self.service_name = 'new_service'
+    // # Ensure the service name does not exist in __energy_supply_connections
+    // self.assertNotIn(self.service_name,
+    //                  self.heat_pump._HeatPump__energy_supply_connections)
+    // # Call the method under test
+    // self.heat_pump._HeatPump__create_service_connection(self.service_name)
+    // # Check that the service name was added to __energy_supply_connections
+    // self.assertIn(self.service_name,
+    //               self.heat_pump._HeatPump__energy_supply_connections)
+    // # Check system exit when connection is created with exiting service name
+    // with self.assertRaises(SystemExit):
+    //     self.heat_pump._HeatPump__create_service_connection(self.service_name)
+
+    // # Check with heat_network
+    // self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: hp1'
+    // self.heat_network = EnergySupply(simulation_time = self.simtime ,
+    //                                  fuel_type = 'custom')
+    // self.heat_pump_nw = HeatPump(self.heat_dict_heat_nw,
+    //                          self.energysupply,
+    //                          self.energy_supply_conn_name_auxiliary,
+    //                          self.simtime,
+    //                          self.extcond,
+    //                          self.number_of_zones,
+    //                          heat_network = self.heat_network)
+    // # Call the method under test
+    // self.heat_pump_nw._HeatPump__create_service_connection('new_service_nw')
+    // self.assertIn('new_service_nw',
+    //               self.heat_pump_nw._HeatPump__energy_supply_HN_connections)
 }
