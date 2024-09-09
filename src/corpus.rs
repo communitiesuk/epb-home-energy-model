@@ -1,7 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    Control, ControlBehaviour, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl,
-    SetpointTimeControl, ToUChargeControl,
+    Control, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
+    ToUChargeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -302,21 +302,17 @@ impl Corpus {
             .unwrap_or_default()
             .iter()
             .map(|(name, heat_source_wet_details)| {
-                let ventilation = ventilation.as_ref().map(|ventilation| ventilation.lock());
                 let heat_source = Arc::new(Mutex::new(heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
                     external_conditions.clone(),
                     simulation_time_iterator.clone(),
-                    ventilation.map(|v| (*v).clone()),
-                    input.ventilation.as_ref().map(|v| v.req_ach()),
                     &mechanical_ventilations,
                     zones.len(),
                     TempInternalAirAccessor {
                         zones: zones.clone(),
                         total_volume,
                     },
-                    total_volume,
                     &controls,
                     &mut energy_supplies,
                 )?));
@@ -1712,7 +1708,7 @@ impl Corpus {
             }
 
             // loop through on-site energy generation
-            for (g_name, pv) in self.on_site_generation.iter() {
+            for pv in self.on_site_generation.values() {
                 // Get energy produced for the current timestep
                 let (_energy_produced, energy_lost) = pv.produce_energy(t_it);
                 // Add the energy lost figure to the internal gains if it is considered inside the building
@@ -3629,12 +3625,9 @@ fn heat_source_wet_from_input(
     input: HeatSourceWetDetails,
     external_conditions: Arc<ExternalConditions>,
     simulation_time: Arc<SimulationTimeIterator>,
-    ventilation: Option<VentilationElement>,
-    ventilation_req_ach: Option<f64>,
     mechanical_ventilations: &IndexMap<String, Arc<MechanicalVentilation>>,
     number_of_zones: usize,
     temp_internal_air_accessor: TempInternalAirAccessor,
-    total_volume: f64,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
 ) -> anyhow::Result<WetHeatSource> {
