@@ -5317,7 +5317,6 @@ mod tests {
         SimulationTime::new(0., 2., 1.)
     }
 
-    #[fixture]
     fn external_conditions(
         simulation_time_for_heat_pump: SimulationTime,
     ) -> Arc<ExternalConditions> {
@@ -5363,8 +5362,7 @@ mod tests {
         ))
     }
 
-    #[fixture]
-    pub fn temp_internal_air_accessor(
+    fn temp_internal_air_accessor(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> TempInternalAirAccessor {
@@ -5414,11 +5412,12 @@ mod tests {
         }
     }
 
-    #[fixture]
-    fn heat_pump(
-        simulation_time_for_heat_pump: SimulationTime,
-        external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor,
+    fn create_heat_pump(
+        energy_supply_conn_name_auxiliary: Option<&str>,
+        heat_network: Option<Arc<RwLock<EnergySupply>>>,
+        source_type: Option<HeatPumpSourceType>,
+        temp_distribution_heat_network: Option<f64>,
+        time_delay_backup: Option<f64>,
     ) -> HeatPump {
         let test_data = vec![
             HeatPumpTestDatum {
@@ -5490,12 +5489,12 @@ mod tests {
 
         let heat_pump_input = HeatSourceWetDetails::HeatPump {
             energy_supply: EnergySupplyType::MainsGas,
-            source_type: HeatPumpSourceType::OutsideAir,
+            source_type: source_type.unwrap_or(HeatPumpSourceType::OutsideAir),
             energy_supply_heat_network: None,
-            temp_distribution_heat_network: None,
+            temp_distribution_heat_network,
             sink_type: HeatPumpSinkType::Water,
             backup_control_type: HeatPumpBackupControlType::TopUp,
-            time_delay_backup: 1.0,
+            time_delay_backup: time_delay_backup.unwrap_or(1.0),
             modulating_control: true,
             min_modulation_rate_20: None,
             min_modulation_rate_35: Some(0.35),
@@ -5519,6 +5518,7 @@ mod tests {
             test_data,
             boiler: None,
         };
+        let simulation_time_for_heat_pump = simulation_time_for_heat_pump();
 
         let energy_supply = EnergySupply::new(
             FuelType::MainsGas,
@@ -5527,11 +5527,17 @@ mod tests {
             None,
             None,
         );
-        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp";
+
+        let energy_supply_conn_name_auxiliary =
+            energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
+
         let number_of_zones = 2;
+        let throughput_exhaust_air = None;
         let boiler = None;
         let cost_schedule_hybrid_hp = None;
-
+        let external_conditions = external_conditions(simulation_time_for_heat_pump);
+        let temp_internal_air_accessor =
+            temp_internal_air_accessor(external_conditions.clone(), simulation_time_for_heat_pump);
         HeatPump::new(
             &heat_pump_input,
             Arc::from(RwLock::from(energy_supply)),
@@ -5539,8 +5545,8 @@ mod tests {
             simulation_time_for_heat_pump.step,
             external_conditions,
             number_of_zones,
-            None,
-            None,
+            throughput_exhaust_air,
+            heat_network,
             false,
             boiler,
             cost_schedule_hybrid_hp,
@@ -5550,41 +5556,59 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_service_connection() {
+    fn test_create_service_connection(simulation_time_for_heat_pump: SimulationTime) {
         let service_name = "new_service";
+        let heat_pump = create_heat_pump(None, None, None, None, None);
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         // Ensure the service name does not exist in energy_supply_connections
-        // TODO: rest of test
+        assert!(heat_pump
+            .lock()
+            .energy_supply_connections
+            .get(service_name)
+            .is_none());
+
+        // Call the method under test
+        HeatPump::create_service_connection(heat_pump.clone(), &service_name).unwrap();
+
+        // Check that the service name was added to energy_supply_connections
+        assert!(heat_pump
+            .lock()
+            .energy_supply_connections
+            .get(service_name)
+            .is_some());
+
+        let create_connection_result =
+            HeatPump::create_service_connection(heat_pump, &service_name);
+
+        // second attempt to create a service connection with same name should error
+        assert!(create_connection_result.is_err());
+
+        // Check with heat_network
+        let energy_supply_conn_name_auxiliary = Some("HeatPump_auxiliary: hp1");
+
+        let heat_network = RwLock::from(EnergySupply::new(
+            FuelType::Custom,
+            simulation_time_for_heat_pump.iter().total_steps(),
+            None,
+            None,
+            None,
+        ));
+
+        let source_type = HeatPumpSourceType::HeatNetwork;
+        let temp_distribution_heat_network = 20.;
+        let time_delay_backup = 2.0;
+        let heat_pump_nw = create_heat_pump(
+            energy_supply_conn_name_auxiliary,
+            Some(heat_network.into()),
+            Some(source_type),
+            Some(temp_distribution_heat_network),
+            Some(time_delay_backup),
+        );
+        let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
+
+        HeatPump::create_service_connection(heat_pump_nw.clone(), "new_service_nw").unwrap();
+        
+        assert!(heat_pump_nw.lock().energy_supply_hn_connections.get("new_service_nw").is_some());
     }
-
-    // def test_create_service_connection(self):
-    // ''' Test creation of EnergySupplyConnection for the service name given'''
-    // self.service_name = 'new_service'
-    // # Ensure the service name does not exist in __energy_supply_connections
-    // self.assertNotIn(self.service_name,
-    //                  self.heat_pump._HeatPump__energy_supply_connections)
-    // # Call the method under test
-    // self.heat_pump._HeatPump__create_service_connection(self.service_name)
-    // # Check that the service name was added to __energy_supply_connections
-    // self.assertIn(self.service_name,
-    //               self.heat_pump._HeatPump__energy_supply_connections)
-    // # Check system exit when connection is created with exiting service name
-    // with self.assertRaises(SystemExit):
-    //     self.heat_pump._HeatPump__create_service_connection(self.service_name)
-
-    // # Check with heat_network
-    // self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: hp1'
-    // self.heat_network = EnergySupply(simulation_time = self.simtime ,
-    //                                  fuel_type = 'custom')
-    // self.heat_pump_nw = HeatPump(self.heat_dict_heat_nw,
-    //                          self.energysupply,
-    //                          self.energy_supply_conn_name_auxiliary,
-    //                          self.simtime,
-    //                          self.extcond,
-    //                          self.number_of_zones,
-    //                          heat_network = self.heat_network)
-    // # Call the method under test
-    // self.heat_pump_nw._HeatPump__create_service_connection('new_service_nw')
-    // self.assertIn('new_service_nw',
-    //               self.heat_pump_nw._HeatPump__energy_supply_HN_connections)
 }
