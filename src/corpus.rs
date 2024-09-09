@@ -61,7 +61,7 @@ use crate::input::{
     ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    Infiltration, InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,

@@ -35,7 +35,6 @@ pub struct Input {
     pub space_heat_system: Option<SpaceHeatSystem>,
     pub space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
-    pub infiltration: Option<Infiltration>,
     pub zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
     #[allow(dead_code)]
@@ -2920,14 +2919,16 @@ impl InputForProcessing {
     }
 
     pub fn zero_infiltration_extract_fans(&mut self) -> anyhow::Result<&Self> {
-        if let Some(ref mut infiltration) = self.input.infiltration {
-            infiltration.extract_fans = 0;
-        }
+        // it's assumed that this function will become redundant while migrating to 0.30
+        // if let Some(ref mut infiltration) = self.input.infiltration {
+        //     infiltration.extract_fans = 0;
+        // }
         Ok(self)
     }
 
     pub fn infiltration_volume(&self) -> f64 {
-        self.input.infiltration.as_ref().unwrap().volume
+        // it's assumed that this method is to be completely replaced
+        unimplemented!()
     }
 
     pub fn set_ventilation(&mut self, ventilation_value: Value) -> anyhow::Result<&Self> {
