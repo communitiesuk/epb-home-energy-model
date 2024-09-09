@@ -4000,7 +4000,6 @@ fn hot_water_source_from_input(
                         WaterSourceWithTemperature::Wwhrs(heat_recovery_system.clone());
                 }
             }
-            let pipework = primary_pipework.as_ref().and_then(|p| p.into());
             let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
             let mut heat_source_for_diverter: Option<Arc<Mutex<HeatSource>>> = Default::default();
