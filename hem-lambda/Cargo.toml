@@ -4,7 +4,7 @@ version = "0.28.0-alpha"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.87"
 hem = { path = ".." }
 lambda_http = "0.13.0"
 parking_lot = "0.12.3"
