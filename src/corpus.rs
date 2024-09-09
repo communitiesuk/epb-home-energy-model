@@ -43,10 +43,7 @@ use crate::core::space_heat_demand::ventilation::{
     AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
     Window,
 };
-use crate::core::space_heat_demand::ventilation_element::{
-    NaturalVentilation, VentilationElement, VentilationElementInfiltration,
-    WholeHouseExtractVentilation,
-};
+use crate::core::space_heat_demand::ventilation_element::VentilationElementInfiltration;
 use crate::core::space_heat_demand::zone::{AirChangesPerHourArgument, HeatBalance, Zone};
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -69,9 +66,9 @@ use crate::input::{
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType, Ventilation,
-    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType, VentilationLeaks,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
+    WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -200,21 +197,7 @@ impl Corpus {
 
         let infiltration = infiltration_from_input(input.infiltration.as_ref().unwrap());
 
-        let ventilation = input
-            .ventilation
-            .as_ref()
-            .map(|v| {
-                anyhow::Ok(Arc::new(Mutex::new(ventilation_from_input(
-                    "Ventilation system",
-                    v,
-                    &infiltration,
-                    simulation_time_iterator.clone().as_ref(),
-                    &mut energy_supplies,
-                )?)))
-            })
-            .transpose()?;
-
-        let opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
+        let _opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
 
         let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
 
@@ -1109,6 +1092,7 @@ impl Corpus {
             let _space_heat_running_time_cumulative = 0.0;
 
             // these following variables need to be referenced outside the while loop with their last value retained
+
             let mut frac_convective_heat = 1.0;
             let mut frac_convective_cool = 1.0;
 
@@ -1618,8 +1602,8 @@ impl Corpus {
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
             let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water();
-            let temp_final_drawoff = temp_hot_water;
-            let temp_average_drawoff = temp_hot_water;
+            let _temp_final_drawoff = temp_hot_water;
+            let _temp_average_drawoff = temp_hot_water;
 
             let DomesticHotWaterDemandData {
                 hw_demand_vol,
@@ -2799,41 +2783,6 @@ fn schedule_event_from_input(
     )
 }
 
-fn ventilation_from_input<'a>(
-    energy_supply_name: &str,
-    ventilation: &'a Ventilation,
-    infiltration: &VentilationElementInfiltration,
-    simulation_time: &'a SimulationTimeIterator,
-    energy_supplies: &mut EnergySupplies,
-) -> anyhow::Result<VentilationElement> {
-    Ok(match ventilation {
-        Ventilation::Whev {
-            req_ach,
-            sfp,
-            energy_supply,
-        } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
-            let energy_supply_conn =
-                EnergySupply::connection(energy_supply, energy_supply_name).unwrap();
-
-            VentilationElement::Whev(WholeHouseExtractVentilation::new(
-                *req_ach,
-                *sfp,
-                infiltration.infiltration_rate(),
-                energy_supply_conn,
-                // energy_supply_from_type_for_ventilation(energy_supply, energy_supplies),
-                // "Ventilation system".to_string(),
-                simulation_time.step_in_hours(),
-            ))
-        }
-        Ventilation::Natural { req_ach } => VentilationElement::Natural(NaturalVentilation::new(
-            *req_ach,
-            infiltration.infiltration_rate(),
-        )),
-    })
-}
-
 fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
     zones
         .iter()
@@ -3082,8 +3031,7 @@ fn infiltration_ventilation_from_input(
             let ctrl_intermittent_mev = mech_vents_data
                 .control
                 .as_ref()
-                .map(|ctrl_name| controls.get_with_string(ctrl_name))
-                .flatten();
+                .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
 
             let energy_supply = energy_supplies.ensured_get_for_type(
                 mech_vents_data.energy_supply,
