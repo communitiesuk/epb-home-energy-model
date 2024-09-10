@@ -169,7 +169,7 @@ impl Corpus {
         let controls =
             control_from_input(&input.control, simulation_time_iterator.clone().as_ref());
 
-        let _event_schedules = event_schedules_from_input(
+        let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
             simulation_time_iterator.as_ref(),
         )?;
@@ -189,7 +189,7 @@ impl Corpus {
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,
-            vec![], // use empty while migrating to 0.30
+            event_schedules,
         )?;
 
         let _opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
@@ -2661,84 +2661,56 @@ fn get_cold_water_source_ref_for_type(
 
 pub type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
 
-#[derive(Clone)]
-pub struct HotWaterEventSchedules {
-    pub shower: HashMap<String, EventSchedule>,
-    pub bath: HashMap<String, EventSchedule>,
-    pub other: HashMap<String, EventSchedule>,
-}
-
 fn event_schedules_from_input(
     events: &WaterHeatingEvents,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<HotWaterEventSchedules> {
-    let mut shower_schedules: HashMap<String, EventSchedule> = Default::default();
+) -> anyhow::Result<EventSchedule> {
+    let mut schedule: EventSchedule = vec![None; simulation_time_iterator.total_steps()];
     let shower_events = &events.shower;
     for (name, events) in shower_events {
-        shower_schedules.insert(
-            name.to_owned(),
-            schedule_event_from_input(
-                events.iter().collect(),
-                name,
-                WaterScheduleEventType::Shower,
-                None,
-                simulation_time_iterator,
-            )?,
-        );
+        schedule = schedule_event_from_input(
+            events.iter().collect(),
+            name,
+            WaterScheduleEventType::Shower,
+            schedule,
+            simulation_time_iterator,
+        )?;
     }
 
-    let mut bath_schedules: HashMap<String, EventSchedule> = Default::default();
     let bath_events = &events.bath;
     for (name, events) in bath_events {
-        bath_schedules.insert(
-            name.to_owned(),
-            schedule_event_from_input(
-                events.iter().collect(),
-                name,
-                WaterScheduleEventType::Bath,
-                None,
-                simulation_time_iterator,
-            )?,
-        );
+        schedule = schedule_event_from_input(
+            events.iter().collect(),
+            name,
+            WaterScheduleEventType::Bath,
+            schedule,
+            simulation_time_iterator,
+        )?;
     }
 
-    let mut other_schedules: HashMap<String, EventSchedule> = Default::default();
     let other_events = &events.other;
     for (name, events) in other_events {
-        other_schedules.insert(
-            name.to_owned(),
-            schedule_event_from_input(
-                events.iter().collect(),
-                name,
-                WaterScheduleEventType::Other,
-                None,
-                simulation_time_iterator,
-            )?,
-        );
+        schedule = schedule_event_from_input(
+            events.iter().collect(),
+            name,
+            WaterScheduleEventType::Other,
+            schedule,
+            simulation_time_iterator,
+        )?;
     }
 
-    Ok(HotWaterEventSchedules {
-        shower: shower_schedules,
-        bath: bath_schedules,
-        other: other_schedules,
-    })
+    Ok(schedule)
 }
 
 fn schedule_event_from_input(
     events_input: Vec<&WaterHeatingEvent>,
     name: &str,
     event_type: WaterScheduleEventType,
-    existing_schedule: Option<Vec<Option<Vec<TypedScheduleEvent>>>>,
+    existing_schedule: EventSchedule,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<EventSchedule> {
     let sim_timestep = simulation_time_iterator.step_in_hours();
     let total_timesteps = simulation_time_iterator.total_steps();
-
-    let schedule = if let Some(existing_schedule) = existing_schedule {
-        existing_schedule
-    } else {
-        vec![None; total_timesteps]
-    };
 
     expand_events(
         events_input
@@ -2749,7 +2721,7 @@ fn schedule_event_from_input(
         total_timesteps,
         name,
         event_type,
-        schedule,
+        existing_schedule,
     )
 }
 
