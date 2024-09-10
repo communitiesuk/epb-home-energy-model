@@ -5426,6 +5426,43 @@ mod tests {
         )
     }
 
+    #[fixture]
+    fn boiler(
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> Boiler {
+        let boiler_details = HeatSourceWetDetails::Boiler {
+            energy_supply: EnergySupplyType::MainsGas,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
+            rated_power: 24.,
+            efficiency_full_load: 0.891,
+            efficiency_part_load: 0.991,
+            boiler_location: HeatSourceLocation::Internal,
+            modulation_load: 0.3,
+            electricity_circ_pump: 0.06,
+            electricity_part_load: 0.0131,
+            electricity_full_load: 0.0388,
+            electricity_standby: 0.0244,
+        };
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(energy_supply));
+
+        let energy_supply_conn_aux = EnergySupplyConnection::new(
+            energy_supply.clone(),
+            "HeatPump_auxiliary: boiler".to_string(),
+        );
+
+        Boiler::new(
+            boiler_details,
+            energy_supply,
+            energy_supply_conn_aux,
+            external_conditions,
+            simulation_time_for_heat_pump.step,
+        )
+        .unwrap()
+    }
+
     fn create_heat_pump(
         energy_supply_conn_name_auxiliary: Option<&str>,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
@@ -5691,8 +5728,8 @@ mod tests {
             )
             .into(),
         );
-        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump_with_boiler
-            .create_service_hot_water_combi(
+        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> =
+            heat_pump_with_boiler.create_service_hot_water_combi(
                 boiler_data.clone(),
                 service_name,
                 temp_hot_water,
@@ -5711,19 +5748,17 @@ mod tests {
         );
 
         let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
-            .create_service_hot_water_combi(
-                boiler_data,
-                service_name,
-                temp_hot_water,
-                cold_feed,
-            );
+            .create_service_hot_water_combi(boiler_data, service_name, temp_hot_water, cold_feed);
 
         // creating a BoilerServiceWaterCombi should error on heat pump without boiler
         assert!(boiler_service_water_combi.is_err());
     }
 
     #[rstest]
-    fn test_create_service_hot_water(simulation_time_for_heat_pump: SimulationTime) {
+    fn test_create_service_hot_water(
+        simulation_time_for_heat_pump: SimulationTime,
+        boiler: Boiler,
+    ) {
         let heat_pump = create_heat_pump(
             Some("HeatPump_auxiliary: HotWater"),
             None,
@@ -5743,8 +5778,37 @@ mod tests {
             simulation_time_for_heat_pump.step,
         );
 
-        HeatPump::create_service_hot_water(
+        let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
+            service_name.to_string(),
+            50.,
+            60.,
+            cold_feed.clone().into(),
+            None,
+        );
+
+        assert!(matches!(hot_water_service, HeatPumpServiceWater { .. }));
+
+        assert!(heat_pump
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name));
+
+        let boiler = Arc::from(Mutex::from(boiler));
+
+        let heat_pump_with_boiler = create_heat_pump(
+            Some("HeatPump_auxiliary: boiler"),
+            None,
+            None,
+            None,
+            None,
+            Some(boiler),
+        );
+
+        let heat_pump_with_boiler = Arc::from(Mutex::from(heat_pump_with_boiler));
+
+        let hot_water_service = HeatPump::create_service_hot_water(
+            heat_pump_with_boiler,
             service_name.to_string(),
             50.,
             60.,
@@ -5752,11 +5816,6 @@ mod tests {
             None,
         );
 
-        assert!(heat_pump
-            .lock()
-            .energy_supply_connections
-            .contains_key(service_name));
-
-        // TODO: second part of test ("# Check the with boiler data in heat pump") - see if assertion `assert_called_once_with` can be replaced meaningfully in Rust
+        assert!(hot_water_service.hybrid_boiler_service.is_some());
     }
 }
