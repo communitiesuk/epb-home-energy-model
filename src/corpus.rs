@@ -109,7 +109,6 @@ pub struct Corpus {
     pub internal_gains: InternalGainsCollection,
     pub controls: Controls,
     pub wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
-    pub event_schedules: HotWaterEventSchedules,
     pub domestic_hot_water_demand: DomesticHotWaterDemand,
     pub ventilation: Arc<InfiltrationVentilation>,
     mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
@@ -170,7 +169,7 @@ impl Corpus {
         let controls =
             control_from_input(&input.control, simulation_time_iterator.clone().as_ref());
 
-        let event_schedules = event_schedules_from_input(
+        let _event_schedules = event_schedules_from_input(
             &input.water_heating_events,
             simulation_time_iterator.as_ref(),
         )?;
@@ -400,7 +399,6 @@ impl Corpus {
             internal_gains,
             controls,
             wwhrs,
-            event_schedules,
             domestic_hot_water_demand,
             ventilation: infiltration_ventilation,
             mechanical_ventilations,
