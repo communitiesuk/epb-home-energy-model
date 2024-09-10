@@ -237,10 +237,12 @@ impl Corpus {
                         window_adjust_control.clone(),
                         simulation_time_iterator.clone().as_ref(),
                     )?;
-                    heat_system_name_for_zone
-                        .insert((*i).clone(), heat_system_name.unwrap_or_default());
-                    cool_system_name_for_zone
-                        .insert((*i).clone(), cool_system_name.unwrap_or_default());
+                    if let Some(heat_system_name) = heat_system_name.as_ref() {
+                        heat_system_name_for_zone.insert((*i).clone(), heat_system_name.clone());
+                    }
+                    if let Some(cool_system_name) = cool_system_name.as_ref() {
+                        cool_system_name_for_zone.insert((*i).clone(), cool_system_name.clone());
+                    }
 
                     zone_for_corpus
                 }))
