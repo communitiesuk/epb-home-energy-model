@@ -13,12 +13,25 @@ pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
 pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
+    
+    if x.is_empty() {
+        panic!("x cannot be empty");
+    }
+
+    if y.is_empty() {
+        panic!("y cannot be empty");
+    }
+
+    if x.len() != y.len() {
+        panic!("x and y must be of equal length");
+    }
+    
     if input > x.max() {
-        return y.max();
+        return *y.last().unwrap();
     }
 
     if input < x.min() {
-        return y.min();
+        return *y.first().unwrap();
     }
 
     interp(x, y, input)
@@ -71,7 +84,7 @@ mod tests {
     #[rstest]
     #[case(5.1, 50.)]
     #[case(10., 50.)]
-    fn test_np_interp_given_number_above_expected_range_returns_maximum_y(
+    fn test_np_interp_given_number_above_expected_range_returns_last_element_of_y(
         #[case] input: f64,
         #[case] expected: f64,
     ) {
@@ -84,9 +97,24 @@ mod tests {
     }
 
     #[rstest]
+    #[case(5.1, 0.)]
+    #[case(10., 0.)]
+    fn test_np_interp_given_number_above_expected_range_returns_last_element_of_y_for_inverse(
+        #[case] input: f64,
+        #[case] expected: f64,
+    ) {
+        let x = [0., 1., 2., 3., 4., 5.];
+        let y = [50., 40., 30., 20., 10., 0.];
+
+        let actual = np_interp(input, &x, &y);
+
+        assert_eq!(actual, expected)
+    }
+
+    #[rstest]
     #[case(-0.1, 0.)]
     #[case(-25., 0.)]
-    fn test_np_interp_given_number_below_expected_range_returns_minimum_y(
+    fn test_np_interp_given_number_below_expected_range_returns_first_element_of_y(
         #[case] input: f64,
         #[case] expected: f64,
     ) {
@@ -96,5 +124,46 @@ mod tests {
         let actual = np_interp(input, &x, &y);
 
         assert_eq!(actual, expected)
+    }
+
+    #[rstest]
+    #[case(-0.1, 50.)]
+    #[case(-25., 50.)]
+    fn test_np_interp_given_number_below_expected_range_returns_first_element_of_y_for_inverse(
+        #[case] input: f64,
+        #[case] expected: f64,
+    ) {
+        let x = [0., 1., 2., 3., 4., 5.];
+        let y = [50., 40., 30., 20., 10., 0.];
+
+        let actual = np_interp(input, &x, &y);
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    #[should_panic(expected = "x cannot be empty")]
+    fn test_np_interp_empty_x_panics() {
+        let x = [];
+        let y = [1., 2., 3., 4., 5.];
+
+        np_interp(3., &x, &y);
+    }
+
+    #[test]
+    #[should_panic(expected = "y cannot be empty")]
+    fn test_np_interp_empty_y_panics() {
+        let x = [1., 2., 3., 4., 5.];
+        let y = [];
+
+        np_interp(3., &x, &y);
+    }
+
+    #[test]
+    #[should_panic(expected = "x and y must be of equal length")]
+    fn test_np_interp_different_length_x_and_y_panics() {
+        let x = [1., 2., 3., 4., 5.];
+        let y = [10., 20.];
+
+        np_interp(3., &x, &y);
     }
 }
