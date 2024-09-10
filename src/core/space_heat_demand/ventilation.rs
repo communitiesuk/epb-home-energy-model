@@ -17,7 +17,6 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
-use rand_distr::num_traits::abs;
 use std::sync::Arc;
 
 fn p_a_ref() -> f64 {
@@ -204,7 +203,7 @@ fn wind_speed_at_zone_level(
 
 /// Determine orientation of other windows relative to largest
 fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
-    let op_rel_orientation = abs(orientation1 - orientation2);
+    let op_rel_orientation = (orientation1 - orientation2).abs();
 
     if op_rel_orientation > 360. {
         return op_rel_orientation - 360.;
@@ -598,7 +597,7 @@ impl WindowPart {
         // Based on Equation 53
         c_w_path / (self.n_w_div + 1.)
             * f64::from(sign(delta_p_path))
-            * abs(delta_p_path).powf(self.n_w)
+            * delta_p_path.abs().powf(self.n_w)
     }
 
     /// The height to be considered for delta_p_w_div_path
@@ -709,7 +708,7 @@ impl Vent {
 
         // Air flow rate for each couple of height and wind pressure coeficient associated with vents.
         // Based on Equation 58
-        c_vent_path * sign(delta_p_path) as f64 * abs(delta_p_path).powf(self.n_vent)
+        c_vent_path * sign(delta_p_path) as f64 * delta_p_path.abs().powf(self.n_vent)
     }
 
     /// Calculate the airflow through vents from internal pressure
@@ -884,7 +883,7 @@ impl Leaks {
         let c_leak_path = Self::calculate_flow_coeff_for_leak(self);
 
         // Airflow through leaks based on Equation 62
-        c_leak_path * f64::from(sign(delta_p_path)) * abs(delta_p_path).powf(N_LEAK)
+        c_leak_path * f64::from(sign(delta_p_path)) * delta_p_path.abs().powf(N_LEAK)
     }
 
     fn calculate_flow_from_internal_p(
@@ -977,7 +976,7 @@ impl AirTerminalDevices {
     fn calculate_pressure_difference_atd(&self, qv_pdu: f64) -> f64 {
         let c_atd_path = self.calculate_flow_coeff_for_atd();
 
-        -(f64::from(sign(qv_pdu))) * (abs(qv_pdu) / c_atd_path).powf(1. / self.n_atd)
+        -(f64::from(sign(qv_pdu))) * (qv_pdu.abs() / c_atd_path).powf(1. / self.n_atd)
     }
 }
 
