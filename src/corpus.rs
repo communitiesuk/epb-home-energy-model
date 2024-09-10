@@ -674,8 +674,18 @@ impl Corpus {
         // TODO (from Python) For now, the existing single system inputs are each added to a
         //      list. This will eventually need to handle a list being specified
         //      in the inputs.
-        let h_name_list = vec![self.heat_system_name_for_zone[z_name].clone()];
-        let c_name_list = vec![self.cool_system_name_for_zone[z_name].clone()];
+        let h_name_list = self
+            .heat_system_name_for_zone
+            .get(z_name)
+            .iter()
+            .map(|x| (*x).clone())
+            .collect::<Vec<String>>();
+        let c_name_list = self
+            .cool_system_name_for_zone
+            .get(z_name)
+            .iter()
+            .map(|x| (*x).clone())
+            .collect::<Vec<String>>();
 
         let SetpointsAndConvectiveFractions {
             temp_setpnt_heat: temp_setpnt_heat_system,
