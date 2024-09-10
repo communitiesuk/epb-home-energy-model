@@ -416,7 +416,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "to update while migrating to 0.30"]
     pub fn test_produce_energy(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
@@ -443,7 +442,6 @@ mod tests {
     }
 
     #[rstest]
-    // #[ignore = "to update while migrating to 0.30"]
     pub fn test_produce_energy_with_shading(
         pv_with_shading: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,

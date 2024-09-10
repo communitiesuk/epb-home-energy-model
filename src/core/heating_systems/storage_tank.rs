@@ -1590,7 +1590,7 @@ mod tests {
             &simulation_time_for_storage_tank.iter(),
             air_temps,
             wind_speeds,
-            wind_directions, // change to 8-length of 0.0 values when migrating to 0.30
+            wind_directions,
             diffuse_horizontal_radiations,
             direct_beam_radiations,
             solar_reflectivity_of_ground,
@@ -1756,7 +1756,8 @@ mod tests {
         storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>),
     ) {
         let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
-        let usage_events = [vec![
+        let usage_events = [
+            vec![
                 TypedScheduleEvent {
                     start: 6.,
                     duration: Some(6.),
@@ -1824,7 +1825,8 @@ mod tests {
                 pipework_volume: None,
             }],
             vec![],
-            vec![]];
+            vec![],
+        ];
 
         //  Expected results for the unit test
         let expected_temperatures_1 = [

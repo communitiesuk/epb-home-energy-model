@@ -1,6 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
+use crate::external_conditions::ExternalConditions;
 use crate::input::{
     EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType, FuelType,
     SecondarySupplyType,
@@ -571,20 +572,45 @@ fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
         .collect::<Vec<_>>()
 }
 
-pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> EnergySupplies {
+pub fn from_input(
+    input: EnergySupplyInput,
+    simulation_timesteps: usize,
+    simulation_timestep: f64,
+    external_conditions: Arc<ExternalConditions>,
+) -> EnergySupplies {
     EnergySupplies {
-        mains_electricity: input
-            .get(&EnergySupplyKey::MainsElectricity)
-            .map(|s| supply_from_details(s, simulation_timesteps)),
-        mains_gas: input
-            .get(&EnergySupplyKey::MainsGas)
-            .map(|s| supply_from_details(s, simulation_timesteps)),
-        bulk_lpg: input
-            .get(&EnergySupplyKey::BulkLpg)
-            .map(|s| supply_from_details(s, simulation_timesteps)),
-        heat_network: input
-            .get(&EnergySupplyKey::HeatNetwork)
-            .map(|s| supply_from_details(s, simulation_timesteps)),
+        mains_electricity: input.get(&EnergySupplyKey::MainsElectricity).map(|s| {
+            supply_from_details(
+                s,
+                simulation_timesteps,
+                simulation_timestep,
+                external_conditions.clone(),
+            )
+        }),
+        mains_gas: input.get(&EnergySupplyKey::MainsGas).map(|s| {
+            supply_from_details(
+                s,
+                simulation_timesteps,
+                simulation_timestep,
+                external_conditions.clone(),
+            )
+        }),
+        bulk_lpg: input.get(&EnergySupplyKey::BulkLpg).map(|s| {
+            supply_from_details(
+                s,
+                simulation_timesteps,
+                simulation_timestep,
+                external_conditions.clone(),
+            )
+        }),
+        heat_network: input.get(&EnergySupplyKey::HeatNetwork).map(|s| {
+            supply_from_details(
+                s,
+                simulation_timesteps,
+                simulation_timestep,
+                external_conditions,
+            )
+        }),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_timesteps,
@@ -601,14 +627,14 @@ pub fn from_input(input: EnergySupplyInput, simulation_timesteps: usize) -> Ener
 fn supply_from_details(
     energy_supply_details: &EnergySupplyDetails,
     simulation_timesteps: usize,
+    simulation_timestep: f64,
+    external_conditions: Arc<ExternalConditions>,
 ) -> Arc<RwLock<EnergySupply>> {
     let fuel_type: FuelType = energy_supply_details.into();
-    // TODO using None here while migrating to 0.30
-    // let electric_battery = energy_supply_details
-    //     .electric_battery
-    //     .as_ref()
-    //     .map(ElectricBattery::from_input);
-    let electric_battery = None;
+    let electric_battery = energy_supply_details
+        .electric_battery
+        .as_ref()
+        .map(|input| ElectricBattery::from_input(input, simulation_timestep, external_conditions));
     Arc::new(RwLock::new(EnergySupply::new(
         fuel_type,
         simulation_timesteps,
