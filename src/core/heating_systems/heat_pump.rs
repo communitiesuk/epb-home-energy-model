@@ -4096,7 +4096,10 @@ mod tests {
     use crate::core::space_heat_demand::zone::Zone;
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::DaylightSavingsConfig;
-    use crate::input::{EnergySupplyType, FuelType, TerrainClass, VentilationShieldClass};
+    use crate::input::{
+        BoilerHotWaterTest, ColdWaterSourceType, EnergySupplyType, FuelType, HeatSourceControlType,
+        HeatSourceLocation, HeatSourceWetType, TerrainClass, VentilationShieldClass,
+    };
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
     use approx::{assert_relative_eq, assert_ulps_eq};
@@ -5315,6 +5318,7 @@ mod tests {
         SimulationTime::new(0., 2., 1.)
     }
 
+    #[fixture]
     fn external_conditions(
         simulation_time_for_heat_pump: SimulationTime,
     ) -> Arc<ExternalConditions> {
@@ -5410,12 +5414,24 @@ mod tests {
         }
     }
 
+    #[fixture]
+    fn energy_supply(simulation_time_for_heat_pump: SimulationTime) -> EnergySupply {
+        EnergySupply::new(
+            FuelType::MainsGas,
+            simulation_time_for_heat_pump.iter().total_steps(),
+            None,
+            None,
+            None,
+        )
+    }
+
     fn create_heat_pump(
         energy_supply_conn_name_auxiliary: Option<&str>,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
         source_type: Option<HeatPumpSourceType>,
         temp_distribution_heat_network: Option<f64>,
         time_delay_backup: Option<f64>,
+        boiler: Option<Arc<Mutex<Boiler>>>,
     ) -> HeatPump {
         let test_data = vec![
             HeatPumpTestDatum {
@@ -5516,22 +5532,16 @@ mod tests {
             test_data,
             boiler: None,
         };
+
         let simulation_time_for_heat_pump = simulation_time_for_heat_pump();
 
-        let energy_supply = EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time_for_heat_pump.iter().total_steps(),
-            None,
-            None,
-            None,
-        );
+        let energy_supply = energy_supply(simulation_time_for_heat_pump);
 
         let energy_supply_conn_name_auxiliary =
             energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
 
         let number_of_zones = 2;
         let throughput_exhaust_air = None;
-        let boiler = None;
         let cost_schedule_hybrid_hp = None;
         let external_conditions = external_conditions(simulation_time_for_heat_pump);
         let temp_internal_air_accessor =
@@ -5556,7 +5566,7 @@ mod tests {
     #[rstest]
     fn test_create_service_connection(simulation_time_for_heat_pump: SimulationTime) {
         let service_name = "new_service";
-        let heat_pump = create_heat_pump(None, None, None, None, None);
+        let heat_pump = create_heat_pump(None, None, None, None, None, None);
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         // Ensure the service name does not exist in energy_supply_connections
@@ -5599,6 +5609,7 @@ mod tests {
             Some(source_type),
             Some(temp_distribution_heat_network),
             Some(time_delay_backup),
+            None,
         );
         let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
 
@@ -5608,5 +5619,52 @@ mod tests {
             .lock()
             .energy_supply_hn_connections
             .contains_key("new_service_nw"));
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water_combi(simulation_time_for_heat_pump: SimulationTime) {
+        // skip set up for assertion on type of `boiler_service_water_combi` as not necessary in Rust
+
+        let heat_pump = create_heat_pump(
+            Some("energy_supply_conn_name_auxiliary"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
+            cold_water_source: ColdWaterSourceType::MainsWater,
+            heat_source_wet: HeatSourceWetType::HeatPump,
+            control: HeatSourceControlType::HotWaterTimer,
+            separate_dhw_tests: BoilerHotWaterTest::ML,
+            rejected_energy_1: 0.0004,
+            fuel_energy_2: 13.078,
+            rejected_energy_2: 0.0004,
+            storage_loss_factor_2: 0.91574,
+            rejected_factor_3: 0.,
+            setpoint_temp: Some(60.),
+            daily_hot_water_usage: 120.,
+        };
+        let service_name = "service_hot_water_combi";
+        let temp_hot_water = 50.;
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+            ColdWaterSource::new(
+                vec![1.0, 1.2],
+                &simulation_time_for_heat_pump,
+                simulation_time_for_heat_pump.step,
+            )
+            .into(),
+        );
+        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
+            .create_service_hot_water_combi(
+                boiler_data.clone(),
+                service_name,
+                temp_hot_water,
+                cold_feed.clone(),
+            );
+
+        // creating a BoilerServiceWaterCombi should error on heat pump without boiler
+        assert!(boiler_service_water_combi.is_err());
     }
 }
