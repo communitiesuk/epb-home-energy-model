@@ -170,6 +170,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     fn test_demand_energy(
         point_of_use: PointOfUse,
         simulation_time_iterator: SimulationTimeIterator,

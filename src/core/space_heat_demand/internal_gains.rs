@@ -391,7 +391,7 @@ mod tests {
             start_day: 0,
             time_series_step: 1.0,
         };
-        let expected = vec![32.0, 46.0, 73.0, 52.0];
+        let expected = [32.0, 46.0, 73.0, 52.0];
         for iteration in simulation_time_iterator {
             assert_eq!(
                 internal_gains.total_internal_gain_in_w(10.0, iteration,),
@@ -415,7 +415,7 @@ mod tests {
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "lighting").unwrap();
         let total_energy_supply = vec![32.0, 46.0, 30.0, 20.0];
-        let total_internal_gains = vec![160.0, 230.0, 150.0, 100.0];
+        let total_internal_gains = [160.0, 230.0, 150.0, 100.0];
         let expected_energy_supply_results = [0.32, 0.46, 0.30, 0.20];
         let appliance_gains = ApplianceGains {
             total_energy_supply,

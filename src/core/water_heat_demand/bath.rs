@@ -96,10 +96,14 @@ mod tests {
             ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time.clone(), 1.0);
         let bath = Bath::new(100.0, cold_water_source, 4.5);
         let expected_demands = [76.0, 75.510, 75.0];
-        for idx in 0..simulation_time.total_steps() {
+        for (idx, expected_demand) in expected_demands
+            .iter()
+            .enumerate()
+            .take(simulation_time.total_steps())
+        {
             assert_relative_eq!(
                 bath.hot_water_demand(40.0, 52.0, idx).0,
-                expected_demands[idx],
+                expected_demand,
                 max_relative = 1e-2
             );
         }

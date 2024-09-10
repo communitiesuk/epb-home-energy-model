@@ -2572,7 +2572,6 @@ mod tests {
         combustion_appliances: CombustionAppliances,
         mechanical_ventilation: MechanicalVentilation,
     ) -> InfiltrationVentilation {
-        let external_conditions = Arc::from(external_conditions);
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
         let windows = vec![create_window(&external_conditions, ctrl, 30.)];
         let vents = vec![Vent::new(
@@ -2598,7 +2597,7 @@ mod tests {
         let mechanical_ventilations = vec![mechanical_ventilation];
 
         InfiltrationVentilation::new(
-            Arc::from(external_conditions),
+            external_conditions,
             true,
             VentilationShieldClass::Open,
             TerrainClass::Country,

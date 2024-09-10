@@ -664,7 +664,6 @@ mod tests {
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::ToUChargeControl;
-    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
     use crate::core::heating_systems::heat_battery::HeatBattery;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
@@ -750,7 +749,7 @@ mod tests {
         )));
 
         let energy_supply_connection: EnergySupplyConnection =
-            EnergySupply::connection(energy_supply.clone(), "WaterHeating".into()).unwrap();
+            EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();
 
         let heat_battery = Arc::new(Mutex::new(HeatBattery::new(
             heat_battery_details,
@@ -798,7 +797,7 @@ mod tests {
             service_control_on.into(),
         );
 
-        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
+        assert!(heat_battery_service.is_on(simulation_time_iteration));
 
         let service_control_off: Control = create_setpoint_time_control(vec![None]);
 
@@ -808,7 +807,7 @@ mod tests {
             service_control_off.into(),
         );
 
-        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), false);
+        assert!(!heat_battery_service.is_on(simulation_time_iteration));
     }
 
     // test_service_is_on_without_control
@@ -829,7 +828,7 @@ mod tests {
                 service_control,
             );
 
-        assert_eq!(heat_battery_service.is_on(simulation_time_iteration), true);
+        assert!(heat_battery_service.is_on(simulation_time_iteration));
     }
 
     #[rstest]
@@ -1070,7 +1069,7 @@ mod tests {
         for (t_idx, _) in simulation_time.iter().enumerate() {
             heat_battery.lock().first_call();
 
-            assert_eq!(heat_battery.lock().flag_first_call, false);
+            assert!(!heat_battery.lock().flag_first_call);
             assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
             assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 4.358566028225806);
             assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.031277812499999995);
@@ -1103,9 +1102,8 @@ mod tests {
 
             let service_names_in_results = get_service_names_from_results(heat_battery.clone());
 
-            assert_eq!(
-                service_names_in_results.contains(&service_name.into()),
-                true
+            assert!(
+                service_names_in_results.contains(&service_name.into())
             );
 
             assert_relative_eq!(
@@ -1182,14 +1180,13 @@ mod tests {
 
         let service_names_in_results = get_service_names_from_results(heat_battery.clone());
 
-        assert_eq!(
-            service_names_in_results.contains(&service_name.into()),
-            true
+        assert!(
+            service_names_in_results.contains(&service_name.into())
         );
 
         heat_battery.lock().timestep_end(t_idx);
 
-        assert_eq!(heat_battery.lock().flag_first_call, false);
+        assert!(!heat_battery.lock().flag_first_call);
         assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
         assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
         assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);

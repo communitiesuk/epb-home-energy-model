@@ -1490,7 +1490,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{FuelType, TerrainClass, VentilationLeaks, VentilationShieldClass};
+    use crate::input::{FuelType, TerrainClass, VentilationShieldClass};
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -1710,7 +1710,7 @@ mod tests {
                 None,
                 Some(energy_supply_conns.0),
                 None,
-                WATER.clone(),
+                *WATER,
             ),
             // Also test case where heater does not heat all layers, to ensure this is handled correctly
             StorageTank::new(
@@ -1743,7 +1743,7 @@ mod tests {
                 None,
                 Some(energy_supply_conns.1),
                 None,
-                WATER.clone(),
+                *WATER,
             ),
         );
 
@@ -1756,8 +1756,7 @@ mod tests {
         storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>),
     ) {
         let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
-        let usage_events = vec![
-            vec![
+        let usage_events = [vec![
                 TypedScheduleEvent {
                     start: 6.,
                     duration: Some(6.),
@@ -1825,8 +1824,7 @@ mod tests {
                 pipework_volume: None,
             }],
             vec![],
-            vec![],
-        ];
+            vec![]];
 
         //  Expected results for the unit test
         let expected_temperatures_1 = [
@@ -2139,7 +2137,7 @@ mod tests {
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_accessor.clone(),
             simulation_time.step,
-            WATER.clone(),
+            *WATER,
         )));
 
         let storage_tank = StorageTank::new(
@@ -2165,7 +2163,7 @@ mod tests {
             None,
             None,
             None,
-            WATER.clone(),
+            *WATER,
         );
 
         (storage_tank, solar_thermal, simulation_time, energy_supply)

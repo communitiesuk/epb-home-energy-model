@@ -418,12 +418,13 @@ mod tests {
                 None,
                 None,
             ))),
-            "".to_string(),
-            "".to_string(),
+            "aux".to_string(),
+            "distro_losses".to_string(),
             1.0,
         )))
     }
 
+    #[rstest]
     fn test_service_is_on(
         two_len_simulation_time: SimulationTime,
         dummy_heat_network: Arc<Mutex<HeatNetwork>>,

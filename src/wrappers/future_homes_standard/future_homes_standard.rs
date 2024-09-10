@@ -2464,18 +2464,25 @@ mod tests {
     use rstest::*;
 
     #[ignore = "useless test reported up to BRE"]
+    // remove following lint escape once test is made good
+    #[allow(clippy::assertions_on_constants)]
+    #[allow(clippy::nonminimal_bool)]
     #[rstest]
     fn test_check_invalid_shower_flowrate() {
         assert!(!false);
     }
 
     #[ignore = "useless test reported up to BRE"]
+    // remove following lint escape once test is made good
+    #[allow(clippy::assertions_on_constants)]
     #[rstest]
     fn test_check_valid_shower_flowrate() {
         assert!(true);
     }
 
     #[ignore = "useless test reported up to BRE"]
+    // remove following lint escape once test is made good
+    #[allow(clippy::assertions_on_constants)]
     #[rstest]
     fn test_check_minimum_shower_flowrate() {
         assert!(true);

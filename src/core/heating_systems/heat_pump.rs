@@ -5000,12 +5000,10 @@ mod tests {
         (precision * src).round() / precision
     }
 
-    fn round_each_by_precision(src: &Vec<f64>, precision: f64) -> Vec<f64> {
+    fn round_each_by_precision(src: &[f64], precision: f64) -> Vec<f64> {
         src.iter()
             .map(|num| round_by_precision(*num, precision))
             .collect::<Vec<f64>>()
-            .try_into()
-            .unwrap()
     }
 
     impl CompleteHeatPumpTestDatum {
@@ -5143,7 +5141,7 @@ mod tests {
             0.040,
             2,
             simulation_time.step,
-            WATER.clone(),
+            *WATER,
             Some(false),
         )
     }
@@ -5562,24 +5560,21 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         // Ensure the service name does not exist in energy_supply_connections
-        assert!(heat_pump
+        assert!(!heat_pump
             .lock()
             .energy_supply_connections
-            .get(service_name)
-            .is_none());
+            .contains_key(service_name));
 
         // Call the method under test
-        HeatPump::create_service_connection(heat_pump.clone(), &service_name).unwrap();
+        HeatPump::create_service_connection(heat_pump.clone(), service_name).unwrap();
 
         // Check that the service name was added to energy_supply_connections
         assert!(heat_pump
             .lock()
             .energy_supply_connections
-            .get(service_name)
-            .is_some());
+            .contains_key(service_name));
 
-        let create_connection_result =
-            HeatPump::create_service_connection(heat_pump, &service_name);
+        let create_connection_result = HeatPump::create_service_connection(heat_pump, service_name);
 
         // second attempt to create a service connection with same name should error
         assert!(create_connection_result.is_err());
@@ -5608,7 +5603,10 @@ mod tests {
         let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
 
         HeatPump::create_service_connection(heat_pump_nw.clone(), "new_service_nw").unwrap();
-        
-        assert!(heat_pump_nw.lock().energy_supply_hn_connections.get("new_service_nw").is_some());
+
+        assert!(heat_pump_nw
+            .lock()
+            .energy_supply_hn_connections
+            .contains_key("new_service_nw"));
     }
 }

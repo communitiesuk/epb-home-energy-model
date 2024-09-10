@@ -1507,8 +1507,8 @@ mod tests {
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
-        FloorType, MassDistributionClass, TerrainClass, VentilationLeaks, VentilationShieldClass,
-        WindShieldLocation, WindowPart,
+        FloorType, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
+        WindowPart,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
