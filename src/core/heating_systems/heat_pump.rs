@@ -5725,7 +5725,10 @@ mod tests {
                 cold_feed.clone(),
             );
 
-        assert!(boiler_service_water_combi.is_ok());
+        assert!(matches!(
+            boiler_service_water_combi,
+            Ok(BoilerServiceWaterCombi { .. })
+        ));
 
         let heat_pump = create_heat_pump(
             Some("energy_supply_conn_name_auxiliary"),
