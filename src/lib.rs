@@ -213,7 +213,7 @@ fn external_conditions_from_input(
             &simulation_time.iter(),
             ec.air_temperatures,
             ec.wind_speeds,
-            vec![], // implement while migrating to 0.30
+            ec.wind_directions,
             ec.diffuse_horizontal_radiation,
             ec.direct_beam_radiation,
             ec.solar_reflectivity_of_ground,
@@ -233,7 +233,7 @@ fn external_conditions_from_input(
             &simulation_time.iter(),
             input.air_temperatures.clone().unwrap_or_default(),
             input.wind_speeds.clone().unwrap_or_default(),
-            vec![], // implement while migrating to 0.30
+            input.wind_directions.clone().unwrap_or_default(),
             input
                 .diffuse_horizontal_radiation
                 .clone()
