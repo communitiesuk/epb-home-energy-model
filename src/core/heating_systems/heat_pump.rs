@@ -4091,7 +4091,6 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::heating_systems::heat_battery;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
     use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
     use crate::core::space_heat_demand::zone::Zone;
