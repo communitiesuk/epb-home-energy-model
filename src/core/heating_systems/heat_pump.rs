@@ -4091,6 +4091,7 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::heating_systems::heat_battery;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
     use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
     use crate::core::space_heat_demand::zone::Zone;
@@ -5666,5 +5667,43 @@ mod tests {
 
         // creating a BoilerServiceWaterCombi should error on heat pump without boiler
         assert!(boiler_service_water_combi.is_err());
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water(simulation_time_for_heat_pump: SimulationTime) {
+        let heat_pump = create_heat_pump(
+            Some("HeatPump_auxiliary: HotWater"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
+
+        let service_name = "service_hot_water";
+
+        let cold_feed = ColdWaterSource::new(
+            vec![1.0, 1.2],
+            &simulation_time_for_heat_pump,
+            simulation_time_for_heat_pump.step,
+        );
+
+        HeatPump::create_service_hot_water(
+            heat_pump.clone(),
+            service_name.to_string(),
+            50.,
+            60.,
+            cold_feed.into(),
+            None,
+        );
+
+        assert!(heat_pump
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name));
+
+        // TODO: second part of test ("# Check the with boiler data in heat pump") - see if assertion `assert_called_once_with` can be replaced meaningfully in Rust
     }
 }
