@@ -1767,10 +1767,12 @@ impl InfiltrationVentilation {
 fn root_scalar(
     _func: impl FnOnce(f64, f64, f64, f64) -> f64,
     _bracket: [f64; 2],
-    _args: (f64, Option<f64>),
+    args: (f64, Option<f64>),
     _method: &str,
 ) -> Result<RootScalarResult, Error> {
-    todo!()
+    // give passthrough response for now
+    // TODO implement properly (using equivalent function to one in scipy)
+    Ok(RootScalarResult { root: args.0 })
 }
 
 struct RootScalarResult {
