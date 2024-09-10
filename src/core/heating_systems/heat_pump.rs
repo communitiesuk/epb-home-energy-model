@@ -5623,16 +5623,50 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_service_hot_water_combi(simulation_time_for_heat_pump: SimulationTime) {
-        // skip set up for assertion on type of `boiler_service_water_combi` as not necessary in Rust
+    fn test_create_service_hot_water_combi(
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
 
-        let heat_pump = create_heat_pump(
-            Some("energy_supply_conn_name_auxiliary"),
+        let boiler_details = HeatSourceWetDetails::Boiler {
+            energy_supply: EnergySupplyType::MainsGas,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
+            rated_power: 24.,
+            efficiency_full_load: 0.891,
+            efficiency_part_load: 0.991,
+            boiler_location: HeatSourceLocation::Internal,
+            modulation_load: 0.3,
+            electricity_circ_pump: 0.06,
+            electricity_part_load: 0.0131,
+            electricity_full_load: 0.0388,
+            electricity_standby: 0.0244,
+        };
+
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(energy_supply));
+
+        let energy_supply_conn_aux = EnergySupplyConnection::new(
+            energy_supply.clone(),
+            energy_supply_conn_name_auxiliary.to_string(),
+        );
+
+        let boiler = Boiler::new(
+            boiler_details,
+            energy_supply,
+            energy_supply_conn_aux,
+            external_conditions,
+            simulation_time_for_heat_pump.step,
+        )
+        .unwrap();
+        let boiler = Mutex::from(boiler);
+        let heat_pump_with_boiler = create_heat_pump(
+            Some(energy_supply_conn_name_auxiliary),
             None,
             None,
             None,
             None,
-            None,
+            Some(boiler.into()),
         );
         let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
             cold_water_source: ColdWaterSourceType::MainsWater,
@@ -5657,12 +5691,31 @@ mod tests {
             )
             .into(),
         );
-        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
+        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump_with_boiler
             .create_service_hot_water_combi(
                 boiler_data.clone(),
                 service_name,
                 temp_hot_water,
                 cold_feed.clone(),
+            );
+
+        assert!(boiler_service_water_combi.is_ok());
+
+        let heat_pump = create_heat_pump(
+            Some("energy_supply_conn_name_auxiliary"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
+            .create_service_hot_water_combi(
+                boiler_data,
+                service_name,
+                temp_hot_water,
+                cold_feed,
             );
 
         // creating a BoilerServiceWaterCombi should error on heat pump without boiler
