@@ -5600,6 +5600,29 @@ mod tests {
         .unwrap()
     }
 
+    fn create_heat_pump_with_boiler(
+        energy_supply_conn_name_auxiliary: &str,
+        external_conditions: Arc<ExternalConditions>,
+        energy_supply: EnergySupply,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPump {
+        let boiler = Arc::from(Mutex::from(create_boiler(
+            external_conditions,
+            energy_supply,
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        create_heat_pump(
+            Some(energy_supply_conn_name_auxiliary),
+            None,
+            None,
+            None,
+            None,
+            Some(boiler),
+        )
+    }
+
     #[rstest]
     fn test_create_service_connection(simulation_time_for_heat_pump: SimulationTime) {
         let service_name = "new_service";
@@ -5665,15 +5688,11 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
-        let boiler = create_boiler(external_conditions, energy_supply, simulation_time_for_heat_pump, energy_supply_conn_name_auxiliary);
-        let boiler = Mutex::from(boiler);
-        let heat_pump_with_boiler = create_heat_pump(
-            Some(energy_supply_conn_name_auxiliary),
-            None,
-            None,
-            None,
-            None,
-            Some(boiler.into()),
+        let heat_pump_with_boiler = create_heat_pump_with_boiler(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            energy_supply,
+            simulation_time_for_heat_pump,
         );
         let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
             cold_water_source: ColdWaterSourceType::MainsWater,
@@ -5766,26 +5785,16 @@ mod tests {
             .contains_key(service_name));
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: HotWater_boiler";
-        let boiler = Arc::from(Mutex::from(create_boiler(
+
+        let heat_pump_with_boiler = Mutex::from(create_heat_pump_with_boiler(
+            energy_supply_conn_name_auxiliary,
             external_conditions,
             energy_supply,
             simulation_time_for_heat_pump,
-            energy_supply_conn_name_auxiliary,
-        )));
-
-        let heat_pump_with_boiler = create_heat_pump(
-            Some(energy_supply_conn_name_auxiliary),
-            None,
-            None,
-            None,
-            None,
-            Some(boiler),
-        );
-
-        let heat_pump_with_boiler = Arc::from(Mutex::from(heat_pump_with_boiler));
+        ));
 
         let hot_water_service = HeatPump::create_service_hot_water(
-            heat_pump_with_boiler,
+            heat_pump_with_boiler.into(),
             service_name.to_string(),
             50.,
             60.,
