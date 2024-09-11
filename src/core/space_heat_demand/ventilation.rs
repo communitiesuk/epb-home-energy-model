@@ -1569,7 +1569,7 @@ impl InfiltrationVentilation {
     /// Used in calculate_internal_reference_pressure function for p_z_ref solve
     // Remove following directive once this function is used
     #[allow(dead_code)]
-    pub fn implicit_mass_balance_for_internal_reference_pressure(
+    pub(crate) fn implicit_mass_balance_for_internal_reference_pressure(
         &self,
         p_z_ref: f64,
         temp_int_air: f64,
@@ -2704,6 +2704,8 @@ mod tests {
     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
+    // TODO more cases here / different states
+    // copy expected values across from Python
     #[rstest]
     fn test_calculate_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
