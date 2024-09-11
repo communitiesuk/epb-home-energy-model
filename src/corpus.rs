@@ -236,12 +236,10 @@ impl Corpus {
                         window_adjust_control.clone(),
                         simulation_time_iterator.clone().as_ref(),
                     )?;
-                    if let Some(heat_system_name) = heat_system_name.as_ref() {
-                        heat_system_name_for_zone.insert((*i).clone(), heat_system_name.clone());
-                    }
-                    if let Some(cool_system_name) = cool_system_name.as_ref() {
-                        cool_system_name_for_zone.insert((*i).clone(), cool_system_name.clone());
-                    }
+                    heat_system_name_for_zone
+                        .insert((*i).clone(), heat_system_name.unwrap_or_default().clone());
+                    cool_system_name_for_zone
+                        .insert((*i).clone(), cool_system_name.unwrap_or_default().clone());
 
                     zone_for_corpus
                 }))
@@ -249,8 +247,8 @@ impl Corpus {
             .collect::<anyhow::Result<_>>()?;
         let zones = Arc::new(zones);
 
-        if !has_unique_values(&heat_system_name_for_zone)
-            || !has_unique_values(&cool_system_name_for_zone)
+        if !has_unique_non_default_values(&heat_system_name_for_zone)
+            || !has_unique_non_default_values(&cool_system_name_for_zone)
         {
             bail!("the heat or cool systems do not have unique names in the inputs");
         }
@@ -2096,8 +2094,8 @@ impl<'a> SpaceHeatCoolSystems<'a> {
     }
 }
 
-fn has_unique_values<K, V: Eq + Hash>(map: &IndexMap<K, V>) -> bool {
-    let values: Vec<&V> = map.values().collect();
+fn has_unique_non_default_values<K, V: Default + Eq + Hash>(map: &IndexMap<K, V>) -> bool {
+    let values: Vec<&V> = map.values().filter(|x| x != &&V::default()).collect();
     let value_set: HashSet<&&V> = values.iter().collect();
     values.len() == value_set.len()
 }
