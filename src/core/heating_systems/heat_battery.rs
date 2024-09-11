@@ -1102,9 +1102,7 @@ mod tests {
 
             let service_names_in_results = get_service_names_from_results(heat_battery.clone());
 
-            assert!(
-                service_names_in_results.contains(&service_name.into())
-            );
+            assert!(service_names_in_results.contains(&service_name.into()));
 
             assert_relative_eq!(
                 heat_battery.lock().charge_level,
@@ -1180,9 +1178,7 @@ mod tests {
 
         let service_names_in_results = get_service_names_from_results(heat_battery.clone());
 
-        assert!(
-            service_names_in_results.contains(&service_name.into())
-        );
+        assert!(service_names_in_results.contains(&service_name.into()));
 
         heat_battery.lock().timestep_end(t_idx);
 

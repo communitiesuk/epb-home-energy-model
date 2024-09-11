@@ -815,14 +815,14 @@ impl Corpus {
                 initial_p_z_ref_guess,
                 temp_int_air,
                 Some(r_w_arg),
-                &simtime,
+                simtime,
             )
         } else {
             self.ventilation.calculate_internal_reference_pressure(
                 self.internal_pressure_window[&reporting_flag],
                 temp_int_air,
                 Some(r_w_arg),
-                &simtime,
+                simtime,
             )
         };
 

@@ -13,7 +13,6 @@ pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
 /// This function matches the behaviour Numpy interp
 /// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
 pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
-    
     if x.is_empty() {
         panic!("x cannot be empty");
     }
@@ -25,7 +24,7 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     if x.len() != y.len() {
         panic!("x and y must be of equal length");
     }
-    
+
     if input > x.max() {
         return *y.last().unwrap();
     }

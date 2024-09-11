@@ -1,6 +1,11 @@
 // This module provides objects to represent Infiltration and Ventilation.
 // The calculations are based on Method 1 of BS EN 16798-7.
 
+use argmin::{
+    core::{CostFunction, Executor},
+    solver::brent::BrentRoot,
+};
+
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
@@ -1535,25 +1540,25 @@ impl InfiltrationVentilation {
         initial_p_z_ref_guess: f64,
         temp_int_air: f64,
         r_w_arg: Option<f64>,
-        simtime: &SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
-        let func = |qv_pdu, p_z_ref: f64, t_z: f64, h_z: f64| {
-            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, h_z, simtime)
-        };
-
         for interval_expansion in INTERVAL_EXPANSION_LIST {
-            let result = root_scalar(
-                func,
-                [
-                    initial_p_z_ref_guess - interval_expansion,
-                    initial_p_z_ref_guess + interval_expansion,
-                ],
-                (temp_int_air, r_w_arg),
-                "brentq",
+            let bracket = (
+                initial_p_z_ref_guess - interval_expansion,
+                initial_p_z_ref_guess + interval_expansion,
+            );
+            let r_w_arg = r_w_arg.expect("r_w_arg is required for root scalar solver");
+
+            let result = root_scalar_for_implicit_mass_balance(
+                &self,
+                temp_int_air,
+                r_w_arg,
+                simtime,
+                bracket,
             );
 
-            if let Ok(sol) = result {
-                let p_z_ref = sol.root;
+            if let Ok(root) = result {
+                let p_z_ref = root;
                 return p_z_ref;
             }
         }
@@ -1564,8 +1569,8 @@ impl InfiltrationVentilation {
     /// Used in calculate_internal_reference_pressure function for p_z_ref solve
     // Remove following directive once this function is used
     #[allow(dead_code)]
-    fn implicit_mass_balance_for_internal_reference_pressure(
-        self,
+    pub fn implicit_mass_balance_for_internal_reference_pressure(
+        &self,
         p_z_ref: f64,
         temp_int_air: f64,
         r_w_arg_min_max: f64,
@@ -1762,21 +1767,65 @@ impl InfiltrationVentilation {
     }
 }
 
-// TODO this is from scipy.
-// Find equivalent function in a Rust library or implement
-fn root_scalar(
-    _func: impl FnOnce(f64, f64, f64, f64) -> f64,
-    _bracket: [f64; 2],
-    args: (f64, Option<f64>),
-    _method: &str,
-) -> Result<RootScalarResult, Error> {
-    // give passthrough response for now
-    // TODO implement properly (using equivalent function to one in scipy)
-    Ok(RootScalarResult { root: args.0 })
+struct ImplicitMassBalanceProblem<'a> {
+    pub temp_int_air: f64,
+    pub r_w_arg: f64,
+    pub simtime: SimulationTimeIteration,
+    pub infiltration_ventilation: &'a InfiltrationVentilation,
 }
 
-struct RootScalarResult {
-    pub root: f64,
+impl CostFunction for ImplicitMassBalanceProblem<'_> {
+    type Param = f64;
+    type Output = f64;
+
+    fn cost(&self, p_z_ref: &Self::Param) -> Result<Self::Output, Error> {
+        let cost = self
+            .infiltration_ventilation
+            .implicit_mass_balance_for_internal_reference_pressure(
+                *p_z_ref,
+                self.temp_int_air,
+                self.r_w_arg,
+                None,
+                self.simtime,
+            );
+        Ok(cost)
+    }
+}
+
+fn root_scalar_for_implicit_mass_balance(
+    infiltration_ventilation: &InfiltrationVentilation,
+    temp_int_air: f64,
+    r_w_arg: f64,
+    simtime: SimulationTimeIteration,
+    bracket: (f64, f64),
+) -> Result<f64, &'static str> {
+    let problem = ImplicitMassBalanceProblem {
+        temp_int_air,
+        r_w_arg,
+        simtime,
+        infiltration_ventilation: infiltration_ventilation,
+    };
+
+    let tol = 0.;
+
+    let (min, max) = bracket;
+    let solver = BrentRoot::new(min, max, tol);
+
+    let executor = Executor::new(problem, solver);
+    let res = executor.run();
+
+    if res.is_err() {
+        // The Python code only continues for specific errors
+        // but in Rust we continue on any error
+        return Err("Error calculating root for implicit mass balance")
+    }
+
+    let best_p_z_ref = res.unwrap().state().best_param;
+
+    match best_p_z_ref {
+        Some(p_z_ref) => Ok(p_z_ref),
+        None => Err("No best_param in result"),
+    }
 }
 
 // TODO this is from scipy
@@ -2655,7 +2704,6 @@ mod tests {
     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
-    #[ignore]
     #[rstest]
     fn test_calculate_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
@@ -2669,7 +2717,7 @@ mod tests {
                 intial_p_z_ref_guess,
                 temp_int_air,
                 Some(r_w_arg),
-                &simulation_time_iterator.current_iteration()
+                simulation_time_iterator.current_iteration()
             ),
             -6.312225965701547,
             max_relative = EIGHT_DECIMAL_PLACES
