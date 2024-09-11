@@ -27,18 +27,18 @@ pub struct EnergySupplies {
 }
 
 impl EnergySupplies {
-    pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
-        if let Some(ref mut supply) = self.mains_electricity {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
+        if let Some(ref supply) = self.mains_electricity {
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
-        if let Some(ref mut supply) = self.mains_gas {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+        if let Some(ref supply) = self.mains_gas {
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
-        if let Some(ref mut supply) = self.bulk_lpg {
-            supply.write().calc_energy_import_export_betafactor(simtime);
+        if let Some(ref supply) = self.bulk_lpg {
+            supply.read().calc_energy_import_export_betafactor(simtime);
         }
         self.unmet_demand
-            .write()
+            .read()
             .calc_energy_import_export_betafactor(simtime);
     }
 
@@ -412,7 +412,7 @@ impl EnergySupply {
 
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
-    pub fn calc_energy_import_export_betafactor(&mut self, simtime: SimulationTimeIteration) {
+    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -492,20 +492,20 @@ impl EnergySupply {
                         let energy_out_of_battery =
                             electric_battery.charge_discharge_battery(supply_surplus, simtime);
                         supply_surplus -= energy_out_of_battery;
-                        self.energy_into_battery
-                            .insert(simtime.index, AtomicF64::new(-energy_out_of_battery));
+                        self.energy_into_battery[simtime.index]
+                            .store(-energy_out_of_battery, Ordering::SeqCst);
                         let energy_out_of_battery =
                             electric_battery.charge_discharge_battery(demand_not_met, simtime);
                         demand_not_met -= energy_out_of_battery;
-                        self.energy_out_of_battery
-                            .insert(simtime.index, AtomicF64::new(-energy_out_of_battery));
+                        self.energy_out_of_battery[simtime.index]
+                            .store(-energy_out_of_battery, Ordering::SeqCst);
                     } else if matches!(item, SecondarySupplyType::Diverter)
                         && self.diverter.is_some()
                     {
                         let diverter = self.diverter.as_ref().unwrap();
-                        self.energy_diverted.insert(
-                            simtime.index,
-                            AtomicF64::new(diverter.read().divert_surplus(supply_surplus, simtime)),
+                        self.energy_diverted[simtime.index].store(
+                            diverter.read().divert_surplus(supply_surplus, simtime),
+                            Ordering::SeqCst,
                         );
                         supply_surplus +=
                             self.energy_diverted[simtime.index].load(Ordering::SeqCst);
@@ -814,7 +814,7 @@ mod tests {
                 .supply_energy(t_idx as f64 * t_idx as f64 * 80., t_idx)
                 .unwrap();
 
-            let mut energy_supply = energy_supply.write();
+            let energy_supply = energy_supply.read();
             energy_supply.calc_energy_import_export_betafactor(t_it);
 
             assert_eq!(
