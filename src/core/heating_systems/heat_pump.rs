@@ -2256,7 +2256,9 @@ impl HeatPump {
             if heat_pump.sink_type != HeatPumpSinkType::Air {
                 bail!("Warm air space heating service requires heat pump with sink type Air");
             }
-            if heat_pump.boiler.is_none() {
+            // TODO: check if a system exit/bail is intended to happen when there is no boiler (as the error message is suggesting
+            if heat_pump.boiler.is_some() {
+                // TODO (from Python) More evidence is required before warm air space heating systems can work with hybrid heat pumps
                 bail!("Missing boiler object");
             }
             if heat_pump.source_is_exhaust_air() {
@@ -5548,6 +5550,8 @@ mod tests {
         var_flow_temp_ctrl_during_test: bool,
         eahp_mixed_max_temp: Option<f64>,
         eahp_mixed_min_temp: Option<f64>,
+        sink_type: HeatPumpSinkType,
+        min_modulation_rate_20: Option<f64>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
         test_data: Vec<HeatPumpTestDatum>,
@@ -5557,11 +5561,11 @@ mod tests {
             source_type: source_type.unwrap_or(HeatPumpSourceType::OutsideAir),
             energy_supply_heat_network: None,
             temp_distribution_heat_network,
-            sink_type: HeatPumpSinkType::Water,
+            sink_type,
             backup_control_type: backup_control_type.unwrap_or(HeatPumpBackupControlType::TopUp),
             time_delay_backup: time_delay_backup.unwrap_or(1.0),
             modulating_control: true,
-            min_modulation_rate_20: None,
+            min_modulation_rate_20,
             min_modulation_rate_35: Some(0.35),
             min_modulation_rate_55: Some(0.4),
             time_constant_onoff_operation: 140.,
@@ -5626,6 +5630,8 @@ mod tests {
             false,
             None,
             None,
+            HeatPumpSinkType::Water,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
             create_test_data(None, None),
@@ -5656,6 +5662,8 @@ mod tests {
             false,
             None,
             None,
+            HeatPumpSinkType::Water,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
             create_test_data(None, None),
@@ -5679,9 +5687,36 @@ mod tests {
             true,
             Some(10.),
             Some(0.),
+            HeatPumpSinkType::Water,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
             create_test_data(Some(100.), Some(0.62)),
+        )
+    }
+
+    fn create_heat_pump_sink_air(
+        energy_supply_conn_name_auxiliary: &str,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPump {
+        create_heat_pump(
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            Some(2.),
+            None,
+            Some(101.),
+            true,
+            Some(10.),
+            Some(0.),
+            HeatPumpSinkType::Air,
+            Some(20.),
+            external_conditions,
+            simulation_time_for_heat_pump,
+            create_test_data(None, None),
         )
     }
 
@@ -5743,6 +5778,8 @@ mod tests {
             None,
             false,
             None,
+            None,
+            HeatPumpSinkType::Water,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
@@ -5964,5 +6001,61 @@ mod tests {
             heat_pump_exhaust.lock().volume_heated_all_services.unwrap(),
             250.
         );
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating_warm_air(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
+
+        let service_name = "service_space_warmair";
+        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![],
+            0,
+            0.,
+        )));
+        let volume_heated = 250.;
+        let frac_convective = 0.9;
+
+        let result = HeatPump::create_service_space_heating_warm_air(
+            heat_pump,
+            service_name.to_string(),
+            control.clone(),
+            frac_convective,
+            volume_heated,
+        );
+
+        // Check we get an error when Sink type is not air
+        assert!(result.is_err());
+
+        // Check without boiler object and sink type 'AIR'
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: sink_air";
+        let heat_pump_sink_air = create_heat_pump_sink_air(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        let heat_pump_sink_air = Arc::from(Mutex::from(heat_pump_sink_air));
+
+        let result = HeatPump::create_service_space_heating_warm_air(
+            heat_pump_sink_air.clone(),
+            service_name.to_string(),
+            control,
+            frac_convective,
+            volume_heated,
+        );
+
+        assert!(result.is_ok());
+        assert!(heat_pump_sink_air
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name));
     }
 }
