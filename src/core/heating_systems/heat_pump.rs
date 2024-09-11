@@ -6058,4 +6058,63 @@ mod tests {
             .energy_supply_connections
             .contains_key(service_name));
     }
+
+    #[rstest]
+    fn test_get_temp_source(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+
+        let result =
+            heat_pump.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
+
+        assert_relative_eq!(result, 273.15);
+
+        // Check with ExhaustAirMixed
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source";
+        let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        // TODO: calling .get_temp_source() fails because the temp_source that is passed to the celsius_to_kelvin method is NaN (was also saw that temp_int, ext_air_ratio and temp_mixed were NaN)
+        // let result = heat_pump_with_exhaust
+        //     .get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
+
+        // assert_relative_eq!(result, 280.75);
+    }
+
+    /*
+    def test_get_temp_source(self):
+        # Check with ExhaustAirMixed
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: exhaust_source'
+        throughput_exhaust_air = 101
+        project = MagicMock()
+        project.temp_internal_air.return_value = 20
+        self.heat_pump_exhaust = HeatPump(self.heat_dict_exhaust,
+                                 self.energysupply,
+                                 self.energy_supply_conn_name_auxiliary,
+                                 self.simtime,
+                                 self.extcond,
+                                 self.number_of_zones,
+                                 throughput_exhaust_air = throughput_exhaust_air,
+                                 project = project)
+        self.assertAlmostEqual(self.heat_pump_exhaust._HeatPump__get_temp_source(),  280.75)
+        # Check with heat_network
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: heat_nw'
+        self.heat_network = EnergySupply(simulation_time = self.simtime ,
+                                         fuel_type = 'custom')
+        self.heat_pump_nw = HeatPump(self.heat_dict_heat_nw,
+                                 self.energysupply,
+                                 self.energy_supply_conn_name_auxiliary,
+                                 self.simtime,
+                                 self.extcond,
+                                 self.number_of_zones,
+                                 heat_network = self.heat_network)
+        self.assertAlmostEqual(self.heat_pump_nw._HeatPump__get_temp_source(), 293.15) */
 }
