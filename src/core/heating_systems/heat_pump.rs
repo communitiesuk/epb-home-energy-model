@@ -5463,20 +5463,13 @@ mod tests {
         .unwrap()
     }
 
-    fn create_heat_pump(
-        energy_supply_conn_name_auxiliary: &str,
-        heat_network: Option<Arc<RwLock<EnergySupply>>>,
-        source_type: Option<HeatPumpSourceType>,
-        temp_distribution_heat_network: Option<f64>,
-        time_delay_backup: Option<f64>,
-        boiler: Option<Arc<Mutex<Boiler>>>,
-        throughput_exhaust_air: Option<f64>,
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) -> HeatPump {
-        let test_data = vec![
+    fn create_test_data(
+        air_flow_rate: Option<f64>,
+        eahp_mixed_ext_air_ratio: Option<f64>,
+    ) -> Vec<HeatPumpTestDatum> {
+        vec![
             HeatPumpTestDatum {
-                air_flow_rate: None,
+                air_flow_rate,
                 test_letter: test_letter("A"),
                 capacity: 8.4,
                 cop: 4.6,
@@ -5486,10 +5479,10 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio,
             },
             HeatPumpTestDatum {
-                air_flow_rate: None,
+                air_flow_rate,
                 test_letter: test_letter("B"),
                 capacity: 8.3,
                 cop: 4.9,
@@ -5499,10 +5492,10 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 2.,
                 ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio,
             },
             HeatPumpTestDatum {
-                air_flow_rate: None,
+                air_flow_rate,
                 test_letter: test_letter("C"),
                 capacity: 8.3,
                 cop: 5.1,
@@ -5512,10 +5505,10 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 7.,
                 ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio,
             },
             HeatPumpTestDatum {
-                air_flow_rate: None,
+                air_flow_rate,
                 test_letter: test_letter("D"),
                 capacity: 8.2,
                 cop: 5.4,
@@ -5525,10 +5518,10 @@ mod tests {
                 temp_source: 0.,
                 temp_test: 12.,
                 ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio,
             },
             HeatPumpTestDatum {
-                air_flow_rate: None,
+                air_flow_rate,
                 test_letter: test_letter("F"),
                 capacity: 8.4,
                 cop: 4.6,
@@ -5538,17 +5531,34 @@ mod tests {
                 temp_source: 0.,
                 temp_test: -7.,
                 ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio: None,
+                eahp_mixed_ext_air_ratio,
             },
-        ];
+        ]
+    }
 
+    fn create_heat_pump(
+        energy_supply_conn_name_auxiliary: &str,
+        heat_network: Option<Arc<RwLock<EnergySupply>>>,
+        source_type: Option<HeatPumpSourceType>,
+        backup_control_type: Option<HeatPumpBackupControlType>,
+        temp_distribution_heat_network: Option<f64>,
+        time_delay_backup: Option<f64>,
+        boiler: Option<Arc<Mutex<Boiler>>>,
+        throughput_exhaust_air: Option<f64>,
+        var_flow_temp_ctrl_during_test: bool,
+        eahp_mixed_max_temp: Option<f64>,
+        eahp_mixed_min_temp: Option<f64>,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+        test_data: Vec<HeatPumpTestDatum>,
+    ) -> HeatPump {
         let heat_pump_input = HeatSourceWetDetails::HeatPump {
             energy_supply: EnergySupplyType::MainsGas,
             source_type: source_type.unwrap_or(HeatPumpSourceType::OutsideAir),
             energy_supply_heat_network: None,
             temp_distribution_heat_network,
             sink_type: HeatPumpSinkType::Water,
-            backup_control_type: HeatPumpBackupControlType::TopUp,
+            backup_control_type: backup_control_type.unwrap_or(HeatPumpBackupControlType::TopUp),
             time_delay_backup: time_delay_backup.unwrap_or(1.0),
             modulating_control: true,
             min_modulation_rate_20: None,
@@ -5558,7 +5568,7 @@ mod tests {
             temp_return_feed_max: 70.,
             temp_lower_operating_limit: -5.0,
             min_temp_diff_flow_return_for_hp_to_operate: 0.0,
-            var_flow_temp_ctrl_during_test: false,
+            var_flow_temp_ctrl_during_test,
             power_heating_warm_air_fan: None,
             power_heating_circ_pump: 0.015,
             power_source_circ_pump: 0.01,
@@ -5566,8 +5576,8 @@ mod tests {
             power_crankcase_heater: 0.01,
             power_off: 0.015,
             power_max_backup: Some(3.0),
-            eahp_mixed_max_temp: None,
-            eahp_mixed_min_temp: None,
+            eahp_mixed_max_temp,
+            eahp_mixed_min_temp,
             mechanical_ventilation: None,
             buffer_tank: None,
             test_data,
@@ -5612,8 +5622,13 @@ mod tests {
             None,
             None,
             None,
+            None,
+            false,
+            None,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
+            create_test_data(None, None),
         )
     }
 
@@ -5635,10 +5650,15 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(boiler),
+            None,
+            false,
+            None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            create_test_data(None, None),
         )
     }
 
@@ -5650,13 +5670,18 @@ mod tests {
         create_heat_pump(
             energy_supply_conn_name_auxiliary,
             None,
+            Some(HeatPumpSourceType::ExhaustAirMixed),
+            Some(HeatPumpBackupControlType::Substitute),
             None,
-            None,
-            None,
+            Some(2.),
             None,
             Some(101.),
+            true,
+            Some(10.),
+            Some(0.),
             external_conditions,
             simulation_time_for_heat_pump,
+            create_test_data(Some(100.), Some(0.62)),
         )
     }
 
@@ -5711,12 +5736,17 @@ mod tests {
             energy_supply_conn_name_auxiliary,
             Some(heat_network.into()),
             Some(source_type),
+            None,
             Some(temp_distribution_heat_network),
             Some(time_delay_backup),
             None,
             None,
+            false,
+            None,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
+            create_test_data(None, None),
         );
         let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
 
@@ -5900,7 +5930,7 @@ mod tests {
             service_name,
             temp_limit_upper,
             temp_diff_emit_dsgn,
-            control,
+            control.clone(),
             volume_heated,
         );
 
@@ -5917,22 +5947,22 @@ mod tests {
             simulation_time_for_heat_pump,
         );
 
-        /*
+        let heat_pump_exhaust = Arc::from(Mutex::from(heat_pump_exhaust));
 
-        # Check with exhaust air heat pump
-        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: exhaust_service_space
+        let service_name = "service_space_exhaust";
 
-        self.service_name = 'service_space_exhaust'
-        self.heat_pump_exhaust.create_service_space_heating(
-                                                    self.service_name,
-                                                    self.temp_limit_upper,
-                                                    self.temp_diff_emit_dsgn,
-                                                    self.control,
-                                                    self.volume_heated
-                                                    )
-        self.assertAlmostEqual(self.heat_pump_exhaust._HeatPump__volume_heated_all_services,
-                               250.0)
+        HeatPump::create_service_space_heating(
+            heat_pump_exhaust.clone(),
+            service_name,
+            temp_limit_upper,
+            temp_diff_emit_dsgn,
+            control,
+            volume_heated,
+        );
 
-         */
+        assert_relative_eq!(
+            heat_pump_exhaust.lock().volume_heated_all_services.unwrap(),
+            250.
+        );
     }
 }
