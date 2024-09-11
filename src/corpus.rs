@@ -801,7 +801,7 @@ impl Corpus {
     /// initial_p_z_ref_guess is used for calculation in first timestep.
     /// Later timesteps use the previous timesteps p_z_ref of max and min ACH ,respective to calc.
     fn calc_air_changes_per_hour(
-        &self,
+        &mut self,
         temp_int_air: f64,
         r_w_arg: f64,
         initial_p_z_ref_guess: f64,
@@ -823,6 +823,9 @@ impl Corpus {
                 simtime,
             )
         };
+
+        self.internal_pressure_window
+            .insert(reporting_flag, current_internal_pressure_window);
 
         let incoming_air_flow = self.ventilation.incoming_air_flow(
             current_internal_pressure_window,
@@ -2011,7 +2014,10 @@ impl Corpus {
             hc_output_overall.insert(hc_name.to_owned(), hc_output.iter().sum::<f64>().abs());
             hc_input_overall.insert(hc_name.to_owned(), 0.);
             let energy_supply_conn_names =
-                energy_supply_conn_name_for_space_hc_system[hc_name.as_str()].clone();
+                match energy_supply_conn_name_for_space_hc_system.get(hc_name.as_str()) {
+                    Some(hc_name) => hc_name.clone(),
+                    None => vec![],
+                };
             for (fuel_name, fuel_summary) in results_end_user {
                 if fuel_name == "_unmet_demand" {
                     continue;
