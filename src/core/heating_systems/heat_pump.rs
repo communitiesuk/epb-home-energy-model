@@ -190,7 +190,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 &degradation_coeff_list
             );
             let ext_air_ratio =
-                (source_type == HeatPumpSourceType::ExhaustAirMixed).then_some(np_interp(
+                (source_type == HeatPumpSourceType::ExhaustAirMixed).then(|| np_interp(
                     throughput_exhaust_air, air_flow_rates_ordered,
                     &ext_air_ratio_list
                 ));
@@ -314,7 +314,7 @@ impl BufferTank {
             q_heat_loss_buffer_rbl: 0.0,
             track_buffer_loss: 0.0,
             temp_ave_buffer: Default::default(),
-            detailed_results: output_detailed_results.then_some(Default::default()),
+            detailed_results: output_detailed_results.then(Default::default),
         }
     }
 

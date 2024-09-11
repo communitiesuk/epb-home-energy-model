@@ -2919,8 +2919,7 @@ fn infiltration_ventilation_from_input(
                 .values()
                 .filter_map(|building_element| {
                     if let BuildingElementInput::Opaque { pitch, area, .. } = building_element {
-                        (pitch_class(*pitch) == HeatFlowDirection::Upwards)
-                            .then_some((*pitch, *area))
+                        (pitch_class(*pitch) == HeatFlowDirection::Upwards).then(|| (*pitch, *area))
                     } else {
                         None
                     }
@@ -4378,7 +4377,7 @@ fn total_volume_heated_by_system(
         .iter()
         .filter_map(|(z_name, zone)| {
             if let Some(system_name) = heat_system_name_for_zone.get(z_name) {
-                (system_name == heat_system_name).then_some(zone.volume())
+                (system_name == heat_system_name).then(|| zone.volume())
             } else {
                 None
             }
