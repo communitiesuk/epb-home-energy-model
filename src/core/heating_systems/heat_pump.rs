@@ -2212,7 +2212,6 @@ impl HeatPump {
     }
 
     pub fn create_service_space_heating(
-        &mut self,
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
         temp_limit_upper_in_c: f64,
@@ -2220,14 +2219,16 @@ impl HeatPump {
         control: Arc<Control>,
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
-        let boiler_service = self.boiler.as_ref().map(|boiler| {
+        let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
             Arc::new(Mutex::new(boiler.lock().create_service_space_heating(
                 service_name.to_owned(),
                 control.clone(),
             )))
         });
-        if self.source_is_exhaust_air() {
-            if let Some(volume_heated_all_services) = self.volume_heated_all_services.as_mut() {
+        if heat_pump.lock().source_is_exhaust_air() {
+            if let Some(volume_heated_all_services) =
+                heat_pump.lock().volume_heated_all_services.as_mut()
+            {
                 *volume_heated_all_services += volume_heated;
             }
         }
@@ -4091,6 +4092,7 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
     use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
     use crate::core::space_heat_demand::zone::Zone;
@@ -5826,5 +5828,38 @@ mod tests {
         );
 
         assert!(hot_water_service.hybrid_boiler_service.is_some());
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let service_name = "service_space";
+        let temp_limit_upper = 50.0;
+        let temp_diff_emit_dsgn = 50.0;
+        let control = Control::OnOffTimeControl(OnOffTimeControl::new(vec![], 0, 0.));
+        let volume_heated = 250.0;
+
+        let heat_pump =
+            create_default_heat_pump(None, external_conditions, simulation_time_for_heat_pump);
+
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
+
+        let service_space_heating = HeatPump::create_service_space_heating(
+            heat_pump.clone(),
+            service_name,
+            temp_limit_upper,
+            temp_diff_emit_dsgn,
+            control.into(),
+            volume_heated,
+        );
+
+        assert!(matches!(service_space_heating, HeatPumpServiceSpace { .. }));
+
+        assert!(heat_pump
+            .lock()
+            .energy_supply_connections
+            .contains_key(service_name));
     }
 }
