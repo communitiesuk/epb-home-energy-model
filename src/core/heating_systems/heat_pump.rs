@@ -5463,12 +5463,14 @@ mod tests {
     }
 
     fn create_heat_pump(
-        energy_supply_conn_name_auxiliary: Option<&str>,
+        energy_supply_conn_name_auxiliary: &str,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
         source_type: Option<HeatPumpSourceType>,
         temp_distribution_heat_network: Option<f64>,
         time_delay_backup: Option<f64>,
         boiler: Option<Arc<Mutex<Boiler>>>,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let test_data = vec![
             HeatPumpTestDatum {
@@ -5570,17 +5572,10 @@ mod tests {
             boiler: None,
         };
 
-        let simulation_time_for_heat_pump = simulation_time_for_heat_pump();
-
         let energy_supply = energy_supply(simulation_time_for_heat_pump);
-
-        let energy_supply_conn_name_auxiliary =
-            energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
-
         let number_of_zones = 2;
         let throughput_exhaust_air = None;
         let cost_schedule_hybrid_hp = None;
-        let external_conditions = external_conditions(simulation_time_for_heat_pump);
         let temp_internal_air_accessor =
             temp_internal_air_accessor(external_conditions.clone(), simulation_time_for_heat_pump);
         HeatPump::new(
@@ -5600,6 +5595,26 @@ mod tests {
         .unwrap()
     }
 
+    fn create_default_heat_pump(
+        energy_supply_conn_name_auxiliary: Option<&str>,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPump {
+        let energy_supply_conn_name_auxiliary =
+            energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
+
+        create_heat_pump(
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            None,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        )
+    }
+
     fn create_heat_pump_with_boiler(
         energy_supply_conn_name_auxiliary: &str,
         external_conditions: Arc<ExternalConditions>,
@@ -5607,26 +5622,35 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         let boiler = Arc::from(Mutex::from(create_boiler(
-            external_conditions,
+            external_conditions.clone(),
             energy_supply,
             simulation_time_for_heat_pump,
             energy_supply_conn_name_auxiliary,
         )));
 
         create_heat_pump(
-            Some(energy_supply_conn_name_auxiliary),
+            energy_supply_conn_name_auxiliary,
             None,
             None,
             None,
             None,
             Some(boiler),
+            external_conditions,
+            simulation_time_for_heat_pump,
         )
     }
 
     #[rstest]
-    fn test_create_service_connection(simulation_time_for_heat_pump: SimulationTime) {
+    fn test_create_service_connection(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
         let service_name = "new_service";
-        let heat_pump = create_heat_pump(None, None, None, None, None, None);
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         // Ensure the service name does not exist in energy_supply_connections
@@ -5650,7 +5674,7 @@ mod tests {
         assert!(create_connection_result.is_err());
 
         // Check with heat_network
-        let energy_supply_conn_name_auxiliary = Some("HeatPump_auxiliary: hp1");
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
 
         let heat_network = RwLock::from(EnergySupply::new(
             FuelType::Custom,
@@ -5670,6 +5694,8 @@ mod tests {
             Some(temp_distribution_heat_network),
             Some(time_delay_backup),
             None,
+            external_conditions,
+            simulation_time_for_heat_pump,
         );
         let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
 
@@ -5690,7 +5716,7 @@ mod tests {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
         let heat_pump_with_boiler = create_heat_pump_with_boiler(
             energy_supply_conn_name_auxiliary,
-            external_conditions,
+            external_conditions.clone(),
             energy_supply,
             simulation_time_for_heat_pump,
         );
@@ -5730,13 +5756,10 @@ mod tests {
             Ok(BoilerServiceWaterCombi { .. })
         ));
 
-        let heat_pump = create_heat_pump(
-            Some("energy_supply_conn_name_auxiliary"),
-            None,
-            None,
-            None,
-            None,
-            None,
+        let heat_pump = create_default_heat_pump(
+            Some("HeatPump_auxiliary: boiler1"),
+            external_conditions,
+            simulation_time_for_heat_pump,
         );
 
         let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
@@ -5752,13 +5775,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         energy_supply: EnergySupply,
     ) {
-        let heat_pump = create_heat_pump(
+        let heat_pump = create_default_heat_pump(
             Some("HeatPump_auxiliary: HotWater"),
-            None,
-            None,
-            None,
-            None,
-            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
         );
 
         let heat_pump = Arc::from(Mutex::from(heat_pump));
