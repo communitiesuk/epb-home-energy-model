@@ -1817,7 +1817,7 @@ fn root_scalar_for_implicit_mass_balance(
     if res.is_err() {
         // The Python code only continues for specific errors
         // but in Rust we continue on any error
-        return Err("Error calculating root for implicit mass balance")
+        return Err("Error calculating root for implicit mass balance");
     }
 
     let best_p_z_ref = res.unwrap().state().best_param;
@@ -2704,16 +2704,21 @@ mod tests {
     // NOTE - Python has a commented out test here for test_calculate_qv_pdu
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
-    // TODO more cases here / different states
-    // copy expected values across from Python
     #[rstest]
+    #[case(20.,  0.5, -6.31222596)]
+    #[case(20.,  7.0, -6.31223437)]
+    #[case(30.,  1.0, -6.89665928)]
+    #[case(0.,   0.5, -5.01495290)]
+    #[case(100., 0.5, -10.1105879)]
     fn test_calculate_internal_reference_pressure(
+        #[case]temp_int_air: f64,
+        #[case]r_w_arg: f64,
+        #[case]expected: f64,
         infiltration_ventilation: InfiltrationVentilation,
         simulation_time_iterator: SimulationTimeIterator,
+        
     ) {
         let intial_p_z_ref_guess = 0.;
-        let temp_int_air = 20.;
-        let r_w_arg = 0.5;
         assert_relative_eq!(
             infiltration_ventilation.calculate_internal_reference_pressure(
                 intial_p_z_ref_guess,
@@ -2721,11 +2726,13 @@ mod tests {
                 Some(r_w_arg),
                 simulation_time_iterator.current_iteration()
             ),
-            -6.312225965701547,
+            expected,
             max_relative = EIGHT_DECIMAL_PLACES
         )
     }
 
+    // TODO more cases here / different states
+    // copy expected values across from Python
     #[rstest]
     fn test_implicit_mass_balance_for_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
