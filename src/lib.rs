@@ -331,30 +331,6 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
     let mut units_row = vec!["[count]"];
 
-    for totals_key in results_totals.keys() {
-        let totals_header = format!("{totals_key} total");
-        headings.push(totals_header.into());
-        units_row.push("[kWh]");
-        for end_user_key in results_end_user[totals_key].keys() {
-            headings.push((*end_user_key).clone().into());
-            units_row.push("[kWh]");
-        }
-        headings.push(format!("{totals_key} import").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} export").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} generated and consumed").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} beta factor").into());
-        units_row.push("[ratio]");
-        headings.push(format!("{totals_key} to storage").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} from storage").into());
-        units_row.push("[kWh]");
-        headings.push(format!("{totals_key} diverted").into());
-        units_row.push("[kWh]");
-    }
-
     // hot_water_dict headings
     for system in hot_water_dict.keys() {
         let mut system = *system;
