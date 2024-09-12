@@ -4107,6 +4107,7 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
     use pretty_assertions::assert_eq;
     use rstest::*;
+    use serde_json::json;
 
     #[rstest]
     pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
@@ -5489,7 +5490,87 @@ mod tests {
         ]
     }
 
+    fn create_heat_pump_input_from_json() -> HeatSourceWetDetails {
+        let input = json!({
+            "type": "HeatPump",
+            "EnergySupply": "mains gas",
+            "source_type": "OutsideAir",
+            "sink_type": "Water",
+            "backup_ctrl_type": "TopUp",
+            "time_delay_backup": 1,
+            "modulating_control": true,
+            "min_modulation_rate_35": 0.35,
+            "min_modulation_rate_55": 0.4,
+            "time_constant_onoff_operation": 140,
+            "temp_return_feed_max": 70,
+            "temp_lower_operating_limit": -5,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0,
+            "var_flow_temp_ctrl_during_test": false,
+            "power_heating_circ_pump": 0.015,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.015,
+            "power_crankcase_heater": 0.01,
+            "power_off": 0.015,
+            "power_max_backup": 3,
+            "test_data": [
+                {
+                    "test_letter": "A",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                },
+                {
+                    "test_letter": "B",
+                    "capacity": 8.3,
+                    "cop": 4.9,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 2
+                },
+                {
+                    "test_letter": "C",
+                    "capacity": 8.3,
+                    "cop": 5.1,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 27,
+                    "temp_source": 0,
+                    "temp_test": 7
+                },
+                {
+                    "test_letter": "D",
+                    "capacity": 8.2,
+                    "cop": 5.4,
+                    "degradation_coeff": 0.95,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 24,
+                    "temp_source": 0,
+                    "temp_test": 12
+                },
+                {
+                    "test_letter": "F",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                }
+            ]
+        });
+
+        serde_json::from_value(input).unwrap()
+    }
+
     fn create_heat_pump(
+        input: Option<HeatSourceWetDetails>,
         energy_supply_conn_name_auxiliary: &str,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
         source_type: Option<HeatPumpSourceType>,
@@ -5508,7 +5589,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
         test_data: Vec<HeatPumpTestDatum>,
     ) -> HeatPump {
-        let heat_pump_input = HeatSourceWetDetails::HeatPump {
+        let heat_pump_input = input.unwrap_or(HeatSourceWetDetails::HeatPump {
             energy_supply: EnergySupplyType::MainsGas,
             source_type: source_type.unwrap_or(HeatPumpSourceType::OutsideAir),
             energy_supply_heat_network: None,
@@ -5538,7 +5619,7 @@ mod tests {
             buffer_tank: None,
             test_data,
             boiler: None,
-        };
+        });
 
         let energy_supply = energy_supply(simulation_time_for_heat_pump);
         let number_of_zones = 2;
@@ -5569,7 +5650,10 @@ mod tests {
         let energy_supply_conn_name_auxiliary =
             energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
 
+        let heat_pump_input = create_heat_pump_input_from_json();
+
         create_heat_pump(
+            Some(heat_pump_input),
             energy_supply_conn_name_auxiliary,
             None,
             None,
@@ -5603,6 +5687,7 @@ mod tests {
         )));
 
         create_heat_pump(
+            None,
             energy_supply_conn_name_auxiliary,
             None,
             None,
@@ -5629,6 +5714,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         create_heat_pump(
+            None,
             energy_supply_conn_name_auxiliary,
             None,
             Some(HeatPumpSourceType::ExhaustAirMixed),
@@ -5655,6 +5741,7 @@ mod tests {
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
         create_heat_pump(
+            None,
             energy_supply_conn_name_auxiliary,
             None,
             None,
@@ -5723,6 +5810,7 @@ mod tests {
         let temp_distribution_heat_network = 20.;
         let time_delay_backup = 2.0;
         let heat_pump_nw = create_heat_pump(
+            None,
             energy_supply_conn_name_auxiliary,
             Some(heat_network.into()),
             Some(source_type),
