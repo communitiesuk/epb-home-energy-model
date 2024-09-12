@@ -12,7 +12,7 @@ use crate::core::units::{
     SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::corpus::TempInternalAirAccessor;
+use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
@@ -1726,7 +1726,8 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct HeatPump {
     // energy supply
     pub energy_supply: Arc<RwLock<EnergySupply>>,
@@ -1766,7 +1767,8 @@ pub struct HeatPump {
     eahp_mixed_min_temp: Option<f64>,
     ext_air_ratio: Option<f64>,
     buffer_tank: Option<BufferTank>,
-    temp_internal_air_fn: Arc<TempInternalAirAccessor>,
+    #[derivative(Debug = "ignore")]
+    temp_internal_air_fn: TempInternalAirFn,
     energy_supply_hn_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
@@ -1814,7 +1816,7 @@ impl HeatPump {
         output_detailed_results: bool,
         boiler: Option<Arc<Mutex<Boiler>>>,
         cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
-        temp_internal_air_fn: TempInternalAirAccessor,
+        temp_internal_air_fn: TempInternalAirFn,
     ) -> anyhow::Result<Self> {
         let energy_supply_connections = Default::default();
         let energy_supply_connection_aux = Arc::new(EnergySupply::connection(
@@ -2093,7 +2095,7 @@ impl HeatPump {
             eahp_mixed_min_temp,
             ext_air_ratio,
             buffer_tank,
-            temp_internal_air_fn: Arc::new(temp_internal_air_fn),
+            temp_internal_air_fn,
             energy_supply_hn_connections: Default::default(),
             overvent_ratio,
             test_data,
@@ -2307,10 +2309,10 @@ impl HeatPump {
             }
             HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(&simulation_time_iteration),
             HeatPumpSourceType::ExhaustAirMEV => 20.0,
-            HeatPumpSourceType::ExhaustAirMVHR => self.temp_internal_air_fn.call(),
+            HeatPumpSourceType::ExhaustAirMVHR => (self.temp_internal_air_fn)(),
             HeatPumpSourceType::ExhaustAirMixed => {
                 let temp_ext = self.external_conditions.air_temp(&simulation_time_iteration);
-                let temp_int = self.temp_internal_air_fn.call();
+                let temp_int = (self.temp_internal_air_fn)();
                 let ext_air_ratio = self.ext_air_ratio.expect("An ext_air_ratio is expected when the heat pump source type is ExhaustAirMixed");
                 let temp_mixed = ext_air_ratio * temp_ext + (1. - ext_air_ratio) * temp_int;
                 if temp_ext > self.eahp_mixed_max_temp.expect("An eahp_mixed_max_temp is expected when the heat pump source type is ExhaustAirMixed") || temp_mixed < self.eahp_mixed_min_temp.expect("An eahp_mixed_min_temp is expected when the heat pump source type is ExhaustAirMixed") {
@@ -4095,19 +4097,14 @@ struct Efficiencies {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
-    use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
-    use crate::core::space_heat_demand::zone::Zone;
-    use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
         BoilerHotWaterTest, ColdWaterSourceType, EnergySupplyType, FuelType, HeatSourceControlType,
-        HeatSourceLocation, HeatSourceWetType, TerrainClass, VentilationShieldClass,
+        HeatSourceLocation, HeatSourceWetType,
     };
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
     use approx::{assert_relative_eq, assert_ulps_eq};
-    use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use rstest::*;
 
@@ -5368,55 +5365,8 @@ mod tests {
         ))
     }
 
-    fn temp_internal_air_accessor(
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time_for_heat_pump: SimulationTime,
-    ) -> TempInternalAirAccessor {
-        let be_objs = IndexMap::from([]);
-        let leaks = CompletedVentilationLeaks {
-            ventilation_zone_height: 0.,
-            test_pressure: 0.,
-            test_result: 0.,
-            area_roof: 0.,
-            area_facades: 0.,
-            env_area: 0.,
-            altitude: 0.,
-        };
-        let ventilation = InfiltrationVentilation::new(
-            external_conditions,
-            true,
-            VentilationShieldClass::Open,
-            TerrainClass::Country,
-            0.,
-            vec![],
-            vec![],
-            leaks,
-            vec![],
-            vec![],
-            vec![],
-            0.,
-            0.,
-        );
-        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
-
-        let zone = Zone::new(
-            500., // any number above 0
-            2.,   // any number
-            be_objs,
-            thermal_bridging,
-            ventilation.into(),
-            0.,  // any number
-            20., // any number, together with zone volume and total_volume this affects the internal_air_temp that is returned
-            None,
-            &simulation_time_for_heat_pump.iter(),
-        );
-
-        let zones = IndexMap::from([("zone one".to_string(), zone.unwrap())]).into();
-
-        TempInternalAirAccessor {
-            zones,
-            total_volume: 1., // any number above 0
-        }
+    fn create_temp_internal_air_fn(canned_value: f64) -> TempInternalAirFn {
+        Arc::new(move || canned_value)
     }
 
     fn energy_supply(simulation_time_for_heat_pump: SimulationTime) -> EnergySupply {
@@ -5553,6 +5503,7 @@ mod tests {
         eahp_mixed_min_temp: Option<f64>,
         sink_type: HeatPumpSinkType,
         min_modulation_rate_20: Option<f64>,
+        temp_internal_air: Option<f64>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
         test_data: Vec<HeatPumpTestDatum>,
@@ -5592,8 +5543,7 @@ mod tests {
         let energy_supply = energy_supply(simulation_time_for_heat_pump);
         let number_of_zones = 2;
         let cost_schedule_hybrid_hp = None;
-        let temp_internal_air_accessor =
-            temp_internal_air_accessor(external_conditions.clone(), simulation_time_for_heat_pump);
+        let temp_internal_air_fn = create_temp_internal_air_fn(temp_internal_air.unwrap_or(20.));
         HeatPump::new(
             &heat_pump_input,
             Arc::from(RwLock::from(energy_supply)),
@@ -5606,7 +5556,7 @@ mod tests {
             false,
             boiler,
             cost_schedule_hybrid_hp,
-            temp_internal_air_accessor,
+            temp_internal_air_fn,
         )
         .unwrap()
     }
@@ -5632,6 +5582,7 @@ mod tests {
             None,
             None,
             HeatPumpSinkType::Water,
+            None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
@@ -5665,6 +5616,7 @@ mod tests {
             None,
             HeatPumpSinkType::Water,
             None,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
             create_test_data(None, None),
@@ -5689,6 +5641,7 @@ mod tests {
             Some(10.),
             Some(0.),
             HeatPumpSinkType::Water,
+            None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
@@ -5715,6 +5668,7 @@ mod tests {
             Some(0.),
             HeatPumpSinkType::Air,
             Some(20.),
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
             create_test_data(None, None),
@@ -5781,6 +5735,7 @@ mod tests {
             None,
             None,
             HeatPumpSinkType::Water,
+            None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,

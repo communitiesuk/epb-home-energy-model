@@ -2618,6 +2618,13 @@ impl TempInternalAirAccessor {
     }
 }
 
+pub(crate) type TempInternalAirFn = Arc<dyn Fn() -> f64 + Send + Sync>;
+
+fn temp_internal_air_fn(accessor: impl Into<Arc<TempInternalAirAccessor>>) -> TempInternalAirFn {
+    let accessor: Arc<TempInternalAirAccessor> = accessor.into();
+    Arc::new(move || accessor.call())
+}
+
 pub type KeyString = ArrayString<64>;
 
 /// A struct definition to encapsulate results from a corpus run.
@@ -3621,7 +3628,7 @@ fn heat_source_wet_from_input(
                     DETAILED_OUTPUT_HEATING_COOLING,
                     boiler.map(|boiler: Boiler| Arc::new(Mutex::new(boiler))),
                     cost_schedule_hybrid_hp,
-                    temp_internal_air_accessor,
+                    temp_internal_air_fn(temp_internal_air_accessor),
                 )?,
             ))))
         }
@@ -3782,7 +3789,7 @@ fn heat_source_from_input(
                         *orientation,
                         *solar_loop_piping_hlc,
                         external_conditions.clone(),
-                        temp_internal_air_accessor,
+                        temp_internal_air_fn(temp_internal_air_accessor),
                         simulation_time.step_in_hours(),
                         *WATER,
                     ),
@@ -4038,7 +4045,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
-                temp_internal_air_accessor,
+                temp_internal_air_fn(temp_internal_air_accessor),
                 external_conditions,
                 Some(24),
                 primary_pipework_lst,

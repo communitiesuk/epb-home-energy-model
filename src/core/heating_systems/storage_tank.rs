@@ -7,11 +7,12 @@ use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::corpus::{HeatSource, PositionedHeatSource, TempInternalAirAccessor};
+use crate::corpus::{HeatSource, PositionedHeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use atomic_float::AtomicF64;
+use derivative::Derivative;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
@@ -48,7 +49,8 @@ pub enum HeatSourceWithStorageTank {
 ///
 /// Implements function demand_hot_water(volume_demanded) which all hot water
 /// source objects must implement.
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct StorageTank {
     q_std_ls_ref: f64, // measured standby losses due to cylinder insulation at standardised conditions, in kWh/24h
     temp_out_w_min: f64, // minimum temperature required for DHW (domestic hot water)
@@ -58,7 +60,8 @@ pub struct StorageTank {
     energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
     control_hold_at_setpoint: Option<Arc<Control>>,
     nb_vol: usize,
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    #[derivative(Debug = "ignore")]
+    temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     volume_total_in_litres: f64,
     vol_n: Vec<f64>,
@@ -111,7 +114,7 @@ impl StorageTank {
         simulation_timestep: f64,
         heat_sources: IndexMap<String, PositionedHeatSource>,
         // In Python this is "project" but only temp_internal_air is accessed from it
-        temp_internal_air_accessor: TempInternalAirAccessor,
+        temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         nb_vol: Option<usize>,
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
@@ -173,7 +176,7 @@ impl StorageTank {
             energy_supply_conn_unmet_demand,
             control_hold_at_setpoint,
             nb_vol,
-            temp_internal_air_accessor,
+            temp_internal_air_fn,
             external_conditions,
             volume_total_in_litres,
             vol_n,
@@ -207,7 +210,7 @@ impl StorageTank {
             PipeworkLocation::External => self
                 .external_conditions
                 .air_temp(&simulation_time_iteration),
-            PipeworkLocation::Internal => self.temp_internal_air_accessor.call(),
+            PipeworkLocation::Internal => (self.temp_internal_air_fn)(),
         }
     }
 
@@ -1267,7 +1270,8 @@ impl PVDiverter {
 
 /// The following code contains objects that represent solar thermal systems.
 /// Method 3 in BS EN 15316-4-3:2017.
-#[derive(Clone, Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct SolarThermalSystem {
     sol_loc: SolarCellLocation,
     area: f64,
@@ -1284,7 +1288,8 @@ pub struct SolarThermalSystem {
     solar_loop_piping_hlc: f64,
     external_conditions: Arc<ExternalConditions>,
     simulation_timestep: f64,
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    #[derivative(Debug = "ignore")]
+    temp_internal_air_fn: TempInternalAirFn,
     heat_output_collector_loop: f64,
     energy_supplied: f64,
     cp: f64,
@@ -1309,7 +1314,7 @@ impl SolarThermalSystem {
         orientation: f64,
         solar_loop_piping_hlc: f64,
         external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor,
+        temp_internal_air_fn: TempInternalAirFn,
         simulation_timestep: f64,
 
         contents: MaterialProperties,
@@ -1330,7 +1335,7 @@ impl SolarThermalSystem {
             solar_loop_piping_hlc,
             external_conditions,
             simulation_timestep,
-            temp_internal_air_accessor,
+            temp_internal_air_fn,
             heat_output_collector_loop: 0.0,
             energy_supplied: 0.0,
             // Water specific heat in J/kg.K
@@ -1350,7 +1355,7 @@ impl SolarThermalSystem {
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
         // Air temperature in a heated space in the building
-        let air_temp_heated_room = self.temp_internal_air_accessor.call();
+        let air_temp_heated_room = (self.temp_internal_air_fn)();
 
         self.air_temp_coll_loop = match self.sol_loc {
             SolarCellLocation::Hs => air_temp_heated_room,
@@ -1482,15 +1487,12 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::material_properties::WATER;
     use crate::core::schedule::WaterScheduleEventType;
-    use crate::core::space_heat_demand::thermal_bridge::ThermalBridging;
-    use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
-    use crate::core::space_heat_demand::zone::Zone;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::corpus::{CompletedVentilationLeaks, HeatSource};
+    use crate::corpus::HeatSource;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{FuelType, TerrainClass, VentilationShieldClass};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -1609,54 +1611,8 @@ mod tests {
     }
 
     #[fixture]
-    pub fn temp_internal_air_accessor(
-        external_conditions: Arc<ExternalConditions>,
-        simulation_time_for_storage_tank: SimulationTime,
-    ) -> TempInternalAirAccessor {
-        let be_objs = IndexMap::from([]);
-        let leaks = CompletedVentilationLeaks {
-            ventilation_zone_height: 0.,
-            test_pressure: 0.,
-            test_result: 0.,
-            area_roof: 0.,
-            area_facades: 0.,
-            env_area: 0.,
-            altitude: 0.,
-        };
-        let ventilation = InfiltrationVentilation::new(
-            external_conditions,
-            true,
-            VentilationShieldClass::Open,
-            TerrainClass::Country,
-            0.,
-            vec![],
-            vec![],
-            leaks,
-            vec![],
-            vec![],
-            vec![],
-            0.,
-            0.,
-        );
-        let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([]));
-
-        let zone = Zone::new(
-            500., // any number above 0
-            0.,   // any number
-            be_objs,
-            thermal_bridging,
-            ventilation.into(),
-            0., // any number
-            0., // any number
-            None,
-            &simulation_time_for_storage_tank.iter(),
-        );
-
-        let zones = IndexMap::from([("zone one".to_string(), zone.unwrap())]).into();
-        TempInternalAirAccessor {
-            zones,
-            total_volume: 0., // any number
-        }
+    fn temp_internal_air_fn() -> TempInternalAirFn {
+        Arc::new(|| 20.)
     }
 
     #[fixture]
@@ -1665,7 +1621,7 @@ mod tests {
         cold_water_source: Arc<ColdWaterSource>,
         control_for_storage_tank: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor,
+        temp_internal_air_fn: TempInternalAirFn,
     ) -> ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>) {
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
@@ -1704,7 +1660,7 @@ mod tests {
                         thermostat_position: 0.33,
                     },
                 )]),
-                temp_internal_air_accessor.clone(),
+                temp_internal_air_fn.clone(),
                 external_conditions.clone(),
                 None,
                 None,
@@ -1737,7 +1693,7 @@ mod tests {
                         thermostat_position: 0.6,
                     },
                 )]),
-                temp_internal_air_accessor.clone(), // this may need to be a different instance
+                temp_internal_air_fn,
                 external_conditions,
                 None,
                 None,
@@ -2097,7 +2053,7 @@ mod tests {
     #[fixture]
     pub fn storage_tank_with_solar_thermal(
         external_conditions_for_solar_thermal: Arc<ExternalConditions>,
-        temp_internal_air_accessor: TempInternalAirAccessor,
+        temp_internal_air_fn: TempInternalAirFn,
     ) -> (
         StorageTank,
         Arc<Mutex<SolarThermalSystem>>,
@@ -2137,7 +2093,7 @@ mod tests {
             0.,
             0.5,
             external_conditions_for_solar_thermal.clone(),
-            temp_internal_air_accessor.clone(),
+            temp_internal_air_fn.clone(),
             simulation_time.step,
             *WATER,
         )));
@@ -2159,7 +2115,7 @@ mod tests {
                     thermostat_position: 0.33,
                 },
             )]),
-            temp_internal_air_accessor.clone(),
+            temp_internal_air_fn,
             external_conditions_for_solar_thermal,
             None,
             None,
