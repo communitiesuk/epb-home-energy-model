@@ -5401,20 +5401,21 @@ mod tests {
 
         let zone = Zone::new(
             500., // any number above 0
-            0.,   // any number
+            2.,   // any number
             be_objs,
             thermal_bridging,
             ventilation.into(),
-            0., // any number
-            0., // any number
+            0.,  // any number
+            20., // any number, together with zone volume and total_volume this affects the internal_air_temp that is returned
             None,
             &simulation_time_for_heat_pump.iter(),
         );
 
         let zones = IndexMap::from([("zone one".to_string(), zone.unwrap())]).into();
+
         TempInternalAirAccessor {
             zones,
-            total_volume: 0., // any number
+            total_volume: 1., // any number above 0
         }
     }
 
