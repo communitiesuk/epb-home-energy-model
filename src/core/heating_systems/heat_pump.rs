@@ -1938,25 +1938,26 @@ impl HeatPump {
         };
 
         // Exhaust air HP requires different/additional initialisation, which is implemented here
-        let (overvent_ratio, volume_heated_all_services, test_data_after_interpolation) = if source_type.is_exhaust_air() {
-            let (lowest_air_flow_rate_in_test_data, test_data_after_interpolation) =
-                interpolate_exhaust_air_heat_pump_test_data(
-                    throughput_exhaust_air
-                        .expect("expected throughput_exhaust_air to have been set here"),
-                    &test_data,
-                    source_type,
-                )?;
-            (
-                max_of_2(
-                    1.0,
-                    lowest_air_flow_rate_in_test_data / throughput_exhaust_air.unwrap(),
-                ),
-                Some(f64::default()),
-                test_data_after_interpolation
-            )
-        } else {
-            (1.0, None, test_data)
-        };
+        let (overvent_ratio, volume_heated_all_services, test_data_after_interpolation) =
+            if source_type.is_exhaust_air() {
+                let (lowest_air_flow_rate_in_test_data, test_data_after_interpolation) =
+                    interpolate_exhaust_air_heat_pump_test_data(
+                        throughput_exhaust_air
+                            .expect("expected throughput_exhaust_air to have been set here"),
+                        &test_data,
+                        source_type,
+                    )?;
+                (
+                    max_of_2(
+                        1.0,
+                        lowest_air_flow_rate_in_test_data / throughput_exhaust_air.unwrap(),
+                    ),
+                    Some(f64::default()),
+                    test_data_after_interpolation,
+                )
+            } else {
+                (1.0, None, test_data)
+            };
 
         // TODO (from Python) For now, disable exhaust air heat pump when conditions are out of
         //                    range of test data. Decision to be made on whether to allow this
@@ -4097,7 +4098,7 @@ struct Efficiencies {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
         BoilerHotWaterTest, ColdWaterSourceType, EnergySupplyType, FuelType, HeatSourceControlType,
@@ -5862,6 +5863,32 @@ mod tests {
         )
     }
 
+    fn create_heat_pump_with_heat_network(
+        energy_supply_conn_name_auxiliary: &str,
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) -> HeatPump {
+        let heat_network = RwLock::from(EnergySupply::new(
+            FuelType::Custom,
+            simulation_time_for_heat_pump.iter().total_steps(),
+            None,
+            None,
+            None,
+        ));
+
+        let input = create_heat_pump_nw_input_from_json();
+        create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            Some(heat_network.into()),
+            None,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        )
+    }
+
     #[rstest]
     fn test_create_service_connection(
         external_conditions: Arc<ExternalConditions>,
@@ -5898,22 +5925,8 @@ mod tests {
         // Check with heat_network
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
 
-        let heat_network = RwLock::from(EnergySupply::new(
-            FuelType::Custom,
-            simulation_time_for_heat_pump.iter().total_steps(),
-            None,
-            None,
-            None,
-        ));
-
-        let input = create_heat_pump_nw_input_from_json();
-        let heat_pump_nw = create_heat_pump(
-            input,
+        let heat_pump_nw = create_heat_pump_with_heat_network(
             energy_supply_conn_name_auxiliary,
-            Some(heat_network.into()),
-            None,
-            None,
-            None,
             external_conditions,
             simulation_time_for_heat_pump,
         );
@@ -6211,7 +6224,7 @@ mod tests {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source";
         let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
             energy_supply_conn_name_auxiliary,
-            external_conditions,
+            external_conditions.clone(),
             simulation_time_for_heat_pump,
         );
 
@@ -6219,5 +6232,130 @@ mod tests {
             .get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
 
         assert_relative_eq!(result, 280.75);
+
+        // Check with heat_network
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
+
+        let heat_pump_nw = create_heat_pump_with_heat_network(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+
+        let result =
+            heat_pump_nw.get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
+
+        assert_relative_eq!(result, 293.15);
+    }
+
+    #[rstest]
+    fn test_thermal_capacity_op_cond(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // Check with source_type OutsideAir
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+        let result = heat_pump.thermal_capacity_op_cond(290., 260.);
+        assert_relative_eq!(result, 8.607029286155587);
+
+        // Check with ExhaustAirMixed
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source_capacity";
+        let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        let result = heat_pump_with_exhaust.thermal_capacity_op_cond(300., 270.);
+        assert_relative_eq!(result, 8.70672362099314);
+    }
+
+    #[rstest]
+    fn test_backup_energy_output_max(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // With TopUp backup control
+        let temp_output = 300.;
+        let temp_return_feed = 290.;
+        let time_available = 1.;
+
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+
+        let result = heat_pump.backup_energy_output_max(
+            temp_output,
+            temp_return_feed,
+            time_available,
+            None,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert_relative_eq!(result, 3.);
+
+        // With substitute backup control
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_backup_energy";
+
+        let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
+            energy_supply_conn_name_auxiliary,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+
+        let result = heat_pump_with_exhaust.backup_energy_output_max(
+            temp_output,
+            temp_return_feed,
+            time_available,
+            None,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert_relative_eq!(result, 3.);
+
+        // With a hybrid boiler
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hybrid_boiler";
+
+        let boiler = Arc::from(Mutex::from(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let control = Arc::from(Control::SetpointTimeControl(SetpointTimeControl::new(
+            vec![Some(21.), Some(22.)],
+            0,
+            1.,
+            None,
+            None,
+            None,
+            None,
+            simulation_time_for_heat_pump.step
+        ).unwrap()));
+
+        let boiler_service_space = boiler.lock().create_service_space_heating("service_boilerspace".to_string(), control);
+        let hybrid_boiler_service = HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
+        let input = create_heat_pump_input_from_json();
+
+        let heat_pump_with_boiler = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        
+        let result = heat_pump_with_boiler.backup_energy_output_max(temp_output, temp_return_feed, time_available, Some(hybrid_boiler_service), simulation_time_for_heat_pump.iter().current_iteration());
+
+        assert_relative_eq!(result, 24.);
     }
 }
