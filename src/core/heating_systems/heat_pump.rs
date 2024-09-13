@@ -5417,79 +5417,6 @@ mod tests {
         .unwrap()
     }
 
-    fn create_test_data(
-        air_flow_rate: Option<f64>,
-        eahp_mixed_ext_air_ratio: Option<f64>,
-    ) -> Vec<HeatPumpTestDatum> {
-        vec![
-            HeatPumpTestDatum {
-                air_flow_rate,
-                test_letter: test_letter("A"),
-                capacity: 8.4,
-                cop: 4.6,
-                degradation_coefficient: 0.90,
-                design_flow_temp: 35.,
-                temp_outlet: 34.,
-                temp_source: 0.,
-                temp_test: -7.,
-                ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio,
-            },
-            HeatPumpTestDatum {
-                air_flow_rate,
-                test_letter: test_letter("B"),
-                capacity: 8.3,
-                cop: 4.9,
-                degradation_coefficient: 0.90,
-                design_flow_temp: 35.,
-                temp_outlet: 30.,
-                temp_source: 0.,
-                temp_test: 2.,
-                ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio,
-            },
-            HeatPumpTestDatum {
-                air_flow_rate,
-                test_letter: test_letter("C"),
-                capacity: 8.3,
-                cop: 5.1,
-                degradation_coefficient: 0.90,
-                design_flow_temp: 35.,
-                temp_outlet: 27.,
-                temp_source: 0.,
-                temp_test: 7.,
-                ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio,
-            },
-            HeatPumpTestDatum {
-                air_flow_rate,
-                test_letter: test_letter("D"),
-                capacity: 8.2,
-                cop: 5.4,
-                degradation_coefficient: 0.95,
-                design_flow_temp: 35.,
-                temp_outlet: 24.,
-                temp_source: 0.,
-                temp_test: 12.,
-                ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio,
-            },
-            HeatPumpTestDatum {
-                air_flow_rate,
-                test_letter: test_letter("F"),
-                capacity: 8.4,
-                cop: 4.6,
-                degradation_coefficient: 0.90,
-                design_flow_temp: 35.,
-                temp_outlet: 34.,
-                temp_source: 0.,
-                temp_test: -7.,
-                ext_air_ratio: None,
-                eahp_mixed_ext_air_ratio,
-            },
-        ]
-    }
-
     fn create_heat_pump_input_from_json() -> HeatSourceWetDetails {
         let input = json!({
             "type": "HeatPump",
@@ -5660,58 +5587,174 @@ mod tests {
         serde_json::from_value(input).unwrap()
     }
 
+    fn create_heat_pump_sink_air_input_from_json() -> HeatSourceWetDetails {
+        let input = json!({
+            "type": "HeatPump",
+            "EnergySupply": "mains gas",
+            "source_type": "OutsideAir",
+            "sink_type": "Air",
+            "backup_ctrl_type": "TopUp",
+            "time_delay_backup": 2.0,
+            "modulating_control": true,
+            "min_modulation_rate_35": 0.35,
+            "min_modulation_rate_55": 0.4,
+            "time_constant_onoff_operation": 140,
+            "temp_return_feed_max": 70.0,
+            "temp_lower_operating_limit": -5.0,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+            "var_flow_temp_ctrl_during_test": true,
+            "power_heating_circ_pump": 0.015,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.015,
+            "power_crankcase_heater": 0.01,
+            "power_off": 0.015,
+            "power_max_backup": 3.0,
+            "min_modulation_rate_20": 20.0,
+            "test_data": [
+                {
+                    "test_letter": "A",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                },
+                {
+                    "test_letter": "B",
+                    "capacity": 8.3,
+                    "cop": 4.9,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 2
+                },
+                {
+                    "test_letter": "C",
+                    "capacity": 8.3,
+                    "cop": 5.1,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 27,
+                    "temp_source": 0,
+                    "temp_test": 7
+                },
+                {
+                    "test_letter": "D",
+                    "capacity": 8.2,
+                    "cop": 5.4,
+                    "degradation_coeff": 0.95,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 24,
+                    "temp_source": 0,
+                    "temp_test": 12
+                },
+                {
+                    "test_letter": "F",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                }
+            ]
+        });
+        serde_json::from_value(input).unwrap()
+    }
+
+    fn create_heat_pump_nw_input_from_json() -> HeatSourceWetDetails {
+        let input = json!({
+            "type": "HeatPump",
+            "EnergySupply": "mains gas",
+            "source_type": "HeatNetwork",
+            "sink_type": "Water",
+            "backup_ctrl_type": "TopUp",
+            "temp_distribution_heat_network": 20.0,
+            "time_delay_backup": 2.0,
+            "modulating_control": true,
+            "min_modulation_rate_35": 0.35,
+            "min_modulation_rate_55": 0.4,
+            "time_constant_onoff_operation": 140,
+            "temp_return_feed_max": 70.0,
+            "temp_lower_operating_limit": -5.0,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+            "var_flow_temp_ctrl_during_test": false,
+            "power_heating_circ_pump": 0.015,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.015,
+            "power_crankcase_heater": 0.01,
+            "power_off": 0.015,
+            "power_max_backup": 3.0,
+            "test_data": [
+                {
+                    "test_letter": "A",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                },
+                {
+                    "test_letter": "B",
+                    "capacity": 8.3,
+                    "cop": 4.9,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 2
+                },
+                {
+                    "test_letter": "C",
+                    "capacity": 8.3,
+                    "cop": 5.1,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 27,
+                    "temp_source": 0,
+                    "temp_test": 7
+                },
+                {
+                    "test_letter": "D",
+                    "capacity": 8.2,
+                    "cop": 5.4,
+                    "degradation_coeff": 0.95,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 24,
+                    "temp_source": 0,
+                    "temp_test": 12
+                },
+                {
+                    "test_letter": "F",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7
+                }
+            ]
+        });
+        serde_json::from_value(input).unwrap()
+    }
+
     fn create_heat_pump(
-        input: Option<HeatSourceWetDetails>,
+        heat_pump_input: HeatSourceWetDetails,
         energy_supply_conn_name_auxiliary: &str,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
-        source_type: Option<HeatPumpSourceType>,
-        backup_control_type: Option<HeatPumpBackupControlType>,
-        temp_distribution_heat_network: Option<f64>,
-        time_delay_backup: Option<f64>,
         boiler: Option<Arc<Mutex<Boiler>>>,
         throughput_exhaust_air: Option<f64>,
-        var_flow_temp_ctrl_during_test: bool,
-        eahp_mixed_max_temp: Option<f64>,
-        eahp_mixed_min_temp: Option<f64>,
-        sink_type: HeatPumpSinkType,
-        min_modulation_rate_20: Option<f64>,
         temp_internal_air: Option<f64>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
-        test_data: Vec<HeatPumpTestDatum>,
     ) -> HeatPump {
-        let heat_pump_input = input.unwrap_or(HeatSourceWetDetails::HeatPump {
-            energy_supply: EnergySupplyType::MainsGas,
-            source_type: source_type.unwrap_or(HeatPumpSourceType::OutsideAir),
-            energy_supply_heat_network: None,
-            temp_distribution_heat_network,
-            sink_type,
-            backup_control_type: backup_control_type.unwrap_or(HeatPumpBackupControlType::TopUp),
-            time_delay_backup: time_delay_backup.unwrap_or(1.0),
-            modulating_control: true,
-            min_modulation_rate_20,
-            min_modulation_rate_35: Some(0.35),
-            min_modulation_rate_55: Some(0.4),
-            time_constant_onoff_operation: 140.,
-            temp_return_feed_max: 70.,
-            temp_lower_operating_limit: -5.0,
-            min_temp_diff_flow_return_for_hp_to_operate: 0.0,
-            var_flow_temp_ctrl_during_test,
-            power_heating_warm_air_fan: None,
-            power_heating_circ_pump: 0.015,
-            power_source_circ_pump: 0.01,
-            power_standby: 0.015,
-            power_crankcase_heater: 0.01,
-            power_off: 0.015,
-            power_max_backup: Some(3.0),
-            eahp_mixed_max_temp,
-            eahp_mixed_min_temp,
-            mechanical_ventilation: None,
-            buffer_tank: None,
-            test_data,
-            boiler: None,
-        });
-
         let energy_supply = energy_supply(simulation_time_for_heat_pump);
         let number_of_zones = 2;
         let cost_schedule_hybrid_hp = None;
@@ -5744,24 +5787,14 @@ mod tests {
         let heat_pump_input = create_heat_pump_input_from_json();
 
         create_heat_pump(
-            Some(heat_pump_input),
+            heat_pump_input,
             energy_supply_conn_name_auxiliary,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            HeatPumpSinkType::Water,
-            None,
-            None,
+            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // boiler: Option<Arc<Mutex<Boiler>>>,
+            None, // throughput_exhaust_air: Option<f64>,
+            None, // temp_internal_air: Option<f64>,
             external_conditions,
             simulation_time_for_heat_pump,
-            create_test_data(None, None),
         )
     }
 
@@ -5777,25 +5810,17 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
+        let input = create_heat_pump_input_from_json();
+
         create_heat_pump(
-            None,
+            input,
             energy_supply_conn_name_auxiliary,
             None,
-            None,
-            None,
-            None,
-            None,
             Some(boiler),
-            None,
-            false,
-            None,
-            None,
-            HeatPumpSinkType::Water,
             None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
-            create_test_data(None, None),
         )
     }
 
@@ -5807,24 +5832,14 @@ mod tests {
         let heat_pump_input = create_heat_pump_with_exhaust_input_from_json();
 
         create_heat_pump(
-            Some(heat_pump_input),
+            heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(HeatPumpSourceType::ExhaustAirMixed),
-            Some(HeatPumpBackupControlType::Substitute),
             None,
-            Some(2.),
-            None,
-            Some(101.),
-            true,
-            Some(10.),
-            Some(0.),
-            HeatPumpSinkType::Water,
-            None,
+            Some(101.), // throughput_exhaust_air
             None,
             external_conditions,
             simulation_time_for_heat_pump,
-            create_test_data(Some(100.), Some(0.62)),
         )
     }
 
@@ -5833,25 +5848,16 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
+        let input = create_heat_pump_sink_air_input_from_json();
         create_heat_pump(
-            None,
+            input,
             energy_supply_conn_name_auxiliary,
             None,
             None,
             None,
             None,
-            Some(2.),
-            None,
-            Some(101.),
-            true,
-            Some(10.),
-            Some(0.),
-            HeatPumpSinkType::Air,
-            Some(20.),
-            None,
             external_conditions,
             simulation_time_for_heat_pump,
-            create_test_data(None, None),
         )
     }
 
@@ -5899,28 +5905,16 @@ mod tests {
             None,
         ));
 
-        let source_type = HeatPumpSourceType::HeatNetwork;
-        let temp_distribution_heat_network = 20.;
-        let time_delay_backup = 2.0;
+        let input = create_heat_pump_nw_input_from_json();
         let heat_pump_nw = create_heat_pump(
-            None,
+            input,
             energy_supply_conn_name_auxiliary,
             Some(heat_network.into()),
-            Some(source_type),
             None,
-            Some(temp_distribution_heat_network),
-            Some(time_delay_backup),
-            None,
-            None,
-            false,
-            None,
-            None,
-            HeatPumpSinkType::Water,
             None,
             None,
             external_conditions,
             simulation_time_for_heat_pump,
-            create_test_data(None, None),
         );
         let heat_pump_nw = Arc::from(Mutex::from(heat_pump_nw));
 
