@@ -1938,8 +1938,8 @@ impl HeatPump {
         };
 
         // Exhaust air HP requires different/additional initialisation, which is implemented here
-        let (overvent_ratio, volume_heated_all_services) = if source_type.is_exhaust_air() {
-            let (lowest_air_flow_rate_in_test_data, _) =
+        let (overvent_ratio, volume_heated_all_services, test_data_after_interpolation) = if source_type.is_exhaust_air() {
+            let (lowest_air_flow_rate_in_test_data, test_data_after_interpolation) =
                 interpolate_exhaust_air_heat_pump_test_data(
                     throughput_exhaust_air
                         .expect("expected throughput_exhaust_air to have been set here"),
@@ -1952,9 +1952,10 @@ impl HeatPump {
                     lowest_air_flow_rate_in_test_data / throughput_exhaust_air.unwrap(),
                 ),
                 Some(f64::default()),
+                test_data_after_interpolation
             )
         } else {
-            (1.0, None)
+            (1.0, None, test_data)
         };
 
         // TODO (from Python) For now, disable exhaust air heat pump when conditions are out of
@@ -1969,7 +1970,7 @@ impl HeatPump {
 
         let (eahp_mixed_max_temp, eahp_mixed_min_temp, ext_air_ratio) =
             if source_type == HeatPumpSourceType::ExhaustAirMixed {
-                let ext_air_ratio_list: Vec<_> = test_data
+                let ext_air_ratio_list: Vec<_> = test_data_after_interpolation
                     .iter()
                     .filter_map(|datum| datum.ext_air_ratio)
                     .collect();
@@ -1992,7 +1993,7 @@ impl HeatPump {
                 (None, None, None)
             };
 
-        let test_data = HeatPumpTestData::new(test_data)?;
+        let test_data = HeatPumpTestData::new(test_data_after_interpolation)?;
 
         let (
             temp_min_modulation_rate_low,
@@ -6213,39 +6214,10 @@ mod tests {
             external_conditions,
             simulation_time_for_heat_pump,
         );
-        // TODO: calling .get_temp_source() fails because the temp_source that is passed to the celsius_to_kelvin method is NaN (was also saw that temp_int, ext_air_ratio and temp_mixed were NaN)
-        // let result = heat_pump_with_exhaust
-        //     .get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
 
-        // assert_relative_eq!(result, 280.75);
+        let result = heat_pump_with_exhaust
+            .get_temp_source(simulation_time_for_heat_pump.iter().current_iteration());
+
+        assert_relative_eq!(result, 280.75);
     }
-
-    /*
-    def test_get_temp_source(self):
-        # Check with ExhaustAirMixed
-        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: exhaust_source'
-        throughput_exhaust_air = 101
-        project = MagicMock()
-        project.temp_internal_air.return_value = 20
-        self.heat_pump_exhaust = HeatPump(self.heat_dict_exhaust,
-                                 self.energysupply,
-                                 self.energy_supply_conn_name_auxiliary,
-                                 self.simtime,
-                                 self.extcond,
-                                 self.number_of_zones,
-                                 throughput_exhaust_air = throughput_exhaust_air,
-                                 project = project)
-        self.assertAlmostEqual(self.heat_pump_exhaust._HeatPump__get_temp_source(),  280.75)
-        # Check with heat_network
-        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: heat_nw'
-        self.heat_network = EnergySupply(simulation_time = self.simtime ,
-                                         fuel_type = 'custom')
-        self.heat_pump_nw = HeatPump(self.heat_dict_heat_nw,
-                                 self.energysupply,
-                                 self.energy_supply_conn_name_auxiliary,
-                                 self.simtime,
-                                 self.extcond,
-                                 self.number_of_zones,
-                                 heat_network = self.heat_network)
-        self.assertAlmostEqual(self.heat_pump_nw._HeatPump__get_temp_source(), 293.15) */
 }
