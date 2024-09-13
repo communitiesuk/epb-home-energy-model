@@ -425,7 +425,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
     }
 
     for totals_key in results_totals.keys() {
-        let totals_header = format!("{totals_key} total");
+        let totals_header = format!("{totals_key}: total");
         headings.push(totals_header.into());
         units_row.push("[kWh]");
         for end_user_key in results_end_user[totals_key].keys() {
