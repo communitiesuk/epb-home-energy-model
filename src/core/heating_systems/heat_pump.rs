@@ -5569,6 +5569,97 @@ mod tests {
         serde_json::from_value(input).unwrap()
     }
 
+    fn create_heat_pump_with_exhaust_input_from_json() -> HeatSourceWetDetails {
+        let input = json!({
+            "type": "HeatPump",
+            "EnergySupply": "mains gas",
+            "source_type": "ExhaustAirMixed",
+            "sink_type": "Water",
+            "backup_ctrl_type": "Substitute",
+            "time_delay_backup": 2.0,
+            "modulating_control": true,
+            "min_modulation_rate_35": 0.35,
+            "min_modulation_rate_55": 0.4,
+            "time_constant_onoff_operation": 140,
+            "temp_return_feed_max": 70,
+            "temp_lower_operating_limit": -5.0,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+            "var_flow_temp_ctrl_during_test": true,
+            "power_heating_circ_pump": 0.015,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.015,
+            "power_crankcase_heater": 0.01,
+            "power_off": 0.015,
+            "power_max_backup": 3.0,
+            "eahp_mixed_max_temp": 10,
+            "eahp_mixed_min_temp": 0,
+            "test_data": [
+                {
+                    "air_flow_rate": 100.0,
+                    "test_letter": "A",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                    "eahp_mixed_ext_air_ratio": 0.62
+                },
+                {
+                    "air_flow_rate": 100.0,
+                    "test_letter": "B",
+                    "capacity": 8.3,
+                    "cop": 4.9,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 30,
+                    "temp_source": 0,
+                    "temp_test": 2,
+                    "eahp_mixed_ext_air_ratio": 0.62
+                },
+                {
+                    "air_flow_rate": 100.0,
+                    "test_letter": "C",
+                    "capacity": 8.3,
+                    "cop": 5.1,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 27,
+                    "temp_source": 0,
+                    "temp_test": 7,
+                    "eahp_mixed_ext_air_ratio": 0.62
+                },
+                {
+                    "air_flow_rate": 100.0,
+                    "test_letter": "D",
+                    "capacity": 8.2,
+                    "cop": 5.4,
+                    "degradation_coeff": 0.95,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 24,
+                    "temp_source": 0,
+                    "temp_test": 12,
+                    "eahp_mixed_ext_air_ratio": 0.62
+                },
+                {
+                    "air_flow_rate": 100.0,
+                    "test_letter": "F",
+                    "capacity": 8.4,
+                    "cop": 4.6,
+                    "degradation_coeff": 0.9,
+                    "design_flow_temp": 35,
+                    "temp_outlet": 34,
+                    "temp_source": 0,
+                    "temp_test": -7,
+                    "eahp_mixed_ext_air_ratio": 0.62
+                }
+            ]
+        });
+
+        serde_json::from_value(input).unwrap()
+    }
+
     fn create_heat_pump(
         input: Option<HeatSourceWetDetails>,
         energy_supply_conn_name_auxiliary: &str,
@@ -5713,8 +5804,10 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
+        let heat_pump_input = create_heat_pump_with_exhaust_input_from_json();
+
         create_heat_pump(
-            None,
+            Some(heat_pump_input),
             energy_supply_conn_name_auxiliary,
             None,
             Some(HeatPumpSourceType::ExhaustAirMixed),
