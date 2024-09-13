@@ -366,6 +366,9 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         }
     }
 
+    headings.push("Ventilation: Ductwork gains".into());
+    units_row.push("[kWh]");
+
     for zone in zone_list.iter() {
         for zone_outputs in zone_dict.keys() {
             let zone_headings = format!("{zone}: {zone_outputs}");
@@ -429,19 +432,19 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
             headings.push(format!("{totals_key}: {end_user_key}").into());
             units_row.push("[kWh]");
         }
-        headings.push(format!("{totals_key} import").into());
+        headings.push(format!("{totals_key}: import").into());
         units_row.push("[kWh]");
-        headings.push(format!("{totals_key} export").into());
+        headings.push(format!("{totals_key}: export").into());
         units_row.push("[kWh]");
-        headings.push(format!("{totals_key} generated and consumed").into());
+        headings.push(format!("{totals_key}: generated and consumed").into());
         units_row.push("[kWh]");
-        headings.push(format!("{totals_key} beta factor").into());
+        headings.push(format!("{totals_key}: beta factor").into());
         units_row.push("[ratio]");
-        headings.push(format!("{totals_key} to storage").into());
+        headings.push(format!("{totals_key}: to storage").into());
         units_row.push("[kWh]");
-        headings.push(format!("{totals_key} from storage").into());
+        headings.push(format!("{totals_key}: from storage").into());
         units_row.push("[kWh]");
-        headings.push(format!("{totals_key} diverted").into());
+        headings.push(format!("{totals_key}: diverted").into());
         units_row.push("[kWh]");
     }
 
