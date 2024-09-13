@@ -2926,7 +2926,7 @@ fn infiltration_ventilation_from_input(
                 .values()
                 .filter_map(|building_element| {
                     if let BuildingElementInput::Opaque { pitch, area, .. } = building_element {
-                        (pitch_class(*pitch) == HeatFlowDirection::Upwards).then(|| (*pitch, *area))
+                        (pitch_class(*pitch) == HeatFlowDirection::Upwards).then_some((*pitch, *area))
                     } else {
                         None
                     }

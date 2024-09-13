@@ -1550,7 +1550,7 @@ impl InfiltrationVentilation {
             let r_w_arg = r_w_arg.expect("r_w_arg is required for root scalar solver");
 
             let result = root_scalar_for_implicit_mass_balance(
-                &self,
+                self,
                 temp_int_air,
                 r_w_arg,
                 simtime,
@@ -1803,7 +1803,7 @@ fn root_scalar_for_implicit_mass_balance(
         temp_int_air,
         r_w_arg,
         simtime,
-        infiltration_ventilation: infiltration_ventilation,
+        infiltration_ventilation,
     };
 
     let tol = 0.;
