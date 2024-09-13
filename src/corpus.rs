@@ -1702,11 +1702,10 @@ impl Corpus {
 
             // Addition of primary_pipework_losses_kWh for reporting as part of investigation of (upstream BRE) issue #31225: FDEV A082
             let (primary_pw_losses, storage_losses) =
-                if let HotWaterSource::StorageTank(_storage_tank) =
+                if let HotWaterSource::StorageTank(storage_tank) =
                     &self.hot_water_sources["hw cylinder"]
                 {
-                    // storage_tank.lock().to_report() // not implementing (for now at least) as this uses toreport() to investigate an upstream bug only
-                    (0.0, 0.0)
+                    storage_tank.lock().to_report()
                 } else {
                     (0.0, 0.0)
                 };

@@ -514,6 +514,10 @@ impl StorageTank {
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
 
+    pub(crate) fn to_report(&self) -> (f64, f64) {
+        (self.primary_pipework_losses_kwh, self.storage_losses_kwh)
+    }
+
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
     fn run_heat_sources(
