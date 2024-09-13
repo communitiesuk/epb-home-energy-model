@@ -1341,7 +1341,7 @@ pub struct InfiltrationVentilation {
     leaks: Vec<Leaks>,
     combustion_appliances: Vec<CombustionAppliances>,
     air_terminal_devices: Vec<AirTerminalDevices>,
-    mech_vents: Vec<MechanicalVentilation>,
+    mech_vents: Vec<Arc<MechanicalVentilation>>,
     p_a_alt: f64,
     _total_volume: f64,
 }
@@ -1374,7 +1374,7 @@ impl InfiltrationVentilation {
         leaks: CompletedVentilationLeaks,
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
-        mech_vents: Vec<MechanicalVentilation>,
+        mech_vents: Vec<Arc<MechanicalVentilation>>,
         altitude: f64,
         total_volume: f64,
     ) -> Self {
@@ -2644,7 +2644,7 @@ mod tests {
         };
         let combustion_appliances_list = vec![combustion_appliances];
         let air_terminal_devices = Vec::<AirTerminalDevices>::new();
-        let mechanical_ventilations = vec![mechanical_ventilation];
+        let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
 
         InfiltrationVentilation::new(
             external_conditions,
@@ -2711,12 +2711,11 @@ mod tests {
     #[case(0.,   0.5, -5.01495290)]
     #[case(100., 0.5, -10.1105879)]
     fn test_calculate_internal_reference_pressure(
-        #[case]temp_int_air: f64,
-        #[case]r_w_arg: f64,
-        #[case]expected: f64,
+        #[case] temp_int_air: f64,
+        #[case] r_w_arg: f64,
+        #[case] expected: f64,
         infiltration_ventilation: InfiltrationVentilation,
         simulation_time_iterator: SimulationTimeIterator,
-        
     ) {
         let intial_p_z_ref_guess = 0.;
         assert_relative_eq!(
