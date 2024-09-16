@@ -2286,18 +2286,6 @@ fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<E
     supply.and_then(|supply| supply.diverter.clone())
 }
 
-// #[derive(Default)]
-// pub struct InternalGainsCollection {
-//     total_internal_gains: Option<InternalGains>,
-//     metabolic_gains: Option<InternalGains>,
-//     _evaporative_losses: Option<InternalGains>,
-//     lighting: Option<ApplianceGains>,
-//     cooking: Option<ApplianceGains>,
-//     cooking1: Option<ApplianceGains>,
-//     cooking2: Option<ApplianceGains>,
-//     other: Option<InternalGains>,
-// }
-
 pub type InternalGainsCollection = IndexMap<String, Gains>;
 
 fn internal_gains_from_input(

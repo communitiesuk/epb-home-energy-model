@@ -55,9 +55,7 @@ impl EnergySupplies {
             EnergySupplyType::LpgBulk => &mut self.bulk_lpg,
             EnergySupplyType::LpgBottled => &mut self.bottled_lpg,
             EnergySupplyType::LpgCondition11F => &mut self.condition_11f_lpg,
-            EnergySupplyType::HeatNetwork => {
-                unimplemented!("Undetermined what to do when heat network is requested.")
-            }
+            EnergySupplyType::HeatNetwork => &mut self.heat_network,
         };
         match energy_supply {
             Some(supply) => Ok(supply.clone()),
