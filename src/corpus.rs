@@ -3484,6 +3484,34 @@ impl WetHeatSource {
             WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(simtime.index),
         }
     }
+
+    pub(crate) fn create_service_hot_water_combi(
+        &mut self,
+        boiler_data: HotWaterSourceDetails,
+        service_name: &str,
+        temp_hot_water: f64,
+        cold_feed: WaterSourceWithTemperature,
+    ) -> anyhow::Result<BoilerServiceWaterCombi> {
+        match self {
+            WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().create_service_hot_water_combi(
+                boiler_data,
+                service_name,
+                temp_hot_water,
+                cold_feed,
+            ),
+            WetHeatSource::Boiler(ref mut boiler) => boiler
+                .create_service_hot_water_combi(
+                    boiler_data,
+                    service_name.to_string(),
+                    temp_hot_water,
+                    cold_feed,
+                )
+                .map_err(|err| anyhow!(format!("{err}"))),
+            _ => {
+                bail!("Expect to only be able to create a hot water combi service for boilers and heat pumps.")
+            }
+        }
+    }
 }
 
 fn heat_source_wet_from_input(
@@ -4059,24 +4087,28 @@ fn hot_water_source_from_input(
                 heat_source_wet_type.to_canonical_string()
             );
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
-            let mut heat_source_wet = match heat_source_wet_type {
-                HeatSourceWetType::Boiler => {
-                    match &*wet_heat_sources
-                        .get("boiler")
-                        .expect("Expected a boiler as wet heat source")
-                        .lock()
-                    {
-                        WetHeatSource::Boiler(boiler) => boiler.clone(),
-                        _ => panic!("Expected a boiler here"),
-                    }
+            let heat_source_wet = match heat_source_wet_type {
+                HeatSourceWetType::Boiler => wet_heat_sources
+                    .get(&heat_source_wet_type.to_canonical_string())
+                    .ok_or_else(|| {
+                        anyhow!("Expected a boiler to have been defined as a wet heat source")
+                    })?,
+                HeatSourceWetType::HeatPump => wet_heat_sources
+                    .get(&heat_source_wet_type.to_canonical_string())
+                    .as_ref()
+                    .ok_or_else(|| {
+                        anyhow!("Expected a heat pump to have been defined as a wet heat source")
+                    })?,
+                _ => {
+                    panic!("Did not expect a heat source type that was not a boiler or a heat pump")
                 }
-                _ => panic!("Did not expect a heat source type that was not a boiler"),
             };
             HotWaterSource::CombiBoiler(
                 heat_source_wet
+                    .lock()
                     .create_service_hot_water_combi(
                         cloned_input,
-                        energy_supply_conn_name,
+                        energy_supply_conn_name.as_str(),
                         setpoint_temp.ok_or_else(|| {
                             anyhow!("A setpoint temp was expected on a combi boiler input.")
                         })?,

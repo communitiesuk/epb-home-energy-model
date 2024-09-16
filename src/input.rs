@@ -852,7 +852,11 @@ pub enum HeatSourceWetType {
 impl HeatSourceWetType {
     /// Convert the type to a canonical string based on the input format to be used in e.g. energy supply names
     pub fn to_canonical_string(&self) -> String {
-        serde_json::to_value(self).unwrap().to_string()
+        serde_json::to_value(self)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
     }
 }
 
