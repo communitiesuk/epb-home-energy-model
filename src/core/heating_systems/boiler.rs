@@ -276,7 +276,7 @@ impl BoilerServiceWaterRegular {
     }
 
     pub fn energy_output_max(
-        &mut self,
+        &self,
         _temp_return: f64,
         time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,

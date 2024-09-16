@@ -20,6 +20,37 @@ pub enum HeatSourceWet {
     HeatPumpWaterOnly(HeatPumpHotWaterOnly),
 }
 
+impl HeatSourceWet {
+    /// Common way of calling energy_output_max() on heat sources, implementing equivalent of duck-typing happening in upstream Python.
+    pub(crate) fn energy_output_max(
+        &self,
+        temperature: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatSourceWet::WaterCombi(combi) => Ok(combi.energy_output_max()),
+            HeatSourceWet::WaterRegular(regular) => {
+                Ok(regular.energy_output_max(temperature, None, simtime))
+            }
+            HeatSourceWet::Space(space) => {
+                Ok(space.energy_output_max(temperature, Default::default(), None, simtime))
+            }
+            HeatSourceWet::HeatNetworkWaterStorage(storage) => {
+                Ok(storage.energy_output_max(temperature, &simtime))
+            }
+            HeatSourceWet::HeatBatteryHotWater(battery) => {
+                Ok(battery.energy_output_max(temperature, simtime))
+            }
+            HeatSourceWet::HeatPumpWater(hp_water) => hp_water
+                .energy_output_max(temperature, simtime)
+                .map(|x| x.0),
+            HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => {
+                Ok(hp_water_only.energy_output_max(temperature, simtime))
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum SpaceHeatSystem {
     Instant(InstantElecHeater),

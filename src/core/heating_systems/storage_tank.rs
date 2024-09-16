@@ -266,20 +266,21 @@ impl StorageTank {
         heater_layer: usize,
         thermostat_layer: usize,
         simulation_time: SimulationTimeIteration,
-    ) -> Vec<f64> {
+    ) -> anyhow::Result<Vec<f64>> {
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = iter::repeat(0.).take(self.nb_vol).collect_vec();
 
         let heat_source = &mut *(heat_source.lock());
 
-        let energy_potential = match heat_source {
-            HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) => {
+        let energy_potential =
+            if let HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) =
+                heat_source
+            {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
                 solar_heat_source
                     .lock()
                     .energy_output_max(self, temp_s3_n, &simulation_time)
-            }
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion_heater)) => {
+            } else {
                 // no demand from heat source if the temperature of the tank at the thermostat position is below the set point
 
                 // trigger heating to start when temperature falls below the minimum
@@ -290,10 +291,21 @@ impl StorageTank {
                             *e = true;
                         });
                 }
+
                 if self.heating_active[heat_source_name] {
-                    let mut energy_potential = immersion_heater
-                        .lock()
-                        .energy_output_max(simulation_time, false);
+                    // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
+                    let mut energy_potential = match heat_source {
+                        HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                            immersion_heater,
+                        )) => immersion_heater
+                            .lock()
+                            .energy_output_max(simulation_time, false),
+                        HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
+                        HeatSource::Wet(heat_source_wet) => {
+                            heat_source_wet.energy_output_max(self.temp_set_on, simulation_time)?
+                        }
+                    };
+
                     // TODO (from Python) Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
@@ -309,16 +321,11 @@ impl StorageTank {
                 } else {
                     0.
                 }
-            }
-            // the source Python code expects to run the above arm for any heat source
-            // that is not solar that is passed here - we may have to implement some kind of common trait/
-            // generic handling if the heat source is ever not immersion or solar here (like boilers)
-            _ => todo!(),
-        };
+            };
 
         q_x_in_n[heater_layer] += energy_potential;
 
-        q_x_in_n
+        Ok(q_x_in_n)
     }
 
     /// Function added into Storage tank to be called by the Solar Thermal object.
@@ -529,7 +536,7 @@ impl StorageTank {
         thermostat_layer: usize,
         q_ls_prev_heat_source: &[f64],
         simulation_time: SimulationTimeIteration,
-    ) -> TemperatureCalculation {
+    ) -> anyhow::Result<TemperatureCalculation> {
         // 6.4.3.8 STEP 6 Energy input into the storage
         // input energy delivered to the storage in kWh - timestep dependent
         let q_x_in_n = self.potential_energy_input(
@@ -539,16 +546,16 @@ impl StorageTank {
             heater_layer,
             thermostat_layer,
             simulation_time,
-        );
+        )?;
 
-        self.calculate_temperatures(
+        Ok(self.calculate_temperatures(
             &temp_s3_n,
             heat_source,
             q_x_in_n,
             heater_layer,
             q_ls_prev_heat_source,
             simulation_time,
-        )
+        ))
     }
 
     fn calculate_temperatures(
@@ -802,7 +809,7 @@ impl StorageTank {
         &mut self,
         usage_events: &mut Option<Vec<TypedScheduleEvent>>,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, f64, f64, f64, f64) {
+    ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         let mut q_use_w = 0.;
         let mut q_unmet_w = 0.;
         let mut _volume_demanded = 0.;
@@ -904,7 +911,7 @@ impl StorageTank {
                 thermostat_layer,
                 &self.q_ls_n_prev_heat_source.clone(),
                 simulation_time,
-            );
+            )?;
 
             temp_after_prev_heat_source = temp_s8_n_step.clone();
             q_ls += q_ls_this_heat_source;
@@ -946,13 +953,13 @@ impl StorageTank {
         // TODO (from Python) recoverable heat losses for heating should impact heating
 
         // Return total energy of hot water supplied and unmet
-        (
+        Ok((
             q_use_w,
             q_unmet_w,
             self.temp_final_drawoff.unwrap(),
             self.temp_average_drawoff.unwrap(),
             self.total_volume_drawoff.unwrap(),
-        )
+        ))
         // Sending temp_final_drawoff, temp_average_drawoff
         // for pipework loss and internal gains calculations
     }
@@ -1871,7 +1878,9 @@ mod tests {
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             let mut usage_events_for_iteration = Some(usage_events[t_idx].clone());
-            storage_tank1.demand_hot_water(&mut usage_events_for_iteration, t_it);
+            storage_tank1
+                .demand_hot_water(&mut usage_events_for_iteration, t_it)
+                .unwrap();
 
             // Verify the temperatures against expected results
             assert_eq!(
@@ -1885,7 +1894,9 @@ mod tests {
                 max_relative = 1e-6
             );
 
-            storage_tank2.demand_hot_water(&mut usage_events_for_iteration, t_it);
+            storage_tank2
+                .demand_hot_water(&mut usage_events_for_iteration, t_it)
+                .unwrap();
 
             assert_eq!(
                 storage_tank2.temp_n, expected_temperatures_2[t_idx],
@@ -2328,7 +2339,8 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             storage_tank
-                .demand_hot_water(&mut Some(usage_events.get(t_idx).unwrap().clone()), t_it);
+                .demand_hot_water(&mut Some(usage_events.get(t_idx).unwrap().clone()), t_it)
+                .unwrap();
             assert_relative_eq!(
                 storage_tank.test_energy_demand(),
                 expected_energy_demands[t_idx],

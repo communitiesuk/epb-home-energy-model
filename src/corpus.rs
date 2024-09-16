@@ -1629,7 +1629,7 @@ impl Corpus {
                         volume_water_remove_from_tank,
                     ) = storage_tank
                         .lock()
-                        .demand_hot_water(&mut usage_events, t_it);
+                        .demand_hot_water(&mut usage_events, t_it)?;
 
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                         .pipework_losses_and_internal_gains_from_hw_storage_tank(

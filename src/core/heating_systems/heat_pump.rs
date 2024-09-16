@@ -1292,7 +1292,7 @@ impl HeatPumpServiceWater {
     /// Calculate the maximum energy output of the HP, accounting for time
     /// spent on higher-priority services
     pub fn energy_output_max(
-        &mut self,
+        &self,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
