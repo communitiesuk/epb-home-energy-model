@@ -49,6 +49,44 @@ impl HeatSourceWet {
             }
         }
     }
+
+    pub(crate) fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        temperature: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            HeatSourceWet::WaterCombi(_combi) => {
+                unimplemented!("BoilerServiceWaterCombi does not implement demand_energy")
+            }
+            HeatSourceWet::WaterRegular(regular) => regular
+                .demand_energy(energy_demand, temperature, None, None, simtime)
+                .map(|x| x.0),
+            HeatSourceWet::Space(space) => space
+                .demand_energy(
+                    energy_demand,
+                    Default::default(),
+                    temperature,
+                    None,
+                    None,
+                    simtime,
+                )
+                .map(|x| x.0),
+            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => {
+                Ok(water_storage.demand_energy(energy_demand, temperature, &simtime))
+            }
+            HeatSourceWet::HeatBatteryHotWater(battery) => {
+                Ok(battery.demand_energy(energy_demand, temperature, simtime))
+            }
+            HeatSourceWet::HeatPumpWater(water) => {
+                water.demand_energy(energy_demand, temperature, simtime)
+            }
+            HeatSourceWet::HeatPumpWaterOnly(water_only) => {
+                Ok(water_only.demand_energy(energy_demand, temperature, simtime))
+            }
+        }
+    }
 }
 
 #[derive(Clone)]

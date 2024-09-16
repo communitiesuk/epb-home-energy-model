@@ -3444,38 +3444,9 @@ impl HeatSource {
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration.index)),
             },
-            HeatSource::Wet(ref mut wet) => match wet.as_mut() {
-                HeatSourceWet::WaterCombi(_) => {
-                    unimplemented!("not expected? this value does not have a demand_energy method")
-                    // the Python uses duck-typing here but there is no method for this type
-                }
-                HeatSourceWet::WaterRegular(ref mut r) => Ok(r
-                    .demand_energy(
-                        energy_demand,
-                        temp_return,
-                        None,
-                        None,
-                        simulation_time_iteration,
-                    )
-                    .expect("Regular water boiler could not register energy demand")
-                    .0),
-                HeatSourceWet::Space(_) => {
-                    unimplemented!("not expected? this value does not have a demand_energy method")
-                    // the Python uses duck-typing here but there is no method for this type
-                }
-                HeatSourceWet::HeatNetworkWaterStorage(ref mut h) => {
-                    Ok(h.demand_energy(energy_demand, temp_return, &simulation_time_iteration))
-                }
-                HeatSourceWet::HeatBatteryHotWater(ref mut h) => {
-                    Ok(h.demand_energy(energy_demand, temp_return, simulation_time_iteration))
-                }
-                HeatSourceWet::HeatPumpWater(ref mut h) => {
-                    h.demand_energy(energy_demand, temp_return, simulation_time_iteration)
-                }
-                HeatSourceWet::HeatPumpWaterOnly(h) => {
-                    Ok(h.demand_energy(energy_demand, temp_return, simulation_time_iteration))
-                }
-            },
+            HeatSource::Wet(ref mut wet) => {
+                wet.demand_energy(energy_demand, temp_return, simulation_time_iteration)
+            }
         }
     }
 
