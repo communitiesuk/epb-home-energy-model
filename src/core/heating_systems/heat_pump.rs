@@ -2863,9 +2863,6 @@ impl HeatPump {
         let temp_min_modulation_rate_low = self
             .temp_min_modulation_rate_low
             .expect("temp_min_modulation_rate_low expected to have been provided");
-        let temp_min_modulation_rate_high = self
-            .temp_min_modulation_rate_high
-            .expect("temp_min_modulation_rate_high expected to have been provided");
         let min_modulation_rate_low = self
             .min_modulation_rate_low
             .expect("A min_modulation_rate_low was expected to have been set");
@@ -2874,6 +2871,9 @@ impl HeatPump {
         let load_ratio = time_running_current_service / timestep;
         let load_ratio_continuous_min = if self.modulating_ctrl {
             if self.test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
+                let temp_min_modulation_rate_high = self
+                    .temp_min_modulation_rate_high
+                    .expect("temp_min_modulation_rate_high expected to have been provided");
                 (min_of_2(
                     max_of_2(temp_output, temp_min_modulation_rate_low),
                     temp_min_modulation_rate_high,
@@ -6460,7 +6460,6 @@ mod tests {
         assert_relative_eq!(result, 1.4444444444444444);
     }
 
-    #[ignore]
     #[rstest]
     /// Check if backup heater is available or still in delay period
     fn test_backup_heater_delay_time_elapsed(
@@ -6493,8 +6492,7 @@ mod tests {
             );
 
             let result = heat_pump.lock().backup_heater_delay_time_elapsed();
-            // thread panicks at src/core/heating_systems/heat_pump.rs:2868:14:
-            // temp_min_modulation_rate_high expected to have been provided
+
             assert_eq!(result, [false, true][t_idx]);
 
             heat_pump.lock().timestep_end(t_idx);
