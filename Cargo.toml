@@ -6,7 +6,7 @@ rust-version = "1.74.1"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
-anyhow = "1.0.87"
+anyhow = "1.0.89"
 argmin = "0.10.0"
 arrayvec = { version = "0.7.6", features = ["serde"] }
 atomic_float = "1.1.0"
@@ -40,7 +40,7 @@ strum_macros = "0.26.3"
 
 [dev-dependencies]
 approx = "0.5.1"
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"
 rstest = "0.22.0"
 walkdir = "2.5.0"
 
