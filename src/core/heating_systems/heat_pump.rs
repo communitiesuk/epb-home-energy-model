@@ -6328,19 +6328,25 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTimeControl(SetpointTimeControl::new(
-            vec![Some(21.), Some(22.)],
-            0,
-            1.,
-            None,
-            None,
-            None,
-            None,
-            simulation_time_for_heat_pump.step
-        ).unwrap()));
+        let control = Arc::from(Control::SetpointTimeControl(
+            SetpointTimeControl::new(
+                vec![Some(21.), Some(22.)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                None,
+                simulation_time_for_heat_pump.step,
+            )
+            .unwrap(),
+        ));
 
-        let boiler_service_space = boiler.lock().create_service_space_heating("service_boilerspace".to_string(), control);
-        let hybrid_boiler_service = HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
+        let boiler_service_space = boiler
+            .lock()
+            .create_service_space_heating("service_boilerspace".to_string(), control);
+        let hybrid_boiler_service =
+            HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
         let input = create_heat_pump_input_from_json();
 
         let heat_pump_with_boiler = create_heat_pump(
@@ -6353,9 +6359,66 @@ mod tests {
             external_conditions,
             simulation_time_for_heat_pump,
         );
-        
-        let result = heat_pump_with_boiler.backup_energy_output_max(temp_output, temp_return_feed, time_available, Some(hybrid_boiler_service), simulation_time_for_heat_pump.iter().current_iteration());
+
+        let result = heat_pump_with_boiler.backup_energy_output_max(
+            temp_output,
+            temp_return_feed,
+            time_available,
+            Some(hybrid_boiler_service),
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
 
         assert_relative_eq!(result, 24.);
+    }
+
+    #[rstest]
+    fn test_cop_deg_coeff_op_cond(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // Check with type service type SPACE
+        let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
+        let service_type = ServiceType::Space;
+        let temp_output = 320.;
+        let temp_source = 275.;
+
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+
+        let (cop_op_cond, deg_coeff_op_cond) = heat_pump.cop_deg_coeff_op_cond(
+            &service_type,
+            temp_output, // Kelvin
+            temp_source, // Kelvin
+            temp_spread_correction,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert_relative_eq!(cop_op_cond, 3.6209597192830136);
+        assert_relative_eq!(deg_coeff_op_cond, 0.9);
+
+        // Check with sink type 'AIR'
+        let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
+
+        let energy_supply_conn_name_auxiliary = "auxillary_cop_deg_eff";
+
+        let heat_pump_sink_air = create_heat_pump_sink_air(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+
+        let (cop_op_cond, deg_coeff_op_cond) = heat_pump_sink_air.cop_deg_coeff_op_cond(
+            &service_type,
+            temp_output,
+            temp_source,
+            temp_spread_correction,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert_relative_eq!(cop_op_cond, 3.6209597192830136);
+        assert_relative_eq!(deg_coeff_op_cond, 0.25);
     }
 }
