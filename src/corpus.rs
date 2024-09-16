@@ -2277,7 +2277,7 @@ impl DiverterTypes {
             EnergySupplyType::Electricity => self.mains_electricity.as_ref(),
             EnergySupplyType::MainsGas => self.mains_gas.as_ref(),
             EnergySupplyType::LpgBulk => self.bulk_lpg.as_ref(),
-            _ => unimplemented!(),
+            _ => None,
         }
     }
 }
