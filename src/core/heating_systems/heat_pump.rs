@@ -2636,10 +2636,11 @@ impl HeatPump {
 
     /// Check if backup heater is available or still in delay period
     fn backup_heater_delay_time_elapsed(&self) -> bool {
-        self.time_running_continuous
+        let result = self.time_running_continuous
             >= self
                 .time_delay_backup
-                .expect("time delay backup was expected to be set")
+                .expect("time delay backup was expected to be set");
+        result
     }
 
     /// Check if heat pump is outside operating limits
@@ -3292,9 +3293,7 @@ impl HeatPump {
                 let load_ratio = service_data.load_ratio;
                 let use_backup_heater_only = service_data.use_backup_heater_only;
                 let hp_operating_in_onoff_mode = service_data.hp_operating_in_onoff_mode;
-                let energy_input_hp_divisor = service_data
-                    .energy_input_hp_divisor
-                    .expect("expected energy_input_hp_divisor to be set in a test record");
+                let energy_input_hp_divisor = service_data.energy_input_hp_divisor;
 
                 let time_running_subsequent_services =
                     times_running_subsequent_services[service_no];
@@ -3318,7 +3317,9 @@ impl HeatPump {
                 };
 
                 let energy_input_hp = if !use_backup_heater_only && hp_operating_in_onoff_mode {
-                    energy_ancillary_when_off / energy_input_hp_divisor
+                    energy_ancillary_when_off
+                        / energy_input_hp_divisor
+                            .expect("expected energy_input_hp_divisor to be set in a test record")
                 } else {
                     0.
                 };
@@ -3410,8 +3411,7 @@ impl HeatPump {
 
         if time_remaining_current_timestep == 0.0 {
             self.time_running_continuous += self.total_time_running_current_timestep;
-        }
-        {
+        } else {
             self.time_running_continuous = 0.;
         }
 
@@ -6473,7 +6473,7 @@ mod tests {
 
         let _ = HeatPump::create_service_connection(heat_pump.clone(), service_name);
 
-        for (t_idx, _) in simulation_time_for_heat_pump.iter().enumerate() {
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
             let _ = heat_pump.lock().demand_energy(
                 service_name,
                 &ServiceType::Water,
@@ -6483,7 +6483,7 @@ mod tests {
                 340.,
                 1560.,
                 true,
-                simulation_time_for_heat_pump.iter().next().unwrap(),
+                t_it,
                 Some(TempSpreadCorrectionArg::Float(1.)),
                 None,
                 None,
