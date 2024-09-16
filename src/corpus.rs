@@ -3972,8 +3972,14 @@ fn hot_water_source_from_input(
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             if !wwhrs.is_empty() {
                 for heat_recovery_system in wwhrs.values() {
-                    cold_water_source =
-                        WaterSourceWithTemperature::Wwhrs(heat_recovery_system.clone());
+                    match *heat_recovery_system.lock() {
+                        Wwhrs::WWHRSInstantaneousSystemC(_)
+                        | Wwhrs::WWHRSInstantaneousSystemA(_) => {
+                            cold_water_source =
+                                WaterSourceWithTemperature::Wwhrs(heat_recovery_system.clone());
+                        }
+                        _ => {}
+                    }
                 }
             }
             let primary_pipework_lst = primary_pipework.as_ref();
