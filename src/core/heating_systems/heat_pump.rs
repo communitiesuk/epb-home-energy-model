@@ -6421,4 +6421,83 @@ mod tests {
         assert_relative_eq!(cop_op_cond, 3.6209597192830136);
         assert_relative_eq!(deg_coeff_op_cond, 0.25);
     }
+
+    #[rstest]
+    /// Check energy output limited by upper temperature
+    fn test_energy_output_limited(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_output_required = 1.5;
+        let temp_output = 320.;
+        let temp_used_for_scaling = 310.;
+        let temp_limit_upper = 340.;
+
+        let heat_pump =
+            create_default_heat_pump(None, external_conditions, simulation_time_for_heat_pump);
+
+        let result = heat_pump.energy_output_limited(
+            energy_output_required,
+            temp_output,
+            temp_used_for_scaling,
+            temp_limit_upper,
+        );
+
+        assert_relative_eq!(result, 1.5);
+
+        let energy_output_required = 1.5;
+        let temp_output = 320.;
+        let temp_used_for_scaling = 50.;
+        let temp_limit_upper = 310.;
+
+        let result = heat_pump.energy_output_limited(
+            energy_output_required,
+            temp_output,
+            temp_used_for_scaling,
+            temp_limit_upper,
+        );
+
+        assert_relative_eq!(result, 1.4444444444444444);
+    }
+
+    #[ignore]
+    #[rstest]
+    /// Check if backup heater is available or still in delay period
+    fn test_backup_heater_delay_time_elapsed(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump =
+            create_default_heat_pump(None, external_conditions, simulation_time_for_heat_pump);
+        let heat_pump = Arc::from(Mutex::from(heat_pump));
+        let service_name = "service_backupheater";
+
+        let _ = HeatPump::create_service_connection(heat_pump.clone(), service_name);
+
+        for (t_idx, _) in simulation_time_for_heat_pump.iter().enumerate() {
+            let _ = heat_pump.lock().demand_energy(
+                service_name,
+                &ServiceType::Water,
+                500.,
+                330.,
+                330.,
+                340.,
+                1560.,
+                true,
+                simulation_time_for_heat_pump.iter().next().unwrap(),
+                Some(TempSpreadCorrectionArg::Float(1.)),
+                None,
+                None,
+                None,
+                t_idx,
+            );
+
+            let result = heat_pump.lock().backup_heater_delay_time_elapsed();
+            // thread panicks at src/core/heating_systems/heat_pump.rs:2868:14:
+            // temp_min_modulation_rate_high expected to have been provided
+            assert_eq!(result, [false, true][t_idx]);
+
+            heat_pump.lock().timestep_end(t_idx);
+        }
+    }
 }
