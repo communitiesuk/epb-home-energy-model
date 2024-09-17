@@ -1649,6 +1649,13 @@ impl HeatPumpServiceSpaceWarmAir {
         )
     }
 
+    // TODO: will this ever be called if only relevant for exhaust air heat pump and
+    // given that create_service_space_heating_warm_air bails if heat pump sink_type is not air?
+    /// Return the cumulative running time and throughput factor (exhaust air HPs only)
+    /// Arguments:
+    /// energy_demand -- in kWh
+    /// space_heat_running_time_cumulative
+    /// -- running time spent on higher-priority space heating services
     pub fn running_time_throughput_factor(
         &self,
         energy_demand: f64,
@@ -1665,10 +1672,10 @@ impl HeatPumpServiceSpaceWarmAir {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
+        let mut pump = self.heat_pump.lock();
+        let source_type = pump.source_type;
 
-        let source_type = self.heat_pump.lock().source_type;
-
-        self.heat_pump.lock().running_time_throughput_factor(
+        pump.running_time_throughput_factor(
             space_heat_running_time_cumulative,
             &self.service_name,
             &ServiceType::Space,
@@ -3260,10 +3267,9 @@ impl HeatPump {
         let throughput_factor_zone = (throughput_factor - 1.0)
             * self
                 .volume_heated_all_services
-                .expect("Volume heated all services was expected to be set.")
+                .expect("Volume heated all services was expected to be set. This is only set for heat pumps with exhaust air.")
             / volume_heated_by_service
             + 1.0;
-
         Ok((service_results.time_running, throughput_factor_zone))
     }
 
@@ -7077,20 +7083,19 @@ mod tests {
         assert_relative_eq!(throughput_factor_zone, 1.);
     }
 
-    #[ignore = "Currently panicks, test written specifically to expose a deadlock issue with demo_hp_warm_air.json"]
+    /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (temp_spread_correction_fn)
     #[rstest]
-    fn test_running_time_throughput_factor_on_service_space_heating_warm_air(
+    fn test_demand_energy_on_heat_pump_service_space_warm_air(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        // Check without boiler object and sink type 'AIR'
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: sink_air";
-        let heat_pump_sink_air = create_heat_pump_sink_air(
+        let heat_pummp_sink_air = create_heat_pump_sink_air(
             energy_supply_conn_name_auxiliary,
             external_conditions,
             simulation_time_for_heat_pump,
         );
-        let heat_pump_sink_air = Arc::from(Mutex::from(heat_pump_sink_air));
+        let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
         let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
@@ -7101,8 +7106,9 @@ mod tests {
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
-        let heat_pump_service_space_warm_air = HeatPump::create_service_space_heating_warm_air(
-            heat_pump_sink_air.clone(),
+        // create_service_space_heating_warm_air expects a heat pump with sink air
+        let mut heat_pump_service_space_warm_air = HeatPump::create_service_space_heating_warm_air(
+            heat_pummp_sink_air.clone(),
             service_name.to_string(),
             control,
             frac_convective,
@@ -7110,9 +7116,10 @@ mod tests {
         )
         .unwrap();
 
-        let result = heat_pump_service_space_warm_air.running_time_throughput_factor(
-            0.,
-            0.,
+        let energy_demanded = 0.;
+
+        let result = heat_pump_service_space_warm_air.demand_energy(
+            energy_demanded,
             simulation_time_for_heat_pump.iter().current_iteration(),
         );
 
