@@ -7090,7 +7090,7 @@ mod tests {
         assert_relative_eq!(throughput_factor_zone, 1.);
     }
 
-    /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (temp_spread_correction_fn)
+    /// this test was added to guard against a deadlock issue with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
     fn test_demand_energy_on_heat_pump_service_space_warm_air(
         external_conditions: Arc<ExternalConditions>,
@@ -7135,7 +7135,7 @@ mod tests {
 
     /// this test was added to guard against a deadlock issue related to what we found with demo_hp_warm_air.json (use of temp_spread_correction_fn)
     #[rstest]
-    fn test_rename(
+    fn test_running_time_throughput_factor_on_heat_pump_service_space(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
@@ -7182,4 +7182,8 @@ mod tests {
 
         assert!(result.is_ok());
     }
+    // TODO: add more tests for other call sites of temp_spread_correction_fn:
+    // HeatPumpServiceSpace: energy_output_max
+    // HeatPumpServiceSpace: demand_energy
+    // HeatPumpServiceSpaceWarmAir: running_time_throughput_factor (will this ever be reached though?)
 }
