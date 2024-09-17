@@ -546,7 +546,7 @@ impl HeatPumpTestDatum {
 /// unlike f64, this is a representation of a float that is both Hash + Eq and so can be
 /// used as a key in a HashMap.
 #[derive(Clone, Debug)]
-struct HeatPumpTestData {
+pub(crate) struct HeatPumpTestData {
     test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     dsgn_flow_temps: Vec<OrderedFloat<f64>>,
     average_deg_coeff: Vec<f64>,
@@ -1524,7 +1524,7 @@ impl HeatPumpServiceSpace {
         )
     }
 
-    fn temp_spread_correction_fn(&self) -> Box<dyn Fn(f64, f64) -> f64> {
+    fn temp_spread_correction_fn(&self) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
@@ -1537,18 +1537,19 @@ impl HeatPumpServiceSpace {
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = self.heat_pump.lock().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
-        Box::new(move |temp_output, temp_source| {
-            test_data.temp_spread_correction(
-                temp_source,
-                temp_output,
-                temp_diff_evaporator,
-                temp_diff_condenser,
-                temp_diff_emit_dsgn,
-            )
-        })
+        Box::new(
+            move |temp_output, temp_source, test_data: HeatPumpTestData| {
+                test_data.temp_spread_correction(
+                    temp_source,
+                    temp_output,
+                    temp_diff_evaporator,
+                    temp_diff_condenser,
+                    temp_diff_emit_dsgn,
+                )
+            },
+        )
     }
 }
 
@@ -1625,6 +1626,9 @@ impl HeatPumpServiceSpaceWarmAir {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
+
+        let source_type = self.heat_pump.lock().source_type;
+
         pump.demand_energy(
             &self.service_name,
             &ServiceType::Space,
@@ -1636,7 +1640,7 @@ impl HeatPumpServiceSpaceWarmAir {
             service_on,
             simulation_time_iteration,
             Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(),
+                self.temp_spread_correction_fn(source_type),
             )),
             None,
             None,
@@ -1662,6 +1666,8 @@ impl HeatPumpServiceSpaceWarmAir {
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
 
+        let source_type = self.heat_pump.lock().source_type;
+
         self.heat_pump.lock().running_time_throughput_factor(
             space_heat_running_time_cumulative,
             &self.service_name,
@@ -1675,37 +1681,41 @@ impl HeatPumpServiceSpaceWarmAir {
             self.volume_heated,
             simulation_time_iteration,
             Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(),
+                self.temp_spread_correction_fn(source_type),
             )),
         )
     }
 
     /// yes this is copy-pasted from the SpaceService
-    fn temp_spread_correction_fn(&self) -> Box<dyn Fn(f64, f64) -> f64> {
+    fn temp_spread_correction_fn(
+        &self,
+        source_type: HeatPumpSourceType,
+    ) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
 
         // Average temperature difference between heat transfer medium and
         // refrigerant in evaporator
-        let temp_diff_evaporator = match &self.heat_pump.lock().source_type {
+        let temp_diff_evaporator = match source_type {
             t if t.source_fluid_is_air() => 15.0,
             t if t.source_fluid_is_water() => 10.0,
             _ => panic!("impossible heat pump source type encountered"),
         };
 
-        let test_data = self.heat_pump.lock().test_data.clone();
         let temp_diff_emit_dsgn = self.temp_diff_emit_dsgn;
 
-        Box::new(move |temp_output, temp_source| {
-            test_data.temp_spread_correction(
-                temp_source,
-                temp_output,
-                temp_diff_evaporator,
-                temp_diff_condenser,
-                temp_diff_emit_dsgn,
-            )
-        })
+        Box::new(
+            move |temp_output, temp_source, test_data: HeatPumpTestData| {
+                test_data.temp_spread_correction(
+                    temp_source,
+                    temp_output,
+                    temp_diff_evaporator,
+                    temp_diff_condenser,
+                    temp_diff_emit_dsgn,
+                )
+            },
+        )
     }
 
     pub fn frac_convective(&self) -> f64 {
@@ -2544,7 +2554,9 @@ impl HeatPump {
     ) -> (f64, f64) {
         let temp_spread_correction_factor = match temp_spread_correction {
             TempSpreadCorrectionArg::Float(correction) => correction,
-            TempSpreadCorrectionArg::Callable(callable) => callable(temp_output, temp_source),
+            TempSpreadCorrectionArg::Callable(callable) => {
+                callable(temp_output, temp_source, self.test_data.clone())
+            }
         };
 
         if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
@@ -3207,7 +3219,7 @@ impl HeatPump {
     }
 
     /// Return the cumulative running time and throughput factor (exhaust air HPs only)
-    pub fn running_time_throughput_factor(
+    pub(crate) fn running_time_throughput_factor(
         &mut self,
         space_heat_running_time_cumulative: f64,
         service_name: &str,
@@ -3732,9 +3744,9 @@ fn result_str(string: &str) -> ResultString {
     name
 }
 
-pub enum TempSpreadCorrectionArg {
+pub(crate) enum TempSpreadCorrectionArg {
     Float(f64),
-    Callable(Box<dyn Fn(f64, f64) -> f64>),
+    Callable(Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64>),
 }
 
 impl Debug for TempSpreadCorrectionArg {
@@ -6920,7 +6932,7 @@ mod tests {
         assert_relative_eq!(throughput_factor_zone, 1.);
     }
 
-    #[ignore = "Currently deadlocks, test written specifically to expose deadlock issue"]
+    #[ignore = "Currently panicks, test written specifically to expose a deadlock issue with demo_hp_warm_air.json"]
     #[rstest]
     fn test_running_time_throughput_factor_on_service_space_heating_warm_air(
         external_conditions: Arc<ExternalConditions>,
@@ -6952,7 +6964,7 @@ mod tests {
             volume_heated,
         )
         .unwrap();
-        //energy_demand: f64, space_heat_running_time_cumulative: f64, simulation_time_iteration: SimulationTimeIteration
+
         let result = heat_pump_service_space_warm_air.running_time_throughput_factor(
             0.,
             0.,
