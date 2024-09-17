@@ -1429,7 +1429,9 @@ impl HeatPumpServiceSpace {
         }
 
         let temp_output = celsius_to_kelvin(temp_output);
-        self.heat_pump.lock().energy_output_max(
+        let mut heat_pump = self.heat_pump.lock();
+        let source_type = heat_pump.source_type;
+        heat_pump.energy_output_max(
             temp_output,
             temp_return_feed,
             self.hybrid_boiler_service
@@ -1437,7 +1439,7 @@ impl HeatPumpServiceSpace {
                 .map(|service| HybridBoilerService::Space(service.clone())),
             Some(Self::SERVICE_TYPE),
             Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(),
+                self.temp_spread_correction_fn(source_type),
             )),
             emitters_data_for_buffer_tank,
             Some(self.service_name.as_str()),
@@ -1462,12 +1464,13 @@ impl HeatPumpServiceSpace {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
-        let mut pump = self.heat_pump.lock();
-        let time_constant_for_service = match pump.sink_type {
+        let mut heat_pump = self.heat_pump.lock();
+        let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
-        pump.demand_energy(
+        let source_type = heat_pump.source_type;
+        heat_pump.demand_energy(
             &self.service_name,
             &Self::SERVICE_TYPE,
             energy_demand,
@@ -1478,7 +1481,7 @@ impl HeatPumpServiceSpace {
             service_on,
             simulation_time_iteration,
             Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(),
+                self.temp_spread_correction_fn(source_type),
             )),
             None,
             self.hybrid_boiler_service
@@ -1500,13 +1503,14 @@ impl HeatPumpServiceSpace {
     ) -> anyhow::Result<(f64, f64)> {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
-
-        let time_constant_for_service = match self.heat_pump.lock().sink_type {
+        let mut heat_pump = self.heat_pump.lock();
+        let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
+        let source_type = heat_pump.source_type;
 
-        self.heat_pump.lock().running_time_throughput_factor(
+        heat_pump.running_time_throughput_factor(
             space_heat_running_time_cumulative,
             &self.service_name,
             &ServiceType::Space,
@@ -1519,19 +1523,22 @@ impl HeatPumpServiceSpace {
             self.volume_heated,
             simulation_time_iteration,
             Some(TempSpreadCorrectionArg::Callable(
-                self.temp_spread_correction_fn(),
+                self.temp_spread_correction_fn(source_type),
             )),
         )
     }
 
-    fn temp_spread_correction_fn(&self) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
+    fn temp_spread_correction_fn(
+        &self,
+        source_type: HeatPumpSourceType,
+    ) -> Box<dyn Fn(f64, f64, HeatPumpTestData) -> f64> {
         // Average temperature difference between heat transfer medium and
         // refrigerant in condenser
         let temp_diff_condenser = 5.0;
 
         // Average temperature difference between heat transfer medium and
         // refrigerant in evaporator
-        let temp_diff_evaporator = match &self.heat_pump.lock().source_type {
+        let temp_diff_evaporator = match source_type {
             t if t.source_fluid_is_air() => 15.0,
             t if t.source_fluid_is_water() => 10.0,
             _ => panic!("impossible heat pump source type encountered"),
@@ -7120,6 +7127,56 @@ mod tests {
 
         let result = heat_pump_service_space_warm_air.demand_energy(
             energy_demanded,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    /// this test was added to guard against a deadlock issue related to what we found with demo_hp_warm_air.json (use of temp_spread_correction_fn)
+    #[rstest]
+    fn test_rename(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: with_exhaust";
+        let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        let heat_pump_with_exhaust = Arc::from(Mutex::from(heat_pump_with_exhaust));
+
+        let service_name = "service_space";
+        let temp_limit_upper = 50.0;
+        let temp_diff_emit_dsgn = 50.0;
+        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![true],
+            0,
+            1.,
+        )));
+        let volume_heated = 250.0;
+
+        let heat_pump_service_space = HeatPump::create_service_space_heating(
+            heat_pump_with_exhaust.clone(),
+            service_name,
+            temp_limit_upper,
+            temp_diff_emit_dsgn,
+            control,
+            volume_heated,
+        );
+
+        let space_heat_running_time_cumulative = 0.;
+        let energy_demanded = 0.;
+        let temp_flow = 0.;
+        let temp_return = 0.;
+        let result = heat_pump_service_space.running_time_throughput_factor(
+            space_heat_running_time_cumulative,
+            energy_demanded,
+            temp_flow,
+            temp_return,
             simulation_time_for_heat_pump.iter().current_iteration(),
         );
 
