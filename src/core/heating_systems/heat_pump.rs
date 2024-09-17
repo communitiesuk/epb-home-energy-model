@@ -1627,7 +1627,7 @@ impl HeatPumpServiceSpaceWarmAir {
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
         };
 
-        let source_type = self.heat_pump.lock().source_type;
+        let source_type = pump.source_type;
 
         pump.demand_energy(
             &self.service_name,
@@ -3736,7 +3736,7 @@ pub type ResultsPerTimestep<'a> =
 pub type ResultsAnnual<'a> = HashMap<&'a str, ResultAnnual<'a>>;
 type ResultAnnual<'a> = HashMap<(&'a str, &'a str), ResultParamValue>;
 
-pub type ResultString = ArrayString<32>;
+pub type ResultString = ArrayString<64>;
 
 fn result_str(string: &str) -> ResultString {
     let mut name = ResultString::new();
