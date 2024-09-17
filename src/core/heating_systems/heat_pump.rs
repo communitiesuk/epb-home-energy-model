@@ -4125,7 +4125,7 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
     use pretty_assertions::assert_eq;
     use rstest::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[rstest]
     pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
@@ -5776,10 +5776,12 @@ mod tests {
         temp_internal_air: Option<f64>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
+        cost_schedule_hybrid_hp: Option<Value>,
     ) -> HeatPump {
         let energy_supply = energy_supply(simulation_time_for_heat_pump);
         let number_of_zones = 2;
-        let cost_schedule_hybrid_hp = None;
+        let cost_schedule_hybrid_hp =
+            cost_schedule_hybrid_hp.map(|json| serde_json::from_value(json).unwrap());
         let temp_internal_air_fn = create_temp_internal_air_fn(temp_internal_air.unwrap_or(20.));
         HeatPump::new(
             &heat_pump_input,
@@ -5818,6 +5820,7 @@ mod tests {
             None, // temp_internal_air: Option<f64>,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         )
     }
 
@@ -5844,6 +5847,7 @@ mod tests {
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         )
     }
 
@@ -5868,6 +5872,7 @@ mod tests {
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         )
     }
 
@@ -5886,6 +5891,7 @@ mod tests {
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         )
     }
 
@@ -5912,6 +5918,7 @@ mod tests {
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         )
     }
 
@@ -6400,6 +6407,7 @@ mod tests {
             None,
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         );
 
         let result = heat_pump_with_boiler.backup_energy_output_max(
@@ -6682,6 +6690,194 @@ mod tests {
     }
 
     #[rstest]
+    fn test_inadequate_capacity_no_delay_elapsed(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        heat_pump.set_canned_whether_delay_time_elapsed(Some(false));
+
+        let energy_output_required = 5.0;
+        let thermal_capacity_op_cond = 5.0;
+        let temp_output = 343.;
+        let time_available = 2.;
+        let temp_return_feed = 313.;
+        let hybrid_boiler_service = None;
+
+        let result = heat_pump.inadequate_capacity(
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            hybrid_boiler_service,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(!result);
+    }
+
+    #[rstest]
+    fn test_inadequate_capacity_insufficient_backup(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            Some("Substitute"),
+        );
+
+        heat_pump.set_canned_whether_delay_time_elapsed(Some(true));
+
+        let energy_output_required = 5.0;
+        let thermal_capacity_op_cond = 5.0;
+        let temp_output = 343.;
+        let time_available = 2.;
+        let temp_return_feed = 313.;
+        let hybrid_boiler_service = None;
+
+        let result = heat_pump.inadequate_capacity(
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            hybrid_boiler_service,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(!result);
+    }
+
+    #[rstest]
+    fn test_is_heat_pump_cost_effective_equal_cost(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let cop_op_cond = 3.;
+        let boiler_eff = 0.9;
+
+        let cost_schedule_hybrid_hp = json!({
+           "cost_schedule_start_day": 0,
+           "cost_schedule_time_series_step": 1,
+           "cost_schedule_hp":
+               {"main": [16, 20, 24, {"value": 16, "repeat": 5}]},
+           "cost_schedule_boiler": {"main": [{"value": 4, "repeat": 8}]}
+        });
+
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: CostSchedule";
+
+        let heat_pump_input = create_heat_pump_input_from_json(Some("Substitute"));
+
+        let heat_pump_with_cost_schedule = create_heat_pump(
+            heat_pump_input,
+            energy_supply_conn_name_auxiliary,
+            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // boiler: Option<Arc<Mutex<Boiler>>>,
+            None, // throughput_exhaust_air: Option<f64>,
+            None, // temp_internal_air: Option<f64>,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            Some(cost_schedule_hybrid_hp),
+        );
+
+        let result = heat_pump_with_cost_schedule.is_heat_pump_cost_effective(
+            cop_op_cond,
+            boiler_eff,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(!result);
+
+        let cop_op_cond = 16.;
+        let boiler_eff = 2.;
+
+        let result = heat_pump_with_cost_schedule.is_heat_pump_cost_effective(
+            cop_op_cond,
+            boiler_eff,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(result);
+    }
+
+    #[rstest]
+    fn test_use_backup_heater_only(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let cop_op_cond = 3.0;
+        let energy_output_required = 4.0;
+        let thermal_capacity_op_cond = 4.0;
+        let temp_output = 320.0;
+        let time_available = 1.0;
+        let temp_return_feed = 320.0;
+
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        assert!(!heat_pump.use_backup_heater_only(
+            cop_op_cond,
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            None,
+            None,
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+
+        let cost_schedule_hybrid_hp = json!({
+           "cost_schedule_start_day": 0,
+           "cost_schedule_time_series_step": 1,
+           "cost_schedule_hp":
+               {"main": [16, 20, 24, {"value": 16, "repeat": 5}]},
+           "cost_schedule_boiler": {"main": [{"value": 4, "repeat": 8}]}
+        });
+
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: CostSchedule_1";
+
+        let heat_pump_input = create_heat_pump_input_from_json(None);
+
+        let heat_pump_with_cost_schedule = create_heat_pump(
+            heat_pump_input,
+            energy_supply_conn_name_auxiliary,
+            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // boiler: Option<Arc<Mutex<Boiler>>>,
+            None, // throughput_exhaust_air: Option<f64>,
+            None, // temp_internal_air: Option<f64>,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            Some(cost_schedule_hybrid_hp),
+        );
+
+        assert!(heat_pump_with_cost_schedule.use_backup_heater_only(
+            cop_op_cond,
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            None,
+            Some(3.0),
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+    }
+
+    #[rstest]
     fn test_running_time_throughput_factor(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -6700,6 +6896,7 @@ mod tests {
             Some(temp_internal_air),
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         );
 
         let (time_running, throughput_factor_zone) = heat_pump
