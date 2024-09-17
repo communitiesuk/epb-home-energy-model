@@ -3775,7 +3775,7 @@ pub enum ServiceResult {
     Aux(AuxiliaryParameters),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct HeatPumpEnergyCalculation {
     service_name: ResultString,
     service_type: ServiceType,
@@ -5400,6 +5400,7 @@ mod tests {
         Arc::new(move || canned_value)
     }
 
+    #[fixture]
     fn energy_supply(simulation_time_for_heat_pump: SimulationTime) -> EnergySupply {
         EnergySupply::new(
             FuelType::MainsGas,
@@ -6888,6 +6889,585 @@ mod tests {
             simulation_time_for_heat_pump.iter().current_iteration()
         ));
     }
+
+    #[rstest]
+    fn test_run_demand_energy_calc(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+        energy_supply: EnergySupply,
+    ) {
+        // Test with hybrid_boiler_service and boiler_eff
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
+
+        let mut boiler = create_boiler(
+            external_conditions.clone(),
+            energy_supply,
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        );
+        let control = SetpointTimeControl::new(
+            vec![Some(21.), Some(22.)],
+            0,
+            1.0,
+            None,
+            None,
+            None,
+            None,
+            1.0,
+        )
+        .unwrap();
+        let boiler_service_space = boiler.create_service_space_heating(
+            "service_boilerspace".to_owned(),
+            Arc::new(Control::SetpointTimeControl(control)),
+        );
+
+        let heat_pump_input = create_heat_pump_input_from_json(None);
+
+        let mut heat_pump_with_boiler = create_heat_pump(
+            heat_pump_input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(Arc::new(Mutex::new(boiler))),
+            None,
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
+            HeatPumpEnergyCalculation {
+                service_name: ResultString::try_from("service_boilerspace").unwrap(),
+                service_type: ServiceType::Water,
+                service_on: true,
+                energy_output_required: 1.0,
+                temp_output: 330.0,
+                temp_source: 273.15,
+                cop_op_cond: 2.955763623095467,
+                thermal_capacity_op_cond: 6.773123981338176,
+                time_running: 0.1476423586450323,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: 0.8020240099530431,
+                load_ratio_continuous_min: 0.35,
+                load_ratio: 0.1476423586450323,
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: true,
+                energy_input_hp_divisor: Some(1.0),
+                energy_input_hp: 0.3396593649678288,
+                energy_delivered_hp: 1.0,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: 0.3433504239339546,
+                energy_delivered_total: 1.0,
+                energy_heating_circ_pump: 0.0022146353796754846,
+                energy_source_circ_pump: 0.0014764235864503231,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            },
+            HeatPumpEnergyCalculation {
+                service_name: "service_boilerspace".try_into().unwrap(),
+                service_type: ServiceType::Water,
+                service_on: true,
+                energy_output_required: 1.0,
+                temp_output: 330.0,
+                temp_source: 275.65,
+                cop_op_cond: 3.091723311370327,
+                thermal_capacity_op_cond: 6.9608039370972525,
+                time_running: 0.1436615668300253,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: 0.7880011024997639,
+                load_ratio_continuous_min: 0.35,
+                load_ratio: 0.1436615668300253,
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: true,
+                energy_input_hp_divisor: Some(1.0),
+                energy_input_hp: 0.32469405583692273,
+                energy_delivered_hp: 1.0,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: 0.3282855950076734,
+                energy_delivered_total: 1.0,
+                energy_heating_circ_pump: 0.002154923502450379,
+                energy_source_circ_pump: 0.0014366156683002528,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            },
+        ];
+
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            assert_eq!(
+                heat_pump_with_boiler
+                    .run_demand_energy_calc(
+                        "service_boilerspace",
+                        &ServiceType::Water,
+                        1.,
+                        330.,
+                        330.,
+                        340.,
+                        1560.,
+                        true,
+                        t_it,
+                        Some(TempSpreadCorrectionArg::Float(1.0)),
+                        None,
+                        Some(HybridBoilerService::Space(Arc::new(Mutex::new(
+                            boiler_service_space.clone()
+                        )))),
+                        Some(1.0),
+                        Some(0.0),
+                        None
+                    )
+                    .unwrap(),
+                expected_energy_calcs[t_idx]
+            );
+        }
+    }
+
+    /*
+    def test_run_demand_energy_calc(self):
+
+        # Test with hybrid_boiler_service and boiler_eff
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: boiler'
+        self.boiler = Boiler(self.boiler_dict,
+                              self.energysupply,
+                              self.energy_supply_conn_name_auxiliary,
+                              self.simtime,
+                              self.extcond,
+                              )
+
+        self.ctrl = SetpointTimeControl([21.0,22.0],
+                                         self.simtime,
+                                         0, #start_day
+                                         1.0, #time_series_step
+                                         )
+        self.boilerservicespace = self.boiler.create_service_space_heating('service_boilerspace',
+                                                      self.ctrl)
+
+        self.heat_pump_with_boiler = HeatPump(self.heat_dict,
+                                  self.energysupply,
+                                  self.energy_supply_conn_name_auxiliary,
+                                  self.simtime,
+                                  self.extcond,
+                                  self.number_of_zones,
+                                  boiler = self.boiler)
+        self.simtime.reset()
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump_with_boiler._HeatPump__run_demand_energy_calc(
+                                                          service_name = 'service_boilerspace',
+                                                          service_type = ServiceType.WATER,
+                                                          energy_output_required = 1.0,
+                                                          temp_output = 330.0, # Kelvin
+                                                          temp_return_feed =330.0, # Kelvin
+                                                          temp_limit_upper= 340.0, # Kelvin
+                                                          time_constant_for_service = 1560,
+                                                          service_on = True, # bool - is service allowed to run?
+                                                          temp_spread_correction=1.0,
+                                                          temp_used_for_scaling = None,
+                                                          hybrid_boiler_service = self.boilerservicespace,
+                                                          boiler_eff = 1.0,
+                                                          additional_time_unavailable=0.0,
+                                                          ),
+                 [{'service_name': 'service_boilerspace', 'service_type': ServiceType.WATER,
+                  'service_on': True,'energy_output_required': 1.0, 'temp_output': 330.0,
+                  'temp_source': 273.15,'cop_op_cond': 2.955763623095467,
+                  'thermal_capacity_op_cond': 6.773123981338176,'time_running': 0.1476423586450323,
+                  'deg_coeff_op_cond': 0.9,'compressor_power_min_load': 0.8020240099530431,
+                  'load_ratio_continuous_min': 0.35, 'load_ratio': 0.1476423586450323,
+                  'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': True,
+                  'energy_input_HP_divisor': 1.0, 'energy_input_HP': 0.3396593649678288,
+                  'energy_delivered_HP': 1.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                  'energy_input_total': 0.3433504239339546, 'energy_delivered_total': 1.0,
+                  'energy_heating_circ_pump': 0.0022146353796754846, 'energy_source_circ_pump': 0.0014764235864503231,
+                  'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0},
+                 {'service_name': 'service_boilerspace', 'service_type': ServiceType.WATER,
+                  'service_on': True, 'energy_output_required': 1.0, 'temp_output': 330.0,
+                  'temp_source': 275.65, 'cop_op_cond': 3.091723311370327,
+                  'thermal_capacity_op_cond': 6.9608039370972525, 'time_running': 0.1436615668300253,
+                  'deg_coeff_op_cond': 0.9, 'compressor_power_min_load': 0.7880011024997639,
+                  'load_ratio_continuous_min': 0.35, 'load_ratio': 0.1436615668300253,
+                  'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': True,
+                  'energy_input_HP_divisor': 1.0, 'energy_input_HP': 0.32469405583692273,
+                  'energy_delivered_HP': 1.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                  'energy_input_total': 0.3282855950076734, 'energy_delivered_total': 1.0,
+                  'energy_heating_circ_pump': 0.002154923502450379, 'energy_source_circ_pump': 0.0014366156683002528,
+                  'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0}][t_idx]
+                 )
+
+
+        # Check without boiler and service_on True
+        self.simtime.reset()
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump._HeatPump__run_demand_energy_calc(service_name = 'service_no_boiler',
+                                                          service_type = ServiceType.WATER,
+                                                          energy_output_required = 1.0,
+                                                          temp_output = 330.0, # Kelvin
+                                                          temp_return_feed =330.0, # Kelvin
+                                                          temp_limit_upper= 340.0, # Kelvin
+                                                          time_constant_for_service = 1560,
+                                                          service_on = True, # bool - is service allowed to run?
+                                                          temp_spread_correction=1.0,
+                                                          temp_used_for_scaling = None,
+                                                          hybrid_boiler_service = None,
+                                                          boiler_eff = None,
+                                                          additional_time_unavailable=0.0,
+                                                          ),
+                    [{'service_name': 'service_no_boiler', 'service_type': ServiceType.WATER,'service_on': True,
+                      'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 273.15,
+                      'cop_op_cond': 2.955763623095467, 'thermal_capacity_op_cond': 6.773123981338176,
+                      'time_running': 0.1476423586450323, 'deg_coeff_op_cond': 0.9,
+                      'compressor_power_min_load': 0.8020240099530431, 'load_ratio_continuous_min': 0.35,
+                      'load_ratio': 0.1476423586450323, 'use_backup_heater_only': False,
+                      'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': 1.0,
+                      'energy_input_HP': 0.3396593649678288, 'energy_delivered_HP': 1.0,
+                      'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                      'energy_input_total': 0.3433504239339546, 'energy_delivered_total': 1.0,
+                      'energy_heating_circ_pump': 0.0022146353796754846, 'energy_source_circ_pump': 0.0014764235864503231,
+                      'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0},
+                      {'service_name': 'service_no_boiler', 'service_type': ServiceType.WATER, 'service_on': True,
+                       'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 275.65,
+                       'cop_op_cond': 3.091723311370327, 'thermal_capacity_op_cond': 6.9608039370972525,
+                       'time_running': 0.1436615668300253, 'deg_coeff_op_cond': 0.9,
+                       'compressor_power_min_load': 0.7880011024997639, 'load_ratio_continuous_min': 0.35,
+                       'load_ratio': 0.1436615668300253, 'use_backup_heater_only': False,
+                       'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': 1.0,
+                       'energy_input_HP': 0.32469405583692273, 'energy_delivered_HP': 1.0,
+                       'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                       'energy_input_total': 0.3282855950076734, 'energy_delivered_total': 1.0,
+                       'energy_heating_circ_pump': 0.002154923502450379, 'energy_source_circ_pump': 0.0014366156683002528,
+                       'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0}][t_idx]
+                 )
+
+
+        # Check without modulating control
+        self.heat_dict_modcontrol = {
+                                    'type': 'HeatPump',
+                                    'EnergySupply': 'mains_gas',
+                                    'source_type': 'OutsideAir',
+                                    'sink_type': 'Water',
+                                    'backup_ctrl_type': 'Substitute',
+                                    'time_delay_backup': 2.0,
+                                    'modulating_control': False,
+                                    'min_modulation_rate_35': 0.35,
+                                    'min_modulation_rate_55': 0.4,
+                                    'time_constant_onoff_operation': 140,
+                                    'temp_return_feed_max': 70.0,
+                                    'temp_lower_operating_limit': -5.0,
+                                    'min_temp_diff_flow_return_for_hp_to_operate': 0.0,
+                                    'var_flow_temp_ctrl_during_test': True,
+                                    'power_heating_circ_pump': 0.015,
+                                    'power_source_circ_pump': 0.01,
+                                    'power_standby': 0.015,
+                                    'power_crankcase_heater': 0.01,
+                                    'power_off': 0.015,
+                                    'power_max_backup': 3.0,
+                                    'test_data': [{'test_letter': 'A',
+                                                   'capacity': 8.4,
+                                                   'cop': 4.6,
+                                                   'degradation_coeff': 0.9,
+                                                   'design_flow_temp': 35,
+                                                   'temp_outlet': 34,
+                                                   'temp_source': 0,
+                                                   'temp_test': -7},
+                                                   {'test_letter': 'B',
+                                                     'capacity': 8.3,
+                                                     'cop': 4.9,
+                                                     'degradation_coeff': 0.9,
+                                                     'design_flow_temp': 35,
+                                                     'temp_outlet': 30,
+                                                     'temp_source': 0,
+                                                     'temp_test': 2},
+
+                                                   {'test_letter': 'C',
+                                                    'capacity': 8.3,
+                                                    'cop': 5.1,
+                                                    'degradation_coeff': 0.9,
+                                                    'design_flow_temp': 35,
+                                                    'temp_outlet': 27,
+                                                    'temp_source': 0,
+                                                    'temp_test': 7},
+                                                   {'test_letter': 'D',
+                                                    'capacity': 8.2,
+                                                    'cop': 5.4,
+                                                    'degradation_coeff': 0.95,
+                                                    'design_flow_temp': 35,
+                                                    'temp_outlet': 24,
+                                                    'temp_source': 0,
+                                                    'temp_test': 12},
+                                                    {'test_letter': 'F',
+                                                     'capacity': 8.4,
+                                                     'cop': 4.6,
+                                                     'degradation_coeff': 0.9,
+                                                     'design_flow_temp': 35,
+                                                     'temp_outlet': 34,
+                                                     'temp_source': 0,
+                                                     'temp_test': -7}
+                                                   ]
+                                    }
+
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: modulating_control'
+
+        self.heat_pump_mod_ctrl = HeatPump(self.heat_dict_modcontrol,
+                                  self.energysupply,
+                                  self.energy_supply_conn_name_auxiliary,
+                                  self.simtime,
+                                  self.extcond,
+                                  self.number_of_zones)
+        self.simtime.reset()
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump_mod_ctrl._HeatPump__run_demand_energy_calc(
+                                                        service_name = 'service_backup_modctrl',
+                                                        service_type = ServiceType.WATER,
+                                                        energy_output_required = 1.0,
+                                                        temp_output = 330.0, # Kelvin
+                                                        temp_return_feed =330.0, # Kelvin
+                                                        temp_limit_upper= 340.0, # Kelvin
+                                                        time_constant_for_service = 1560,
+                                                        service_on = True,
+                                                        temp_spread_correction=1.0,
+                                                        temp_used_for_scaling = None,
+                                                        hybrid_boiler_service = None,
+                                                        boiler_eff = None,
+                                                        additional_time_unavailable=0.0,
+                                                        ),
+                         [{'service_name': 'service_backup_modctrl', 'service_type': ServiceType.WATER, 'service_on': True,
+                           'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 273.15,
+                           'cop_op_cond': 2.955763623095467, 'thermal_capacity_op_cond': 8.857000000000003,
+                           'time_running': 0.11290504685559441, 'deg_coeff_op_cond': 0.9, 'compressor_power_min_load': 2.9965183720355757,
+                           'load_ratio_continuous_min': 1.0, 'load_ratio': 0.11290504685559441, 'use_backup_heater_only': False,
+                           'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': 1.0, 'energy_input_HP': 0.34136305266734507,
+                           'energy_delivered_HP': 1.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                           'energy_input_total': 0.3441856788387349, 'energy_delivered_total': 1.0,
+                           'energy_heating_circ_pump': 0.0016935757028339162, 'energy_source_circ_pump': 0.0011290504685559442,
+                           'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0},
+                           {'service_name': 'service_backup_modctrl', 'service_type': ServiceType.WATER, 'service_on': True,
+                            'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 275.65, 'cop_op_cond': 3.091723311370327,
+                            'thermal_capacity_op_cond': 8.807000000000002, 'time_running': 0.1135460429204042, 'deg_coeff_op_cond': 0.9,
+                            'compressor_power_min_load': 2.848573146119122, 'load_ratio_continuous_min': 1.0,
+                            'load_ratio': 0.1135460429204042, 'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': True,
+                            'energy_input_HP_divisor': 1.0, 'energy_input_HP': 0.3263658776501164, 'energy_delivered_HP': 1.0,
+                            'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0, 'energy_input_total': 0.3292045287231265,
+                            'energy_delivered_total': 1.0, 'energy_heating_circ_pump': 0.001703190643806063,
+                            'energy_source_circ_pump': 0.001135460429204042, 'energy_output_required_boiler': 0.0,
+                             'energy_heating_warm_air_fan': 0}][t_idx]
+                         )
+
+
+        self.simtime.reset()
+        # Check the results with service off and more energy_output_required
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump._HeatPump__run_demand_energy_calc(service_name = 'service_erengy_output_required',
+                                                          service_type = ServiceType.WATER,
+                                                          energy_output_required = 50,
+                                                          temp_output = 330.0, # Kelvin
+                                                          temp_return_feed =330.0, # Kelvin
+                                                          temp_limit_upper= 340.0, # Kelvin
+                                                          time_constant_for_service = 1560,
+                                                          service_on = False, # bool - is service allowed to run?
+                                                          temp_spread_correction=1.0,
+                                                          temp_used_for_scaling = None,
+                                                          hybrid_boiler_service = None,
+                                                          boiler_eff = None,
+                                                          additional_time_unavailable=0.0,
+                                                          ),
+                             [{'service_name': 'service_erengy_output_required', 'service_type': ServiceType.WATER, 'service_on': False,
+                               'energy_output_required': 50, 'temp_output': 330.0, 'temp_source': 273.15, 'cop_op_cond': 2.955763623095467,
+                               'thermal_capacity_op_cond': 6.773123981338176, 'time_running': 0.0, 'deg_coeff_op_cond': 0.9,
+                               'compressor_power_min_load': 0.8020240099530431, 'load_ratio_continuous_min': 0.35, 'load_ratio': 1.0,
+                               'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': False, 'energy_input_HP_divisor': None,
+                               'energy_input_HP': 0.0, 'energy_delivered_HP': 0.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                               'energy_input_total': 0.0, 'energy_delivered_total': 0.0, 'energy_heating_circ_pump': 0.0,
+                               'energy_source_circ_pump': 0.0, 'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0},
+                              {'service_name': 'service_erengy_output_required', 'service_type': ServiceType.WATER, 'service_on': False,
+                               'energy_output_required': 50, 'temp_output': 330.0, 'temp_source': 275.65, 'cop_op_cond': 3.091723311370327,
+                               'thermal_capacity_op_cond': 6.9608039370972525, 'time_running': 0.0, 'deg_coeff_op_cond': 0.9,
+                               'compressor_power_min_load': 0.7880011024997639, 'load_ratio_continuous_min': 0.35, 'load_ratio': 1.0,
+                               'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': False, 'energy_input_HP_divisor': None,
+                               'energy_input_HP': 0.0, 'energy_delivered_HP': 0.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                               'energy_input_total': 0.0, 'energy_delivered_total': 0.0, 'energy_heating_circ_pump': 0.0,
+                               'energy_source_circ_pump': 0.0, 'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0}][t_idx]
+                             )
+
+
+        # Check service off with boiler
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: boiler_and_sevice_off'
+        self.boiler = Boiler(self.boiler_dict,
+                              self.energysupply,
+                              self.energy_supply_conn_name_auxiliary,
+                              self.simtime,
+                              self.extcond,
+                              )
+
+        self.ctrl = SetpointTimeControl([21.0,22.0],
+                                         self.simtime,
+                                         0, #start_day
+                                         1.0, #time_series_step
+                                         )
+        self.boilerservicespace = self.boiler.create_service_space_heating('service_boilerspace_service_off',
+                                                      self.ctrl)
+
+        self.heat_pump_with_boiler = HeatPump(self.heat_dict,
+                                  self.energysupply,
+                                  self.energy_supply_conn_name_auxiliary,
+                                  self.simtime,
+                                  self.extcond,
+                                  self.number_of_zones,
+                                  boiler = self.boiler)
+        self.simtime.reset()
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump_with_boiler._HeatPump__run_demand_energy_calc(
+                                                        service_name = 'service_boilerspace_service_off',
+                                                        service_type = ServiceType.WATER,
+                                                        energy_output_required = 1.0,
+                                                        temp_output = 330.0, # Kelvin
+                                                        temp_return_feed =330.0, # Kelvin
+                                                        temp_limit_upper= 340.0, # Kelvin
+                                                        time_constant_for_service = 1560,
+                                                        service_on = False, # bool - is service allowed to run?
+                                                        temp_spread_correction=1.0,
+                                                        temp_used_for_scaling = None,
+                                                        hybrid_boiler_service = self.boilerservicespace,
+                                                        boiler_eff = 1.0,
+                                                        additional_time_unavailable=0.0,
+                                                        ),
+                            [{'service_name': 'service_boilerspace_service_off', 'service_type': ServiceType.WATER, 'service_on': False,
+                               'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 273.15, 'cop_op_cond': 2.955763623095467,
+                               'thermal_capacity_op_cond': 6.773123981338176, 'time_running': 0.0, 'deg_coeff_op_cond': 0.9,
+                               'compressor_power_min_load': 0.8020240099530431, 'load_ratio_continuous_min': 0.35, 'load_ratio': 0.1476423586450323,
+                               'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': None,
+                               'energy_input_HP': 0.0, 'energy_delivered_HP': 0.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                               'energy_input_total': 0.0, 'energy_delivered_total': 0.0, 'energy_heating_circ_pump': 0.0,
+                               'energy_source_circ_pump': 0.0, 'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0},
+                             {'service_name': 'service_boilerspace_service_off', 'service_type': ServiceType.WATER, 'service_on': False,
+                               'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 275.65, 'cop_op_cond': 3.091723311370327,
+                               'thermal_capacity_op_cond': 6.9608039370972525, 'time_running': 0.0, 'deg_coeff_op_cond': 0.9,
+                               'compressor_power_min_load': 0.7880011024997639, 'load_ratio_continuous_min': 0.35, 'load_ratio': 0.1436615668300253,
+                               'use_backup_heater_only': False, 'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': None,
+                               'energy_input_HP': 0.0, 'energy_delivered_HP': 0.0, 'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                               'energy_input_total': 0.0, 'energy_delivered_total': 0.0, 'energy_heating_circ_pump': 0.0,
+                               'energy_source_circ_pump': 0.0, 'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0}][t_idx]
+                     )
+
+        # Check wtih backup_ctrl_type Substitute
+        self.heat_dict_with_sub =  {'type': 'HeatPump',
+                                    'EnergySupply': 'mains_gas',
+                                    'source_type': 'OutsideAir',
+                                    'sink_type': 'Water',
+                                    'backup_ctrl_type': 'Substitute',
+                                    'time_delay_backup': 2.0,
+                                    'modulating_control': True,
+                                    'min_modulation_rate_35': 0.35,
+                                    'min_modulation_rate_55': 0.4,
+                                    'time_constant_onoff_operation': 140,
+                                    'temp_return_feed_max': 70.0,
+                                    'temp_lower_operating_limit': -5.0,
+                                    'min_temp_diff_flow_return_for_hp_to_operate': 0.0,
+                                    'var_flow_temp_ctrl_during_test': True,
+                                    'power_heating_circ_pump': 0.015,
+                                    'power_source_circ_pump': 0.01,
+                                    'power_standby': 0.015,
+                                    'power_crankcase_heater': 0.01,
+                                    'power_off': 0.015,
+                                    'power_max_backup': 3.0,
+                                    'test_data': [{'test_letter': 'A',
+                                                   'capacity': 8.4,
+                                                   'cop': 4.6,
+                                                   'degradation_coeff': 0.9,
+                                                   'design_flow_temp': 35,
+                                                   'temp_outlet': 34,
+                                                   'temp_source': 0,
+                                                   'temp_test': -7},
+                                                   {'test_letter': 'B',
+                                                     'capacity': 8.3,
+                                                     'cop': 4.9,
+                                                     'degradation_coeff': 0.9,
+                                                     'design_flow_temp': 35,
+                                                     'temp_outlet': 30,
+                                                     'temp_source': 0,
+                                                     'temp_test': 2},
+                                                   {'test_letter': 'C',
+                                                    'capacity': 8.3,
+                                                    'cop': 5.1,
+                                                    'degradation_coeff': 0.9,
+                                                    'design_flow_temp': 35,
+                                                    'temp_outlet': 27,
+                                                    'temp_source': 0,
+                                                    'temp_test': 7},
+                                                   {'test_letter': 'D',
+                                                    'capacity': 8.2,
+                                                    'cop': 5.4,
+                                                    'degradation_coeff': 0.95,
+                                                    'design_flow_temp': 35,
+                                                    'temp_outlet': 24,
+                                                    'temp_source': 0,
+                                                    'temp_test': 12},
+                                                    {'test_letter': 'F',
+                                                     'capacity': 8.4,
+                                                     'cop': 4.6,
+                                                     'degradation_coeff': 0.9,
+                                                     'design_flow_temp': 35,
+                                                     'temp_outlet': 34,
+                                                     'temp_source': 0,
+                                                     'temp_test': -7}
+                                                   ]
+                                    }
+        self.energy_supply_conn_name_auxiliary = 'HeatPump_auxiliary: backup'
+
+        self.heat_pump_backup = HeatPump(self.heat_dict_with_sub,
+                                  self.energysupply,
+                                  self.energy_supply_conn_name_auxiliary,
+                                  self.simtime,
+                                  self.extcond,
+                                  self.number_of_zones)
+        self.simtime.reset()
+        for t_idx, _, _ in self.simtime:
+            with self.subTest(i=t_idx):
+                self.assertEqual(self.heat_pump_backup._HeatPump__run_demand_energy_calc(
+                                                          service_name = 'service_backup_substitute',
+                                                          service_type = ServiceType.SPACE,
+                                                          energy_output_required = 1.0,
+                                                          temp_output = 330.0, # Kelvin
+                                                          temp_return_feed =330.0, # Kelvin
+                                                          temp_limit_upper= 340.0, # Kelvin
+                                                          time_constant_for_service = 1560,
+                                                          service_on = True,
+                                                          temp_spread_correction=1.0,
+                                                          temp_used_for_scaling = None,
+                                                          hybrid_boiler_service = None,
+                                                          boiler_eff = None,
+                                                          additional_time_unavailable=0.0,
+                                                          ),
+                                         [{'service_name': 'service_backup_substitute', 'service_type': ServiceType.SPACE, 'service_on': True,
+                                           'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 273.15,
+                                           'cop_op_cond': 2.955763623095467, 'thermal_capacity_op_cond': 6.773123981338176,
+                                           'time_running': 0.1476423586450323, 'deg_coeff_op_cond': 0.9,
+                                           'compressor_power_min_load': 0.8020240099530431, 'load_ratio_continuous_min': 0.35,
+                                           'load_ratio': 0.1476423586450323, 'use_backup_heater_only': False,
+                                           'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': 1.0,
+                                           'energy_input_HP': 0.3396593649678288, 'energy_delivered_HP': 1.0, 'energy_input_backup': 0.0,
+                                           'energy_delivered_backup': 0.0, 'energy_input_total': 0.3433504239339546,
+                                           'energy_delivered_total': 1.0, 'energy_heating_circ_pump': 0.0022146353796754846,
+                                           'energy_source_circ_pump': 0.0014764235864503231, 'energy_output_required_boiler': 0.0,
+                                           'energy_heating_warm_air_fan': 0},
+                                           {'service_name': 'service_backup_substitute', 'service_type': ServiceType.SPACE, 'service_on': True,
+                                            'energy_output_required': 1.0, 'temp_output': 330.0, 'temp_source': 275.65,
+                                            'cop_op_cond': 3.091723311370327, 'thermal_capacity_op_cond': 6.9608039370972525,
+                                            'time_running': 0.1436615668300253, 'deg_coeff_op_cond': 0.9,
+                                            'compressor_power_min_load': 0.7880011024997639, 'load_ratio_continuous_min': 0.35,
+                                            'load_ratio': 0.1436615668300253, 'use_backup_heater_only': False,
+                                            'hp_operating_in_onoff_mode': True, 'energy_input_HP_divisor': 1.0,
+                                            'energy_input_HP': 0.32469405583692273, 'energy_delivered_HP': 1.0,
+                                            'energy_input_backup': 0.0, 'energy_delivered_backup': 0.0,
+                                            'energy_input_total': 0.3282855950076734, 'energy_delivered_total': 1.0,
+                                            'energy_heating_circ_pump': 0.002154923502450379, 'energy_source_circ_pump': 0.0014366156683002528,
+                                             'energy_output_required_boiler': 0.0, 'energy_heating_warm_air_fan': 0}][t_idx])
+
+    */
 
     #[rstest]
     fn test_running_time_throughput_factor(
