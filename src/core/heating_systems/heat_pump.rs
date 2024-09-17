@@ -1777,6 +1777,8 @@ pub struct HeatPump {
     temp_min_modulation_rate_high: Option<f64>,
     min_modulation_rate_55: Option<f64>,
     detailed_results: Option<Vec<Arc<Mutex<Vec<ServiceResult>>>>>,
+    #[cfg(test)]
+    canned_whether_delay: Option<bool>,
 }
 
 impl HeatPump {
@@ -2106,6 +2108,8 @@ impl HeatPump {
             temp_min_modulation_rate_high,
             min_modulation_rate_55,
             detailed_results,
+            #[cfg(test)]
+            canned_whether_delay: None,
         })
     }
 
@@ -2634,8 +2638,20 @@ impl HeatPump {
         }
     }
 
+    #[cfg(test)]
+    fn set_canned_whether_delay_time_elapsed(&mut self, whether: Option<bool>) {
+        self.canned_whether_delay = whether;
+    }
+
     /// Check if backup heater is available or still in delay period
     fn backup_heater_delay_time_elapsed(&self) -> bool {
+        #[cfg(test)]
+        {
+            if let Some(whether) = self.canned_whether_delay {
+                return whether;
+            }
+        }
+
         let result = self.time_running_continuous
             >= self
                 .time_delay_backup
@@ -5419,13 +5435,14 @@ mod tests {
         .unwrap()
     }
 
-    fn create_heat_pump_input_from_json() -> HeatSourceWetDetails {
+    fn create_heat_pump_input_from_json(backup_ctrl_type: Option<&str>) -> HeatSourceWetDetails {
+        let backup_ctrl_type = backup_ctrl_type.unwrap_or("TopUp");
         let input = json!({
             "type": "HeatPump",
             "EnergySupply": "mains gas",
             "source_type": "OutsideAir",
             "sink_type": "Water",
-            "backup_ctrl_type": "TopUp",
+            "backup_ctrl_type": backup_ctrl_type,
             "time_delay_backup": 1,
             "modulating_control": true,
             "min_modulation_rate_35": 0.35,
@@ -5785,11 +5802,12 @@ mod tests {
         energy_supply_conn_name_auxiliary: Option<&str>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
+        backup_ctrl_type: Option<&str>,
     ) -> HeatPump {
         let energy_supply_conn_name_auxiliary =
             energy_supply_conn_name_auxiliary.unwrap_or("HeatPump_auxiliary: hp");
 
-        let heat_pump_input = create_heat_pump_input_from_json();
+        let heat_pump_input = create_heat_pump_input_from_json(backup_ctrl_type);
 
         create_heat_pump(
             heat_pump_input,
@@ -5815,7 +5833,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let input = create_heat_pump_input_from_json();
+        let input = create_heat_pump_input_from_json(None);
 
         create_heat_pump(
             input,
@@ -5907,6 +5925,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
@@ -5999,6 +6018,7 @@ mod tests {
             Some("HeatPump_auxiliary: boiler1"),
             external_conditions,
             simulation_time_for_heat_pump,
+            None,
         );
 
         let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> = heat_pump
@@ -6017,6 +6037,7 @@ mod tests {
             Some("HeatPump_auxiliary: HotWater"),
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let heat_pump = Arc::from(Mutex::from(heat_pump));
@@ -6084,6 +6105,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let heat_pump = Arc::from(Mutex::from(heat_pump));
@@ -6167,6 +6189,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
@@ -6223,6 +6246,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let result =
@@ -6270,6 +6294,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
         let result = heat_pump.thermal_capacity_op_cond(290., 260.);
         assert_relative_eq!(result, 8.607029286155587);
@@ -6301,6 +6326,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let result = heat_pump.backup_energy_output_max(
@@ -6363,7 +6389,7 @@ mod tests {
             .create_service_space_heating("service_boilerspace".to_string(), control);
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
-        let input = create_heat_pump_input_from_json();
+        let input = create_heat_pump_input_from_json(None);
 
         let heat_pump_with_boiler = create_heat_pump(
             input,
@@ -6402,6 +6428,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let (cop_op_cond, deg_coeff_op_cond) = heat_pump.cop_deg_coeff_op_cond(
@@ -6449,8 +6476,12 @@ mod tests {
         let temp_used_for_scaling = 310.;
         let temp_limit_upper = 340.;
 
-        let heat_pump =
-            create_default_heat_pump(None, external_conditions, simulation_time_for_heat_pump);
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
 
         let result = heat_pump.energy_output_limited(
             energy_output_required,
@@ -6482,8 +6513,12 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) {
-        let heat_pump =
-            create_default_heat_pump(None, external_conditions, simulation_time_for_heat_pump);
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
         let heat_pump = Arc::from(Mutex::from(heat_pump));
         let service_name = "service_backupheater";
 
@@ -6524,6 +6559,7 @@ mod tests {
             None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
+            None,
         );
 
         let result = heat_pump.outside_operating_limits(
@@ -6545,6 +6581,104 @@ mod tests {
             simulation_time_for_heat_pump.iter().current_iteration(),
         );
         assert_eq!(result, true)
+    }
+
+    #[rstest]
+    fn test_inadequate_capacity(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        let energy_output_required = 5.0;
+        let thermal_capacity_op_cond = 5.0;
+        let temp_output = 310.0;
+        let time_available = 1.0;
+        let temp_return_feed = 315.0;
+        let hybrid_boiler_service = None;
+
+        assert!(!heat_pump.inadequate_capacity(
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            hybrid_boiler_service,
+            simulation_time_for_heat_pump.iter().current_iteration()
+        ));
+    }
+
+    #[rstest]
+    fn test_inadequate_capacity_topup(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            None,
+        );
+
+        heat_pump.set_canned_whether_delay_time_elapsed(Some(true));
+
+        let energy_output_required = 5.0;
+        let thermal_capacity_op_cond = 1.0;
+        let temp_output = 343.;
+        let time_available = 2.;
+        let temp_return_feed = 313.;
+        let hybrid_boiler_service = None;
+
+        let result = heat_pump.inadequate_capacity(
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            hybrid_boiler_service,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(result);
+    }
+
+    #[rstest]
+    fn test_inadequate_capacity_substitute(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let mut heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+            Some("Substitute"),
+        );
+
+        heat_pump.set_canned_whether_delay_time_elapsed(Some(true));
+
+        let energy_output_required = 5.0;
+        let thermal_capacity_op_cond = 1.0;
+        let temp_output = 343.;
+        let time_available = 2.;
+        let temp_return_feed = 313.;
+        let hybrid_boiler_service = None;
+
+        let result = heat_pump.inadequate_capacity(
+            energy_output_required,
+            thermal_capacity_op_cond,
+            temp_output,
+            time_available,
+            temp_return_feed,
+            hybrid_boiler_service,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(result);
     }
 
     #[rstest]
