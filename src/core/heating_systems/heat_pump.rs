@@ -6546,4 +6546,47 @@ mod tests {
         );
         assert_eq!(result, true)
     }
+
+    #[rstest]
+    fn test_running_time_throughput_factor(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let temp_internal_air = 30.;
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_runtime_throughput";
+
+        let heat_source_wet_details = create_heat_pump_with_exhaust_input_from_json(2., 70);
+
+        // TODO can we use create_heat_pump_exhaust instaed?
+        let mut heat_pump = create_heat_pump(
+            heat_source_wet_details,
+            energy_supply_conn_name_auxiliary,
+            None,
+            None,
+            Some(101.),
+            Some(temp_internal_air),
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+
+        let (time_running, throughput_factor_zone) = heat_pump
+            .running_time_throughput_factor(
+                0.,
+                "service_runtime_throughput".into(),
+                &ServiceType::Water,
+                1.,
+                330.,
+                330.,
+                340.,
+                1350.,
+                true,
+                100.,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+                Some(TempSpreadCorrectionArg::Float(1.)),
+            )
+            .unwrap();
+
+        assert_relative_eq!(time_running, 0.1305986895949177);
+        assert_relative_eq!(throughput_factor_zone, 1.);
+    }
 }
