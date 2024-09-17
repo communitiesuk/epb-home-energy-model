@@ -5498,19 +5498,22 @@ mod tests {
         serde_json::from_value(input).unwrap()
     }
 
-    fn create_heat_pump_with_exhaust_input_from_json() -> HeatSourceWetDetails {
+    fn create_heat_pump_with_exhaust_input_from_json(
+        time_delay_backup: f64,
+        temp_return_feed_max: u32,
+    ) -> HeatSourceWetDetails {
         let input = json!({
             "type": "HeatPump",
             "EnergySupply": "mains gas",
             "source_type": "ExhaustAirMixed",
             "sink_type": "Water",
             "backup_ctrl_type": "Substitute",
-            "time_delay_backup": 2.0,
+            "time_delay_backup": time_delay_backup,
             "modulating_control": true,
             "min_modulation_rate_35": 0.35,
             "min_modulation_rate_55": 0.4,
             "time_constant_onoff_operation": 140,
-            "temp_return_feed_max": 70,
+            "temp_return_feed_max": temp_return_feed_max,
             "temp_lower_operating_limit": -5.0,
             "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
             "var_flow_temp_ctrl_during_test": true,
@@ -5828,10 +5831,15 @@ mod tests {
 
     fn create_heat_pump_with_exhaust(
         energy_supply_conn_name_auxiliary: &str,
+        time_delay_backup: Option<f64>,
+        temp_return_feed_max: Option<u32>,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
-        let heat_pump_input = create_heat_pump_with_exhaust_input_from_json();
+        let time_delay_backup = time_delay_backup.unwrap_or(2.);
+        let temp_return_feed_max = temp_return_feed_max.unwrap_or(70);
+        let heat_pump_input =
+            create_heat_pump_with_exhaust_input_from_json(time_delay_backup, temp_return_feed_max);
 
         create_heat_pump(
             heat_pump_input,
@@ -6125,6 +6133,8 @@ mod tests {
 
         let heat_pump_exhaust = create_heat_pump_with_exhaust(
             energy_supply_conn_name_auxiliary,
+            None,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
         );
@@ -6224,6 +6234,8 @@ mod tests {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source";
         let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
             energy_supply_conn_name_auxiliary,
+            None,
+            None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
         );
@@ -6266,6 +6278,8 @@ mod tests {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: exhaust_source_capacity";
         let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
             energy_supply_conn_name_auxiliary,
+            None,
+            None,
             external_conditions,
             simulation_time_for_heat_pump,
         );
@@ -6304,6 +6318,8 @@ mod tests {
 
         let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
             energy_supply_conn_name_auxiliary,
+            None,
+            None,
             external_conditions.clone(),
             simulation_time_for_heat_pump,
         );
@@ -6497,5 +6513,37 @@ mod tests {
 
             heat_pump.lock().timestep_end(t_idx);
         }
+    }
+
+    #[rstest]
+    fn test_outside_operating_limits(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions.clone(),
+            simulation_time_for_heat_pump,
+        );
+
+        let result = heat_pump.outside_operating_limits(
+            300.,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+        assert_eq!(result, false);
+
+        let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
+            &"aux_outside_operating_limit",
+            Some(-1.),
+            Some(10),
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+
+        let result = heat_pump_with_exhaust.outside_operating_limits(
+            300.,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+        assert_eq!(result, true)
     }
 }
