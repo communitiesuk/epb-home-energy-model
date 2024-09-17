@@ -343,7 +343,7 @@ impl Corpus {
                     &controls,
                     &mut energy_supplies,
                     simulation_time_iterator.as_ref(),
-                    &Default::default(),
+                    &wet_heat_sources,
                     &mut heat_system_names_requiring_overvent,
                     &heat_system_name_for_zone,
                     &zones,
@@ -4200,7 +4200,7 @@ fn space_heat_systems_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     simulation_time: &SimulationTimeIterator,
-    heat_sources_wet: &HashMap<String, Arc<WetHeatSource>>,
+    heat_sources_wet: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_name_for_zone: &IndexMap<String, String>,
     zones: &Arc<IndexMap<String, Zone>>,
@@ -4246,7 +4246,7 @@ fn space_heat_systems_from_input(
                         let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
-                        match heat_source.as_ref() {
+                        match heat_source.lock().deref() {
                             WetHeatSource::HeatPump(heat_pump) => {
                                 if heat_pump.lock().source_is_exhaust_air() {
                                     heat_system_names_requiring_overvent.push((*system_name).clone());
