@@ -6691,7 +6691,6 @@ mod tests {
 
         let heat_source_wet_details = create_heat_pump_with_exhaust_input_from_json(2., 70);
 
-        // TODO can we use create_heat_pump_exhaust instaed?
         let mut heat_pump = create_heat_pump(
             heat_source_wet_details,
             energy_supply_conn_name_auxiliary,
@@ -6722,5 +6721,47 @@ mod tests {
 
         assert_relative_eq!(time_running, 0.1305986895949177);
         assert_relative_eq!(throughput_factor_zone, 1.);
+    }
+
+    #[ignore = "Currently deadlocks, test written specifically to expose deadlock issue"]
+    #[rstest]
+    fn test_running_time_throughput_factor_on_service_space_heating_warm_air(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // Check without boiler object and sink type 'AIR'
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: sink_air";
+        let heat_pump_sink_air = create_heat_pump_sink_air(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        );
+        let heat_pump_sink_air = Arc::from(Mutex::from(heat_pump_sink_air));
+
+        let service_name = "service_space_warmair";
+        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![true],
+            0,
+            1.,
+        )));
+        let volume_heated = 250.;
+        let frac_convective = 0.9;
+
+        let heat_pump_service_space_warm_air = HeatPump::create_service_space_heating_warm_air(
+            heat_pump_sink_air.clone(),
+            service_name.to_string(),
+            control,
+            frac_convective,
+            volume_heated,
+        )
+        .unwrap();
+        //energy_demand: f64, space_heat_running_time_cumulative: f64, simulation_time_iteration: SimulationTimeIteration
+        let result = heat_pump_service_space_warm_air.running_time_throughput_factor(
+            0.,
+            0.,
+            simulation_time_for_heat_pump.iter().current_iteration(),
+        );
+
+        assert!(result.is_ok());
     }
 }
