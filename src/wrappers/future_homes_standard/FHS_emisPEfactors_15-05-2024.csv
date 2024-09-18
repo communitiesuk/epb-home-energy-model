@@ -1,0 +1,22 @@
+Fuel Code,Fuel,Emissions Factor kgCO2e/kWh,Emissions Factor kgCO2e/kWh including out-of-scope emissions,Primary Energy Factor kWh/kWh delivered
+electricity,electricity,0.083959064,0.083959064,1.961853329
+electricity_generated,renewable electricity generated on-site,0,0,1
+mains_gas,mains gas,0.213138926,0.213138926,1.118589036
+LPG_bulk,bulk LPG,0.239976004,0.239976004,1.105497142
+LPG_bottled,bottled LPG (for main heating system),0.239976004,0.239976004,1.105497142
+,bottled LPG (for secondary heating),0.239976004,0.239976004,1.105497142
+LPG_condition_11F,LPG subject to Special Condition 11F,0.239976004,0.239976004,1.105497142
+biogas,biogas (including anaerobic digestion),0.02863,0.02863,1.442038473
+,heating oil,0.29830325,0.29830325,1.128807196
+,bio-liquid HVO from used cooking oil,0.032939676,0.032939676,1.010008049
+,bio-liquid FAME from animal/vegetable oils,0.066882852,0.066882852,1.152320902
+,B30K,0.22887713,0.22887713,1.135861307
+,bioethanol from any biomass source,0.098805672,0.098805672,1.348390719
+,house coal,0.403502966,0.403502966,1.078272734
+,anthracite,0.403502966,0.403502966,1.078272734
+,manufactured smokeless fuel,0.403502966,0.403502966,0.934159145
+,wood logs,0.02351,0.02351,1.065316729
+,wood pellets (in bags for secondary heating),0.04818,0.04818,1.306131621
+,wood pellets (bulk supply for main heating),0.04818,0.04818,1.306131621
+,wood chips,0.01866,0.01866,1.068975518
+unmet_demand,energy supply shortfall,0.403502966,0.403502966,1.961853329

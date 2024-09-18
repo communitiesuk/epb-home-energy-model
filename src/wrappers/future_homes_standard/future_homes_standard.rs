@@ -25,12 +25,14 @@ const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
 const _PE_FACTOR_NAME: &str = "Primary Energy Factor kWh/kWh delivered";
 
-pub const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
+pub(crate) const ENERGY_SUPPLY_NAME_GAS: &str = "mains gas";
+pub(crate) const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 const APPL_OBJ_NAME: &str = "appliances";
 const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
 const GAS_COOK_OBJ_NAME: &str = "Gascooking";
 const HW_TIMER_MAIN_NAME: &str = "hw timer";
 const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
+const RANDOM_SEED: u32 = 37;
 
 const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
 const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
@@ -41,6 +43,9 @@ const SIMTIME_STEP: f64 = 0.5;
 fn simtime() -> SimulationTime {
     SimulationTime::new(SIMTIME_START, SIMTIME_END, SIMTIME_STEP)
 }
+
+// Central point for hot water temperature (temp_hot_water) across the code
+const HW_TEMPERATURE: f64 = 52.0;
 
 pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result<()> {
     input.set_simulation_time(simtime());
@@ -89,7 +94,7 @@ lazy_static! {
         let mut factors: HashMap<String, FactorData> = Default::default();
 
         let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
-            "./FHS_emisPEfactors_07-06-2023.csv"
+            "./FHS_emisPEfactors_15-05-2024.csv"
         ))));
         for factor_data in factors_reader.deserialize() {
             let factor_data: FactorData = factor_data.expect("Reading the PE factors file failed.");
