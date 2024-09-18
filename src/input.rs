@@ -364,7 +364,7 @@ impl TryFrom<EnergySupplyType> for FuelType {
 pub enum EnergySupplyType {
     #[serde(rename = "mains elec")]
     Electricity,
-    #[serde(rename = "mains gas")]
+    #[serde(rename = "mains gas", alias = "mains_gas")]
     MainsGas,
     #[serde(rename = "unmet_demand")]
     UnmetDemand,
