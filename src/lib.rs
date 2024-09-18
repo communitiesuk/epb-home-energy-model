@@ -180,6 +180,18 @@ pub fn run_project(
         },
     )?;
 
+    let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
+    let heat_capacity_parameter = corpus.calc_hcp();
+    let heat_loss_form_factor = corpus.calc_hlff();
+
+    write_core_output_file_static(&output, StaticOutputFileArgs {
+        output_key: "results_static".to_string(),
+        heat_transfer_coefficient,
+        heat_loss_parameter,
+        heat_capacity_parameter,
+        heat_loss_form_factor
+    })?;
+
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
         let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
         apply_fhs_postprocessing(
@@ -694,6 +706,8 @@ fn write_core_output_file_summary(
         daily_hw_demand_75th_percentile,
     } = args;
 
+    println!("writing out to {output_key}");
+
     // Electricity breakdown
     let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
         (0.0, 0.0),
@@ -1081,6 +1095,39 @@ fn write_core_output_file_summary(
     }
 
     println!("flushing out summary CSV");
+    writer.flush()?;
+
+    Ok(())
+}
+
+struct StaticOutputFileArgs {
+    output_key: String,
+    heat_transfer_coefficient: f64,
+    heat_loss_parameter: f64,
+    heat_capacity_parameter: f64,
+    heat_loss_form_factor: f64
+}
+
+fn write_core_output_file_static(output: &impl Output, args: StaticOutputFileArgs) -> Result<(), anyhow::Error> {
+    let StaticOutputFileArgs {
+        output_key,
+        heat_transfer_coefficient,
+        heat_loss_parameter,
+        heat_capacity_parameter,
+        heat_loss_form_factor
+    } = args;
+
+    println!("writing out to {output_key}");
+
+    let writer = output.writer_for_location_key(&output_key)?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    writer.write_record(["Heat transfer coefficient".to_owned(), "W / K".to_owned(), heat_transfer_coefficient.to_string() ])?;
+    writer.write_record(["Heat loss parameter".to_owned(), "W / m2.K".to_owned(), heat_loss_parameter.to_string() ])?;
+    writer.write_record(["Heat capacity parameter".to_owned(), "kJ / m2.K".to_owned(), heat_capacity_parameter.to_string() ])?;
+    writer.write_record(["Heat loss form factor".to_owned(), "".to_owned(), heat_loss_form_factor.to_string() ])?;
+
+    println!("flushing out static CSV");
     writer.flush()?;
 
     Ok(())
