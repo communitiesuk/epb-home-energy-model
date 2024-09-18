@@ -7515,7 +7515,7 @@ mod tests {
             );
         }
 
-        // TODO Check wtih backup_ctrl_type Substitute
+        // Check with backup_ctrl_type Substitute
         let heat_pump_with_sub_input = serde_json::from_value(json!(
             {"type": "HeatPump",
                                     "EnergySupply": "mains_gas",
@@ -7963,6 +7963,11 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TODO: add more tests for other call sites of temp_spread_correction_fn:
+    // HeatPumpServiceSpace: energy_output_max
+    // HeatPumpServiceSpace: demand_energy
+    // HeatPumpServiceSpaceWarmAir: running_time_throughput_factor (will this ever be reached though?)
+
     #[rstest]
     fn test_calc_throughput_factor(
         external_conditions: Arc<ExternalConditions>,
@@ -8119,8 +8124,147 @@ mod tests {
         // upstream uses mock to now check demand_energy is delegated to - was not considered that this is useful enough test to migrate
     }
 
-    // TODO: add more tests for other call sites of temp_spread_correction_fn:
-    // HeatPumpServiceSpace: energy_output_max
-    // HeatPumpServiceSpace: demand_energy
-    // HeatPumpServiceSpaceWarmAir: running_time_throughput_factor (will this ever be reached though?)
+    #[rstest]
+    fn test_timestep_end(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        // Call demand_energy function to record the state of variables
+        let heat_pump = Arc::new(Mutex::new(create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        )));
+
+        HeatPump::create_service_connection(heat_pump.clone(), "servicetimestep_demand_energy")
+            .unwrap();
+
+        let mut heat_pump = heat_pump.lock();
+
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+
+        heat_pump
+            .demand_energy(
+                "servicetimestep_demand_energy",
+                &ServiceType::Water,
+                5.0,
+                330.0,
+                330.0,
+                340.0,
+                1560.,
+                true,
+                simtime,
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
+                None,
+                0,
+            )
+            .unwrap();
+
+        assert_relative_eq!(
+            heat_pump.total_time_running_current_timestep,
+            0.7382117932251615
+        );
+
+        let expected_service_results = [ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+            service_name: "servicetimestep_demand_energy".try_into().unwrap(),
+            service_type: ServiceType::Water,
+            service_on: true,
+            energy_output_required: 5.0,
+            temp_output: 330.0,
+            temp_source: 273.15,
+            cop_op_cond: 2.955763623095467,
+            thermal_capacity_op_cond: 6.773123981338176,
+            time_running: 0.7382117932251615,
+            deg_coeff_op_cond: 0.9,
+            compressor_power_min_load: 0.8020240099530431,
+            load_ratio_continuous_min: 0.35,
+            load_ratio: 0.7382117932251615,
+            use_backup_heater_only: false,
+            hp_operating_in_onoff_mode: false,
+            energy_input_hp_divisor: None,
+            energy_input_hp: 1.6916102359916307,
+            energy_delivered_hp: 5.0,
+            energy_input_backup: 0.0,
+            energy_delivered_backup: 0.0,
+            energy_input_total: 1.7100655308222596,
+            energy_delivered_total: 5.0,
+            energy_heating_circ_pump: 0.011073176898377422,
+            energy_source_circ_pump: 0.007382117932251615,
+            energy_output_required_boiler: 0.0,
+            energy_heating_warm_air_fan: 0.,
+            energy_output_delivered_boiler: Some(0.0),
+        }))];
+
+        assert_eq!(
+            *heat_pump.service_results.lock().deref(),
+            expected_service_results
+        );
+
+        // Call the method under test
+        heat_pump.timestep_end(0);
+
+        assert_eq!(heat_pump.total_time_running_current_timestep, 0.);
+        assert_eq!(*heat_pump.service_results.lock().deref(), []);
+    }
+
+    // In Python below test is in a new/separate class called TestHeatPump_HWOnly
+    #[rstest]
+    fn test_calc_efficiency(energy_supply: EnergySupply) {
+        let test_data: HeatPumpHotWaterTestData = HeatPumpHotWaterTestData {
+            l: Some(HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.5,
+                hw_tapping_prof_daily: 11.655,
+                energy_input_measured: 4.6,
+                power_standby: 0.03,
+                hw_vessel_loss_daily: 1.6,
+            }),
+            m: HeatPumpHotWaterOnlyTestDatum {
+                cop_dhw: 2.7,
+                hw_tapping_prof_daily: 5.845,
+                energy_input_measured: 2.15,
+                power_standby: 0.02,
+                hw_vessel_loss_daily: 1.18,
+            },
+        };
+
+        let power_max = 3.0;
+        let vol_daily_average = 150.0;
+        let tank_volume = 200.0;
+        let daily_losses = 1.5;
+        let heat_exchanger_surface_area = 1.2;
+        let in_use_factor_mismatch = 0.6;
+        let tank_volume_declared = 180.0;
+        let heat_exchanger_surface_area_declared = 1.0;
+        let daily_losses_declared = 1.2;
+
+        let energy_supply_connection = EnergySupplyConnection::new(
+            Arc::from(RwLock::from(energy_supply)),
+            "HeatPump: hp".to_owned(),
+        );
+
+        let heat_pump = HeatPumpHotWaterOnly::new(
+            power_max,
+            energy_supply_connection,
+            &test_data,
+            vol_daily_average,
+            tank_volume,
+            daily_losses,
+            heat_exchanger_surface_area,
+            in_use_factor_mismatch,
+            tank_volume_declared,
+            heat_exchanger_surface_area_declared,
+            daily_losses_declared,
+            1.,
+            None,
+        );
+
+        assert_relative_eq!(
+            heat_pump.calc_efficiency(),
+            1.738556406,
+            max_relative = 1e-7
+        );
+    }
 }
