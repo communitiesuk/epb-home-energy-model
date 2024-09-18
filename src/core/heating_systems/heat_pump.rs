@@ -7297,8 +7297,92 @@ mod tests {
             );
         }
 
-        // TODO Check the results with service off and more energy_output_required
+        // Check the results with service off and more energy_output_required
+        let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
+            HeatPumpEnergyCalculation {
+                service_name: "service_erengy_output_required".try_into().unwrap(),
+                service_type: ServiceType::Water,
+                service_on: false,
+                energy_output_required: 50.,
+                temp_output: 330.0,
+                temp_source: 273.15,
+                cop_op_cond: 2.955763623095467,
+                thermal_capacity_op_cond: 6.773123981338176,
+                time_running: 0.0,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: 0.8020240099530431,
+                load_ratio_continuous_min: 0.35,
+                load_ratio: 1.0,
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: false,
+                energy_input_hp_divisor: None,
+                energy_input_hp: 0.0,
+                energy_delivered_hp: 0.0,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: 0.0,
+                energy_delivered_total: 0.0,
+                energy_heating_circ_pump: 0.0,
+                energy_source_circ_pump: 0.0,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            },
+            HeatPumpEnergyCalculation {
+                service_name: "service_erengy_output_required".try_into().unwrap(),
+                service_type: ServiceType::Water,
+                service_on: false,
+                energy_output_required: 50.,
+                temp_output: 330.0,
+                temp_source: 275.65,
+                cop_op_cond: 3.091723311370327,
+                thermal_capacity_op_cond: 6.9608039370972525,
+                time_running: 0.0,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: 0.7880011024997639,
+                load_ratio_continuous_min: 0.35,
+                load_ratio: 1.0,
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: false,
+                energy_input_hp_divisor: None,
+                energy_input_hp: 0.0,
+                energy_delivered_hp: 0.0,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: 0.0,
+                energy_delivered_total: 0.0,
+                energy_heating_circ_pump: 0.0,
+                energy_source_circ_pump: 0.0,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            },
+        ];
 
+        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+            assert_eq!(
+                heat_pump
+                    .run_demand_energy_calc(
+                        "service_erengy_output_required",
+                        &ServiceType::Water,
+                        50.,
+                        330.,
+                        330.,
+                        340.,
+                        1560.,
+                        false,
+                        t_it,
+                        Some(TempSpreadCorrectionArg::Float(1.)),
+                        None,
+                        None,
+                        None,
+                        Some(0.0),
+                        None
+                    )
+                    .unwrap(),
+                expected_energy_calcs[t_idx]
+            );
+        }
         // TODO Check service off with boiler
 
         // TODO Check wtih backup_ctrl_type Substitute
