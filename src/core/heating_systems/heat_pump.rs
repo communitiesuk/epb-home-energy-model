@@ -3782,13 +3782,13 @@ pub(crate) enum HybridBoilerService {
     Space(Arc<Mutex<BoilerServiceSpace>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ServiceResult {
     Full(Box<HeatPumpEnergyCalculation>),
     Aux(AuxiliaryParameters),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HeatPumpEnergyCalculation {
     service_name: ResultString,
     service_type: ServiceType,
@@ -3924,7 +3924,7 @@ impl From<f64> for ResultParamValue {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AuxiliaryParameters {
     _energy_standby: f64,
     _energy_crankcase_heater_mode: f64,
@@ -7990,54 +7990,134 @@ mod tests {
             None,
         )));
 
-        HeatPump::create_service_connection(heat_pump.clone(), "service_anc_energy");
+        HeatPump::create_service_connection(heat_pump.clone(), "service_anc_energy").unwrap();
 
         let mut heat_pump = heat_pump.lock();
 
         let simtime = simulation_time_for_heat_pump.iter().current_iteration();
 
-        heat_pump.demand_energy(
-            "service_anc_energy",
-            &ServiceType::Water,
-            1.0,
-            330.0,
-            330.0,
-            340.0,
-            1560.,
-            true,
-            simtime,
-            Some(TempSpreadCorrectionArg::Float(1.0)),
-            None,
-            None,
-            None,
-            0,
-        );
+        heat_pump
+            .demand_energy(
+                "service_anc_energy",
+                &ServiceType::Water,
+                1.0,
+                330.0,
+                330.0,
+                340.0,
+                1560.,
+                true,
+                simtime,
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
+                None,
+                0,
+            )
+            .unwrap();
 
-        // let ServiceResult::Full(HeatPumpEnergyCalculation {
-        //     energy_input_hp,
-        //     energy_input_total,
-        //     ..
-        // }) = heat_pump.service_results.lock()[0];
+        let (energy_input_hp, energy_input_total) =
+            if let ServiceResult::Full(calc) = &heat_pump.service_results.lock()[0] {
+                let HeatPumpEnergyCalculation {
+                    energy_input_hp,
+                    energy_input_total,
+                    ..
+                } = **calc;
 
-        // assert_eq!(energy_input_hp, 0.3396593649678288);
-        // assert_eq!(energy_input_total, 0.3433504239339546);
+                (energy_input_hp, energy_input_total)
+            } else {
+                unreachable!()
+            };
+
+        assert_eq!(energy_input_hp, 0.3396593649678288);
+        assert_eq!(energy_input_total, 0.3433504239339546);
+
+        heat_pump.calc_ancillary_energy(1., 0.5, 0);
+
+        // Check if the energy_input_HP and energy_input_total were updated correctly
+        let (energy_input_hp, energy_input_total) =
+            if let ServiceResult::Full(calc) = &heat_pump.service_results.lock()[0] {
+                let HeatPumpEnergyCalculation {
+                    energy_input_hp,
+                    energy_input_total,
+                    ..
+                } = **calc;
+
+                (energy_input_hp, energy_input_total)
+            } else {
+                unreachable!()
+            };
+
+        assert_eq!(energy_input_hp, 0.3575707814758846);
+        assert_eq!(energy_input_total, 0.36126184044201043);
     }
 
-    /*
-        def test_calc_ancillary_energy(self):
+    #[rstest]
+    fn test_calc_auxiliary_energy(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
 
+        let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
+            heat_pump.calc_auxiliary_energy(1., 0.5, 0);
 
-        self.assertEqual(self.heat_pump._HeatPump__service_results[0]['energy_input_HP'], 0.3396593649678288)
-        self.assertEqual(self.heat_pump._HeatPump__service_results[0]['energy_input_total'], 0.3433504239339546)
+        assert_eq!(energy_standby, 0.0);
+        assert_eq!(energy_crankcase_heater_mode, 0.0);
+        assert_eq!(energy_off_mode, 0.015);
+    }
 
-        self.heat_pump._HeatPump__calc_ancillary_energy(timestep= 1,
-                                                        time_remaining_current_timestep = 0.5)
+    #[rstest]
+    fn test_extract_energy_from_source(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
 
+        let heat_pump_with_nw = Arc::new(Mutex::new(create_heat_pump_with_heat_network(
+            energy_supply_conn_name_auxiliary,
+            external_conditions,
+            simulation_time_for_heat_pump,
+        )));
 
-        # Check if the energy_input_HP and energy_input_total were updated correctly
-        self.assertEqual(self.heat_pump._HeatPump__service_results[0]['energy_input_HP'], 0.3575707814758846)
-        self.assertEqual(self.heat_pump._HeatPump__service_results[0]['energy_input_total'], 0.36126184044201043 )
-    */
+        HeatPump::create_service_connection(heat_pump_with_nw.clone(), "service_extract_energy")
+            .unwrap();
+
+        let mut heat_pump_with_nw = heat_pump_with_nw.lock();
+
+        let simtime = simulation_time_for_heat_pump.iter().current_iteration();
+
+        heat_pump_with_nw
+            .demand_energy(
+                "service_extract_energy",
+                &ServiceType::Water,
+                1.0,
+                330.0,
+                330.0,
+                340.0,
+                1560.,
+                true,
+                simtime,
+                Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
+                None,
+                0,
+            )
+            .unwrap();
+
+        let test_service_results = heat_pump_with_nw.service_results.lock().clone();
+        // Call the method under test
+        heat_pump_with_nw.extract_energy_from_source(0);
+        let actual_service_results = heat_pump_with_nw.service_results.lock().clone();
+        assert_eq!(actual_service_results, test_service_results);
+
+        // upstream uses mock to now check demand_energy is delegated to - was not considered that this is useful enough test to migrate
+    }
 
     // TODO: add more tests for other call sites of temp_spread_correction_fn:
     // HeatPumpServiceSpace: energy_output_max
