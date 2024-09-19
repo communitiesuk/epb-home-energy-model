@@ -1,5 +1,5 @@
 use crate::core::units::{JOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE};
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 /// This module contains data on the properties of materials, and classes to
 /// organise this data.
@@ -64,10 +64,10 @@ impl MaterialProperties {
     }
 }
 
-lazy_static! {
-    pub static ref WATER: MaterialProperties = MaterialProperties::new(1.0, 4184.0);
-    pub static ref AIR: MaterialProperties = MaterialProperties::new(0.001204, 1006.0);
-}
+pub static WATER: LazyLock<MaterialProperties> =
+    LazyLock::new(|| MaterialProperties::new(1.0, 4184.0));
+pub static AIR: LazyLock<MaterialProperties> =
+    LazyLock::new(|| MaterialProperties::new(0.001204, 1006.0));
 
 #[cfg(test)]
 mod tests {

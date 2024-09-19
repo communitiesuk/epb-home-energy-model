@@ -13,7 +13,6 @@ mod wrappers;
 
 #[macro_use]
 extern crate is_close;
-extern crate lazy_static;
 
 use crate::core::units::convert_profile_to_daily;
 pub use crate::corpus::RunResults;
@@ -28,12 +27,11 @@ use crate::wrappers::future_homes_standard::future_homes_standard::apply_fhs_pre
 use anyhow::anyhow;
 use csv::WriterBuilder;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::Read;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
 use wrappers::future_homes_standard::future_homes_standard_fee::{
     apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
@@ -273,8 +271,8 @@ fn external_conditions_from_input(
     }
 }
 
-lazy_static! {
-    pub static ref UNITS_MAP: IndexMap<&'static str, &'static str> = IndexMap::from([
+pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock::new(|| {
+    IndexMap::from([
         ("internal gains", "[W]"),
         ("solar gains", "[W]"),
         ("operative temp", "[deg C]"),
@@ -283,23 +281,23 @@ lazy_static! {
         ("space cool demand", "[kWh]"),
         (
             "DHW: demand volume (including distribution pipework losses)",
-            "[litres]"
+            "[litres]",
         ),
         (
             "DHW: demand energy (including distribution pipework losses)",
-            "[kWh]"
+            "[kWh]",
         ),
         (
             "DHW: demand energy (excluding distribution pipework losses)",
-            "[kWh]"
+            "[kWh]",
         ),
         ("DHW: total event duration", "[mins]"),
         ("DHW: number of events", "[count]"),
         ("DHW: distribution pipework losses", "[kWh]"),
         ("DHW: primary pipework losses", "[kWh]"),
         ("DHW: storage losses", "[kWh]"),
-    ]);
-}
+    ])
+});
 
 struct OutputFileArgs<'a> {
     output_key: String,

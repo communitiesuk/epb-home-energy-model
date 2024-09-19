@@ -13,7 +13,6 @@ use anyhow::{anyhow, bail};
 use arrayvec::{ArrayString, ArrayVec};
 use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use log::warn;
 use serde::Deserialize;
 use serde_json::{json, Number, Value};
@@ -21,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Cursor, Read};
 use std::iter::{repeat, zip};
 use std::marker::PhantomData;
+use std::sync::LazyLock;
 
 const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
@@ -92,32 +92,35 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     Ok(())
 }
 
-lazy_static! {
-    static ref EMIS_PE_FACTORS: HashMap<String, FactorData> = {
-        let mut factors: HashMap<String, FactorData> = Default::default();
+static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(|| {
+    let mut factors: HashMap<String, FactorData> = Default::default();
 
-        let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
-            "./FHS_emisPEfactors_15-05-2024.csv"
-        ))));
-        for factor_data in factors_reader.deserialize() {
-            let factor_data: FactorData = factor_data.expect("Reading the PE factors file failed.");
-            if let Some(fuel_code) = &factor_data.fuel_code {
-                factors.insert(fuel_code.clone(), factor_data);
-            }
+    let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
+        "./FHS_emisPEfactors_15-05-2024.csv"
+    ))));
+    for factor_data in factors_reader.deserialize() {
+        let factor_data: FactorData = factor_data.expect("Reading the PE factors file failed.");
+        if let Some(fuel_code) = &factor_data.fuel_code {
+            factors.insert(fuel_code.clone(), factor_data);
         }
+    }
 
-        factors
-    };
-    static ref EVAP_PROFILE_DATA: Vec<EvaporativeProfile> =
-        load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
-            .expect("Could not read evap_loss_profile.csv.");
-    static ref COLD_WATER_LOSS_PROFILE_DATA: Vec<EvaporativeProfile> =
-        load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
-            .expect("Could not read cold_water_loss_profile.csv");
-    static ref APPLIANCE_PROPENSITIES: AppliancePropensities<Normalised> =
-        load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
-            .expect("Could not read and parse appliance_propensities.csv");
-}
+    factors
+});
+static EVAP_PROFILE_DATA: LazyLock<Vec<EvaporativeProfile>> = LazyLock::new(|| {
+    load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
+        .expect("Could not read evap_loss_profile.csv.")
+});
+
+static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<Vec<EvaporativeProfile>> = LazyLock::new(|| {
+    load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
+        .expect("Could not read cold_water_loss_profile.csv")
+});
+
+static APPLIANCE_PROPENSITIES: LazyLock<AppliancePropensities<Normalised>> = LazyLock::new(|| {
+    load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
+        .expect("Could not read and parse appliance_propensities.csv")
+});
 
 #[derive(Clone, Debug, Deserialize)]
 struct FactorData {
