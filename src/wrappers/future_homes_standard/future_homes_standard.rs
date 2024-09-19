@@ -20,6 +20,7 @@ use serde_json::{json, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Cursor, Read};
 use std::iter::{repeat, zip};
+use std::marker::PhantomData;
 
 const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
@@ -111,6 +112,9 @@ lazy_static! {
     static ref COLD_WATER_LOSS_PROFILE_DATA: Vec<EvaporativeProfile> =
         load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
             .expect("Could not read cold_water_loss_profile.csv");
+    static ref APPLIANCE_PROPENSITIES: AppliancePropensities<Normalised> =
+        load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
+            .expect("Could not read and parse appliance_propensities.csv");
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -819,6 +823,185 @@ fn create_evaporative_losses(
     )?;
 
     Ok(())
+}
+
+fn load_appliance_propensities(
+    file: impl Read,
+) -> anyhow::Result<AppliancePropensities<Normalised>> {
+    let mut propensities_reader = Reader::from_reader(BufReader::new(file));
+    let appliance_propensities_rows: Vec<AppliancePropensityRow> = propensities_reader
+        .deserialize()
+        .collect::<Result<Vec<AppliancePropensityRow>, _>>()
+        .expect("Could not parse out appliance propensities CSV file correctly.");
+
+    let (
+        hour,
+        occupied,
+        cleaning_washing_machine,
+        cleaning_tumble_dryer,
+        cleaning_dishwasher,
+        cooking_electric_oven,
+        cooking_microwave,
+        cooking_kettle,
+        cooking_gas_cooker,
+        consumer_electronics,
+    ): (
+        [usize; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+        [f64; 24],
+    ) = appliance_propensities_rows.iter().enumerate().fold(
+        Default::default(),
+        |acc, (i, item)| {
+            let (
+                mut hour,
+                mut occupied,
+                mut cleaning_washing_machine,
+                mut cleaning_tumble_dryer,
+                mut cleaning_dishwasher,
+                mut cooking_electric_oven,
+                mut cooking_microwave,
+                mut cooking_kettle,
+                mut cooking_gas_cooker,
+                mut consumer_electronics,
+            ) = acc;
+            hour[i] = item.hour;
+            occupied[i] = item.occupied;
+            cleaning_washing_machine[i] = item.cleaning_washing_machine;
+            cleaning_tumble_dryer[i] = item.cleaning_tumble_dryer;
+            cleaning_dishwasher[i] = item.cleaning_dishwasher;
+            cooking_electric_oven[i] = item.cooking_electric_oven;
+            cooking_microwave[i] = item.cooking_microwave;
+            cooking_kettle[i] = item.cooking_kettle;
+            cooking_gas_cooker[i] = item.cooking_gas_cooker;
+            consumer_electronics[i] = item.consumer_electronics;
+            acc
+        },
+    );
+    Ok(AppliancePropensities {
+        hour: hour.try_into()?,
+        occupied: occupied.try_into()?,
+        cleaning_washing_machine: cleaning_washing_machine.try_into()?,
+        cleaning_tumble_dryer,
+        cleaning_dishwasher,
+        cooking_electric_oven,
+        cooking_microwave,
+        cooking_kettle,
+        cooking_gas_cooker,
+        consumer_electronics,
+        state: Default::default(),
+    }
+    .normalise())
+}
+
+// +    appliance_propensities_file = os.path.join(this_directory, 'appliance_propensities.csv')
+// +    with open(appliance_propensities_file,'r') as appfile:
+// +        appfilereader = csv.DictReader(appfile)
+// +        appliance_propensities = {fieldname:[] for fieldname in appfilereader.fieldnames}
+// +        for row in appfilereader:
+// +            for key in row.keys():
+// +                appliance_propensities[key].append(float(row[key]))
+// +        #normalise appliance propensities, but not occupancy
+// +        for key in list(appliance_propensities.keys())[2:]:
+// +            sumcol = sum(appliance_propensities[key])
+// +            appliance_propensities[key] = [ x / sumcol for x in appliance_propensities[key]]
+
+#[derive(Copy, Clone)]
+struct AppliancePropensities<T> {
+    hour: [usize; 24],
+    occupied: [f64; 24],
+    cleaning_washing_machine: [f64; 24],
+    cleaning_tumble_dryer: [f64; 24],
+    cleaning_dishwasher: [f64; 24],
+    cooking_electric_oven: [f64; 24],
+    cooking_microwave: [f64; 24],
+    cooking_kettle: [f64; 24],
+    cooking_gas_cooker: [f64; 24],
+    consumer_electronics: [f64; 24],
+    state: PhantomData<T>,
+}
+
+impl AppliancePropensities<AsDataFile> {
+    fn normalise(self) -> AppliancePropensities<Normalised> {
+        let AppliancePropensities {
+            cleaning_washing_machine,
+            cleaning_tumble_dryer,
+            cleaning_dishwasher,
+            cooking_electric_oven,
+            cooking_microwave,
+            cooking_kettle,
+            cooking_gas_cooker,
+            consumer_electronics,
+            ..
+        } = self;
+
+        let [cleaning_washing_machine, cleaning_tumble_dryer, cleaning_dishwasher, cooking_electric_oven, cooking_microwave, cooking_kettle, cooking_gas_cooker, consumer_electronics] =
+            [
+                cleaning_washing_machine,
+                cleaning_tumble_dryer,
+                cleaning_dishwasher,
+                cooking_electric_oven,
+                cooking_microwave,
+                cooking_kettle,
+                cooking_gas_cooker,
+                consumer_electronics,
+            ]
+            .into_iter()
+            .map(|probabilities| -> [f64; 24] {
+                let sumcol = probabilities.iter().sum::<f64>();
+                probabilities.map(|x| x / sumcol)
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("Problem normalising appliance propensities.");
+
+        AppliancePropensities {
+            hour: self.hour,
+            occupied: self.occupied,
+            cleaning_washing_machine,
+            cleaning_tumble_dryer,
+            cleaning_dishwasher,
+            cooking_electric_oven,
+            cooking_microwave,
+            cooking_kettle,
+            cooking_gas_cooker,
+            consumer_electronics,
+            state: Default::default(),
+        }
+    }
+}
+
+struct AsDataFile;
+struct Normalised;
+
+#[derive(Deserialize)]
+struct AppliancePropensityRow {
+    #[serde(rename = "Hour")]
+    hour: usize,
+    #[serde(rename = "Occupied prop ( Chance the house is occupied)")]
+    occupied: f64,
+    #[serde(rename = "Cleaning Washing machine Prop")]
+    cleaning_washing_machine: f64,
+    #[serde(rename = "Cleaning Tumble dryer")]
+    cleaning_tumble_dryer: f64,
+    #[serde(rename = "Cleaning Dishwasher")]
+    cleaning_dishwasher: f64,
+    #[serde(rename = "Cooking Electric Oven")]
+    cooking_electric_oven: f64,
+    #[serde(rename = "Cooking Microwave")]
+    cooking_microwave: f64,
+    #[serde(rename = "Cooking Kettle")]
+    cooking_kettle: f64,
+    #[serde(rename = "Cooking Gas Cooker")]
+    cooking_gas_cooker: f64,
+    #[serde(rename = "Consumer Electronics")]
+    consumer_electronics: f64,
 }
 
 /// Calculate the annual energy requirement in kWh using the procedure described in SAP 10.2 up to and including step 9.
