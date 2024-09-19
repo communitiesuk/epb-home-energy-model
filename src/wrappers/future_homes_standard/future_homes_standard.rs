@@ -60,9 +60,11 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     let n_occupants = calc_n_occupants(tfa, nbeds)?;
 
     // construct schedules
-    let (schedule_occupancy_weekday, schedule_occupancy_weekend) = create_occupancy(n_occupants);
+    let (schedule_occupancy_weekday, schedule_occupancy_weekend) =
+        create_occupancy(n_occupants, APPLIANCE_PROPENSITIES.occupied);
 
     create_metabolic_gains(
+        n_occupants,
         input,
         tfa,
         schedule_occupancy_weekday,
@@ -524,23 +526,15 @@ const THREE_BED_OCCUPANCY: f64 = 2.9796;
 const FOUR_BED_OCCUPANCY: f64 = 3.3715;
 const FIVE_BED_OCCUPANCY: f64 = 3.8997;
 
-fn create_occupancy(n_occupants: f64) -> ([f64; 24], [f64; 24]) {
-    let schedule_occupancy_weekday = OCCUPANCY_WEEKDAY_FHS.map(|factor| factor * n_occupants);
-    let schedule_occupancy_weekend = OCCUPANCY_WEEKEND_FHS.map(|factor| factor * n_occupants);
+fn create_occupancy(n_occupants: f64, occupancy_fhs: [f64; 24]) -> ([f64; 24], [f64; 24]) {
+    let schedule_occupancy_weekday = occupancy_fhs.map(|factor| factor * n_occupants);
+    let schedule_occupancy_weekend = occupancy_fhs.map(|factor| factor * n_occupants);
 
     (schedule_occupancy_weekday, schedule_occupancy_weekend)
 }
 
-const OCCUPANCY_WEEKDAY_FHS: [f64; 24] = [
-    1., 1., 1., 1., 1., 1., 0.5, 0.5, 0.5, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.5, 0.5, 0.5, 0.8,
-    0.8, 1., 1., 1.,
-];
-const OCCUPANCY_WEEKEND_FHS: [f64; 24] = [
-    1., 1., 1., 1., 1., 1., 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8,
-    0.8, 1., 1., 1.,
-];
-
 fn create_metabolic_gains(
+    _number_of_occupants: f64,
     input: &mut InputForProcessing,
     total_floor_area: f64,
     schedule_occupancy_weekday: [f64; 24],
