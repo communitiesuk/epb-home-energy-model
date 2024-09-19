@@ -18,7 +18,7 @@ use log::warn;
 use serde::Deserialize;
 use serde_json::{json, Number, Value};
 use std::collections::{HashMap, HashSet};
-use std::io::{BufReader, Cursor};
+use std::io::{BufReader, Cursor, Read};
 use std::iter::{repeat, zip};
 
 const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
@@ -105,6 +105,12 @@ lazy_static! {
 
         factors
     };
+    static ref EVAP_PROFILE_DATA: Vec<EvaporativeProfile> =
+        load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
+            .expect("Could not read evap_loss_profile.csv.");
+    static ref COLD_WATER_LOSS_PROFILE_DATA: Vec<EvaporativeProfile> =
+        load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
+            .expect("Could not read cold_water_loss_profile.csv");
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -754,6 +760,47 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     }
 
     Ok(())
+}
+
+/// Load the daily evaporative profile from a CSV file.
+///
+/// This function reads a CSV file containing time-of-day factors for evaporative losses
+/// for each day of the week. It constructs a dictionary mapping days of the week to
+/// lists of evaporative loss factors.
+///
+/// Arguments:
+///
+///  * `file` - The name of the CSV file containing the evaporative profile data.
+///
+///  Returns:
+///     dict: A dictionary with days of the week as keys and lists of float factors as values.
+fn load_evaporative_profile(file: impl Read) -> anyhow::Result<Vec<EvaporativeProfile>> {
+    let mut profile_reader = Reader::from_reader(BufReader::new(file));
+
+    Ok(profile_reader
+        .deserialize()
+        .collect::<Result<Vec<EvaporativeProfile>, _>>()
+        .map_err(|_| anyhow!("Could not read evaporative profile file."))?)
+}
+
+#[derive(Debug, Deserialize)]
+struct EvaporativeProfile {
+    #[serde(rename = "Half_hour")]
+    half_hour: usize,
+    #[serde(rename = "Mon")]
+    monday: f64,
+    #[serde(rename = "Tue")]
+    tuesday: f64,
+    #[serde(rename = "Wed")]
+    wednesday: f64,
+    #[serde(rename = "Thu")]
+    thursday: f64,
+    #[serde(rename = "Fri")]
+    friday: f64,
+    #[serde(rename = "Sat")]
+    saturday: f64,
+    #[serde(rename = "Sun")]
+    sunday: f64,
 }
 
 fn create_evaporative_losses(
