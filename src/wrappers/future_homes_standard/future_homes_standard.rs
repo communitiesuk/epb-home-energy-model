@@ -10,7 +10,7 @@ use crate::wrappers::future_homes_standard::fhs_hw_events::{
     reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
 };
 use anyhow::{anyhow, bail};
-use arrayvec::{ArrayString, ArrayVec};
+use arrayvec::ArrayString;
 use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
 use log::warn;
@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{json, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Cursor, Read};
-use std::iter::{repeat, zip};
+use std::iter::repeat;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 
@@ -60,16 +60,10 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     let n_occupants = calc_n_occupants(tfa, nbeds)?;
 
     // construct schedules
-    let (schedule_occupancy_weekday, schedule_occupancy_weekend) =
+    let (_schedule_occupancy_weekday, _schedule_occupancy_weekend) =
         create_occupancy(n_occupants, APPLIANCE_PROPENSITIES.occupied);
 
-    create_metabolic_gains(
-        n_occupants,
-        input,
-        tfa,
-        schedule_occupancy_weekday,
-        schedule_occupancy_weekend,
-    )?;
+    create_metabolic_gains(n_occupants, input)?;
     create_water_heating_pattern(input)?;
     create_heating_pattern(input)?;
     create_evaporative_losses(input, tfa, n_occupants)?;
@@ -121,6 +115,19 @@ static APPLIANCE_PROPENSITIES: LazyLock<AppliancePropensities<Normalised>> = Laz
     load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
         .expect("Could not read and parse appliance_propensities.csv")
 });
+
+static METABOLIC_GAINS: LazyLock<MetabolicGains> = LazyLock::new(|| {
+    let (weekday, weekend) = load_metabolic_gains_profile(Cursor::new(include_str!(
+        "./dry_metabolic_gains_profile_Wperm2.csv"
+    )))
+    .expect("Could not load in metabolic gains file.");
+    MetabolicGains { weekday, weekend }
+});
+
+struct MetabolicGains {
+    weekday: [f64; 48],
+    weekend: [f64; 48],
+}
 
 #[derive(Clone, Debug, Deserialize)]
 struct FactorData {
@@ -537,49 +544,62 @@ fn create_occupancy(n_occupants: f64, occupancy_fhs: [f64; 24]) -> ([f64; 24], [
 }
 
 fn create_metabolic_gains(
-    _number_of_occupants: f64,
+    number_of_occupants: f64,
     input: &mut InputForProcessing,
-    total_floor_area: f64,
-    schedule_occupancy_weekday: [f64; 24],
-    schedule_occupancy_weekend: [f64; 24],
-) -> anyhow::Result<(Vec<f64>, Vec<f64>)> {
-    // Profile below is in Watts/m^2 body surface area, average adult has 1.8m^2 surface area
-    // Nighttime metabolic rate based on figure for sleeping from CIBSE Guide A
-    // Daytime metabolic rate based on figures for "seated quiet" from CIBSE Guide A
-    let body_area_average = 1.8;
-    let night = 41.0;
-    let daytime = 58.0;
-    // 7 hours using night figure, 17 hours using daytime
-    let mut metabolic_gains_fhs = ArrayVec::<f64, 24>::new();
-    metabolic_gains_fhs.extend(repeat(night).take(17));
-    metabolic_gains_fhs.extend(repeat(daytime).take(7));
-    let metabolic_gains_fhs: [f64; 24] = metabolic_gains_fhs.into_inner().unwrap();
-    let schedule_metabolic_gains_weekday: Vec<f64> =
-        zip(schedule_occupancy_weekday, metabolic_gains_fhs)
-            .map(|(occupancy, gains)| occupancy * body_area_average * gains / total_floor_area)
-            .collect();
-    let schedule_metabolic_gains_weekend: Vec<f64> =
-        zip(schedule_occupancy_weekend, metabolic_gains_fhs)
-            .map(|(occupancy, gains)| occupancy * body_area_average * gains / total_floor_area)
-            .collect();
+) -> anyhow::Result<()> {
+    // Calculate total body surface area of occupants
+    let a = 2.0001;
+    let b = 0.8492;
+    let total_body_surface_area_occupants = (a * number_of_occupants).powf(b);
+
+    let metabolic_gains_weekday_absolute = METABOLIC_GAINS
+        .weekday
+        .map(|gains| gains * total_body_surface_area_occupants)
+        .to_vec();
+    let metabolic_gains_weekend_absolute = METABOLIC_GAINS
+        .weekend
+        .map(|gains| gains * total_body_surface_area_occupants)
+        .to_vec();
 
     input.set_metabolic_gains(
         0,
-        1.,
+        0.5,
         json!(
             {
                 "main": [{"repeat": 53, "value": "week"}],
                 "week": [{"repeat": 5, "value": "weekday"}, {"repeat": 2, "value": "weekend"}],
-                "weekday": schedule_metabolic_gains_weekday,
-                "weekend": schedule_metabolic_gains_weekend,
+                "weekday": metabolic_gains_weekday_absolute,
+                "weekend": metabolic_gains_weekend_absolute,
             }
         ),
     )?;
 
-    Ok((
-        schedule_metabolic_gains_weekday,
-        schedule_metabolic_gains_weekend,
-    ))
+    Ok(())
+}
+
+fn load_metabolic_gains_profile(file: impl Read) -> anyhow::Result<([f64; 48], [f64; 48])> {
+    let mut metabolic_gains_reader = Reader::from_reader(BufReader::new(file));
+    let rows: Vec<DryMetabolicGainsRow> = metabolic_gains_reader
+        .deserialize()
+        .collect::<Result<Vec<DryMetabolicGainsRow>, _>>()?;
+    Ok(rows
+        .iter()
+        .enumerate()
+        .fold(([0.; 48], [0.; 48]), |mut acc, (i, item)| {
+            acc.0[i] = item.weekday;
+            acc.1[1] = item.weekend;
+            acc
+        })
+        .try_into()?)
+}
+
+#[derive(Deserialize)]
+#[serde(rename = "lowercase")]
+struct DryMetabolicGainsRow {
+    #[serde(rename = "half_hour")]
+    _half_hour: usize,
+    weekday: f64,
+    weekend: f64,
 }
 
 fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
