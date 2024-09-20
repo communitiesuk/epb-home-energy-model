@@ -101,12 +101,12 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
 
     factors
 });
-static EVAP_PROFILE_DATA: LazyLock<Vec<EvaporativeProfile>> = LazyLock::new(|| {
+static EVAP_PROFILE_DATA: LazyLock<EvaporativeProfileData> = LazyLock::new(|| {
     load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
         .expect("Could not read evap_loss_profile.csv.")
 });
 
-static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<Vec<EvaporativeProfile>> = LazyLock::new(|| {
+static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<EvaporativeProfileData> = LazyLock::new(|| {
     load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
         .expect("Could not read cold_water_loss_profile.csv")
 });
@@ -801,13 +801,40 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
 ///
 ///  Returns:
 ///     dict: A dictionary with days of the week as keys and lists of float factors as values.
-fn load_evaporative_profile(file: impl Read) -> anyhow::Result<Vec<EvaporativeProfile>> {
+fn load_evaporative_profile(file: impl Read) -> anyhow::Result<EvaporativeProfileData> {
     let mut profile_reader = Reader::from_reader(BufReader::new(file));
 
-    Ok(profile_reader
+    let rows = profile_reader
         .deserialize()
         .collect::<Result<Vec<EvaporativeProfile>, _>>()
-        .map_err(|_| anyhow!("Could not read evaporative profile file."))?)
+        .map_err(|_| anyhow!("Could not read evaporative profile file."))?;
+
+    let (monday, tuesday, wednesday, thursday, friday, saturday, sunday) =
+        rows.iter().enumerate().fold(
+            (
+                [0.; 48], [0.; 48], [0.; 48], [0.; 48], [0.; 48], [0.; 48], [0.; 48],
+            ),
+            |mut acc, (i, item)| {
+                acc.0[i] = item.monday;
+                acc.1[i] = item.tuesday;
+                acc.2[i] = item.wednesday;
+                acc.3[i] = item.thursday;
+                acc.4[i] = item.friday;
+                acc.5[i] = item.saturday;
+                acc.6[i] = item.sunday;
+                acc
+            },
+        );
+
+    Ok(EvaporativeProfileData {
+        monday,
+        tuesday,
+        wednesday,
+        thursday,
+        friday,
+        saturday,
+        sunday,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -828,6 +855,16 @@ struct EvaporativeProfile {
     saturday: f64,
     #[serde(rename = "Sun")]
     sunday: f64,
+}
+
+struct EvaporativeProfileData {
+    monday: [f64; 48],
+    tuesday: [f64; 48],
+    wednesday: [f64; 48],
+    thursday: [f64; 48],
+    friday: [f64; 48],
+    saturday: [f64; 48],
+    sunday: [f64; 48],
 }
 
 fn create_evaporative_losses(
