@@ -737,9 +737,15 @@ enum ControlType {
     Type3,
 }
 
+/// water heating pattern - if system is not instantaneous, hold at setpoint
+/// 00:00-02:00 and then reheat as necessary 24/7
+/// Note: Holding at setpoint for two hours has been chosen because
+/// typical setting is for sterilisation cycle to last one hour, but the
+/// model can only set a maximum and minimum setpoint temperaure, not
+/// guarantee that the temperature is actually reached. Therefore, setting
+/// the minimum to the maximum for two hours allows time for the tank
+/// to heat up to the required temperature before being held there
 fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    // water heating pattern - if system is not instantaneous, hold at setpoint
-    // 00:00-07:00 and then reheat as necessary 24/7
     input.add_control(
         HW_TIMER_MAIN_NAME,
         json!({
@@ -761,8 +767,8 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
             "schedule": {
                 "main": [{"value": "day", "repeat": 365}],
                 "day": [
-                    {"value": true, "repeat": 14},
-                    {"value": false, "repeat": 34}
+                    {"value": true, "repeat": 4},
+                    {"value": false, "repeat": 44}
                 ]
             }
         }),
