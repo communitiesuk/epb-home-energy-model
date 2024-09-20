@@ -86,16 +86,6 @@
     "HotWaterSource": {
       "$ref": "#/definitions/HotWaterSource"
     },
-    "Infiltration": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Infiltration"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "InfiltrationVentilation": {
       "$ref": "#/definitions/InfiltrationVentilation"
     },
@@ -321,13 +311,39 @@
         "energy_supply": {
           "$ref": "#/definitions/EnergySupplyType"
         },
+        "events": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/ApplianceGainsDetailsEvent"
+          }
+        },
         "gains_fraction": {
           "type": "number",
           "format": "double"
         },
+        "load_shifting": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApplianceLoadShifting"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "schedule": {
           "type": "object",
           "additionalProperties": true
+        },
+        "standby": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         },
         "start_day": {
           "type": "integer",
@@ -351,6 +367,29 @@
       },
       "additionalProperties": false
     },
+    "ApplianceGainsDetailsEvent": {
+      "type": "object",
+      "required": [
+        "demand_w",
+        "duration",
+        "start"
+      ],
+      "properties": {
+        "demand_w": {
+          "type": "number",
+          "format": "double"
+        },
+        "duration": {
+          "type": "number",
+          "format": "double"
+        },
+        "start": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false
+    },
     "ApplianceLoadShifting": {
       "type": "object",
       "required": [
@@ -363,12 +402,32 @@
           "type": "number",
           "format": "double"
         },
+        "demand_timeseries": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
         "max_shift_hrs": {
           "type": "number",
           "format": "double"
         },
         "weight": {
           "type": "string"
+        },
+        "weight_timeseries": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
         }
       },
       "additionalProperties": false
@@ -741,20 +800,6 @@
             },
             "floor_type": {
               "$ref": "#/definitions/FloorType"
-            },
-            "h_pe": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double"
-            },
-            "h_pi": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double"
             },
             "height_basement_walls": {
               "type": [
@@ -1731,6 +1776,16 @@
           ],
           "format": "uint32",
           "minimum": 0.0
+        },
+        "wind_directions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
         },
         "wind_speeds": {
           "type": [
@@ -3053,145 +3108,12 @@
         }
       ]
     },
-    "Infiltration": {
-      "type": "object",
-      "required": [
-        "blocked_chimneys",
-        "build_type",
-        "closed_fire",
-        "env_area",
-        "extract_fans",
-        "flues_d",
-        "flues_e",
-        "gas_fires",
-        "open_chimneys",
-        "open_flues",
-        "passive_vents",
-        "shelter",
-        "sheltered_sides",
-        "storeys_in_building",
-        "test_result",
-        "test_type",
-        "volume"
-      ],
-      "properties": {
-        "blocked_chimneys": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "build_type": {
-          "$ref": "#/definitions/InfiltrationBuildType"
-        },
-        "closed_fire": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "env_area": {
-          "type": "number",
-          "format": "double"
-        },
-        "extract_fans": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "flues_d": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "flues_e": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "gas_fires": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "open_chimneys": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "open_flues": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "passive_vents": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "shelter": {
-          "$ref": "#/definitions/InfiltrationShelterType"
-        },
-        "sheltered_sides": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "storey_of_dwelling": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "storeys_in_building": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "test_result": {
-          "type": "number",
-          "format": "double"
-        },
-        "test_type": {
-          "$ref": "#/definitions/InfiltrationTestType"
-        },
-        "volume": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "additionalProperties": false
-    },
-    "InfiltrationBuildType": {
-      "type": "string",
-      "enum": [
-        "house",
-        "flat"
-      ]
-    },
-    "InfiltrationShelterType": {
-      "type": "string",
-      "enum": [
-        "verysheltered",
-        "sheltered",
-        "normal",
-        "exposed"
-      ]
-    },
-    "InfiltrationTestType": {
-      "type": "string",
-      "enum": [
-        "50Pa",
-        "4Pa"
-      ]
-    },
     "InfiltrationVentilation": {
       "type": "object",
       "required": [
         "CombustionAppliances",
         "Cowls",
         "Leaks",
-        "MechanicalVentilation",
         "PDUs",
         "Vents",
         "altitude",
@@ -3231,7 +3153,10 @@
           "$ref": "#/definitions/VentilationLeaks"
         },
         "MechanicalVentilation": {
-          "type": "object",
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": {
             "$ref": "#/definitions/MechanicalVentilation"
           }
@@ -4348,13 +4273,6 @@
         "ventilation_zone_height"
       ],
       "properties": {
-        "altitude": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        },
         "area_facades": {
           "type": [
             "number",
