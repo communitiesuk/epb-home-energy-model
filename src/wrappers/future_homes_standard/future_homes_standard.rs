@@ -66,7 +66,7 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     create_metabolic_gains(n_occupants, input)?;
     create_water_heating_pattern(input)?;
     create_heating_pattern(input)?;
-    create_evaporative_losses(input, tfa, n_occupants)?;
+    create_evaporative_losses(input, tfa, n_occupants, &EVAP_PROFILE_DATA)?;
     create_lighting_gains(input, tfa, n_occupants)?;
     create_cooking_gains(input, tfa, n_occupants)?;
     create_appliance_gains(input, tfa, n_occupants)?;
@@ -840,7 +840,7 @@ fn load_evaporative_profile(file: impl Read) -> anyhow::Result<EvaporativeProfil
 #[derive(Debug, Deserialize)]
 struct EvaporativeProfile {
     #[serde(rename = "Half_hour")]
-    half_hour: usize,
+    _half_hour: usize,
     #[serde(rename = "Mon")]
     monday: f64,
     #[serde(rename = "Tue")]
@@ -867,18 +867,62 @@ struct EvaporativeProfileData {
     sunday: [f64; 48],
 }
 
+/// Apply the evaporative loss profile to modify the base evaporative loss across a full year.
+///
+/// This function takes the base evaporative loss and modifies it according to the provided
+/// daily profile for each day of the week. It extends this profile throughout the year,
+/// adjusting for any discrepancies in the week cycle (e.g., leap years).
+///
+/// Arguments:
+///     * `input` - The main project dictionary where results are stored.
+///     * `total_floor_area` - Total floor area used in the base loss calculation.
+///     * `number_of_occupants` - Number of occupants used in the base loss calculation.
+///     * `evaporative_profile_data` - Daily evaporative loss profiles loaded from a CSV file.
+///
+/// Effects:
+///     Modifies the input in-place by setting a detailed schedule for evaporative losses.
 fn create_evaporative_losses(
     input: &mut InputForProcessing,
-    total_floor_area: f64,
+    _total_floor_area: f64,
     number_of_occupants: f64,
+    evaporative_profile_data: &EvaporativeProfileData,
 ) -> anyhow::Result<()> {
-    let evaporative_losses_fhs = -40. * number_of_occupants / total_floor_area;
+    // Base evaporative loss calculation
+    let evaporative_losses_fhs = -25. * number_of_occupants;
+
+    // Prepare to populate a full-year schedule of gains adjusted by the profile
+    let mut evaporative_losses_schedule: Vec<f64> = Vec::with_capacity(18000);
+
+    // Repeat for each week in a standard year
+    evaporative_losses_schedule.extend(
+        evaporative_profile_data
+            .monday
+            .iter()
+            .chain(evaporative_profile_data.tuesday.iter())
+            .chain(evaporative_profile_data.wednesday.iter())
+            .chain(evaporative_profile_data.thursday.iter())
+            .chain(evaporative_profile_data.friday.iter())
+            .chain(evaporative_profile_data.saturday.iter())
+            .chain(evaporative_profile_data.sunday.iter())
+            .map(|factor| evaporative_losses_fhs * factor)
+            .cycle()
+            .take(48 * 7 * 52), // number of half-hour periods in 52 weeks
+    );
+
+    // Handle the extra days in the year not covered by the full weeks
+    // Adjust based on the year (e.g., extra Monday for leap years)
+    evaporative_losses_schedule.extend(
+        evaporative_profile_data
+            .monday
+            .iter()
+            .map(|factor| evaporative_losses_fhs * factor),
+    );
 
     input.set_evaporative_losses(
         0,
-        1.,
+        0.5,
         json!({
-            "main": [{"value": evaporative_losses_fhs, "repeat": 8760}]
+            "main": evaporative_losses_schedule,
         }),
     )?;
 
@@ -959,18 +1003,6 @@ fn load_appliance_propensities(
     }
     .normalise())
 }
-
-// +    appliance_propensities_file = os.path.join(this_directory, 'appliance_propensities.csv')
-// +    with open(appliance_propensities_file,'r') as appfile:
-// +        appfilereader = csv.DictReader(appfile)
-// +        appliance_propensities = {fieldname:[] for fieldname in appfilereader.fieldnames}
-// +        for row in appfilereader:
-// +            for key in row.keys():
-// +                appliance_propensities[key].append(float(row[key]))
-// +        #normalise appliance propensities, but not occupancy
-// +        for key in list(appliance_propensities.keys())[2:]:
-// +            sumcol = sum(appliance_propensities[key])
-// +            appliance_propensities[key] = [ x / sumcol for x in appliance_propensities[key]]
 
 #[derive(Copy, Clone)]
 struct AppliancePropensities<T> {
