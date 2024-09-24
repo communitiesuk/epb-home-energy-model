@@ -1,4 +1,6 @@
+use crate::core::units::DAYS_IN_MONTH;
 use crate::corpus::{KeyString, ResultsEndUser};
+use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
     EnergySupplyDetails, FuelType, HeatSourceControlType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
@@ -101,12 +103,12 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
 
     factors
 });
-static EVAP_PROFILE_DATA: LazyLock<EvaporativeProfileData> = LazyLock::new(|| {
+static EVAP_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> = LazyLock::new(|| {
     load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
         .expect("Could not read evap_loss_profile.csv.")
 });
 
-static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<EvaporativeProfileData> = LazyLock::new(|| {
+static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> = LazyLock::new(|| {
     load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
         .expect("Could not read cold_water_loss_profile.csv")
 });
@@ -801,12 +803,12 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
 ///
 ///  Returns:
 ///     dict: A dictionary with days of the week as keys and lists of float factors as values.
-fn load_evaporative_profile(file: impl Read) -> anyhow::Result<EvaporativeProfileData> {
+fn load_evaporative_profile(file: impl Read) -> anyhow::Result<HalfHourWeeklyProfileData> {
     let mut profile_reader = Reader::from_reader(BufReader::new(file));
 
     let rows = profile_reader
         .deserialize()
-        .collect::<Result<Vec<EvaporativeProfile>, _>>()
+        .collect::<Result<Vec<HalfHourWeeklyProfile>, _>>()
         .map_err(|_| anyhow!("Could not read evaporative profile file."))?;
 
     let (monday, tuesday, wednesday, thursday, friday, saturday, sunday) =
@@ -826,7 +828,7 @@ fn load_evaporative_profile(file: impl Read) -> anyhow::Result<EvaporativeProfil
             },
         );
 
-    Ok(EvaporativeProfileData {
+    Ok(HalfHourWeeklyProfileData {
         monday,
         tuesday,
         wednesday,
@@ -838,7 +840,7 @@ fn load_evaporative_profile(file: impl Read) -> anyhow::Result<EvaporativeProfil
 }
 
 #[derive(Debug, Deserialize)]
-struct EvaporativeProfile {
+struct HalfHourWeeklyProfile {
     #[serde(rename = "Half_hour")]
     _half_hour: usize,
     #[serde(rename = "Mon")]
@@ -857,7 +859,7 @@ struct EvaporativeProfile {
     sunday: f64,
 }
 
-struct EvaporativeProfileData {
+struct HalfHourWeeklyProfileData {
     monday: [f64; 48],
     tuesday: [f64; 48],
     wednesday: [f64; 48],
@@ -885,7 +887,7 @@ fn create_evaporative_losses(
     input: &mut InputForProcessing,
     _total_floor_area: f64,
     number_of_occupants: f64,
-    evaporative_profile_data: &EvaporativeProfileData,
+    evaporative_profile_data: &HalfHourWeeklyProfileData,
 ) -> anyhow::Result<()> {
     // Base evaporative loss calculation
     let evaporative_losses_fhs = -25. * number_of_occupants;
@@ -923,6 +925,68 @@ fn create_evaporative_losses(
         0.5,
         json!({
             "main": evaporative_losses_schedule,
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Apply the cold water loss profile to modify the base cold water loss across a full year.
+///
+/// This function takes the base cold water loss and modifies it according to the provided
+/// daily profile for each day of the week. It extends this profile throughout the year,
+/// adjusting for any discrepancies in the weekly cycle (e.g., leap years).
+///
+/// Arguments:
+///     * `input` - The main project dictionary where results are stored.
+///     * `total_floor_area` - Total floor area used in the base loss calculation.
+///     * `number_of_occupants` - Number of occupants used in the base loss calculation.
+///     * `cold_water_loss_profile_data` - Daily cold water loss profiles loaded from a CSV file.
+///
+/// Effects:
+///    Modifies the project_dict in-place by setting a detailed schedule for cold water losses.
+fn create_cold_water_losses(
+    input: &mut InputForProcessing,
+    _total_floor_area: f64,
+    number_of_occupants: f64,
+    cold_water_loss_profile_data: &HalfHourWeeklyProfileData,
+) -> anyhow::Result<()> {
+    // Base cold water loss calculation
+    let cold_water_losses_fhs = -20. * number_of_occupants;
+
+    // Prepare to populate a full-year schedule of gains adjusted by the profile
+    let mut cold_water_losses_schedule: Vec<f64> = Vec::with_capacity(18000);
+
+    // Repeat for each week in a standard year
+    cold_water_losses_schedule.extend(
+        cold_water_loss_profile_data
+            .monday
+            .iter()
+            .chain(cold_water_loss_profile_data.tuesday.iter())
+            .chain(cold_water_loss_profile_data.wednesday.iter())
+            .chain(cold_water_loss_profile_data.thursday.iter())
+            .chain(cold_water_loss_profile_data.friday.iter())
+            .chain(cold_water_loss_profile_data.saturday.iter())
+            .chain(cold_water_loss_profile_data.sunday.iter())
+            .map(|factor| cold_water_losses_fhs * factor)
+            .cycle()
+            .take(48 * 7 * 52), // number of half-hour periods in 52 weeks
+    );
+
+    // Handle the extra days in the year not covered by the full weeks
+    // Adjust based on the year (e.g., extra Monday for leap years)
+    cold_water_losses_schedule.extend(
+        cold_water_loss_profile_data
+            .monday
+            .iter()
+            .map(|factor| cold_water_losses_fhs * factor),
+    );
+
+    input.set_cold_water_losses(
+        0,
+        0.5,
+        json!({
+            "main": cold_water_losses_schedule
         }),
     )?;
 
@@ -1100,6 +1164,7 @@ struct AppliancePropensityRow {
 /// Divide this by 365 to get the average daily energy use.
 /// Multiply the daily energy consumption figure by the following profiles to
 /// create a daily profile for each month of the year (to be applied to all days in that month).
+/// Multiply by the daylighting at each half hourly timestep to correct for incidence of daylight.
 fn create_lighting_gains(
     input: &mut InputForProcessing,
     total_floor_area: f64,
@@ -1122,21 +1187,31 @@ fn create_lighting_gains(
         bail!("invalid/missing lighting efficacy for all zones");
     }
 
-    // fron analysis of EFUS 2017 data
-    let lumens = 1_418. * (total_floor_area * number_of_occupants).powf(0.41);
+    // from analysis of EFUS 2017 data (updated to derive from harmonic mean)
+    let lumens = 1_139. * (total_floor_area * number_of_occupants).powf(0.39);
 
     // dropped 1/3 - 2/3 split based on SAP2012 assumptions about portable lighting
     let kwh_per_year = lumens / lighting_efficacy;
     let kwh_per_day = kwh_per_year / 365.;
+    let factor = daylight_factor(input, total_floor_area)?;
+
+    let annual_half_hour_profile: Vec<f64> = DAYS_IN_MONTH
+        .iter()
+        .enumerate()
+        .flat_map(|(month, days)| (0..*days).map(move |_| month))
+        .flat_map(|month| AVERAGE_MONTHLY_LIGHTING_HALF_HOUR_PROFILES[month])
+        .collect();
 
     // To obtain the lighting gains,
     // the above should be converted to Watts by multiplying the individual half-hourly figure by (2 x 1000).
     // Since some lighting energy will be used in external light
     // (e.g. outdoor security lights or lights in unheated spaces like garages and sheds)
     // a factor of 0.85 is also applied to get the internal gains from lighting.
-    let [lighting_gains_w_jan, lighting_gains_w_feb, lighting_gains_w_mar, lighting_gains_w_apr, lighting_gains_w_may, lighting_gains_w_jun, lighting_gains_w_jul, lighting_gains_w_aug, lighting_gains_w_sep, lighting_gains_w_oct, lighting_gains_w_nov, lighting_gains_w_dec] =
-        AVERAGE_MONTHLY_LIGHTING_HALF_HOUR_PROFILES
-            .map(|monthly_profile| monthly_profile.map(|frac| (frac * kwh_per_day) * 2. * 1_000.));
+    let lighting_gains_w: Vec<f64> = annual_half_hour_profile
+        .into_iter()
+        .enumerate()
+        .map(|(i, profile)| (profile * kwh_per_day * factor[i]) * 2. * 1_000.)
+        .collect();
 
     input.set_lighting_gains(json!({
         "type": "lighting",
@@ -1145,32 +1220,7 @@ fn create_lighting_gains(
         "gains_fraction": 0.85,
         "EnergySupply": ENERGY_SUPPLY_NAME_ELECTRICITY,
         "schedule": {
-            "main": [
-                {"value": "jan", "repeat": 31},
-                {"value": "feb", "repeat": 28},
-                {"value": "mar", "repeat": 31},
-                {"value": "apr", "repeat": 30},
-                {"value": "may", "repeat": 31},
-                {"value": "jun", "repeat": 30},
-                {"value": "jul", "repeat": 31},
-                {"value": "aug", "repeat": 31},
-                {"value": "sep", "repeat": 30},
-                {"value": "oct", "repeat": 31},
-                {"value": "nov", "repeat": 30},
-                {"value": "dec", "repeat": 31},
-            ],
-            "jan": lighting_gains_w_jan.to_vec(),
-            "feb": lighting_gains_w_feb.to_vec(),
-            "mar": lighting_gains_w_mar.to_vec(),
-            "apr": lighting_gains_w_apr.to_vec(),
-            "may": lighting_gains_w_may.to_vec(),
-            "jun": lighting_gains_w_jun.to_vec(),
-            "jul": lighting_gains_w_jul.to_vec(),
-            "aug": lighting_gains_w_aug.to_vec(),
-            "sep": lighting_gains_w_sep.to_vec(),
-            "oct": lighting_gains_w_oct.to_vec(),
-            "nov": lighting_gains_w_nov.to_vec(),
-            "dec": lighting_gains_w_dec.to_vec(),
+            "main": lighting_gains_w
         }
     }))?;
 
@@ -1806,6 +1856,138 @@ fn create_cold_water_feed_temps(input: &mut InputForProcessing) -> anyhow::Resul
     )?;
 
     Ok(output_feed_temp)
+}
+
+fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow::Result<Vec<f64>> {
+    let mut total_area = vec![0.; simtime().total_steps()];
+
+    let data: Vec<Vec<f64>> = input
+        .all_transparent_building_elements()
+        .iter()
+        .map(|el| match el {
+            crate::input::BuildingElement::Transparent {
+                orientation,
+                g_value,
+                frame_area_fraction,
+                base_height,
+                height,
+                width,
+                shading,
+                ..
+            } => {
+                let ff = *frame_area_fraction;
+                let g_val = *g_value;
+                let width = *width;
+                let height = *height;
+                let base_height = *base_height;
+                let orientation = *orientation;
+                let w_area = width * height;
+                // retrieve half-hourly shading factor
+                let direct =
+                    shading_factor(input, base_height, height, width, orientation, shading)?;
+                let area = 0.9 * w_area * (1. - ff) * g_val;
+                Ok(direct.iter().map(|factor| factor * area).collect())
+            }
+            _ => unreachable!(),
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    for idx in data {
+        for (t, gl) in idx.into_iter().enumerate() {
+            total_area[t] += gl;
+        }
+    }
+
+    // calculate Gl for each half hourly timestep
+    Ok((0..(total_area.len()))
+        .map(|i| {
+            let gl = total_area[i] / total_floor_area;
+
+            if gl > 0.095 {
+                0.96
+            } else {
+                52.2 * gl.powi(2) - 9.94 * gl + 1.433
+            }
+        })
+        .collect())
+}
+
+fn shading_factor(
+    input: &InputForProcessing,
+    base_height: f64,
+    height: f64,
+    width: f64,
+    orientation: f64,
+    shading: &[WindowShadingObject],
+) -> anyhow::Result<Vec<f64>> {
+    // there is code in the upstream Python to convert orientations from -180 to +180 (anticlockwise) to 0-360 (clockwise)
+    // but the Rust input code has already implicitly performed this conversion on the way in, so we don't need to do it here
+
+    let time = simtime();
+
+    let input_external_conditions = input.external_conditions();
+
+    let dir_beam_conversion = input_external_conditions
+        .direct_beam_conversion_needed
+        .is_some_and(|x| x);
+
+    let conditions = ExternalConditions::new(
+        &time.iter(),
+        input_external_conditions
+            .air_temperatures
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions
+            .wind_speeds
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions
+            .wind_directions
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions
+            .diffuse_horizontal_radiation
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions
+            .direct_beam_radiation
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions
+            .solar_reflectivity_of_ground
+            .as_ref()
+            .unwrap()
+            .to_vec(),
+        input_external_conditions.latitude.unwrap(),
+        input_external_conditions.longitude.unwrap(),
+        0,
+        0,
+        Some(365),
+        1.,
+        None,
+        DaylightSavingsConfig::NotApplicable,
+        false,
+        dir_beam_conversion,
+        input_external_conditions.shading_segments.to_vec(),
+    );
+
+    time.iter()
+        .map(|t_it| {
+            conditions.direct_shading_reduction_factor(
+                base_height,
+                height,
+                width,
+                orientation,
+                Some(shading),
+                t_it,
+            )
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy)]

@@ -100,6 +100,8 @@ pub struct InternalGains {
     #[serde(alias = "metabolic gains")]
     pub metabolic_gains: Option<InternalGainsDetails>,
     pub evaporative_losses: Option<InternalGainsDetails>,
+    #[serde(rename = "ColdWaterLosses")]
+    pub cold_water_losses: Option<InternalGainsDetails>,
     pub other: Option<InternalGainsDetails>,
 }
 
@@ -2469,6 +2471,21 @@ impl InputForProcessing {
         Ok(self)
     }
 
+    pub(crate) fn set_cold_water_losses(
+        &mut self,
+        start_day: u32,
+        time_series_step: f64,
+        schedule_json: Value,
+    ) -> anyhow::Result<&Self> {
+        self.input.internal_gains.cold_water_losses = Some(InternalGainsDetails {
+            start_day,
+            time_series_step,
+            schedule: serde_json::from_value(schedule_json)?,
+        });
+
+        Ok(self)
+    }
+
     pub fn heating_control_type(&self) -> Option<HeatingControlType> {
         self.input.heating_control_type
     }
@@ -3025,6 +3042,19 @@ impl InputForProcessing {
             energy_supply.electric_battery = None;
         }
         self
+    }
+
+    pub(crate) fn external_conditions(&self) -> Arc<ExternalConditionsInput> {
+        self.input.external_conditions.clone()
+    }
+
+    pub(crate) fn all_transparent_building_elements(&self) -> Vec<&BuildingElement> {
+        self.input
+            .zone
+            .values()
+            .flat_map(|zone| zone.building_elements.values())
+            .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
+            .collect()
     }
 }
 

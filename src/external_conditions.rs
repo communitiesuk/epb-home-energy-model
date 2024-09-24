@@ -803,7 +803,7 @@ impl ExternalConditions {
         self.solar_altitudes[simulation_time.current_hour() as usize]
     }
 
-    fn direct_shading_reduction_factor(
+    pub(crate) fn direct_shading_reduction_factor(
         &self,
         base_height: f64,
         height: f64,
