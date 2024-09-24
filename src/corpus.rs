@@ -1419,7 +1419,7 @@ impl Corpus {
                 hc_output_convective[h_name.as_str()] + hc_output_radiative[h_name.as_str()]
             })
             .sum::<f64>();
-        let gains_cool = h_name_list_sorted
+        let gains_cool = c_name_list_sorted
             .iter()
             .map(|c_name| {
                 hc_output_convective[c_name.as_str()] + hc_output_radiative[c_name.as_str()]
