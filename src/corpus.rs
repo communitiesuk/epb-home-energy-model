@@ -3538,6 +3538,7 @@ fn heat_source_wet_from_input(
             let throughput_exhaust_air = if source_type.is_exhaust_air() {
                 // Check that ventilation system is compatible with exhaust air HP
                 // the Python code here will assign to throughput_exhaust_air on the last iteration, though mech vents collection is not ordered - this may be erroneous
+                // reported to BRE as possible bug https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45508
                 let mut throughput_exhaust_air: Option<f64> = Default::default();
                 for mech_vent in mechanical_ventilations.values() {
                     match mech_vent.vent_type() {
