@@ -8,6 +8,7 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Value};
 use serde_valid::Validate;
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
 use std::sync::Arc;
@@ -61,7 +62,7 @@ pub struct Input {
     pub general: General,
     pub infiltration_ventilation: InfiltrationVentilation,
     #[serde(rename = "Appliances")]
-    pub _appliances: Option<IndexMap<String, ApplianceEntry>>,
+    pub appliances: Option<IndexMap<String, ApplianceEntry>>,
     pub tariff: Option<Tariff>,
 }
 
@@ -316,7 +317,7 @@ pub enum SecondarySupplyType {
 /// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
 /// in the input examples, so keeping them separate for the time being
 /// (It's also hard to see some of these as types of fuel)
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FuelType {
@@ -2362,6 +2363,52 @@ pub struct Appliance {
     pub(crate) kwh_per_cycle: Option<f64>,
 }
 
+impl Appliance {
+    pub(crate) fn with_energy_supply(energy_supply: EnergySupplyType, kwh_per_cycle: f64) -> Self {
+        Self {
+            kwh_per_100_cycle: None,
+            load_shifting: None,
+            kg_load: None,
+            kwh_per_annum: None,
+            energy_supply: Some(energy_supply),
+            kwh_per_cycle: Some(kwh_per_cycle),
+        }
+    }
+
+    pub(crate) fn with_kwh_per_cycle(kwh_per_cycle: f64) -> Self {
+        Self {
+            kwh_per_100_cycle: None,
+            load_shifting: None,
+            kg_load: None,
+            kwh_per_annum: None,
+            energy_supply: None,
+            kwh_per_cycle: Some(kwh_per_cycle),
+        }
+    }
+
+    pub(crate) fn with_kwh_per_annum(kwh_per_annum: f64) -> Self {
+        Self {
+            kwh_per_100_cycle: None,
+            load_shifting: None,
+            kg_load: None,
+            kwh_per_annum: Some(kwh_per_annum),
+            energy_supply: None,
+            kwh_per_cycle: None,
+        }
+    }
+
+    pub(crate) fn with_kwh_per_100_cycle(kwh_per_100_cycle: f64, kg_load: Option<f64>) -> Self {
+        Self {
+            kwh_per_100_cycle: Some(kwh_per_100_cycle),
+            load_shifting: None,
+            kg_load,
+            kwh_per_annum: None,
+            energy_supply: None,
+            kwh_per_cycle: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2375,7 +2422,7 @@ pub struct ApplianceLoadShifting {
     pub demand_timeseries: Option<Vec<f64>>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ApplianceReference {
     Default,
@@ -3055,6 +3102,60 @@ impl InputForProcessing {
             .flat_map(|zone| zone.building_elements.values())
             .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
             .collect()
+    }
+
+    pub(crate) fn all_energy_supply_fuel_types(&self) -> HashSet<FuelType> {
+        let mut fuel_types: HashSet<FuelType> = Default::default();
+        for energy_supply in self.input.energy_supply.values() {
+            fuel_types.insert(energy_supply.fuel);
+        }
+
+        fuel_types
+    }
+
+    pub(crate) fn has_appliances(&self) -> bool {
+        self.input.appliances.is_some()
+    }
+
+    pub(crate) fn merge_in_appliances(&mut self, appliances: &IndexMap<String, Appliance>) {
+        let mut appliances: IndexMap<String, ApplianceEntry> = appliances
+            .iter()
+            .map(|(k, v)| (k.to_owned(), ApplianceEntry::Object(v.clone())))
+            .collect();
+        if let Some(ref mut existing_appliances) = self.input.appliances.as_mut() {
+            existing_appliances.append(&mut appliances);
+        } else {
+            self.input.appliances = Some(appliances);
+        }
+    }
+
+    pub(crate) fn remove_appliance(&mut self, appliance_name: &str) {
+        if let Some(ref mut appliances) = self.input.appliances.as_mut() {
+            appliances.shift_remove_entry(appliance_name);
+        }
+    }
+
+    pub(crate) fn appliances_contain_name(&self, name: &str) -> bool {
+        self.input
+            .appliances
+            .as_ref()
+            .is_some_and(|appliances| appliances.contains_key(name))
+    }
+
+    pub(crate) fn appliance_name_has_reference(
+        &self,
+        name: &str,
+        reference: &ApplianceReference,
+    ) -> bool {
+        self.input.appliances.as_ref().is_some_and(|appliances| {
+            appliances.get(name).is_some_and(|appliance| {
+                if let ApplianceEntry::Reference(appliance_reference) = appliance {
+                    appliance_reference == reference
+                } else {
+                    false
+                }
+            })
+        })
     }
 }
 

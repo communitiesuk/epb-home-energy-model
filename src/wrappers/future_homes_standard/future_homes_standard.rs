@@ -2,15 +2,16 @@ use crate::core::units::DAYS_IN_MONTH;
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
-    EnergySupplyDetails, FuelType, HeatSourceControlType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
-    WaterHeatingEvent, WaterHeatingEventType,
+    Appliance, ApplianceReference, EnergySupplyDetails, EnergySupplyType, FuelType,
+    HeatSourceControlType, HeatingControlType, HotWaterSourceDetailsForProcessing, Input,
+    InputForProcessing, SpaceHeatControlType, WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
 use crate::wrappers::future_homes_standard::fhs_hw_events::{
     reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
 };
+use crate::HOURS_TO_END_DEC;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use csv::{Reader, WriterBuilder};
@@ -70,8 +71,7 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     create_heating_pattern(input)?;
     create_evaporative_losses(input, tfa, n_occupants, &EVAP_PROFILE_DATA)?;
     create_lighting_gains(input, tfa, n_occupants)?;
-    create_cooking_gains(input, tfa, n_occupants)?;
-    create_appliance_gains(input, tfa, n_occupants)?;
+    create_appliance_gains(input, tfa, n_occupants, &APPLIANCE_PROPENSITIES)?;
 
     for source_key in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(&source_key);
@@ -591,8 +591,7 @@ fn load_metabolic_gains_profile(file: impl Read) -> anyhow::Result<([f64; 48], [
             acc.0[i] = item.weekday;
             acc.1[1] = item.weekend;
             acc
-        })
-        .try_into()?)
+        }))
 }
 
 #[derive(Deserialize)]
@@ -1053,9 +1052,9 @@ fn load_appliance_propensities(
         },
     );
     Ok(AppliancePropensities {
-        hour: hour.try_into()?,
-        occupied: occupied.try_into()?,
-        cleaning_washing_machine: cleaning_washing_machine.try_into()?,
+        hour,
+        occupied,
+        cleaning_washing_machine,
         cleaning_tumble_dryer,
         cleaning_dishwasher,
         cooking_electric_oven,
@@ -1160,6 +1159,89 @@ struct AppliancePropensityRow {
     consumer_electronics: f64,
 }
 
+struct FlatAnnualPropensities {
+    cleaning_washing_machine: [f64; HOURS_TO_END_DEC as usize],
+    cleaning_tumble_dryer: [f64; HOURS_TO_END_DEC as usize],
+    cleaning_dishwasher: [f64; HOURS_TO_END_DEC as usize],
+    cooking_electric_oven: [f64; HOURS_TO_END_DEC as usize],
+    cooking_microwave: [f64; HOURS_TO_END_DEC as usize],
+    cooking_kettle: [f64; HOURS_TO_END_DEC as usize],
+    cooking_gas_cooker: [f64; HOURS_TO_END_DEC as usize],
+    consumer_electronics: [f64; HOURS_TO_END_DEC as usize],
+}
+
+impl From<&AppliancePropensities<Normalised>> for FlatAnnualPropensities {
+    fn from(value: &AppliancePropensities<Normalised>) -> Self {
+        let hours_in_year = HOURS_TO_END_DEC as usize;
+        Self {
+            cleaning_washing_machine: value
+                .cleaning_washing_machine
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cleaning_tumble_dryer: value
+                .cleaning_tumble_dryer
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cleaning_dishwasher: value
+                .cleaning_dishwasher
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cooking_electric_oven: value
+                .cooking_electric_oven
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cooking_microwave: value
+                .cooking_microwave
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cooking_kettle: value
+                .cooking_kettle
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            cooking_gas_cooker: value
+                .cooking_gas_cooker
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            consumer_electronics: value
+                .consumer_electronics
+                .into_iter()
+                .cycle()
+                .take(hours_in_year)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        }
+    }
+}
+
 /// Calculate the annual energy requirement in kWh using the procedure described in SAP 10.2 up to and including step 9.
 /// Divide this by 365 to get the average daily energy use.
 /// Multiply the daily energy consumption figure by the following profiles to
@@ -1227,145 +1309,157 @@ fn create_lighting_gains(
     Ok(())
 }
 
-fn create_cooking_gains(
-    input: &mut InputForProcessing,
-    _total_floor_area: f64,
-    number_of_occupants: f64,
-) -> anyhow::Result<()> {
-    // check for gas and/or electric cooking. Remove any existing objects
-    // so that we can add our own (just one for gas and one for elec)
-    let cooking_fields = input.appliance_gains_fields_for_cooking();
-    let mut cooking_energy_supplies = HashSet::new();
-    for field in cooking_fields.iter() {
-        if let Some(energy_supply_type) = input.energy_supply_type_for_appliance_gains_field(field)
-        {
-            cooking_energy_supplies.insert(energy_supply_type);
-        }
-        input.reset_appliance_gains_field(field)?;
-    }
-
-    // from the cooking energy supplies, need to find the associated fuel they use
-    let mut cooking_fuels = HashSet::new();
-    for supply in cooking_energy_supplies.iter() {
-        if let Ok(fuel_type) = input.fuel_type_for_energy_supply_field(supply) {
-            cooking_fuels.insert(fuel_type);
-        }
-    }
-
-    let (ec1_elec, ec2_elec, ec1_gas, ec2_gas) = match (
-        cooking_fuels.contains("electricity"),
-        cooking_fuels.contains("mains_gas"),
-    ) {
-        (true, true) => (86, 49, 150, 86),
-        (_, true) => (0, 0, 299, 171),
-        (true, _) => (171, 98, 0, 0),
-        _ => (0, 0, 0, 0),
-    };
-
-    let annual_cooking_elec_kwh = ec1_elec as f64 + ec2_elec as f64 * number_of_occupants;
-    let annual_cooking_gas_kwh = ec1_gas as f64 + ec2_gas as f64 * number_of_occupants;
-
-    // energy consumption, W_m2, gains factor not applied
-    let cooking_elec_profile_w = COOKING_PROFILE_FHS
-        .map(|half_hour| (1_000 * 2) as f64 * annual_cooking_elec_kwh / 365. * half_hour);
-    let cooking_gas_profile_w = COOKING_PROFILE_FHS
-        .map(|half_hour| (1_000 * 2) as f64 * annual_cooking_gas_kwh / 365. * half_hour);
-
-    // add back gas and electric cooking gains if they are present
-    if cooking_fuels.contains("mains_gas") {
-        input.set_gains_for_field(
-            GAS_COOK_OBJ_NAME,
-            json!({
-                "type": "cooking",
-                "EnergySupply": "mains gas",
-                "start_day": 0,
-                "time_series_step": 0.5,
-                "gains_fraction": 0.5,
-                "schedule": {
-                    "main": [{"repeat": 365, "value": "day"}],
-                    "day": cooking_gas_profile_w.to_vec()
-                }
-            }),
-        )?;
-    }
-    if cooking_fuels.contains("electricity") {
-        input.set_gains_for_field(
-            ELEC_COOK_OBJ_NAME,
-            json!({
-                "type": "cooking",
-                "EnergySupply": "mains elec",
-                "start_day": 0,
-                "time_series_step": 0.5,
-                "gains_fraction": 0.5,
-                "schedule": {
-                    "main": [{"repeat": 365, "value": "day"}],
-                    "day": cooking_elec_profile_w.to_vec()
-                }
-            }),
-        )?;
-    }
-
-    Ok(())
-}
-
 fn create_appliance_gains(
     input: &mut InputForProcessing,
     total_floor_area: f64,
     number_of_occupants: f64,
+    appliance_propensities: &AppliancePropensities<Normalised>,
 ) -> anyhow::Result<()> {
-    // old relation based on sap2012, efus 1998 data verified in 2013
-    // EA_annual_kWh = 207.8 * (TFA * N_occupants) ** 0.4714
+    // create flattened year-long versions of energy use profiles
+    let flat_efus_profile: Vec<f64> = DAYS_IN_MONTH
+        .iter()
+        .enumerate()
+        .flat_map(|(month, days)| (0..*days).map(move |_| month))
+        .flat_map(|month| AVERAGE_MONTHLY_APPLIANCES_HOURLY_PROFILES[month])
+        .collect();
 
-    // new relation based on analysis of EFUS 2017 monitoring data
-    let ea_annual_kwh = 145. * (total_floor_area * number_of_occupants).powf(0.49);
+    let flat_annual_propensities: FlatAnnualPropensities = appliance_propensities.into();
 
-    let appliance_gains_w = AVERAGE_MONTHLY_APPLIANCES_HALF_HOUR_PROFILES
-        .map(|month| month.map(|frac| 1_000. * ea_annual_kwh * frac / 365.));
+    // TODO (from Python) change to enum
+    // TODO (from Python) check appliances are named correctly and what to do if not?
+    //
+    // let appliance_map =
 
-    input.set_gains_for_field(
-        APPL_OBJ_NAME,
-        json!({
-            "type": "appliances",
-            "EnergySupply": ENERGY_SUPPLY_NAME_ELECTRICITY,
-            "start_day": 0,
-            "time_series_step": 1,
-            // Internal gains are reduced from washer/dryers and dishwasher waste heat losses.
-            // Assume 70% of their heat is lost as waste heat in waste water or vented hot air,
-            // or 30% of total appliance energy, leaving 70% appliance gains fraction
-            "gains_fraction": 0.7,
-            "schedule": {
-                // watts
-                "main": [
-                    {"value": "jan", "repeat": 31},
-                    {"value": "feb", "repeat": 28},
-                    {"value": "mar", "repeat": 31},
-                    {"value": "apr", "repeat": 30},
-                    {"value": "may", "repeat": 31},
-                    {"value": "jun", "repeat": 30},
-                    {"value": "jul", "repeat": 31},
-                    {"value": "aug", "repeat": 31},
-                    {"value": "sep", "repeat": 30},
-                    {"value": "oct", "repeat": 31},
-                    {"value": "nov", "repeat": 30},
-                    {"value": "dec", "repeat": 31},
-                ],
-                "jan": appliance_gains_w[0].to_vec(),
-                "feb": appliance_gains_w[1].to_vec(),
-                "mar": appliance_gains_w[2].to_vec(),
-                "apr": appliance_gains_w[3].to_vec(),
-                "may": appliance_gains_w[4].to_vec(),
-                "jun": appliance_gains_w[5].to_vec(),
-                "jul": appliance_gains_w[6].to_vec(),
-                "aug": appliance_gains_w[7].to_vec(),
-                "sep": appliance_gains_w[8].to_vec(),
-                "oct": appliance_gains_w[9].to_vec(),
-                "nov": appliance_gains_w[10].to_vec(),
-                "dec": appliance_gains_w[11].to_vec()
-            }
-        }),
-    )?;
+    // add any missing required appliances to the assessment,
+    // get default demand figures for any unknown appliances
+    appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
 
     Ok(())
+}
+
+fn appliance_cooking_defaults(
+    input: &mut InputForProcessing,
+    number_of_occupants: f64,
+    total_floor_area: f64,
+) -> (IndexMap<String, Appliance>, IndexMap<String, Appliance>) {
+    let cooking_fuels = input.all_energy_supply_fuel_types();
+
+    // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
+    let mut cooking_defaults: IndexMap<String, Appliance> = match (
+        cooking_fuels.contains(&FuelType::Electricity),
+        cooking_fuels.contains(&FuelType::MainsGas),
+    ) {
+        (true, true) => IndexMap::from([
+            (
+                "Oven".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+            ),
+            (
+                "Hobs".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+            ),
+        ]),
+        (_, true) => IndexMap::from([
+            (
+                "Oven".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+            ),
+            (
+                "Hobs".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+            ),
+        ]),
+        (true, _) => IndexMap::from([
+            (
+                "Oven".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+            ),
+            (
+                "Hobs".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+            ),
+        ]),
+        _ => IndexMap::from([
+            (
+                "Oven".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+            ),
+            (
+                "Hobs".to_owned(),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+            ),
+        ]),
+    };
+
+    let additional_cooking_defaults = IndexMap::from([
+        ("Kettle".to_owned(), Appliance::with_kwh_per_cycle(0.1)),
+        ("Microwave".to_owned(), Appliance::with_kwh_per_cycle(0.08)),
+    ]);
+
+    let appliance_defaults = IndexMap::from([
+        (
+            "Otherdevices".to_owned(),
+            Appliance::with_kwh_per_annum(
+                30.0 * (number_of_occupants * total_floor_area).powf(0.49),
+            ),
+        ),
+        (
+            "Dishwasher".to_owned(),
+            Appliance::with_kwh_per_100_cycle(92.0, None),
+        ),
+        (
+            "Clothes_washing".to_owned(),
+            Appliance::with_kwh_per_100_cycle(79.0, Some(7.0)),
+        ),
+        (
+            "Clothes_drying".to_owned(),
+            Appliance::with_kwh_per_100_cycle(213.0, Some(7.0)),
+        ),
+        ("Fridge".to_owned(), Appliance::with_kwh_per_annum(223.0)),
+        ("Freezer".to_owned(), Appliance::with_kwh_per_annum(209.0)),
+    ]);
+
+    if !input.has_appliances() {
+        input.merge_in_appliances(&appliance_defaults);
+        input.merge_in_appliances(&cooking_defaults);
+        input.merge_in_appliances(&additional_cooking_defaults);
+    } else {
+        for appliance_name in appliance_defaults.keys() {
+            if !input.appliances_contain_name(appliance_name)
+                || input.appliance_name_has_reference(appliance_name, &ApplianceReference::Default)
+            {
+                input.merge_in_appliances(&IndexMap::from([(
+                    appliance_name.to_owned(),
+                    appliance_defaults[appliance_name].clone(),
+                )]));
+            } else if input
+                .appliance_name_has_reference(appliance_name, &ApplianceReference::NotInstalled)
+            {
+                input.remove_appliance(appliance_name);
+            }
+        }
+        if !cooking_defaults
+            .keys()
+            .any(|cooking_appliance_name| input.appliances_contain_name(cooking_appliance_name))
+        {
+            // neither cooker nor oven specified, add cooker as minimum requirement
+            // NB. upstream Python looks to be erroneous here (does not specify a dict with the key of "Hobs"), but implementing what appears to be the intent
+            input.merge_in_appliances(&IndexMap::from([(
+                "Hobs".to_owned(),
+                cooking_defaults["Hobs"].clone(),
+            )]));
+        }
+    }
+
+    (appliance_defaults, cooking_defaults)
+}
+
+fn appliance_kwh_cycle_loading_factor(
+    input: &InputForProcessing,
+    appliance_name: &str,
+    appliance_map: &IndexMap<String, Appliance>,
+) -> (Option<f64>, f64) {
+    todo!()
 }
 
 /// Check (almost an assert) whether the shower flow rate is not less than the minimum allowed.
@@ -2651,7 +2745,7 @@ const COOKING_PROFILE_FHS: [f64; 48] = [
     0.001139293,
 ];
 
-const AVERAGE_MONTHLY_APPLIANCES_HALF_HOUR_PROFILES: [[f64; 24]; 12] = [
+const AVERAGE_MONTHLY_APPLIANCES_HOURLY_PROFILES: [[f64; 24]; 12] = [
     [
         0.025995114,
         0.023395603,
