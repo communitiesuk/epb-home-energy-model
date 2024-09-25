@@ -3002,7 +3002,8 @@ fn infiltration_ventilation_from_input(
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
             if mech_vents_data.vent_type == VentType::Mvhr {
-                // the Python nixes the ductwork map here, perhaps erroneously?
+                // the upstream Python incorrectly nixes the ductwork map here. it's fixed on more-recent-than-0.30 versions of upstream HEM,
+                // so keep this in place for now and delete this comment when fixing 😉
                 space_heating_ductwork = Default::default();
                 space_heating_ductwork.insert(
                     mech_vents_name.to_owned(),
