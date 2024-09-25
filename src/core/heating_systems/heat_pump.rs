@@ -2678,11 +2678,11 @@ impl HeatPump {
             }
         }
 
-        let result = self.time_running_continuous
+        
+        self.time_running_continuous
             >= self
                 .time_delay_backup
-                .expect("time delay backup was expected to be set");
-        result
+                .expect("time delay backup was expected to be set")
     }
 
     /// Check if heat pump is outside operating limits

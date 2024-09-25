@@ -19,7 +19,7 @@ use indexmap::IndexMap;
 use log::warn;
 use serde::Deserialize;
 use serde_json::{json, Number, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
 use std::iter::repeat;
 use std::marker::PhantomData;
@@ -1345,7 +1345,7 @@ fn appliance_cooking_defaults(
     let cooking_fuels = input.all_energy_supply_fuel_types();
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
-    let mut cooking_defaults: IndexMap<String, Appliance> = match (
+    let cooking_defaults: IndexMap<String, Appliance> = match (
         cooking_fuels.contains(&FuelType::Electricity),
         cooking_fuels.contains(&FuelType::MainsGas),
     ) {
