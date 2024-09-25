@@ -2851,7 +2851,8 @@ fn infiltration_ventilation_from_input(
                                 mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
                                 max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
                                 window_part_list.as_ref().unwrap_or(&vec![]).clone(),
-                                // running orientation through init_orientation again to convert it back to "orientation360" value, which is expected by the Python (possibly erroneously?)
+                                // running orientation through init_orientation again to convert it back to "orientation360" value, which is expected by the Python
+                                // (orientation_difference function this is used within expects values in 0-360 degree range)
                                 init_orientation(*orientation),
                                 *pitch,
                                 input.altitude,
