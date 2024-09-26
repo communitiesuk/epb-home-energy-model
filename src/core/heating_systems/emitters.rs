@@ -1,6 +1,7 @@
 use crate::compare_floats::max_of_2;
 use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::space_heat_demand::zone::Zone;
+use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
@@ -27,7 +28,7 @@ pub struct Emitters {
     temp_diff_emit_dsgn: f64,
     frac_convective: f64,
     heat_source: Arc<SpaceHeatingService>,
-    zone: Arc<Zone>,
+    temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     design_flow_temp: f64,
     ecodesign_controller_class: EcoDesignControllerClass,
@@ -64,7 +65,7 @@ impl Emitters {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         heat_source: Arc<SpaceHeatingService>,
-        zone: Arc<Zone>,
+        temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
@@ -94,7 +95,7 @@ impl Emitters {
             temp_diff_emit_dsgn,
             frac_convective,
             heat_source,
-            zone,
+            temp_internal_air_fn,
             external_conditions,
             design_flow_temp,
             ecodesign_controller_class,
@@ -247,7 +248,20 @@ impl Emitters {
     //
     //     let temp_diff_start = temp_emitter_start - temp_rm;
     // }
+
+    /// Demand energy from emitters and calculate how much energy can be provided
+    /// Arguments:
+    /// energy_demand -- in kWh
     fn demand_energy(&self, energy_demand: f64) -> f64 {
+        // timestep = self.__simtime.timestep()
+        // temp_rm_prev = self.__zone.temp_internal_air()
+        // # Calculate target flow and return temperature
+        // temp_flow_target, temp_return_target = self.temp_flow_return()
+        // temp_emitter_max = (temp_flow_target + temp_return_target) / 2.0
+        // self.__target_flow_temp = temp_flow_target
+
+        // emitters_data_for_buffer_tank = None
+
         todo!()
     }
 }
@@ -256,18 +270,26 @@ impl Emitters {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use parking_lot::RwLock;
     use rstest::fixture;
     use rstest::rstest;
 
+    use crate::core::controls::time_control::Control;
+    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
     use crate::core::heating_systems::boiler::Boiler;
+    use crate::core::heating_systems::boiler::BoilerServiceSpace;
     use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
     use crate::core::heating_systems::common::HeatSourceWet;
     use crate::core::space_heat_demand::zone::Zone;
     use crate::corpus::HeatSource;
     use crate::external_conditions::DaylightSavingsConfig;
+    use crate::external_conditions::ShadingSegment;
     use crate::input::EnergySupplyType;
+    use crate::input::FuelType;
+    use crate::input::HeatSourceLocation;
     use crate::input::HeatSourceWetDetails;
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
@@ -278,24 +300,103 @@ mod tests {
     }
 
     #[fixture]
-    pub(crate) fn external_conditions() -> ExternalConditions {
-        todo!();
+    pub(crate) fn external_conditions(
+        simulation_time: SimulationTimeIterator,
+    ) -> ExternalConditions {
+        let simulation_time_iterator = simulation_time;
+        let wind_speeds = vec![3.7, 3.8];
+        let wind_directions = vec![200., 220.];
+        let air_temps = vec![0.0, 2.5];
+        let diffuse_horizontal_radiations = vec![333., 610.];
+        let direct_beam_radiations = vec![420., 750.];
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                objects: None,
+            },
+        ];
+        ExternalConditions::new(
+            &simulation_time_iterator,
+            air_temps,
+            wind_speeds,
+            wind_directions,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            vec![0.2; 8760],
+            51.42,
+            -0.75,
+            0,
+            0,
+            None,
+            1.0,
+            Some(1),
+            DaylightSavingsConfig::NotApplicable,
+            false,
+            false,
+            shading_segments,
+        )
     }
 
     #[fixture]
-    pub(crate) fn heat_source() -> SpaceHeatingService {
-        todo!();
-    }
+    pub(crate) fn heat_source(
+        simulation_time: SimulationTimeIterator,
+        external_conditions: ExternalConditions,
+    ) -> SpaceHeatingService {
+        let boiler_details = HeatSourceWetDetails::Boiler {
+            energy_supply: EnergySupplyType::MainsGas,
+            energy_supply_auxiliary: EnergySupplyType::Electricity,
+            rated_power: 24.,
+            efficiency_full_load: 0.891,
+            efficiency_part_load: 0.991,
+            boiler_location: HeatSourceLocation::Internal,
+            modulation_load: 0.3,
+            electricity_circ_pump: 0.06,
+            electricity_part_load: 0.0131,
+            electricity_full_load: 0.0388,
+            electricity_standby: 0.0244,
+        };
+        let energy_supply = Arc::from(RwLock::from(EnergySupply::new(
+            FuelType::MainsGas,
+            simulation_time.total_steps(),
+            None,
+            None,
+            None,
+        )));
 
-    #[fixture]
-    pub(crate) fn zone() -> Zone {
-        todo!();
+        let energy_supply_conn_aux =
+            EnergySupplyConnection::new(energy_supply.clone(), "end_user_name".into());
+
+        let boiler = Boiler::new(
+            boiler_details,
+            energy_supply,
+            energy_supply_conn_aux,
+            external_conditions.into(),
+            1., // TODO is this correct?
+        )
+        .unwrap();
+
+        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
+            vec![],
+            0,
+            0.,
+        )));
+
+        let boiler_service_space = BoilerServiceSpace::new(boiler, "service_name".into(), control);
+
+        SpaceHeatingService::Boiler(boiler_service_space)
     }
 
     #[fixture]
     pub(crate) fn emitters(
         heat_source: SpaceHeatingService,
-        zone: Zone,
         external_conditions: ExternalConditions,
     ) -> Emitters {
         let thermal_mass = 0.14;
@@ -303,7 +404,7 @@ mod tests {
         let n = 1.2;
         let temp_diff_emit_dsgn = 10.0;
         let frac_convective = 0.4;
-
+        let canned_value = 20.;
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
@@ -323,7 +424,7 @@ mod tests {
             temp_diff_emit_dsgn,
             frac_convective,
             heat_source.into(),
-            zone.into(),
+            Arc::new(move || canned_value),
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
@@ -353,6 +454,20 @@ mod tests {
                     0.9419772896929609,
                     0.915353814620655,
                     0.7639281136418886
+                ][t_idx]
+            );
+
+            assert_relative_eq!(
+                emitters.temp_emitter_prev,
+                [
+                    35.96557640041081,
+                    47.20238095238095,
+                    47.20238095238095,
+                    47.20238095238095,
+                    44.78422619047619,
+                    44.78422619047619,
+                    43.67306169524251,
+                    38.21643231208616
                 ][t_idx]
             )
         }
