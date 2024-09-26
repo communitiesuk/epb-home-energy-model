@@ -1417,6 +1417,7 @@ pub(crate) struct EcoDesignController {
 
 #[derive(Debug, Deserialize_repr, PartialEq)]
 #[repr(u8)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub(crate) enum EcoDesignControllerClass {
     // exact possible classes tbc
     ClassI = 1,
