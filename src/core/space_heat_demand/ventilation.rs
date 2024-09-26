@@ -1242,6 +1242,7 @@ impl MechanicalVentilation {
             }
             SupplyAirFlowRateControlType::Load => {
                 // NOTE - this is not currently implemented in the Python code
+                // reported up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45523
                 unimplemented!("calc_mech_vent_air_flw_rates_req_to_supply_vent_zone is not implemented for SupplyAirFlowRateControlType::Load")
             }
         };
