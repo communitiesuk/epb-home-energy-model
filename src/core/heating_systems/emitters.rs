@@ -1,10 +1,10 @@
 use crate::compare_floats::max_of_2;
 use crate::core::heating_systems::common::SpaceHeatingService;
-use crate::core::space_heat_demand::zone::Zone;
 use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
+use std::collections::HashMap;
 // use bacon_sci::ivp::{RungeKuttaSolver, RK45};
 use std::sync::Arc;
 
@@ -30,6 +30,7 @@ pub struct Emitters {
     heat_source: Arc<SpaceHeatingService>,
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
+    with_buffer_tank: bool,
     design_flow_temp: f64,
     ecodesign_controller_class: EcoDesignControllerClass,
     min_outdoor_temp: Option<f64>,
@@ -38,6 +39,7 @@ pub struct Emitters {
     max_flow_temp: Option<f64>,
     simulation_timestep: f64,
     temp_emitter_prev: f64,
+    target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
 }
 
 impl Emitters {
@@ -70,6 +72,7 @@ impl Emitters {
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
         simulation_timestep: f64,
+        with_buffer_tank: bool,
     ) -> Self {
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
         let (min_outdoor_temp, max_outdoor_temp, min_flow_temp, max_flow_temp) = if matches!(
@@ -97,6 +100,7 @@ impl Emitters {
             heat_source,
             temp_internal_air_fn,
             external_conditions,
+            with_buffer_tank,
             design_flow_temp,
             ecodesign_controller_class,
             min_outdoor_temp,
@@ -105,6 +109,7 @@ impl Emitters {
             max_flow_temp,
             simulation_timestep,
             temp_emitter_prev: 20.0,
+            target_flow_temp: None,
         }
     }
 
@@ -249,20 +254,139 @@ impl Emitters {
     //     let temp_diff_start = temp_emitter_start - temp_rm;
     // }
 
+    fn energy_required_from_heat_source(
+        &self,
+        energy_demand: f64,
+        timestep: f64,
+        temp_rm_prev: f64,
+        temp_emitter_max: f64,
+        temp_return: f64,
+    ) -> (f64, bool, Option<HashMap<&str, f64>>) {
+        // When there is some demand, calculate max. emitter temperature
+        // achievable and emitter temperature required, and base calculation
+        // on the lower of the two.
+        // TODO The final calculation of emitter temperature below assumes
+        // constant power output from heating source over the timestep.
+        // It does not account for:
+        // - overshoot/undershoot and then stabilisation of emitter temp.
+        // This leads to emitter temp at end of timestep not exactly
+        // matching temp_emitter_target.
+        // - On warm-up, calculate max. temp achievable, then cap at target
+        // and record time this is reached, then assume target temp is
+        // maintained? Would there be an overshoot to make up for
+        // underheating during warm-up?
+        // - On cool-down to lower target temp, calculate lowest temp achieveable,
+        // with target temp as floor and record time this is reached, then
+        // assume target temp is maintained? Would there be an undershoot
+        // to make up for overheating during cool-down?
+        // - other services being served by heat source (e.g. DHW) as a
+        // higher priority. This may cause intermittent operation or
+        // delayed start which could cause the emitters to cool
+        // through part of the timestep. We could assume that all the
+        // time spent on higher priority services is at the start of
+        // the timestep and run solve_ivp for time periods 0 to
+        // higher service running time (with no heat input) and higher
+        // service running time to timestep end (with heat input). However,
+        // this may not be realistic where there are multiple space
+        // heating services which in reality would be running at the same
+        // time.
+
+        // Calculate emitter temperature required
+        let power_emitter_req = energy_demand / timestep;
+        let temp_emitter_req = self.temp_emitter_req(power_emitter_req, temp_rm_prev);
+
+        // Calculate extra energy required for emitters to reach temp required
+        let energy_req_to_warm_emitters =
+            self.thermal_mass * (temp_emitter_req - self.temp_emitter_prev);
+        // Calculate energy input required to meet energy demand
+        let energy_req_from_heat_source =
+            max_of_2(energy_req_to_warm_emitters + energy_demand, 0.0);
+        // potential demand from buffer tank
+
+        let energy_req_from_buffer_tank = energy_req_from_heat_source;
+
+        // === Limit energy to account for maximum emitter temperature ===
+        let mut emitters_data_for_buffer_tank: Option<HashMap<&str, f64>> = None;
+        let mut energy_provided_by_heat_source_max_min: f64 = Default::default();
+        // if (self.temp_emitter_prev > temp_emitter_max) {
+        // If emitters are already above max. temp for this timestep,
+        // then heat source should provide no energy until emitter temp
+        // falls to maximum
+        // energy_provided_by_heat_source_max_min = 0.0;
+        // }
+        if (self.temp_emitter_prev <= temp_emitter_max) {
+            // If emitters are below max. temp for this timestep, then max energy
+            // required from heat source will depend on maximum warm-up rate,
+            // which depends on the maximum energy output from the heat source
+
+            if (self.with_buffer_tank) {
+                // Call to HeatSourceServiceSpace with buffer_tank relevant data
+                emitters_data_for_buffer_tank = Some(HashMap::from([
+                    ("temp_emitter_req", temp_emitter_req),
+                    (
+                        "power_req_from_buffer_tank",
+                        energy_req_from_buffer_tank / timestep,
+                    ),
+                    ("design_flow_temp", self.design_flow_temp),
+                    (
+                        "target_flow_temp",
+                        self.target_flow_temp
+                            .expect("Expect a target_flow_temp to have been set at this point"),
+                    ),
+                    ("temp_rm_prev", temp_rm_prev),
+                ]));
+
+                // (
+                //     energy_provided_by_heat_source_max_min,
+                //     emitters_data_for_buffer_tank,
+                // ) = self.heat_source.energy_output_max(
+                //     temp_emitter_max,
+                //     temp_return,
+                //     emitters_data_for_buffer_tank,
+                // );
+            }
+        }
+        todo!("finish this method")
+    }
+
     /// Demand energy from emitters and calculate how much energy can be provided
     /// Arguments:
     /// energy_demand -- in kWh
-    fn demand_energy(&self, energy_demand: f64) -> f64 {
-        // timestep = self.__simtime.timestep()
-        // temp_rm_prev = self.__zone.temp_internal_air()
-        // # Calculate target flow and return temperature
-        // temp_flow_target, temp_return_target = self.temp_flow_return()
-        // temp_emitter_max = (temp_flow_target + temp_return_target) / 2.0
-        // self.__target_flow_temp = temp_flow_target
+    fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        simulation_time: SimulationTimeIteration,
+    ) -> f64 {
+        let timestep = simulation_time.timestep;
+        let temp_rm_prev = &self.temp_internal_air_fn;
 
-        // emitters_data_for_buffer_tank = None
+        // Calculate target flow and return temperature
+        let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
+        let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.0;
+        self.target_flow_temp = Some(temp_flow_target);
 
-        todo!()
+        let mut energy_req_from_heat_source = Default::default();
+        let mut temp_emitter_max_is_final_temp = false;
+        let mut emitters_data_for_buffer_tank = None;
+        if energy_demand <= 0. {
+            // Emitters cooling down or at steady-state with heating off
+            // energy_req_from_heat_source = 0.0
+            // temp_emitter_max_is_final_temp = False
+        } else {
+            // Emitters warming up or cooling down to a target temperature
+            (
+                energy_req_from_heat_source,
+                temp_emitter_max_is_final_temp,
+                emitters_data_for_buffer_tank,
+            ) = self.energy_required_from_heat_source(
+                energy_demand,
+                timestep,
+                temp_rm_prev(),
+                temp_emitter_max,
+                temp_return_target,
+            )
+        }
+        todo!("finish this method")
     }
 }
 
@@ -416,6 +540,8 @@ mod tests {
 
         // TODO check this is correct
         let simulation_timestep = 1.;
+        // TODO check this is correct
+        let with_buffer_tank = false;
 
         Emitters::new(
             thermal_mass,
@@ -429,18 +555,20 @@ mod tests {
             ecodesign_controller,
             design_flow_temp,
             simulation_timestep,
+            with_buffer_tank,
         )
     }
 
     #[rstest]
     #[ignore = "not yet implemented"]
-    fn test_demand_energy(simulation_time: SimulationTimeIterator, emitters: Emitters) {
+    fn test_demand_energy(simulation_time: SimulationTimeIterator, mut emitters: Emitters) {
         let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
         for (t_idx, t_it) in simulation_time.enumerate() {
             energy_demand += energy_demand_list[t_idx];
-            let energy_provided = emitters.demand_energy(energy_demand);
+
+            let energy_provided = emitters.demand_energy(energy_demand, t_it);
             energy_demand -= energy_provided;
 
             assert_relative_eq!(
