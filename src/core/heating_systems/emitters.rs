@@ -247,11 +247,15 @@ impl Emitters {
     //
     //     let temp_diff_start = temp_emitter_start - temp_rm;
     // }
+    fn demand_energy(&self, energy_demand: f64) -> f64 {
+        todo!()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use rstest::fixture;
     use rstest::rstest;
 
@@ -335,8 +339,22 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.enumerate() {
             energy_demand += energy_demand_list[t_idx];
-            // let energy_provided = self.emitters.demand_energy(energy_demand)
-            //     energy_demand -= energy_provided
+            let energy_provided = emitters.demand_energy(energy_demand);
+            energy_demand -= energy_provided;
+
+            assert_relative_eq!(
+                energy_provided,
+                [
+                    0.26481930394248643,
+                    0.8287480680413242,
+                    1.053315069769369,
+                    1.053315069769369,
+                    0.9604801440326911,
+                    0.9419772896929609,
+                    0.915353814620655,
+                    0.7639281136418886
+                ][t_idx]
+            )
         }
     }
 }
