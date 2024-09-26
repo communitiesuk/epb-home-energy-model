@@ -2,7 +2,7 @@ use crate::core::units::DAYS_IN_MONTH;
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
-    Appliance, ApplianceReference, EnergySupplyDetails, EnergySupplyType, FuelType,
+    Appliance, ApplianceEntry, ApplianceReference, EnergySupplyDetails, EnergySupplyType, FuelType,
     HeatSourceControlType, HeatingControlType, HotWaterSourceDetailsForProcessing, Input,
     InputForProcessing, SpaceHeatControlType, WaterHeatingEvent, WaterHeatingEventType,
 };
@@ -1160,14 +1160,14 @@ struct AppliancePropensityRow {
 }
 
 struct FlatAnnualPropensities {
-    cleaning_washing_machine: [f64; HOURS_TO_END_DEC as usize],
-    cleaning_tumble_dryer: [f64; HOURS_TO_END_DEC as usize],
-    cleaning_dishwasher: [f64; HOURS_TO_END_DEC as usize],
-    cooking_electric_oven: [f64; HOURS_TO_END_DEC as usize],
-    cooking_microwave: [f64; HOURS_TO_END_DEC as usize],
-    cooking_kettle: [f64; HOURS_TO_END_DEC as usize],
-    cooking_gas_cooker: [f64; HOURS_TO_END_DEC as usize],
-    consumer_electronics: [f64; HOURS_TO_END_DEC as usize],
+    cleaning_washing_machine: Vec<f64>,
+    cleaning_tumble_dryer: Vec<f64>,
+    cleaning_dishwasher: Vec<f64>,
+    cooking_electric_oven: Vec<f64>,
+    cooking_microwave: Vec<f64>,
+    cooking_kettle: Vec<f64>,
+    cooking_gas_cooker: Vec<f64>,
+    consumer_electronics: Vec<f64>,
 }
 
 impl From<&AppliancePropensities<Normalised>> for FlatAnnualPropensities {
@@ -1179,65 +1179,49 @@ impl From<&AppliancePropensities<Normalised>> for FlatAnnualPropensities {
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cleaning_tumble_dryer: value
                 .cleaning_tumble_dryer
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cleaning_dishwasher: value
                 .cleaning_dishwasher
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cooking_electric_oven: value
                 .cooking_electric_oven
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cooking_microwave: value
                 .cooking_microwave
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cooking_kettle: value
                 .cooking_kettle
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             cooking_gas_cooker: value
                 .cooking_gas_cooker
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
             consumer_electronics: value
                 .consumer_electronics
                 .into_iter()
                 .cycle()
                 .take(hours_in_year)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -1327,14 +1311,212 @@ fn create_appliance_gains(
 
     // TODO (from Python) change to enum
     // TODO (from Python) check appliances are named correctly and what to do if not?
-    //
-    // let appliance_map =
+
+    let appliance_map: IndexMap<String, ApplianceUseProfile> = IndexMap::from([
+        (
+            "Fridge".to_owned(),
+            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+        ),
+        (
+            "Freezer".to_owned(),
+            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+        ),
+        (
+            "Otherdevices".to_owned(),
+            ApplianceUseProfile::simple(
+                1.,
+                0.,
+                1.0,
+                flat_annual_propensities.consumer_electronics.clone(),
+            ),
+        ),
+        (
+            "Dishwasher".to_owned(),
+            ApplianceUseProfile::complex(
+                number_of_occupants,
+                132,       // HES 2012 final report table 22
+                Some(280), // EU standard
+                0.75,
+                0.3,
+                flat_annual_propensities.cleaning_dishwasher.clone(),
+                1.5,
+                0.,
+            ),
+        ),
+        (
+            "Clothes_washing".to_owned(),
+            ApplianceUseProfile::clothes(
+                number_of_occupants,
+                174, // HES 2012 final report table 22
+                220, // EU standard
+                5.,
+                0.75,
+                0.3,
+                flat_annual_propensities.cleaning_washing_machine.clone(),
+                2.5,
+                0.,
+            ),
+        ),
+        (
+            "Clothes_drying".to_owned(),
+            ApplianceUseProfile::clothes(
+                number_of_occupants,
+                145, // HES 2012 final report table 22
+                160, // EU standard
+                5.,
+                0.50,
+                0.7,
+                flat_annual_propensities.cleaning_tumble_dryer.clone(),
+                0.75,
+                0.,
+            ),
+        ),
+        (
+            "Oven".to_owned(),
+            ApplianceUseProfile::complex(
+                number_of_occupants,
+                178, // analysis of HES - see folder
+                None,
+                0.50,
+                0.5,
+                flat_annual_propensities.cooking_electric_oven.clone(),
+                0.5,
+                0.7,
+            ),
+        ),
+        (
+            "Hobs".to_owned(),
+            ApplianceUseProfile::complex(
+                number_of_occupants,
+                235, // analysis of HES - see folder
+                None,
+                0.50,
+                0.5,
+                flat_annual_propensities.cooking_gas_cooker.clone(),
+                0.1,
+                0.7,
+            ),
+        ),
+        (
+            "Microwave".to_owned(),
+            ApplianceUseProfile::complex(
+                number_of_occupants,
+                315, // analysis of HES - see folder
+                None,
+                0.50,
+                1.,
+                flat_annual_propensities.cooking_microwave.clone(),
+                0.05,
+                0.3,
+            ),
+        ),
+        (
+            "Kettle".to_owned(),
+            ApplianceUseProfile::complex(
+                number_of_occupants,
+                921, // analysis of HES - see folder
+                None,
+                0.50,
+                1.,
+                flat_annual_propensities.cooking_kettle.clone(),
+                0.05,
+                0.3,
+            ),
+        ),
+    ]);
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
     appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
 
-    Ok(())
+    todo!()
+}
+
+#[derive(Clone, Debug)]
+struct ApplianceUseProfile {
+    util_unit: f64,
+    use_data: Option<ApplianceUseData>,
+    standby: f64,
+    gains_frac: f64,
+    prof: Vec<f64>,
+}
+
+impl ApplianceUseProfile {
+    fn simple(util_unit: f64, standby: f64, gains_frac: f64, prof: Vec<f64>) -> Self {
+        Self {
+            util_unit,
+            use_data: None,
+            standby,
+            gains_frac,
+            prof,
+        }
+    }
+
+    fn complex(
+        util_unit: f64,
+        use_metric: usize,
+        standard_use: Option<usize>,
+        standby: f64,
+        gains_frac: f64,
+        prof: Vec<f64>,
+        duration: f64,
+        duration_deviation: f64,
+    ) -> Self {
+        Self {
+            util_unit,
+            use_data: Some(ApplianceUseData {
+                use_metric,
+                clothes_use_data: None,
+                standard_use,
+                duration,
+                duration_deviation,
+            }),
+            standby,
+            gains_frac,
+            prof,
+        }
+    }
+
+    fn clothes(
+        util_unit: f64,
+        use_metric: usize,
+        standard_use: usize,
+        standard_load_kg: f64,
+        standby: f64,
+        gains_frac: f64,
+        prof: Vec<f64>,
+        duration: f64,
+        duration_deviation: f64,
+    ) -> Self {
+        Self {
+            util_unit,
+            use_data: Some(ApplianceUseData {
+                use_metric,
+                clothes_use_data: Some(ClothesUseData { standard_load_kg }),
+                standard_use: Some(standard_use),
+                duration,
+                duration_deviation,
+            }),
+            standby,
+            gains_frac,
+            prof,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ApplianceUseData {
+    // maps to "use" field in upstream, though 'use' is a keywork in Rust so calling this "use_metric"
+    use_metric: usize,
+    clothes_use_data: Option<ClothesUseData>,
+    standard_use: Option<usize>,
+    duration: f64,
+    duration_deviation: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ClothesUseData {
+    standard_load_kg: f64,
 }
 
 fn appliance_cooking_defaults(
@@ -1345,7 +1527,7 @@ fn appliance_cooking_defaults(
     let cooking_fuels = input.all_energy_supply_fuel_types();
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
-    let cooking_defaults: IndexMap<String, Appliance> = match (
+    let mut cooking_defaults: IndexMap<String, Appliance> = match (
         cooking_fuels.contains(&FuelType::Electricity),
         cooking_fuels.contains(&FuelType::MainsGas),
     ) {
@@ -1391,7 +1573,7 @@ fn appliance_cooking_defaults(
         ]),
     };
 
-    let additional_cooking_defaults = IndexMap::from([
+    let mut additional_cooking_defaults = IndexMap::from([
         ("Kettle".to_owned(), Appliance::with_kwh_per_cycle(0.1)),
         ("Microwave".to_owned(), Appliance::with_kwh_per_cycle(0.08)),
     ]);
@@ -1450,6 +1632,21 @@ fn appliance_cooking_defaults(
                 cooking_defaults["Hobs"].clone(),
             )]));
         }
+        cooking_defaults.append(&mut additional_cooking_defaults);
+        for (cooking_name, cooking_appliance) in cooking_defaults.iter() {
+            if !input.appliances_contain_name(cooking_name)
+                || input.appliance_name_has_reference(cooking_name, &ApplianceReference::Default)
+            {
+                input.merge_in_appliances(&IndexMap::from([(
+                    cooking_name.to_owned(),
+                    cooking_appliance.clone(),
+                )]));
+            } else if input
+                .appliance_name_has_reference(cooking_name, &ApplianceReference::NotInstalled)
+            {
+                input.remove_appliance(cooking_name);
+            }
+        }
     }
 
     (appliance_defaults, cooking_defaults)
@@ -1458,9 +1655,52 @@ fn appliance_cooking_defaults(
 fn appliance_kwh_cycle_loading_factor(
     input: &InputForProcessing,
     appliance_name: &str,
-    appliance_map: &IndexMap<String, Appliance>,
-) -> (Option<f64>, f64) {
-    todo!()
+    appliance_map: &IndexMap<String, ApplianceUseProfile>,
+) -> anyhow::Result<(Option<f64>, f64)> {
+    // value on energy label is defined differently between appliance types,
+    // convert any different input types to simple kWh per cycle
+
+    let (kwh_cycle, appliance) = if let Some(ApplianceEntry::Object(appliance)) =
+        input.appliance_with_name(appliance_name)
+    {
+        (
+            (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
+                Some(kwh_per_cycle)
+            } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
+                Some(kwh_per_100_cycle)
+            } else if let Some(kwh_per_annum) = appliance.kwh_per_annum {
+                Some(kwh_per_annum)
+            } else {
+                None
+            }),
+            appliance,
+        )
+    } else {
+        bail!("Appliance with name '{appliance_name}' must exist.")
+    };
+
+    let map_appliance = appliance_map.get(appliance_name).ok_or_else(|| anyhow!("The appliance name '{appliance_name}' was expected to be found within the appliance map: {appliance_map:?}."))?;
+
+    let loading_factor = if appliance_name.contains("Clothes") {
+        // additionally, laundry appliances have variable load size,
+        // which affects the required number of uses to do all the occupants' laundry for the year
+
+        map_appliance
+            .use_data
+            .as_ref()
+            .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
+            .clothes_use_data
+            .as_ref()
+            .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
+            .standard_load_kg
+            / appliance.kg_load.as_ref().ok_or_else(|| {
+                anyhow!("Passed in appliance is expected to have a kg_load value.")
+            })?
+    } else {
+        1.0
+    };
+
+    Ok((kwh_cycle, loading_factor))
 }
 
 /// Check (almost an assert) whether the shower flow rate is not less than the minimum allowed.

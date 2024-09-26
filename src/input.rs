@@ -3173,6 +3173,13 @@ impl InputForProcessing {
             })
         })
     }
+
+    pub(crate) fn appliance_with_name(&self, name: &str) -> Option<&ApplianceEntry> {
+        self.input
+            .appliances
+            .as_ref()
+            .and_then(|appliances| appliances.get(name))
+    }
 }
 
 #[cfg(test)]
