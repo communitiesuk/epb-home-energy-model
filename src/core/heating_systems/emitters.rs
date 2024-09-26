@@ -248,3 +248,95 @@ impl Emitters {
     //     let temp_diff_start = temp_emitter_start - temp_rm;
     // }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::fixture;
+    use rstest::rstest;
+
+    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+    use crate::core::heating_systems::boiler::Boiler;
+    use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
+    use crate::core::heating_systems::common::HeatSourceWet;
+    use crate::core::space_heat_demand::zone::Zone;
+    use crate::corpus::HeatSource;
+    use crate::external_conditions::DaylightSavingsConfig;
+    use crate::input::EnergySupplyType;
+    use crate::input::HeatSourceWetDetails;
+    use crate::simulation_time::SimulationTime;
+    use crate::simulation_time::SimulationTimeIterator;
+
+    #[fixture]
+    pub(crate) fn simulation_time() -> SimulationTimeIterator {
+        SimulationTime::new(0., 2., 0.25).iter()
+    }
+
+    #[fixture]
+    pub(crate) fn external_conditions() -> ExternalConditions {
+        todo!();
+    }
+
+    #[fixture]
+    pub(crate) fn heat_source() -> SpaceHeatingService {
+        todo!();
+    }
+
+    #[fixture]
+    pub(crate) fn zone() -> Zone {
+        todo!();
+    }
+
+    #[fixture]
+    pub(crate) fn emitters(
+        heat_source: SpaceHeatingService,
+        zone: Zone,
+        external_conditions: ExternalConditions,
+    ) -> Emitters {
+        let thermal_mass = 0.14;
+        let c = 0.08;
+        let n = 1.2;
+        let temp_diff_emit_dsgn = 10.0;
+        let frac_convective = 0.4;
+
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassII,
+            min_outdoor_temp: Some(-4.),
+            max_outdoor_temp: Some(20.),
+            min_flow_temp: Some(30.),
+        };
+
+        let design_flow_temp = 55.;
+
+        // TODO check this is correct
+        let simulation_timestep = 1.;
+
+        Emitters::new(
+            thermal_mass,
+            c,
+            n,
+            temp_diff_emit_dsgn,
+            frac_convective,
+            heat_source.into(),
+            zone.into(),
+            external_conditions.into(),
+            ecodesign_controller,
+            design_flow_temp,
+            simulation_timestep,
+        )
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    fn test_demand_energy(simulation_time: SimulationTimeIterator, emitters: Emitters) {
+        let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let mut energy_demand = 0.0;
+
+        for (t_idx, t_it) in simulation_time.enumerate() {
+            energy_demand += energy_demand_list[t_idx];
+            // let energy_provided = self.emitters.demand_energy(energy_demand)
+            //     energy_demand -= energy_provided
+        }
+    }
+}
