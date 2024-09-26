@@ -1444,6 +1444,7 @@ fn appliance_cooking_defaults(
         {
             // neither cooker nor oven specified, add cooker as minimum requirement
             // NB. upstream Python looks to be erroneous here (does not specify a dict with the key of "Hobs"), but implementing what appears to be the intent
+            // reported this up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45524
             input.merge_in_appliances(&IndexMap::from([(
                 "Hobs".to_owned(),
                 cooking_defaults["Hobs"].clone(),
