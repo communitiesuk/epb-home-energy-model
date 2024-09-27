@@ -1,3 +1,4 @@
+use crate::core::schedule::expand_numeric_schedule;
 use crate::core::units::DAYS_IN_MONTH;
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
@@ -9,6 +10,7 @@ use crate::input::{
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
+use crate::wrappers::future_homes_standard::fhs_appliance::FhsAppliance;
 use crate::wrappers::future_homes_standard::fhs_hw_events::{
     reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
 };
@@ -1313,17 +1315,17 @@ fn create_appliance_gains(
     // TODO (from Python) change to enum
     // TODO (from Python) check appliances are named correctly and what to do if not?
 
-    let appliance_map: IndexMap<String, ApplianceUseProfile> = IndexMap::from([
+    let appliance_map: IndexMap<ApplianceKey, ApplianceUseProfile> = IndexMap::from([
         (
-            "Fridge".to_owned(),
+            ApplianceKey::Fridge,
             ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
         ),
         (
-            "Freezer".to_owned(),
+            ApplianceKey::Freezer,
             ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
         ),
         (
-            "Otherdevices".to_owned(),
+            ApplianceKey::OtherDevices,
             ApplianceUseProfile::simple(
                 1.,
                 0.,
@@ -1332,7 +1334,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Dishwasher".to_owned(),
+            ApplianceKey::Dishwasher,
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 132,       // HES 2012 final report table 22
@@ -1345,7 +1347,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Clothes_washing".to_owned(),
+            ApplianceKey::ClothesWashing,
             ApplianceUseProfile::clothes(
                 number_of_occupants,
                 174, // HES 2012 final report table 22
@@ -1359,7 +1361,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Clothes_drying".to_owned(),
+            ApplianceKey::ClothesDrying,
             ApplianceUseProfile::clothes(
                 number_of_occupants,
                 145, // HES 2012 final report table 22
@@ -1373,7 +1375,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Oven".to_owned(),
+            ApplianceKey::Oven,
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 178, // analysis of HES - see folder
@@ -1386,7 +1388,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Hobs".to_owned(),
+            ApplianceKey::Hobs,
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 235, // analysis of HES - see folder
@@ -1399,7 +1401,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Microwave".to_owned(),
+            ApplianceKey::Microwave,
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 315, // analysis of HES - see folder
@@ -1412,7 +1414,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            "Kettle".to_owned(),
+            ApplianceKey::Kettle,
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 921, // analysis of HES - see folder
@@ -1430,73 +1432,119 @@ fn create_appliance_gains(
     // get default demand figures for any unknown appliances
     appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
 
-    /*
-    demand_scheds = {}
-    #loop through appliances in the assessment.
-    for appliancename in project_dict["Appliances"]:
-        #if it needs to be modelled per use
-        if isinstance(appliancemap[appliancename]["use"], int) or isinstance(appliancemap[appliancename]["use"], float):
-            #value on energy label is defined differently between appliance types
-            #todo - translation of efficiencies should be its own function
-            kWhcycle, loadingfactor = appliance_kWhcycle_loadingfactor(project_dict, appliancename, appliancemap)
+    let mut demand_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
 
+    // loop through appliances in the assessment.
+    let input_appliances = input.clone_appliances();
 
-            app = FHS_appliance(appliancemap[appliancename]["util_unit"],
-                                        appliancemap[appliancename]["use"] * loadingfactor,
-                                        kWhcycle,
-                                        appliancemap[appliancename]["dur"],
-                                        appliancemap[appliancename]["standby"],
-                                        appliancemap[appliancename]["gains_frac"],
-                                        appliancemap[appliancename]['prof'],
-                                        duration_std_dev = appliancemap[appliancename]['dur_devation'])
+    for (appliance_key, appliance) in input_appliances {
+        // if it needs to be modelled per use
+        let map_appliance = appliance_map
+            .get(&appliance_key)
+            .expect("Appliance key was not in appliance map");
 
-            project_dict['ApplianceGains'][appliancename] = {
-                "type": appliancename,
-                "EnergySupply": project_dict["Appliances"][appliancename]["Energysupply"]\
-                    if appliancename in ["Hobs", "Oven"] else energysupplyname_electricity,
+        if let Some(use_data) = map_appliance.use_data {
+            // value on energy label is defined differently between appliance types
+            // TODO (from Python) - translation of efficiencies should be its own function
+            let (kwhcycle, loadingfactor) =
+                appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
+            let kwhcycle = kwhcycle.ok_or_else(|| {
+                anyhow!("Could not get kwhcycle value for appliance with key {appliance_key}.")
+            })?;
+
+            let app = FhsAppliance::new(
+                map_appliance.util_unit,
+                use_data.use_metric as f64 * loadingfactor,
+                kwhcycle,
+                use_data.duration,
+                map_appliance.standby,
+                map_appliance.gains_frac,
+                &map_appliance.prof,
+                None,
+                Some(use_data.duration_deviation),
+            )?;
+
+            let appliance_energy_supply = if let ApplianceEntry::Object(appliance_obj) = &appliance
+            {
+                appliance_obj.energy_supply
+            } else {
+                None
+            };
+
+            // if the appliance specifies load shifting, add it to the appliance gains details
+            let load_shifting = if let ApplianceEntry::Object(Appliance {
+                load_shifting: Some(load_shifting),
+                ..
+            }) = &appliance
+            {
+                let mut load_shifting = load_shifting.clone();
+                // create year long cost profile
+                // loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
+                // so the weight timeseries is generic.
+                let weight_timeseries = expand_numeric_schedule(
+                    input.tariff_schedule().ok_or_else(|| {
+                        anyhow!(
+                            "A tariff schedule was expected to have been provided in the input."
+                        )
+                    })?,
+                    false,
+                );
+                load_shifting.weight_timeseries =
+                    Some(weight_timeseries.into_iter().map(Option::unwrap).collect());
+
+                Some(load_shifting)
+            } else {
+                // only add demand from appliances that DO NOT have loadshifting to the demands
+                demand_scheds.append(&mut IndexMap::from([(
+                    appliance_key,
+                    app.flat_schedule.clone(),
+                )]));
+                None
+            };
+
+            input.set_gains_for_field(appliance_key.to_string(), json!({
+                "type": appliance_key.to_string(),
+                "EnergySupply": if [ApplianceKey::Hobs, ApplianceKey::Oven].contains(&appliance_key) {
+                    appliance_energy_supply.ok_or_else(|| anyhow!("Could not get energy supply type for appliance with key {appliance_key}"))?.to_string()
+                } else {
+                    ENERGY_SUPPLY_NAME_ELECTRICITY.to_owned()
+                },
                 "start_day": 0,
-                #TODO - variable timestep
+                // TODO - variable timestep
                 "time_series_step": 1,
                 "gains_fraction": app.gains_frac,
-                "Events": app.eventlist,
-                "Standby": app.standby_W
-            }
-            #if the appliance specifies load shifting, add it to the dict
-            if "loadshifting" in project_dict["Appliances"][appliancename].keys():
-                project_dict['ApplianceGains'][appliancename].update({"loadshifting":project_dict["Appliances"][appliancename]["loadshifting"]})
-                #create year long cost profile
-                #loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
-                #so the weight timeseries is generic.
-                weight_timeseries = schedule.expand_schedule(float, project_dict["Tariff"]["schedule"], "main", False)
-                project_dict['ApplianceGains'][appliancename]["loadshifting"].update({
-                        "weight_timeseries": weight_timeseries
-                    }
-                )
-            else:
-                #only add demand from appliances that DO NOT have loadshifting to the demands
-                demand_scheds.update({appliancename:app.flatschedule})
-        else:
-            #model as yearlong time series schedule of demand in W
-            if "kWh_per_annum" in project_dict["Appliances"][appliancename]:
-                annualkWh = project_dict["Appliances"][appliancename]["kWh_per_annum"] *\
-                            appliancemap[appliancename]["util_unit"]
-            else:
-                continue
-            #todo - check normalisation of flat profile here
-            flatschedule = [W_per_kW /days_per_year * frac * annualkWh for frac in flatEFUSprofile]
-            demand_scheds.update({appliancename:flatschedule})
-            project_dict['ApplianceGains'][appliancename] = {
-                "type": appliancename,
-                "EnergySupply": energysupplyname_gas if "Gas" in appliancename else energysupplyname_electricity,
-                "start_day": 0,
-                "time_series_step": 1,
-                "gains_fraction": appliancemap[appliancename]["gains_frac"],
-                "schedule": {
-                    #watts
-                    "main": flatschedule
-                }
-            }
-     */
+                "Events": app.event_list,
+                "Standby": app.standby_w,
+                "loadshifting": load_shifting
+            }))?;
+        } else {
+            // continue as per else clause from Python below!
+        }
+    }
+
+    /*
+       else:
+           #model as yearlong time series schedule of demand in W
+           if "kWh_per_annum" in project_dict["Appliances"][appliancename]:
+               annualkWh = project_dict["Appliances"][appliancename]["kWh_per_annum"] *\
+                           appliancemap[appliancename]["util_unit"]
+           else:
+               continue
+           #todo - check normalisation of flat profile here
+           flatschedule = [W_per_kW /days_per_year * frac * annualkWh for frac in flatEFUSprofile]
+           demand_scheds.update({appliancename:flatschedule})
+           project_dict['ApplianceGains'][appliancename] = {
+               "type": appliancename,
+               "EnergySupply": energysupplyname_gas if "Gas" in appliancename else energysupplyname_electricity,
+               "start_day": 0,
+               "time_series_step": 1,
+               "gains_fraction": appliancemap[appliancename]["gains_frac"],
+               "schedule": {
+                   #watts
+                   "main": flatschedule
+               }
+           }
+    */
 
     todo!()
 }

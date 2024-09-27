@@ -12,10 +12,10 @@ pub(super) struct FhsAppliance {
     annual_expected_demand: f64,
     op_kwh: f64,
     event_duration: f64,
-    standby_w: f64,
-    gains_frac: f64,
-    event_list: Vec<ApplianceGainsDetailsEvent>,
-    flat_schedule: Vec<f64>,
+    pub(super) standby_w: f64,
+    pub(super) gains_frac: f64,
+    pub(super) event_list: Vec<ApplianceGainsDetailsEvent>,
+    pub(super) flat_schedule: Vec<f64>,
 }
 
 impl FhsAppliance {
@@ -37,7 +37,16 @@ impl FhsAppliance {
             + standby_w
                 * ((HOURS_PER_DAY * DAYS_PER_YEAR) as f64 - annual_expected_uses * event_duration)
                 / WATTS_PER_KILOWATT as f64;
-        let (event_list, flat_schedule, schema_w) = Self::build_sched(flat_profile, seed, annual_expected_uses, annual_expected_demand, op_kwh, standby_w, event_duration, duration_std_dev)?;
+        let (event_list, flat_schedule, standby_w) = Self::build_sched(
+            flat_profile,
+            seed,
+            annual_expected_uses,
+            annual_expected_demand,
+            op_kwh,
+            standby_w,
+            event_duration,
+            duration_std_dev,
+        )?;
         Ok(Self {
             annual_expected_uses,
             // deduct durations of uses from standby power consumption (should only have small effect)

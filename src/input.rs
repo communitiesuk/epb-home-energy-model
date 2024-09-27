@@ -156,7 +156,7 @@ pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 pub struct ApplianceGainsDetails {
     // check upstream whether type is used here
     #[serde(rename(deserialize = "type"))]
-    gain_type: Option<ApplianceGainType>,
+    gain_type: Option<String>,
     pub start_day: u32,
     pub time_series_step: f64,
     pub gains_fraction: f64,
@@ -171,22 +171,13 @@ pub struct ApplianceGainsDetails {
     pub load_shifting: Option<ApplianceLoadShifting>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGainsDetailsEvent {
     pub start: f64,
     pub duration: f64,
     pub demand_w: f64,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum ApplianceGainType {
-    Appliances,
-    Lighting,
-    Cooking,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
@@ -2458,7 +2449,7 @@ impl Appliance {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceLoadShifting {
@@ -2484,7 +2475,7 @@ pub enum ApplianceReference {
 #[serde(deny_unknown_fields)]
 pub struct Tariff {
     #[serde(rename = "schedule")]
-    _schedule: Schedule,
+    schedule: Schedule,
 }
 
 #[derive(Debug)]
@@ -2840,15 +2831,6 @@ impl InputForProcessing {
             .insert(field.into(), gains_details);
 
         Ok(self)
-    }
-
-    pub fn appliance_gains_fields_for_cooking(&self) -> Vec<String> {
-        self.input
-            .appliance_gains
-            .iter()
-            .filter(|(_field, gains)| matches!(gains.gain_type, Some(ApplianceGainType::Cooking)))
-            .map(|(field, _gains)| field.clone())
-            .collect()
     }
 
     pub fn energy_supply_type_for_appliance_gains_field(&self, field: &str) -> Option<String> {
@@ -3212,6 +3194,14 @@ impl InputForProcessing {
             .appliances
             .as_ref()
             .and_then(|appliances| appliances.get(key))
+    }
+
+    pub(crate) fn clone_appliances(&self) -> IndexMap<ApplianceKey, ApplianceEntry> {
+        self.input.appliances.clone().unwrap_or_default()
+    }
+
+    pub(crate) fn tariff_schedule(&self) -> Option<&Schedule> {
+        self.input.tariff.as_ref().map(|tariff| &tariff.schedule)
     }
 }
 
