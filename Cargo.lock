@@ -569,6 +569,7 @@ dependencies = [
  "itertools 0.13.0",
  "log",
  "nalgebra 0.33.0",
+ "ode_solvers",
  "ordered-float",
  "parking_lot",
  "partial_application",
@@ -1089,6 +1090,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "084f1a5821ac4c651660a94a7153d27ac9d8a53736203f58b31945ded098070a"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ode_solvers"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a9193898d78b3d44e4ff2d9b886b1d5f8b1dfeaa44554803a1194ff968af2e"
+dependencies = [
+ "nalgebra 0.32.6",
+ "num-traits",
+ "simba 0.8.1",
+ "thiserror",
 ]
 
 [[package]]

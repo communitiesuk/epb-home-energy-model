@@ -1,4 +1,4 @@
-use crate::compare_floats::max_of_2;
+use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::BufferTankEmittersData;
 use crate::corpus::TempInternalAirFn;
@@ -7,7 +7,12 @@ use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
 use std::collections::HashMap;
 // use bacon_sci::ivp::{RungeKuttaSolver, RK45};
+use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use std::sync::Arc;
+
+type State = Vector1<f64>; // type State = OVector<f32, U3>;
+type Time = f64;
+// type Result = SolverResult<Time, State>;
 
 /// This module provides objects to represent radiator and underfloor emitter systems.
 
@@ -23,9 +28,9 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
 }
 
 pub struct Emitters {
-    thermal_mass: f64,
-    c: f64,
-    n: f64,
+    pub thermal_mass: f64,
+    pub c: f64,
+    pub n: f64,
     temp_diff_emit_dsgn: f64,
     frac_convective: f64,
     heat_source: Arc<SpaceHeatingService>,
@@ -41,6 +46,24 @@ pub struct Emitters {
     simulation_timestep: f64,
     temp_emitter_prev: f64,
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
+}
+
+struct EmittersAndPowerInput<'a> {
+    pub emitters: &'a Emitters,
+    pub power_input: f64,
+}
+
+impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
+    fn system(&self, _x: Time, temp_diff: &State, dy: &mut State) {
+        dy[0] = (self.power_input
+            - self.emitters.c * max_of_2(0., temp_diff[0]).powf(self.emitters.n))
+            / self.emitters.thermal_mass
+    }
+
+    // Stop function called at every successful integration step. The integration is stopped when this function returns true.
+    fn solout(&mut self, x: Time, y: &State, dy: &State) -> bool {
+        false
+    }
 }
 
 impl Emitters {
@@ -251,9 +274,75 @@ impl Emitters {
     //     temp_emitter_max: Option<f64>,
     // ) -> Result<(f64, f64), &'static str> {
     //     // Calculate emitter temp at start of timestep
-    //
+
     //     let temp_diff_start = temp_emitter_start - temp_rm;
     // }
+
+    /// Calculate emitter temperature after specified time with specified power input
+    fn temp_emitter(
+        &self,
+        time_start: f64,
+        time_end: f64,
+        temp_emitter_start: f64,
+        temp_rm: f64,
+        power_input: f64,
+        temp_emitter_max: Option<f64>,
+    ) -> (f64, Option<f64>) {
+        // Calculate emitter temp at start of timestep
+        let temp_diff_start = temp_emitter_start - temp_rm;
+
+        let emitter_with_power_input = EmittersAndPowerInput {
+            emitters: &self,
+            power_input,
+        };
+
+        let f = emitter_with_power_input; // f - Structure implementing the System trait
+        let x: Time = time_start; // x - Initial value of the independent variable (usually time)
+        let x_end: Time = time_end; // x_end - Final value of the independent variable
+        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
+        let y0: State = State::new(temp_diff_start); // y - Initial value of the dependent variable(s)
+
+        // scipy implementation for reference:
+        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
+        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
+        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
+        let h = 0.; // initial step size - 0
+        let safety_factor = 0.9; // matches scipy implementation
+        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
+        let fac_min = 0.2; // matches scipy implementation
+        let fac_max = 10.; // matches scipy implementation
+        let h_max = x_end - x;
+        let n_max = 100000;
+        let n_stiff = 1000;
+        let mut stepper = Dopri5::from_param(
+            f,
+            x,
+            x_end,
+            dx,
+            y0,
+            rtol,
+            atol,
+            safety_factor,
+            beta,
+            fac_min,
+            fac_max,
+            h_max,
+            h,
+            n_max,
+            n_stiff,
+            OutputType::Sparse,
+        );
+        let integration_statistics = stepper.integrate();
+        println!("Integration stats: {:?}", integration_statistics);
+
+        // TODO handle max temperature being reached
+
+        println!("results: {:?}", stepper.results());
+
+        let temp_diff_emitter_rm_final = stepper.y_out().last().expect("y_out was empty")[0];
+        let temp_emitter = temp_rm + temp_diff_emitter_rm_final;
+        (temp_emitter, None)
+    }
 
     fn energy_required_from_heat_source(
         &self,
@@ -263,7 +352,7 @@ impl Emitters {
         temp_emitter_max: f64,
         temp_return: f64,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, bool, Option<HashMap<&str, f64>>) {
+    ) -> (f64, bool, Option<BufferTankEmittersData>) {
         // When there is some demand, calculate max. emitter temperature
         // achievable and emitter temperature required, and base calculation
         // on the lower of the two.
@@ -354,7 +443,51 @@ impl Emitters {
             };
         }
 
-        todo!("finish this method")
+        // Calculate time to reach max. emitter temp at max heat source output
+        let power_output_max_min = energy_provided_by_heat_source_max_min / timestep;
+
+        let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
+            0.0,
+            timestep,
+            self.temp_emitter_prev,
+            temp_rm_prev,
+            power_output_max_min,
+            Some(temp_emitter_max),
+        );
+
+        let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
+            match time_temp_emitter_max_reached {
+                None => (timestep, false),
+                Some(time) => (time, true),
+            };
+
+        // Before this time, energy output from heat source is maximum
+        let energy_req_from_heat_source_before_temp_emitter_max_reached =
+            power_output_max_min * time_in_warmup_cooldown_phase;
+
+        // After this time, energy output is amount needed to maintain
+        // emitter temp (based on emitter output at constant emitter temp)
+        let energy_req_from_heat_source_after_temp_emitter_max_reached = self
+            .power_output_emitter(temp_emitter, temp_rm_prev)
+            * (timestep - time_in_warmup_cooldown_phase);
+
+        // Total energy input req from heat source is therefore sum of energy
+        // output required before and after max emitter temp reached
+        let energy_req_from_heat_source_max =
+            energy_req_from_heat_source_before_temp_emitter_max_reached
+                + energy_req_from_heat_source_after_temp_emitter_max_reached;
+
+        let temp_emitter_max_is_final_temp =
+            temp_emitter_max_reached && temp_emitter_req > temp_emitter_max;
+
+        // Total energy input req from heat source is therefore lower of:
+        // - energy output required to meet space heating demand
+        // - energy output when emitters reach maximum temperature
+        (
+            min_of_2(energy_req_from_heat_source, energy_req_from_heat_source_max),
+            temp_emitter_max_is_final_temp,
+            emitters_data_for_buffer_tank,
+        )
     }
 
     /// Demand energy from emitters and calculate how much energy can be provided
@@ -426,6 +559,8 @@ mod tests {
     use crate::input::HeatSourceWetDetails;
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
+
+    const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
     #[fixture]
     pub(crate) fn simulation_time() -> SimulationTimeIterator {
@@ -517,7 +652,7 @@ mod tests {
         .unwrap();
 
         let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
-            vec![],
+            vec![true, true, true, true, true, true, true, true],
             0,
             0.,
         )));
@@ -608,5 +743,26 @@ mod tests {
                 ][t_idx]
             )
         }
+    }
+
+    // TODO more tests to implement here
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    fn test_temp_emitter(emitters: Emitters) {
+        // Test function calculates emitter temperature after specified time with specified power input
+        // Check None conditions  are invoked
+        let (temp_emitter, time_temp_diff_max_reached) =
+            emitters.temp_emitter(0., 2., 5., 10., 0.2, None);
+
+        assert_relative_eq!(temp_emitter, 7.85714285, max_relative=EIGHT_DECIMAL_PLACES);
+        assert!(time_temp_diff_max_reached.is_none());
+
+        // Check not None conditions are invoked
+        // Test wehen max temp is reached (early exit)
+        let (temp_emitter, time_temp_diff_max_reached) =
+            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
+        
+        assert_relative_eq!(temp_emitter, 25., max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
     }
 }
