@@ -165,6 +165,47 @@ pub enum SpaceHeatingService {
     HeatBattery(()),
 }
 
+impl SpaceHeatingService {
+    pub(crate) fn energy_output_max(
+        &self,
+        temp_output: f64,
+        temp_return_feed: f64,
+        emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> Result<(f64, Option<BufferTankEmittersDataWithResult>), Error> {
+        match self {
+            SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
+                .energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    emitters_data_for_buffer_tank,
+                    simulation_time_iteration,
+                ),
+            SpaceHeatingService::Boiler(boiler_service_space) => {
+                let time_elapsed_hp: Option<f64> = None; // TODO is this assumption correct?
+                Ok((
+                    boiler_service_space.energy_output_max(
+                        temp_output,
+                        temp_return_feed,
+                        time_elapsed_hp,
+                        simulation_time_iteration,
+                    ),
+                    None,
+                ))
+            }
+            SpaceHeatingService::HeatNetwork(heat_network_service_space) => Ok((
+                heat_network_service_space.energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    &simulation_time_iteration,
+                ),
+                None,
+            )),
+            SpaceHeatingService::HeatBattery(_) => unimplemented!(),
+        }
+    }
+}
+
 // macro so accessing individual controls through the enum isn't so repetitive
 #[macro_use]
 macro_rules! per_space_heating {
@@ -178,4 +219,7 @@ macro_rules! per_space_heating {
     };
 }
 
+use anyhow::Error;
 pub(crate) use per_space_heating;
+
+use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
