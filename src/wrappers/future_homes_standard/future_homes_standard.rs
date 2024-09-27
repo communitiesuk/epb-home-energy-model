@@ -2,9 +2,10 @@ use crate::core::units::DAYS_IN_MONTH;
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
-    Appliance, ApplianceEntry, ApplianceReference, EnergySupplyDetails, EnergySupplyType, FuelType,
-    HeatSourceControlType, HeatingControlType, HotWaterSourceDetailsForProcessing, Input,
-    InputForProcessing, SpaceHeatControlType, WaterHeatingEvent, WaterHeatingEventType,
+    Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
+    EnergySupplyType, FuelType, HeatSourceControlType, HeatingControlType,
+    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
+    WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -1429,6 +1430,74 @@ fn create_appliance_gains(
     // get default demand figures for any unknown appliances
     appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
 
+    /*
+    demand_scheds = {}
+    #loop through appliances in the assessment.
+    for appliancename in project_dict["Appliances"]:
+        #if it needs to be modelled per use
+        if isinstance(appliancemap[appliancename]["use"], int) or isinstance(appliancemap[appliancename]["use"], float):
+            #value on energy label is defined differently between appliance types
+            #todo - translation of efficiencies should be its own function
+            kWhcycle, loadingfactor = appliance_kWhcycle_loadingfactor(project_dict, appliancename, appliancemap)
+
+
+            app = FHS_appliance(appliancemap[appliancename]["util_unit"],
+                                        appliancemap[appliancename]["use"] * loadingfactor,
+                                        kWhcycle,
+                                        appliancemap[appliancename]["dur"],
+                                        appliancemap[appliancename]["standby"],
+                                        appliancemap[appliancename]["gains_frac"],
+                                        appliancemap[appliancename]['prof'],
+                                        duration_std_dev = appliancemap[appliancename]['dur_devation'])
+
+            project_dict['ApplianceGains'][appliancename] = {
+                "type": appliancename,
+                "EnergySupply": project_dict["Appliances"][appliancename]["Energysupply"]\
+                    if appliancename in ["Hobs", "Oven"] else energysupplyname_electricity,
+                "start_day": 0,
+                #TODO - variable timestep
+                "time_series_step": 1,
+                "gains_fraction": app.gains_frac,
+                "Events": app.eventlist,
+                "Standby": app.standby_W
+            }
+            #if the appliance specifies load shifting, add it to the dict
+            if "loadshifting" in project_dict["Appliances"][appliancename].keys():
+                project_dict['ApplianceGains'][appliancename].update({"loadshifting":project_dict["Appliances"][appliancename]["loadshifting"]})
+                #create year long cost profile
+                #loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
+                #so the weight timeseries is generic.
+                weight_timeseries = schedule.expand_schedule(float, project_dict["Tariff"]["schedule"], "main", False)
+                project_dict['ApplianceGains'][appliancename]["loadshifting"].update({
+                        "weight_timeseries": weight_timeseries
+                    }
+                )
+            else:
+                #only add demand from appliances that DO NOT have loadshifting to the demands
+                demand_scheds.update({appliancename:app.flatschedule})
+        else:
+            #model as yearlong time series schedule of demand in W
+            if "kWh_per_annum" in project_dict["Appliances"][appliancename]:
+                annualkWh = project_dict["Appliances"][appliancename]["kWh_per_annum"] *\
+                            appliancemap[appliancename]["util_unit"]
+            else:
+                continue
+            #todo - check normalisation of flat profile here
+            flatschedule = [W_per_kW /days_per_year * frac * annualkWh for frac in flatEFUSprofile]
+            demand_scheds.update({appliancename:flatschedule})
+            project_dict['ApplianceGains'][appliancename] = {
+                "type": appliancename,
+                "EnergySupply": energysupplyname_gas if "Gas" in appliancename else energysupplyname_electricity,
+                "start_day": 0,
+                "time_series_step": 1,
+                "gains_fraction": appliancemap[appliancename]["gains_frac"],
+                "schedule": {
+                    #watts
+                    "main": flatschedule
+                }
+            }
+     */
+
     todo!()
 }
 
@@ -1523,82 +1592,85 @@ fn appliance_cooking_defaults(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
     total_floor_area: f64,
-) -> (IndexMap<String, Appliance>, IndexMap<String, Appliance>) {
+) -> (
+    IndexMap<ApplianceKey, Appliance>,
+    IndexMap<ApplianceKey, Appliance>,
+) {
     let cooking_fuels = input.all_energy_supply_fuel_types();
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
-    let mut cooking_defaults: IndexMap<String, Appliance> = match (
+    let mut cooking_defaults: IndexMap<ApplianceKey, Appliance> = match (
         cooking_fuels.contains(&FuelType::Electricity),
         cooking_fuels.contains(&FuelType::MainsGas),
     ) {
         (true, true) => IndexMap::from([
             (
-                "Oven".to_owned(),
+                ApplianceKey::Oven,
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
             ),
             (
-                "Hobs".to_owned(),
+                ApplianceKey::Hobs,
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
             ),
         ]),
         (_, true) => IndexMap::from([
             (
-                "Oven".to_owned(),
+                ApplianceKey::Oven,
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
             ),
             (
-                "Hobs".to_owned(),
+                ApplianceKey::Hobs,
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
             ),
         ]),
         (true, _) => IndexMap::from([
             (
-                "Oven".to_owned(),
+                ApplianceKey::Oven,
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
             ),
             (
-                "Hobs".to_owned(),
+                ApplianceKey::Hobs,
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
             ),
         ]),
         _ => IndexMap::from([
             (
-                "Oven".to_owned(),
+                ApplianceKey::Oven,
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
             ),
             (
-                "Hobs".to_owned(),
+                ApplianceKey::Hobs,
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
             ),
         ]),
     };
 
     let mut additional_cooking_defaults = IndexMap::from([
-        ("Kettle".to_owned(), Appliance::with_kwh_per_cycle(0.1)),
-        ("Microwave".to_owned(), Appliance::with_kwh_per_cycle(0.08)),
+        (ApplianceKey::Kettle, Appliance::with_kwh_per_cycle(0.1)),
+        (ApplianceKey::Microwave, Appliance::with_kwh_per_cycle(0.08)),
     ]);
 
     let appliance_defaults = IndexMap::from([
         (
-            "Otherdevices".to_owned(),
+            ApplianceKey::OtherDevices,
             Appliance::with_kwh_per_annum(
                 30.0 * (number_of_occupants * total_floor_area).powf(0.49),
             ),
         ),
         (
-            "Dishwasher".to_owned(),
+            ApplianceKey::Dishwasher,
             Appliance::with_kwh_per_100_cycle(92.0, None),
         ),
         (
-            "Clothes_washing".to_owned(),
+            ApplianceKey::ClothesWashing,
             Appliance::with_kwh_per_100_cycle(79.0, Some(7.0)),
         ),
         (
-            "Clothes_drying".to_owned(),
+            ApplianceKey::ClothesDrying,
             Appliance::with_kwh_per_100_cycle(213.0, Some(7.0)),
         ),
-        ("Fridge".to_owned(), Appliance::with_kwh_per_annum(223.0)),
-        ("Freezer".to_owned(), Appliance::with_kwh_per_annum(209.0)),
+        (ApplianceKey::Fridge, Appliance::with_kwh_per_annum(223.0)),
+        (ApplianceKey::Freezer, Appliance::with_kwh_per_annum(209.0)),
     ]);
 
     if !input.has_appliances() {
@@ -1607,42 +1679,42 @@ fn appliance_cooking_defaults(
         input.merge_in_appliances(&additional_cooking_defaults);
     } else {
         for appliance_name in appliance_defaults.keys() {
-            if !input.appliances_contain_name(appliance_name)
-                || input.appliance_name_has_reference(appliance_name, &ApplianceReference::Default)
+            if !input.appliances_contain_key(appliance_name)
+                || input.appliance_key_has_reference(appliance_name, &ApplianceReference::Default)
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
                 )]));
             } else if input
-                .appliance_name_has_reference(appliance_name, &ApplianceReference::NotInstalled)
+                .appliance_key_has_reference(appliance_name, &ApplianceReference::NotInstalled)
             {
                 input.remove_appliance(appliance_name);
             }
         }
         if !cooking_defaults
             .keys()
-            .any(|cooking_appliance_name| input.appliances_contain_name(cooking_appliance_name))
+            .any(|cooking_appliance_name| input.appliances_contain_key(cooking_appliance_name))
         {
             // neither cooker nor oven specified, add cooker as minimum requirement
             // NB. upstream Python looks to be erroneous here (does not specify a dict with the key of "Hobs"), but implementing what appears to be the intent
             // reported this up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45524
             input.merge_in_appliances(&IndexMap::from([(
-                "Hobs".to_owned(),
-                cooking_defaults["Hobs"].clone(),
+                ApplianceKey::Hobs,
+                cooking_defaults[&ApplianceKey::Hobs].clone(),
             )]));
         }
         cooking_defaults.append(&mut additional_cooking_defaults);
         for (cooking_name, cooking_appliance) in cooking_defaults.iter() {
-            if !input.appliances_contain_name(cooking_name)
-                || input.appliance_name_has_reference(cooking_name, &ApplianceReference::Default)
+            if !input.appliances_contain_key(cooking_name)
+                || input.appliance_key_has_reference(cooking_name, &ApplianceReference::Default)
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     cooking_name.to_owned(),
                     cooking_appliance.clone(),
                 )]));
             } else if input
-                .appliance_name_has_reference(cooking_name, &ApplianceReference::NotInstalled)
+                .appliance_key_has_reference(cooking_name, &ApplianceReference::NotInstalled)
             {
                 input.remove_appliance(cooking_name);
             }
@@ -1654,34 +1726,33 @@ fn appliance_cooking_defaults(
 
 fn appliance_kwh_cycle_loading_factor(
     input: &InputForProcessing,
-    appliance_name: &str,
-    appliance_map: &IndexMap<String, ApplianceUseProfile>,
+    appliance_key: &ApplianceKey,
+    appliance_map: &IndexMap<ApplianceKey, ApplianceUseProfile>,
 ) -> anyhow::Result<(Option<f64>, f64)> {
     // value on energy label is defined differently between appliance types,
     // convert any different input types to simple kWh per cycle
 
-    let (kwh_cycle, appliance) = if let Some(ApplianceEntry::Object(appliance)) =
-        input.appliance_with_name(appliance_name)
-    {
-        (
-            (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
-                Some(kwh_per_cycle)
-            } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
-                Some(kwh_per_100_cycle)
-            } else if let Some(kwh_per_annum) = appliance.kwh_per_annum {
-                Some(kwh_per_annum)
-            } else {
-                None
-            }),
-            appliance,
-        )
-    } else {
-        bail!("Appliance with name '{appliance_name}' must exist.")
-    };
+    let (kwh_cycle, appliance) =
+        if let Some(ApplianceEntry::Object(appliance)) = input.appliance_with_key(appliance_key) {
+            (
+                (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
+                    Some(kwh_per_cycle)
+                } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
+                    Some(kwh_per_100_cycle)
+                } else if let Some(kwh_per_annum) = appliance.kwh_per_annum {
+                    Some(kwh_per_annum)
+                } else {
+                    None
+                }),
+                appliance,
+            )
+        } else {
+            bail!("Appliance with name '{appliance_key}' must exist.")
+        };
 
-    let map_appliance = appliance_map.get(appliance_name).ok_or_else(|| anyhow!("The appliance name '{appliance_name}' was expected to be found within the appliance map: {appliance_map:?}."))?;
+    let map_appliance = appliance_map.get(appliance_key).ok_or_else(|| anyhow!("The appliance name '{appliance_key}' was expected to be found within the appliance map: {appliance_map:?}."))?;
 
-    let loading_factor = if appliance_name.contains("Clothes") {
+    let loading_factor = if appliance_key.is_clothes_appliance() {
         // additionally, laundry appliances have variable load size,
         // which affects the required number of uses to do all the occupants' laundry for the year
 

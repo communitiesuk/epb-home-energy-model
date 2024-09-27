@@ -63,7 +63,7 @@ pub struct Input {
     pub general: General,
     pub infiltration_ventilation: InfiltrationVentilation,
     #[serde(rename = "Appliances")]
-    pub appliances: Option<IndexMap<String, ApplianceEntry>>,
+    pub appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
     pub tariff: Option<Tariff>,
 }
 
@@ -2352,6 +2352,39 @@ pub enum CombustionApplianceType {
     ClosedFire,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub(crate) enum ApplianceKey {
+    Fridge,
+    Freezer,
+    #[serde(rename = "Otherdevices")]
+    OtherDevices,
+    Dishwasher,
+    #[serde(rename = "Clothes_washing")]
+    ClothesWashing,
+    #[serde(rename = "Clothes_drying")]
+    ClothesDrying,
+    Oven,
+    Hobs,
+    Microwave,
+    Kettle,
+}
+
+impl ApplianceKey {
+    pub(crate) fn is_clothes_appliance(&self) -> bool {
+        [Self::ClothesWashing, Self::ClothesDrying].contains(self)
+    }
+}
+
+impl Display for ApplianceKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -3133,10 +3166,10 @@ impl InputForProcessing {
         self.input.appliances.is_some()
     }
 
-    pub(crate) fn merge_in_appliances(&mut self, appliances: &IndexMap<String, Appliance>) {
-        let mut appliances: IndexMap<String, ApplianceEntry> = appliances
+    pub(crate) fn merge_in_appliances(&mut self, appliances: &IndexMap<ApplianceKey, Appliance>) {
+        let mut appliances: IndexMap<ApplianceKey, ApplianceEntry> = appliances
             .iter()
-            .map(|(k, v)| (k.to_owned(), ApplianceEntry::Object(v.clone())))
+            .map(|(k, v)| (*k, ApplianceEntry::Object(v.clone())))
             .collect();
         if let Some(ref mut existing_appliances) = self.input.appliances.as_mut() {
             existing_appliances.append(&mut appliances);
@@ -3145,26 +3178,26 @@ impl InputForProcessing {
         }
     }
 
-    pub(crate) fn remove_appliance(&mut self, appliance_name: &str) {
+    pub(crate) fn remove_appliance(&mut self, appliance_key: &ApplianceKey) {
         if let Some(ref mut appliances) = self.input.appliances.as_mut() {
-            appliances.shift_remove_entry(appliance_name);
+            appliances.shift_remove_entry(appliance_key);
         }
     }
 
-    pub(crate) fn appliances_contain_name(&self, name: &str) -> bool {
+    pub(crate) fn appliances_contain_key(&self, name: &ApplianceKey) -> bool {
         self.input
             .appliances
             .as_ref()
             .is_some_and(|appliances| appliances.contains_key(name))
     }
 
-    pub(crate) fn appliance_name_has_reference(
+    pub(crate) fn appliance_key_has_reference(
         &self,
-        name: &str,
+        key: &ApplianceKey,
         reference: &ApplianceReference,
     ) -> bool {
         self.input.appliances.as_ref().is_some_and(|appliances| {
-            appliances.get(name).is_some_and(|appliance| {
+            appliances.get(key).is_some_and(|appliance| {
                 if let ApplianceEntry::Reference(appliance_reference) = appliance {
                     appliance_reference == reference
                 } else {
@@ -3174,11 +3207,11 @@ impl InputForProcessing {
         })
     }
 
-    pub(crate) fn appliance_with_name(&self, name: &str) -> Option<&ApplianceEntry> {
+    pub(crate) fn appliance_with_key(&self, key: &ApplianceKey) -> Option<&ApplianceEntry> {
         self.input
             .appliances
             .as_ref()
-            .and_then(|appliances| appliances.get(name))
+            .and_then(|appliances| appliances.get(key))
     }
 }
 
