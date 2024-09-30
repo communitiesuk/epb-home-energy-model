@@ -743,6 +743,85 @@ mod tests {
         }
     }
 
+    /// Test flow and return temperature based on ecodesign control class
+    #[rstest]
+    fn test_temp_flow_return(
+        emitters: Emitters,
+        simulation_time: SimulationTimeIterator,
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+    ) {
+        let (flow_temp, return_temp) =
+            emitters.temp_flow_return(&simulation_time.current_iteration());
+
+        assert_relative_eq!(flow_temp, 50.8333, max_relative = 1e-2);
+        assert_relative_eq!(return_temp, 43.5714, max_relative = 1e-2);
+
+        // Test with different outdoor temp
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassII,
+            min_outdoor_temp: Some(10.),
+            max_outdoor_temp: Some(15.),
+            min_flow_temp: Some(30.),
+        };
+
+        let heat_source = Arc::new(heat_source);
+
+        let emitters = Emitters::new(
+            0.14,
+            0.08,
+            1.2,
+            10.,
+            0.4,
+            heat_source.clone(),
+            Arc::new(move || 20.),
+            external_conditions.clone().into(),
+            ecodesign_controller,
+            55.,
+            1.,
+            false,
+        );
+
+        let (flow_temp, return_temp) =
+            emitters.temp_flow_return(&simulation_time.current_iteration());
+
+        assert_relative_eq!(flow_temp, 55., max_relative = 1e-2);
+        assert_relative_eq!(return_temp, 47.1428, max_relative = 1e-2);
+
+        // Test with different control class
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassIV,
+            min_outdoor_temp: Some(-4.),
+            max_outdoor_temp: Some(20.),
+            min_flow_temp: Some(30.),
+        };
+
+        let emitters = Emitters::new(
+            0.14,
+            0.08,
+            1.2,
+            10.,
+            0.4,
+            heat_source,
+            Arc::new(move || 20.),
+            external_conditions.into(),
+            ecodesign_controller,
+            55.,
+            1.,
+            false,
+        );
+
+        let (flow_temp, return_temp) =
+            emitters.temp_flow_return(&simulation_time.current_iteration());
+
+        assert_relative_eq!(flow_temp, 55.);
+        assert_relative_eq!(
+            return_temp,
+            47.14285714,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
     // TODO more tests to implement here
     #[rstest]
     #[ignore = "not yet implemented"]
