@@ -1,5 +1,5 @@
 use crate::core::schedule::expand_numeric_schedule;
-use crate::core::units::DAYS_IN_MONTH;
+use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, WATTS_PER_KILOWATT};
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
@@ -1502,8 +1502,8 @@ fn create_appliance_gains(
                 None
             };
 
-            input.set_gains_for_field(appliance_key.to_string(), json!({
-                "type": appliance_key.to_string(),
+            input.set_gains_for_field(String::from(appliance_key), json!({
+                "type": appliance_key,
                 "EnergySupply": if [ApplianceKey::Hobs, ApplianceKey::Oven].contains(&appliance_key) {
                     appliance_energy_supply.ok_or_else(|| anyhow!("Could not get energy supply type for appliance with key {appliance_key}"))?.to_string()
                 } else {
@@ -1518,35 +1518,56 @@ fn create_appliance_gains(
                 "loadshifting": load_shifting
             }))?;
         } else {
-            // continue as per else clause from Python below!
+            // model as yearlong time series schedule of demand in W
+            let annual_kwh = if let ApplianceEntry::Object(Appliance {
+                kwh_per_annum: Some(ref kwh_per_annum),
+                ..
+            }) = &appliance
+            {
+                kwh_per_annum * map_appliance.util_unit
+            } else {
+                continue;
+            };
+            // TODO (from Python) - check normalisation of flat profile here
+            let flat_schedule: Vec<f64> = flat_efus_profile
+                .iter()
+                .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
+                .collect();
+            demand_scheds.insert(appliance_key, flat_schedule.clone());
+
+            let appliance_uses_gas = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
+
+            input.set_gains_for_field(String::from(appliance_key), json!({
+                "type": appliance_key,
+                "EnergySupply": if appliance_uses_gas { ENERGY_SUPPLY_NAME_GAS } else { ENERGY_SUPPLY_NAME_ELECTRICITY },
+                "start_day": 0,
+                "time_series_step": 1,
+                "gains_fraction": map_appliance.gains_frac,
+                "schedule": {
+                   // watts
+                   "main": flat_schedule
+                }
+            }))?;
         }
     }
+    // sum schedules for use with loadshifting
+    // will this work with variable timestep?
+    let sched_len = demand_scheds
+        .values()
+        .nth(0)
+        .ok_or_else(|| anyhow!("Demand schedules are empty"))?
+        .len();
+    let mut main_sched = vec![0.; sched_len];
+    for sched in demand_scheds.values() {
+        for (i, main_sched_item) in main_sched.iter_mut().enumerate() {
+            *main_sched_item += sched[i];
+        }
+    }
+    for key in input.keys_for_appliance_gains_with_load_shifting() {
+        input.set_load_shifting_demand_timeseries_for_appliance(&key, main_sched.clone());
+    }
 
-    /*
-       else:
-           #model as yearlong time series schedule of demand in W
-           if "kWh_per_annum" in project_dict["Appliances"][appliancename]:
-               annualkWh = project_dict["Appliances"][appliancename]["kWh_per_annum"] *\
-                           appliancemap[appliancename]["util_unit"]
-           else:
-               continue
-           #todo - check normalisation of flat profile here
-           flatschedule = [W_per_kW /days_per_year * frac * annualkWh for frac in flatEFUSprofile]
-           demand_scheds.update({appliancename:flatschedule})
-           project_dict['ApplianceGains'][appliancename] = {
-               "type": appliancename,
-               "EnergySupply": energysupplyname_gas if "Gas" in appliancename else energysupplyname_electricity,
-               "start_day": 0,
-               "time_series_step": 1,
-               "gains_fraction": appliancemap[appliancename]["gains_frac"],
-               "schedule": {
-                   #watts
-                   "main": flatschedule
-               }
-           }
-    */
-
-    todo!()
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

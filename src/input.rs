@@ -2376,6 +2376,20 @@ impl Display for ApplianceKey {
     }
 }
 
+impl From<ApplianceKey> for String {
+    fn from(appliance_key: ApplianceKey) -> Self {
+        appliance_key.to_string()
+    }
+}
+
+impl TryFrom<&str> for ApplianceKey {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        serde_json::from_str(format!("\"{}\"", value).as_str()).map_err(|err| anyhow!(err))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -3202,6 +3216,36 @@ impl InputForProcessing {
 
     pub(crate) fn tariff_schedule(&self) -> Option<&Schedule> {
         self.input.tariff.as_ref().map(|tariff| &tariff.schedule)
+    }
+
+    pub(crate) fn keys_for_appliance_gains_with_load_shifting(&self) -> Vec<String> {
+        self.input
+            .appliance_gains
+            .iter()
+            .filter_map(|(key, gain)| gain.load_shifting.is_some().then(|| key.clone()))
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn set_load_shifting_demand_timeseries_for_appliance(
+        &mut self,
+        appliance_name: &str,
+        timeseries: Vec<f64>,
+    ) {
+        if let Some(ApplianceEntry::Object(Appliance {
+            load_shifting: Some(ref mut load_shifting),
+            ..
+        })) = ApplianceKey::try_from(appliance_name)
+            .ok()
+            .and_then(|appliance_key| {
+                self.input
+                    .appliances
+                    .as_mut()
+                    .map(|gains| gains.get_mut(&appliance_key))
+            })
+            .flatten()
+        {
+            load_shifting.demand_timeseries = Some(timeseries);
+        }
     }
 }
 
