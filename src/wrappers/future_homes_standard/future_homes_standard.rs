@@ -5,8 +5,9 @@ use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, Wind
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
     EnergySupplyType, FuelType, HeatSourceControlType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, SpaceHeatControlType,
-    WaterHeatingEvent, WaterHeatingEventType,
+    HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
+    MechanicalVentilationForProcessing, SpaceHeatControlType, WaterHeatingEvent,
+    WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -54,7 +55,12 @@ fn simtime() -> SimulationTime {
 // Central point for hot water temperature (temp_hot_water) across the code
 const HW_TEMPERATURE: f64 = 52.0;
 
-pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result<()> {
+pub fn apply_fhs_preprocessing(
+    input: &mut InputForProcessing,
+    is_fee: Option<bool>,
+) -> anyhow::Result<()> {
+    let is_fee = is_fee.unwrap_or(false);
+
     input.set_simulation_time(simtime());
 
     input.reset_internal_gains();
@@ -73,13 +79,16 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     create_water_heating_pattern(input)?;
     create_heating_pattern(input)?;
     create_evaporative_losses(input, tfa, n_occupants, &EVAP_PROFILE_DATA)?;
+    create_cold_water_losses(input, tfa, n_occupants, &COLD_WATER_LOSS_PROFILE_DATA)?;
     create_lighting_gains(input, tfa, n_occupants)?;
     create_appliance_gains(input, tfa, n_occupants, &APPLIANCE_PROPENSITIES)?;
 
     for source_key in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(&source_key);
         if source.is_storage_tank() {
-            source.set_min_temp_and_setpoint_temp_if_storage_tank(52.0, 60.0);
+            source.set_min_temp_and_setpoint_temp_if_storage_tank(HW_TEMPERATURE, 60.0);
+        } else {
+            source.set_setpoint_temp(HW_TEMPERATURE);
         }
     }
 
@@ -87,6 +96,12 @@ pub fn apply_fhs_preprocessing(input: &mut InputForProcessing) -> anyhow::Result
     create_hot_water_use_pattern(input, n_occupants, &cold_water_feed_temps)?;
     create_cooling(input)?;
     create_window_opening_schedule(input)?;
+    if !is_fee {
+        calc_sfp_mech_vent(input)?;
+    }
+    if input.has_mechanical_ventilation() {
+        create_mev_pattern(input);
+    }
 
     Ok(())
 }
@@ -2029,6 +2044,39 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
             }
             None => {
                 bail!("Space heat control for zone '{zone_key}' was not of expected type.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn create_mev_pattern(input: &mut InputForProcessing) {
+    // intermittent extract fans are assumed to turn on whenever cooking, bath or shower events occur
+
+    // continue!!
+}
+
+fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    for mech_vents_data in input
+        .mechanical_ventilations_for_processing()
+        .iter_mut()
+        .flatten()
+    {
+        match mech_vents_data.vent_type() {
+            crate::input::VentType::CentralisedContinuousMev | crate::input::VentType::Mvhr => {
+                let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;
+                let measured_air_flow_rate = mech_vents_data.measured_air_flow_rate().ok_or_else(|| anyhow!("Measured air flow rate was not given for a mechanical ventilation that expected one to be present."))?;
+                // Specific fan power is total measured electrical power in Watts divided by air flow rate
+                let measured_sfp = measured_fan_power / measured_air_flow_rate; // in W/l/s
+                mech_vents_data.set_sfp(measured_sfp);
+            }
+            crate::input::VentType::IntermittentMev
+            | crate::input::VentType::DecentralisedContinuousMev => {
+                continue;
+            }
+            crate::input::VentType::Piv => {
+                bail!("Mechanical ventilation type of PIV not recognised")
             }
         }
     }

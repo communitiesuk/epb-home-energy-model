@@ -756,6 +756,7 @@ pub trait HotWaterSourceDetailsForProcessing {
         control_name: impl Into<String>,
     ) -> anyhow::Result<()>;
     fn set_min_temp_and_setpoint_temp_if_storage_tank(&mut self, min_temp: f64, setpoint_temp: f64);
+    fn set_setpoint_temp(&mut self, setpoint_temp: f64);
 }
 
 impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
@@ -821,6 +822,36 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         {
             *min_temp_store = min_temp;
             *setpoint_temp_store = setpoint_temp;
+        }
+    }
+
+    fn set_setpoint_temp(&mut self, setpoint_temp: f64) {
+        match self {
+            HotWaterSourceDetails::StorageTank {
+                setpoint_temp: ref mut source_setpoint_temp,
+                ..
+            } => {
+                *source_setpoint_temp = setpoint_temp;
+            }
+            HotWaterSourceDetails::CombiBoiler {
+                setpoint_temp: ref mut source_setpoint_temp,
+                ..
+            } => {
+                *source_setpoint_temp = Some(setpoint_temp);
+            }
+            HotWaterSourceDetails::Hiu {
+                setpoint_temp: ref mut source_setpoint_temp,
+                ..
+            } => {
+                *source_setpoint_temp = setpoint_temp;
+            }
+            HotWaterSourceDetails::PointOfUse {
+                setpoint_temp: ref mut source_setpoint_temp,
+                ..
+            } => {
+                *source_setpoint_temp = setpoint_temp;
+            }
+            HotWaterSourceDetails::HeatBattery {} => {}
         }
     }
 }
@@ -2205,13 +2236,38 @@ pub struct MechanicalVentilation {
     #[serde(rename = "SFP")]
     pub(crate) sfp: Option<f64>,
     #[serde(rename = "measured_fan_power")]
-    _measured_fan_power: Option<f64>,
+    pub(crate) measured_fan_power: Option<f64>,
     #[serde(rename = "measured_air_flow_rate")]
-    _measured_air_flow_rate: Option<f64>,
+    pub(crate) measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: EnergySupplyType,
     pub(crate) design_outdoor_air_flow_rate: f64,
     pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
+}
+
+pub(crate) trait MechanicalVentilationForProcessing {
+    fn vent_type(&self) -> VentType;
+    fn measured_fan_power(&self) -> Option<f64>;
+    fn measured_air_flow_rate(&self) -> Option<f64>;
+    fn set_sfp(&mut self, sfp: f64);
+}
+
+impl MechanicalVentilationForProcessing for MechanicalVentilation {
+    fn set_sfp(&mut self, sfp: f64) {
+        self.sfp = Some(sfp);
+    }
+
+    fn vent_type(&self) -> VentType {
+        self.vent_type
+    }
+
+    fn measured_fan_power(&self) -> Option<f64> {
+        self.measured_fan_power
+    }
+
+    fn measured_air_flow_rate(&self) -> Option<f64> {
+        self.measured_air_flow_rate
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -3246,6 +3302,23 @@ impl InputForProcessing {
         {
             load_shifting.demand_timeseries = Some(timeseries);
         }
+    }
+
+    pub(crate) fn mechanical_ventilations_for_processing(
+        &mut self,
+    ) -> Option<Vec<&mut impl MechanicalVentilationForProcessing>> {
+        self.input
+            .infiltration_ventilation
+            .mechanical_ventilation
+            .as_mut()
+            .map(|v| v.values_mut().collect::<Vec<_>>())
+    }
+
+    pub(crate) fn has_mechanical_ventilation(&self) -> bool {
+        self.input
+            .infiltration_ventilation
+            .mechanical_ventilation
+            .is_some()
     }
 }
 

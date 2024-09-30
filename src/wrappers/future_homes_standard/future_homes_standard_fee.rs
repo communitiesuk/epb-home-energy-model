@@ -172,7 +172,7 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     // Note: In SAP 10.2, different gains assumptions were used for the cooling
     // calculation compared to the heating calculation. However, only one set of
     // standardised gains have so far been defined here.
-    apply_fhs_preprocessing(input)?;
+    apply_fhs_preprocessing(input, Some(true))?;
 
     Ok(())
 }

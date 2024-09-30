@@ -55,7 +55,7 @@ pub fn run_project(
 
     // do wrapper pre-processing here
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-        apply_fhs_preprocessing(&mut input_for_processing)?;
+        apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
     } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
         apply_fhs_fee_preprocessing(&mut input_for_processing)?;
     }
