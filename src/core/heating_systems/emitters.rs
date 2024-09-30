@@ -5,8 +5,6 @@ use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
-use std::collections::HashMap;
-// use bacon_sci::ivp::{RungeKuttaSolver, RK45};
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use std::sync::Arc;
 
@@ -754,14 +752,18 @@ mod tests {
         let (temp_emitter, time_temp_diff_max_reached) =
             emitters.temp_emitter(0., 2., 5., 10., 0.2, None);
 
-        assert_relative_eq!(temp_emitter, 7.85714285, max_relative=EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(
+            temp_emitter,
+            7.85714285,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
         assert!(time_temp_diff_max_reached.is_none());
 
         // Check not None conditions are invoked
-        // Test wehen max temp is reached (early exit)
+        // Test when max temp is reached (early exit)
         let (temp_emitter, time_temp_diff_max_reached) =
             emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
-        
+
         assert_relative_eq!(temp_emitter, 25., max_relative = EIGHT_DECIMAL_PLACES);
         assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
     }
