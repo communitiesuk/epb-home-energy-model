@@ -66,8 +66,8 @@ use crate::input::{
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent, WaterHeatingEvents,
-    WwhrsType, ZoneDictionary, ZoneInput,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -2669,37 +2669,40 @@ fn event_schedules_from_input(
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<EventSchedule> {
     let mut schedule: EventSchedule = vec![None; simulation_time_iterator.total_steps()];
-    let shower_events = &events.shower;
-    for (name, events) in shower_events {
-        schedule = schedule_event_from_input(
-            events.iter().collect(),
-            name,
-            WaterScheduleEventType::Shower,
-            schedule,
-            simulation_time_iterator,
-        )?;
+    if let Some(&shower_events) = events.0.get(&WaterHeatingEventType::Shower).as_ref() {
+        for (name, events) in shower_events {
+            schedule = schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                WaterScheduleEventType::Shower,
+                schedule,
+                simulation_time_iterator,
+            )?;
+        }
     }
 
-    let bath_events = &events.bath;
-    for (name, events) in bath_events {
-        schedule = schedule_event_from_input(
-            events.iter().collect(),
-            name,
-            WaterScheduleEventType::Bath,
-            schedule,
-            simulation_time_iterator,
-        )?;
+    if let Some(&bath_events) = events.0.get(&WaterHeatingEventType::Bath).as_ref() {
+        for (name, events) in bath_events {
+            schedule = schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                WaterScheduleEventType::Bath,
+                schedule,
+                simulation_time_iterator,
+            )?;
+        }
     }
 
-    let other_events = &events.other;
-    for (name, events) in other_events {
-        schedule = schedule_event_from_input(
-            events.iter().collect(),
-            name,
-            WaterScheduleEventType::Other,
-            schedule,
-            simulation_time_iterator,
-        )?;
+    if let Some(&other_events) = events.0.get(&WaterHeatingEventType::Other).as_ref() {
+        for (name, events) in other_events {
+            schedule = schedule_event_from_input(
+                events.iter().collect(),
+                name,
+                WaterScheduleEventType::Other,
+                schedule,
+                simulation_time_iterator,
+            )?;
+        }
     }
 
     Ok(schedule)

@@ -1248,15 +1248,9 @@ pub type WaterDistribution = Vec<WaterPipeworkSimple>;
 
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
-pub struct WaterHeatingEvents {
-    #[serde(default)]
-    pub shower: IndexMap<String, Vec<WaterHeatingEvent>>,
-    #[serde(default)]
-    pub bath: IndexMap<String, Vec<WaterHeatingEvent>>,
-    #[serde(default)]
-    pub other: IndexMap<String, Vec<WaterHeatingEvent>>,
-}
+pub(crate) struct WaterHeatingEvents(
+    pub(crate) IndexMap<WaterHeatingEventType, IndexMap<String, Vec<WaterHeatingEvent>>>,
+);
 
 impl WaterHeatingEvents {
     fn add_event_for_type_and_name(
@@ -1265,17 +1259,12 @@ impl WaterHeatingEvents {
         name: &str,
         event: WaterHeatingEvent,
     ) {
-        match event_type {
-            WaterHeatingEventType::Shower => {
-                self.shower.entry(name.to_string()).or_default().push(event);
-            }
-            WaterHeatingEventType::Bath => {
-                self.bath.entry(name.to_string()).or_default().push(event);
-            }
-            WaterHeatingEventType::Other => {
-                self.other.entry(name.to_string()).or_default().push(event);
-            }
-        }
+        self.0
+            .entry(event_type)
+            .or_default()
+            .entry(name.to_string())
+            .or_default()
+            .push(event);
     }
 }
 
@@ -1288,7 +1277,7 @@ pub struct WaterHeatingEvent {
     pub temperature: f64,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
 pub enum WaterHeatingEventType {
     Shower,
     Bath,
