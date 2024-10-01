@@ -3,6 +3,7 @@ use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::{Equivalent, IndexMap};
+use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Value};
@@ -1268,7 +1269,30 @@ impl WaterHeatingEvents {
     }
 }
 
-#[derive(Debug, Deserialize)]
+pub(crate) trait WaterHeatingEventsForProcessing {
+    fn water_heating_events_of_types(
+        &self,
+        event_types: &[WaterHeatingEventType],
+    ) -> Vec<WaterHeatingEvent>;
+}
+
+impl WaterHeatingEventsForProcessing for WaterHeatingEvents {
+    fn water_heating_events_of_types(
+        &self,
+        event_types: &[WaterHeatingEventType],
+    ) -> Vec<WaterHeatingEvent> {
+        self.0
+            .iter()
+            .filter(|(event_type, events)| event_types.contains(event_type))
+            .map(|(_, events)| events.values())
+            .flatten()
+            .flatten()
+            .copied()
+            .collect_vec()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
@@ -2239,6 +2263,7 @@ pub(crate) trait MechanicalVentilationForProcessing {
     fn measured_fan_power(&self) -> Option<f64>;
     fn measured_air_flow_rate(&self) -> Option<f64>;
     fn set_sfp(&mut self, sfp: f64);
+    fn set_control(&mut self, control: &str);
 }
 
 impl MechanicalVentilationForProcessing for MechanicalVentilation {
@@ -2256,6 +2281,10 @@ impl MechanicalVentilationForProcessing for MechanicalVentilation {
 
     fn measured_air_flow_rate(&self) -> Option<f64> {
         self.measured_air_flow_rate
+    }
+
+    fn set_control(&mut self, control: &str) {
+        self.control = Some(control.to_owned());
     }
 }
 
@@ -2278,7 +2307,7 @@ pub enum SupplyAirTemperatureControlType {
     LoadCom,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum VentType {
     #[serde(rename = "Intermittent MEV")]
@@ -2291,6 +2320,16 @@ pub enum VentType {
     Mvhr,
     #[serde(rename = "PIV")]
     Piv,
+}
+
+impl Display for VentType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -3057,6 +3096,15 @@ impl InputForProcessing {
         );
     }
 
+    pub(crate) fn water_heating_events_of_types(
+        &self,
+        event_types: &[WaterHeatingEventType],
+    ) -> Vec<WaterHeatingEvent> {
+        self.input
+            .water_heating_events
+            .water_heating_events_of_types(event_types)
+    }
+
     pub fn defines_window_opening_for_cooling(&self) -> bool {
         self.input.window_opening_for_cooling.is_some()
     }
@@ -3303,11 +3351,35 @@ impl InputForProcessing {
             .map(|v| v.values_mut().collect::<Vec<_>>())
     }
 
+    pub(crate) fn keyed_mechanical_ventilations_for_processing(
+        &mut self,
+    ) -> Option<&mut IndexMap<String, impl MechanicalVentilationForProcessing>> {
+        self.input
+            .infiltration_ventilation
+            .mechanical_ventilation
+            .as_mut()
+    }
+
     pub(crate) fn has_mechanical_ventilation(&self) -> bool {
         self.input
             .infiltration_ventilation
             .mechanical_ventilation
             .is_some()
+    }
+
+    pub(crate) fn appliance_gains_events(
+        &self,
+    ) -> IndexMap<String, Vec<ApplianceGainsDetailsEvent>> {
+        self.input
+            .appliance_gains
+            .iter()
+            .map(|(name, gain)| {
+                (
+                    name.clone(),
+                    gain.events.as_ref().unwrap_or(&vec![]).clone(),
+                )
+            })
+            .collect()
     }
 }
 

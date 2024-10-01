@@ -1,12 +1,12 @@
 use crate::core::schedule::expand_numeric_schedule;
-use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, WATTS_PER_KILOWATT};
+use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
     EnergySupplyType, FuelType, HeatSourceControlType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SpaceHeatControlType, WaterHeatingEvent,
+    MechanicalVentilationForProcessing, SpaceHeatControlType, VentType, WaterHeatingEvent,
     WaterHeatingEventType,
 };
 use crate::output::Output;
@@ -100,7 +100,7 @@ pub fn apply_fhs_preprocessing(
         calc_sfp_mech_vent(input)?;
     }
     if input.has_mechanical_ventilation() {
-        create_mev_pattern(input);
+        create_mev_pattern(input)?;
     }
 
     Ok(())
@@ -2051,10 +2051,142 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
     Ok(())
 }
 
-fn create_mev_pattern(input: &mut InputForProcessing) {
+fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // intermittent extract fans are assumed to turn on whenever cooking, bath or shower events occur
 
-    // continue!!
+    let shower_and_bath_events = input.water_heating_events_of_types(&[
+        WaterHeatingEventType::Shower,
+        WaterHeatingEventType::Bath,
+    ]);
+    let appliance_gains_events = input.appliance_gains_events();
+
+    let mut mech_vents = input.keyed_mechanical_ventilations_for_processing();
+    let simtime = simtime();
+    let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
+        .iter()
+        .flat_map(|vents| vents.iter())
+        .filter(|(_, vent)| vent.vent_type() == VentType::IntermittentMev)
+        .fold(IndexMap::from([]), |mut acc, (vent, _)| {
+            acc.insert(
+                vent.to_owned(),
+                vec![
+                    0.;
+                    ((simtime.end_time() - simtime.start_time()) / simtime.step).ceil() as usize
+                ],
+            );
+            acc
+        });
+
+    let mev_names = intermittent_mev.keys().cloned().collect::<Vec<_>>();
+    if mev_names.is_empty() {
+        return Ok(());
+    }
+
+    let mut cycle_mev = CycleMev::new(mev_names.iter().map(String::as_str).collect());
+
+    for event in shower_and_bath_events {
+        let mev_name = cycle_mev.mev();
+        let idx = (event.start / simtime.step).floor() as usize;
+        let tsfrac = event.duration.ok_or_else(|| {
+            anyhow!("Water heating event was expected to have a defined duration in FHS transform.")
+        })? / (MINUTES_PER_HOUR as f64 * simtime.step);
+        // add fraction of the timestep for which appliance is turned on
+        // to the fraction of the timestep for which the fan is turned on,
+        // and cap that fraction at 1.
+        let mut integralx: f64 = Default::default();
+        let start_offset = event.start / simtime.step - idx as f64;
+        while integralx < tsfrac {
+            let segment = (start_offset.ceil() - start_offset).min(tsfrac - integralx);
+            let step_idx = (idx + (start_offset + integralx).floor() as usize)
+                % intermittent_mev[mev_name].len();
+            intermittent_mev[mev_name][step_idx] =
+                (intermittent_mev[mev_name][step_idx] + segment).min(1.);
+            integralx += segment;
+        }
+    }
+
+    // these names are the same as those already defined in create_appliance_gains
+    // TODO (from Python) - define them at top level of wrapper
+    // kettles and microwaves are assumed not to activate the extract fan
+    for cook_enduse in ["Gas_Cooker", "Gas_Oven", "Electric_Cooker", "Electric_Oven"] {
+        if let Some(events) = appliance_gains_events.get(cook_enduse) {
+            for event in events {
+                let mev_name = cycle_mev.mev();
+                let idx = (event.start / simtime.step).floor() as usize;
+                let tsfrac = event.duration / (MINUTES_PER_HOUR as f64 * simtime.step);
+                // add fraction of the timestep for which appliance is turned on
+                // to the fraction of the timestep for which the fan is turned on,
+                // and cap that fraction at 1.
+                let mut integralx: f64 = Default::default();
+                let start_offset = event.start / simtime.step - idx as f64;
+                while integralx < tsfrac {
+                    let segment = (start_offset.ceil() - start_offset).min(tsfrac - integralx);
+                    let step_idx = (idx + (start_offset + integralx).floor() as usize)
+                        % intermittent_mev[mev_name].len();
+                    intermittent_mev[mev_name][step_idx] =
+                        (intermittent_mev[mev_name][step_idx] + segment).min(1.);
+                    integralx += segment;
+                }
+            }
+        }
+    }
+
+    let control_names: HashMap<String, String> = intermittent_mev
+        .keys()
+        .map(|name| (name.clone(), format!("_intermittent_MEV_control: {}", name)))
+        .collect();
+
+    for vent in intermittent_mev.keys() {
+        let control_name = &control_names[vent];
+        mech_vents
+            .as_mut()
+            .unwrap()
+            .get_mut(vent)
+            .unwrap()
+            .set_control(&control_name);
+    }
+
+    // loop through again as can't write to two different mutable refs based on input in one loop
+    for vent in intermittent_mev.keys() {
+        let control_name = &control_names[vent];
+        input.add_control(
+            control_name,
+            json!({
+                "type": "SetpointTimeControl",
+                "start_day": 0,
+                "time_series_step": simtime.step,
+                "schedule": {
+                    "main": intermittent_mev[vent]
+                }
+            }),
+        )?;
+    }
+
+    Ok(())
+}
+
+// if there are multiple extract fans they are cycled sequentially
+// in order that they all be used an approximately equal amount,
+// so a different extract fan could be activated by the same shower,
+// and likewise the same extract fan could be activated by cooking as by a shower
+struct CycleMev<'a> {
+    names: Vec<&'a str>,
+    cycle_count: usize,
+}
+
+impl<'a> CycleMev<'a> {
+    fn new(names: Vec<&'a str>) -> Self {
+        Self {
+            names,
+            cycle_count: Default::default(),
+        }
+    }
+
+    fn mev(&mut self) -> &str {
+        let res = self.names[self.cycle_count].as_ref();
+        self.cycle_count = (self.cycle_count + 1) % self.names.len();
+        res
+    }
 }
 
 fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
