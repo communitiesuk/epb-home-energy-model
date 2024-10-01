@@ -1712,6 +1712,32 @@ impl BuildingElement {
     }
 }
 
+pub(crate) trait TransparentBuildingElement {
+    fn set_window_openable_control(&mut self, control: &str);
+    fn is_security_risk(&self) -> bool;
+}
+
+impl TransparentBuildingElement for BuildingElement {
+    fn set_window_openable_control(&mut self, control: &str) {
+        match self {
+            BuildingElement::Transparent {
+                ref mut window_openable_control,
+                ..
+            } => {
+                *window_openable_control = Some(control.to_owned());
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn is_security_risk(&self) -> bool {
+        match self {
+            BuildingElement::Transparent { security_risk, .. } => security_risk.unwrap_or(false),
+            _ => unreachable!(),
+        }
+    }
+}
+
 // special deserialization logic so that orientations are normalized correctly on the way in
 pub fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
@@ -3242,6 +3268,17 @@ impl InputForProcessing {
             .collect()
     }
 
+    pub(crate) fn all_transparent_building_elements_mut(
+        &mut self,
+    ) -> Vec<&mut impl TransparentBuildingElement> {
+        self.input
+            .zone
+            .values_mut()
+            .flat_map(|zone| zone.building_elements.values_mut())
+            .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
+            .collect()
+    }
+
     pub(crate) fn all_energy_supply_fuel_types(&self) -> HashSet<FuelType> {
         let mut fuel_types: HashSet<FuelType> = Default::default();
         for energy_supply in self.input.energy_supply.values() {
@@ -3380,6 +3417,17 @@ impl InputForProcessing {
                 )
             })
             .collect()
+    }
+
+    pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(&mut self, control: &str) {
+        self.input.infiltration_ventilation.window_adjust_control = Some(control.to_owned());
+    }
+
+    pub(crate) fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
+        self.input
+            .infiltration_ventilation
+            .noise_nuisance
+            .unwrap_or(false)
     }
 }
 

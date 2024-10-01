@@ -6,8 +6,8 @@ use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
     EnergySupplyType, FuelType, HeatSourceControlType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SpaceHeatControlType, VentType, WaterHeatingEvent,
-    WaterHeatingEventType,
+    MechanicalVentilationForProcessing, SpaceHeatControlType, TransparentBuildingElement, VentType,
+    WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -1880,11 +1880,13 @@ fn create_hot_water_use_pattern(
     check_shower_flowrate(input)?;
 
     // temperature of mixed hot water for event
-    let event_temperature = 41.0;
-    let hw_temperature = 52.0;
+    let event_temperature_showers = 41.0;
+    let event_temperature_bath = 41.0;
+    let event_temperature_others = 41.0;
+
     let mean_feedtemp =
         cold_water_feed_temps.iter().sum::<f64>() / cold_water_feed_temps.len() as f64;
-    let _mean_delta_t = hw_temperature - mean_feedtemp;
+    let _mean_delta_t = HW_TEMPERATURE - mean_feedtemp;
 
     let _annual_hw_events: Vec<()> = vec![];
     let _annual_hw_events_energy: Vec<()> = vec![];
@@ -1894,8 +1896,8 @@ fn create_hot_water_use_pattern(
     // vol_daily_average = (25 * N_occupants) + 36
 
     // new relation based on Boiler Manufacturer data and EST surveys
-    // reduced by 15% to account for pipework losses present in the source data
-    let vol_hw_daily_average = 0.85 * 60.3 * number_of_occupants.powf(0.71);
+    // reduced by 30% to account for pipework losses present in the source data
+    let vol_hw_daily_average = 0.70 * 60.3 * number_of_occupants.powf(0.71);
 
     let mut hw_event_gen = HotWaterEventGenerator::new(vol_hw_daily_average, None, None)?;
     let ref_event_list = hw_event_gen.build_annual_hw_events(startmod)?;
@@ -1928,8 +1930,8 @@ fn create_hot_water_use_pattern(
     let mut hw_event_aa = reset_events_and_provide_drawoff_generator(
         input,
         fhw,
-        event_temperature,
-        hw_temperature,
+        event_temperature_others,
+        HW_TEMPERATURE,
         cold_water_feed_temps,
         part_g_bonus,
     )?;
@@ -1975,7 +1977,13 @@ fn create_hot_water_use_pattern(
             WaterHeatingEvent {
                 start: event_start,
                 duration: Some(duration),
-                temperature: event_temperature,
+                temperature: if event.event_type.is_shower_type() {
+                    event_temperature_showers
+                } else if event.event_type.is_bath_type() {
+                    event_temperature_bath
+                } else {
+                    event_temperature_others
+                },
             },
         );
     }
@@ -1984,68 +1992,63 @@ fn create_hot_water_use_pattern(
 }
 
 fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    if !input.defines_window_opening_for_cooling() {
-        warn!("Warning: No window opening for cooling has been specified. The calculation will assume that there are no openable windows.");
-        return Ok(());
-    }
+    let simtime = simtime();
 
     let window_opening_setpoint = 22.0;
 
-    // 09:00 - 22:00
     input.add_control(
-        "WindowOpening_LivingRoom",
+        "_window_opening_adjust",
         json!({
             "type": "SetpointTimeControl",
             "start_day": 0,
-            "time_series_step": 0.5,
+            "time_series_step": 1.0,
+            "schedule": {
+                "main": [{"repeat": simtime.end_time(), "value": window_opening_setpoint}],
+            }
+        }),
+    )?;
+    input.set_window_adjust_control_for_infiltration_ventilation("_window_opening_adjust");
+
+    input.add_control(
+        "_window_opening_openablealways",
+        json!({
+            "type": "OnOffTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.0,
+            "schedule": {
+                "main": [{"repeat": simtime.end_time(), "value": true}]
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_window_opening_closedsleeping",
+        json!({
+            "type": "OnOffTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.0,
             "schedule": {
                 "main": [{"repeat": 365, "value": "day"}],
                 "day": [
-                    {"repeat": 18, "value": Value::Null},
-                    {"repeat": 26, "value": window_opening_setpoint},
-                    {"repeat": 4, "value": Value::Null},
+                    {"repeat": 7, "value": false},
+                    {"repeat": 15, "value": true},
+                    {"repeat": 2, "value": false},
                 ]
             }
         }),
     )?;
 
-    // 08:00 - 23:00
-    input.add_control(
-        "WindowOpening_RestOfDwelling",
-        json!({
-            "type": "SetpointTimeControl",
-            "start_day": 0,
-            "time_series_step": 0.5,
-            "schedule": {
-                "main": [{"repeat": 365, "value": "day"}],
-                "day": [
-                    {"repeat": 16, "value": Value::Null},
-                    {"repeat": 30, "value": window_opening_setpoint},
-                    {"repeat": 2, "value": Value::Null},
-                ]
-            }
-        }),
-    )?;
+    let noise_nuisance = input.infiltration_ventilation_is_noise_nuisance();
 
-    let zone_keys = input.zone_keys();
-    for zone_key in zone_keys {
-        match input.space_heat_control_for_zone(&zone_key)? {
-            Some(SpaceHeatControlType::LivingRoom) => {
-                input.set_control_window_opening_for_zone(
-                    &zone_key,
-                    Some(HeatSourceControlType::WindowOpeningLivingRoom),
-                )?;
-            }
-            Some(SpaceHeatControlType::RestOfDwelling) => {
-                input.set_control_window_opening_for_zone(
-                    &zone_key,
-                    Some(HeatSourceControlType::WindowOpeningRestOfDwelling),
-                )?;
-            }
-            None => {
-                bail!("Space heat control for zone '{zone_key}' was not of expected type.");
-            }
-        }
+    for transparent_building_element in input.all_transparent_building_elements_mut() {
+        let element_is_security_risk = transparent_building_element.is_security_risk();
+        transparent_building_element.set_window_openable_control(
+            if noise_nuisance || element_is_security_risk {
+                "_window_opening_closedsleeping"
+            } else {
+                "_window_opening_openablealways"
+            },
+        );
     }
 
     Ok(())
