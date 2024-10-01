@@ -2106,6 +2106,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     }
 
     // these names are the same as those already defined in create_appliance_gains
+    // NB. have reported possible bug here https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45690 as these names don't seem to match with known
     // TODO (from Python) - define them at top level of wrapper
     // kettles and microwaves are assumed not to activate the extract fan
     for cook_enduse in ["Gas_Cooker", "Gas_Oven", "Electric_Cooker", "Electric_Oven"] {
