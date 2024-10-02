@@ -34,8 +34,8 @@ pub struct Input {
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
-    pub water_heating_events: WaterHeatingEvents,
-    pub space_heat_system: Option<SpaceHeatSystem>,
+    pub(crate) water_heating_events: WaterHeatingEvents,
+    pub(crate) space_heat_system: Option<SpaceHeatSystem>,
     pub space_cool_system: Option<SpaceCoolSystem>,
     pub ventilation: Option<Ventilation>,
     pub zone: ZoneDictionary,
@@ -1328,6 +1328,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         zone: Option<String>,
     },
     #[serde(alias = "ElecStorageHeater")]
+    #[allow(dead_code)]
     ElectricStorageHeater {
         temp_charge_cut: f64,
         rated_power: f64,
@@ -1360,6 +1361,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(alias = "Zone")]
         zone: String, // think these are just arbitrary names?
     },
+    #[allow(dead_code)]
     WetDistribution {
         advanced_start: Option<f64>,
         thermal_mass: f64,
@@ -1378,6 +1380,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(alias = "Zone")]
         zone: String, // as above, these are likely arbitrary names
     },
+    #[allow(dead_code)]
     WarmAir {
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
@@ -2511,8 +2514,6 @@ pub enum ApplianceEntry {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-// following in place to remove from warnings during migrating to 0.30 as these fields are referenced by FHS code
-#[allow(dead_code)]
 pub struct Appliance {
     #[serde(rename = "kWh_per_100cycle")]
     pub(crate) kwh_per_100_cycle: Option<f64>,
@@ -2525,6 +2526,7 @@ pub struct Appliance {
     pub(crate) energy_supply: Option<EnergySupplyType>,
     #[serde(rename = "kWh_per_cycle")]
     pub(crate) kwh_per_cycle: Option<f64>,
+    pub(crate) standard_use: Option<f64>,
 }
 
 impl Appliance {
@@ -2536,6 +2538,7 @@ impl Appliance {
             kwh_per_annum: None,
             energy_supply: Some(energy_supply),
             kwh_per_cycle: Some(kwh_per_cycle),
+            standard_use: None,
         }
     }
 
@@ -2547,6 +2550,7 @@ impl Appliance {
             kwh_per_annum: None,
             energy_supply: None,
             kwh_per_cycle: Some(kwh_per_cycle),
+            standard_use: None,
         }
     }
 
@@ -2558,6 +2562,7 @@ impl Appliance {
             kwh_per_annum: Some(kwh_per_annum),
             energy_supply: None,
             kwh_per_cycle: None,
+            standard_use: None,
         }
     }
 
@@ -2569,6 +2574,7 @@ impl Appliance {
             kwh_per_annum: None,
             energy_supply: None,
             kwh_per_cycle: None,
+            standard_use: None,
         }
     }
 }
@@ -3364,7 +3370,8 @@ impl InputForProcessing {
         self.input
             .appliance_gains
             .iter()
-            .filter(|&(key, gain)| gain.load_shifting.is_some()).map(|(key, gain)| key.clone())
+            .filter(|&(key, gain)| gain.load_shifting.is_some())
+            .map(|(key, gain)| key.clone())
             .collect::<Vec<_>>()
     }
 

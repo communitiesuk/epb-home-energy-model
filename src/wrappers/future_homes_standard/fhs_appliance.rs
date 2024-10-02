@@ -8,10 +8,6 @@ use crate::{
 };
 
 pub(super) struct FhsAppliance {
-    annual_expected_uses: f64,
-    annual_expected_demand: f64,
-    op_kwh: f64,
-    event_duration: f64,
     pub(super) standby_w: f64,
     pub(super) gains_frac: f64,
     pub(super) event_list: Vec<ApplianceGainsDetailsEvent>,
@@ -48,11 +44,6 @@ impl FhsAppliance {
             duration_std_dev,
         )?;
         Ok(Self {
-            annual_expected_uses,
-            // deduct durations of uses from standby power consumption (should only have small effect)
-            annual_expected_demand,
-            op_kwh,
-            event_duration,
             standby_w,
             gains_frac,
             event_list,

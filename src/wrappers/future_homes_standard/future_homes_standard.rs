@@ -1835,7 +1835,13 @@ fn appliance_kwh_cycle_loading_factor(
                 } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
                     Some(kwh_per_100_cycle)
                 } else {
-                    appliance.kwh_per_annum
+                    if let (Some(kwh_per_annum), Some(standard_use)) =
+                        (appliance.kwh_per_annum, appliance.standard_use)
+                    {
+                        Some(kwh_per_annum / standard_use)
+                    } else {
+                        None
+                    }
                 }),
                 appliance,
             )

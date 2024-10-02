@@ -206,19 +206,6 @@ impl SpaceHeatingService {
     }
 }
 
-// macro so accessing individual controls through the enum isn't so repetitive
-#[macro_use]
-macro_rules! per_space_heating {
-    ($val:expr, $pattern:pat => { $res:expr }) => {
-        match $val {
-            SpaceHeatingService::HeatPump($pattern) => $res,
-            SpaceHeatingService::Boiler($pattern) => $res,
-            SpaceHeatingService::HeatNetwork($pattern) => $res,
-            SpaceHeatingService::HeatBattery($pattern) => unreachable!(),
-        }
-    };
-}
-
 use anyhow::Error;
 
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
