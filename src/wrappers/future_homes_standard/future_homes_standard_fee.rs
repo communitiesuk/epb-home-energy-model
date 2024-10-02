@@ -2,10 +2,8 @@ use super::{
     future_homes_standard::{apply_fhs_preprocessing, calc_tfa},
     future_homes_standard_notional::minimum_air_change_rate,
 };
-use crate::{
-    input::InputForProcessing, output::Output,
-    wrappers::future_homes_standard::future_homes_standard::ENERGY_SUPPLY_NAME_ELECTRICITY,
-};
+use crate::{input::InputForProcessing, output::Output};
+use anyhow::anyhow;
 use csv::WriterBuilder;
 use serde_json::json;
 
@@ -36,18 +34,30 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     //  - passive vents
     //  - flueless gas fires
 
-    // No of intermittent extract fans is zero because there is continuous extract (see below)
-    input.zero_infiltration_extract_fans()?;
+    // Retrieve the number of bedrooms and total volume
+    let number_of_bedrooms = input
+        .number_of_bedrooms()
+        .ok_or_else(|| anyhow!("Expected number of bedrooms to be indicated."))?;
+    let total_volume = input.total_zone_volume();
 
-    // Use continuous decentralised mechanical extract ventilation
     let total_floor_area = calc_tfa(input);
-    let req_ach = minimum_air_change_rate(input, total_floor_area);
-    input.set_ventilation(json!({
-        "type": "WHEV",
-        "req_ach": req_ach,
-        "SFP": 0.15,
-        "EnergySupply": ENERGY_SUPPLY_NAME_ELECTRICITY,
-    }))?;
+    let req_ach =
+        minimum_air_change_rate(input, total_floor_area, total_volume, number_of_bedrooms);
+    // convert to m3/h
+    let design_outdoor_air_flow_rate = req_ach * total_volume;
+
+    input.reset_mechanical_ventilation();
+    input.add_mechanical_ventilation(
+        "Decentralised_Continuous_MEV_for_FEE_calc",
+        json!({
+            "sup_air_flw_ctrl": "ODA",
+            "sup_air_temp_ctrl": "CONST",
+            "vent_type": "Decentralised continuous MEV",
+            "SFP": 0.15,
+            "EnergySupply": "mains elec",
+            "design_outdoor_air_flow_rate": design_outdoor_air_flow_rate
+        }),
+    )?;
 
     // Use instantaneous electric water heater
     // Set power such that it should always be sufficient for any realistic demand
@@ -61,25 +71,28 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     };
     input.set_hot_water_cylinder(json!({
         "type": "PointOfUse",
-        "power": 10000.0,
         "efficiency": 1.0,
         "EnergySupply": "mains elec",
         "ColdWaterSource": cold_water_source_name,
     }))?;
     // No hot water distribution pipework for point of use water heaters
-    let pipework_none = json!({
-        "internal_diameter_mm": 0.01,
-        "external_diameter_mm": 0.02,
-        "length": 0.0,
-        "insulation_thermal_conductivity": 0.01,
-        "insulation_thickness_mm": 0.0,
-        "surface_reflectivity": false,
-        "pipe_contents": "water",
-    });
-    input.set_water_distribution(json!({
-        "internal": pipework_none,
-        "external": pipework_none,
-    }))?;
+    // NB. writing empty water distribution here as believe setting this has no effect as hot water cylinder is point of use,
+    // and shape here is now not as expected - reported to BRE as https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45862
+    // let pipework_none = json!({
+    //     "internal_diameter_mm": 0.01,
+    //     "external_diameter_mm": 0.02,
+    //     "length": 0.0,
+    //     "insulation_thermal_conductivity": 0.01,
+    //     "insulation_thickness_mm": 0.0,
+    //     "surface_reflectivity": false,
+    //     "pipe_contents": "water",
+    // });
+    input.set_water_distribution(json!([
+        // {
+        //     // "internal": pipework_none,
+        //     // "external": pipework_none,
+        // }
+        ]))?;
 
     // One 9.3 kW InstantElecShower, one bath
     input.set_shower(json!({

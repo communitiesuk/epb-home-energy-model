@@ -2079,7 +2079,6 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut mech_vents = input.keyed_mechanical_ventilations_for_processing();
     let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
         .iter()
-        .flat_map(|vents| vents.iter())
         .filter(|(_, vent)| vent.vent_type() == VentType::IntermittentMev)
         .fold(IndexMap::from([]), |mut acc, (vent, _)| {
             acc.insert(
@@ -2151,12 +2150,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     for vent in intermittent_mev.keys() {
         let control_name = &control_names[vent];
-        mech_vents
-            .as_mut()
-            .unwrap()
-            .get_mut(vent)
-            .unwrap()
-            .set_control(control_name);
+        mech_vents.get_mut(vent).unwrap().set_control(control_name);
     }
 
     // loop through again as can't write to two different mutable refs based on input in one loop
@@ -2203,11 +2197,7 @@ impl<'a> CycleMev<'a> {
 }
 
 fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    for mech_vents_data in input
-        .mechanical_ventilations_for_processing()
-        .iter_mut()
-        .flatten()
-    {
+    for mech_vents_data in input.mechanical_ventilations_for_processing().iter_mut() {
         match mech_vents_data.vent_type() {
             crate::input::VentType::CentralisedContinuousMev | crate::input::VentType::Mvhr => {
                 let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;

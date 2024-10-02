@@ -728,7 +728,7 @@ pub enum HotWaterSourceDetails {
         energy_supply: EnergySupplyType,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        setpoint_temp: f64,
+        setpoint_temp: Option<f64>,
     },
     HeatBattery {
         // tbc
@@ -851,7 +851,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
                 setpoint_temp: ref mut source_setpoint_temp,
                 ..
             } => {
-                *source_setpoint_temp = setpoint_temp;
+                *source_setpoint_temp = Some(setpoint_temp);
             }
             HotWaterSourceDetails::HeatBattery {} => {}
         }
@@ -2198,8 +2198,8 @@ pub struct InfiltrationVentilation {
     pub(crate) vents: IndexMap<String, Vent>,
     #[serde(rename = "Leaks")]
     pub(crate) leaks: VentilationLeaks,
-    #[serde(rename = "MechanicalVentilation")]
-    pub(crate) mechanical_ventilation: Option<IndexMap<String, MechanicalVentilation>>,
+    #[serde(rename = "MechanicalVentilation", default)]
+    pub(crate) mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
     #[serde(rename = "AirTerminalDevices")]
     _air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
     #[serde(rename = "PDUs")]
@@ -2266,9 +2266,9 @@ pub struct MechanicalVentilation {
     #[serde(rename = "sup_air_temp_ctrl")]
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
     #[serde(rename = "design_zone_cooling_covered_by_mech_vent")]
-    _design_zone_cooling_covered_by_mechanical_vent: f64,
+    _design_zone_cooling_covered_by_mechanical_vent: Option<f64>,
     #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
-    _design_zone_heating_covered_by_mechanical_vent: f64,
+    _design_zone_heating_covered_by_mechanical_vent: Option<f64>,
     pub(crate) vent_type: VentType,
     #[serde(rename = "mvhr_eff")]
     pub(crate) mvhr_efficiency: Option<f64>,
@@ -2655,6 +2655,10 @@ impl InputForProcessing {
 
     pub fn total_zone_area(&self) -> f64 {
         self.input.zone.values().map(|z| z.area).sum::<f64>()
+    }
+
+    pub(crate) fn total_zone_volume(&self) -> f64 {
+        self.input.zone.values().map(|z| z.volume).sum::<f64>()
     }
 
     pub fn area_for_zone(&self, zone: &str) -> anyhow::Result<f64> {
@@ -3168,24 +3172,6 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub fn zero_infiltration_extract_fans(&mut self) -> anyhow::Result<&Self> {
-        // it's assumed that this function will become redundant while migrating to 0.30
-        // if let Some(ref mut infiltration) = self.input.infiltration {
-        //     infiltration.extract_fans = 0;
-        // }
-        Ok(self)
-    }
-
-    pub fn infiltration_volume(&self) -> f64 {
-        // it's assumed that this method is to be completely replaced
-        unimplemented!()
-    }
-
-    pub fn set_ventilation(&mut self, ventilation_value: Value) -> anyhow::Result<&Self> {
-        self.input.ventilation = Some(serde_json::from_value(ventilation_value)?);
-        Ok(self)
-    }
-
     pub fn set_hot_water_cylinder(&mut self, source_value: Value) -> anyhow::Result<&Self> {
         self.input.hot_water_source.hot_water_cylinder = serde_json::from_value(source_value)?;
         Ok(self)
@@ -3399,28 +3385,43 @@ impl InputForProcessing {
 
     pub(crate) fn mechanical_ventilations_for_processing(
         &mut self,
-    ) -> Option<Vec<&mut impl MechanicalVentilationForProcessing>> {
+    ) -> Vec<&mut impl MechanicalVentilationForProcessing> {
         self.input
             .infiltration_ventilation
             .mechanical_ventilation
-            .as_mut()
-            .map(|v| v.values_mut().collect::<Vec<_>>())
+            .values_mut()
+            .collect::<Vec<_>>()
     }
 
     pub(crate) fn keyed_mechanical_ventilations_for_processing(
         &mut self,
-    ) -> Option<&mut IndexMap<String, impl MechanicalVentilationForProcessing>> {
-        self.input
-            .infiltration_ventilation
-            .mechanical_ventilation
-            .as_mut()
+    ) -> &mut IndexMap<String, impl MechanicalVentilationForProcessing> {
+        &mut self.input.infiltration_ventilation.mechanical_ventilation
     }
 
     pub(crate) fn has_mechanical_ventilation(&self) -> bool {
+        !self
+            .input
+            .infiltration_ventilation
+            .mechanical_ventilation
+            .is_empty()
+    }
+
+    pub(crate) fn reset_mechanical_ventilation(&mut self) {
+        self.input.infiltration_ventilation.mechanical_ventilation = Default::default();
+    }
+
+    pub(crate) fn add_mechanical_ventilation(
+        &mut self,
+        vent_name: &str,
+        mech_vent: Value,
+    ) -> anyhow::Result<()> {
         self.input
             .infiltration_ventilation
             .mechanical_ventilation
-            .is_some()
+            .insert(vent_name.to_owned(), serde_json::from_value(mech_vent)?);
+
+        Ok(())
     }
 
     pub(crate) fn appliance_gains_events(

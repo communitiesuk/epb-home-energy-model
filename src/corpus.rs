@@ -2976,21 +2976,18 @@ fn infiltration_ventilation_from_input(
         Default::default();
     let mut space_heating_ductwork: IndexMap<String, Vec<Ductwork>> = Default::default();
 
-    if let Some(mech_vent_input) = input.mechanical_ventilation.as_ref() {
-        for (mech_vents_name, mech_vents_data) in mech_vent_input {
-            let ctrl_intermittent_mev = mech_vents_data
-                .control
-                .as_ref()
-                .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+    for (mech_vents_name, mech_vents_data) in input.mechanical_ventilation.iter() {
+        let ctrl_intermittent_mev = mech_vents_data
+            .control
+            .as_ref()
+            .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
 
-            let energy_supply = energy_supplies.ensured_get_for_type(
-                mech_vents_data.energy_supply,
-                simulation_time.total_steps(),
-            )?;
-            let energy_supply_connection =
-                EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
+        let energy_supply = energy_supplies
+            .ensured_get_for_type(mech_vents_data.energy_supply, simulation_time.total_steps())?;
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
 
-            mechanical_ventilations.insert(
+        mechanical_ventilations.insert(
                 mech_vents_name.clone(),
                 Arc::new(MechanicalVentilation::new(external_conditions.clone(), mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
                     VentType::Mvhr => mech_vents_data.mvhr_efficiency,
@@ -3003,12 +3000,12 @@ fn infiltration_ventilation_from_input(
                 }, None)),
             );
 
-            // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
-            if mech_vents_data.vent_type == VentType::Mvhr {
-                // the upstream Python incorrectly nixes the ductwork map here. it's fixed on more-recent-than-0.30 versions of upstream HEM,
-                // so keep this in place for now and delete this comment when fixing 😉
-                space_heating_ductwork = Default::default();
-                space_heating_ductwork.insert(
+        // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
+        if mech_vents_data.vent_type == VentType::Mvhr {
+            // the upstream Python incorrectly nixes the ductwork map here. it's fixed on more-recent-than-0.30 versions of upstream HEM,
+            // so keep this in place for now and delete this comment when fixing 😉
+            space_heating_ductwork = Default::default();
+            space_heating_ductwork.insert(
                     mech_vents_name.to_owned(),
                     mech_vents_data
                         .ductwork
@@ -3027,7 +3024,6 @@ fn infiltration_ventilation_from_input(
                         })
                         .collect::<anyhow::Result<Vec<Ductwork>>>()?,
                 );
-            }
         }
     }
 
@@ -4147,7 +4143,11 @@ fn hot_water_source_from_input(
                 *efficiency,
                 energy_supply_conn,
                 cold_water_source,
-                *setpoint_temp,
+                (*setpoint_temp).ok_or_else(|| {
+                    anyhow!(
+                        "A setpoint_temp value was expected on a point of use hot water source."
+                    )
+                })?,
             ))
         }
         HotWaterSourceDetails::Hiu {

@@ -5,13 +5,12 @@ use crate::{
 };
 
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
-pub fn minimum_air_change_rate(input: &InputForProcessing, total_floor_area: f64) -> f64 {
-    // Retrieve the number of bedrooms and total volume
-    let bedroom_number = input
-        .number_of_bedrooms()
-        .expect("A number of bedrooms is expected to be defined.");
-    let total_volume = input.infiltration_volume();
-
+pub fn minimum_air_change_rate(
+    _input: &InputForProcessing,
+    total_floor_area: f64,
+    total_volume: f64,
+    bedroom_number: usize,
+) -> f64 {
     // minimum ventilation rates method B
     let min_ventilation_rates_b = [19, 25, 31, 37, 43];
 
