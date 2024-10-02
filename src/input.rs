@@ -1285,8 +1285,7 @@ impl WaterHeatingEventsForProcessing for WaterHeatingEvents {
         self.0
             .iter()
             .filter(|(event_type, events)| event_types.contains(event_type))
-            .map(|(_, events)| events.values())
-            .flatten()
+            .flat_map(|(_, events)| events.values())
             .flatten()
             .copied()
             .collect_vec()
@@ -2637,7 +2636,7 @@ impl InputForProcessing {
     ) {
         if let Some(external_conditions) = external_conditions_data {
             let shading_segments = self.input.external_conditions.shading_segments.clone();
-            let mut new_external_conditions: ExternalConditionsInput = external_conditions.into();
+            let mut new_external_conditions: ExternalConditionsInput = external_conditions;
             new_external_conditions.shading_segments = shading_segments;
             self.input.external_conditions = Arc::new(new_external_conditions);
         }
@@ -3365,7 +3364,7 @@ impl InputForProcessing {
         self.input
             .appliance_gains
             .iter()
-            .filter_map(|(key, gain)| gain.load_shifting.is_some().then(|| key.clone()))
+            .filter(|&(key, gain)| gain.load_shifting.is_some()).map(|(key, gain)| key.clone())
             .collect::<Vec<_>>()
     }
 

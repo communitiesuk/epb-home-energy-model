@@ -4,10 +4,9 @@ use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
-    EnergySupplyType, FuelType, HeatSourceControlType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SpaceHeatControlType, TransparentBuildingElement, VentType,
-    WaterHeatingEvent, WaterHeatingEventType,
+    EnergySupplyType, FuelType, HeatingControlType, HotWaterSourceDetailsForProcessing, Input,
+    InputForProcessing, MechanicalVentilationForProcessing, SpaceHeatControlType,
+    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -20,7 +19,6 @@ use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
-use log::warn;
 use serde::Deserialize;
 use serde_json::{json, Number, Value};
 use std::collections::HashMap;
@@ -40,7 +38,6 @@ const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
 const GAS_COOK_OBJ_NAME: &str = "Gascooking";
 const HW_TIMER_MAIN_NAME: &str = "hw timer";
 const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
-const RANDOM_SEED: u32 = 37;
 
 const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
 const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
@@ -1583,7 +1580,7 @@ fn create_appliance_gains(
     // will this work with variable timestep?
     let sched_len = demand_scheds
         .values()
-        .nth(0)
+        .next()
         .ok_or_else(|| anyhow!("Demand schedules are empty"))?
         .len();
     let mut main_sched = vec![0.; sched_len];
@@ -1837,10 +1834,8 @@ fn appliance_kwh_cycle_loading_factor(
                     Some(kwh_per_cycle)
                 } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
                     Some(kwh_per_100_cycle)
-                } else if let Some(kwh_per_annum) = appliance.kwh_per_annum {
-                    Some(kwh_per_annum)
                 } else {
-                    None
+                    appliance.kwh_per_annum
                 }),
                 appliance,
             )
@@ -2155,7 +2150,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
             .unwrap()
             .get_mut(vent)
             .unwrap()
-            .set_control(&control_name);
+            .set_control(control_name);
     }
 
     // loop through again as can't write to two different mutable refs based on input in one loop
@@ -2195,7 +2190,7 @@ impl<'a> CycleMev<'a> {
     }
 
     fn mev(&mut self) -> &str {
-        let res = self.names[self.cycle_count].as_ref();
+        let res = self.names[self.cycle_count];
         self.cycle_count = (self.cycle_count + 1) % self.names.len();
         res
     }
@@ -3275,57 +3270,6 @@ const AVERAGE_MONTHLY_LIGHTING_HALF_HOUR_PROFILES: [[f64; 48]; 12] = [
         0.0510938,
         0.041481111,
     ],
-];
-
-const COOKING_PROFILE_FHS: [f64; 48] = [
-    0.001192419,
-    0.000825857,
-    0.000737298,
-    0.000569196,
-    0.000574409,
-    0.000573778,
-    0.000578369,
-    0.000574619,
-    0.000678235,
-    0.000540799,
-    0.000718043,
-    0.002631192,
-    0.002439288,
-    0.003263445,
-    0.003600656,
-    0.005743044,
-    0.011250675,
-    0.015107564,
-    0.014475307,
-    0.016807917,
-    0.018698336,
-    0.018887283,
-    0.021856976,
-    0.047785397,
-    0.08045051,
-    0.099929701,
-    0.042473353,
-    0.02361216,
-    0.015650513,
-    0.014345379,
-    0.015951211,
-    0.01692045,
-    0.037738026,
-    0.066195428,
-    0.062153502,
-    0.073415686,
-    0.077486476,
-    0.069093846,
-    0.046706527,
-    0.024924648,
-    0.014783978,
-    0.009192004,
-    0.005617715,
-    0.0049381,
-    0.003529689,
-    0.002365773,
-    0.001275927,
-    0.001139293,
 ];
 
 const AVERAGE_MONTHLY_APPLIANCES_HOURLY_PROFILES: [[f64; 24]; 12] = [

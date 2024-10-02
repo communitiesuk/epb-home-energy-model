@@ -290,7 +290,7 @@ impl Emitters {
         let temp_diff_start = temp_emitter_start - temp_rm;
 
         let emitter_with_power_input = EmittersAndPowerInput {
-            emitters: &self,
+            emitters: self,
             power_input,
         };
 

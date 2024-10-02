@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal, Poisson};
 use rand_pcg::Pcg64;

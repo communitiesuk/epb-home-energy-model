@@ -54,7 +54,7 @@ pub fn run_project(
     let mut input_for_processing = ingest_for_processing(input)?;
 
     input_for_processing
-        .merge_external_conditions_data((&external_conditions_data).as_ref().map(|x| x.into()));
+        .merge_external_conditions_data(external_conditions_data.as_ref().map(|x| x.into()));
 
     // do wrapper pre-processing here
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {

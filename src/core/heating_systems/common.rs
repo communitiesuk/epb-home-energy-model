@@ -220,6 +220,5 @@ macro_rules! per_space_heating {
 }
 
 use anyhow::Error;
-pub(crate) use per_space_heating;
 
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
