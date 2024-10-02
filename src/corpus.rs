@@ -3399,7 +3399,7 @@ fn apply_appliance_gains_from_input(
                 gains_details,
                 energy_supply_conn,
                 total_floor_area,
-            ))
+            )?)
         };
 
         internal_gains_collection.insert(name.clone(), gains);
@@ -3412,19 +3412,25 @@ fn appliance_gains_from_single_input(
     input: &ApplianceGainsDetails,
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
-) -> ApplianceGains {
-    let total_energy_supply = expand_numeric_schedule(&input.schedule, false)
-        .iter()
-        .map(|energy_data| energy_data.unwrap() / total_floor_area)
-        .collect();
+) -> anyhow::Result<ApplianceGains> {
+    let total_energy_supply = expand_numeric_schedule(
+        input
+            .schedule
+            .as_ref()
+            .ok_or_else(|| anyhow!("Appliance gains did not have schedule when expected."))?,
+        false,
+    )
+    .iter()
+    .map(|energy_data| energy_data.unwrap() / total_floor_area)
+    .collect();
 
-    ApplianceGains::new(
+    Ok(ApplianceGains::new(
         total_energy_supply,
         input.gains_fraction,
         input.start_day,
         input.time_series_step,
         energy_supply_connection,
-    )
+    ))
 }
 
 #[derive(Clone, Debug)]

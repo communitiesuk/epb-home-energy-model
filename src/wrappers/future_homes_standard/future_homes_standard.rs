@@ -617,7 +617,9 @@ fn load_metabolic_gains_profile(file: impl Read) -> anyhow::Result<([f64; 48], [
 struct DryMetabolicGainsRow {
     #[serde(rename = "half_hour")]
     _half_hour: usize,
+    #[serde(alias = "Weekday")]
     weekday: f64,
+    #[serde(alias = "Weekend")]
     weekend: f64,
 }
 
@@ -1066,7 +1068,18 @@ fn load_appliance_propensities(
             cooking_kettle[i] = item.cooking_kettle;
             cooking_gas_cooker[i] = item.cooking_gas_cooker;
             consumer_electronics[i] = item.consumer_electronics;
-            acc
+            (
+                hour,
+                occupied,
+                cleaning_washing_machine,
+                cleaning_tumble_dryer,
+                cleaning_dishwasher,
+                cooking_electric_oven,
+                cooking_microwave,
+                cooking_kettle,
+                cooking_gas_cooker,
+                consumer_electronics,
+            )
         },
     );
     Ok(AppliancePropensities {
@@ -2595,35 +2608,45 @@ fn shading_factor(
         input_external_conditions
             .air_temperatures
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| anyhow!("Air temps were expected in input and not provided."))?
             .to_vec(),
         input_external_conditions
             .wind_speeds
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| anyhow!("Wind speeds were expected in input and not provided."))?
             .to_vec(),
         input_external_conditions
             .wind_directions
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| anyhow!("Wind directions were expected in input and not provided."))?
             .to_vec(),
         input_external_conditions
             .diffuse_horizontal_radiation
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| {
+                anyhow!("Diffuse horizontal radiations were expected in input and not provided.")
+            })?
             .to_vec(),
         input_external_conditions
             .direct_beam_radiation
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| {
+                anyhow!("Direct beam radiations were expected in input and not provided.")
+            })?
             .to_vec(),
         input_external_conditions
             .solar_reflectivity_of_ground
             .as_ref()
-            .unwrap()
+            .ok_or_else(|| {
+                anyhow!("Solar reflectivity of ground was expected in input and not provided.")
+            })?
             .to_vec(),
-        input_external_conditions.latitude.unwrap(),
-        input_external_conditions.longitude.unwrap(),
+        input_external_conditions
+            .latitude
+            .ok_or_else(|| anyhow!("Latitude was expected in input and not provided."))?,
+        input_external_conditions
+            .longitude
+            .ok_or_else(|| anyhow!("Longitude was expected in input and not provided."))?,
         0,
         0,
         Some(365),

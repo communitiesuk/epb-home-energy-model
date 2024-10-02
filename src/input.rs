@@ -68,7 +68,7 @@ pub struct Input {
     pub tariff: Option<Tariff>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
@@ -77,7 +77,7 @@ pub struct ExternalConditionsInput {
     pub wind_directions: Option<Vec<f64>>,
     // check upstream whether anything uses this
     #[serde(rename = "ground_temperatures")]
-    _ground_temperatures: Option<Vec<f64>>,
+    pub(crate) _ground_temperatures: Option<Vec<f64>>,
     pub diffuse_horizontal_radiation: Option<Vec<f64>>,
     pub direct_beam_radiation: Option<Vec<f64>>,
     pub solar_reflectivity_of_ground: Option<Vec<f64>>,
@@ -155,20 +155,21 @@ pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGainsDetails {
-    // check upstream whether type is used here
     #[serde(rename(deserialize = "type"))]
-    gain_type: Option<String>,
+    _gain_type: Option<String>,
     pub start_day: u32,
     pub time_series_step: f64,
     pub gains_fraction: f64,
     #[serde(alias = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
-    pub schedule: Schedule,
-
+    pub schedule: Option<Schedule>,
     // In the Python code these fields are
     // set in the FHS wrapper
+    #[serde(rename = "Standby")]
     pub standby: Option<f64>,
+    #[serde(rename = "Events")]
     pub events: Option<Vec<ApplianceGainsDetailsEvent>>,
+    #[serde(rename = "loadshifting")]
     pub load_shifting: Option<ApplianceLoadShifting>,
 }
 
@@ -2628,6 +2629,18 @@ impl InputForProcessing {
     pub fn set_simulation_time(&mut self, simulation_time: SimulationTime) -> &Self {
         self.input.simulation_time = simulation_time;
         self
+    }
+
+    pub(crate) fn merge_external_conditions_data(
+        &mut self,
+        external_conditions_data: Option<ExternalConditionsInput>,
+    ) {
+        if let Some(external_conditions) = external_conditions_data {
+            let shading_segments = self.input.external_conditions.shading_segments.clone();
+            let mut new_external_conditions: ExternalConditionsInput = external_conditions.into();
+            new_external_conditions.shading_segments = shading_segments;
+            self.input.external_conditions = Arc::new(new_external_conditions);
+        }
     }
 
     pub fn reset_internal_gains(&mut self) -> &Self {

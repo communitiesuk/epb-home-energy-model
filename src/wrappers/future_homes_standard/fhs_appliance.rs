@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal, Poisson};
 use rand_pcg::Pcg64;
@@ -79,7 +80,8 @@ impl FhsAppliance {
         let events = flat_profile
             .iter()
             .map(|x| {
-                let lambda = x * annual_expected_uses / DAYS_PER_YEAR as f64;
+                let lambda =
+                    (x * annual_expected_uses / DAYS_PER_YEAR as f64).max(f64::MIN_POSITIVE); // ensure lambda > 0. for poisson distribution
                 let poisson = Poisson::new(lambda)?;
                 Ok(poisson.sample(&mut appliance_rng))
             })

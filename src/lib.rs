@@ -53,6 +53,9 @@ pub fn run_project(
 ) -> Result<(), anyhow::Error> {
     let mut input_for_processing = ingest_for_processing(input)?;
 
+    input_for_processing
+        .merge_external_conditions_data((&external_conditions_data).as_ref().map(|x| x.into()));
+
     // do wrapper pre-processing here
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
         apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
@@ -1223,5 +1226,22 @@ impl From<&str> for StringOrNumber {
 impl From<f64> for StringOrNumber {
     fn from(value: f64) -> Self {
         StringOrNumber::Number(value)
+    }
+}
+
+impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
+    fn from(value: &ExternalConditionsFromFile) -> Self {
+        Self {
+            air_temperatures: Some(value.air_temperatures.clone()),
+            wind_speeds: Some(value.wind_speeds.clone()),
+            wind_directions: Some(value.wind_directions.clone()),
+            diffuse_horizontal_radiation: Some(value.wind_directions.clone()),
+            direct_beam_radiation: Some(value.direct_beam_radiation.clone()),
+            solar_reflectivity_of_ground: Some(value.solar_reflectivity_of_ground.clone()),
+            latitude: Some(value.latitude),
+            longitude: Some(value.longitude),
+            direct_beam_conversion_needed: Some(value.direct_beam_conversion_needed),
+            ..Default::default()
+        }
     }
 }
