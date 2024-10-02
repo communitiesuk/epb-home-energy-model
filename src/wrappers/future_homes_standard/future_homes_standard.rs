@@ -1030,20 +1030,10 @@ fn load_appliance_propensities(
         cooking_kettle,
         cooking_gas_cooker,
         consumer_electronics,
-    ): (
-        [usize; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-        [f64; 24],
-    ) = appliance_propensities_rows.iter().enumerate().fold(
-        Default::default(),
-        |acc, (i, item)| {
+    ): AppliancePropensitiesUnderConstruction = appliance_propensities_rows
+        .iter()
+        .enumerate()
+        .fold(Default::default(), |acc, (i, item)| {
             let (
                 mut hour,
                 mut occupied,
@@ -1078,8 +1068,7 @@ fn load_appliance_propensities(
                 cooking_gas_cooker,
                 consumer_electronics,
             )
-        },
-    );
+        });
     Ok(AppliancePropensities {
         hour,
         occupied,
@@ -1095,6 +1084,19 @@ fn load_appliance_propensities(
     }
     .normalise())
 }
+
+type AppliancePropensitiesUnderConstruction = (
+    [usize; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+    [f64; 24],
+);
 
 #[derive(Copy, Clone)]
 struct AppliancePropensities<T> {
@@ -1834,14 +1836,12 @@ fn appliance_kwh_cycle_loading_factor(
                     Some(kwh_per_cycle)
                 } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
                     Some(kwh_per_100_cycle)
+                } else if let (Some(kwh_per_annum), Some(standard_use)) =
+                    (appliance.kwh_per_annum, appliance.standard_use)
+                {
+                    Some(kwh_per_annum / standard_use)
                 } else {
-                    if let (Some(kwh_per_annum), Some(standard_use)) =
-                        (appliance.kwh_per_annum, appliance.standard_use)
-                    {
-                        Some(kwh_per_annum / standard_use)
-                    } else {
-                        None
-                    }
+                    None
                 }),
                 appliance,
             )
@@ -2076,7 +2076,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     ]);
     let appliance_gains_events = input.appliance_gains_events();
 
-    let mut mech_vents = input.keyed_mechanical_ventilations_for_processing();
+    let mech_vents = input.keyed_mechanical_ventilations_for_processing();
     let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
         .iter()
         .filter(|(_, vent)| vent.vent_type() == VentType::IntermittentMev)

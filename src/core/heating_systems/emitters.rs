@@ -325,10 +325,7 @@ impl Emitters {
     ) -> (f64, Option<f64>) {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
-        let temp_diff_max = match temp_emitter_max {
-            Some(emitter_max) => Some(emitter_max - temp_rm),
-            None => None
-        };
+        let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
 
         let emitter_with_power_input = EmittersAndPowerInput {
             emitters: self,
@@ -336,7 +333,7 @@ impl Emitters {
             temp_diff_max
         };
 
-        let f = emitter_with_power_input.clone(); // f - Structure implementing the System trait
+        let f = emitter_with_power_input; // f - Structure implementing the System trait
         let x: Time = time_start; // x - Initial value of the independent variable (usually time)
         let x_end: Time = time_end; // x_end - Final value of the independent variable
         let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
