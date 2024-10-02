@@ -55,14 +55,16 @@ struct EmittersAndPowerInput<'a> {
 
 impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
-        dy[0] = self.emitters.func_temp_emitter_change_rate(self.power_input, y[0]);
+        dy[0] = self
+            .emitters
+            .func_temp_emitter_change_rate(self.power_input, y[0]);
     }
 
     // Stop function called at every successful integration step. The integration is stopped when this function returns true.
     fn solout(&mut self, _x: Time, y: &State, _dy: &State) -> bool {
         if self.temp_diff_max.is_none() {
             // no maximum - keep going
-            return false
+            return false;
         }
 
         // we should stop if we cross the max temp difference
@@ -254,12 +256,8 @@ impl Emitters {
         (power_emitter_req / self.c).powf(1. / self.n) + temp_rm
     }
 
-    pub fn func_temp_emitter_change_rate(
-        &self,
-        power_input: f64,
-        y: f64,
-    ) -> f64 {
-        /* 
+    pub fn func_temp_emitter_change_rate(&self, power_input: f64, y: f64) -> f64 {
+        /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
             Derivation:
@@ -325,12 +323,15 @@ impl Emitters {
     ) -> (f64, Option<f64>) {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
-        let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
+        let temp_diff_max = match temp_emitter_max {
+            Some(emitter_max) => Some(emitter_max - temp_rm),
+            None => None,
+        };
 
         let emitter_with_power_input = EmittersAndPowerInput {
             emitters: self,
             power_input,
-            temp_diff_max
+            temp_diff_max,
         };
 
         let f = emitter_with_power_input; // f - Structure implementing the System trait
@@ -390,10 +391,9 @@ impl Emitters {
 
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
-        }
-        else {
+        } else {
             let temp_diff_emitter_rm_final = stepper.y_out().last().expect("y_out was empty")[0];
-            temp_emitter = temp_rm + temp_diff_emitter_rm_final;   
+            temp_emitter = temp_rm + temp_diff_emitter_rm_final;
         }
 
         (temp_emitter, time_temp_diff_max_reached)
@@ -879,9 +879,48 @@ mod tests {
         );
     }
 
-    // TODO more tests to implement here
+    // test_temp_flow_return_invalid_value test not copied across from Python
+    // as the compile-time checks cover the invalid value case
+
     #[rstest]
-    // #[ignore = "not yet implemented"]
+    #[ignore = "not yet implemented"]
+    fn test_power_output_emitter(
+        simulation_time: SimulationTimeIterator,
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+    ) {
+        // Test emitter output at given emitter and room temp
+
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassIV,
+            min_outdoor_temp: Some(-4.),
+            max_outdoor_temp: Some(20.),
+            min_flow_temp: Some(30.),
+        };
+
+        let heat_source = Arc::new(heat_source);
+
+        let emitters = Emitters::new(
+            0.14,
+            0.08,
+            0.12,
+            10.,
+            0.4,
+            heat_source,
+            Arc::new(move || 20.),
+            external_conditions.into(),
+            ecodesign_controller,
+            55.0,
+            1.,
+            false,
+        );
+
+        todo!()
+    }
+
+    // TODO more tests to implement here
+
+    #[rstest]
     fn test_temp_emitter_with_no_max(emitters: Emitters) {
         // Test function calculates emitter temperature after specified time with specified power input
         // Check None conditions  are invoked
