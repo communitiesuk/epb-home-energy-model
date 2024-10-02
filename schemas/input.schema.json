@@ -276,6 +276,13 @@
               "type": "null"
             }
           ]
+        },
+        "standard_use": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "additionalProperties": false
@@ -290,28 +297,16 @@
         }
       ]
     },
-    "ApplianceGainType": {
-      "type": "string",
-      "enum": [
-        "appliances",
-        "lighting",
-        "cooking"
-      ]
-    },
     "ApplianceGainsDetails": {
       "type": "object",
       "required": [
         "energy_supply",
         "gains_fraction",
-        "schedule",
         "start_day",
         "time_series_step"
       ],
       "properties": {
-        "energy_supply": {
-          "$ref": "#/definitions/EnergySupplyType"
-        },
-        "events": {
+        "Events": {
           "type": [
             "array",
             "null"
@@ -320,11 +315,21 @@
             "$ref": "#/definitions/ApplianceGainsDetailsEvent"
           }
         },
+        "Standby": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "energy_supply": {
+          "$ref": "#/definitions/EnergySupplyType"
+        },
         "gains_fraction": {
           "type": "number",
           "format": "double"
         },
-        "load_shifting": {
+        "loadshifting": {
           "anyOf": [
             {
               "$ref": "#/definitions/ApplianceLoadShifting"
@@ -335,15 +340,11 @@
           ]
         },
         "schedule": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "standby": {
           "type": [
-            "number",
+            "object",
             "null"
           ],
-          "format": "double"
+          "additionalProperties": true
         },
         "start_day": {
           "type": "integer",
@@ -355,13 +356,9 @@
           "format": "double"
         },
         "type": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ApplianceGainType"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         }
       },
@@ -1432,33 +1429,44 @@
       ],
       "properties": {
         "ecodesign_control_class": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
+          "$ref": "#/definitions/EcoDesignControllerClass"
         },
         "max_outdoor_temp": {
           "type": [
-            "integer",
+            "number",
             "null"
           ],
-          "format": "int32"
+          "format": "double"
         },
         "min_flow_temp": {
           "type": [
-            "integer",
+            "number",
             "null"
           ],
-          "format": "int32"
+          "format": "double"
         },
         "min_outdoor_temp": {
           "type": [
-            "integer",
+            "number",
             "null"
           ],
-          "format": "int32"
+          "format": "double"
         }
       },
       "additionalProperties": false
+    },
+    "EcoDesignControllerClass": {
+      "type": "string",
+      "enum": [
+        "ClassI",
+        "ClassII",
+        "ClassIII",
+        "ClassIV",
+        "ClassV",
+        "ClassVI",
+        "ClassVII",
+        "ClassVIII"
+      ]
     },
     "EdgeInsulation": {
       "oneOf": [
@@ -3064,7 +3072,6 @@
             "ColdWaterSource",
             "EnergySupply",
             "efficiency",
-            "setpoint_temp",
             "type"
           ],
           "properties": {
@@ -3079,7 +3086,10 @@
               "format": "double"
             },
             "setpoint_temp": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "double"
             },
             "type": {
@@ -3153,10 +3163,7 @@
           "$ref": "#/definitions/VentilationLeaks"
         },
         "MechanicalVentilation": {
-          "type": [
-            "object",
-            "null"
-          ],
+          "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/MechanicalVentilation"
           }
@@ -3198,6 +3205,16 @@
     "InternalGains": {
       "type": "object",
       "properties": {
+        "ColdWaterLosses": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/InternalGainsDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "evaporative_losses": {
           "anyOf": [
             {
@@ -3300,8 +3317,6 @@
       "required": [
         "EnergySupply",
         "design_outdoor_air_flow_rate",
-        "design_zone_cooling_covered_by_mech_vent",
-        "design_zone_heating_covered_by_mech_vent",
         "sup_air_flw_ctrl",
         "sup_air_temp_ctrl",
         "vent_type"
@@ -3328,11 +3343,17 @@
           "format": "double"
         },
         "design_zone_cooling_covered_by_mech_vent": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "double"
         },
         "design_zone_heating_covered_by_mech_vent": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "double"
         },
         "ductwork": {
@@ -3785,6 +3806,12 @@
             "EnergySupply": {
               "$ref": "#/definitions/EnergySupplyType"
             },
+            "_zone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "control": {
               "type": [
                 "string",
@@ -3810,12 +3837,6 @@
               "type": "string",
               "enum": [
                 "InstantElectricHeater"
-              ]
-            },
-            "zone": {
-              "type": [
-                "string",
-                "null"
               ]
             }
           },
@@ -4385,36 +4406,15 @@
     },
     "WaterHeatingEvents": {
       "type": "object",
-      "properties": {
-        "Bath": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/WaterHeatingEvent"
-            }
-          }
-        },
-        "Other": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/WaterHeatingEvent"
-            }
-          }
-        },
-        "Shower": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/WaterHeatingEvent"
-            }
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WaterHeatingEvent"
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "WaterHeatingSchedule": {
       "type": "string",
