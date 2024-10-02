@@ -1633,7 +1633,7 @@ impl ApplianceUseProfile {
             use_data: Some(ApplianceUseData {
                 use_metric,
                 clothes_use_data: None,
-                standard_use,
+                _standard_use: standard_use,
                 duration,
                 duration_deviation,
             }),
@@ -1659,7 +1659,7 @@ impl ApplianceUseProfile {
             use_data: Some(ApplianceUseData {
                 use_metric,
                 clothes_use_data: Some(ClothesUseData { standard_load_kg }),
-                standard_use: Some(standard_use),
+                _standard_use: Some(standard_use),
                 duration,
                 duration_deviation,
             }),
@@ -1675,7 +1675,7 @@ struct ApplianceUseData {
     // maps to "use" field in upstream, though 'use' is a keywork in Rust so calling this "use_metric"
     use_metric: usize,
     clothes_use_data: Option<ClothesUseData>,
-    standard_use: Option<usize>,
+    _standard_use: Option<usize>,
     duration: f64,
     duration_deviation: f64,
 }

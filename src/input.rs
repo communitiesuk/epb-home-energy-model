@@ -64,7 +64,7 @@ pub struct Input {
     pub general: General,
     pub infiltration_ventilation: InfiltrationVentilation,
     #[serde(rename = "Appliances")]
-    pub appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
+    pub(crate) appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
     pub tariff: Option<Tariff>,
 }
 
@@ -1284,7 +1284,7 @@ impl WaterHeatingEventsForProcessing for WaterHeatingEvents {
     ) -> Vec<WaterHeatingEvent> {
         self.0
             .iter()
-            .filter(|(event_type, events)| event_types.contains(event_type))
+            .filter(|(event_type, _)| event_types.contains(event_type))
             .flat_map(|(_, events)| events.values())
             .flatten()
             .copied()
@@ -1308,7 +1308,7 @@ pub enum WaterHeatingEventType {
     Other,
 }
 
-pub type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
+pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -1325,7 +1325,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         // not sure what the possible options are here yet
         frac_convective: f64,
         #[serde(alias = "Zone")]
-        zone: Option<String>,
+        _zone: Option<String>,
     },
     #[serde(alias = "ElecStorageHeater")]
     #[allow(dead_code)]
@@ -2191,8 +2191,6 @@ pub struct InfiltrationVentilation {
     pub(crate) altitude: f64,
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) window_adjust_control: Option<String>, // don't know what this can be
-    // marking as known dead code until FHS code is complete when migrating to 0.30
-    #[allow(dead_code)]
     noise_nuisance: Option<bool>,
     #[serde(rename = "Vents")]
     pub(crate) vents: IndexMap<String, Vent>,
@@ -3356,8 +3354,8 @@ impl InputForProcessing {
         self.input
             .appliance_gains
             .iter()
-            .filter(|&(key, gain)| gain.load_shifting.is_some())
-            .map(|(key, gain)| key.clone())
+            .filter(|&(_, gain)| gain.load_shifting.is_some())
+            .map(|(key, _)| key.clone())
             .collect::<Vec<_>>()
     }
 
