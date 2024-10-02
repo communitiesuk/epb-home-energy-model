@@ -623,6 +623,7 @@ struct DryMetabolicGainsRow {
     weekend: f64,
 }
 
+/// Space heating.
 fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // 07:00-09:30 and then 16:30-22:00
     let mut heating_fhs_weekday = Vec::with_capacity(48);
@@ -2005,8 +2006,6 @@ fn create_hot_water_use_pattern(
 }
 
 fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let simtime = simtime();
-
     let window_opening_setpoint = 22.0;
 
     input.add_control(
@@ -2016,7 +2015,7 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
             "start_day": 0,
             "time_series_step": 1.0,
             "schedule": {
-                "main": [{"repeat": simtime.end_time(), "value": window_opening_setpoint}],
+                "main": [{"repeat": SIMTIME_END, "value": window_opening_setpoint}],
             }
         }),
     )?;
@@ -2029,7 +2028,7 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
             "start_day": 0,
             "time_series_step": 1.0,
             "schedule": {
-                "main": [{"repeat": simtime.end_time(), "value": true}]
+                "main": [{"repeat": SIMTIME_END, "value": true}]
             }
         }),
     )?;
@@ -2077,7 +2076,6 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let appliance_gains_events = input.appliance_gains_events();
 
     let mut mech_vents = input.keyed_mechanical_ventilations_for_processing();
-    let simtime = simtime();
     let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
         .iter()
         .flat_map(|vents| vents.iter())
@@ -2085,10 +2083,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
         .fold(IndexMap::from([]), |mut acc, (vent, _)| {
             acc.insert(
                 vent.to_owned(),
-                vec![
-                    0.;
-                    ((simtime.end_time() - simtime.start_time()) / simtime.step).ceil() as usize
-                ],
+                vec![0.; ((SIMTIME_END - SIMTIME_START) / SIMTIME_STEP).ceil() as usize],
             );
             acc
         });
@@ -2102,15 +2097,15 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     for event in shower_and_bath_events {
         let mev_name = cycle_mev.mev();
-        let idx = (event.start / simtime.step).floor() as usize;
+        let idx = (event.start / SIMTIME_STEP).floor() as usize;
         let tsfrac = event.duration.ok_or_else(|| {
             anyhow!("Water heating event was expected to have a defined duration in FHS transform.")
-        })? / (MINUTES_PER_HOUR as f64 * simtime.step);
+        })? / (MINUTES_PER_HOUR as f64 * SIMTIME_STEP);
         // add fraction of the timestep for which appliance is turned on
         // to the fraction of the timestep for which the fan is turned on,
         // and cap that fraction at 1.
         let mut integralx: f64 = Default::default();
-        let start_offset = event.start / simtime.step - idx as f64;
+        let start_offset = event.start / SIMTIME_STEP - idx as f64;
         while integralx < tsfrac {
             let segment = (start_offset.ceil() - start_offset).min(tsfrac - integralx);
             let step_idx = (idx + (start_offset + integralx).floor() as usize)
@@ -2129,13 +2124,13 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
         if let Some(events) = appliance_gains_events.get(cook_enduse) {
             for event in events {
                 let mev_name = cycle_mev.mev();
-                let idx = (event.start / simtime.step).floor() as usize;
-                let tsfrac = event.duration / (MINUTES_PER_HOUR as f64 * simtime.step);
+                let idx = (event.start / SIMTIME_STEP).floor() as usize;
+                let tsfrac = event.duration / (MINUTES_PER_HOUR as f64 * SIMTIME_STEP);
                 // add fraction of the timestep for which appliance is turned on
                 // to the fraction of the timestep for which the fan is turned on,
                 // and cap that fraction at 1.
                 let mut integralx: f64 = Default::default();
-                let start_offset = event.start / simtime.step - idx as f64;
+                let start_offset = event.start / SIMTIME_STEP - idx as f64;
                 while integralx < tsfrac {
                     let segment = (start_offset.ceil() - start_offset).min(tsfrac - integralx);
                     let step_idx = (idx + (start_offset + integralx).floor() as usize)
@@ -2171,7 +2166,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
             json!({
                 "type": "SetpointTimeControl",
                 "start_day": 0,
-                "time_series_step": simtime.step,
+                "time_series_step": SIMTIME_STEP,
                 "schedule": {
                     "main": intermittent_mev[vent]
                 }
