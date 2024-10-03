@@ -204,6 +204,29 @@ impl SpaceHeatingService {
             SpaceHeatingService::HeatBattery(_) => unimplemented!(),
         }
     }
+
+    pub(crate) fn demand_energy(
+        &self,
+        energy_demand: f64,
+        temp_flow: f64,
+        temp_return: f64,
+        emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        match self {
+            SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
+                .demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    emitters_data_for_buffer_tank,
+                    simulation_time_iteration,
+                ),
+            SpaceHeatingService::Boiler(_) => unimplemented!(),
+            SpaceHeatingService::HeatNetwork(_) => unimplemented!(),
+            SpaceHeatingService::HeatBattery(_) => unimplemented!(),
+        }
+    }
 }
 
 use anyhow::Error;

@@ -1479,7 +1479,7 @@ impl HeatPumpServiceSpace {
     /// * `temp_flow` - flow temperature for emitters, in deg C
     /// * `temp_return` - return temperature for emitters, in deg C
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,

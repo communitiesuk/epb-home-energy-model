@@ -1,6 +1,8 @@
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::heating_systems::common::SpaceHeatingService;
-use crate::core::heating_systems::heat_pump::BufferTankEmittersData;
+use crate::core::heating_systems::heat_pump::{
+    BufferTankEmittersData, BufferTankEmittersDataWithResult,
+};
 use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
@@ -407,7 +409,7 @@ impl Emitters {
         temp_emitter_max: f64,
         temp_return: f64,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, bool, Option<BufferTankEmittersData>) {
+    ) -> (f64, bool, Option<BufferTankEmittersDataWithResult>) {
         // When there is some demand, calculate max. emitter temperature
         // achievable and emitter temperature required, and base calculation
         // on the lower of the two.
@@ -454,7 +456,9 @@ impl Emitters {
         // === Limit energy to account for maximum emitter temperature ===
         let mut emitters_data_for_buffer_tank: Option<BufferTankEmittersData> = None;
         let mut energy_provided_by_heat_source_max_min: f64 = Default::default();
-
+        let mut emitters_data_for_buffer_tank_with_result: Option<
+            BufferTankEmittersDataWithResult,
+        > = None;
         // If emitters are already above max. temp for this timestep,
         // then heat source should provide no energy until emitter temp
         // falls to maximum
@@ -479,7 +483,7 @@ impl Emitters {
 
             let (
                 energy_provided_by_heat_source_max_min_temp,
-                emitters_data_for_buffer_tank_with_result,
+                emitters_data_for_buffer_tank_with_result_from_energy_output_max,
             ) = self
                 .heat_source
                 .energy_output_max(
@@ -491,11 +495,8 @@ impl Emitters {
                 .unwrap();
 
             energy_provided_by_heat_source_max_min = energy_provided_by_heat_source_max_min_temp;
-
-            emitters_data_for_buffer_tank = match emitters_data_for_buffer_tank_with_result {
-                Some(x) => Some(x.data),
-                None => None,
-            };
+            emitters_data_for_buffer_tank_with_result =
+                emitters_data_for_buffer_tank_with_result_from_energy_output_max;
         }
 
         // Calculate time to reach max. emitter temp at max heat source output
@@ -541,7 +542,7 @@ impl Emitters {
         (
             min_of_2(energy_req_from_heat_source, energy_req_from_heat_source_max),
             temp_emitter_max_is_final_temp,
-            emitters_data_for_buffer_tank,
+            emitters_data_for_buffer_tank_with_result,
         )
     }
 
@@ -563,7 +564,7 @@ impl Emitters {
 
         let mut energy_req_from_heat_source = Default::default();
         let mut temp_emitter_max_is_final_temp = false;
-        let mut emitters_data_for_buffer_tank = None;
+        let mut emitters_data_for_buffer_tank_with_result = None;
         if energy_demand <= 0. {
             // Emitters cooling down or at steady-state with heating off
             // energy_req_from_heat_source = 0.0
@@ -573,7 +574,7 @@ impl Emitters {
             (
                 energy_req_from_heat_source,
                 temp_emitter_max_is_final_temp,
-                emitters_data_for_buffer_tank,
+                emitters_data_for_buffer_tank_with_result,
             ) = self.energy_required_from_heat_source(
                 energy_demand,
                 timestep,
@@ -583,6 +584,33 @@ impl Emitters {
                 simulation_time,
             )
         }
+        // Get energy output of heat source (i.e. energy input to emitters)
+        // TODO (from Python) - Instead of passing temp_flow_req into heating system module,
+        // calculate average flow temp achieved across timestep?
+
+        // Catering for the possibility of a BufferTank in the emitters' loop
+        let energy_provided_by_heat_source = if self.with_buffer_tank {
+            // Call to HeatSourceServiceSpace with buffer_tank relevant data
+            self.heat_source
+                .demand_energy(
+                    energy_req_from_heat_source,
+                    temp_flow_target,
+                    temp_return_target,
+                    emitters_data_for_buffer_tank_with_result,
+                    simulation_time,
+                )
+                .unwrap();
+        } else {
+            self.heat_source
+                .demand_energy(
+                    energy_req_from_heat_source,
+                    temp_flow_target,
+                    temp_return_target,
+                    None,
+                    simulation_time,
+                )
+                .unwrap();
+        };
         todo!("finish this method")
     }
 }
