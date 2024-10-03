@@ -206,24 +206,44 @@ impl SpaceHeatingService {
     }
 
     pub(crate) fn demand_energy(
-        &self,
+        &mut self,
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<f64> {
+    ) -> Result<(f64, Option<f64>), Error> {
         match self {
-            SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
+            SpaceHeatingService::HeatPump(heat_pump_service_space) => Ok((
+                heat_pump_service_space
+                    .demand_energy(
+                        energy_demand,
+                        temp_flow,
+                        temp_return,
+                        emitters_data_for_buffer_tank,
+                        simulation_time_iteration,
+                    )
+                    .unwrap(),
+                None,
+            )),
+            SpaceHeatingService::Boiler(ref mut boiler_service_space) => boiler_service_space
                 .demand_energy(
                     energy_demand,
                     temp_flow,
                     temp_return,
-                    emitters_data_for_buffer_tank,
+                    None,
+                    None,
                     simulation_time_iteration,
                 ),
-            SpaceHeatingService::Boiler(_) => unimplemented!(),
-            SpaceHeatingService::HeatNetwork(_) => unimplemented!(),
+            SpaceHeatingService::HeatNetwork(ref mut heat_network_service_space) => Ok((
+                heat_network_service_space.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    &simulation_time_iteration,
+                ),
+                None,
+            )),
             SpaceHeatingService::HeatBattery(_) => unimplemented!(),
         }
     }

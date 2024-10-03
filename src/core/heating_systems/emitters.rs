@@ -8,6 +8,8 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
+use parking_lot::RwLock;
+use std::ops::Deref;
 use std::sync::Arc;
 
 type State = Vector1<f64>; // type State = OVector<f32, U3>;
@@ -33,7 +35,7 @@ pub struct Emitters {
     pub n: f64,
     temp_diff_emit_dsgn: f64,
     frac_convective: f64,
-    heat_source: Arc<SpaceHeatingService>,
+    heat_source: Arc<RwLock<SpaceHeatingService>>,
     temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     with_buffer_tank: bool,
@@ -98,7 +100,7 @@ impl Emitters {
         n: f64,
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
-        heat_source: Arc<SpaceHeatingService>,
+        heat_source: Arc<RwLock<SpaceHeatingService>>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
@@ -146,7 +148,7 @@ impl Emitters {
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        match self.heat_source.as_ref() {
+        match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.temp_setpnt(simulation_time_iteration)
             }
@@ -162,7 +164,7 @@ impl Emitters {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        match self.heat_source.as_ref() {
+        match self.heat_source.read().deref() {
             SpaceHeatingService::HeatPump(heat_pump) => {
                 heat_pump.in_required_period(simulation_time_iteration)
             }
@@ -297,21 +299,6 @@ impl Emitters {
 
         (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
     }
-
-    // /// Calculate emitter temperature after specified time with specified power input
-    // pub fn temp_emitter(
-    //     &self,
-    //     time_start: f64,
-    //     time_end: f64,
-    //     temp_emitter_start: f64,
-    //     temp_rm: f64,
-    //     power_input: f64,
-    //     temp_emitter_max: Option<f64>,
-    // ) -> Result<(f64, f64), &'static str> {
-    //     // Calculate emitter temp at start of timestep
-
-    //     let temp_diff_start = temp_emitter_start - temp_rm;
-    // }
 
     /// Calculate emitter temperature after specified time with specified power input
     fn temp_emitter(
@@ -477,6 +464,7 @@ impl Emitters {
                 };
 
                 self.heat_source
+                    .read()
                     .energy_output_max(
                         temp_emitter_max,
                         temp_return,
@@ -542,7 +530,7 @@ impl Emitters {
         &mut self,
         energy_demand: f64,
         simulation_time: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let timestep = simulation_time.timestep;
         let temp_rm_prev = &self.temp_internal_air_fn;
 
@@ -578,29 +566,69 @@ impl Emitters {
         // calculate average flow temp achieved across timestep?
 
         // Catering for the possibility of a BufferTank in the emitters' loop
-        let energy_provided_by_heat_source = if self.with_buffer_tank {
+        let energy_provided_by_heat_source: f64 = if self.with_buffer_tank {
             // Call to HeatSourceServiceSpace with buffer_tank relevant data
             self.heat_source
+                .write()
                 .demand_energy(
                     energy_req_from_heat_source,
                     temp_flow_target,
                     temp_return_target,
                     emitters_data_for_buffer_tank_with_result,
                     simulation_time,
-                )
-                .unwrap();
+                )?
+                .0
         } else {
             self.heat_source
+                .write()
                 .demand_energy(
                     energy_req_from_heat_source,
                     temp_flow_target,
                     temp_return_target,
                     None,
                     simulation_time,
-                )
-                .unwrap();
+                )?
+                .0
         };
-        todo!("finish this method")
+        // Calculate emitter temperature achieved at end of timestep.
+        // Do not allow emitter temp to rise above maximum
+        // Do not allow emitter temp to fall below room temp
+        let mut temp_emitter;
+
+        if temp_emitter_max_is_final_temp {
+            temp_emitter = temp_emitter_max
+        } else {
+            let power_provided_by_heat_source = energy_provided_by_heat_source / timestep;
+            (temp_emitter, _) = self.temp_emitter(
+                0.0,
+                timestep,
+                self.temp_emitter_prev,
+                temp_rm_prev(),
+                power_provided_by_heat_source,
+                None,
+            );
+        }
+        temp_emitter = temp_emitter.max(temp_rm_prev());
+
+        // Calculate emitter output achieved at end of timestep.
+        let energy_released_from_emitters = energy_provided_by_heat_source
+            + self.thermal_mass * (self.temp_emitter_prev - temp_emitter);
+
+        // Save emitter temperature for next timestep
+        self.temp_emitter_prev = temp_emitter;
+
+        // If detailed results flag is set populate dict with values
+        // TODO port below python code
+        /*
+        if self.__output_detailed_results:
+
+            dr_list = [self.__simtime.index(), energy_demand, energy_provided_by_heat_source, temp_emitter,
+                       temp_emitter_max, energy_released_from_emitters, temp_flow_target,
+                       temp_return_target, temp_emitter_max_is_final_temp, energy_req_from_heat_source]
+
+            self.__emitters_detailed_results[self.__simtime.index()] = dr_list
+         */
+        Ok(energy_released_from_emitters)
     }
 }
 
@@ -765,7 +793,7 @@ mod tests {
             n,
             temp_diff_emit_dsgn,
             frac_convective,
-            heat_source.into(),
+            Arc::new(RwLock::new(heat_source)),
             Arc::new(move || canned_value),
             external_conditions.into(),
             ecodesign_controller,
@@ -784,7 +812,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time.enumerate() {
             energy_demand += energy_demand_list[t_idx];
 
-            let energy_provided = emitters.demand_energy(energy_demand, t_it);
+            let energy_provided = emitters.demand_energy(energy_demand, t_it).unwrap();
             energy_demand -= energy_provided;
 
             assert_relative_eq!(
@@ -839,7 +867,7 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        let heat_source = Arc::new(heat_source);
+        let heat_source = Arc::new(RwLock::new(heat_source));
 
         let emitters = Emitters::new(
             0.14,
@@ -915,7 +943,7 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        let heat_source = Arc::new(heat_source);
+        let heat_source = Arc::new(RwLock::new(heat_source));
 
         let emitters = Emitters::new(
             0.14,
