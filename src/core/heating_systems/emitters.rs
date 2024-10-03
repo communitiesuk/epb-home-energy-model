@@ -454,50 +454,39 @@ impl Emitters {
         let energy_req_from_buffer_tank = energy_req_from_heat_source;
 
         // === Limit energy to account for maximum emitter temperature ===
-        let mut emitters_data_for_buffer_tank: Option<BufferTankEmittersData> = None;
-        let mut energy_provided_by_heat_source_max_min: f64 = Default::default();
-        let mut emitters_data_for_buffer_tank_with_result: Option<
-            BufferTankEmittersDataWithResult,
-        > = None;
         // If emitters are already above max. temp for this timestep,
         // then heat source should provide no energy until emitter temp
         // falls to maximum
         // Otherwise:
-        if self.temp_emitter_prev <= temp_emitter_max {
-            // If emitters are below max. temp for this timestep, then max energy
-            // required from heat source will depend on maximum warm-up rate,
-            // which depends on the maximum energy output from the heat source
+        let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
+            if self.temp_emitter_prev <= temp_emitter_max {
+                // If emitters are below max. temp for this timestep, then max energy
+                // required from heat source will depend on maximum warm-up rate,
+                // which depends on the maximum energy output from the heat source
+                let emitters_data_for_buffer_tank = match self.with_buffer_tank {
+                    true => Some(BufferTankEmittersData {
+                        temp_emitter_req,
+                        power_req_from_buffer_tank: energy_req_from_buffer_tank / timestep,
+                        design_flow_temp: self.design_flow_temp,
+                        target_flow_temp: self
+                            .target_flow_temp
+                            .expect("Expect a target_flow_temp to have been set at this point"),
+                        temp_rm_prev,
+                    }),
+                    false => None,
+                };
 
-            emitters_data_for_buffer_tank = match self.with_buffer_tank {
-                true => Some(BufferTankEmittersData {
-                    temp_emitter_req,
-                    power_req_from_buffer_tank: energy_req_from_buffer_tank / timestep,
-                    design_flow_temp: self.design_flow_temp,
-                    target_flow_temp: self
-                        .target_flow_temp
-                        .expect("Expect a target_flow_temp to have been set at this point"),
-                    temp_rm_prev,
-                }),
-                false => None,
+                self.heat_source
+                    .energy_output_max(
+                        temp_emitter_max,
+                        temp_return,
+                        emitters_data_for_buffer_tank,
+                        simulation_time,
+                    )
+                    .unwrap()
+            } else {
+                (Default::default(), None)
             };
-
-            let (
-                energy_provided_by_heat_source_max_min_temp,
-                emitters_data_for_buffer_tank_with_result_from_energy_output_max,
-            ) = self
-                .heat_source
-                .energy_output_max(
-                    temp_emitter_max,
-                    temp_return,
-                    emitters_data_for_buffer_tank,
-                    simulation_time,
-                )
-                .unwrap();
-
-            energy_provided_by_heat_source_max_min = energy_provided_by_heat_source_max_min_temp;
-            emitters_data_for_buffer_tank_with_result =
-                emitters_data_for_buffer_tank_with_result_from_energy_output_max;
-        }
 
         // Calculate time to reach max. emitter temp at max heat source output
         let power_output_max_min = energy_provided_by_heat_source_max_min / timestep;
