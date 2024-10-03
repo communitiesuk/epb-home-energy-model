@@ -9,13 +9,24 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+anyhow = "1.0.89"
 
-[dependencies.hem-lambda]
+[dependencies.hem]
 path = ".."
+features = ["arbitrary"]
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "build_corpus_from_input"
+path = "fuzz_targets/build_corpus_from_input.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+
+[[bin]]
+name = "random_byte_input"
+path = "fuzz_targets/random_byte_input.rs"
 test = false
 doc = false
 bench = false

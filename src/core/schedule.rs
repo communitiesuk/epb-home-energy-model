@@ -1,6 +1,5 @@
 use crate::input::WaterHeatingEvent;
 use anyhow::{anyhow, bail};
-use itertools::Itertools;
 use serde_json::Value;
 
 pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
@@ -185,6 +184,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct Schedule<T: Copy> {
         pub(crate) main: Vec<ScheduleEntry<T>>,
         #[serde(flatten)]
@@ -239,6 +239,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleEntry<T: Copy> {
         Null(()),
@@ -249,6 +250,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleReferenceEntry<T: Copy> {
         Multi(Vec<ScheduleEntry<T>>),
@@ -257,6 +259,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Copy, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleRepeaterEntry<T> {
         Null(()),
@@ -265,6 +268,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct ScheduleRepeater<T: Copy> {
         pub(crate) value: ScheduleRepeaterValue<T>,
         pub(crate) repeat: usize,
@@ -272,6 +276,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleRepeaterValue<T: Copy> {
         Reference(String),

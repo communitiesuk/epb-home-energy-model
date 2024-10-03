@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum DaylightSavingsConfig {
     #[serde(rename(deserialize = "applicable and taken into account"))]
     ApplicableAndTakenIntoAccount,
@@ -19,6 +20,7 @@ pub enum DaylightSavingsConfig {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShadingSegment {
     pub number: usize,
     #[serde(rename = "start360")]
@@ -32,6 +34,7 @@ pub struct ShadingSegment {
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShadingObject {
     #[serde(rename(deserialize = "type"))]
     pub object_type: ShadingObjectType,
@@ -41,6 +44,7 @@ pub struct ShadingObject {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct WindowShadingObject {
     #[serde(rename(deserialize = "type"))]
     pub object_type: WindowShadingObjectType,
@@ -50,6 +54,7 @@ pub struct WindowShadingObject {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum ShadingObjectType {
     Obstacle,
@@ -58,6 +63,7 @@ pub enum ShadingObjectType {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum WindowShadingObjectType {
     Obstacle,

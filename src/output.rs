@@ -1,5 +1,6 @@
 use formatx::formatx;
 use std::fs::File;
+use std::io;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
@@ -32,5 +33,15 @@ impl Output for FileOutput {
 impl Output for &FileOutput {
     fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write> {
         <FileOutput as Output>::writer_for_location_key(self, location_key)
+    }
+}
+
+/// An output that goes to nowhere/ a "sink"/ /dev/null.
+#[derive(Default)]
+pub struct SinkOutput;
+
+impl Output for SinkOutput {
+    fn writer_for_location_key(&self, _location_key: &str) -> anyhow::Result<impl Write> {
+        Ok(io::sink())
     }
 }
