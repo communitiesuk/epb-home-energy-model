@@ -340,11 +340,14 @@
           ]
         },
         "schedule": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Schedule_for_double"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "start_day": {
           "type": "integer",
@@ -481,12 +484,10 @@
       ],
       "properties": {
         "cost_schedule_boiler": {
-          "type": "object",
-          "additionalProperties": true
+          "$ref": "#/definitions/Schedule_for_double"
         },
         "cost_schedule_hp": {
-          "type": "object",
-          "additionalProperties": true
+          "$ref": "#/definitions/Schedule_for_double"
         },
         "cost_schedule_start_day": {
           "type": "integer",
@@ -1159,8 +1160,7 @@
               ]
             },
             "schedule": {
-              "type": "object",
-              "additionalProperties": true
+              "$ref": "#/definitions/Schedule_for_Boolean"
             },
             "start_day": {
               "type": "integer",
@@ -1208,8 +1208,7 @@
               ]
             },
             "schedule": {
-              "type": "object",
-              "additionalProperties": true
+              "$ref": "#/definitions/Schedule_for_double"
             },
             "start_day": {
               "type": "integer",
@@ -1269,8 +1268,7 @@
               ]
             },
             "schedule": {
-              "type": "object",
-              "additionalProperties": true
+              "$ref": "#/definitions/Schedule_for_double"
             },
             "setpoint_max": {
               "type": [
@@ -1333,8 +1331,7 @@
               ]
             },
             "schedule": {
-              "type": "object",
-              "additionalProperties": true
+              "$ref": "#/definitions/Schedule_for_Boolean"
             },
             "start_day": {
               "type": "integer",
@@ -3267,7 +3264,7 @@
       ],
       "properties": {
         "schedule": {
-          "$ref": "#/definitions/InternalGainsSchedule"
+          "$ref": "#/definitions/Schedule_for_double"
         },
         "start_day": {
           "type": "integer",
@@ -3278,20 +3275,6 @@
           "type": "number",
           "format": "double"
         }
-      },
-      "additionalProperties": false
-    },
-    "InternalGainsSchedule": {
-      "type": "object",
-      "required": [
-        "main"
-      ],
-      "properties": {
-        "day": true,
-        "main": true,
-        "week": true,
-        "weekday": true,
-        "weekend": true
       },
       "additionalProperties": false
     },
@@ -3573,6 +3556,168 @@
       "type": "object",
       "additionalProperties": {
         "$ref": "#/definitions/OtherWaterUseDetails"
+      }
+    },
+    "ScheduleEntry_for_Boolean": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/ScheduleRepeater_for_Boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "ScheduleEntry_for_double": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "$ref": "#/definitions/ScheduleRepeater_for_double"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "ScheduleReferenceEntry_for_Boolean": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry_for_Boolean"
+          }
+        },
+        {
+          "$ref": "#/definitions/ScheduleEntry_for_Boolean"
+        }
+      ]
+    },
+    "ScheduleReferenceEntry_for_double": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry_for_double"
+          }
+        },
+        {
+          "$ref": "#/definitions/ScheduleEntry_for_double"
+        }
+      ]
+    },
+    "ScheduleRepeaterEntry_for_Boolean": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "ScheduleRepeaterEntry_for_double": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "ScheduleRepeaterValue_for_Boolean": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ScheduleRepeaterEntry_for_Boolean"
+        }
+      ]
+    },
+    "ScheduleRepeaterValue_for_double": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ScheduleRepeaterEntry_for_double"
+        }
+      ]
+    },
+    "ScheduleRepeater_for_Boolean": {
+      "type": "object",
+      "required": [
+        "repeat",
+        "value"
+      ],
+      "properties": {
+        "repeat": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "value": {
+          "$ref": "#/definitions/ScheduleRepeaterValue_for_Boolean"
+        }
+      }
+    },
+    "ScheduleRepeater_for_double": {
+      "type": "object",
+      "required": [
+        "repeat",
+        "value"
+      ],
+      "properties": {
+        "repeat": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "value": {
+          "$ref": "#/definitions/ScheduleRepeaterValue_for_double"
+        }
+      }
+    },
+    "Schedule_for_Boolean": {
+      "type": "object",
+      "required": [
+        "main"
+      ],
+      "properties": {
+        "main": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry_for_Boolean"
+          }
+        }
+      }
+    },
+    "Schedule_for_double": {
+      "type": "object",
+      "required": [
+        "main"
+      ],
+      "properties": {
+        "main": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry_for_double"
+          }
+        }
       }
     },
     "SecondarySupplyType": {
@@ -4114,8 +4259,7 @@
       ],
       "properties": {
         "schedule": {
-          "type": "object",
-          "additionalProperties": true
+          "$ref": "#/definitions/Schedule_for_double"
         }
       },
       "additionalProperties": false

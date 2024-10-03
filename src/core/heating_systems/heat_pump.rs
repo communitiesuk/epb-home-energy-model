@@ -6,7 +6,7 @@ use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
 use crate::core::heating_systems::emitters::convert_flow_to_return_temp;
 use crate::core::material_properties::{MaterialProperties, WATER};
-use crate::core::schedule::{expand_numeric_schedule, NumericSchedule};
+use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
     celsius_to_kelvin, kelvin_to_celsius, HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR,
     SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
@@ -490,7 +490,7 @@ pub struct TestDatumTempsAndTestLetters {
     // we need to ignore air flow rate when performing comparisons
     pub air_flow_rate: f64,
     pub design_flow_temp: f64,
-    pub test_letter: TestLetter,
+    pub(crate) test_letter: TestLetter,
     pub temp_outlet: f64,
     pub temp_source: f64,
     pub temp_test: f64,
@@ -499,7 +499,7 @@ pub struct TestDatumTempsAndTestLetters {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CompleteHeatPumpTestDatum {
     pub air_flow_rate: Option<f64>,
-    pub test_letter: TestLetter,
+    pub(crate) test_letter: TestLetter,
     pub capacity: f64,
     pub cop: f64,
     pub degradation_coefficient: f64,
@@ -1855,7 +1855,7 @@ impl HeatPump {
     ///               EnergySupplyConnection objects as values
     ///        energy_supply_connection_aux -- EnergySupplyConnection object for auxiliary energy
     ///        test_data -- HeatPumpTestData object
-    pub fn new(
+    pub(crate) fn new(
         heat_pump_input: &HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_name_auxiliary: &str,
@@ -1977,7 +1977,8 @@ impl HeatPump {
 
         let cost_schedule_metadata = cost_schedule_hybrid_hp
             .as_ref()
-            .map(|cost_schedule| cost_schedule.into());
+            .map(|cost_schedule| anyhow::Ok(cost_schedule.try_into()?))
+            .transpose()?;
 
         let temp_return_feed_max = match sink_type {
             HeatPumpSinkType::Air => None,
@@ -2786,8 +2787,7 @@ impl HeatPump {
         let cost_hp = schedule_metadata.hp[schedule_index];
         let cost_boiler = schedule_metadata.boiler[schedule_index];
 
-        (cost_hp.expect("Expected to have a cost figure for heat pump") / cop_op_cond)
-            <= (cost_boiler.expect("Expected to have a cost figure for boiler") / boiler_eff)
+        (cost_hp / cop_op_cond) <= (cost_boiler / boiler_eff)
     }
 
     /// Evaluate boolean conditions that may trigger backup heater
@@ -3958,20 +3958,22 @@ pub struct AuxiliaryParameters {
 
 #[derive(Clone, Debug)]
 struct CostScheduleMetadata {
-    pub hp: NumericSchedule,
-    pub boiler: NumericSchedule,
+    pub hp: Vec<f64>,
+    pub boiler: Vec<f64>,
     pub start_day: u32,
     pub time_series_step: f64,
 }
 
-impl From<&BoilerCostScheduleHybrid> for CostScheduleMetadata {
-    fn from(cost_schedule: &BoilerCostScheduleHybrid) -> Self {
-        Self {
-            hp: expand_numeric_schedule(&cost_schedule.cost_schedule_hp, false),
-            boiler: expand_numeric_schedule(&cost_schedule.cost_schedule_boiler, false),
+impl TryFrom<&BoilerCostScheduleHybrid> for CostScheduleMetadata {
+    type Error = anyhow::Error;
+
+    fn try_from(cost_schedule: &BoilerCostScheduleHybrid) -> anyhow::Result<Self> {
+        Ok(Self {
+            hp: reject_nulls(expand_numeric_schedule(&cost_schedule.cost_schedule_hp))?,
+            boiler: reject_nulls(expand_numeric_schedule(&cost_schedule.cost_schedule_boiler))?,
             start_day: cost_schedule.cost_schedule_start_day,
             time_series_step: cost_schedule.cost_schedule_time_series_step,
-        }
+        })
     }
 }
 

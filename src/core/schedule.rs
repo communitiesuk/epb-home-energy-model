@@ -1,112 +1,20 @@
-use crate::input::{Schedule, WaterHeatingEvent};
+use crate::input::WaterHeatingEvent;
 use anyhow::{anyhow, bail};
 use serde_json::Value;
 
-pub type BooleanSchedule = Vec<bool>;
-pub type NumericSchedule = Vec<Option<f64>>;
-
-const MAIN_SCHEDULE: &str = "main";
-
-pub fn expand_boolean_schedule(schedule: &Schedule, nullable: bool) -> BooleanSchedule {
-    process_boolean_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), schedule, nullable)
+pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
+    vec_of_options
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| anyhow!("A null was in a schedule when it was not expected."))
 }
 
-pub fn expand_numeric_schedule(schedule: &Schedule, nullable: bool) -> NumericSchedule {
-    process_numeric_schedule_entries(schedule.get(MAIN_SCHEDULE).unwrap(), schedule, nullable)
+pub(crate) fn expand_boolean_schedule(schedule: &BooleanSchedule) -> Vec<Option<bool>> {
+    schedule.expand()
 }
 
-fn process_boolean_schedule_entries(
-    entries: &Value,
-    schedules: &Schedule,
-    nullable: bool,
-) -> Vec<bool> {
-    let mut expansion = vec![];
-    match entries {
-        Value::Array(entry_vec) => {
-            for entry in entry_vec {
-                let extension = process_boolean_schedule_entry(entry, schedules, nullable);
-                expansion.extend(extension);
-            }
-        }
-        _ => panic!("An individual schedule was, illegally, not provided as a list."),
-    }
-
-    expansion
-}
-
-fn process_boolean_schedule_entry(
-    entry: &Value,
-    subschedules: &Schedule,
-    nullable: bool,
-) -> Vec<bool> {
-    match entry {
-        Value::String(subschedule) => process_boolean_schedule_entries(
-            subschedules.get(subschedule).unwrap(),
-            subschedules,
-            nullable,
-        ),
-        Value::Object(repeated_map) => std::iter::repeat(
-            process_boolean_schedule_entry(
-                repeated_map.get("value").unwrap(),
-                subschedules,
-                nullable,
-            )
-            .into_iter(),
-        )
-        .take(repeated_map.get("repeat").unwrap().as_u64().unwrap() as usize)
-        .flatten()
-        .collect(),
-        Value::Bool(whether) => vec![*whether],
-        Value::Null if nullable => vec![Default::default()],
-        _ => panic!("Unexpected value in schedule that was sent."),
-    }
-}
-
-fn process_numeric_schedule_entries(
-    entries: &Value,
-    schedules: &Schedule,
-    nullable: bool,
-) -> NumericSchedule {
-    let mut expansion = vec![];
-    match entries {
-        Value::Array(entry_vec) => {
-            for entry in entry_vec {
-                let extension = process_numeric_schedule_entry(entry, schedules, nullable);
-                expansion.extend(extension);
-            }
-        }
-        _ => panic!("An individual schedule was, illegally, not provided as a list."),
-    }
-
-    expansion
-}
-
-fn process_numeric_schedule_entry(
-    entry: &Value,
-    subschedules: &Schedule,
-    nullable: bool,
-) -> Vec<Option<f64>> {
-    match entry {
-        Value::String(subschedule) => process_numeric_schedule_entries(
-            subschedules.get(subschedule).unwrap(),
-            subschedules,
-            nullable,
-        ),
-        Value::Object(repeated_map) => std::iter::repeat(
-            process_numeric_schedule_entry(
-                repeated_map.get("value").unwrap(),
-                subschedules,
-                nullable,
-            )
-            .into_iter(),
-        )
-        .take(repeated_map.get("repeat").unwrap().as_u64().unwrap() as usize)
-        .flatten()
-        .collect(),
-        Value::Number(number) => vec![number.as_f64()],
-        Value::Null if nullable => vec![Default::default()],
-        _ => panic!("Unexpected value in schedule that was sent."),
-    }
+pub(crate) fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
+    schedule.expand()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -268,48 +176,238 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::input::Schedule;
-    use indexmap::IndexMap;
-    use pretty_assertions::assert_eq;
-    use rstest::*;
-    use serde_json::json;
+/// Data structures representing how schedules can be provided as input (in JSON).
+pub(crate) mod input {
+    use itertools::Itertools;
+    use serde::Deserialize;
+    use std::collections::HashMap;
 
-    #[fixture]
-    pub fn boolean_schedule() -> Schedule {
-        IndexMap::from([
-            (
-                "main".to_string(),
-                json!([
+    #[derive(Clone, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    pub(crate) struct Schedule<T: Copy> {
+        pub(crate) main: Vec<ScheduleEntry<T>>,
+        #[serde(flatten)]
+        pub(crate) references: HashMap<String, ScheduleReferenceEntry<T>>,
+    }
+
+    impl<T> Schedule<T>
+    where
+        T: Copy,
+    {
+        pub(super) fn expand(&self) -> Vec<Option<T>> {
+            self.main
+                .iter()
+                .map(|entry| self.expand_entry(entry))
+                .flatten()
+                .collect()
+        }
+
+        fn expand_entry(&self, entry: &ScheduleEntry<T>) -> Vec<Option<T>> {
+            match entry {
+                ScheduleEntry::Null(_) => vec![None],
+                ScheduleEntry::Value(v) => vec![Some(*v)],
+                ScheduleEntry::Repeater(repeater) => std::iter::repeat([match &repeater.value {
+                    ScheduleRepeaterValue::Reference(reference) => self.expand_reference(reference),
+                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Null(_)) => {
+                        vec![None]
+                    }
+                    ScheduleRepeaterValue::Entry(ScheduleRepeaterEntry::Value(v)) => {
+                        vec![Some(*v)]
+                    }
+                }])
+                .into_iter()
+                .take(repeater.repeat)
+                .flatten()
+                .flatten()
+                .collect_vec(),
+                ScheduleEntry::Reference(reference) => self.expand_reference(reference),
+            }
+        }
+
+        fn expand_reference(&self, reference: &str) -> Vec<Option<T>> {
+            match &self.references[reference] {
+                ScheduleReferenceEntry::Single(entry) => self.expand_entry(&entry),
+                ScheduleReferenceEntry::Multi(entries) => entries
+                    .iter()
+                    .map(|entry| self.expand_entry(entry))
+                    .flatten()
+                    .collect_vec(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[serde(untagged)]
+    pub(crate) enum ScheduleEntry<T: Copy> {
+        Null(()),
+        Value(T),
+        Repeater(ScheduleRepeater<T>),
+        Reference(String),
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[serde(untagged)]
+    pub(crate) enum ScheduleReferenceEntry<T: Copy> {
+        Multi(Vec<ScheduleEntry<T>>),
+        Single(ScheduleEntry<T>),
+    }
+
+    #[derive(Clone, Copy, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[serde(untagged)]
+    pub(crate) enum ScheduleRepeaterEntry<T> {
+        Null(()),
+        Value(T),
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    pub(crate) struct ScheduleRepeater<T: Copy> {
+        pub(crate) value: ScheduleRepeaterValue<T>,
+        pub(crate) repeat: usize,
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+    #[serde(untagged)]
+    pub(crate) enum ScheduleRepeaterValue<T: Copy> {
+        Reference(String),
+        Entry(ScheduleRepeaterEntry<T>),
+    }
+
+    pub(crate) type BooleanSchedule = Schedule<bool>;
+    pub(crate) type NumericSchedule = Schedule<f64>;
+
+    #[cfg(test)]
+    mod schedule_test {
+        use super::*;
+        use rstest::*;
+        use serde_json::json;
+
+        #[rstest]
+        fn make_boolean_schedule_with_simple_values() {
+            let _boolean_schedule: BooleanSchedule = serde_json::from_value(json!({
+                "main": [true, false]
+            }))
+            .unwrap();
+        }
+
+        #[rstest]
+        fn make_boolean_schedule_with_repeater() {
+            let _boolean_schedule: BooleanSchedule = serde_json::from_value(json!({
+                "main": [true, false, {"value": true, "repeat": 5}]
+            }))
+            .unwrap();
+        }
+
+        #[rstest]
+        fn boolean_schedule_without_main_fails() {
+            assert!(serde_json::from_value::<BooleanSchedule>(json!({
+                "weekday": [true, false, {"value": true, "repeat": 5}]
+            }))
+            .is_err());
+        }
+
+        #[rstest]
+        fn boolean_schedule_allows_nulls() {
+            assert!(serde_json::from_value::<BooleanSchedule>(json!({
+                "main": [true, null, {"value": true, "repeat": 5}]
+            }))
+            .is_ok());
+        }
+
+        #[rstest]
+        fn numeric_schedule_allows_numbers_and_repeats() {
+            assert!(serde_json::from_value::<NumericSchedule>(json!({
+                "main": [21.0, null, {"value": 22.0, "repeat": 5}]
+            }))
+            .is_ok());
+        }
+
+        #[rstest]
+        fn numeric_schedule_with_references_as_entries_allowed() {
+            assert!(serde_json::from_value::<BooleanSchedule>(json!({
+                "main": [
                     {"value": "weekday", "repeat": 5},
                     "weekend", "weekend",
-                ]),
-            ),
-            (
-                "weekday".to_string(),
-                json!([
+                ],
+                "weekday": [
                     {"value": false, "repeat": 7},
                     {"value": true, "repeat": 2},
                     {"value": false, "repeat": 7},
                     {"value": true, "repeat": 7},
                     false,
-                ]),
-            ),
-            (
-                "weekend".to_string(),
-                json!([
+                ],
+                "weekend": [
                     {"value": false, "repeat": 7},
                     {"value": true, "repeat": 16},
                     false,
-                ]),
-            ),
-        ])
+                ]
+            }))
+            .is_ok());
+        }
+
+        #[rstest]
+        fn schedule_with_repeaters_with_references_allowed() {
+            assert!(serde_json::from_value::<NumericSchedule>(json!({
+                "main": [{"repeat": 53, "value": "week"}],
+                "week": [{"repeat": 5, "value": "weekday"}, {"repeat": 2, "value": "weekend"}],
+                "weekday": [22.0],
+                "weekend": [23.0],
+            }))
+            .is_ok());
+        }
+
+        #[rstest]
+        fn schedule_with_repeaters_with_references_to_single_values_allowed() {
+            assert!(serde_json::from_value::<NumericSchedule>(json!({
+                "main": [{"repeat": 53, "value": "week"}],
+                "week": [{"repeat": 5, "value": "weekday"}, {"repeat": 2, "value": "weekend"}],
+                "weekday": 22.0,
+                "weekend": 23.0,
+            }))
+            .is_ok());
+        }
+    }
+}
+
+pub(crate) use input::BooleanSchedule;
+pub(crate) use input::NumericSchedule;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use rstest::*;
+    use serde_json::json;
+
+    #[fixture]
+    pub fn boolean_schedule() -> BooleanSchedule {
+        serde_json::from_value(json!({
+            "main": [
+                {"value": "weekday", "repeat": 5},
+                "weekend", "weekend",
+            ],
+            "weekday": [
+                {"value": false, "repeat": 7},
+                {"value": true, "repeat": 2},
+                {"value": false, "repeat": 7},
+                {"value": true, "repeat": 7},
+                false,
+            ],
+            "weekend": [
+                {"value": false, "repeat": 7},
+                {"value": true, "repeat": 16},
+                false,
+            ]
+        }))
+        .unwrap()
     }
 
     #[fixture]
-    pub fn boolean_schedule_expanded() -> BooleanSchedule {
+    pub fn boolean_schedule_expanded() -> Vec<bool> {
         vec![
             // Weekday schedule (Mon)
             false, false, false, false, false, false, false, true, true, false, false, false, false,
@@ -337,26 +435,26 @@ mod tests {
 
     #[rstest]
     pub fn should_expand_boolean_schedule_correctly(
-        boolean_schedule: Schedule,
-        boolean_schedule_expanded: BooleanSchedule,
+        boolean_schedule: BooleanSchedule,
+        boolean_schedule_expanded: Vec<bool>,
     ) {
         assert_eq!(
-            expand_boolean_schedule(&boolean_schedule, false),
+            reject_nulls(expand_boolean_schedule(&boolean_schedule)).unwrap(),
             boolean_schedule_expanded,
             "Incorrect expansion of Boolean schedule"
         );
     }
 
     #[fixture]
-    pub fn numeric_schedule() -> Schedule {
-        IndexMap::from([(
-            "main".to_string(),
-            json!([300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0,]),
-        )])
+    pub fn numeric_schedule() -> NumericSchedule {
+        serde_json::from_value(json!({
+            "main": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0]
+        }))
+        .unwrap()
     }
 
     #[fixture]
-    pub fn numeric_schedule_expanded() -> NumericSchedule {
+    pub fn numeric_schedule_expanded() -> Vec<Option<f64>> {
         vec![
             Some(300.0),
             Some(120.0),
@@ -371,26 +469,26 @@ mod tests {
 
     #[rstest]
     pub fn should_expand_numeric_schedule_correctly(
-        numeric_schedule: Schedule,
-        numeric_schedule_expanded: NumericSchedule,
+        numeric_schedule: NumericSchedule,
+        numeric_schedule_expanded: Vec<Option<f64>>,
     ) {
         assert_eq!(
-            expand_numeric_schedule(&numeric_schedule, false),
+            expand_numeric_schedule(&numeric_schedule),
             numeric_schedule_expanded,
             "Incorrect expansion of numeric schedule"
         );
     }
 
     #[fixture]
-    pub fn gappy_numeric_schedule() -> Schedule {
-        IndexMap::from([(
-            "main".to_string(),
-            json!([300.0, 120.0, null, 750.0, 890.0, null, 550.0, 280.0,]),
-        )])
+    pub fn gappy_numeric_schedule() -> NumericSchedule {
+        serde_json::from_value(json!({
+            "main": [300.0, 120.0, null, 750.0, 890.0, null, 550.0, 280.0]
+        }))
+        .unwrap()
     }
 
     #[fixture]
-    pub fn gappy_numeric_schedule_expanded() -> NumericSchedule {
+    pub fn gappy_numeric_schedule_expanded() -> Vec<Option<f64>> {
         vec![
             Some(300.0),
             Some(120.0),
@@ -405,11 +503,11 @@ mod tests {
 
     #[rstest]
     pub fn should_expand_gappy_numeric_schedule_correctly(
-        gappy_numeric_schedule: Schedule,
-        gappy_numeric_schedule_expanded: NumericSchedule,
+        gappy_numeric_schedule: NumericSchedule,
+        gappy_numeric_schedule_expanded: Vec<Option<f64>>,
     ) {
         assert_eq!(
-            expand_numeric_schedule(&gappy_numeric_schedule, true),
+            expand_numeric_schedule(&gappy_numeric_schedule),
             gappy_numeric_schedule_expanded,
             "Incorrect expansion of numeric schedule"
         );

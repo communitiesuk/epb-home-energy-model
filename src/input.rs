@@ -1,4 +1,5 @@
 use crate::core::heating_systems::heat_pump::TestLetter;
+use crate::core::schedule::{BooleanSchedule, NumericSchedule};
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
@@ -25,7 +26,7 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 pub struct Input {
     pub simulation_time: SimulationTime,
     pub external_conditions: Arc<ExternalConditionsInput>,
-    pub internal_gains: InternalGains,
+    pub(crate) internal_gains: InternalGains,
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     pub energy_supply: EnergySupplyInput,
@@ -97,7 +98,7 @@ pub struct ExternalConditionsInput {
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct InternalGains {
+pub(crate) struct InternalGains {
     #[serde(alias = "total internal gains")]
     pub total_internal_gains: Option<InternalGainsDetails>,
     #[serde(alias = "metabolic gains")]
@@ -111,42 +112,10 @@ pub struct InternalGains {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct InternalGainsDetails {
+pub(crate) struct InternalGainsDetails {
     pub start_day: u32,
     pub time_series_step: f64,
-    pub schedule: InternalGainsSchedule,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct InternalGainsSchedule {
-    pub main: Value,
-    pub day: Option<Value>,
-    pub week: Option<Value>,
-    pub weekday: Option<Value>,
-    pub weekend: Option<Value>,
-}
-
-impl From<&InternalGainsSchedule> for IndexMap<String, Value> {
-    fn from(value: &InternalGainsSchedule) -> Self {
-        let mut schedule: IndexMap<String, Value> =
-            IndexMap::from([("main".to_string(), value.main.clone())]);
-        if let Some(day) = &value.day {
-            schedule.insert("day".to_string(), day.clone());
-        }
-        if let Some(week) = &value.week {
-            schedule.insert("week".to_string(), week.clone());
-        }
-        if let Some(weekday) = &value.weekday {
-            schedule.insert("weekday".to_string(), weekday.clone());
-        }
-        if let Some(weekend) = &value.weekend {
-            schedule.insert("weekend".to_string(), weekend.clone());
-        }
-
-        schedule
-    }
+    pub(crate) schedule: NumericSchedule,
 }
 
 pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
@@ -162,7 +131,7 @@ pub struct ApplianceGainsDetails {
     pub gains_fraction: f64,
     #[serde(alias = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
-    pub schedule: Option<Schedule>,
+    pub(crate) schedule: Option<NumericSchedule>,
     // In the Python code these fields are
     // set in the FHS wrapper
     #[serde(rename = "Standby")]
@@ -507,17 +476,15 @@ pub struct ColdWaterSourceDetails {
     pub time_series_step: f64,
 }
 
-pub type Schedule = IndexMap<String, Value>; // TODO: possible values are too undefined and unpredictable to reverse-engineer at time of writing! (2023-07-06)
+pub(crate) type CoreControls = Vec<HeatSourceControl>;
 
-pub type CoreControls = Vec<HeatSourceControl>;
-
-pub type ExtraControls = IndexMap<String, ControlDetails>;
+pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Control {
-    pub core: CoreControls,
-    pub extra: ExtraControls,
+    pub(crate) core: CoreControls,
+    pub(crate) extra: ExtraControls,
 }
 
 // specialised deserialisation logic for converting a map of controls into a list of HeatSourceControl structs
@@ -551,14 +518,14 @@ where
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum ControlDetails {
+pub(crate) enum ControlDetails {
     #[serde(rename = "OnOffTimeControl")]
     OnOffTime {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
-        schedule: Schedule,
+        schedule: BooleanSchedule,
     },
     #[serde(rename = "OnOffCostMinimisingTimeControl")]
     OnOffCostMinimisingTime {
@@ -567,7 +534,7 @@ pub enum ControlDetails {
         advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
         time_on_daily: Option<f64>,
-        schedule: Schedule,
+        schedule: NumericSchedule,
     },
     #[serde(rename = "SetpointTimeControl")]
     SetpointTime {
@@ -578,7 +545,7 @@ pub enum ControlDetails {
         setpoint_min: Option<f64>,
         setpoint_max: Option<f64>,
         default_to_max: Option<bool>,
-        schedule: Schedule,
+        schedule: NumericSchedule,
     },
     #[serde(rename = "ToUChargeControl")]
     ToUCharge {
@@ -588,7 +555,7 @@ pub enum ControlDetails {
         logic_type: Option<ControlLogicType>,
         charge_level: Option<Value>,
         target_charge: Option<f64>,
-        schedule: Schedule,
+        schedule: BooleanSchedule,
     },
 }
 
@@ -619,12 +586,11 @@ impl ControlDetails {
         }
     }
 
-    pub(crate) fn schedule(&self) -> &Schedule {
+    pub(crate) fn numeric_schedule(&self) -> anyhow::Result<&NumericSchedule> {
         match self {
-            ControlDetails::OnOffTime { schedule, .. } => schedule,
-            ControlDetails::OnOffCostMinimisingTime { schedule, .. } => schedule,
-            ControlDetails::SetpointTime { schedule, .. } => schedule,
-            ControlDetails::ToUCharge { schedule, .. } => schedule,
+            ControlDetails::OnOffCostMinimisingTime { schedule, .. } => Ok(schedule),
+            ControlDetails::SetpointTime { schedule, .. } => Ok(schedule),
+            _ => Err(anyhow::anyhow!("Numeric schedule was not available")),
         }
     }
 }
@@ -905,7 +871,7 @@ pub enum HeatSourceControlType {
 
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub enum HeatSourceControl {
+pub(crate) enum HeatSourceControl {
     HotWaterTimer(ControlDetails),
     WindowOpening(ControlDetails),
     WindowOpeningLivingRoom(ControlDetails),
@@ -2037,7 +2003,7 @@ pub struct HeatPumpBufferTank {
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpTestDatum {
     pub air_flow_rate: Option<f64>,
-    pub test_letter: TestLetter,
+    pub(crate) test_letter: TestLetter,
     pub capacity: f64,
     pub cop: f64,
     #[serde(rename = "degradation_coeff")]
@@ -2074,11 +2040,11 @@ pub struct HeatPumpBoiler {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct BoilerCostScheduleHybrid {
+pub(crate) struct BoilerCostScheduleHybrid {
     pub cost_schedule_start_day: u32,
     pub cost_schedule_time_series_step: f64,
-    pub cost_schedule_hp: Schedule,
-    pub cost_schedule_boiler: Schedule,
+    pub cost_schedule_hp: NumericSchedule,
+    pub cost_schedule_boiler: NumericSchedule,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -2601,7 +2567,7 @@ pub enum ApplianceReference {
 #[serde(deny_unknown_fields)]
 pub struct Tariff {
     #[serde(rename = "schedule")]
-    schedule: Schedule,
+    schedule: NumericSchedule,
 }
 
 #[derive(Debug)]
@@ -3344,7 +3310,7 @@ impl InputForProcessing {
         self.input.appliances.clone().unwrap_or_default()
     }
 
-    pub(crate) fn tariff_schedule(&self) -> Option<&Schedule> {
+    pub(crate) fn tariff_schedule(&self) -> Option<&NumericSchedule> {
         self.input.tariff.as_ref().map(|tariff| &tariff.schedule)
     }
 

@@ -1,4 +1,4 @@
-use crate::core::schedule::expand_numeric_schedule;
+use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
@@ -1509,16 +1509,14 @@ fn create_appliance_gains(
                 // create year long cost profile
                 // loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
                 // so the weight timeseries is generic.
-                let weight_timeseries = expand_numeric_schedule(
+                let weight_timeseries = reject_nulls(expand_numeric_schedule(
                     input.tariff_schedule().ok_or_else(|| {
                         anyhow!(
                             "A tariff schedule was expected to have been provided in the input."
                         )
                     })?,
-                    false,
-                );
-                load_shifting.weight_timeseries =
-                    Some(weight_timeseries.into_iter().map(Option::unwrap).collect());
+                ))?;
+                load_shifting.weight_timeseries = Some(weight_timeseries);
 
                 Some(load_shifting)
             } else {

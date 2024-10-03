@@ -27,8 +27,8 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events, expand_numeric_schedule, NumericSchedule,
-    ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
+    expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nulls, ScheduleEvent,
+    TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
@@ -167,7 +167,7 @@ impl Corpus {
         );
 
         let controls =
-            control_from_input(&input.control, simulation_time_iterator.clone().as_ref());
+            control_from_input(&input.control, simulation_time_iterator.clone().as_ref())?;
 
         let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
@@ -217,7 +217,7 @@ impl Corpus {
 
         let infiltration_ventilation = Arc::from(infiltration_ventilation);
 
-        let required_vent_data = required_vent_data_from_input(&input.control);
+        let required_vent_data = required_vent_data_from_input(&input.control)?;
 
         let zones: IndexMap<String, Zone> = input
             .zone
@@ -256,7 +256,8 @@ impl Corpus {
 
         let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
 
-        let mut internal_gains = internal_gains_from_input(&input.internal_gains, total_floor_area);
+        let mut internal_gains =
+            internal_gains_from_input(&input.internal_gains, total_floor_area)?;
 
         apply_appliance_gains_from_input(
             &mut internal_gains,
@@ -2291,74 +2292,80 @@ pub type InternalGainsCollection = IndexMap<String, Gains>;
 fn internal_gains_from_input(
     input: &InternalGainsInput,
     total_floor_area: f64,
-) -> InternalGainsCollection {
+) -> anyhow::Result<InternalGainsCollection> {
     let mut gains_collection = InternalGainsCollection::from([]);
-    input
-        .total_internal_gains
-        .as_ref()
-        .and_then(|internal_gains| {
+    match input.total_internal_gains.as_ref() {
+        Some(internal_gains) => {
             gains_collection.insert(
                 "total_internal_gains".to_string(),
                 Gains::Internal(internal_gains_from_details(
                     internal_gains,
                     total_floor_area,
-                )),
-            )
-        });
-    input.metabolic_gains.as_ref().and_then(|internal_gains| {
-        gains_collection.insert(
-            "metabolic_gains".to_string(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-            )),
-        )
-    });
-    input
-        .evaporative_losses
-        .as_ref()
-        .and_then(|internal_gains| {
+                )?),
+            );
+        }
+        None => (),
+    }
+    match input.metabolic_gains.as_ref() {
+        Some(internal_gains) => {
+            gains_collection.insert(
+                "metabolic_gains".to_string(),
+                Gains::Internal(internal_gains_from_details(
+                    internal_gains,
+                    total_floor_area,
+                )?),
+            );
+        }
+        None => (),
+    }
+    match input.evaporative_losses.as_ref() {
+        Some(internal_gains) => {
             gains_collection.insert(
                 "evaporative_losses".to_string(),
                 Gains::Internal(internal_gains_from_details(
                     internal_gains,
                     total_floor_area,
-                )),
-            )
-        });
-    input.other.as_ref().and_then(|internal_gains| {
-        gains_collection.insert(
-            "other".to_string(),
-            Gains::Internal(internal_gains_from_details(
-                internal_gains,
-                total_floor_area,
-            )),
-        )
-    });
+                )?),
+            );
+        }
+        None => (),
+    }
+    match input.other.as_ref() {
+        Some(internal_gains) => {
+            gains_collection.insert(
+                "other".to_string(),
+                Gains::Internal(internal_gains_from_details(
+                    internal_gains,
+                    total_floor_area,
+                )?),
+            );
+        }
+        None => (),
+    }
 
-    gains_collection
+    Ok(gains_collection)
 }
 
 fn internal_gains_from_details(
     details: &InternalGainsDetails,
     total_floor_area: f64,
-) -> InternalGains {
-    InternalGains::new(
-        convert_energy_to_wm2(details, total_floor_area),
+) -> anyhow::Result<InternalGains> {
+    Ok(InternalGains::new(
+        convert_energy_to_wm2(details, total_floor_area)?,
         details.start_day,
         details.time_series_step,
-    )
+    ))
 }
 
 fn convert_energy_to_wm2(
     internal_gains_details: &InternalGainsDetails,
     total_floor_area: f64,
-) -> Vec<f64> {
-    let schedule: IndexMap<String, Value> = (&internal_gains_details.schedule).into();
-    expand_numeric_schedule(&schedule, false)
+) -> anyhow::Result<Vec<f64>> {
+    let schedule = &internal_gains_details.schedule;
+    Ok(reject_nulls(expand_numeric_schedule(&schedule))?
         .iter()
-        .map(|energy_data| energy_data.unwrap_or_default() / total_floor_area)
-        .collect()
+        .map(|energy_data| energy_data / total_floor_area)
+        .collect())
 }
 
 pub struct Controls {
@@ -2392,7 +2399,7 @@ impl Controls {
 fn control_from_input(
     control_input: &ControlInput,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> Controls {
+) -> anyhow::Result<Controls> {
     let mut core: Vec<HeatSourceControl> = Default::default();
     let mut extra: HashMap<String, Arc<Control>> = Default::default();
 
@@ -2403,12 +2410,12 @@ fn control_from_input(
         match control {
             HeatSourceControlInput::HotWaterTimer(control) => {
                 core.push(HeatSourceControl::HotWaterTimer(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator),
+                    single_control_from_details(control, simulation_time_iterator)?,
                 )));
             }
             HeatSourceControlInput::WindowOpening(control) => {
                 core.push(HeatSourceControl::WindowOpening(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator),
+                    single_control_from_details(control, simulation_time_iterator)?,
                 )));
             }
             unknown => panic!(
@@ -2423,25 +2430,25 @@ fn control_from_input(
             Arc::new(single_control_from_details(
                 control,
                 simulation_time_iterator,
-            )),
+            )?),
         );
     }
 
-    Controls { core, extra }
+    Ok(Controls { core, extra })
 }
 
 fn single_control_from_details(
     details: &ControlDetails,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> Control {
-    match details {
+) -> anyhow::Result<Control> {
+    Ok(match details {
         ControlDetails::OnOffTime {
             start_day,
             time_series_step,
             schedule,
             ..
         } => Control::OnOffTimeControl(OnOffTimeControl::new(
-            expand_boolean_schedule(schedule, false),
+            reject_nulls(expand_boolean_schedule(schedule))?,
             *start_day,
             *time_series_step,
         )),
@@ -2452,10 +2459,7 @@ fn single_control_from_details(
             schedule,
             ..
         } => Control::OnOffMinimisingTimeControl(OnOffMinimisingTimeControl::new(
-            expand_numeric_schedule(schedule, false)
-                .into_iter()
-                .flatten()
-                .collect(),
+            reject_nulls(expand_numeric_schedule(schedule))?,
             *start_day,
             *time_series_step,
             time_on_daily.unwrap_or_default(),
@@ -2471,7 +2475,7 @@ fn single_control_from_details(
             ..
         } => Control::SetpointTimeControl(
             SetpointTimeControl::new(
-                expand_numeric_schedule(schedule, true).to_vec(),
+                expand_numeric_schedule(schedule),
                 *start_day,
                 *time_series_step,
                 *setpoint_min,
@@ -2514,13 +2518,13 @@ fn single_control_from_details(
             }
 
             Control::ToUChargeControl(ToUChargeControl {
-                schedule: expand_boolean_schedule(schedule, false),
+                schedule: reject_nulls(expand_boolean_schedule(schedule))?,
                 start_day: *start_day,
                 time_series_step: *time_series_step,
                 charge_level: charge_level_vec,
             })
         }
-    }
+    })
 }
 
 fn wwhrs_from_input(
@@ -3409,15 +3413,14 @@ fn appliance_gains_from_single_input(
     energy_supply_connection: EnergySupplyConnection,
     total_floor_area: f64,
 ) -> anyhow::Result<ApplianceGains> {
-    let total_energy_supply = expand_numeric_schedule(
+    let total_energy_supply = reject_nulls(expand_numeric_schedule(
         input
             .schedule
             .as_ref()
             .ok_or_else(|| anyhow!("Appliance gains did not have schedule when expected."))?,
-        false,
-    )
+    ))?
     .iter()
-    .map(|energy_data| energy_data.unwrap() / total_floor_area)
+    .map(|energy_data| energy_data / total_floor_area)
     .collect();
 
     Ok(ApplianceGains::new(
@@ -4397,20 +4400,23 @@ fn total_volume_heated_by_system(
         .sum::<f64>()
 }
 
-fn required_vent_data_from_input(input: &ControlInput) -> Option<RequiredVentData> {
-    input
+fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<RequiredVentData>> {
+    Ok(input
         .extra
         .get("required_vent")
-        .map(|ctrl| RequiredVentData {
-            schedule: expand_numeric_schedule(ctrl.schedule(), true),
-            start_day: ctrl.start_day(),
-            time_series_step: ctrl.time_series_step(),
+        .map(|ctrl| {
+            anyhow::Ok(RequiredVentData {
+                schedule: expand_numeric_schedule(ctrl.numeric_schedule()?),
+                start_day: ctrl.start_day(),
+                time_series_step: ctrl.time_series_step(),
+            })
         })
+        .transpose()?)
 }
 
 #[derive(Clone, Debug)]
 struct RequiredVentData {
-    schedule: NumericSchedule,
+    schedule: Vec<Option<f64>>,
     start_day: u32,
     time_series_step: f64,
 }
