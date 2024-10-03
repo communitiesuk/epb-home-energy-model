@@ -1,7 +1,7 @@
+use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
-use arrayvec::ArrayString;
 use indexmap::{Equivalent, IndexMap};
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -2080,8 +2080,6 @@ pub struct BoilerCostScheduleHybrid {
     pub cost_schedule_hp: Schedule,
     pub cost_schedule_boiler: Schedule,
 }
-
-pub type TestLetter = ArrayString<2>;
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

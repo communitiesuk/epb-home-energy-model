@@ -2100,7 +2100,7 @@
           "format": "double"
         },
         "test_letter": {
-          "type": "string"
+          "$ref": "#/definitions/TestLetter"
         }
       },
       "additionalProperties": false
@@ -4126,6 +4126,17 @@
         "Open terrain",
         "Country",
         "Urban"
+      ]
+    },
+    "TestLetter": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F",
+        "F2"
       ]
     },
     "ThermalBridging": {

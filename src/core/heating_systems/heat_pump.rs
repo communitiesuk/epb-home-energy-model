@@ -17,7 +17,7 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
     HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
-    HeatSourceWetDetails, HotWaterSourceDetails, TestLetter,
+    HeatSourceWetDetails, HotWaterSourceDetails,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
@@ -28,6 +28,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
+use serde::Deserialize;
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -131,7 +132,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             fixed_temps_and_test_letters_this.push(TestDatumTempsAndTestLetters {
                 air_flow_rate: air_flow_rate.0,
                 design_flow_temp: test_data_record.design_flow_temp,
-                test_letter: &test_data_record.test_letter,
+                test_letter: test_data_record.test_letter,
                 temp_outlet: test_data_record.temp_outlet,
                 temp_source: test_data_record.temp_source,
                 temp_test: test_data_record.temp_test,
@@ -168,7 +169,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             for air_flow_rate in air_flow_rates_ordered {
                 for test_record in &test_data_by_air_flow_rate[&OrderedFloat(*air_flow_rate)] {
                     if test_record.design_flow_temp == datum.design_flow_temp
-                        && test_record.test_letter.as_str() == datum.test_letter
+                        && test_record.test_letter == datum.test_letter
                     {
                         capacity_list.push(test_record.capacity);
                         cop_list.push(test_record.cop);
@@ -197,7 +198,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
 
             Ok(HeatPumpTestDatum {
                 air_flow_rate: Some(datum.air_flow_rate),
-                test_letter: test_letter(datum.test_letter),
+                test_letter: datum.test_letter,
                 capacity,
                 cop,
                 degradation_coefficient: degradation_coeff,
@@ -448,20 +449,48 @@ impl BufferTank {
     }
 }
 
-fn test_letter(letter: &str) -> TestLetter {
-    let mut test_letter = TestLetter::new();
-    test_letter.push_str(letter);
-    test_letter
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub(crate) enum TestLetter {
+    A,
+    B,
+    C,
+    D,
+    F,
+    F2, // this appears in some example JSON
+}
+
+impl std::fmt::Display for TestLetter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                TestLetter::A => "A",
+                TestLetter::B => "B",
+                TestLetter::C => "C",
+                TestLetter::D => "D",
+                TestLetter::F => "F",
+                TestLetter::F2 => "F2",
+            }
+        )
+    }
+}
+
+impl TestLetter {
+    fn is_non_bivalent(&self) -> bool {
+        [TestLetter::A, TestLetter::B, TestLetter::C, TestLetter::D].contains(self)
+    }
 }
 
 #[derive(Derivative)]
 #[derivative(PartialEq, Debug)]
-pub struct TestDatumTempsAndTestLetters<'a> {
+pub struct TestDatumTempsAndTestLetters {
     #[derivative(PartialEq = "ignore")]
     // we need to ignore air flow rate when performing comparisons
     pub air_flow_rate: f64,
     pub design_flow_temp: f64,
-    pub test_letter: &'a str,
+    pub test_letter: TestLetter,
     pub temp_outlet: f64,
     pub temp_source: f64,
     pub temp_test: f64,
@@ -631,7 +660,7 @@ impl HeatPumpTestData {
         let mut test_letter_vec: Vec<char> = Default::default();
         for temperature in &dsgn_flow_temps {
             for test_data in &test_data[temperature] {
-                for test_letter in test_data.test_letter.chars() {
+                for test_letter in test_data.test_letter.to_string().chars() {
                     test_letter_vec.push(test_letter);
                 }
                 if test_letter_vec.len() == 5 {
@@ -784,7 +813,7 @@ impl HeatPumpTestData {
 
         self.test_data[&OrderedFloat(dsgn_flow_temp)]
             .iter()
-            .position(|test_record| &test_record.test_letter == test_condition)
+            .position(|test_record| &test_record.test_letter.to_string() == test_condition)
     }
 
     /// Return value at specified test condition, interpolated between design flow temps
@@ -1157,9 +1186,7 @@ fn ave_degradation_coeff(
         .map(|dsgn_flow_temp| {
             test_data[dsgn_flow_temp]
                 .iter()
-                .filter(|datum| {
-                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().next().unwrap())
-                }) // assumption is made here that the first letter of the "test_letter" attribute can be considered the test letter
+                .filter(|datum| datum.test_letter.is_non_bivalent())
                 .map(|datum| datum.degradation_coefficient)
                 .sum::<f64>()
                 / TEST_LETTERS_NON_BIVALENT.len() as f64
@@ -1179,9 +1206,7 @@ fn ave_capacity(
         .map(|dsgn_flow_temp| {
             test_data[dsgn_flow_temp]
                 .iter()
-                .filter(|datum| {
-                    TEST_LETTERS_NON_BIVALENT.contains(&datum.test_letter.chars().next().unwrap())
-                }) // assumption is made here that the first letter of the "test_letter" attribute can be considered the test letter
+                .filter(|datum| datum.test_letter.is_non_bivalent())
                 .map(|datum| datum.capacity)
                 .sum::<f64>()
                 / TEST_LETTERS_NON_BIVALENT.len() as f64
@@ -4159,7 +4184,7 @@ mod tests {
         let data_eahp = vec![
             HeatPumpTestDatum {
                 air_flow_rate: Some(100.0),
-                test_letter: test_letter("A"),
+                test_letter: TestLetter::A,
                 capacity: 5.0,
                 cop: 2.0,
                 degradation_coefficient: 0.9,
@@ -4172,7 +4197,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(200.0),
-                test_letter: test_letter("A"),
+                test_letter: TestLetter::A,
                 capacity: 6.0,
                 cop: 2.5,
                 degradation_coefficient: 0.95,
@@ -4185,7 +4210,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(100.0),
-                test_letter: test_letter("B"),
+                test_letter: TestLetter::B,
                 capacity: 5.5,
                 cop: 2.4,
                 degradation_coefficient: 0.92,
@@ -4198,7 +4223,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: Some(200.0),
-                test_letter: test_letter("B"),
+                test_letter: TestLetter::B,
                 capacity: 6.0,
                 cop: 3.0,
                 degradation_coefficient: 0.98,
@@ -4213,7 +4238,7 @@ mod tests {
         let data_eahp_interpolated = vec![
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("A"),
+                test_letter: TestLetter::A,
                 capacity: 5.4,
                 cop: 2.2,
                 degradation_coefficient: 0.92,
@@ -4226,7 +4251,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("B"),
+                test_letter: TestLetter::B,
                 capacity: 5.7,
                 cop: 2.64,
                 degradation_coefficient: 0.9440000000000001,
@@ -4268,7 +4293,7 @@ mod tests {
         vec![
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("A"),
+                test_letter: TestLetter::A,
                 capacity: 8.4,
                 cop: 4.6,
                 degradation_coefficient: 0.90,
@@ -4281,7 +4306,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("B"),
+                test_letter: TestLetter::B,
                 capacity: 8.3,
                 cop: 4.9,
                 degradation_coefficient: 0.90,
@@ -4294,7 +4319,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("C"),
+                test_letter: TestLetter::C,
                 capacity: 8.3,
                 cop: 5.1,
                 degradation_coefficient: 0.90,
@@ -4307,7 +4332,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("D"),
+                test_letter: TestLetter::D,
                 capacity: 8.2,
                 cop: 5.4,
                 degradation_coefficient: 0.95,
@@ -4320,7 +4345,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("F"),
+                test_letter: TestLetter::F,
                 capacity: 8.4,
                 cop: 4.6,
                 degradation_coefficient: 0.90,
@@ -4333,7 +4358,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("A"),
+                test_letter: TestLetter::A,
                 capacity: 8.8,
                 cop: 3.2,
                 degradation_coefficient: 0.90,
@@ -4346,7 +4371,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("B"),
+                test_letter: TestLetter::B,
                 capacity: 8.6,
                 cop: 3.6,
                 degradation_coefficient: 0.90,
@@ -4359,7 +4384,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("C"),
+                test_letter: TestLetter::C,
                 capacity: 8.5,
                 cop: 3.9,
                 degradation_coefficient: 0.98,
@@ -4372,7 +4397,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("D"),
+                test_letter: TestLetter::D,
                 capacity: 8.5,
                 cop: 4.3,
                 degradation_coefficient: 0.98,
@@ -4385,7 +4410,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("F"),
+                test_letter: TestLetter::F,
                 capacity: 8.8,
                 cop: 3.2,
                 degradation_coefficient: 0.90,
@@ -4398,7 +4423,7 @@ mod tests {
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: test_letter("F2"),
+                test_letter: TestLetter::F2,
                 capacity: 8.8,
                 cop: 3.2,
                 degradation_coefficient: 0.90,
@@ -4420,7 +4445,7 @@ mod tests {
             vec![
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("A"),
+                    test_letter: TestLetter::A,
                     capacity: 8.4,
                     carnot_cop: 9.033823529411764,
                     cop: 4.6,
@@ -4434,7 +4459,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("F"),
+                    test_letter: TestLetter::F,
                     capacity: 8.4,
                     carnot_cop: 9.033823529438331,
                     cop: 4.6,
@@ -4448,7 +4473,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("B"),
+                    test_letter: TestLetter::B,
                     capacity: 8.3,
                     carnot_cop: 10.104999999999999,
                     cop: 4.9,
@@ -4462,7 +4487,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("C"),
+                    test_letter: TestLetter::C,
                     capacity: 8.3,
                     carnot_cop: 11.116666666666665,
                     cop: 5.1,
@@ -4476,7 +4501,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("D"),
+                    test_letter: TestLetter::D,
                     capacity: 8.2,
                     carnot_cop: 12.38125,
                     cop: 5.4,
@@ -4495,7 +4520,7 @@ mod tests {
             vec![
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("A"),
+                    test_letter: TestLetter::A,
                     capacity: 8.8,
                     carnot_cop: 6.252884615384615,
                     cop: 3.2,
@@ -4509,7 +4534,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("F"),
+                    test_letter: TestLetter::F,
                     capacity: 8.8,
                     carnot_cop: 6.252884615396638,
                     cop: 3.2,
@@ -4523,7 +4548,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("F2"),
+                    test_letter: TestLetter::F2,
                     capacity: 8.8,
                     carnot_cop: 6.252884615408662,
                     cop: 3.2,
@@ -4537,7 +4562,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("B"),
+                    test_letter: TestLetter::B,
                     capacity: 8.6,
                     carnot_cop: 7.503571428571428,
                     cop: 3.6,
@@ -4551,7 +4576,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("C"),
+                    test_letter: TestLetter::C,
                     capacity: 8.5,
                     carnot_cop: 8.587499999999999,
                     cop: 3.9,
@@ -4565,7 +4590,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: test_letter("D"),
+                    test_letter: TestLetter::D,
                     capacity: 8.5,
                     carnot_cop: 10.104999999999999,
                     cop: 4.3,
