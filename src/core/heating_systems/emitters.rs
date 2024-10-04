@@ -708,11 +708,11 @@ mod tests {
         simulation_time: SimulationTimeIterator,
     ) -> ExternalConditions {
         let simulation_time_iterator = simulation_time;
-        let wind_speeds = vec![3.7, 3.8];
-        let wind_directions = vec![200., 220.];
-        let air_temps = vec![0.0, 2.5];
-        let diffuse_horizontal_radiations = vec![333., 610.];
-        let direct_beam_radiations = vec![420., 750.];
+        let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
+        let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
+        let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
+        let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
+        let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let shading_segments = vec![
             ShadingSegment {
                 number: 1,
@@ -724,6 +724,42 @@ mod tests {
                 number: 2,
                 start: 135.,
                 end: 90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 4,
+                start: 45.,
+                end: 0.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 5,
+                start: 0.,
+                end: -45.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 6,
+                start: -45.,
+                end: -90.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 7,
+                start: -90.,
+                end: -135.,
+                objects: None,
+            },
+            ShadingSegment {
+                number: 8,
+                start: -135.,
+                end: -180.,
                 objects: None,
             },
         ];
