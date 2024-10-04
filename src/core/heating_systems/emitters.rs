@@ -591,22 +591,21 @@ impl Emitters {
         // Calculate emitter temperature achieved at end of timestep.
         // Do not allow emitter temp to rise above maximum
         // Do not allow emitter temp to fall below room temp
-        let mut temp_emitter;
-
-        if temp_emitter_max_is_final_temp {
-            temp_emitter = temp_emitter_max
+        let mut temp_emitter = if temp_emitter_max_is_final_temp {
+            temp_emitter_max
         } else {
             let power_provided_by_heat_source = energy_provided_by_heat_source / timestep;
-            (temp_emitter, _) = self.temp_emitter(
+            self.temp_emitter(
                 0.0,
                 timestep,
                 self.temp_emitter_prev,
                 temp_rm_prev(),
                 power_provided_by_heat_source,
                 None,
-            );
-        }
-        temp_emitter = temp_emitter.max(temp_rm_prev());
+            )
+            .0
+        };
+        temp_emitter = max_of_2(temp_emitter, temp_rm_prev());
 
         // Calculate emitter output achieved at end of timestep.
         let energy_released_from_emitters = energy_provided_by_heat_source
@@ -616,7 +615,7 @@ impl Emitters {
         self.temp_emitter_prev = temp_emitter;
 
         // TODO implement detailed reporting if required
-        // If output detailed results flag is true, populate dict with values
+        // If detailed results flag is set populate dict with values
         // if self.__output_detailed_results {
         //      Python has optional detailed reporting
         //      which is currently not implemented here
