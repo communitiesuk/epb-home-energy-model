@@ -247,6 +247,27 @@ impl SpaceHeatingService {
             SpaceHeatingService::HeatBattery(_) => unimplemented!(),
         }
     }
+
+    pub(crate) fn running_time_throughput_factor(
+        &self,
+        space_heat_running_time_cumulative: f64,
+        energy_demand: f64,
+        temp_flow: f64,
+        temp_return: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        match self {
+            SpaceHeatingService::HeatPump(heat_pump_service_space) => heat_pump_service_space
+                .running_time_throughput_factor(
+                    space_heat_running_time_cumulative,
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    simulation_time_iteration,
+                ),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 use anyhow::Error;

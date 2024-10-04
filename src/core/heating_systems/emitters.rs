@@ -616,13 +616,56 @@ impl Emitters {
         self.temp_emitter_prev = temp_emitter;
 
         // TODO implement detailed reporting if required
-        // If detailed results flag is set populate dict with values
+        // If output detailed results flag is true, populate dict with values
         // if self.__output_detailed_results {
         //      Python has optional detailed reporting
         //      which is currently not implemented here
         // }
 
         Ok(energy_released_from_emitters)
+    }
+
+    /// Return the cumulative running time and throughput factor for the heat source
+    /// Arguments:
+    /// energy_demand -- in kWh
+    /// space_heat_running_time_cumulative
+    ///     -- running time spent on higher-priority space heating services
+    fn running_time_throughput_factor(
+        &self,
+        energy_demand: f64,
+        space_heat_running_time_cumulative: f64,
+        simulation_time: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        let timestep = simulation_time.timestep;
+        let temp_rm_prev = &self.temp_internal_air_fn;
+
+        // Calculate target flow and return temperature
+        let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
+        let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.;
+
+        let energy_req_from_heat_source = if energy_demand > 0. {
+            // Emitters warming up or cooling down to a target temperature
+            self.energy_required_from_heat_source(
+                energy_demand,
+                timestep,
+                temp_rm_prev(),
+                temp_emitter_max,
+                temp_return_target,
+                simulation_time,
+            )
+            .0
+        } else {
+            // Emitters cooling down or at steady-state with heating off
+            0.
+        };
+
+        self.heat_source.read().running_time_throughput_factor(
+            space_heat_running_time_cumulative,
+            energy_req_from_heat_source,
+            temp_flow_target,
+            temp_return_target,
+            simulation_time,
+        )
     }
 }
 
