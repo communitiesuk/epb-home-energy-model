@@ -1005,17 +1005,15 @@ mod tests {
     // test_temp_flow_return_invalid_value test not copied across from Python
     // as the compile-time checks cover the invalid value case
 
+    /// Test emitter output at given emitter and room temp
     #[rstest]
-    #[ignore = "not yet implemented"]
     fn test_power_output_emitter(
         simulation_time: SimulationTimeIterator,
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
     ) {
-        // Test emitter output at given emitter and room temp
-
         let ecodesign_controller = EcoDesignController {
-            ecodesign_control_class: EcoDesignControllerClass::ClassIV,
+            ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
             max_outdoor_temp: Some(20.),
             min_flow_temp: Some(30.),
@@ -1026,7 +1024,7 @@ mod tests {
         let emitters = Emitters::new(
             0.14,
             0.08,
-            0.12,
+            1.2,
             10.,
             0.4,
             heat_source,
@@ -1038,7 +1036,12 @@ mod tests {
             false,
         );
 
-        todo!()
+        let temp_emitter = 15.;
+        let temp_rm = 10.;
+
+        let result = emitters.power_output_emitter(temp_emitter, temp_rm);
+
+        assert_relative_eq!(result, 0.55189186, max_relative = EIGHT_DECIMAL_PLACES);
     }
 
     /// Test emitter temperature that gives required power output at given room temp
