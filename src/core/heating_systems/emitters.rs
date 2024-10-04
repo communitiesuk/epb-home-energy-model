@@ -542,11 +542,8 @@ impl Emitters {
         let mut energy_req_from_heat_source = Default::default();
         let mut temp_emitter_max_is_final_temp = false;
         let mut emitters_data_for_buffer_tank_with_result = None;
-        if energy_demand <= 0. {
-            // Emitters cooling down or at steady-state with heating off
-            // energy_req_from_heat_source = 0.0
-            // temp_emitter_max_is_final_temp = False
-        } else {
+
+        if energy_demand > 0. {
             // Emitters warming up or cooling down to a target temperature
             (
                 energy_req_from_heat_source,
@@ -561,6 +558,7 @@ impl Emitters {
                 simulation_time,
             )
         }
+
         // Get energy output of heat source (i.e. energy input to emitters)
         // TODO (from Python) - Instead of passing temp_flow_req into heating system module,
         // calculate average flow temp achieved across timestep?
@@ -617,17 +615,13 @@ impl Emitters {
         // Save emitter temperature for next timestep
         self.temp_emitter_prev = temp_emitter;
 
+        // TODO implement detailed reporting if required
         // If detailed results flag is set populate dict with values
-        // TODO port below python code
-        /*
-        if self.__output_detailed_results:
+        // if self.__output_detailed_results {
+        //      Python has optional detailed reporting
+        //      which is currently not implemented here
+        // }
 
-            dr_list = [self.__simtime.index(), energy_demand, energy_provided_by_heat_source, temp_emitter,
-                       temp_emitter_max, energy_released_from_emitters, temp_flow_target,
-                       temp_return_target, temp_emitter_max_is_final_temp, energy_req_from_heat_source]
-
-            self.__emitters_detailed_results[self.__simtime.index()] = dr_list
-         */
         Ok(energy_released_from_emitters)
     }
 }
@@ -721,7 +715,7 @@ mod tests {
         let boiler_details = HeatSourceWetDetails::Boiler {
             energy_supply: EnergySupplyType::MainsGas,
             energy_supply_auxiliary: EnergySupplyType::Electricity,
-            rated_power: 24.,
+            rated_power: 2.5, // changed to match Python mocks
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,
             boiler_location: HeatSourceLocation::Internal,
@@ -742,7 +736,7 @@ mod tests {
         let energy_supply_conn_aux =
             EnergySupplyConnection::new(energy_supply.clone(), "end_user_name".into());
 
-        let boiler = Boiler::new(
+        let mut boiler = Boiler::new(
             boiler_details,
             energy_supply,
             energy_supply_conn_aux,
@@ -751,13 +745,19 @@ mod tests {
         )
         .unwrap();
 
+        let service_name = "service_name";
+
+        boiler
+            .create_service_connection(service_name.into())
+            .unwrap();
+
         let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
             vec![true, true, true, true, true, true, true, true],
             0,
-            0.,
+            0.25, // to match simulation time
         )));
 
-        let boiler_service_space = BoilerServiceSpace::new(boiler, "service_name".into(), control);
+        let boiler_service_space = BoilerServiceSpace::new(boiler, service_name.into(), control);
 
         SpaceHeatingService::Boiler(boiler_service_space)
     }
@@ -963,6 +963,25 @@ mod tests {
         todo!()
     }
 
+    /// Test emitter temperature that gives required power output at given room temp
+    #[rstest]
+    fn test_temp_emitter_req(emitters: Emitters) {
+        let power_emitter_req = 0.22;
+        let temp_rm = 2.0;
+
+        let result = emitters.temp_emitter_req(power_emitter_req, temp_rm);
+
+        assert_relative_eq!(result, 4.32332827, max_relative = EIGHT_DECIMAL_PLACES);
+    }
+
+    /// Test Differential eqn is formed for change rate of emitter temperature
+    #[rstest]
+    fn test_func_temp_emitter_change_rate(emitters: Emitters) {
+        let result = emitters.func_temp_emitter_change_rate(5., 32.);
+
+        assert_eq!(result, -0.8571428571428514);
+    }
+
     // TODO more tests to implement here
 
     #[rstest]
@@ -1003,5 +1022,42 @@ mod tests {
             emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
 
         assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
+    }
+
+    #[rstest]
+    #[ignore = "blocked by temp_emitters issue"]
+    fn test_energy_required_from_heat_source(
+        simulation_time: SimulationTimeIterator,
+        emitters: Emitters,
+    ) {
+        let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let mut energy_demand = 0.0;
+
+        for (t_idx, t_it) in simulation_time.enumerate() {
+            energy_demand += energy_demand_list[t_idx];
+
+            let (energy_req, temp_emitter_max_is_final_temp, _) =
+                emitters.energy_required_from_heat_source(energy_demand, 1., 10., 25., 30., t_it);
+
+            //dbg!(t_idx, energy_req, temp_emitter_max_is_final_temp);
+            assert_relative_eq!(
+                energy_req,
+                [
+                    0.7487346289045738,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754
+                ][t_idx]
+            );
+
+            assert_eq!(
+                temp_emitter_max_is_final_temp,
+                [false, false, true, true, true, true, true, true][t_idx]
+            );
+        }
     }
 }
