@@ -699,15 +699,19 @@ mod tests {
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
     #[fixture]
-    pub(crate) fn simulation_time() -> SimulationTimeIterator {
-        SimulationTime::new(0., 2., 0.25).iter()
+    pub fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0., 2., 0.25)
+    }
+
+    #[fixture]
+    pub(crate) fn simulation_time_iterator() -> SimulationTimeIterator {
+        simulation_time().iter()
     }
 
     #[fixture]
     pub(crate) fn external_conditions(
-        simulation_time: SimulationTimeIterator,
+        simulation_time_iterator: SimulationTimeIterator,
     ) -> ExternalConditions {
-        let simulation_time_iterator = simulation_time;
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
         let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
@@ -787,8 +791,9 @@ mod tests {
 
     #[fixture]
     pub(crate) fn heat_source(
-        simulation_time: SimulationTimeIterator,
+        simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
     ) -> SpaceHeatingService {
         let boiler_details = HeatSourceWetDetails::Boiler {
             energy_supply: EnergySupplyType::MainsGas,
@@ -805,7 +810,7 @@ mod tests {
         };
         let energy_supply = Arc::from(RwLock::from(EnergySupply::new(
             FuelType::MainsGas,
-            simulation_time.total_steps(),
+            simulation_time_iterator.total_steps(),
             None,
             None,
             None,
@@ -819,7 +824,7 @@ mod tests {
             energy_supply,
             energy_supply_conn_aux,
             external_conditions.into(),
-            1., // TODO is this correct?
+            simulation_time.step,
         )
         .unwrap();
 
@@ -844,6 +849,7 @@ mod tests {
     pub(crate) fn emitters(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
     ) -> Emitters {
         let thermal_mass = 0.14;
         let c = 0.08;
@@ -860,9 +866,6 @@ mod tests {
 
         let design_flow_temp = 55.;
 
-        // TODO check this is correct
-        let simulation_timestep = 1.;
-        // TODO check this is correct
         let with_buffer_tank = false;
 
         Emitters::new(
@@ -876,18 +879,21 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
-            simulation_timestep,
+            simulation_time.step,
             with_buffer_tank,
         )
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
-    fn test_demand_energy(simulation_time: SimulationTimeIterator, mut emitters: Emitters) {
+    #[ignore = "blocked by temp_emitters issue"]
+    fn test_demand_energy(
+        simulation_time_iterator: SimulationTimeIterator,
+        mut emitters: Emitters,
+    ) {
         let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
-        for (t_idx, t_it) in simulation_time.enumerate() {
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             energy_demand += energy_demand_list[t_idx];
 
             let energy_provided = emitters.demand_energy(energy_demand, t_it).unwrap();
@@ -927,12 +933,12 @@ mod tests {
     #[rstest]
     fn test_temp_flow_return(
         emitters: Emitters,
-        simulation_time: SimulationTimeIterator,
+        simulation_time_iterator: SimulationTimeIterator,
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
     ) {
         let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time.current_iteration());
+            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 50.8333, max_relative = 1e-2);
         assert_relative_eq!(return_temp, 43.5714, max_relative = 1e-2);
@@ -963,7 +969,7 @@ mod tests {
         );
 
         let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time.current_iteration());
+            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55., max_relative = 1e-2);
         assert_relative_eq!(return_temp, 47.1428, max_relative = 1e-2);
@@ -992,7 +998,7 @@ mod tests {
         );
 
         let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time.current_iteration());
+            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55.);
         assert_relative_eq!(
@@ -1008,7 +1014,7 @@ mod tests {
     /// Test emitter output at given emitter and room temp
     #[rstest]
     fn test_power_output_emitter(
-        simulation_time: SimulationTimeIterator,
+        simulation_time_iterator: SimulationTimeIterator,
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
     ) {
@@ -1063,8 +1069,6 @@ mod tests {
         assert_eq!(result, -0.8571428571428514);
     }
 
-    // TODO more tests to implement here
-
     #[rstest]
     fn test_temp_emitter_with_no_max(emitters: Emitters) {
         // Test function calculates emitter temperature after specified time with specified power input
@@ -1108,19 +1112,18 @@ mod tests {
     #[rstest]
     #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source(
-        simulation_time: SimulationTimeIterator,
+        simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
     ) {
         let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
-        for (t_idx, t_it) in simulation_time.enumerate() {
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             energy_demand += energy_demand_list[t_idx];
 
             let (energy_req, temp_emitter_max_is_final_temp, _) =
                 emitters.energy_required_from_heat_source(energy_demand, 1., 10., 25., 30., t_it);
 
-            //dbg!(t_idx, energy_req, temp_emitter_max_is_final_temp);
             assert_relative_eq!(
                 energy_req,
                 [
