@@ -55,10 +55,10 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, ColdWaterSourceDetails, ColdWaterSourceInput,
-    ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape, DuctType,
-    EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType,
-    ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
+    BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
+    ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape,
+    DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey,
+    EnergySupplyType, ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
     HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input,
@@ -78,7 +78,6 @@ use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
-use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -2505,14 +2504,11 @@ fn single_control_from_details(
             // user can specify a vector with all days (plus 1), or as a single float value to be used for each day
             if let Some(charge) = charge_level {
                 match charge {
-                    Value::Array(charge_vec) => {
-                        charge_level_vec = charge_vec.iter().map(|v| v.as_f64().unwrap()).collect();
+                    ChargeLevel::List(charge_vec) => {
+                        charge_level_vec = charge_vec.iter().copied().collect();
                     }
-                    Value::Number(charge) => {
-                        charge_level_vec = vec![charge.as_f64().unwrap(); vec_size];
-                    }
-                    _ => {
-                        panic!("Control charge value must be either a number of a list of numbers")
+                    ChargeLevel::Single(charge) => {
+                        charge_level_vec = vec![*charge; vec_size];
                     }
                 }
             }

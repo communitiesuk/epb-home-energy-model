@@ -553,10 +553,18 @@ pub(crate) enum ControlDetails {
         time_series_step: f64,
         advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
-        charge_level: Option<Value>,
+        charge_level: Option<ChargeLevel>,
         target_charge: Option<f64>,
         schedule: BooleanSchedule,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub(crate) enum ChargeLevel {
+    Single(f64),
+    List(Vec<f64>),
 }
 
 impl ControlDetails {
@@ -1145,7 +1153,7 @@ pub enum Shower {
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "WWHRS")]
-        waste_water_heat_recovery: Option<Value>, // unclear what these can be yet
+        waste_water_heat_recovery: Option<String>,
     },
     #[serde(rename = "InstantElecShower")]
     InstantElectricShower {

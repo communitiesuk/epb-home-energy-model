@@ -393,7 +393,7 @@ fn shower_from_input(
             };
             let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = waste_water_heat_recovery
                 .as_ref()
-                .and_then(|w| wwhrs.get(&w.as_str().unwrap().to_string()).cloned());
+                .and_then(|w| wwhrs.get(w).cloned());
 
             Shower::MixerShower(MixerShower::new(
                 *flowrate,
@@ -480,7 +480,6 @@ mod tests {
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use rstest::*;
-    use serde_json::Value;
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
@@ -538,7 +537,7 @@ mod tests {
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    waste_water_heat_recovery: Some(Value::String("Example_Inst_WWHRS".to_owned())),
+                    waste_water_heat_recovery: Some("Example_Inst_WWHRS".to_owned()),
                 },
             ),
             (
