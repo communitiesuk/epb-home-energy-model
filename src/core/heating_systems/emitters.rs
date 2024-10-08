@@ -56,6 +56,16 @@ struct EmittersAndPowerInput<'a> {
     pub emitters: &'a Emitters,
     pub power_input: f64,
     pub temp_diff_max: Option<f64>,
+
+    // TODO can we calculate what this should be
+    // based on initial value and timestep
+    previous_difference_from_temp_diff_max: Option<f64>
+}
+
+impl EmittersAndPowerInput<'_> {
+    fn difference_from_temp_diff_max(self: &Self, y: f64) -> f64 {
+        y - self.temp_diff_max.unwrap()
+    }
 }
 
 impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
@@ -72,9 +82,26 @@ impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
             return false;
         }
 
-        // we should stop if we cross the max temp difference
-        y[0] < self.temp_diff_max.unwrap()
+        let difference_from_temp_diff_max=  self.difference_from_temp_diff_max(y[0]);
+
+        if self.previous_difference_from_temp_diff_max.is_some() {            
+            let previous = self.previous_difference_from_temp_diff_max.unwrap();
+
+            // signs are different - we must have passed zero
+            if difference_from_temp_diff_max == 0. || signs_are_different(difference_from_temp_diff_max, previous) {
+
+                // passing zero means we hit temp_diff_max, so stop solver
+                return true;
+            }
+        }
+
+        self.previous_difference_from_temp_diff_max = Some(difference_from_temp_diff_max);
+        return false;
     }
+}
+
+fn signs_are_different(a: f64, b: f64) -> bool {
+    (b > 0. && a < 0.) || (b < 0. && a > 0.)
 }
 
 impl Emitters {
@@ -322,6 +349,9 @@ impl Emitters {
             emitters: self,
             power_input,
             temp_diff_max,
+
+            // TODO set these up in the struct with a new function
+            previous_difference_from_temp_diff_max: None,
         };
 
         let f = emitter_with_power_input; // f - Structure implementing the System trait
@@ -362,13 +392,16 @@ impl Emitters {
         );
 
         let _ = stepper.integrate();
-        let last_x = *stepper.x_out().last().expect("x_out was empty");
 
         let mut temp_emitter = 0.;
         let mut time_temp_diff_max_reached: Option<f64> = None;
 
-        let max_temp_diff_was_reached = last_x != x_end;
-        if temp_diff_max.is_some() && max_temp_diff_was_reached {
+        let y_count = stepper.y_out().len();
+        let last_y = stepper.y_out().last().expect("y_out was empty")[0];
+        let second_last_y = stepper.y_out().get(y_count - 2).unwrap()[0];
+
+        let max_temp_diff_was_reached = temp_diff_max.is_some() && signs_are_different(f.difference_from_temp_diff_max(last_y), f.difference_from_temp_diff_max(second_last_y));
+        if max_temp_diff_was_reached {
             // We stopped early because the max diff was passed.
             // The Python code uses a built in feature of scipy's solve_ivp here.
             // when an "event" (in this case, max temp diff) happens a root solver
@@ -389,10 +422,10 @@ impl Emitters {
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
         } else {
-            let temp_diff_emitter_rm_final = stepper.y_out().last().expect("y_out was empty")[0];
+            let last_y = stepper.y_out().last().expect("y_out was empty")[0];
+            let temp_diff_emitter_rm_final = last_y;
             temp_emitter = temp_rm + temp_diff_emitter_rm_final;
         }
-
         (temp_emitter, time_temp_diff_max_reached)
     }
 
@@ -708,7 +741,7 @@ mod tests {
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 2., 0.25)
+        SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
