@@ -1144,4 +1144,7 @@ mod tests {
             );
         }
     }
+
+    // Python has a test_running_time_throughput_factor which we've not ported for now as it relies
+    // on mocking
 }
