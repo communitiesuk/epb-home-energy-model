@@ -17,7 +17,7 @@ derivative = "2.2.0"
 formatx = "0.2.2"
 indexmap = { version = "2.6.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.8", optional = true }
-interp = "1.0.3"
+interp = "2.0.0"
 is_close = "0.1.3"
 itertools = "0.13.0"
 log = "0.4.22"
