@@ -7,6 +7,7 @@ use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
+use crate::statistics::np_interp;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use parking_lot::RwLock;
 use std::ops::Deref;
@@ -374,9 +375,16 @@ impl Emitters {
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
 
-            // For now we set this to the last time value
-            // but Python will have a more exact result
-            time_temp_diff_max_reached = Some(last_x);
+            let mut y_out_reversed: Vec<f64> = stepper.y_out().iter().flatten().map(|f| *f).collect();
+            y_out_reversed.reverse();
+
+            let mut x_out_reversed = stepper.x_out().clone();
+            x_out_reversed.reverse();
+
+            // based on the time steps and "outputs" we have from the solver
+            // interpolate a reasonable guess as to what time we hit max temp diff
+            let interpolated_guess = np_interp(temp_diff_max.unwrap(), &y_out_reversed[..], &x_out_reversed);
+            time_temp_diff_max_reached = Some(interpolated_guess);
 
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
@@ -1106,6 +1114,7 @@ mod tests {
         let (_temp_emitter, time_temp_diff_max_reached) =
             emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
 
+        // TODO can we set a threshold here for a close enough match?
         assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
     }
 
