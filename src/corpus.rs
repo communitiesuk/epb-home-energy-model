@@ -347,6 +347,7 @@ impl Corpus {
                     &mut heat_system_names_requiring_overvent,
                     &heat_system_name_for_zone,
                     &zones,
+                    &heat_sources_wet_with_buffer_tank,
                 )?)
             })
             .transpose()?
@@ -4215,6 +4216,7 @@ fn space_heat_systems_from_input(
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_name_for_zone: &IndexMap<String, String>,
     zones: &Arc<IndexMap<String, Zone>>,
+    heat_sources_wet_with_buffer_tank: &Vec<String>,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
@@ -4246,7 +4248,45 @@ fn space_heat_systems_from_input(
                         ))
                     },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
-                    SpaceHeatSystemDetails::WetDistribution { .. } => unimplemented!(), // requires implementation of Emitters, make sure to add energy supply conn name to energy_conn_names_for_systems collection
+                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control,  .. } => {
+                        let heat_source_name = &heat_source.name;
+                        let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
+
+                        let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
+                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+
+                        let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
+                        let mut with_buffer_tank = false;
+
+                        let control = control
+                            .as_ref()
+                            .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump system");
+
+                        match heat_source.lock().deref() {
+                            WetHeatSource::HeatPump(heat_pump) => {
+                                // TODO (from Python) If EAHP, feed zone volume into function below
+
+                                // For HPs, checking if there's a buffer tank to inform both the service space heating
+                                // and the emitters of its presence.
+                                if heat_sources_wet_with_buffer_tank.contains(heat_source_name) {
+                                    with_buffer_tank = true;
+                                }
+
+                                let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, system_name);
+
+                                let heat_source_service = HeatPump::create_service_space_heating(
+                                    heat_pump.clone(),
+                                    &energy_supply_conn_name,
+                                    temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
+                                    *temp_diff_emit_dsgn, control,
+                                    volume_heated);
+                            }
+                            WetHeatSource::Boiler(_) => { unimplemented!() }
+                            WetHeatSource::Hiu(_) => { unimplemented!() }
+                            WetHeatSource::HeatBattery(_) => { unimplemented!() }
+                        }
+                        todo!()
+                    } // requires implementation of Emitters, make sure to add energy supply conn name to energy_conn_names_for_systems collection
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,
                         heat_source,
@@ -4257,15 +4297,17 @@ fn space_heat_systems_from_input(
                         let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
+                        let control = control
+                            .as_ref()
+                            .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system");
+
                         match heat_source.lock().deref() {
                             WetHeatSource::HeatPump(heat_pump) => {
                                 if heat_pump.lock().source_is_exhaust_air() {
                                     heat_system_names_requiring_overvent.push((*system_name).clone());
                                 }
                                 let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, system_name);
-                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control
-                                    .as_ref()
-                                    .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system"), *frac_convective, volume_heated).unwrap())
+                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control, *frac_convective, volume_heated).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }
