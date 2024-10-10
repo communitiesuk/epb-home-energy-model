@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn boolean_schedule_expanded() -> Vec<Option<bool>> {
+    pub fn boolean_schedule_expanded() -> Vec<bool> {
         vec![
             // Weekday schedule (Mon)
             false, false, false, false, false, false, false, true, true, false, false, false, false,
@@ -437,15 +437,12 @@ mod tests {
             false, false, false, false, false, false, false, true, true, true, true, true, true,
             true, true, true, true, true, true, true, true, true, true, false,
         ]
-        .into_iter()
-        .map(|x| Some(x))
-        .collect()
     }
 
     #[rstest]
     pub fn should_expand_boolean_schedule_correctly(
         boolean_schedule: BooleanSchedule,
-        boolean_schedule_expanded: Vec<Option<bool>>,
+        boolean_schedule_expanded: Vec<bool>,
     ) {
         assert_eq!(
             reject_nulls(expand_boolean_schedule(&boolean_schedule)).unwrap(),
