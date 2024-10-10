@@ -3478,8 +3478,8 @@ pub struct PositionedHeatSource {
 pub enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<Mutex<Boiler>>),
-    Hiu(HeatNetwork),
-    HeatBattery(HeatBattery),
+    Hiu(Arc<Mutex<HeatNetwork>>),
+    HeatBattery(Arc<Mutex<HeatBattery>>),
 }
 
 impl WetHeatSource {
@@ -3487,8 +3487,10 @@ impl WetHeatSource {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
             WetHeatSource::Boiler(boiler) => boiler.lock().timestep_end(simtime),
-            WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(simtime.index),
-            WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(simtime.index),
+            WetHeatSource::Hiu(heat_network) => heat_network.lock().timestep_end(simtime.index),
+            WetHeatSource::HeatBattery(heat_battery) => {
+                heat_battery.lock().timestep_end(simtime.index)
+            }
         }
     }
 
@@ -3662,7 +3664,7 @@ fn heat_source_wet_from_input(
             let energy_supply_conn_name_building_level_distribution_losses =
                 format!("HeatNetwork_building_level_distribution_losses: {energy_supply_name}");
 
-            Ok(WetHeatSource::Hiu(HeatNetwork::new(
+            Ok(WetHeatSource::Hiu(Arc::new(Mutex::new(HeatNetwork::new(
                 *power_max,
                 *hiu_daily_loss,
                 *building_level_distribution_losses,
@@ -3670,7 +3672,7 @@ fn heat_source_wet_from_input(
                 energy_supply_conn_name_auxiliary,
                 energy_supply_conn_name_building_level_distribution_losses,
                 simulation_time.step_in_hours(),
-            )))
+            )))))
             // TODO add heat network to timestep_end_calcs
         }
         HeatSourceWetDetails::HeatBattery {
@@ -3683,7 +3685,7 @@ fn heat_source_wet_from_input(
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_name).unwrap();
 
-            let heat_source = WetHeatSource::HeatBattery(HeatBattery::new(
+            let heat_source = WetHeatSource::HeatBattery(Arc::new(Mutex::new(HeatBattery::new(
                 &input,
                 controls
                     .get_with_string(control_charge)
@@ -3696,7 +3698,7 @@ fn heat_source_wet_from_input(
                 energy_supply,
                 energy_supply_conn,
                 simulation_time,
-            ));
+            ))));
             Ok(heat_source)
         }
     }
@@ -3832,7 +3834,7 @@ fn heat_source_from_input(
                     WetHeatSource::Hiu(heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             HeatNetwork::create_service_hot_water_storage(
-                                Arc::new(Mutex::new(heat_network)),
+                                heat_network,
                                 energy_supply_conn_name.clone(),
                                 temp_setpoint,
                                 source_control,
@@ -3842,7 +3844,7 @@ fn heat_source_from_input(
                     WetHeatSource::HeatBattery(battery) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatBatteryHotWater(
                             HeatBattery::create_service_hot_water_regular(
-                                Arc::new(Mutex::new(battery)),
+                                battery,
                                 &energy_supply_conn_name,
                                 temp_setpoint,
                                 source_control,
@@ -4180,7 +4182,7 @@ fn hot_water_source_from_input(
                 _ => panic!("expected a heat network in this context"),
             };
             HotWaterSource::HeatNetwork(HeatNetwork::create_service_hot_water_direct(
-                Arc::new(Mutex::new(heat_source_wet.clone())),
+                heat_source_wet.clone(),
                 energy_supply_conn_name,
                 *setpoint_temp,
                 cold_water_source,
@@ -4295,11 +4297,16 @@ fn space_heat_systems_from_input(
                                 let heat_source_service = boiler.lock().create_service_space_heating(energy_supply_conn_name, control);
                                 SpaceHeatingService::Boiler(heat_source_service)
                             }
-                            WetHeatSource::Hiu(_) => { unimplemented!() }
-                            WetHeatSource::HeatBattery(_) => { unimplemented!() }
+                            WetHeatSource::Hiu(heat_network) => {
+                                let heat_source_service = HeatNetwork::create_service_space_heating(heat_network.clone(), energy_supply_conn_name, control);
+                                SpaceHeatingService::HeatNetwork(heat_source_service)
+                            }
+                            WetHeatSource::HeatBattery(_) => {
+                                unimplemented!()
+                            }
                         };
-                        todo!()
-                    } // requires implementation of Emitters, make sure to add energy supply conn name to energy_conn_names_for_systems collection
+                        todo!("Currently working on Emitters")
+                    }
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,
                         heat_source,
