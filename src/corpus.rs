@@ -3477,7 +3477,7 @@ pub struct PositionedHeatSource {
 #[derive(Clone)]
 pub enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
-    Boiler(Boiler),
+    Boiler(Arc<Mutex<Boiler>>),
     Hiu(HeatNetwork),
     HeatBattery(HeatBattery),
 }
@@ -3486,7 +3486,7 @@ impl WetHeatSource {
     pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
-            WetHeatSource::Boiler(boiler) => boiler.timestep_end(simtime),
+            WetHeatSource::Boiler(boiler) => boiler.lock().timestep_end(simtime),
             WetHeatSource::Hiu(heat_network) => heat_network.timestep_end(simtime.index),
             WetHeatSource::HeatBattery(heat_battery) => heat_battery.timestep_end(simtime.index),
         }
@@ -3507,6 +3507,7 @@ impl WetHeatSource {
                 cold_feed,
             ),
             WetHeatSource::Boiler(ref mut boiler) => boiler
+                .lock()
                 .create_service_hot_water_combi(
                     boiler_data,
                     service_name.to_string(),
@@ -3636,7 +3637,7 @@ fn heat_source_wet_from_input(
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())?;
 
-            Ok(WetHeatSource::Boiler(
+            Ok(WetHeatSource::Boiler(Arc::new(Mutex::new(
                 Boiler::new(
                     input,
                     energy_supply,
@@ -3645,7 +3646,7 @@ fn heat_source_wet_from_input(
                     simulation_time.step_in_hours(),
                 )
                 .expect("could not construct boiler value from provided data"),
-            ))
+            ))))
         }
         HeatSourceWetDetails::Hiu {
             power_max,
@@ -3819,13 +3820,15 @@ fn heat_source_from_input(
                             source_control,
                         )),
                     )),
-                    WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
-                        HeatSourceWet::WaterRegular(boiler.create_service_hot_water_regular(
-                            energy_supply_conn_name.clone(),
-                            temp_setpoint,
-                            source_control,
-                        )),
-                    )),
+                    WetHeatSource::Boiler(ref mut boiler) => {
+                        HeatSource::Wet(Box::new(HeatSourceWet::WaterRegular(
+                            boiler.lock().create_service_hot_water_regular(
+                                energy_supply_conn_name.clone(),
+                                temp_setpoint,
+                                source_control,
+                            ),
+                        )))
+                    }
                     WetHeatSource::Hiu(heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             HeatNetwork::create_service_hot_water_storage(
@@ -4288,7 +4291,10 @@ fn space_heat_systems_from_input(
                                 }
                                 SpaceHeatingService::HeatPump(heat_source_service)
                             }
-                            WetHeatSource::Boiler(_) => {unimplemented!()}
+                            WetHeatSource::Boiler(boiler) => {
+                                let heat_source_service = boiler.lock().create_service_space_heating(energy_supply_conn_name, control);
+                                SpaceHeatingService::Boiler(heat_source_service)
+                            }
                             WetHeatSource::Hiu(_) => { unimplemented!() }
                             WetHeatSource::HeatBattery(_) => { unimplemented!() }
                         };
