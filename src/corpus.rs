@@ -11,7 +11,7 @@ use crate::core::energy_supply::energy_supply::{
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
-use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem};
+use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{
@@ -4262,6 +4262,7 @@ fn space_heat_systems_from_input(
                             .as_ref()
                             .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump system");
 
+                        let heat_source_service: SpaceHeatingService =
                         match heat_source.lock().deref() {
                             WetHeatSource::HeatPump(heat_pump) => {
                                 // TODO (from Python) If EAHP, feed zone volume into function below
@@ -4280,11 +4281,17 @@ fn space_heat_systems_from_input(
                                     temp_flow_limit_upper.expect("Expected a temp_flow_limit_upper to be present for a heat pump"),
                                     *temp_diff_emit_dsgn, control,
                                     volume_heated);
+
+                                if heat_pump.lock().source_is_exhaust_air() {
+                                    // Record heating system as potentially requiring overventilation
+                                    heat_system_names_requiring_overvent.push((*system_name).clone());
+                                }
+                                SpaceHeatingService::HeatPump(heat_source_service)
                             }
-                            WetHeatSource::Boiler(_) => { unimplemented!() }
+                            WetHeatSource::Boiler(_) => {unimplemented!()}
                             WetHeatSource::Hiu(_) => { unimplemented!() }
                             WetHeatSource::HeatBattery(_) => { unimplemented!() }
-                        }
+                        };
                         todo!()
                     } // requires implementation of Emitters, make sure to add energy supply conn name to energy_conn_names_for_systems collection
                     SpaceHeatSystemDetails::WarmAir {

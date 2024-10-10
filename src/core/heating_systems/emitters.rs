@@ -59,7 +59,7 @@ struct EmittersAndPowerInput<'a> {
 
     // TODO can we calculate what this should be
     // based on initial value and timestep
-    previous_difference_from_temp_diff_max: Option<f64>
+    previous_difference_from_temp_diff_max: Option<f64>,
 }
 
 impl EmittersAndPowerInput<'_> {
@@ -82,14 +82,15 @@ impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
             return false;
         }
 
-        let difference_from_temp_diff_max=  self.difference_from_temp_diff_max(y[0]);
+        let difference_from_temp_diff_max = self.difference_from_temp_diff_max(y[0]);
 
-        if self.previous_difference_from_temp_diff_max.is_some() {            
+        if self.previous_difference_from_temp_diff_max.is_some() {
             let previous = self.previous_difference_from_temp_diff_max.unwrap();
 
             // signs are different - we must have passed zero
-            if difference_from_temp_diff_max == 0. || signs_are_different(difference_from_temp_diff_max, previous) {
-
+            if difference_from_temp_diff_max == 0.
+                || signs_are_different(difference_from_temp_diff_max, previous)
+            {
                 // passing zero means we hit temp_diff_max, so stop solver
                 return true;
             }
@@ -400,7 +401,11 @@ impl Emitters {
         let last_y = stepper.y_out().last().expect("y_out was empty")[0];
         let second_last_y = stepper.y_out().get(y_count - 2).unwrap()[0];
 
-        let max_temp_diff_was_reached = temp_diff_max.is_some() && signs_are_different(f.difference_from_temp_diff_max(last_y), f.difference_from_temp_diff_max(second_last_y));
+        let max_temp_diff_was_reached = temp_diff_max.is_some()
+            && signs_are_different(
+                f.difference_from_temp_diff_max(last_y),
+                f.difference_from_temp_diff_max(second_last_y),
+            );
         if max_temp_diff_was_reached {
             // We stopped early because the max diff was passed.
             // The Python code uses a built in feature of scipy's solve_ivp here.
@@ -408,7 +413,8 @@ impl Emitters {
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
 
-            let mut y_out_reversed: Vec<f64> = stepper.y_out().iter().flatten().map(|f| *f).collect();
+            let mut y_out_reversed: Vec<f64> =
+                stepper.y_out().iter().flatten().map(|f| *f).collect();
             y_out_reversed.reverse();
 
             let mut x_out_reversed = stepper.x_out().clone();
@@ -416,7 +422,8 @@ impl Emitters {
 
             // based on the time steps and "outputs" we have from the solver
             // interpolate a reasonable guess as to what time we hit max temp diff
-            let interpolated_guess = np_interp(temp_diff_max.unwrap(), &y_out_reversed[..], &x_out_reversed);
+            let interpolated_guess =
+                np_interp(temp_diff_max.unwrap(), &y_out_reversed[..], &x_out_reversed);
             time_temp_diff_max_reached = Some(interpolated_guess);
 
             // max temp diff was reached, so that should be our result
