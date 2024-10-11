@@ -1865,12 +1865,14 @@ pub enum ThermalBridging {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum ThermalBridgingDetails {
     #[serde(rename(deserialize = "ThermalBridgeLinear"))]
     Linear {
         linear_thermal_transmittance: f64,
         length: f64,
+        #[allow(dead_code)]
+        junction_type: Option<String>,
     },
     #[serde(rename = "ThermalBridgePoint")]
     Point {

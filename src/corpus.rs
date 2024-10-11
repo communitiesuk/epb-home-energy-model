@@ -2751,6 +2751,7 @@ fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging 
                         ThermalBridgingDetails::Linear {
                             linear_thermal_transmittance,
                             length,
+                            ..
                         } => ThermalBridge::Linear {
                             linear_thermal_transmittance: *linear_thermal_transmittance,
                             length: *length,
