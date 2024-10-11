@@ -95,6 +95,7 @@ impl HeatSourceWet {
 pub enum SpaceHeatSystem {
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),
+    WetDistribution(Emitters),
 }
 
 impl SpaceHeatSystem {
@@ -102,6 +103,9 @@ impl SpaceHeatSystem {
         match self {
             SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
+            SpaceHeatSystem::WetDistribution(wet_distribution) => {
+                wet_distribution.temp_setpnt(&simulation_time_iteration)
+            }
         }
     }
 
@@ -109,6 +113,9 @@ impl SpaceHeatSystem {
         match self {
             SpaceHeatSystem::Instant(instant) => instant.frac_convective(),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.frac_convective(),
+            SpaceHeatSystem::WetDistribution(wet_distribution) => {
+                wet_distribution.frac_convective()
+            }
         }
     }
 
@@ -125,6 +132,12 @@ impl SpaceHeatSystem {
                 space_heat_running_time_cumulative,
                 simulation_time_iteration,
             ),
+            SpaceHeatSystem::WetDistribution(wet_distribution) => wet_distribution
+                .running_time_throughput_factor(
+                    energy_demand,
+                    space_heat_running_time_cumulative,
+                    simulation_time_iteration,
+                ),
         }
     }
 
@@ -140,6 +153,9 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WarmAir(ref mut warm_air) => {
                 warm_air.demand_energy(energy_demand, simulation_time_iteration)?
             }
+            SpaceHeatSystem::WetDistribution(ref mut wet_distribution) => {
+                wet_distribution.demand_energy(energy_demand, simulation_time_iteration)?
+            }
         })
     }
 
@@ -153,6 +169,9 @@ impl SpaceHeatSystem {
             }
             SpaceHeatSystem::WarmAir(warm_air) => {
                 warm_air.in_required_period(&simulation_time_iteration)
+            }
+            SpaceHeatSystem::WetDistribution(emitters) => {
+                emitters.in_required_period(&simulation_time_iteration)
             }
         }
     }
@@ -272,4 +291,5 @@ impl SpaceHeatingService {
 
 use anyhow::Error;
 
+use super::emitters::Emitters;
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};

@@ -1467,7 +1467,7 @@ pub struct SpaceHeatSystemHeatSource {
 }
 
 // it is unclear whether this struct should be used - see reference to the struct above
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]
@@ -1479,7 +1479,7 @@ pub(crate) struct EcoDesignController {
     pub(crate) min_flow_temp: Option<f64>,
 }
 
-#[derive(Debug, Deserialize_repr, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

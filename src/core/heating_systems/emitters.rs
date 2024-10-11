@@ -30,11 +30,12 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
     (6.0 / 7.0) * flow_temp_celsius
 }
 
+#[derive(Clone)]
 pub struct Emitters {
     pub thermal_mass: f64,
     pub c: f64,
     pub n: f64,
-    temp_diff_emit_dsgn: f64,
+    _temp_diff_emit_dsgn: f64,
     frac_convective: f64,
     heat_source: Arc<RwLock<SpaceHeatingService>>,
     temp_internal_air_fn: TempInternalAirFn,
@@ -46,7 +47,6 @@ pub struct Emitters {
     max_outdoor_temp: Option<f64>,
     min_flow_temp: Option<f64>,
     max_flow_temp: Option<f64>,
-    simulation_timestep: f64,
     temp_emitter_prev: f64,
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
 }
@@ -134,7 +134,6 @@ impl Emitters {
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
-        simulation_timestep: f64,
         with_buffer_tank: bool,
     ) -> Self {
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
@@ -158,7 +157,7 @@ impl Emitters {
             thermal_mass,
             c,
             n,
-            temp_diff_emit_dsgn,
+            _temp_diff_emit_dsgn: temp_diff_emit_dsgn,
             frac_convective,
             heat_source,
             temp_internal_air_fn,
@@ -170,7 +169,6 @@ impl Emitters {
             max_outdoor_temp,
             min_flow_temp,
             max_flow_temp,
-            simulation_timestep,
             temp_emitter_prev: 20.0,
             target_flow_temp: None,
         }
@@ -391,7 +389,7 @@ impl Emitters {
 
         let _ = stepper.integrate();
 
-        let mut temp_emitter = 0.;
+        let temp_emitter;
         let mut time_temp_diff_max_reached: Option<f64> = None;
 
         let y_count = stepper.y_out().len();
@@ -571,7 +569,7 @@ impl Emitters {
     /// Demand energy from emitters and calculate how much energy can be provided
     /// Arguments:
     /// energy_demand -- in kWh
-    fn demand_energy(
+    pub(crate) fn demand_energy(
         &mut self,
         energy_demand: f64,
         simulation_time: SimulationTimeIteration,
@@ -674,7 +672,7 @@ impl Emitters {
     /// energy_demand -- in kWh
     /// space_heat_running_time_cumulative
     ///     -- running time spent on higher-priority space heating services
-    fn running_time_throughput_factor(
+    pub(crate) fn running_time_throughput_factor(
         &self,
         energy_demand: f64,
         space_heat_running_time_cumulative: f64,
@@ -723,15 +721,10 @@ mod tests {
 
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::energy_supply;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
     use crate::core::heating_systems::boiler::Boiler;
     use crate::core::heating_systems::boiler::BoilerServiceSpace;
-    use crate::core::heating_systems::boiler::BoilerServiceWaterRegular;
-    use crate::core::heating_systems::common::HeatSourceWet;
-    use crate::core::space_heat_demand::zone::Zone;
-    use crate::corpus::HeatSource;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::external_conditions::ShadingSegment;
     use crate::input::EnergySupplyType;
@@ -894,7 +887,6 @@ mod tests {
     pub(crate) fn emitters(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
-        simulation_time: SimulationTime,
     ) -> Emitters {
         let thermal_mass = 0.14;
         let c = 0.08;
@@ -924,7 +916,6 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
-            simulation_time.step,
             with_buffer_tank,
         )
     }
@@ -1009,7 +1000,6 @@ mod tests {
             external_conditions.clone().into(),
             ecodesign_controller,
             55.,
-            1.,
             false,
         );
 
@@ -1038,7 +1028,6 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             55.,
-            1.,
             false,
         );
 
@@ -1059,7 +1048,6 @@ mod tests {
     /// Test emitter output at given emitter and room temp
     #[rstest]
     fn test_power_output_emitter(
-        simulation_time_iterator: SimulationTimeIterator,
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
     ) {
@@ -1083,7 +1071,6 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             55.0,
-            1.,
             false,
         );
 

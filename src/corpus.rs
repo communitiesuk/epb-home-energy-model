@@ -12,6 +12,7 @@ use crate::core::energy_supply::energy_supply::{
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
+use crate::core::heating_systems::emitters::Emitters;
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{
@@ -348,6 +349,11 @@ impl Corpus {
                     &heat_system_name_for_zone,
                     &zones,
                     &heat_sources_wet_with_buffer_tank,
+                    TempInternalAirAccessor {
+                        zones: zones.clone(),
+                        total_volume,
+                    },
+                    external_conditions.clone(),
                 )?)
             })
             .transpose()?
@@ -4210,6 +4216,8 @@ fn space_heat_systems_from_input(
     heat_system_name_for_zone: &IndexMap<String, String>,
     zones: &Arc<IndexMap<String, Zone>>,
     heat_sources_wet_with_buffer_tank: &Vec<String>,
+    temp_internal_air_accessor: TempInternalAirAccessor,
+    external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
@@ -4241,7 +4249,7 @@ fn space_heat_systems_from_input(
                         ))
                     },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
-                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control,  .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control, thermal_mass, c, n, frac_convective, ecodesign_controller, design_flow_temp, .. } => {
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
@@ -4293,7 +4301,9 @@ fn space_heat_systems_from_input(
                                 unimplemented!()
                             }
                         };
-                        todo!("Currently working on Emitters")
+                        let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
+                        let space_heater = Emitters::new(*thermal_mass, *c, *n, *temp_diff_emit_dsgn, *frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank);
+                        SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {
                         frac_convective,
