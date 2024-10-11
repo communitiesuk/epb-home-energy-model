@@ -1175,7 +1175,7 @@ impl Corpus {
                     );
                     hc_output_radiative.insert(
                         h_name,
-                        space_heat_demand_zone_system[h_name] * (1.0 - frac_convective_heat),
+                        space_heat_provided_zone_system[h_name] * (1.0 - frac_convective_heat),
                     );
                     // If heating has been provided, then next iteration of loop
                     // should use next-priority heating system
