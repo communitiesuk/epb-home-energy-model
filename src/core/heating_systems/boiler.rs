@@ -836,7 +836,7 @@ impl Boiler {
         self.total_time_running_current_timestep += time_running_current_service;
 
         // Save results that are needed later (in the timestep_end function)
-        let mut result_service_name = ArrayString::<32>::new(); // ArrayStrings are a pain, therefore this small song and dance
+        let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
         result_service_name.push_str(service_name);
         self.service_results.push(ServiceResult {
             _service_name: result_service_name,
@@ -901,7 +901,7 @@ impl Boiler {
 
 #[derive(Copy, Clone, Debug)]
 struct ServiceResult {
-    _service_name: ArrayString<32>,
+    _service_name: ArrayString<64>,
     time_running: f64,
     current_boiler_power: f64,
 }
