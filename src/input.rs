@@ -104,7 +104,7 @@ pub struct ExternalConditionsInput {
 pub(crate) struct InternalGains {
     #[serde(alias = "total internal gains")]
     pub total_internal_gains: Option<InternalGainsDetails>,
-    #[serde(alias = "metabolic gains")]
+    #[serde(rename = "metabolic gains")]
     pub metabolic_gains: Option<InternalGainsDetails>,
     pub evaporative_losses: Option<InternalGainsDetails>,
     #[serde(rename = "ColdWaterLosses")]
@@ -134,7 +134,7 @@ pub struct ApplianceGainsDetails {
     pub start_day: u32,
     pub time_series_step: f64,
     pub gains_fraction: f64,
-    #[serde(alias = "EnergySupply")]
+    #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
     pub(crate) schedule: Option<NumericSchedule>,
     // In the Python code these fields are
@@ -699,7 +699,7 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: HeatSourceControlType,
         #[serde(rename = "separate_DHW_tests")]
         separate_dhw_tests: BoilerHotWaterTest,
@@ -718,7 +718,7 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: HeatSourceControlType,
         setpoint_temp: f64,
     },
@@ -1338,20 +1338,20 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
 pub(crate) enum SpaceHeatSystemDetails {
-    #[serde(alias = "InstantElecHeater")]
+    #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
         temp_setback: Option<f64>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: Option<String>,
         // not sure what the possible options are here yet
         frac_convective: f64,
-        #[serde(alias = "Zone")]
+        #[serde(rename = "Zone")]
         _zone: Option<String>,
     },
-    #[serde(alias = "ElecStorageHeater")]
+    #[serde(rename = "ElecStorageHeater")]
     #[allow(dead_code)]
     ElectricStorageHeater {
         temp_charge_cut: f64,
@@ -1362,12 +1362,12 @@ pub(crate) enum SpaceHeatSystemDetails {
         temp_dis_safe: f64,
         thermal_mass: f64,
         frac_convective: f64,
-        #[serde(alias = "U_ins")]
+        #[serde(rename = "U_ins")]
         u_ins: f64,
         mass_core: f64,
         c_pcore: f64,
         temp_core_target: f64,
-        #[serde(alias = "A_core")]
+        #[serde(rename = "A_core")]
         a_core: f64,
         c_wall: f64,
         n_wall: f64,
@@ -1376,13 +1376,13 @@ pub(crate) enum SpaceHeatSystemDetails {
         n_units: u32,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: Option<String>,
         // don't know possible options here
         #[serde(rename = "ControlCharger")]
         control_charger: String,
         // don't know possible options here
-        #[serde(alias = "Zone")]
+        #[serde(rename = "Zone")]
         zone: String, // think these are just arbitrary names?
     },
     #[allow(dead_code)]
@@ -1396,12 +1396,12 @@ pub(crate) enum SpaceHeatSystemDetails {
         // unclear which values are possible here
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: Option<String>,
         // check upstream if this is used
         ecodesign_controller: EcoDesignController,
         design_flow_temp: i32,
-        #[serde(alias = "Zone")]
+        #[serde(rename = "Zone")]
         zone: String, // as above, these are likely arbitrary names
     },
     #[allow(dead_code)]
@@ -1410,7 +1410,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         frac_convective: f64,
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(alias = "Control")]
+        #[serde(rename = "Control")]
         control: Option<String>,
     },
 }
@@ -1876,7 +1876,7 @@ pub enum ThermalBridgingDetails {
     },
     #[serde(rename = "ThermalBridgePoint")]
     Point {
-        #[serde(alias = "heat_transfer_coeff")]
+        #[serde(rename = "heat_transfer_coeff")]
         heat_transfer_coefficient: f64,
     },
 }
@@ -2143,9 +2143,9 @@ pub(crate) struct BoilerCostScheduleHybrid {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceLocation {
-    #[serde(alias = "internal")]
+    #[serde(rename = "internal")]
     Internal,
-    #[serde(alias = "external")]
+    #[serde(rename = "external")]
     External,
 }
 
@@ -2170,11 +2170,11 @@ pub struct WasteWaterHeatRecoveryDetails {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WwhrsType {
-    #[serde(alias = "WWHRS_InstantaneousSystemA")]
+    #[serde(rename = "WWHRS_InstantaneousSystemA")]
     SystemA,
-    #[serde(alias = "WWHRS_InstantaneousSystemB")]
+    #[serde(rename = "WWHRS_InstantaneousSystemB")]
     SystemB,
-    #[serde(alias = "WWHRS_InstantaneousSystemC")]
+    #[serde(rename = "WWHRS_InstantaneousSystemC")]
     SystemC,
 }
 
@@ -2207,13 +2207,13 @@ pub enum OnSiteGenerationDetails {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum OnSiteGenerationVentilationStrategy {
-    #[serde(alias = "unventilated")]
+    #[serde(rename = "unventilated")]
     Unventilated,
-    #[serde(alias = "moderately_ventilated")]
+    #[serde(rename = "moderately_ventilated")]
     ModeratelyVentilated,
-    #[serde(alias = "strongly_or_forced_ventilated")]
+    #[serde(rename = "strongly_or_forced_ventilated")]
     StronglyOrForcedVentilated,
-    #[serde(alias = "rear_surface_free")]
+    #[serde(rename = "rear_surface_free")]
     RearSurfaceFree,
 }
 
@@ -3579,7 +3579,6 @@ mod tests {
 
     /// this test should become redundant once there is an official JSON Schema definition for HEM.
     /// until that is the case, this checks each example input JSON against the schema generated by the schema-gen package.
-    #[ignore = "ignore test until schema is initially changed to work against example input files"]
     #[rstest]
     fn test_all_demo_files_pass_input_schema(files: Vec<DirEntry>) {
         let schema = serde_json::from_str(include_str!("../schemas/input.schema.json")).unwrap();
