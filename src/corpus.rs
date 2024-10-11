@@ -2080,7 +2080,7 @@ enum SpaceHeatCoolSystems<'a> {
     Cool(&'a IndexMap<String, AirConditioning>),
 }
 
-impl<'a> SpaceHeatCoolSystems<'a> {
+impl SpaceHeatCoolSystems<'_> {
     fn in_required_period_for_name(
         &self,
         system_name: &str,
@@ -2294,53 +2294,41 @@ fn internal_gains_from_input(
     total_floor_area: f64,
 ) -> anyhow::Result<InternalGainsCollection> {
     let mut gains_collection = InternalGainsCollection::from([]);
-    match input.total_internal_gains.as_ref() {
-        Some(internal_gains) => {
-            gains_collection.insert(
-                "total_internal_gains".to_string(),
-                Gains::Internal(internal_gains_from_details(
-                    internal_gains,
-                    total_floor_area,
-                )?),
-            );
-        }
-        None => (),
+    if let Some(internal_gains) = input.total_internal_gains.as_ref() {
+        gains_collection.insert(
+            "total_internal_gains".to_string(),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )?),
+        );
     }
-    match input.metabolic_gains.as_ref() {
-        Some(internal_gains) => {
-            gains_collection.insert(
-                "metabolic_gains".to_string(),
-                Gains::Internal(internal_gains_from_details(
-                    internal_gains,
-                    total_floor_area,
-                )?),
-            );
-        }
-        None => (),
+    if let Some(internal_gains) = input.metabolic_gains.as_ref() {
+        gains_collection.insert(
+            "metabolic_gains".to_string(),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )?),
+        );
     }
-    match input.evaporative_losses.as_ref() {
-        Some(internal_gains) => {
-            gains_collection.insert(
-                "evaporative_losses".to_string(),
-                Gains::Internal(internal_gains_from_details(
-                    internal_gains,
-                    total_floor_area,
-                )?),
-            );
-        }
-        None => (),
+    if let Some(internal_gains) = input.evaporative_losses.as_ref() {
+        gains_collection.insert(
+            "evaporative_losses".to_string(),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )?),
+        );
     }
-    match input.other.as_ref() {
-        Some(internal_gains) => {
-            gains_collection.insert(
-                "other".to_string(),
-                Gains::Internal(internal_gains_from_details(
-                    internal_gains,
-                    total_floor_area,
-                )?),
-            );
-        }
-        None => (),
+    if let Some(internal_gains) = input.other.as_ref() {
+        gains_collection.insert(
+            "other".to_string(),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )?),
+        );
     }
 
     Ok(gains_collection)
@@ -2362,7 +2350,7 @@ fn convert_energy_to_wm2(
     total_floor_area: f64,
 ) -> anyhow::Result<Vec<f64>> {
     let schedule = &internal_gains_details.schedule;
-    Ok(reject_nulls(expand_numeric_schedule(&schedule))?
+    Ok(reject_nulls(expand_numeric_schedule(schedule))?
         .iter()
         .map(|energy_data| energy_data / total_floor_area)
         .collect())
@@ -2506,7 +2494,7 @@ fn single_control_from_details(
             if let Some(charge) = charge_level {
                 match charge {
                     ChargeLevel::List(charge_vec) => {
-                        charge_level_vec = charge_vec.iter().copied().collect();
+                        charge_level_vec = charge_vec.to_vec();
                     }
                     ChargeLevel::Single(charge) => {
                         charge_level_vec = vec![*charge; vec_size];
@@ -4459,7 +4447,7 @@ fn total_volume_heated_by_system(
 }
 
 fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<RequiredVentData>> {
-    Ok(input
+    input
         .extra
         .get("required_vent")
         .map(|ctrl| {
@@ -4469,7 +4457,7 @@ fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<
                 time_series_step: ctrl.time_series_step(),
             })
         })
-        .transpose()?)
+        .transpose()
 }
 
 #[derive(Clone, Debug)]

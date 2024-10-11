@@ -63,12 +63,12 @@ struct EmittersAndPowerInput<'a> {
 }
 
 impl EmittersAndPowerInput<'_> {
-    fn difference_from_temp_diff_max(self: &Self, y: f64) -> f64 {
+    fn difference_from_temp_diff_max(&self, y: f64) -> f64 {
         y - self.temp_diff_max.unwrap()
     }
 }
 
-impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
+impl System<Time, State> for EmittersAndPowerInput<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         dy[0] = self
             .emitters
@@ -97,7 +97,7 @@ impl<'a> System<Time, State> for EmittersAndPowerInput<'a> {
         }
 
         self.previous_difference_from_temp_diff_max = Some(difference_from_temp_diff_max);
-        return false;
+        false
     }
 }
 
@@ -341,10 +341,7 @@ impl Emitters {
     ) -> (f64, Option<f64>) {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
-        let temp_diff_max = match temp_emitter_max {
-            Some(emitter_max) => Some(emitter_max - temp_rm),
-            None => None,
-        };
+        let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
 
         let emitter_with_power_input = EmittersAndPowerInput {
             emitters: self,
@@ -414,7 +411,7 @@ impl Emitters {
             // and sets time_temp_diff_max_reached
 
             let mut y_out_reversed: Vec<f64> =
-                stepper.y_out().iter().flatten().map(|f| *f).collect();
+                stepper.y_out().iter().flatten().copied().collect();
             y_out_reversed.reverse();
 
             let mut x_out_reversed = stepper.x_out().clone();

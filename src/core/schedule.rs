@@ -198,8 +198,7 @@ pub(crate) mod input {
         pub(super) fn expand(&self) -> Vec<Option<T>> {
             self.main
                 .iter()
-                .map(|entry| self.expand_entry(entry))
-                .flatten()
+                .flat_map(|entry| self.expand_entry(entry))
                 .collect()
         }
 
@@ -216,7 +215,6 @@ pub(crate) mod input {
                         vec![Some(*v)]
                     }
                 }])
-                .into_iter()
                 .take(repeater.repeat)
                 .flatten()
                 .flatten()
@@ -227,11 +225,10 @@ pub(crate) mod input {
 
         fn expand_reference(&self, reference: &str) -> Vec<Option<T>> {
             match &self.references[reference] {
-                ScheduleReferenceEntry::Single(entry) => self.expand_entry(&entry),
+                ScheduleReferenceEntry::Single(entry) => self.expand_entry(entry),
                 ScheduleReferenceEntry::Multi(entries) => entries
                     .iter()
-                    .map(|entry| self.expand_entry(entry))
-                    .flatten()
+                    .flat_map(|entry| self.expand_entry(entry))
                     .collect_vec(),
             }
         }
