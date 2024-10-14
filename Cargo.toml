@@ -42,7 +42,7 @@ strum_macros = "0.26.3"
 
 [dev-dependencies]
 approx = "0.5.1"
-jsonschema = "0.22.3"
+jsonschema = "0.23.0"
 pretty_assertions = "1.4.1"
 rstest = "0.23.0"
 walkdir = "2.5.0"
