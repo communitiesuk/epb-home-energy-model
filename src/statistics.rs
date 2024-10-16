@@ -1,6 +1,6 @@
-use interp::interp;
 /// A simple statistics module with some utility functions such as calculation of percentiles.
-use statrs::statistics::{Data, OrderStatistics, Statistics};
+use interp::{interp, InterpMode};
+use statrs::statistics::{Data, OrderStatistics};
 
 #[allow(dead_code)]
 pub fn percentile(numbers: &[f64], percentile: usize) -> f64 {
@@ -25,15 +25,7 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
         panic!("x and y must be of equal length");
     }
 
-    if input > x.max() {
-        return *y.last().unwrap();
-    }
-
-    if input < x.min() {
-        return *y.first().unwrap();
-    }
-
-    interp(x, y, input)
+    interp(x, y, input, &InterpMode::FirstLast)
 }
 
 #[cfg(test)]
@@ -75,7 +67,7 @@ mod tests {
         let y = [0., 10., 20., 30., 40., 50.];
 
         let actual = np_interp(input, &x, &y);
-        let expected = interp(&x, &y, input);
+        let expected = interp(&x, &y, input, &InterpMode::Extrapolate);
 
         assert_eq!(actual, expected)
     }

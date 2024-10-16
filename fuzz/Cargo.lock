@@ -261,7 +261,7 @@ dependencies = [
  "indexmap",
  "interp",
  "is_close",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "nalgebra 0.33.0",
  "ode_solvers",
@@ -320,11 +320,11 @@ dependencies = [
 
 [[package]]
 name = "interp"
-version = "1.0.3"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "530f1a6dab1502fc7dd5e193d08ed17c775c32c40894b75532533c6b1611f08b"
+checksum = "bbf8add5dd9442596f3c5f504fd4fbbdf6266ff2337a51f6430dfeff6fd3a4de"
 dependencies = [
- "itertools 0.12.1",
+ "itertools",
  "num-traits",
 ]
 
@@ -335,15 +335,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4d49e01f14871e71a0dce6f09eb72308bca74a4adb1bab5a8c34ee26979a8a2"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
 ]
 
 [[package]]
@@ -883,7 +874,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5766a432e0c90becd28272fed5f24cd42aea2dbddf2d86059aeaee20b16ace57"
 dependencies = [
  "indexmap",
- "itertools 0.13.0",
+ "itertools",
  "num-traits",
  "once_cell",
  "paste",
@@ -902,7 +893,7 @@ version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68d5b451c72740399084db5f2b8e5f54fde555f9b5f3c1a6146f5b9d58516d18"
 dependencies = [
- "itertools 0.13.0",
+ "itertools",
  "paste",
  "proc-macro-error2",
  "proc-macro2",
