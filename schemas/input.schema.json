@@ -1126,14 +1126,6 @@
             "type"
           ],
           "properties": {
-            "advanced_start": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint32",
-              "minimum": 0.0
-            },
             "logic_type": {
               "anyOf": [
                 {
@@ -1174,14 +1166,6 @@
             "type"
           ],
           "properties": {
-            "advanced_start": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint32",
-              "minimum": 0.0
-            },
             "logic_type": {
               "anyOf": [
                 {
@@ -1296,14 +1280,6 @@
             "type"
           ],
           "properties": {
-            "advanced_start": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint32",
-              "minimum": 0.0
-            },
             "charge_level": true,
             "logic_type": {
               "anyOf": [

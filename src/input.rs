@@ -544,7 +544,6 @@ pub(crate) enum ControlDetails {
     OnOffTime {
         start_day: u32,
         time_series_step: f64,
-        advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
         schedule: BooleanSchedule,
     },
@@ -552,7 +551,6 @@ pub(crate) enum ControlDetails {
     OnOffCostMinimisingTime {
         start_day: u32,
         time_series_step: f64,
-        advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
         time_on_daily: Option<f64>,
         schedule: NumericSchedule,
@@ -572,7 +570,6 @@ pub(crate) enum ControlDetails {
     ToUCharge {
         start_day: u32,
         time_series_step: f64,
-        advanced_start: Option<u32>,
         logic_type: Option<ControlLogicType>,
         charge_level: Option<ChargeLevel>,
         target_charge: Option<f64>,
