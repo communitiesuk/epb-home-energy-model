@@ -3535,6 +3535,10 @@ impl InputForProcessing {
             .noise_nuisance
             .unwrap_or(false)
     }
+
+    pub(crate) fn heat_source_wet(&self) -> Option<&IndexMap<String, HeatSourceWetDetails>> {
+        self.input.heat_source_wet.as_ref()
+    }
 }
 
 #[cfg(test)]
