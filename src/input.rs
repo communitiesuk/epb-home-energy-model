@@ -284,11 +284,11 @@ pub enum SecondarySupplyType {
     Diverter,
 }
 
-/// TODO clarify further
-/// It's not completely clear at the moment what the difference between fuel type and energy supply type is,
-/// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
-/// in the input examples, so keeping them separate for the time being
-/// (It's also hard to see some of these as types of fuel)
+// TODO clarify further
+// It's not completely clear at the moment what the difference between fuel type and energy supply type is,
+// but electricity and gas each seem to be indicated using different strings between fuel and energy supply
+// in the input examples, so keeping them separate for the time being
+// (It's also hard to see some of these as types of fuel)
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -544,6 +544,7 @@ pub(crate) enum ControlDetails {
     OnOffTime {
         start_day: u32,
         time_series_step: f64,
+        #[allow(dead_code)]
         logic_type: Option<ControlLogicType>,
         schedule: BooleanSchedule,
     },
@@ -551,6 +552,7 @@ pub(crate) enum ControlDetails {
     OnOffCostMinimisingTime {
         start_day: u32,
         time_series_step: f64,
+        #[allow(dead_code)]
         logic_type: Option<ControlLogicType>,
         time_on_daily: Option<f64>,
         schedule: NumericSchedule,
@@ -560,6 +562,7 @@ pub(crate) enum ControlDetails {
         start_day: u32,
         time_series_step: f64,
         advanced_start: Option<f64>,
+        #[allow(dead_code)]
         logic_type: Option<ControlLogicType>,
         setpoint_min: Option<f64>,
         setpoint_max: Option<f64>,
@@ -570,9 +573,11 @@ pub(crate) enum ControlDetails {
     ToUCharge {
         start_day: u32,
         time_series_step: f64,
+        #[allow(dead_code)]
         logic_type: Option<ControlLogicType>,
         charge_level: Option<ChargeLevel>,
-        target_charge: Option<f64>,
+        #[serde(rename = "target_charge")]
+        _target_charge: Option<f64>,
         schedule: BooleanSchedule,
     },
 }

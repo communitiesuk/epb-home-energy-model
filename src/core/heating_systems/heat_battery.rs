@@ -1,3 +1,4 @@
+/// This module provides object(s) to model the behaviour of heat batteries.
 use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
@@ -8,8 +9,6 @@ use anyhow::bail;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
-
-/// This module provides object(s) to model the behaviour of heat batteries.
 
 pub enum ServiceType {
     WaterRegular,

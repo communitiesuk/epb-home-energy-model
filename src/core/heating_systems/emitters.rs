@@ -1,3 +1,4 @@
+/// This module provides objects to represent radiator and underfloor emitter systems.
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::{
@@ -16,8 +17,6 @@ use std::sync::Arc;
 type State = Vector1<f64>; // type State = OVector<f32, U3>;
 type Time = f64;
 // type Result = SolverResult<Time, State>;
-
-/// This module provides objects to represent radiator and underfloor emitter systems.
 
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
@@ -408,8 +407,7 @@ impl Emitters {
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
 
-            let mut y_out_reversed: Vec<f64> =
-                stepper.y_out().iter().flatten().copied().collect();
+            let mut y_out_reversed: Vec<f64> = stepper.y_out().iter().flatten().copied().collect();
             y_out_reversed.reverse();
 
             let mut x_out_reversed = stepper.x_out().clone();

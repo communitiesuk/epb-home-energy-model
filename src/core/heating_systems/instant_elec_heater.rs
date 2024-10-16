@@ -1,11 +1,10 @@
+/// This module provides object(s) to model the behaviour of instantaneous electric
+/// room heaters.
 use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
-
-/// This module provides object(s) to model the behaviour of instantaneous electric
-/// room heaters.
 
 /// Type to represent instantaneous electric heaters
 #[derive(Clone)]

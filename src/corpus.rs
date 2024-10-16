@@ -4212,7 +4212,7 @@ fn space_heat_systems_from_input(
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_name_for_zone: &IndexMap<String, String>,
     zones: &Arc<IndexMap<String, Zone>>,
-    heat_sources_wet_with_buffer_tank: &Vec<String>,
+    heat_sources_wet_with_buffer_tank: &[String],
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {

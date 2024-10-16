@@ -1,3 +1,7 @@
+/// This module provides objects to represent heat pumps and heat pump test data.
+/// The calculations are based on the DAHPSE method developed for generating PCDB
+/// entries for SAP 2012 and SAP 10. DAHPSE was based on a draft of
+/// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 use crate::compare_floats::{max_of_2, min_of_2};
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
@@ -35,11 +39,6 @@ use std::fmt::{Debug, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::Arc;
-
-/// This module provides objects to represent heat pumps and heat pump test data.
-/// The calculations are based on the DAHPSE method developed for generating PCDB
-/// entries for SAP 2012 and SAP 10. DAHPSE was based on a draft of
-/// BS EN 15316-4-2:2017 and is described in the SAP calculation method CALCM-01.
 
 const N_EXER: f64 = 3.0;
 
@@ -814,7 +813,7 @@ impl HeatPumpTestData {
 
         self.test_data[&OrderedFloat(dsgn_flow_temp)]
             .iter()
-            .position(|test_record| &test_record.test_letter.to_string() == test_condition)
+            .position(|test_record| test_record.test_letter.to_string() == test_condition)
     }
 
     /// Return value at specified test condition, interpolated between design flow temps

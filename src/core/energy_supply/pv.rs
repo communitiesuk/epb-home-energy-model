@@ -1,3 +1,4 @@
+/// This module contains objects that represent photovoltaic systems.
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::projected_height;
@@ -6,8 +7,6 @@ use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::OnSiteGenerationVentilationStrategy;
 use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
-
-/// This module contains objects that represent photovoltaic systems.
 
 /// system performance factor lookup
 /// informative values from table C.4 Annex C BS EN 15316-4-3:2017

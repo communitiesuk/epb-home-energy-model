@@ -1421,13 +1421,13 @@ impl Hash for NamedBuildingElement {
     }
 }
 
-/// There are cases where functions in the upstream Python code have some optional arguments to do with
-/// air changes per hour (ach), but EITHER ach_cooling OR both ach_target and ach_windows_open need to
-/// have values given (i.e. not None). The relation between these arguments is not explicit in the Python,
-/// but de facto the above both always holds and must hold in order for there not to be errors present
-/// such as arithmetic attempted with None values. This enum makes this relationship between arguments
-/// explicit in the Rust, so that we aren't forced to make assertions about the "someness" of a value
-/// when we need to use the underlying argument values.
+// There are cases where functions in the upstream Python code have some optional arguments to do with
+// air changes per hour (ach), but EITHER ach_cooling OR both ach_target and ach_windows_open need to
+// have values given (i.e. not None). The relation between these arguments is not explicit in the Python,
+// but de facto the above both always holds and must hold in order for there not to be errors present
+// such as arithmetic attempted with None values. This enum makes this relationship between arguments
+// explicit in the Rust, so that we aren't forced to make assertions about the "someness" of a value
+// when we need to use the underlying argument values.
 #[derive(Clone, Copy, Debug)]
 pub enum AirChangesPerHourArgument {
     Cooling {

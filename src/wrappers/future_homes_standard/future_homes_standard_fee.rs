@@ -10,7 +10,6 @@ use serde_json::json;
 /// This module provides functions to implement pre- and post-processing
 /// steps for the Fabric Energy Efficiency calculation run for the Future Homes
 /// Standard.
-
 pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // Calculation assumptions (expressed in comments) are based on SAP 10.2 FEE specification
     //

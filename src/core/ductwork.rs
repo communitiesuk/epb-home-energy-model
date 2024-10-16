@@ -10,8 +10,9 @@ const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7;
 // low emissivity reflective surface, CIBSE Guide C, Table 3.25
 const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective surface, CIBSE Guide C, Table 3.25
 
-/// A struct to represent ductwork for mechanical ventilation with heat recovery
-/// (MVHR), assuming steady state heat transfer in, 1. a hollow cylinder (duct)
+/// A struct to represent ductwork for mechanical ventilation with heat recovery (MVHR)
+///
+/// Assumes steady state heat transfer in, 1. a hollow cylinder (duct)
 /// with radial heat flow and 2. a rectangular cross-section ISO 12241:2022
 #[derive(Clone, Copy)]
 pub struct Ductwork {

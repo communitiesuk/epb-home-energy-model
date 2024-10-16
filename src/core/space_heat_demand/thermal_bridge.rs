@@ -30,9 +30,9 @@ pub fn heat_transfer_coefficient_for_thermal_bridge(thermal_bridge: &ThermalBrid
     }
 }
 
-/// Converts the serde_json value for ThermalBridging into structs as have not been able to handle these variants
-/// Ultimately this field in the JSON should be divided into different attributes (one for bridging elements, one for a number)
-/// and then this would not be necessary (as serde_json would handle it) and could be removed!
+// Converts the serde_json value for ThermalBridging into structs as have not been able to handle these variants
+// Ultimately this field in the JSON should be divided into different attributes (one for bridging elements, one for a number)
+// and then this would not be necessary (as serde_json would handle it) and could be removed!
 pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
     match input {
         Value::Object(map) => {
