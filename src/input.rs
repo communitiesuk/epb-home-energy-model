@@ -909,9 +909,6 @@ pub enum HeatSourceControlType {
 pub(crate) enum HeatSourceControl {
     HotWaterTimer(ControlDetails),
     WindowOpening(ControlDetails),
-    WindowOpeningLivingRoom(ControlDetails),
-    WindowOpeningRestOfDwelling(ControlDetails),
-    AlwaysOff(ControlDetails),
 }
 
 #[derive(Clone, Debug, Deserialize)]

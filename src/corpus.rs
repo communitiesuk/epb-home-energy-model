@@ -2412,10 +2412,6 @@ fn control_from_input(
                     single_control_from_details(control, simulation_time_iterator)?,
                 )));
             }
-            unknown => panic!(
-                "incorrectly formed HeatSourceControl struct encountered: {:?}",
-                unknown
-            ),
         }
     }
     for (name, control) in &control_input.extra {

@@ -2368,42 +2368,6 @@
             }
           },
           "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "WindowOpeningLivingRoom"
-          ],
-          "properties": {
-            "WindowOpeningLivingRoom": {
-              "$ref": "#/definitions/ControlDetails"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "WindowOpeningRestOfDwelling"
-          ],
-          "properties": {
-            "WindowOpeningRestOfDwelling": {
-              "$ref": "#/definitions/ControlDetails"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "AlwaysOff"
-          ],
-          "properties": {
-            "AlwaysOff": {
-              "$ref": "#/definitions/ControlDetails"
-            }
-          },
-          "additionalProperties": false
         }
       ]
     },
