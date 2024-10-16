@@ -167,12 +167,7 @@
 			{
 				"location": "internal",
 				"internal_diameter_mm": 25,
-				"external_diameter_mm": 27,
-				"length": 8.0,
-				"insulation_thermal_conductivity": 0.035,
-				"insulation_thickness_mm": 25,
-				"surface_reflectivity": false,
-				"pipe_contents": "water"
+				"length": 8.0
 			}
 		]
 	},
@@ -386,22 +381,61 @@
 	    "build_type": "house"
 	},
 
-	"Infiltration": {
-		"shelter": "normal",
-		"test_result": 4.0,
-		"test_type": "50Pa",
-		"env_area": 125.0,
-		"sheltered_sides": 1,
-		"open_chimneys": 1,
-		"open_flues": 1,
-		"closed_fire": 2,
-		"flues_d": 1,
-		"flues_e": 1,
-		"blocked_chimneys": 0,
-		"extract_fans": 2,
-		"passive_vents": 2,
-		"gas_fires": 0
-	},
+	"InfiltrationVentilation": {
+        "cross_vent_factor": true,
+        "shield_class": "Normal",
+        "terrain_class": "Country",
+        "altitude": 30,
+        "noise_nuisance" : true,
+        "Vents": {
+            "vent1": {
+                "mid_height_air_flow_path": 1.5,
+                "area_cm2": 100,
+                "pressure_difference_ref": 20,
+                "orientation360": 180,
+                "pitch": 60
+            },
+            "vent2": {
+                "mid_height_air_flow_path": 1.5,
+                "area_cm2": 100,
+                "pressure_difference_ref": 20,
+                "orientation360": 0,
+                "pitch": 60
+            }
+        },
+        "Leaks" : {
+			"ventilation_zone_height" : 6,
+			"test_pressure": 50,
+			"test_result": 1.2,
+			"env_area":220
+        },
+        "MechanicalVentilation": {
+            "mechvent1":{
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "CONST",
+                "design_zone_cooling_covered_by_mech_vent": 3.4,
+                "design_zone_heating_covered_by_mech_vent": 1,
+                "vent_type": "Centralised continuous MEV",
+                "measured_fan_power": 12.26,
+                "measured_air_flow_rate":37,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": 0.5
+            }
+        },
+        "PDUs": {
+        },
+        "Cowls": {
+        },
+        "CombustionAppliances":{
+            "Fireplace":{
+                "supply_situation":"room_air",
+                "exhaust_situation": "into_separate_duct",
+                "fuel_type": "wood",
+                "appliance_type": "open_fireplace"
+            }
+        }
+    },
+
 	"Zone": {
 		"zone 1": {
 			"SpaceHeatSystem": "zone 1 radiators",
