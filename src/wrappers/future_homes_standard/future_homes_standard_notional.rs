@@ -76,9 +76,13 @@ fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
 
 /// Apply notional lighting efficacy
 /// efficacy = 120 lm/W
-fn edit_lighting_efficacy(input: &mut InputForProcessing) -> () {
+fn edit_lighting_efficacy(input: &mut InputForProcessing) {
     let lighting_efficacy = 120.0;
     input.set_lighting_efficacy_for_all_zones(lighting_efficacy);
+}
+
+fn edit_opaque_ajdztu_elements(input: &mut InputForProcessing) {
+    todo!()
 }
 
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
@@ -163,5 +167,11 @@ mod tests {
                 120.
             )
         }
+    }
+
+    #[ignore = "this test is not correct in Python so has not been ported"]
+    #[rstest]
+    fn test_edit_opaque_ajdztu_elements() {
+        todo!("Implement once equivalent python test is fixed. Currently it always passes but no assertions are actually reached and run because of logic that compares pitch (int) to a HeatFlowDirection (enum) and a missing else block.")
     }
 }
