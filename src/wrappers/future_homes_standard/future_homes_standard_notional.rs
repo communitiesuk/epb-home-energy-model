@@ -1,3 +1,5 @@
+use core::panic;
+
 use itertools::Itertools;
 
 use crate::{
@@ -9,6 +11,31 @@ use crate::{
         InputForProcessing,
     },
 };
+
+/// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
+fn apply_fhs_not_preprocessing(
+    input: InputForProcessing,
+    fhs_not_a_assumptions: bool,
+    _fhs_not_b_assumptions: bool,
+    fhs_fee_not_a_assumptions: bool,
+    fhs_fee_not_b_assumptions: bool,
+) -> () {
+    let _is_not_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
+    let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
+    // Check if a heat network is present
+    let _is_heat_network = check_heatnetwork_present(&input);
+
+    // Determine cold water source
+    let cold_water_type = input.cold_water_source();
+
+    let _cold_water_source = match (cold_water_type.mains_water, cold_water_type.header_tank) {
+        (Some(source), None) => source,
+        (None, Some(source)) => source,
+        _ => panic!("Error: There should be exactly one cold water type"),
+    };
+
+    todo!()
+}
 
 fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
     let mut is_heat_network = false;
@@ -76,6 +103,25 @@ mod tests {
         InputForProcessing::init_with_json(reader).expect(
             "expected valid test_future_homes_standard_notional_input_data.json to be present",
         )
+    }
+
+    #[ignore = "still to complete"]
+    #[rstest]
+    // test written in Rust, not present in Python
+    fn test_apply_fhs_not_preprocessing(test_input: InputForProcessing) {
+        let fhs_not_a_assumptions = true;
+        let _fhs_not_b_assumptions = false;
+        let fhs_fee_not_a_assumptions = false;
+        let fhs_fee_not_b_assumptions = false;
+
+        let actual = apply_fhs_not_preprocessing(
+            test_input,
+            fhs_not_a_assumptions,
+            _fhs_not_b_assumptions,
+            fhs_fee_not_a_assumptions,
+            fhs_fee_not_b_assumptions,
+        );
+        todo!()
     }
 
     #[rstest]

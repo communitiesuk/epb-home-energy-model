@@ -456,7 +456,7 @@ pub struct CustomEnergySourceFactor {
     pub primary_energy_factor: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -485,7 +485,7 @@ impl ColdWaterSourceInput {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -3538,6 +3538,10 @@ impl InputForProcessing {
 
     pub(crate) fn heat_source_wet(&self) -> Option<&IndexMap<String, HeatSourceWetDetails>> {
         self.input.heat_source_wet.as_ref()
+    }
+
+    pub(crate) fn cold_water_source(&self) -> ColdWaterSourceInput {
+        self.input.cold_water_source.clone()
     }
 }
 
