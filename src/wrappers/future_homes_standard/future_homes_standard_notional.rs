@@ -10,11 +10,12 @@ use crate::{
         HeatSourceWetDetails::{HeatPump, Hiu},
         InputForProcessing,
     },
+    wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
 fn apply_fhs_not_preprocessing(
-    input: InputForProcessing,
+    mut input: InputForProcessing,
     fhs_not_a_assumptions: bool,
     _fhs_not_b_assumptions: bool,
     fhs_fee_not_a_assumptions: bool,
@@ -33,6 +34,15 @@ fn apply_fhs_not_preprocessing(
         (None, Some(source)) => source,
         _ => panic!("Error: There should be exactly one cold water type"),
     };
+
+    // Retrieve the number of bedrooms and total volume
+    let _bedroom_number = input.number_of_bedrooms();
+    // Loop through zones to sum up volume.
+    let _total_volume = input.total_zone_area();
+
+    // Determine the TFA
+    let _tfa = calc_tfa(&input);
+    edit_lighting_efficacy(&mut input);
 
     todo!()
 }
@@ -61,6 +71,13 @@ fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
         }
     }
     is_heat_network
+}
+
+/// Apply notional lighting efficacy
+/// efficacy = 120 lm/W
+fn edit_lighting_efficacy(input: &mut InputForProcessing) -> () {
+    let lighting_efficacy = 120.0;
+    input.set_lighting_efficacy_for_all_zones(lighting_efficacy);
 }
 
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
@@ -93,6 +110,7 @@ pub fn minimum_air_change_rate(
 mod tests {
     use super::*;
     use rstest::{fixture, rstest};
+    use std::borrow::BorrowMut;
     use std::fs::File;
     use std::io::BufReader;
     use std::path::Path;
@@ -114,7 +132,7 @@ mod tests {
         let fhs_fee_not_a_assumptions = false;
         let fhs_fee_not_b_assumptions = false;
 
-        let actual = apply_fhs_not_preprocessing(
+        let _actual = apply_fhs_not_preprocessing(
             test_input,
             fhs_not_a_assumptions,
             _fhs_not_b_assumptions,
@@ -128,5 +146,21 @@ mod tests {
     /// test written in Rust, not present in Python
     fn test_check_heatnetwork_present(test_input: InputForProcessing) {
         assert_eq!(check_heatnetwork_present(&test_input), false);
+    }
+
+    #[rstest]
+    fn test_edit_lighting_efficacy(mut test_input: InputForProcessing) {
+        let test_input = test_input.borrow_mut();
+        edit_lighting_efficacy(test_input);
+
+        for zone in test_input.zone_keys() {
+            let lighting_efficacy = test_input.lighting_efficacy_for_zone(&zone);
+            assert_eq!(
+                lighting_efficacy
+                    .unwrap()
+                    .expect("expected lighting in zone and efficacy in lighting"),
+                120.
+            )
+        }
     }
 }
