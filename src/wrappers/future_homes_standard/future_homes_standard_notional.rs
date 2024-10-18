@@ -116,13 +116,14 @@ mod tests {
     use super::*;
     use rstest::{fixture, rstest};
     use std::borrow::BorrowMut;
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::path::Path;
+    use std::io::{BufReader, Cursor};
 
     #[fixture]
     fn test_input() -> InputForProcessing {
-        let reader = BufReader::new(File::open(Path::new("src/wrappers/future_homes_standard/test_future_homes_standard_notional_input_data.json")).unwrap());
+        // TODO use include string
+        let reader = BufReader::new(Cursor::new(include_str!(
+            "./test_future_homes_standard_notional_input_data.json"
+        )));
         InputForProcessing::init_with_json(reader).expect(
             "expected valid test_future_homes_standard_notional_input_data.json to be present",
         )
