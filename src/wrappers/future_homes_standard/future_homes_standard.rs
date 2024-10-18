@@ -1310,6 +1310,7 @@ fn create_lighting_gains(
         .map(|(i, profile)| (profile * kwh_per_day * factor[i]) * 2. * 1_000.)
         .collect();
 
+    input.clear_appliance_gains();
     input.set_lighting_gains(json!({
         "type": "lighting",
         "start_day": 0,

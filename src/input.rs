@@ -3078,6 +3078,10 @@ impl InputForProcessing {
         Ok(())
     }
 
+    pub fn clear_appliance_gains(&mut self) {
+        self.input.appliance_gains.clear();
+    }
+
     pub fn fuel_type_for_energy_supply_field(&self, field: &str) -> anyhow::Result<String> {
         Ok(self
             .input
