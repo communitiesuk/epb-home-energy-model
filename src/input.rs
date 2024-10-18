@@ -1797,7 +1797,7 @@ pub(crate) trait GroundBuildingElement {
 impl GroundBuildingElement for BuildingElement {
     fn set_u_value(&mut self, new_u_value: f64) {
         match self {
-            Self::Ground { u_value, ..} => {
+            Self::Ground { u_value, .. } => {
                 *u_value = new_u_value;
             }
             _ => unreachable!(),
@@ -1815,7 +1815,10 @@ impl GroundBuildingElement for BuildingElement {
 
     fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64) {
         match self {
-            Self::Ground { psi_wall_floor_junc, .. } => {
+            Self::Ground {
+                psi_wall_floor_junc,
+                ..
+            } => {
                 *psi_wall_floor_junc = new_psi_wall_floor_junc;
             }
             _ => unreachable!(),
@@ -1982,7 +1985,6 @@ pub enum ThermalBridgingDetails {
     Linear {
         linear_thermal_transmittance: f64,
         length: f64,
-        #[allow(dead_code)]
         junction_type: Option<String>,
     },
     #[serde(rename = "ThermalBridgePoint")]
@@ -2868,6 +2870,29 @@ impl InputForProcessing {
             .area)
     }
 
+    #[cfg(test)]
+    pub(crate) fn all_thermal_bridgings(&self) -> Vec<&ThermalBridging> {
+        self.input
+            .zone
+            .values()
+            .map(|z| &z.thermal_bridging)
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn all_thermal_bridging_elements(
+        &mut self,
+    ) -> Vec<&mut IndexMap<String, ThermalBridgingDetails>> {
+        self.input
+            .zone
+            .values_mut()
+            .map(|z| &mut z.thermal_bridging)
+            .filter_map(|el| match el {
+                ThermalBridging::ThermalBridgingElements(ref mut elements) => Some(elements),
+                ThermalBridging::ThermalBridgingNumber(_) => None,
+            })
+            .collect::<Vec<&mut IndexMap<String, ThermalBridgingDetails>>>()
+    }
+
     pub fn number_of_bedrooms(&self) -> Option<usize> {
         self.input.number_of_bedrooms
     }
@@ -3485,7 +3510,9 @@ impl InputForProcessing {
             .collect()
     }
 
-    pub(crate) fn all_ground_building_elements_mut(&mut self) -> Vec<&mut impl GroundBuildingElement> {
+    pub(crate) fn all_ground_building_elements_mut(
+        &mut self,
+    ) -> Vec<&mut impl GroundBuildingElement> {
         self.input
             .zone
             .values_mut()

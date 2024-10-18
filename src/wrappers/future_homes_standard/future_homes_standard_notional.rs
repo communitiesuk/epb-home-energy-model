@@ -7,14 +7,16 @@ use crate::{
         units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
     },
     input::{
-        HeatPumpSourceType,
+        GroundBuildingElement, HeatPumpSourceType,
         HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing, UValueEditableBuildingElement, GroundBuildingElement
+        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement,
     },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use itertools::Itertools;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
 fn apply_fhs_not_preprocessing(
@@ -145,6 +147,87 @@ pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Resu
     Ok(())
 }
 
+/// The notional building must follow the same thermal bridges as specified in
+/// SAP10.2 Table R2
+///
+/// TODO - how to deal with ThermalBridging when lengths are not specified?
+pub(crate) fn edit_thermal_bridging(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let mut thermal_bridging_elements = input.all_thermal_bridging_elements();
+
+    for element in thermal_bridging_elements
+        .iter_mut()
+        .flat_map(|group| group.values_mut())
+    {
+        match element {
+            ThermalBridgingDetails::Point {
+                heat_transfer_coefficient,
+                ..
+            } => {
+                *heat_transfer_coefficient = 0.;
+            }
+            ThermalBridgingDetails::Linear {
+                junction_type,
+                linear_thermal_transmittance,
+                ..
+            } => {
+                let junction_type = junction_type.as_ref().and_then(|junc| if TABLE_R2.contains_key(junc.as_str()) {Some(junc.clone())} else {None}).ok_or_else(|| anyhow!("Thermal bridging junction type was expected to be set and one of the values in SAP10.2 Table R2."))?;
+                *linear_thermal_transmittance = TABLE_R2[junction_type.as_str()];
+            }
+        }
+    }
+
+    Ok(())
+}
+
+static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
+    HashMap::from([
+        ("E1", 0.05),
+        ("E2", 0.05),
+        ("E3", 0.05),
+        ("E4", 0.05),
+        ("E5", 0.16),
+        ("E19", 0.07),
+        ("E20", 0.32),
+        ("E21", 0.32),
+        ("E22", 0.07),
+        ("E6", 0.),
+        ("E7", 0.07),
+        ("E8", 0.),
+        ("E9", 0.02),
+        ("E23", 0.02),
+        ("E10", 0.06),
+        ("E24", 0.24),
+        ("E11", 0.04),
+        ("E12", 0.06),
+        ("E13", 0.08),
+        ("E14", 0.08),
+        ("E15", 0.56),
+        ("E16", 0.09),
+        ("E17", -0.09),
+        ("E18", 0.06),
+        ("E25", 0.06),
+        ("P1", 0.08),
+        ("P6", 0.07),
+        ("P2", 0.),
+        ("P3", 0.),
+        ("P7", 0.16),
+        ("P8", 0.24),
+        ("P4", 0.12),
+        ("P5", 0.08),
+        ("R1", 0.08),
+        ("R2", 0.06),
+        ("R3", 0.08),
+        ("R4", 0.08),
+        ("R5", 0.04),
+        ("R6", 0.06),
+        ("R7", 0.04),
+        ("R8", 0.06),
+        ("R9", 0.04),
+        ("R10", 0.08),
+        ("R11", 0.08),
+    ])
+});
+
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -177,6 +260,7 @@ mod tests {
 
     use super::*;
     use crate::input;
+    use crate::input::{ThermalBridging, ThermalBridgingDetails};
     use rstest::{fixture, rstest};
     use std::borrow::BorrowMut;
     use std::io::{BufReader, Cursor};
@@ -273,10 +357,50 @@ mod tests {
         edit_ground_floors(test_input).unwrap();
 
         for building_element in test_input.all_building_elements() {
-            if let input::BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = building_element {
+            if let input::BuildingElement::Ground {
+                u_value,
+                r_f,
+                psi_wall_floor_junc,
+                ..
+            } = building_element
+            {
                 assert_eq!(*u_value, 0.13);
                 assert_eq!(*r_f, 6.12);
                 assert_eq!(*psi_wall_floor_junc, 0.16);
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_edit_thermal_bridgings(mut test_input: InputForProcessing) {
+        let test_input = test_input.borrow_mut();
+
+        edit_thermal_bridging(test_input).unwrap();
+
+        for thermal_bridging in test_input.all_thermal_bridgings() {
+            match thermal_bridging {
+                ThermalBridging::ThermalBridgingNumber(_) => {}
+                ThermalBridging::ThermalBridgingElements(elements) => {
+                    for bridging in elements.values() {
+                        match bridging {
+                            ThermalBridgingDetails::Point {
+                                heat_transfer_coefficient,
+                                ..
+                            } => {
+                                assert_eq!(*heat_transfer_coefficient, 0.0);
+                            }
+                            ThermalBridgingDetails::Linear {
+                                junction_type,
+                                linear_thermal_transmittance,
+                                ..
+                            } => {
+                                let junction_type = junction_type.as_ref().unwrap().as_str();
+                                assert!(TABLE_R2.contains_key(junction_type));
+                                assert_eq!(*linear_thermal_transmittance, TABLE_R2[junction_type]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
