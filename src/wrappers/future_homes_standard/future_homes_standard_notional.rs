@@ -179,6 +179,7 @@ pub(crate) fn edit_thermal_bridging(input: &mut InputForProcessing) -> anyhow::R
     Ok(())
 }
 
+/// Table R2 from SAP10.2
 static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
     HashMap::from([
         ("E1", 0.05),
