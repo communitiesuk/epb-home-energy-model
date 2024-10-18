@@ -2014,7 +2014,7 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
             "start_day": 0,
             "time_series_step": 1.0,
             "schedule": {
-                "main": [{"repeat": SIMTIME_END, "value": window_opening_setpoint}],
+                "main": [{"repeat": SIMTIME_END as usize, "value": window_opening_setpoint}],
             }
         }),
     )?;
@@ -2027,7 +2027,7 @@ fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Res
             "start_day": 0,
             "time_series_step": 1.0,
             "schedule": {
-                "main": [{"repeat": SIMTIME_END, "value": true}]
+                "main": [{"repeat": SIMTIME_END as usize, "value": true}]
             }
         }),
     )?;
