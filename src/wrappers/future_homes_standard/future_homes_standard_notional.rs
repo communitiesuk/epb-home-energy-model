@@ -1,18 +1,20 @@
 #![allow(dead_code)]
-use core::panic;
-
-use itertools::Itertools;
 
 use crate::{
     compare_floats::max_of_2,
-    core::units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
+    core::{
+        space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
+        units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
+    },
     input::{
         HeatPumpSourceType,
         HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing,
+        InputForProcessing, UValueEditableBuildingElement,
     },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
+use anyhow::bail;
+use itertools::Itertools;
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
 fn apply_fhs_not_preprocessing(
@@ -21,7 +23,7 @@ fn apply_fhs_not_preprocessing(
     _fhs_not_b_assumptions: bool,
     fhs_fee_not_a_assumptions: bool,
     fhs_fee_not_b_assumptions: bool,
-) -> () {
+) {
     let _is_not_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
     let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
     // Check if a heat network is present
@@ -81,8 +83,49 @@ fn edit_lighting_efficacy(input: &mut InputForProcessing) {
     input.set_lighting_efficacy_for_all_zones(lighting_efficacy);
 }
 
-fn edit_opaque_ajdztu_elements(input: &mut InputForProcessing) {
+fn edit_infiltration_ventilation() {
     todo!()
+}
+
+/// Apply notional u-value (W/m2K) to:
+///
+/// external elements: walls (0.18), doors (1.0), roofs (0.11), exposed floors (0.13)
+/// elements adjacent to unheated space: walls (0.18), ceilings (0.11), floors (0.13)
+/// to differenciate external doors from walls, user input: is_external_door
+fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let mut opaque_adjztu_building_elements =
+        input.all_opaque_and_adjztu_building_elements_mut_u_values();
+
+    for building_element in opaque_adjztu_building_elements.iter_mut() {
+        let pitch_class = pitch_class(building_element.pitch());
+        match pitch_class {
+            HeatFlowDirection::Downwards => {
+                building_element.set_u_value(0.13);
+            }
+            HeatFlowDirection::Upwards => {
+                building_element.set_u_value(0.11);
+            }
+            HeatFlowDirection::Horizontal => {
+                building_element.set_u_value(0.18);
+                // exception if external door
+                if building_element.is_opaque() {
+                    match building_element.is_external_door() {
+                        None => {
+                            bail!("Opaque building element input needed value for is_external_door field.");
+                        }
+                        Some(true) => {
+                            building_element.set_u_value(1.0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // remove the r_c input if it was there, as engine would prioritise r_c over u_value
+        building_element.remove_r_c();
+    }
+
+    Ok(())
 }
 
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
@@ -113,14 +156,16 @@ pub fn minimum_air_change_rate(
 
 #[cfg(test)]
 mod tests {
+    use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
+
     use super::*;
+    use crate::input;
     use rstest::{fixture, rstest};
     use std::borrow::BorrowMut;
     use std::io::{BufReader, Cursor};
 
     #[fixture]
     fn test_input() -> InputForProcessing {
-        // TODO use include string
         let reader = BufReader::new(Cursor::new(include_str!(
             "./test_future_homes_standard_notional_input_data.json"
         )));
@@ -170,9 +215,37 @@ mod tests {
         }
     }
 
-    #[ignore = "this test is not correct in Python so has not been ported"]
     #[rstest]
-    fn test_edit_opaque_ajdztu_elements() {
-        todo!("Implement once equivalent python test is fixed. Currently it always passes but no assertions are actually reached and run because of logic that compares pitch (int) to a HeatFlowDirection (enum) and a missing else block.")
+    fn test_edit_opaque_ajdztu_elements(mut test_input: InputForProcessing) {
+        edit_opaque_adjztu_elements(&mut test_input).unwrap();
+
+        for building_element in test_input.all_building_elements() {
+            if let input::BuildingElement::Opaque { .. }
+            | input::BuildingElement::AdjacentZTUSimple { .. } = building_element
+            {
+                if let Some(u_value) = building_element.u_value() {
+                    match pitch_class(building_element.pitch()) {
+                        HeatFlowDirection::Downwards => {
+                            assert_eq!(u_value, 0.13);
+                        }
+                        HeatFlowDirection::Upwards => {
+                            assert_eq!(u_value, 0.11);
+                        }
+                        HeatFlowDirection::Horizontal => {
+                            let expected_u_value = if let input::BuildingElement::Opaque {
+                                is_external_door: Some(true),
+                                ..
+                            } = building_element
+                            {
+                                1.0
+                            } else {
+                                0.18
+                            };
+                            assert_eq!(u_value, expected_u_value);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

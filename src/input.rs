@@ -1749,6 +1749,17 @@ impl BuildingElement {
             BuildingElement::AdjacentZTUSimple { pitch, .. } => pitch,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn u_value(&self) -> Option<f64> {
+        match self {
+            BuildingElement::Opaque { u_value, .. } => *u_value,
+            BuildingElement::Transparent { u_value, .. } => *u_value,
+            BuildingElement::Ground { u_value, .. } => Some(*u_value),
+            BuildingElement::AdjacentZTC { u_value, .. } => *u_value,
+            BuildingElement::AdjacentZTUSimple { u_value, .. } => *u_value,
+        }
+    }
 }
 
 pub(crate) trait TransparentBuildingElement {
@@ -1773,6 +1784,72 @@ impl TransparentBuildingElement for BuildingElement {
         match self {
             BuildingElement::Transparent { security_risk, .. } => security_risk.unwrap_or(false),
             _ => unreachable!(),
+        }
+    }
+}
+
+pub(crate) trait UValueEditableBuildingElement {
+    fn set_u_value(&mut self, new_u_value: f64);
+    fn pitch(&self) -> f64;
+    fn is_opaque(&self) -> bool;
+    fn is_external_door(&self) -> Option<bool>;
+    fn remove_r_c(&mut self);
+}
+impl UValueEditableBuildingElement for BuildingElement {
+    fn set_u_value(&mut self, new_u_value: f64) {
+        match self {
+            BuildingElement::Opaque { u_value, .. } => {
+                *u_value = Some(new_u_value);
+            }
+            BuildingElement::Transparent { u_value, .. } => {
+                *u_value = Some(new_u_value);
+            }
+            BuildingElement::Ground { u_value, .. } => {
+                *u_value = new_u_value;
+            }
+            BuildingElement::AdjacentZTC { u_value, .. } => {
+                *u_value = Some(new_u_value);
+            }
+            BuildingElement::AdjacentZTUSimple { u_value, .. } => {
+                *u_value = Some(new_u_value);
+            }
+        }
+    }
+
+    fn pitch(&self) -> f64 {
+        self.pitch()
+    }
+
+    fn is_opaque(&self) -> bool {
+        matches!(self, Self::Opaque { .. })
+    }
+
+    fn is_external_door(&self) -> Option<bool> {
+        if let Self::Opaque {
+            is_external_door, ..
+        } = self
+        {
+            *is_external_door
+        } else {
+            None
+        }
+    }
+
+    fn remove_r_c(&mut self) {
+        match self {
+            BuildingElement::Opaque { r_c, .. } => {
+                *r_c = None;
+            }
+            BuildingElement::Transparent { r_c, .. } => {
+                *r_c = None;
+            }
+            BuildingElement::AdjacentZTC { r_c, .. } => {
+                *r_c = None;
+            }
+            BuildingElement::AdjacentZTUSimple { r_c, .. } => {
+                *r_c = None;
+            }
+            _ => {}
         }
     }
 }
@@ -3370,6 +3447,31 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|zone| zone.building_elements.values_mut())
             .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
+            .collect()
+    }
+
+    pub(crate) fn all_opaque_and_adjztu_building_elements_mut_u_values(
+        &mut self,
+    ) -> Vec<&mut impl UValueEditableBuildingElement> {
+        self.input
+            .zone
+            .values_mut()
+            .flat_map(|zone| zone.building_elements.values_mut())
+            .filter(|el| {
+                matches!(
+                    el,
+                    BuildingElement::Opaque { .. } | BuildingElement::AdjacentZTUSimple { .. }
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn all_building_elements(&self) -> Vec<&BuildingElement> {
+        self.input
+            .zone
+            .values()
+            .flat_map(|zone| zone.building_elements.values())
             .collect()
     }
 
