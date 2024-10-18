@@ -9,7 +9,7 @@ use crate::{
     input::{
         HeatPumpSourceType,
         HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing, UValueEditableBuildingElement,
+        InputForProcessing, UValueEditableBuildingElement, GroundBuildingElement
     },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
@@ -123,6 +123,23 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
         }
         // remove the r_c input if it was there, as engine would prioritise r_c over u_value
         building_element.remove_r_c();
+    }
+
+    Ok(())
+}
+
+/// Apply notional building ground specifications
+///
+///     u-value = 0.13 W/m2.K
+///     thermal resistance of the floor construction,excluding the ground, r_f = 6.12 m2.K/W
+///     linear thermal transmittance, psi_wall_floor_junc = 0.16 W/m.K
+pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    // TODO (from Python) waiting from MHCLG/DESNZ for clarification if basement floors and basement walls are treated the same
+
+    for building_element in input.all_ground_building_elements_mut() {
+        building_element.set_u_value(0.13);
+        building_element.set_r_f(6.12);
+        building_element.set_psi_wall_floor_junc(0.16);
     }
 
     Ok(())
@@ -245,6 +262,21 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_edit_ground_floors(mut test_input: InputForProcessing) {
+        let test_input = test_input.borrow_mut();
+
+        edit_ground_floors(test_input).unwrap();
+
+        for building_element in test_input.all_building_elements() {
+            if let input::BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = building_element {
+                assert_eq!(*u_value, 0.13);
+                assert_eq!(*r_f, 6.12);
+                assert_eq!(*psi_wall_floor_junc, 0.16);
             }
         }
     }

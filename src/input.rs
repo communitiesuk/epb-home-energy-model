@@ -1788,6 +1788,41 @@ impl TransparentBuildingElement for BuildingElement {
     }
 }
 
+pub(crate) trait GroundBuildingElement {
+    fn set_u_value(&mut self, new_u_value: f64);
+    fn set_r_f(&mut self, new_r_f: f64);
+    fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64);
+}
+
+impl GroundBuildingElement for BuildingElement {
+    fn set_u_value(&mut self, new_u_value: f64) {
+        match self {
+            Self::Ground { u_value, ..} => {
+                *u_value = new_u_value;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn set_r_f(&mut self, new_r_f: f64) {
+        match self {
+            Self::Ground { r_f, .. } => {
+                *r_f = new_r_f;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64) {
+        match self {
+            Self::Ground { psi_wall_floor_junc, .. } => {
+                *psi_wall_floor_junc = new_psi_wall_floor_junc;
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 pub(crate) trait UValueEditableBuildingElement {
     fn set_u_value(&mut self, new_u_value: f64);
     fn pitch(&self) -> f64;
@@ -3447,6 +3482,15 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|zone| zone.building_elements.values_mut())
             .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
+            .collect()
+    }
+
+    pub(crate) fn all_ground_building_elements_mut(&mut self) -> Vec<&mut impl GroundBuildingElement> {
+        self.input
+            .zone
+            .values_mut()
+            .flat_map(|zone| zone.building_elements.values_mut())
+            .filter(|el| matches!(el, BuildingElement::Ground { .. }))
             .collect()
     }
 
