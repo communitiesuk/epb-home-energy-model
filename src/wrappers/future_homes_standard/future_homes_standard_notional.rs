@@ -344,7 +344,27 @@ fn add_wwhrs(
 
     Ok(())
 }
-/// Calculate effective air change rate accoring to according to Part F 1.24 a
+
+fn calculate_daily_losses(cylinder_vol: f64) -> f64 {
+    const CYLINDER_LOSS: f64 = 0.005;
+    const FACTORY_INSULATED_THICKNESS_COEFF: f64 = 0.55;
+    const THICKNESS: f64 = 120.; // mm
+
+    // calculate cylinder factor insulated factor
+    let cylinder_heat_loss_factor =
+        CYLINDER_LOSS + FACTORY_INSULATED_THICKNESS_COEFF / (THICKNESS + 4.0);
+
+    // calculate volume factor
+    let vol_factor = (120. / cylinder_vol).powf(1. / 3.);
+
+    // Temperature factor
+    let temp_factor = 0.6 * 0.9;
+
+    // Calculate daily losses
+    cylinder_heat_loss_factor * vol_factor * temp_factor * cylinder_vol
+}
+
+/// Calculate effective air change rate according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
     total_floor_area: f64,
@@ -380,6 +400,7 @@ mod tests {
         Baths, OtherWaterUses, Shower, Showers, ThermalBridging, ThermalBridgingDetails,
         WasteWaterHeatRecovery, ZoneDictionary,
     };
+    use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
     use serde_json::json;
     use std::borrow::BorrowMut;
@@ -666,5 +687,17 @@ mod tests {
                 panic!()
             }
         }
+    }
+
+    #[rstest]
+    fn test_calculate_daily_losses() {
+        let cylinder_vol = 265.;
+        let actual_daily_losses = calculate_daily_losses(cylinder_vol);
+        let expected_daily_losses = 1.03685;
+        assert_relative_eq!(
+            actual_daily_losses,
+            expected_daily_losses,
+            max_relative = 1E-6
+        );
     }
 }
