@@ -7,9 +7,9 @@ use crate::{
         units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
     },
     input::{
-        GroundBuildingElement, HeatPumpSourceType,
+        BuildingElement, GroundBuildingElement, HeatPumpSourceType,
         HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement,
+        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement, ZoneDictionary,
     },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
@@ -128,6 +128,52 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
     }
 
     Ok(())
+}
+
+/// Calculate max glazing area fraction for notional building, adjusted for rooflights
+fn calc_max_glazing_area_fraction(
+    zones: &ZoneDictionary,
+    total_floor_area: f64,
+) -> anyhow::Result<f64> {
+    let mut total_rooflight_area = 0.0;
+    let mut sum_uval_times_area = 0.0;
+
+    let transparent_building_elements = zones
+        .values()
+        .flat_map(|zone| {
+            zone.building_elements
+                .values()
+                .filter(|element| matches!(element, BuildingElement::Transparent { .. }))
+        })
+        .collect_vec();
+    for element in transparent_building_elements {
+        if pitch_class(element.pitch()) != HeatFlowDirection::Upwards {
+            continue;
+        }
+        if let BuildingElement::Transparent {
+            height,
+            width,
+            u_value,
+            ..
+        } = element
+        {
+            let rooflight_area = height * width;
+            total_rooflight_area += rooflight_area;
+            sum_uval_times_area += rooflight_area
+                * u_value.ok_or_else(|| {
+                    anyhow!("FHS notional wrapper needs transparent building elements to have u values set.")
+                })?;
+        }
+    }
+    let rooflight_correction_factor = if total_rooflight_area == 0.0 {
+        0.0
+    } else {
+        let average_rooflight_uval = sum_uval_times_area / total_rooflight_area;
+        let rooflight_proportion = total_rooflight_area / total_floor_area;
+        (rooflight_proportion * (average_rooflight_uval - 1.2) / 1.2).max(0.0)
+    };
+
+    Ok(0.25 - rooflight_correction_factor)
 }
 
 /// Apply notional building ground specifications
@@ -261,8 +307,9 @@ mod tests {
 
     use super::*;
     use crate::input;
-    use crate::input::{ThermalBridging, ThermalBridgingDetails};
+    use crate::input::{ThermalBridging, ThermalBridgingDetails, ZoneDictionary};
     use rstest::{fixture, rstest};
+    use serde_json::json;
     use std::borrow::BorrowMut;
     use std::io::{BufReader, Cursor};
 
@@ -404,5 +451,56 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[rstest]
+    fn test_calc_max_glazing_area_fraction() {
+        assert_eq!(
+            calc_max_glazing_area_fraction(&zone_input_for_max_glazing_area_test(1.5, None), 80.0)
+                .unwrap(),
+            0.24375,
+            "incorrect max glazing area fraction"
+        );
+        assert_eq!(
+            calc_max_glazing_area_fraction(&zone_input_for_max_glazing_area_test(1.0, None), 80.0)
+                .unwrap(),
+            0.25,
+            "incorrect max glazing area fraction"
+        );
+        assert_eq!(
+            calc_max_glazing_area_fraction(
+                &zone_input_for_max_glazing_area_test(1.5, Some(90.)),
+                80.0
+            )
+            .unwrap(),
+            0.25,
+            "incorrect max glazing area fraction when there are no rooflights"
+        );
+    }
+
+    fn zone_input_for_max_glazing_area_test(
+        u_value: f64,
+        pitch_override: Option<f64>,
+    ) -> ZoneDictionary {
+        serde_json::from_value(json!({"test_zone": {
+            "BuildingElement": {
+                "test_rooflight": {
+                    "type": "BuildingElementTransparent",
+                    "pitch": pitch_override.unwrap_or(0.0),
+                    "height": 2.0,
+                    "width": 1.0,
+                    "u_value": u_value,
+                    "orientation360": 0.0,
+                    "g_value": 0.0,
+                    "frame_area_fraction": 0.0,
+                    "base_height": 0.0,
+                    "shading": [],
+                }
+            },
+            "ThermalBridging": 1.0,
+            "area": 10.0,
+            "volume": 20.0
+        }}))
+        .unwrap()
     }
 }
