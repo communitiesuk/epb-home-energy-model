@@ -335,7 +335,7 @@ impl TryFrom<EnergySupplyType> for FuelType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EnergySupplyType {
@@ -860,7 +860,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ColdWaterSourceType {
@@ -1165,7 +1165,7 @@ pub struct HotWaterDemand {
     pub water_distribution: Option<WaterDistribution>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Showers(pub IndexMap<String, Shower>);
@@ -1183,7 +1183,7 @@ impl Showers {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
@@ -1205,7 +1205,7 @@ pub enum Shower {
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1226,7 +1226,7 @@ impl Baths {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1237,7 +1237,7 @@ pub struct BathDetails {
     pub flowrate: f64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1254,7 +1254,7 @@ impl OtherWaterUses {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -3253,6 +3253,11 @@ impl InputForProcessing {
         self.input.water_heating_events = Default::default();
     }
 
+    #[cfg(test)]
+    pub(crate) fn showers(&self) -> Option<&Showers> {
+        self.input.hot_water_demand.shower.as_ref()
+    }
+
     pub fn shower_keys(&self) -> Vec<String> {
         match self.input.hot_water_demand.shower.as_ref() {
             Some(shower) => shower.keys(),
@@ -3265,6 +3270,11 @@ impl InputForProcessing {
             Some(shower) => shower.name_refers_to_instant_electric_shower(name),
             None => false,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn baths(&self) -> Option<&Baths> {
+        self.input.hot_water_demand.bath.as_ref()
     }
 
     pub fn bath_keys(&self) -> Vec<String> {
@@ -3288,6 +3298,11 @@ impl InputForProcessing {
             .bath
             .as_ref()
             .and_then(|bath| bath.flowrate_for_field(field))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn other_water_uses(&self) -> Option<&OtherWaterUses> {
+        self.input.hot_water_demand.other_water_use.as_ref()
     }
 
     pub fn other_water_use_keys(&self) -> Vec<String> {

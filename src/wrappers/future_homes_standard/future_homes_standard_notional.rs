@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::input::ColdWaterSourceType;
 use crate::{
     compare_floats::max_of_2,
     core::{
@@ -15,8 +16,13 @@ use crate::{
 };
 use anyhow::{anyhow, bail};
 use itertools::Itertools;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+
+const NOTIONAL_BATH_NAME: &str = "medium";
+const NOTIONAL_SHOWER_NAME: &str = "mixer";
+const NOTIONAL_OTHER_HW_NAME: &str = "other";
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
 fn apply_fhs_not_preprocessing(
@@ -275,6 +281,37 @@ static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
     ])
 });
 
+fn edit_bath_shower_other(
+    input: &mut InputForProcessing,
+    cold_water_source_type: ColdWaterSourceType,
+) -> anyhow::Result<()> {
+    // Define Bath, Shower, and Other DHW outlet
+    let notional_bath = json!({ NOTIONAL_BATH_NAME: {
+            "ColdWaterSource": cold_water_source_type,
+            "flowrate": 12,
+            "size": 73
+        }
+    });
+    input.set_bath(notional_bath)?;
+
+    let notional_shower = json!({ NOTIONAL_SHOWER_NAME: {
+            "ColdWaterSource": cold_water_source_type,
+            "flowrate": 8,
+            "type": "MixerShower"
+        }
+    });
+    input.set_shower(notional_shower)?;
+
+    let notional_other_hw = json!({ NOTIONAL_OTHER_HW_NAME: {
+            "ColdWaterSource": cold_water_source_type,
+            "flowrate": 6,
+        }
+    });
+    input.set_other_water_use(notional_other_hw)?;
+
+    Ok(())
+}
+
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -307,7 +344,9 @@ mod tests {
 
     use super::*;
     use crate::input;
-    use crate::input::{ThermalBridging, ThermalBridgingDetails, ZoneDictionary};
+    use crate::input::{
+        Baths, OtherWaterUses, Showers, ThermalBridging, ThermalBridgingDetails, ZoneDictionary,
+    };
     use rstest::{fixture, rstest};
     use serde_json::json;
     use std::borrow::BorrowMut;
@@ -502,5 +541,41 @@ mod tests {
             "volume": 20.0
         }}))
         .unwrap()
+    }
+
+    #[rstest]
+    fn test_edit_bath_shower_other(mut test_input: InputForProcessing) {
+        // this is the only cold water source type in the test input JSON file
+        let cold_water_source_type = ColdWaterSourceType::MainsWater;
+        let cold_water_source_type_string = "mains water";
+
+        edit_bath_shower_other(&mut test_input, cold_water_source_type).unwrap();
+
+        let expected_baths: Baths = serde_json::from_value(json!({ "medium": {
+            "ColdWaterSource": cold_water_source_type_string,
+            "flowrate": 12,
+            "size": 73
+        }}))
+        .unwrap();
+
+        let expected_showers: Showers = serde_json::from_value(json!({"mixer": {
+            "ColdWaterSource": cold_water_source_type_string,
+            "flowrate": 8,
+            "type": "MixerShower"
+        }}))
+        .unwrap();
+
+        let expected_other: OtherWaterUses = serde_json::from_value(json!({"other": {
+            "ColdWaterSource": cold_water_source_type_string,
+            "flowrate": 6,
+        }}))
+        .unwrap();
+
+        assert_eq!(test_input.baths().unwrap().clone(), expected_baths);
+        assert_eq!(test_input.showers().unwrap().clone(), expected_showers);
+        assert_eq!(
+            test_input.other_water_uses().unwrap().clone(),
+            expected_other
+        );
     }
 }
