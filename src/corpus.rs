@@ -2142,28 +2142,6 @@ fn external_conditions_from_input(
 
 pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, ColdWaterSource>;
 
-// pub struct ColdWaterSources {
-//     mains_water: Option<ColdWaterSource>,
-//     header_tank: Option<ColdWaterSource>,
-// }
-
-// impl ColdWaterSources {
-//     pub fn ref_for_mains_water(&self) -> Option<ColdWaterSource> {
-//         self.mains_water.clone()
-//     }
-//
-//     pub fn ref_for_header_tank(&self) -> Option<ColdWaterSource> {
-//         self.header_tank.clone()
-//     }
-//
-//     pub fn ref_for_type(&self, source_type: ColdWaterSourceType) -> Option<ColdWaterSource> {
-//         match source_type {
-//             ColdWaterSourceType::MainsWater => self.ref_for_mains_water(),
-//             ColdWaterSourceType::HeaderTank => self.ref_for_header_tank(),
-//         }
-//     }
-// }
-
 fn cold_water_sources_from_input(
     input: &ColdWaterSourceInput,
     simulation_time: &SimulationTime,
@@ -4001,7 +3979,7 @@ fn hot_water_source_from_input(
                     name.as_str(),
                     hs,
                     &cold_water_source,
-                    *setpoint_temp,
+                    setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                     *volume,
                     *daily_losses,
                     heat_exchanger_surface_area,
@@ -4030,8 +4008,8 @@ fn hot_water_source_from_input(
             let storage_tank = Arc::new(Mutex::new(StorageTank::new(
                 *volume,
                 *daily_losses,
-                *min_temp,
-                *setpoint_temp,
+                min_temp.ok_or_else(|| anyhow!("A min temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
+                setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources,
@@ -4123,6 +4101,7 @@ fn hot_water_source_from_input(
             cold_water_source: cold_water_source_type,
             energy_supply,
             setpoint_temp,
+            ..
         } => {
             let energy_supply = energy_supplies
                 .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;

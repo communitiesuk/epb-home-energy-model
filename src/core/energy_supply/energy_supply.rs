@@ -98,6 +98,27 @@ impl EnergySupplies {
     }
 }
 
+impl Default for EnergySupplies {
+    fn default() -> Self {
+        Self {
+            mains_electricity: None,
+            mains_gas: None,
+            bulk_lpg: None,
+            bottled_lpg: None,
+            condition_11f_lpg: None,
+            custom: None,
+            heat_network: None,
+            unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
+                FuelType::UnmetDemand,
+                0,
+                None,
+                None,
+                None,
+            ))),
+        }
+    }
+}
+
 /// An object to represent the connection of a system that consumes energy to the energy supply
 ///
 /// This object encapsulates the name of the connection, meaning that the

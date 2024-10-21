@@ -1,5 +1,3 @@
-use indexmap::IndexMap;
-
 use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
@@ -17,6 +15,7 @@ use crate::input::{
     WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use std::collections::HashMap;

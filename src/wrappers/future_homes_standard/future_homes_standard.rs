@@ -43,15 +43,15 @@ const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
 const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
 const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
 
-const SIMTIME_START: f64 = 0.;
-const SIMTIME_END: f64 = 8760.;
-const SIMTIME_STEP: f64 = 0.5;
+pub(crate) const SIMTIME_START: f64 = 0.;
+pub(crate) const SIMTIME_END: f64 = 8760.;
+pub(crate) const SIMTIME_STEP: f64 = 0.5;
 fn simtime() -> SimulationTime {
     SimulationTime::new(SIMTIME_START, SIMTIME_END, SIMTIME_STEP)
 }
 
 // Central point for hot water temperature (temp_hot_water) across the code
-const HW_TEMPERATURE: f64 = 52.0;
+pub(super) const HW_TEMPERATURE: f64 = 52.0;
 
 pub fn apply_fhs_preprocessing(
     input: &mut InputForProcessing,
@@ -513,14 +513,17 @@ fn calc_tfa_from_finalised_input(input: &Input) -> f64 {
     input.zone.values().map(|z| z.area).sum::<f64>()
 }
 
-fn calc_nbeds(input: &InputForProcessing) -> anyhow::Result<usize> {
+pub(super) fn calc_nbeds(input: &InputForProcessing) -> anyhow::Result<usize> {
     match input.number_of_bedrooms() {
         Some(bedrooms) => Ok(bedrooms),
         None => bail!("missing NumberOfBedrooms - required for FHS calculation"),
     }
 }
 
-fn calc_n_occupants(total_floor_area: f64, number_of_bedrooms: usize) -> anyhow::Result<f64> {
+pub(super) fn calc_n_occupants(
+    total_floor_area: f64,
+    number_of_bedrooms: usize,
+) -> anyhow::Result<f64> {
     if total_floor_area <= 0. {
         bail!("Invalid floor area: {total_floor_area}");
     }
@@ -1887,7 +1890,7 @@ fn check_shower_flowrate(input: &InputForProcessing) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_hot_water_use_pattern(
+pub(super) fn create_hot_water_use_pattern(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
     cold_water_feed_temps: &[f64],
@@ -1916,6 +1919,7 @@ fn create_hot_water_use_pattern(
 
     let mut hw_event_gen = HotWaterEventGenerator::new(vol_hw_daily_average, None, None)?;
     let ref_event_list = hw_event_gen.build_annual_hw_events(startmod)?;
+
     let mut ref_hw_vol = 0.;
 
     for event in &ref_event_list {
@@ -2454,7 +2458,9 @@ const COOLING_SUBSCHEDULE_RESTOFDWELLING: [Option<f64>; 48] = [
     Some(COOLING_SETPOINT),
 ];
 
-fn create_cold_water_feed_temps(input: &mut InputForProcessing) -> anyhow::Result<Vec<f64>> {
+pub(super) fn create_cold_water_feed_temps(
+    input: &mut InputForProcessing,
+) -> anyhow::Result<Vec<f64>> {
     // 24-hour average feed temperature (degrees Celsius) per month m. SAP 10.2 Table J1
     let t24m_header_tank = [
         11.1, 11.3, 12.3, 14.5, 16.2, 18.8, 21.3, 19.3, 18.7, 16.2, 13.2, 11.2,

@@ -1,5 +1,5 @@
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::input::{InputForProcessing, WaterHeatingEventType};
+use crate::input::{ColdWaterSourceType, InputForProcessing, WaterHeatingEventType};
 use crate::wrappers::future_homes_standard::future_homes_standard::HourlyHotWaterEvent;
 use anyhow::bail;
 use csv::Reader;
@@ -11,6 +11,7 @@ use rand_distr::{Distribution, Poisson};
 use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::io::{BufReader, Cursor};
 use std::iter::Iterator;
 use std::rc::Rc;
@@ -30,6 +31,7 @@ const OTHER_HW_FACTOR_M: [f64; 13] = [
     1.10, 1.06, 1.02, 0.98, 0.94, 0.90, 0.90, 0.94, 0.98, 1.02, 1.06, 1.10, 1.00,
 ];
 
+#[derive(Debug)]
 pub struct DrawoffGenerator {
     showers: Vec<Drawoff>,
     baths: Vec<Drawoff>,
@@ -136,17 +138,12 @@ pub fn reset_events_and_provide_drawoff_generator(
     // so this choice only affects how sharp peaks in HW demand can be.
     if other.is_empty() {
         let feed_type = if input.cold_water_source_has_header_tank() {
-            "header tank"
+            ColdWaterSourceType::HeaderTank
         } else {
-            "mains water"
+            ColdWaterSourceType::MainsWater
         };
 
-        input
-            .set_other_water_use_details(feed_type, 8.0)
-            .unwrap_or_else(|_| {
-                // we can panic here because only reasons for failure are the feed type strings we've just set
-                panic!("Feed type {feed_type} was not a known type of cold water source")
-            });
+        input.set_other_water_use_details(feed_type, 8.0);
         let other_flow_rate = input
             .flow_rate_for_other_water_use_field("other")
             .unwrap_or_else(|| {
@@ -232,6 +229,16 @@ pub struct Drawoff {
 impl Drawoff {
     pub fn call_duration_fn(&mut self, event: HourEvent) -> f64 {
         self.duration_fn.lock()(event.into())
+    }
+}
+
+impl Debug for Drawoff {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Drawoff")
+            .field("event_type", &self.event_type)
+            .field("name", &self.name)
+            .field("duration_fn", &"duration_fn content hidden")
+            .finish_non_exhaustive()
     }
 }
 

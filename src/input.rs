@@ -48,7 +48,6 @@ pub struct Input {
     #[allow(dead_code)]
     #[serde(rename = "PartO_active_cooling_required")]
     part_o_active_cooling_required: Option<bool>,
-    #[allow(dead_code)]
     ground_floor_area: Option<f64>,
     number_of_bedrooms: Option<usize>,
     #[allow(dead_code)]
@@ -463,9 +462,9 @@ pub(crate) type ColdWaterSourceInput = IndexMap<ColdWaterSourceType, ColdWaterSo
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ColdWaterSourceDetails {
-    pub start_day: u32,
-    pub temperatures: Vec<f64>,
-    pub time_series_step: f64,
+    pub(crate) start_day: u32,
+    pub(crate) temperatures: Vec<f64>,
+    pub(crate) time_series_step: f64,
 }
 
 pub(crate) type CoreControls = Vec<HeatSourceControl>;
@@ -607,7 +606,7 @@ pub enum ControlLogicType {
     Manual,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -650,7 +649,7 @@ pub enum BoilerHotWaterTest {
     NoAdditionalTests,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -659,8 +658,8 @@ pub enum HotWaterSourceDetails {
         volume: f64,
         daily_losses: f64,
         heat_exchanger_surface_area: Option<f64>,
-        min_temp: f64,
-        setpoint_temp: f64,
+        min_temp: Option<f64>,
+        setpoint_temp: Option<f64>,
         #[serde(rename = "Control_hold_at_setpnt")]
         control_hold_at_setpoint: Option<String>,
         #[serde(rename = "ColdWaterSource")]
@@ -797,8 +796,8 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             ..
         } = self
         {
-            *min_temp_store = min_temp;
-            *setpoint_temp_store = setpoint_temp;
+            *min_temp_store = Some(min_temp);
+            *setpoint_temp_store = Some(setpoint_temp);
         }
     }
 
@@ -808,7 +807,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
                 setpoint_temp: ref mut source_setpoint_temp,
                 ..
             } => {
-                *source_setpoint_temp = setpoint_temp;
+                *source_setpoint_temp = Some(setpoint_temp);
             }
             HotWaterSourceDetails::CombiBoiler {
                 setpoint_temp: ref mut source_setpoint_temp,
@@ -828,7 +827,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *source_setpoint_temp = Some(setpoint_temp);
             }
-            HotWaterSourceDetails::HeatBattery {} => {}
+            HotWaterSourceDetails::HeatBattery { .. } => {}
         }
     }
 }
@@ -843,7 +842,7 @@ pub enum ColdWaterSourceType {
     HeaderTank,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceWetType {
@@ -865,7 +864,7 @@ impl HeatSourceWetType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize_enum_str)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceControlType {
@@ -889,7 +888,7 @@ pub(crate) enum HeatSourceControl {
     WindowOpening(ControlDetails),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -1033,7 +1032,7 @@ impl HeatSource {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SolarCellLocation {
@@ -1045,7 +1044,7 @@ pub enum SolarCellLocation {
     Nhs,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1056,7 +1055,7 @@ pub struct HeatPumpHotWaterTestData {
     pub m: HeatPumpHotWaterOnlyTestDatum,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1088,7 +1087,7 @@ pub struct WaterPipeworkSimple {
     pub length: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1103,7 +1102,7 @@ pub struct WaterPipework {
     pub pipe_contents: WaterPipeContentsType,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterPipeworkLocation {
@@ -1113,7 +1112,7 @@ pub enum WaterPipeworkLocation {
     External,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterPipeContentsType {
@@ -2235,7 +2234,7 @@ pub enum HeatSourceLocation {
     External,
 }
 
-pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
+pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -3145,6 +3144,11 @@ impl InputForProcessing {
             .advanced_start())
     }
 
+    #[cfg(test)]
+    pub(crate) fn hot_water_source(&self) -> &HotWaterSource {
+        &self.input.hot_water_source
+    }
+
     pub fn hot_water_source_keys(&self) -> Vec<String> {
         self.input.hot_water_source.source_keys()
     }
@@ -3226,7 +3230,6 @@ impl InputForProcessing {
         self.input.water_heating_events = Default::default();
     }
 
-    #[cfg(test)]
     pub(crate) fn showers(&self) -> Option<&Showers> {
         self.input.hot_water_demand.shower.as_ref()
     }
@@ -3267,7 +3270,6 @@ impl InputForProcessing {
         Ok(())
     }
 
-    #[cfg(test)]
     pub(crate) fn baths(&self) -> Option<&Baths> {
         self.input.hot_water_demand.bath.as_ref()
     }
@@ -3295,7 +3297,6 @@ impl InputForProcessing {
             .and_then(|bath| bath.flowrate_for_field(field))
     }
 
-    #[cfg(test)]
     pub(crate) fn other_water_uses(&self) -> Option<&OtherWaterUses> {
         self.input.hot_water_demand.other_water_use.as_ref()
     }
@@ -3317,12 +3318,12 @@ impl InputForProcessing {
 
     pub fn set_other_water_use_details(
         &mut self,
-        cold_water_source_type: impl Into<String>,
+        cold_water_source_type: ColdWaterSourceType,
         flowrate: f64,
-    ) -> anyhow::Result<()> {
+    ) {
         let other_details = OtherWaterUseDetails {
             flowrate,
-            cold_water_source: serde_json::from_str(cold_water_source_type.into().as_str())?,
+            cold_water_source: cold_water_source_type,
         };
 
         match self.input.hot_water_demand.other_water_use {
@@ -3335,8 +3336,10 @@ impl InputForProcessing {
                 )));
             }
         }
+    }
 
-        Ok(())
+    pub(crate) fn water_distribution(&self) -> Option<&WaterDistribution> {
+        self.input.hot_water_demand.water_distribution.as_ref()
     }
 
     /// Override all the vol_hw_daily_average values on the heat pump hot water only heat sources.
@@ -3443,7 +3446,6 @@ impl InputForProcessing {
         self
     }
 
-    #[cfg(test)]
     pub(crate) fn wwhrs(&self) -> Option<&WasteWaterHeatRecovery> {
         self.input.waste_water_heat_recovery.as_ref()
     }
@@ -3755,6 +3757,36 @@ impl InputForProcessing {
 
     pub(crate) fn build_type(&self) -> BuildType {
         self.input.general.build_type
+    }
+
+    pub(crate) fn hot_water_cylinder_volume(&self) -> Option<f64> {
+        self.input.hot_water_source.hot_water_cylinder.volume()
+    }
+
+    pub(crate) fn ground_floor_area(&self) -> Option<f64> {
+        self.input.ground_floor_area
+    }
+
+    pub(crate) fn primary_pipework_clone(&self) -> Option<Vec<WaterPipework>> {
+        match &self.input.hot_water_source.hot_water_cylinder {
+            HotWaterSourceDetails::StorageTank {
+                primary_pipework, ..
+            } => primary_pipework.clone(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn water_heating_event_by_type_and_name(
+        &self,
+        event_type: WaterHeatingEventType,
+        event_name: &str,
+    ) -> Option<&[WaterHeatingEvent]> {
+        self.input
+            .water_heating_events
+            .0
+            .get(&event_type)
+            .and_then(|events| events.get(event_name))
+            .map(|events| events.as_slice())
     }
 }
 

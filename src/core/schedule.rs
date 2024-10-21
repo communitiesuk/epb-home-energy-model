@@ -1,4 +1,4 @@
-use crate::input::WaterHeatingEvent;
+use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
 use anyhow::{anyhow, bail};
 use serde_json::Value;
 
@@ -29,6 +29,16 @@ pub enum WaterScheduleEventType {
     Shower,
     Bath,
     Other,
+}
+
+impl From<WaterHeatingEventType> for WaterScheduleEventType {
+    fn from(value: WaterHeatingEventType) -> Self {
+        match value {
+            WaterHeatingEventType::Shower => Self::Shower,
+            WaterHeatingEventType::Bath => Self::Bath,
+            WaterHeatingEventType::Other => Self::Other,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -128,7 +138,7 @@ pub fn expand_events_from_json_values(
 /// * `name`
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
-pub fn expand_events(
+pub(crate) fn expand_events(
     events: Vec<ScheduleEvent>,
     simulation_timestep: f64,
     total_timesteps: usize,

@@ -1,6 +1,24 @@
 #![allow(dead_code)]
 
-use crate::input::{BuildType, ColdWaterSourceType};
+use crate::core::energy_supply::energy_supply::EnergySupplies;
+use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
+use crate::core::schedule::{expand_events, TypedScheduleEvent};
+use crate::core::units::convert_profile_to_daily;
+use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+use crate::core::water_heat_demand::dhw_demand::{
+    DomesticHotWaterDemand, DomesticHotWaterDemandData,
+};
+use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::corpus::ColdWaterSources;
+use crate::input::{
+    BuildType, ColdWaterSourceType, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
+};
+use crate::simulation_time::SimulationTime;
+use crate::statistics::{np_interp, percentile};
+use crate::wrappers::future_homes_standard::future_homes_standard::{
+    calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
+    HW_TEMPERATURE, SIMTIME_END, SIMTIME_START, SIMTIME_STEP,
+};
 use crate::{
     compare_floats::max_of_2,
     core::{
@@ -15,12 +33,15 @@ use crate::{
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
 use anyhow::{anyhow, bail};
+use indexmap::IndexMap;
 use itertools::Itertools;
+use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
+const NOTIONAL_HP: &str = "notional_HP";
 const NOTIONAL_BATH_NAME: &str = "medium";
 const NOTIONAL_SHOWER_NAME: &str = "mixer";
 const NOTIONAL_OTHER_HW_NAME: &str = "other";
@@ -364,6 +385,223 @@ fn calculate_daily_losses(cylinder_vol: f64) -> f64 {
     cylinder_heat_loss_factor * vol_factor * temp_factor * cylinder_vol
 }
 
+fn calc_daily_hw_demand(
+    input: &mut InputForProcessing,
+    total_floor_area: f64,
+    cold_water_source_type: ColdWaterSourceType,
+) -> anyhow::Result<Vec<f64>> {
+    // create SimulationTime
+    let simtime = SimulationTime::new(SIMTIME_START, SIMTIME_END, SIMTIME_STEP);
+
+    // create ColdWaterSource
+    let cold_water_feed_temps = create_cold_water_feed_temps(input)?;
+    let cold_water_sources: ColdWaterSources = input
+        .cold_water_source()
+        .iter()
+        .map(|(key, source)| {
+            (
+                *key,
+                ColdWaterSource::new(
+                    source.temperatures.clone(),
+                    &simtime,
+                    source.start_day,
+                    source.time_series_step,
+                ),
+            )
+        })
+        .collect();
+
+    let wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>> = if let Some(waste_water_heat_recovery) =
+        input.wwhrs()
+    {
+        let notional_wwhrs = waste_water_heat_recovery.get(NOTIONAL_WWHRS).ok_or_else(|| anyhow!("A {} entry for WWHRS was expected to have been set in the FHS Notional wrapper.", NOTIONAL_WWHRS))?;
+        [(
+            NOTIONAL_WWHRS.to_owned(),
+            Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
+                WWHRSInstantaneousSystemB::new(
+                    cold_water_sources
+                        .get(&notional_wwhrs.cold_water_source)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "A cold water source could not be found with the type '{:?}'.",
+                                notional_wwhrs.cold_water_source
+                            )
+                        })?
+                        .clone(),
+                    notional_wwhrs.flow_rates.clone(),
+                    notional_wwhrs.efficiencies.clone(),
+                    notional_wwhrs.utilisation_factor,
+                ),
+            ))),
+        )]
+        .into()
+    } else {
+        Default::default()
+    };
+
+    let nbeds = calc_nbeds(input)?;
+    let number_of_occupants = calc_n_occupants(total_floor_area, nbeds)?;
+    create_hot_water_use_pattern(input, number_of_occupants, &cold_water_feed_temps)?;
+    let sim_timestep = simtime.step;
+    let total_timesteps = simtime.total_steps();
+    let event_types_names_list = [
+        (WaterHeatingEventType::Shower, NOTIONAL_SHOWER_NAME),
+        (WaterHeatingEventType::Bath, NOTIONAL_BATH_NAME),
+        (WaterHeatingEventType::Other, NOTIONAL_OTHER_HW_NAME),
+    ];
+
+    // Initialize a single schedule dictionary
+    let mut event_schedules: Vec<Option<Vec<TypedScheduleEvent>>> = vec![None; total_timesteps];
+
+    // Populate the event_schedules dictionary using the modified expand_events function
+    for (event_type, event_name) in event_types_names_list {
+        let event_data = input.water_heating_event_by_type_and_name(event_type, event_name).ok_or_else(|| anyhow!("FHS Notional wrapper expected water heating events with type '{event_type:?}' and name '{event_name}'"))?.iter().map(Into::into).collect::<Vec<_>>();
+        event_schedules = expand_events(
+            event_data,
+            sim_timestep,
+            total_timesteps,
+            event_name,
+            event_type.into(),
+            event_schedules,
+        )?;
+    }
+
+    let mut dhw_demand = DomesticHotWaterDemand::new(
+        input.showers().cloned().unwrap_or_default(),
+        input.baths().cloned().unwrap_or_default(),
+        input.other_water_uses().cloned().unwrap_or_default(),
+        input.water_distribution().cloned(),
+        &cold_water_sources,
+        &wwhrs,
+        &EnergySupplies::default(),
+        event_schedules,
+    )?;
+
+    // For each timestep, calculate HW draw
+    let total_steps = simtime.total_steps();
+    let mut hw_energy_demand = vec![0.0; total_steps];
+    for (t_idx, t_it) in simtime.iter().enumerate() {
+        let DomesticHotWaterDemandData { hw_demand_vol, .. } =
+            dhw_demand.hot_water_demand(t_it, HW_TEMPERATURE);
+
+        // Convert from litres to kWh
+        let cold_water_temperature = cold_water_sources[&cold_water_source_type].temperature(t_it);
+        hw_energy_demand[t_idx] =
+            water_demand_to_kwh(hw_demand_vol, HW_TEMPERATURE, cold_water_temperature);
+    }
+
+    Ok(convert_profile_to_daily(&hw_energy_demand, simtime.step))
+}
+
+fn edit_storagetank(
+    input: &mut InputForProcessing,
+    cold_water_source_type: ColdWaterSourceType,
+    total_floor_area: f64,
+) -> anyhow::Result<()> {
+    let cylinder_vol = match input.hot_water_cylinder_volume() {
+        Some(volume) => volume,
+        None => {
+            let daily_hwd = calc_daily_hw_demand(input, total_floor_area, cold_water_source_type)?;
+            calculate_cylinder_volume(&daily_hwd)
+        }
+    };
+
+    // Calculate daily losses
+    let daily_losses = calculate_daily_losses(cylinder_vol);
+
+    // Modify primary pipework characteristics
+    let primary_pipework = edit_primary_pipework(input, total_floor_area)?;
+
+    // Modify cylinder characteristics
+    input.set_hot_water_cylinder(json!({
+        "ColdWaterSource": cold_water_source_type,
+            "HeatSource": {
+                NOTIONAL_HP: {
+                    "ColdWaterSource": cold_water_source_type,
+                    "EnergySupply": "mains elec",
+                    "heater_position": 0.1,
+                    "name": NOTIONAL_HP,
+                    "temp_flow_limit_upper": 60,
+                    "thermostat_position": 0.1,
+                    "type": "HeatSourceWet"
+                }
+            },
+            "daily_losses": daily_losses,
+            "type": "StorageTank",
+            "volume": cylinder_vol,
+            "primary_pipework": primary_pipework
+    }))?;
+
+    Ok(())
+}
+
+fn edit_primary_pipework(
+    input: &InputForProcessing,
+    total_floor_area: f64,
+) -> anyhow::Result<Vec<WaterPipework>> {
+    // Define minimum values
+    let internal_diameter_mm_min = 20.;
+    let external_diameter_mm_min = 22.;
+    let insulation_thickness_mm_min = 25.;
+    let surface_reflectivity = false;
+    let pipe_contents = WaterPipeContentsType::Water;
+    let insulation_thermal_conductivity = 0.035;
+
+    let length_max = match input.build_type() {
+        BuildType::Flat => 0.05 * total_floor_area,
+        BuildType::House => {
+            0.05 * input.ground_floor_area().ok_or_else(|| {
+                anyhow!("FHS Notional wrapper expected ground floor area to be set for a house.")
+            })?
+        }
+    };
+
+    let mut primary_pipework = input.primary_pipework_clone();
+
+    if primary_pipework.is_none() {
+        primary_pipework = Some(vec![serde_json::from_value::<WaterPipework>(json!({
+            "location": "internal",
+            "internal_diameter_mm": internal_diameter_mm_min,
+            "external_diameter_mm": external_diameter_mm_min,
+            "length": length_max,
+            "insulation_thermal_conductivity": insulation_thermal_conductivity,
+            "insulation_thickness_mm": insulation_thickness_mm_min,
+            "surface_reflectivity": surface_reflectivity,
+            "pipe_contents": pipe_contents
+        }))?]);
+    } else {
+        for pipework in primary_pipework.as_mut().unwrap().iter_mut() {
+            let length = pipework.length;
+            let internal_diameter_mm = pipework.internal_diameter_mm.max(internal_diameter_mm_min);
+            let external_diameter_mm = pipework.external_diameter_mm.max(external_diameter_mm_min);
+
+            // Update insulation thickness based on internal diameter
+            let adjusted_insulation_thickness_mm_min = if internal_diameter_mm > 25. {
+                35.
+            } else {
+                insulation_thickness_mm_min
+            };
+
+            // Primary pipework should not be greater than maximum length
+            let length = length.min(length_max);
+
+            // Update pipework
+            *pipework = serde_json::from_value(json!({
+                "location": "internal",
+                "internal_diameter_mm": internal_diameter_mm,
+                "external_diameter_mm": external_diameter_mm,
+                "length": length,
+                "insulation_thermal_conductivity": insulation_thermal_conductivity,
+                "insulation_thickness_mm": adjusted_insulation_thickness_mm_min,
+                "surface_reflectivity": surface_reflectivity,
+                "pipe_contents": pipe_contents
+            }))?;
+        }
+    }
+
+    Ok(primary_pipework.unwrap())
+}
+
 /// Calculate effective air change rate according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -390,6 +628,35 @@ pub fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64
 }
 
+fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
+    // Data from the table
+    let percentiles_kwh = [3.7, 4.4, 5.2, 5.9, 6.7, 7.4, 8.1, 8.9, 9.6, 10.3, 11.1];
+    let vessel_sizes_litres = [
+        165., 190., 215., 240., 265., 290., 315., 340., 365., 390., 415.,
+    ];
+
+    // Calculate the 75th percentile of daily hot water demand
+    let percentile_75_kwh = percentile(daily_hwd, 75);
+
+    // Use linear interpolation to find the appropriate vessel size
+    let interpolated_size_litres =
+        np_interp(percentile_75_kwh, &percentiles_kwh, &vessel_sizes_litres);
+    let mut interpolated_size_litres = interpolated_size_litres.round();
+
+    // If the size of the hot water storage vessel is unavailable, the next
+    // largest size available should be selected
+    if !vessel_sizes_litres.contains(&interpolated_size_litres) {
+        for size in vessel_sizes_litres {
+            if size > interpolated_size_litres {
+                interpolated_size_litres = size;
+                break;
+            }
+        }
+    }
+
+    interpolated_size_litres
+}
+
 #[cfg(test)]
 mod tests {
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
@@ -397,8 +664,8 @@ mod tests {
     use super::*;
     use crate::input;
     use crate::input::{
-        Baths, OtherWaterUses, Shower, Showers, ThermalBridging, ThermalBridgingDetails,
-        WasteWaterHeatRecovery, ZoneDictionary,
+        Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
+        ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
     };
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
@@ -699,5 +966,48 @@ mod tests {
             expected_daily_losses,
             max_relative = 1E-6
         );
+    }
+
+    #[rstest]
+    fn test_edit_storagetank(mut test_input: InputForProcessing) {
+        let cold_water_source_type = ColdWaterSourceType::MainsWater;
+        let total_floor_area = calc_tfa(&test_input);
+
+        edit_storagetank(&mut test_input, cold_water_source_type, total_floor_area).unwrap();
+
+        let expected_primary_pipework = json!([{
+            "location": "internal",
+            "internal_diameter_mm": 26,
+                "external_diameter_mm": 28,
+                "length": 2.5,
+                "insulation_thermal_conductivity": 0.035,
+                "insulation_thickness_mm": 35,
+                "surface_reflectivity": false,
+                "pipe_contents": "water"
+        }]);
+
+        let expected_hotwater_source: HotWaterSource = serde_json::from_value(json!({
+            "hw cylinder": {
+                "ColdWaterSource": cold_water_source_type,
+                "HeatSource": {
+                    "notional_HP": {
+                        "ColdWaterSource": cold_water_source_type,
+                        "EnergySupply": "mains elec",
+                        "heater_position": 0.1,
+                        "name": "notional_HP",
+                        "temp_flow_limit_upper": 60,
+                        "thermostat_position": 0.1,
+                        "type": "HeatSourceWet"
+                    }
+                },
+                "daily_losses": 0.46660029577109363,
+                "type": "StorageTank",
+                "volume": 80.0,
+                "primary_pipework": expected_primary_pipework,
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(test_input.hot_water_source(), &expected_hotwater_source);
     }
 }
