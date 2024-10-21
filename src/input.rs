@@ -3765,8 +3765,8 @@ impl InputForProcessing {
         self.input.heat_source_wet.as_ref()
     }
 
-    pub(crate) fn cold_water_source(&self) -> ColdWaterSourceInput {
-        self.input.cold_water_source.clone()
+    pub(crate) fn cold_water_source(&self) -> &ColdWaterSourceInput {
+        &self.input.cold_water_source
     }
 
     #[cfg(test)]

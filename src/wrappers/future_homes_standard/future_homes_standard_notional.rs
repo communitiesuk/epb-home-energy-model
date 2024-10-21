@@ -41,7 +41,10 @@ fn apply_fhs_not_preprocessing(
     // Determine cold water source
     let cold_water_type = input.cold_water_source();
 
-    let _cold_water_source = match (cold_water_type.mains_water, cold_water_type.header_tank) {
+    let _cold_water_source = match (
+        cold_water_type.mains_water.as_ref(),
+        cold_water_type.header_tank.as_ref(),
+    ) {
         (Some(source), None) => source,
         (None, Some(source)) => source,
         _ => panic!("Error: There should be exactly one cold water type"),
