@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::input::ColdWaterSourceType;
+use crate::input::{BuildType, ColdWaterSourceType};
 use crate::{
     compare_floats::max_of_2,
     core::{
@@ -20,6 +20,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
 const NOTIONAL_BATH_NAME: &str = "medium";
 const NOTIONAL_SHOWER_NAME: &str = "mixer";
 const NOTIONAL_OTHER_HW_NAME: &str = "other";
@@ -312,6 +313,37 @@ fn edit_bath_shower_other(
     Ok(())
 }
 
+fn add_wwhrs(
+    input: &mut InputForProcessing,
+    cold_water_source_type: ColdWaterSourceType,
+    is_not_a: bool,
+    is_fee: bool,
+) -> anyhow::Result<()> {
+    // TODO (from Python) Storeys in dwelling is not currently collected as an input, so use
+    //      storeys in building for houses and assume 1 for flats. Note that this
+    //      means that maisonettes cannot be handled at present.
+
+    let storeys_in_building = match input.build_type() {
+        BuildType::House => input.storeys_in_building(),
+        BuildType::Flat => 1,
+    };
+
+    // add WWHRS if more than 1 storeys in dwelling, notional A and not FEE
+    if storeys_in_building > 1 && is_not_a && !is_fee {
+        input.register_wwhrs_name_on_mixer_shower(NOTIONAL_WWHRS)?;
+        input.set_wwhrs(json!({
+            NOTIONAL_WWHRS: {
+                "ColdWaterSource": cold_water_source_type,
+                "efficiencies": [50, 50],
+                "flow_rates": [0, 100],
+                "type": "WWHRS_InstantaneousSystemB",
+                "utilisation_factor": 0.98
+            }
+        }))?;
+    }
+
+    Ok(())
+}
 /// Calculate effective air change rate accoring to according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -345,7 +377,8 @@ mod tests {
     use super::*;
     use crate::input;
     use crate::input::{
-        Baths, OtherWaterUses, Showers, ThermalBridging, ThermalBridgingDetails, ZoneDictionary,
+        Baths, OtherWaterUses, Shower, Showers, ThermalBridging, ThermalBridgingDetails,
+        WasteWaterHeatRecovery, ZoneDictionary,
     };
     use rstest::{fixture, rstest};
     use serde_json::json;
@@ -577,5 +610,61 @@ mod tests {
             test_input.other_water_uses().unwrap().clone(),
             expected_other
         );
+    }
+
+    #[rstest]
+    fn test_add_wwhrs(mut test_input: InputForProcessing) {
+        test_input.set_storeys_in_building(2);
+
+        let cold_water_source_type = ColdWaterSourceType::MainsWater;
+
+        add_wwhrs(&mut test_input, cold_water_source_type, true, false).unwrap();
+
+        let expected_wwhrs: WasteWaterHeatRecovery = serde_json::from_value(json!({
+            "Notional_Inst_WWHRS": {
+               "ColdWaterSource": cold_water_source_type,
+               "efficiencies": [50, 50],
+               "flow_rates": [0, 100],
+               "type": "WWHRS_InstantaneousSystemB",
+               "utilisation_factor": 0.98
+           }
+        }))
+        .unwrap();
+
+        assert_eq!(test_input.wwhrs().unwrap().clone(), expected_wwhrs);
+
+        match &test_input.showers().as_ref().unwrap().0["mixer"] {
+            Shower::MixerShower {
+                waste_water_heat_recovery,
+                ..
+            } => {
+                assert_eq!(
+                    waste_water_heat_recovery.as_ref().unwrap(),
+                    "Notional_Inst_WWHRS"
+                )
+            }
+            _ => {
+                panic!()
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_add_no_wwhrs_for_one_storey_buildings(mut test_input: InputForProcessing) {
+        let cold_water_source_type = ColdWaterSourceType::MainsWater;
+
+        add_wwhrs(&mut test_input, cold_water_source_type, true, false).unwrap();
+
+        assert!(test_input.wwhrs().is_none());
+
+        match &test_input.showers().as_ref().unwrap().0["mixer"] {
+            Shower::MixerShower {
+                waste_water_heat_recovery,
+                ..
+            } => assert!(waste_water_heat_recovery.is_none()),
+            _ => {
+                panic!()
+            }
+        }
     }
 }

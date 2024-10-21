@@ -2264,7 +2264,7 @@ pub enum HeatSourceLocation {
 
 pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2279,7 +2279,7 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub electrical_consumption: Option<f64>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WwhrsType {
@@ -3272,6 +3272,28 @@ impl InputForProcessing {
         }
     }
 
+    pub(crate) fn register_wwhrs_name_on_mixer_shower(
+        &mut self,
+        wwhrs: &str,
+    ) -> anyhow::Result<()> {
+        let mixer_shower = self
+            .input
+            .hot_water_demand
+            .shower
+            .as_mut()
+            .map(|showers| showers.0.get_mut("mixer"))
+            .ok_or_else(|| anyhow!("In the FHS Notional wrapper, a mixer shower was expected to be set on the input under the key 'mixer'."))?;
+
+        match mixer_shower {
+            Some(Shower::MixerShower { ref mut waste_water_heat_recovery, .. }) => {
+                *waste_water_heat_recovery = Some(wwhrs.to_owned());
+            }
+            _ => bail!("In the FHS Notional wrapper, the shower under the key mixer was not found to be a mixer shower when it was expected to be."),
+        }
+
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) fn baths(&self) -> Option<&Baths> {
         self.input.hot_water_demand.bath.as_ref()
@@ -3444,6 +3466,17 @@ impl InputForProcessing {
     pub fn remove_wwhrs(&mut self) -> &Self {
         self.input.waste_water_heat_recovery = None;
         self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wwhrs(&self) -> Option<&WasteWaterHeatRecovery> {
+        self.input.waste_water_heat_recovery.as_ref()
+    }
+
+    pub(crate) fn set_wwhrs(&mut self, wwhrs: Value) -> anyhow::Result<()> {
+        self.input.waste_water_heat_recovery = Some(serde_json::from_value(wwhrs)?);
+
+        Ok(())
     }
 
     pub fn remove_space_heat_systems(&mut self) -> &Self {
@@ -3734,6 +3767,19 @@ impl InputForProcessing {
 
     pub(crate) fn cold_water_source(&self) -> ColdWaterSourceInput {
         self.input.cold_water_source.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_storeys_in_building(&mut self, storeys: usize) {
+        self.input.general.storeys_in_building = storeys;
+    }
+
+    pub(crate) fn storeys_in_building(&self) -> usize {
+        self.input.general.storeys_in_building
+    }
+
+    pub(crate) fn build_type(&self) -> BuildType {
+        self.input.general.build_type
     }
 }
 
