@@ -924,7 +924,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         mut emitters: Emitters,
     ) {
-        let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
@@ -1146,7 +1146,7 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
     ) {
-        let energy_demand_list = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let mut energy_demand = 0.0;
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {

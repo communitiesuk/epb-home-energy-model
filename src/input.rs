@@ -3816,7 +3816,7 @@ mod tests {
                     error_outputs.push(format!(
                         "{} at path \"{}\":\n{error:?}",
                         entry.file_name().to_str().unwrap().to_owned(),
-                        error.instance_path.to_string()
+                        error.instance_path
                     ));
                 }
             };

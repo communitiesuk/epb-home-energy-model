@@ -2172,7 +2172,7 @@ fn cold_water_sources_from_input(
         .iter()
         .map(|(source_type, source_details)| {
             (
-                source_type.clone(),
+                *source_type,
                 cold_water_source_from_input_details(source_details, simulation_time),
             )
         })
@@ -2647,7 +2647,7 @@ fn get_cold_water_source_ref_for_type(
     source_type: ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
 ) -> Option<ColdWaterSource> {
-    cold_water_sources.get(&source_type).map(Clone::clone)
+    cold_water_sources.get(&source_type).cloned()
 }
 
 pub type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;

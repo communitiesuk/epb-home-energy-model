@@ -6634,7 +6634,7 @@ mod tests {
         assert_eq!(result, false);
 
         let heat_pump_with_exhaust = create_heat_pump_with_exhaust(
-            &"aux_outside_operating_limit",
+            "aux_outside_operating_limit",
             Some(-1.),
             Some(10),
             external_conditions,
@@ -7448,7 +7448,7 @@ mod tests {
 
         let mut heat_pump_with_boiler = create_heat_pump(
             heat_pump_input,
-            &energy_supply_conn_name_auxiliary,
+            energy_supply_conn_name_auxiliary,
             None,
             Some(Arc::new(Mutex::new(boiler))),
             None,
@@ -7749,7 +7749,7 @@ mod tests {
 
         let heat_pump_with_boiler = Arc::new(Mutex::new(create_heat_pump(
             heat_pump_input,
-            &energy_supply_conn_name_auxiliary,
+            energy_supply_conn_name_auxiliary,
             None,
             Some(Arc::new(Mutex::new(boiler))),
             None,
@@ -7881,7 +7881,7 @@ mod tests {
         let (time_running, throughput_factor_zone) = heat_pump
             .running_time_throughput_factor(
                 0.,
-                "service_runtime_throughput".into(),
+                "service_runtime_throughput",
                 &ServiceType::Water,
                 1.,
                 330.,

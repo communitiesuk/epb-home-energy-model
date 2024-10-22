@@ -438,7 +438,7 @@ mod tests {
     #[rstest]
     /// test written in Rust, not present in Python
     fn test_check_heatnetwork_present(test_input: InputForProcessing) {
-        assert_eq!(check_heatnetwork_present(&test_input), false);
+        assert!(!check_heatnetwork_present(&test_input));
     }
 
     #[rstest]
