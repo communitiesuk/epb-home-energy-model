@@ -4,6 +4,7 @@ use crate::core::material_properties::WATER;
 use crate::core::units::MINUTES_PER_HOUR;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
+use crate::simulation_time::SimulationTimeIteration;
 use parking_lot::Mutex;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -26,21 +27,15 @@ impl Shower {
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
         match self {
-            Shower::MixerShower(s) => s.hot_water_demand(
-                temp_target,
-                temp_hot_water,
-                total_shower_duration,
-                timestep_idx,
-            ),
-            Shower::InstantElectricShower(s) => s.hot_water_demand(
-                temp_target,
-                temp_hot_water,
-                total_shower_duration,
-                timestep_idx,
-            ),
+            Shower::MixerShower(s) => {
+                s.hot_water_demand(temp_target, temp_hot_water, total_shower_duration, simtime)
+            }
+            Shower::InstantElectricShower(s) => {
+                s.hot_water_demand(temp_target, temp_hot_water, total_shower_duration, simtime)
+            }
         }
     }
 }
@@ -82,9 +77,9 @@ impl MixerShower {
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let temp_cold = self.cold_water_source.temperature(timestep_idx);
+        let temp_cold = self.cold_water_source.temperature(simtime);
 
         let vol_warm_water = self.flowrate * total_shower_duration;
         let mut vol_hot_water =
@@ -97,7 +92,7 @@ impl MixerShower {
             let temp_drain = 35.0;
 
             let wwhrs_return_temperature =
-                wwhrs.return_temperature(temp_drain, self.flowrate, timestep_idx);
+                wwhrs.return_temperature(temp_drain, self.flowrate, simtime);
             match wwhrs.deref_mut() {
                 Wwhrs::WWHRSInstantaneousSystemB(_) => {
                     vol_hot_water = vol_warm_water
@@ -154,9 +149,9 @@ impl InstantElectricShower {
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let temp_cold = self.cold_water_source.temperature(timestep_idx);
+        let temp_cold = self.cold_water_source.temperature(simtime);
 
         let elec_demand =
             self.power_in_kilowatts * (total_shower_duration / MINUTES_PER_HOUR as f64);
@@ -167,7 +162,7 @@ impl InstantElectricShower {
             vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
 
         self.energy_supply_connection
-            .demand_energy(elec_demand, timestep_idx)
+            .demand_energy(elec_demand, simtime.index)
             .unwrap();
 
         (vol_hot_water_equiv, vol_warm_water)
@@ -190,12 +185,12 @@ mod tests {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
-            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
+            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 0, 1.0);
         let mut mixer_shower = MixerShower::new(6.5, cold_water_source, None);
         let expected_demands = [24.7, 24.54081632653061, 24.375];
-        for (idx, _) in simulation_time.iter().enumerate() {
+        for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                mixer_shower.hot_water_demand(40.0, 52.0, 5.0, idx).0,
+                mixer_shower.hot_water_demand(40.0, 52.0, 5.0, t_it).0,
                 expected_demands[idx],
                 "incorrect volume of hot water returned"
             );
@@ -207,7 +202,7 @@ mod tests {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
-            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 1.0);
+            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 0, 1.0);
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
@@ -220,8 +215,8 @@ mod tests {
             InstantElectricShower::new(50.0, cold_water_source, energy_supply_conn);
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
-        for (idx, _) in simulation_time.iter().enumerate() {
-            instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, idx);
+        for (idx, t_it) in simulation_time.iter().enumerate() {
+            instant_shower.hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it);
             assert_eq!(
                 energy_supply.read().results_by_end_user()["shower"][idx],
                 expected_results_by_end_user[idx],
@@ -229,7 +224,7 @@ mod tests {
             );
             assert_eq!(
                 instant_shower
-                    .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, idx)
+                    .hot_water_demand(40.0, 52.0, ((idx + 1) * 6) as f64, t_it)
                     .0,
                 expected_demands[idx]
             );

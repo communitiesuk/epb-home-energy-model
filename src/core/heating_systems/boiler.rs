@@ -121,7 +121,7 @@ impl BoilerServiceWaterCombi {
 
         let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water_in_c,
-            self.cold_feed.temperature(simtime.index),
+            self.cold_feed.temperature(simtime),
         );
 
         let volume_demanded = volume_demanded_target
@@ -1212,7 +1212,7 @@ mod tests {
 
     #[fixture]
     pub fn cold_water_source(simulation_time: SimulationTime) -> ColdWaterSource {
-        ColdWaterSource::new(vec![1.0, 1.2], &simulation_time, simulation_time.step)
+        ColdWaterSource::new(vec![1.0, 1.2], &simulation_time, 0, simulation_time.step)
     }
 
     #[fixture]

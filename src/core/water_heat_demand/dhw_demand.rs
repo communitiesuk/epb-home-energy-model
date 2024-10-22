@@ -16,6 +16,7 @@ use crate::input::{
     OtherWaterUses as OtherWaterUseInput, Shower as ShowerInput, Showers as ShowersInput,
     WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipeworkSimple,
 };
+use crate::simulation_time::SimulationTimeIteration;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -115,7 +116,7 @@ impl DomesticHotWaterDemand {
 
     pub(crate) fn hot_water_demand(
         &mut self,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
         temp_hot_water: f64,
     ) -> DomesticHotWaterDemandData {
         let mut hw_demand_vol = 0.;
@@ -133,7 +134,7 @@ impl DomesticHotWaterDemand {
         // source (tank). The first event that starts is Served before the second event
         // is considered even if this starts before the previous event has finished.
 
-        let mut usage_events = self.event_schedules[timestep_idx].as_mut();
+        let mut usage_events = self.event_schedules[simtime.index].as_mut();
 
         if let Some(usage_events) = &mut usage_events {
             for event in usage_events.iter_mut() {
@@ -146,8 +147,7 @@ impl DomesticHotWaterDemand {
                             // If shower is used in the current timestep, get details of use
                             // and calculate HW demand from shower
                             let the_cold_water_temp = shower.get_cold_water_source();
-                            let cold_water_temperature =
-                                the_cold_water_temp.temperature(timestep_idx);
+                            let cold_water_temperature = the_cold_water_temp.temperature(simtime);
 
                             let shower_temp = event.temperature;
                             let label_temp = shower_temp.into();
@@ -159,7 +159,7 @@ impl DomesticHotWaterDemand {
                                 shower_temp,
                                 temp_hot_water,
                                 shower_duration,
-                                timestep_idx,
+                                simtime,
                             );
 
                             if let Shower::InstantElectricShower(_) = shower {
@@ -194,8 +194,7 @@ impl DomesticHotWaterDemand {
                             // If other is used in the current timestep, get details of use
                             // and calculate HW demand from other
                             let the_cold_water_temp = other.get_cold_water_source();
-                            let cold_water_temperature =
-                                the_cold_water_temp.temperature(timestep_idx);
+                            let cold_water_temperature = the_cold_water_temp.temperature(simtime);
 
                             let other_temp = event.temperature;
                             let label_temp = other_temp.into();
@@ -206,7 +205,7 @@ impl DomesticHotWaterDemand {
                                 other_temp,
                                 temp_hot_water,
                                 other_duration,
-                                timestep_idx,
+                                simtime,
                             );
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
@@ -237,15 +236,14 @@ impl DomesticHotWaterDemand {
                             // If bath is used in the current timestep, get details of use
                             // and calculate HW demand from bath
                             let the_cold_water_temp = bath.get_cold_water_source();
-                            let cold_water_temperature =
-                                the_cold_water_temp.temperature(timestep_idx);
+                            let cold_water_temperature = the_cold_water_temp.temperature(simtime);
 
                             // Assume flow rate for bath event is the same as other hot water events
                             let peak_flowrate = bath.get_flowrate();
                             let bath_temp = event.temperature;
                             let label_temp = bath_temp.into();
                             let (hw_demand_i, hw_demand_target_i) =
-                                bath.hot_water_demand(bath_temp, temp_hot_water, timestep_idx);
+                                bath.hot_water_demand(bath_temp, temp_hot_water, simtime);
                             event.warm_volume = Some(hw_demand_target_i);
                             hw_demand_vol_target
                                 .entry(label_temp)
@@ -480,7 +478,7 @@ mod tests {
             2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0,
             4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0,
         ];
-        let cold_water_source = ColdWaterSource::new(cold_water_temps, &simulation_time, 1.);
+        let cold_water_source = ColdWaterSource::new(cold_water_temps, &simulation_time, 0, 1.);
         let cold_water_sources =
             ColdWaterSources::from([(ColdWaterSourceType::MainsWater, cold_water_source.clone())]);
         let flow_rates = vec![5., 7., 9., 11., 13.];
@@ -700,9 +698,9 @@ mod tests {
         mut dhw_demand: DomesticHotWaterDemand,
         simulation_time: SimulationTime,
     ) {
-        for (t_idx, _) in simulation_time.iter().enumerate() {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
-                dhw_demand.hot_water_demand(t_idx, 55.0),
+                dhw_demand.hot_water_demand(t_it, 55.0),
                 [
                     DomesticHotWaterDemandData {
                         hw_demand_vol: 0.0,

@@ -158,6 +158,7 @@ impl Corpus {
         let wwhrs = wwhrs_from_input(
             input.waste_water_heat_recovery.as_ref(),
             &cold_water_sources,
+            simulation_time_iterator.current_iteration(),
         );
 
         let mut energy_supplies = energy_supplies_from_input(
@@ -1622,7 +1623,7 @@ impl Corpus {
                 vol_hot_water_equiv_elec_shower,
             } = self
                 .domestic_hot_water_demand
-                .hot_water_demand(t_it.index, temp_hot_water);
+                .hot_water_demand(t_it, temp_hot_water);
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::StorageTank(storage_tank) =
@@ -1681,7 +1682,7 @@ impl Corpus {
 
             // Convert from litres to kWh
             let cold_water_source = self.hot_water_sources["hw cylinder"].get_cold_water_source();
-            let cold_water_temperature = cold_water_source.temperature(t_it.index);
+            let cold_water_temperature = cold_water_source.temperature(t_it);
             let hw_energy_demand_incl_pipework_loss =
                 water_demand_to_kwh(hw_demand_vol, temp_hot_water, cold_water_temperature);
             let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
@@ -2185,6 +2186,7 @@ fn cold_water_source_from_input_details(
     ColdWaterSource::new(
         details.temperatures.clone(),
         simulation_time,
+        details.start_day,
         details.time_series_step,
     )
 }
@@ -2510,6 +2512,7 @@ fn single_control_from_details(
 fn wwhrs_from_input(
     wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
+    initial_simtime: SimulationTimeIteration,
 ) -> IndexMap<String, Arc<Mutex<Wwhrs>>> {
     let mut wwhr_systems: IndexMap<String, Arc<Mutex<Wwhrs>>> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
@@ -2519,6 +2522,7 @@ fn wwhrs_from_input(
                 .or_insert(Arc::new(Mutex::new(wwhr_system_from_details(
                     system.clone(),
                     cold_water_sources,
+                    initial_simtime,
                 ))));
         }
     }
@@ -2529,6 +2533,7 @@ fn wwhrs_from_input(
 fn wwhr_system_from_details(
     system: WasteWaterHeatRecoveryDetails,
     cold_water_sources: &ColdWaterSources,
+    initial_simtime: SimulationTimeIteration,
 ) -> Wwhrs {
     match system.system_type {
         WwhrsType::SystemA => Wwhrs::WWHRSInstantaneousSystemA(WWHRSInstantaneousSystemA::new(
@@ -2537,6 +2542,7 @@ fn wwhr_system_from_details(
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
                 .unwrap(),
             system.utilisation_factor,
+            initial_simtime,
         )),
         WwhrsType::SystemB => Wwhrs::WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB::new(
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
@@ -2551,6 +2557,7 @@ fn wwhr_system_from_details(
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
                 .unwrap(),
             system.utilisation_factor,
+            initial_simtime,
         )),
     }
 }
@@ -3924,7 +3931,7 @@ impl HotWaterSource {
                 source.demand_hot_water(vol_demand_target, &simulation_time_iteration)
             }
             HotWaterSource::HeatNetwork(ref mut source) => {
-                source.demand_hot_water(vol_demand_target, simulation_time_iteration.index)
+                source.demand_hot_water(vol_demand_target, simulation_time_iteration)
             }
             HotWaterSource::HeatBattery(_) => {
                 unreachable!("demand_hot_water is not expected to be called on a heat battery")

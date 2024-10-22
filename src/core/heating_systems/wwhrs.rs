@@ -1,3 +1,4 @@
+use crate::simulation_time::SimulationTimeIteration;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
 
 /// This module provides types to model waste water heat recovery systems of different kinds.
@@ -14,17 +15,17 @@ impl Wwhrs {
         &self,
         temp_target: f64,
         flowrate_waste_water: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         match &self {
             Wwhrs::WWHRSInstantaneousSystemB(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, timestep_idx)
+                system.return_temperature(temp_target, flowrate_waste_water, simtime)
             }
             Wwhrs::WWHRSInstantaneousSystemC(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, timestep_idx)
+                system.return_temperature(temp_target, flowrate_waste_water, simtime)
             }
             Wwhrs::WWHRSInstantaneousSystemA(system) => {
-                system.return_temperature(temp_target, flowrate_waste_water, timestep_idx)
+                system.return_temperature(temp_target, flowrate_waste_water, simtime)
             }
         }
     }
@@ -70,14 +71,14 @@ impl WWHRSInstantaneousSystemB {
         &self,
         temp_target: f64,
         flowrate_waste_water: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // # TODO (from Python) The cold water flow rate depends on the temperature returned from
         // #      this function, which may create a circularity in the calculation.
         // #      May need to integrate System B into shower module and/or combine
         // #      equations.
 
-        let temp_cold = self.cold_water_source.temperature(timestep_idx);
+        let temp_cold = self.cold_water_source.temperature(simtime);
 
         // # TODO If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
@@ -112,9 +113,10 @@ impl WWHRSInstantaneousSystemC {
         efficiencies: Vec<f64>,
         cold_water_source: ColdWaterSource,
         utilisation_factor: f64,
+        initial_simtime: SimulationTimeIteration,
     ) -> Self {
         // assuming the first timestep index is wanted here, but this is unclear!
-        let stored_temperature = cold_water_source.temperature(0usize);
+        let stored_temperature = cold_water_source.temperature(initial_simtime);
 
         Self {
             cold_water_source,
@@ -133,14 +135,14 @@ impl WWHRSInstantaneousSystemC {
         &self,
         temp_target: f64,
         flowrate_waste_water: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // # TODO (from Python) The cold water flow rate depends on the temperature returned from
         // #      this function, which may create a circularity in the calculation.
         // #      May need to integrate System B into shower module and/or combine
         // #      equations.
 
-        let temp_cold = self.cold_water_source.temperature(timestep_idx);
+        let temp_cold = self.cold_water_source.temperature(simtime);
 
         // # TODO If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
@@ -180,9 +182,10 @@ impl WWHRSInstantaneousSystemA {
         efficiencies: Vec<f64>,
         cold_water_source: ColdWaterSource,
         utilisation_factor: f64,
+        initial_simtime: SimulationTimeIteration,
     ) -> Self {
         // assume that the first timestep is what is wanted here though could be wrong!!
-        let stored_temperature = cold_water_source.temperature(0usize);
+        let stored_temperature = cold_water_source.temperature(initial_simtime);
 
         Self {
             cold_water_source,
@@ -201,14 +204,14 @@ impl WWHRSInstantaneousSystemA {
         &self,
         temp_target: f64,
         flowrate_waste_water: f64,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // # TODO (from Python) The cold water flow rate depends on the temperature returned from
         // #      this function, which may create a circularity in the calculation.
         // #      May need to integrate System B into shower module and/or combine
         // #      equations.
 
-        let temp_cold = self.cold_water_source.temperature(timestep_idx);
+        let temp_cold = self.cold_water_source.temperature(simtime);
 
         // # TODO If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
@@ -243,7 +246,8 @@ mod tests {
 
     #[fixture]
     fn wwhrs_b(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemB {
-        let cold_water_source = ColdWaterSource::new(vec![17.0, 17.0, 17.0], &simulation_time, 1.0);
+        let cold_water_source =
+            ColdWaterSource::new(vec![17.0, 17.0, 17.0], &simulation_time, 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -257,9 +261,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_return_temperature_for_b(wwhrs_b: WWHRSInstantaneousSystemB) {
+    fn test_return_temperature_for_b(
+        wwhrs_b: WWHRSInstantaneousSystemB,
+        simulation_time: SimulationTime,
+    ) {
         assert_relative_eq!(
-            wwhrs_b.return_temperature(35.0, 8.0, 0),
+            wwhrs_b.return_temperature(35.0, 8.0, simulation_time.iter().current_iteration()),
             21.6557,
             max_relative = 1e-7
         );
@@ -272,7 +279,8 @@ mod tests {
 
     #[fixture]
     fn wwhrs_c(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemC {
-        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 1.0);
+        let cold_water_source =
+            ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -282,13 +290,17 @@ mod tests {
             efficiencies,
             cold_water_source,
             utilisation_factor,
+            simulation_time.iter().current_iteration(),
         )
     }
 
     #[rstest]
-    fn test_return_temperature_for_c(wwhrs_c: WWHRSInstantaneousSystemC) {
+    fn test_return_temperature_for_c(
+        wwhrs_c: WWHRSInstantaneousSystemC,
+        simulation_time: SimulationTime,
+    ) {
         assert_relative_eq!(
-            wwhrs_c.return_temperature(35.0, 8.0, 0),
+            wwhrs_c.return_temperature(35.0, 8.0, simulation_time.iter().current_iteration()),
             21.729835,
             max_relative = 1e-7
         );
@@ -305,7 +317,8 @@ mod tests {
 
     #[fixture]
     fn wwhrs_a(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemA {
-        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 1.0);
+        let cold_water_source =
+            ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -315,13 +328,17 @@ mod tests {
             efficiencies,
             cold_water_source,
             utilisation_factor,
+            simulation_time.iter().current_iteration(),
         )
     }
 
     #[rstest]
-    fn test_return_temperature_for_a(wwhrs_a: WWHRSInstantaneousSystemA) {
+    fn test_return_temperature_for_a(
+        wwhrs_a: WWHRSInstantaneousSystemA,
+        simulation_time: SimulationTime,
+    ) {
         assert_relative_eq!(
-            wwhrs_a.return_temperature(35.0, 8.0, 0),
+            wwhrs_a.return_temperature(35.0, 8.0, simulation_time.iter().current_iteration()),
             21.729835,
             max_relative = 1e-7
         );

@@ -2,6 +2,7 @@
 
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
+use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -13,10 +14,10 @@ pub enum WaterSourceWithTemperature {
 }
 
 impl WaterSourceWithTemperature {
-    pub fn temperature(&self, timestep_idx: usize) -> f64 {
+    pub fn temperature(&self, simtime: SimulationTimeIteration) -> f64 {
         match self {
             WaterSourceWithTemperature::ColdWaterSource(cold_water_source) => {
-                cold_water_source.temperature(timestep_idx)
+                cold_water_source.temperature(simtime)
             }
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
         }

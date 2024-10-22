@@ -55,7 +55,7 @@ impl HeatNetworkServiceWaterDirect {
     pub fn demand_hot_water(
         &mut self,
         volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
-        timestep_idx: usize,
+        simtime: SimulationTimeIteration,
     ) -> f64 {
         // Calculate energy needed to meet hot water demand
         let volume_demanded = volume_demanded_target
@@ -64,13 +64,13 @@ impl HeatNetworkServiceWaterDirect {
             .unwrap_or(0.0);
         let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water,
-            self.cold_feed.temperature(timestep_idx),
+            self.cold_feed.temperature(simtime),
         );
         let energy_demand = volume_demanded * energy_content_kwh_per_litre;
 
         self.heat_network
             .lock()
-            .demand_energy(&self.service_name, energy_demand, timestep_idx)
+            .demand_energy(&self.service_name, energy_demand, simtime.index)
     }
 }
 
@@ -501,6 +501,7 @@ mod tests {
         let cold_feed = ColdWaterSource::new(
             cold_water_temps,
             &two_len_simulation_time,
+            0,
             two_len_simulation_time.step,
         );
         let return_temp = 60.;
@@ -568,10 +569,10 @@ mod tests {
             ]),
         ];
 
-        for (t_idx, _) in two_len_simulation_time.iter().enumerate() {
+        for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_relative_eq!(
                 heat_network_service_water_direct
-                    .demand_hot_water(volume_demanded[t_idx].clone(), t_idx),
+                    .demand_hot_water(volume_demanded[t_idx].clone(), t_it),
                 [7.5834, 2.2279][t_idx],
                 max_relative = 1e-4
             );
@@ -891,6 +892,7 @@ mod tests {
             WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
                 vec![1.0, 1.2],
                 &two_len_simulation_time,
+                0,
                 two_len_simulation_time.step,
             )));
 

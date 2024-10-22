@@ -624,7 +624,7 @@ impl StorageTank {
         // Initialize the unmet and met energies
         let mut energy_unmet = 0.0;
         let mut energy_withdrawn = 0.0;
-        let mut pipework_temp = self.cold_feed.temperature(simulation_time.index); // This value set to initialise, but is never used - overwritten later.
+        let mut pipework_temp = self.cold_feed.temperature(simulation_time); // This value set to initialise, but is never used - overwritten later.
 
         let mut pipework_considered = event.pipework_volume.unwrap() <= 0.0;
 
@@ -667,7 +667,7 @@ impl StorageTank {
             let fraction = frac_hot_water(
                 warm_temp,
                 layer_temp,
-                self.cold_feed.temperature(simulation_time.index),
+                self.cold_feed.temperature(simulation_time),
             );
 
             let _warm_vol_removed: f64;
@@ -701,7 +701,7 @@ impl StorageTank {
                 self.rho
                     * self.cp
                     * required_vol
-                    * (layer_temp - self.cold_feed.temperature(simulation_time.index))
+                    * (layer_temp - self.cold_feed.temperature(simulation_time))
         }
 
         self.temp_average_drawoff_volweighted = Some(temp_average_drawoff_volweighted);
@@ -717,7 +717,7 @@ impl StorageTank {
         energy_unmet += self.rho
             * self.cp
             * remaining_demanded_warm_volume
-            * (warm_temp - self.cold_feed.temperature(simulation_time.index));
+            * (warm_temp - self.cold_feed.temperature(simulation_time));
 
         //  Calculate the remaining total volume
         let remaining_total_volume: f64 = remaining_vols.iter().sum();
@@ -786,7 +786,7 @@ impl StorageTank {
             if needed_volume > 0. {
                 total_volume += needed_volume;
                 volume_weighted_temperature +=
-                    needed_volume * self.cold_feed.temperature(simulation_time.index);
+                    needed_volume * self.cold_feed.temperature(simulation_time);
             }
 
             // Calculate the new temperature for the current layer
@@ -1531,6 +1531,7 @@ mod tests {
         Arc::new(ColdWaterSource::new(
             vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1],
             &simulation_time_for_storage_tank,
+            0,
             1.,
         ))
     }
@@ -2082,7 +2083,7 @@ mod tests {
         ];
         let simulation_time = SimulationTime::new(5088., 5112., 1.);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 1.),
+            ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 212, 1.),
         ));
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,

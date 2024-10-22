@@ -1348,7 +1348,7 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let temp_cold_water =
-            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration.index));
+            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration));
         let temp_return_k = celsius_to_kelvin(temp_return);
 
         let service_on = self.is_on(simulation_time_iteration);
@@ -6059,6 +6059,7 @@ mod tests {
             ColdWaterSource::new(
                 vec![1.0, 1.2],
                 &simulation_time_for_heat_pump,
+                0,
                 simulation_time_for_heat_pump.step,
             )
             .into(),
@@ -6109,6 +6110,7 @@ mod tests {
         let cold_feed = ColdWaterSource::new(
             vec![1.0, 1.2],
             &simulation_time_for_heat_pump,
+            0,
             simulation_time_for_heat_pump.step,
         );
 

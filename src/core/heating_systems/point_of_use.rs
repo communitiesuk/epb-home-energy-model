@@ -51,7 +51,7 @@ impl PointOfUse {
         let water_energy_demand = water_demand_to_kwh(
             volume_demanded,
             demand_temp,
-            self.cold_feed.temperature(simulation_time_iteration.index),
+            self.cold_feed.temperature(*simulation_time_iteration),
         );
 
         // Assumption is that system specified has sufficient capacity to meet any realistic demand
@@ -122,6 +122,7 @@ mod tests {
         let coldfeed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
             cold_water_temps,
             &simtime,
+            0,
             1.,
         )));
         let temp_hot_water = 55.;
