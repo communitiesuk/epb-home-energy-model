@@ -3,10 +3,11 @@ use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, MINUTES_PER_HOUR, WATTS_P
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
 use crate::input::{
-    Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, EnergySupplyDetails,
-    EnergySupplyType, FuelType, HeatingControlType, HotWaterSourceDetailsForProcessing, Input,
-    InputForProcessing, MechanicalVentilationForProcessing, SpaceHeatControlType,
-    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
+    Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
+    EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+    HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
+    MechanicalVentilationForProcessing, SpaceHeatControlType, TransparentBuildingElement, VentType,
+    WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -2465,9 +2466,9 @@ fn create_cold_water_feed_temps(input: &mut InputForProcessing) -> anyhow::Resul
     let delta = 1.5;
 
     let (t24m, feed_type) = if input.cold_water_source_has_header_tank() {
-        (t24m_header_tank, "header tank")
+        (t24m_header_tank, ColdWaterSourceType::HeaderTank)
     } else {
-        (t24m_mains, "mains water")
+        (t24m_mains, ColdWaterSourceType::MainsWater)
     };
 
     let mut cold_feed_schedule_m: Vec<Vec<f64>> = Vec::with_capacity(12 * 24);

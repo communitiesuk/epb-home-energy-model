@@ -2175,11 +2175,11 @@ fn cold_water_sources_from_input(
 ) -> ColdWaterSources {
     ColdWaterSources {
         mains_water: input
-            .mains_water
+            .get(&ColdWaterSourceType::MainsWater)
             .as_ref()
             .map(|details| cold_water_source_from_input_details(details, simulation_time)),
         header_tank: input
-            .header_tank
+            .get(&ColdWaterSourceType::HeaderTank)
             .as_ref()
             .map(|details| cold_water_source_from_input_details(details, simulation_time)),
     }

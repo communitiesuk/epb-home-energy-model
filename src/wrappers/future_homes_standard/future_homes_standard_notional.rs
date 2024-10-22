@@ -32,7 +32,7 @@ fn apply_fhs_not_preprocessing(
     _fhs_not_b_assumptions: bool,
     fhs_fee_not_a_assumptions: bool,
     fhs_fee_not_b_assumptions: bool,
-) {
+) -> anyhow::Result<()> {
     let _is_not_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
     let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
     // Check if a heat network is present
@@ -41,14 +41,11 @@ fn apply_fhs_not_preprocessing(
     // Determine cold water source
     let cold_water_type = input.cold_water_source();
 
-    let _cold_water_source = match (
-        cold_water_type.mains_water.as_ref(),
-        cold_water_type.header_tank.as_ref(),
-    ) {
-        (Some(source), None) => source,
-        (None, Some(source)) => source,
-        _ => panic!("Error: There should be exactly one cold water type"),
-    };
+    if cold_water_type.len() != 1 {
+        bail!("The FHS Notional wrapper expects exactly one cold water type to be set.");
+    }
+
+    let _cold_water_source = cold_water_type.first().as_ref().unwrap();
 
     // Retrieve the number of bedrooms and total volume
     let _bedroom_number = input.number_of_bedrooms();

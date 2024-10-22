@@ -456,34 +456,7 @@ pub struct CustomEnergySourceFactor {
     pub primary_energy_factor: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
-pub struct ColdWaterSourceInput {
-    #[serde(rename = "mains water")]
-    pub mains_water: Option<ColdWaterSourceDetails>,
-    #[serde(rename = "header tank")]
-    pub header_tank: Option<ColdWaterSourceDetails>,
-}
-
-impl ColdWaterSourceInput {
-    fn has_header_tank(&self) -> bool {
-        self.header_tank.is_some()
-    }
-
-    fn set_cold_water_source_details_by_key(&mut self, key: &str, source: ColdWaterSourceDetails) {
-        match key {
-            "mains water" => {
-                self.mains_water = Some(source);
-            }
-            "header tank" => {
-                self.header_tank = Some(source);
-            }
-            _ => unreachable!(),
-        }
-    }
-}
+pub(crate) type ColdWaterSourceInput = IndexMap<ColdWaterSourceType, ColdWaterSourceDetails>;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -860,7 +833,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ColdWaterSourceType {
@@ -3422,17 +3395,19 @@ impl InputForProcessing {
     }
 
     pub fn cold_water_source_has_header_tank(&self) -> bool {
-        self.input.cold_water_source.has_header_tank()
+        self.input
+            .cold_water_source
+            .contains_key(&ColdWaterSourceType::HeaderTank)
     }
 
     pub fn set_cold_water_source_by_key(
         &mut self,
-        key: &str,
+        key: ColdWaterSourceType,
         source_details: Value,
     ) -> anyhow::Result<&Self> {
         self.input
             .cold_water_source
-            .set_cold_water_source_details_by_key(key, serde_json::from_value(source_details)?);
+            .insert(key, serde_json::from_value(source_details)?);
         Ok(self)
     }
 
