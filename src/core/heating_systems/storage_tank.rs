@@ -628,8 +628,9 @@ impl StorageTank {
 
         let mut pipework_considered = event.pipework_volume.unwrap() <= 0.0;
 
-        let mut temp_average_drawoff_volweighted: f64 = Default::default();
-        let mut total_volume_drawoff: f64 = Default::default();
+        let mut temp_average_drawoff_volweighted: f64 =
+            self.temp_average_drawoff_volweighted.unwrap_or(0.);
+        let mut total_volume_drawoff: f64 = self.total_volume_drawoff.unwrap_or(0.);
         let mut last_layer_index: usize = Default::default();
         //  Loop through storage layers (starting from the top)
         for layer_index in (0..self.temp_n.len()).rev() {
