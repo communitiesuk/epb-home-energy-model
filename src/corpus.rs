@@ -2139,50 +2139,43 @@ fn external_conditions_from_input(
     )
 }
 
-pub struct ColdWaterSources {
-    mains_water: Option<ColdWaterSource>,
-    header_tank: Option<ColdWaterSource>,
-}
+pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, ColdWaterSource>;
 
-impl ColdWaterSources {
-    #[cfg(test)]
-    pub fn new(mains_water: Option<ColdWaterSource>, header_tank: Option<ColdWaterSource>) -> Self {
-        Self {
-            mains_water,
-            header_tank,
-        }
-    }
+// pub struct ColdWaterSources {
+//     mains_water: Option<ColdWaterSource>,
+//     header_tank: Option<ColdWaterSource>,
+// }
 
-    pub fn ref_for_mains_water(&self) -> Option<ColdWaterSource> {
-        self.mains_water.clone()
-    }
-
-    pub fn ref_for_header_tank(&self) -> Option<ColdWaterSource> {
-        self.header_tank.clone()
-    }
-
-    pub fn ref_for_type(&self, source_type: ColdWaterSourceType) -> Option<ColdWaterSource> {
-        match source_type {
-            ColdWaterSourceType::MainsWater => self.ref_for_mains_water(),
-            ColdWaterSourceType::HeaderTank => self.ref_for_header_tank(),
-        }
-    }
-}
+// impl ColdWaterSources {
+//     pub fn ref_for_mains_water(&self) -> Option<ColdWaterSource> {
+//         self.mains_water.clone()
+//     }
+//
+//     pub fn ref_for_header_tank(&self) -> Option<ColdWaterSource> {
+//         self.header_tank.clone()
+//     }
+//
+//     pub fn ref_for_type(&self, source_type: ColdWaterSourceType) -> Option<ColdWaterSource> {
+//         match source_type {
+//             ColdWaterSourceType::MainsWater => self.ref_for_mains_water(),
+//             ColdWaterSourceType::HeaderTank => self.ref_for_header_tank(),
+//         }
+//     }
+// }
 
 fn cold_water_sources_from_input(
     input: &ColdWaterSourceInput,
     simulation_time: &SimulationTime,
 ) -> ColdWaterSources {
-    ColdWaterSources {
-        mains_water: input
-            .get(&ColdWaterSourceType::MainsWater)
-            .as_ref()
-            .map(|details| cold_water_source_from_input_details(details, simulation_time)),
-        header_tank: input
-            .get(&ColdWaterSourceType::HeaderTank)
-            .as_ref()
-            .map(|details| cold_water_source_from_input_details(details, simulation_time)),
-    }
+    input
+        .iter()
+        .map(|(source_type, source_details)| {
+            (
+                source_type.clone(),
+                cold_water_source_from_input_details(source_details, simulation_time),
+            )
+        })
+        .collect()
 }
 
 fn cold_water_source_from_input_details(
@@ -2647,10 +2640,7 @@ fn get_cold_water_source_ref_for_type(
     source_type: ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
 ) -> Option<ColdWaterSource> {
-    match source_type {
-        ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank(),
-    }
+    cold_water_sources.get(&source_type).map(Clone::clone)
 }
 
 pub type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
@@ -4189,18 +4179,12 @@ fn cold_water_source_for_type(
     cold_water_source_type: &ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
 ) -> WaterSourceWithTemperature {
-    WaterSourceWithTemperature::ColdWaterSource(Arc::new(match cold_water_source_type {
-        ColdWaterSourceType::MainsWater => cold_water_sources
-            .mains_water
-            .as_ref()
+    WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+        cold_water_sources
+            .get(cold_water_source_type)
             .expect("referenced cold water source was expected to exist")
             .clone(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources
-            .header_tank
-            .as_ref()
-            .expect("referenced cold water source was expected to exist")
-            .clone(),
-    }))
+    ))
 }
 
 fn space_heat_systems_from_input(

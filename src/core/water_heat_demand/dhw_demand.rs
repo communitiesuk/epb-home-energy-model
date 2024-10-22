@@ -12,7 +12,7 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, ColdWaterSourceType, EnergySupplyType, OtherWaterUseDetails,
+    BathDetails, Baths as BathInput, EnergySupplyType, OtherWaterUseDetails,
     OtherWaterUses as OtherWaterUseInput, Shower as ShowerInput, Showers as ShowersInput,
     WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipeworkSimple,
 };
@@ -383,14 +383,7 @@ fn shower_from_input(
             waste_water_heat_recovery,
             flowrate,
         } => {
-            let cold_water_source = match cold_water_source {
-                ColdWaterSourceType::MainsWater => {
-                    cold_water_sources.ref_for_mains_water().unwrap()
-                }
-                ColdWaterSourceType::HeaderTank => {
-                    cold_water_sources.ref_for_header_tank().unwrap()
-                }
-            };
+            let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
             let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = waste_water_heat_recovery
                 .as_ref()
                 .and_then(|w| wwhrs.get(w).cloned());
@@ -406,14 +399,7 @@ fn shower_from_input(
             energy_supply,
             rated_power,
         } => {
-            let cold_water_source = match cold_water_source {
-                ColdWaterSourceType::MainsWater => {
-                    cold_water_sources.ref_for_mains_water().unwrap()
-                }
-                ColdWaterSourceType::HeaderTank => {
-                    cold_water_sources.ref_for_header_tank().unwrap()
-                }
-            };
+            let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
 
             let energy_supply = match energy_supply {
                 EnergySupplyType::Electricity => energy_supplies.mains_electricity.clone().unwrap(),
@@ -435,10 +421,10 @@ fn shower_from_input(
 }
 
 fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> Bath {
-    let cold_water_source = match input.cold_water_source {
-        ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
-    };
+    let cold_water_source = cold_water_sources
+        .get(&input.cold_water_source)
+        .unwrap()
+        .clone();
 
     Bath::new(input.size, cold_water_source, input.flowrate)
 }
@@ -447,10 +433,10 @@ fn input_to_other_water_events(
     input: &OtherWaterUseDetails,
     cold_water_sources: &ColdWaterSources,
 ) -> OtherHotWater {
-    let cold_water_source = match input.cold_water_source {
-        ColdWaterSourceType::MainsWater => cold_water_sources.ref_for_mains_water().unwrap(),
-        ColdWaterSourceType::HeaderTank => cold_water_sources.ref_for_header_tank().unwrap(),
-    };
+    let cold_water_source = cold_water_sources
+        .get(&input.cold_water_source)
+        .unwrap()
+        .clone();
 
     OtherHotWater::new(input.flowrate, cold_water_source)
 }
@@ -475,7 +461,9 @@ mod tests {
     use super::*;
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::input::{Baths, FuelType, OtherWaterUses, Showers, WaterPipeworkLocation};
+    use crate::input::{
+        Baths, ColdWaterSourceType, FuelType, OtherWaterUses, Showers, WaterPipeworkLocation,
+    };
     use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
@@ -493,7 +481,8 @@ mod tests {
             4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0,
         ];
         let cold_water_source = ColdWaterSource::new(cold_water_temps, &simulation_time, 1.);
-        let cold_water_sources = ColdWaterSources::new(Some(cold_water_source.clone()), None);
+        let cold_water_sources =
+            ColdWaterSources::from([(ColdWaterSourceType::MainsWater, cold_water_source.clone())]);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
