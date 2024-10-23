@@ -288,7 +288,7 @@ impl HotWaterEventGenerator {
                 (DayOfWeek::Sunday, Default::default()),
             ]);
 
-        let rng = Pcg64::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
+        let mut rng = Pcg64::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
 
         let mut decile: i8 = -1;
         let mut banding_correction = 1.0;
@@ -397,7 +397,7 @@ impl HotWaterEventGenerator {
                                 )
                             });
                             (0..POISSON_DISTRIBUTION_SIZE)
-                                .map(|_| poisson.sample(&mut rng.clone()))
+                                .map(|_| poisson.sample(&mut rng))
                                 .collect::<Vec<f64>>()
                         },
                         poisson_arr_idx: 0,
@@ -543,7 +543,7 @@ struct DecileEventTimes {
     simple_labels2_based_on_900k_sample: SimpleLabelBasedOn900KSample,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct HourEvent {
     pub time: f64,
     pub event_type: SimpleLabelBasedOn900KSample,
