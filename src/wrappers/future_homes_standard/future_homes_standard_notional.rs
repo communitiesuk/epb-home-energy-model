@@ -57,7 +57,7 @@ pub(crate) fn apply_fhs_not_preprocessing(
     let _is_not_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
     let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
     // Check if a heat network is present
-    let _is_heat_network = check_heatnetwork_present(&input);
+    let _is_heat_network = check_heatnetwork_present(input);
 
     // Determine cold water source
     let cold_water_type = input.cold_water_source();
@@ -74,7 +74,7 @@ pub(crate) fn apply_fhs_not_preprocessing(
     let _total_volume = input.total_zone_area();
 
     // Determine the TFA
-    let _tfa = calc_tfa(&input);
+    let _tfa = calc_tfa(input);
     edit_lighting_efficacy(input);
 
     todo!()
