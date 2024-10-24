@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::Read;
 use std::sync::{Arc, LazyLock};
+use tracing::info;
 use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
 use wrappers::future_homes_standard::future_homes_standard_fee::{
     apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
@@ -355,7 +356,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         hot_water_dict,
         ductwork_gains,
     } = args;
-    println!("writing out to {output_key}");
+    info!("writing out to {output_key}");
     let writer = output.writer_for_location_key(&output_key)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
@@ -639,7 +640,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<
         writer.write_record(&row)?;
     }
 
-    println!("flushing out CSV");
+    info!("flushing out CSV");
     writer.flush()?;
 
     Ok(())
@@ -725,7 +726,7 @@ fn write_core_output_file_summary(
         daily_hw_demand_75th_percentile,
     } = args;
 
-    println!("writing out to {output_key}");
+    info!("writing out to {output_key}");
 
     // Electricity breakdown
     let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
@@ -1113,7 +1114,7 @@ fn write_core_output_file_summary(
         }
     }
 
-    println!("flushing out summary CSV");
+    info!("flushing out summary CSV");
     writer.flush()?;
 
     Ok(())
@@ -1139,7 +1140,7 @@ fn write_core_output_file_static(
         heat_loss_form_factor,
     } = args;
 
-    println!("writing out to {output_key}");
+    info!("writing out to {output_key}");
 
     let writer = output.writer_for_location_key(&output_key)?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
@@ -1165,7 +1166,7 @@ fn write_core_output_file_static(
         heat_loss_form_factor.to_string(),
     ])?;
 
-    println!("flushing out static CSV");
+    info!("flushing out static CSV");
     writer.flush()?;
 
     Ok(())

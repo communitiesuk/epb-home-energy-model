@@ -79,6 +79,13 @@ struct WeatherFileType {
 }
 
 fn main() -> anyhow::Result<()> {
+    // set up basic tracing
+    let tracing_subscriber = tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .finish();
+    tracing::subscriber::set_global_default(tracing_subscriber)
+        .expect("setting tracing subscriber failed");
+
     let args = SapArgs::parse();
 
     let input_file = args.input_file.as_str();
