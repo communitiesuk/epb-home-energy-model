@@ -24,6 +24,7 @@ use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 use crate::wrappers::future_homes_standard::future_homes_standard::apply_fhs_preprocessing;
+use crate::wrappers::future_homes_standard::future_homes_standard_notional::apply_fhs_not_preprocessing;
 use anyhow::anyhow;
 use csv::WriterBuilder;
 use indexmap::IndexMap;
@@ -56,7 +57,21 @@ pub fn run_project(
     input_for_processing
         .merge_external_conditions_data(external_conditions_data.as_ref().map(|x| x.into()));
 
-    // do wrapper pre-processing here
+    // Apply required preprocessing steps, if any
+    // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
+    if fhs_not_a_assumptions
+        || fhs_not_b_assumptions
+        || fhs_fee_not_a_assumptions
+        || fhs_fee_not_b_assumptions
+    {
+        apply_fhs_not_preprocessing(
+            &mut input_for_processing,
+            fhs_not_a_assumptions,
+            fhs_not_b_assumptions,
+            fhs_fee_not_a_assumptions,
+            fhs_not_b_assumptions,
+        )?;
+    }
     if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
         apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
     } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {

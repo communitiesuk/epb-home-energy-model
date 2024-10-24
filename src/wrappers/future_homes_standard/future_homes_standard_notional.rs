@@ -47,8 +47,8 @@ const NOTIONAL_SHOWER_NAME: &str = "mixer";
 const NOTIONAL_OTHER_HW_NAME: &str = "other";
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
-fn apply_fhs_not_preprocessing(
-    mut input: InputForProcessing,
+pub(crate) fn apply_fhs_not_preprocessing(
+    input: &mut InputForProcessing,
     fhs_not_a_assumptions: bool,
     _fhs_not_b_assumptions: bool,
     fhs_fee_not_a_assumptions: bool,
@@ -75,7 +75,7 @@ fn apply_fhs_not_preprocessing(
 
     // Determine the TFA
     let _tfa = calc_tfa(&input);
-    edit_lighting_efficacy(&mut input);
+    edit_lighting_efficacy(input);
 
     todo!()
 }
@@ -686,14 +686,14 @@ mod tests {
     #[ignore = "still to complete"]
     #[rstest]
     // test written in Rust, not present in Python
-    fn test_apply_fhs_not_preprocessing(test_input: InputForProcessing) {
+    fn test_apply_fhs_not_preprocessing(mut test_input: InputForProcessing) {
         let fhs_not_a_assumptions = true;
         let _fhs_not_b_assumptions = false;
         let fhs_fee_not_a_assumptions = false;
         let fhs_fee_not_b_assumptions = false;
 
         let _actual = apply_fhs_not_preprocessing(
-            test_input,
+            &mut test_input,
             fhs_not_a_assumptions,
             _fhs_not_b_assumptions,
             fhs_fee_not_a_assumptions,
