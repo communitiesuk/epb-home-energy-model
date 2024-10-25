@@ -1084,7 +1084,12 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
 pub struct WaterPipeworkSimple {
     pub location: WaterPipeworkLocation,
     pub internal_diameter_mm: f64,
+    pub external_diameter_mm: Option<f64>,
     pub length: f64,
+    pub insulation_thermal_conductivity: Option<f64>,
+    pub insulation_thickness_mm: Option<f64>,
+    pub surface_reflectivity: Option<bool>,
+    pub pipe_contents: Option<WaterPipeContentsType>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
