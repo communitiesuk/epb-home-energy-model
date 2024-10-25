@@ -11,7 +11,8 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::ColdWaterSources;
 use crate::input::{
-    BuildType, ColdWaterSourceType, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
+    BuildType, ColdWaterSourceType, EnergySupplyType, WaterHeatingEventType, WaterPipeContentsType,
+    WaterPipework,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -628,6 +629,18 @@ pub fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64
 }
 
+fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let part_o_active_cooling_required = input.part_o_active_cooling_required().unwrap_or(false);
+
+    if part_o_active_cooling_required {
+        input.set_efficiency_for_all_space_cool_systems(5.1)?;
+        input.set_frac_convective_for_all_space_cool_systems(0.95)?;
+        input.set_energy_supply_for_all_space_cool_systems(EnergySupplyType::Electricity)?;
+    }
+
+    Ok(())
+}
+
 fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
     // Data from the table
     let percentiles_kwh = [3.7, 4.4, 5.2, 5.9, 6.7, 7.4, 8.1, 8.9, 9.6, 10.3, 11.1];
@@ -662,7 +675,7 @@ mod tests {
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
-    use crate::input;
+    use crate::input::{self, EnergySupplyType};
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
         ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
@@ -1396,6 +1409,25 @@ mod tests {
 
         for (x, y) in daily_hwd.unwrap().iter().zip(expected_result.iter()) {
             assert_relative_eq!(x, y, max_relative = 1e-4)
+        }
+    }
+
+    #[ignore = ""]
+    #[test]
+    fn test_edit_hot_water_distribution() {
+        todo!()
+    }
+
+    #[rstest]
+    fn test_edit_space_cool_system(mut test_input: InputForProcessing) {
+        test_input.set_part_o_active_cooling_required(true);
+        let _ = edit_space_cool_system(&mut test_input);
+        let space_cool_system = test_input.space_cool_system().unwrap();
+
+        for system in space_cool_system.values() {
+            assert_eq!(system.efficiency, 5.1);
+            assert_eq!(system.frac_convective, 0.95);
+            assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
         }
     }
 }

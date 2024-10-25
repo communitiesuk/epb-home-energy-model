@@ -2001,6 +2001,18 @@ impl SpaceCoolSystemDetails {
         Ok(self)
     }
 
+    pub(crate) fn set_efficiency(&mut self, efficiency: f64) {
+        self.efficiency = efficiency;
+    }
+
+    pub(crate) fn set_frac_convective(&mut self, frac_convective: f64) {
+        self.frac_convective = frac_convective;
+    }
+
+    pub(crate) fn set_energy_supply(&mut self, energy_supply_type: EnergySupplyType) {
+        self.energy_supply = energy_supply_type;
+    }
+
     pub fn temp_setback(&self) -> Option<f64> {
         self.temp_setback
     }
@@ -3090,6 +3102,59 @@ impl InputForProcessing {
         Ok(self)
     }
 
+    pub(crate) fn set_efficiency_for_all_space_cool_systems(
+        &mut self,
+        efficiency: f64,
+    ) -> anyhow::Result<()> {
+        let systems = self
+            .input
+            .space_cool_system
+            .as_mut()
+            .ok_or_else(|| anyhow!("Space cool system expected"))?;
+
+        for system in systems.values_mut() {
+            system.set_efficiency(efficiency);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_frac_convective_for_all_space_cool_systems(
+        &mut self,
+        frac_convective: f64,
+    ) -> anyhow::Result<()> {
+        let systems = self
+            .input
+            .space_cool_system
+            .as_mut()
+            .ok_or_else(|| anyhow!("Space cool system expected"))?;
+
+        for system in systems.values_mut() {
+            system.set_frac_convective(frac_convective);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_energy_supply_for_all_space_cool_systems(
+        &mut self,
+        energy_supply_type: EnergySupplyType,
+    ) -> anyhow::Result<()> {
+        let systems = self
+            .input
+            .space_cool_system
+            .as_mut()
+            .ok_or_else(|| anyhow!("Space cool system expected"))?;
+
+        for system in systems.values_mut() {
+            system.set_energy_supply(energy_supply_type);
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn space_cool_system(&self) -> Option<&SpaceCoolSystem> {
+        self.input.space_cool_system.as_ref()
+    }
+
     pub fn temperature_setback_for_space_heat_system(
         &self,
         space_heat_system: &str,
@@ -3787,6 +3852,16 @@ impl InputForProcessing {
             .get(&event_type)
             .and_then(|events| events.get(event_name))
             .map(|events| events.as_slice())
+    }
+
+    pub(crate) fn part_o_active_cooling_required(&self) -> Option<bool> {
+        self.input.part_o_active_cooling_required
+    }
+
+    #[cfg(test)]
+    pub fn set_part_o_active_cooling_required(&mut self, required: bool) -> &Self {
+        self.input.part_o_active_cooling_required = Some(required);
+        self
     }
 }
 
