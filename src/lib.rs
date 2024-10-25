@@ -142,7 +142,7 @@ pub fn run_project(
         input: &Input,
         external_conditions: ExternalConditions,
     ) -> anyhow::Result<Corpus> {
-        Ok(Corpus::from_inputs(&input, Some(external_conditions))?)
+        Corpus::from_inputs(input, Some(external_conditions))
     }
     let mut corpus = build_corpus(&input, external_conditions)?;
 
