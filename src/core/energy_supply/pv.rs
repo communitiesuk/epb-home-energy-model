@@ -30,6 +30,7 @@ const F_PERF_LOOKUP_MODERATELY_VENTILATED: f64 = 0.85;
 const F_PERF_LOOKUP_STRONGLY_OR_FORCED_VENTILATED: f64 = 0.87;
 const F_PERF_LOOKUP_REAR_SURFACE_FREE: f64 = 0.87;
 
+#[derive(Debug)]
 pub struct PhotovoltaicSystem {
     peak_power: f64,
     f_perf: f64,

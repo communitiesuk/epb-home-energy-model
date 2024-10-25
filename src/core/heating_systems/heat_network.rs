@@ -12,6 +12,7 @@ use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct HeatNetworkServiceWaterDirect {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
@@ -147,6 +148,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 }
 
+#[derive(Debug)]
 pub struct HeatNetworkServiceSpace {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,

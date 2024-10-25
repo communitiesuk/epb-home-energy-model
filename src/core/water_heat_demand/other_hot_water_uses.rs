@@ -2,6 +2,7 @@ use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::simulation_time::SimulationTimeIteration;
 
+#[derive(Debug)]
 pub struct OtherHotWater {
     flowrate: f64,
     cold_water_source: ColdWaterSource,

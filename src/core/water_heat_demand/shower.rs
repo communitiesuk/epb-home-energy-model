@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum Shower {
     MixerShower(MixerShower),
     InstantElectricShower(InstantElectricShower),
@@ -40,6 +41,7 @@ impl Shower {
     }
 }
 
+#[derive(Debug)]
 pub struct MixerShower {
     flowrate: f64,
     cold_water_source: ColdWaterSource,
@@ -114,6 +116,7 @@ impl MixerShower {
     }
 }
 
+#[derive(Debug)]
 pub struct InstantElectricShower {
     power_in_kilowatts: f64,
     cold_water_source: ColdWaterSource,

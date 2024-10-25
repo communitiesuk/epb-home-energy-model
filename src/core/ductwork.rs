@@ -14,7 +14,7 @@ const EXTERNAL_NONREFLECTIVE_HTC: f64 = 10.0; // high emissivity non-reflective 
 ///
 /// Assumes steady state heat transfer in, 1. a hollow cylinder (duct)
 /// with radial heat flow and 2. a rectangular cross-section ISO 12241:2022
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Ductwork {
     length_in_m: f64,
     mvhr_location: MVHRLocation,

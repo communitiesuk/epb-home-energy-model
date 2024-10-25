@@ -16,9 +16,12 @@ extern crate is_close;
 
 use crate::core::units::convert_profile_to_daily;
 pub use crate::corpus::RunResults;
-use crate::corpus::{Corpus, HotWaterResultMap, KeyString, NumberOrDivisionByZero};
+use crate::corpus::{Corpus, HotWaterResultMap, KeyString, NumberOrDivisionByZero, ResultsEndUser};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-use crate::input::{ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input};
+use crate::input::{
+    ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
+    InputForProcessing,
+};
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
@@ -30,17 +33,17 @@ use csv::WriterBuilder;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
 use std::sync::{Arc, LazyLock};
-use tracing::debug;
+use tracing::{debug, instrument};
 use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
 use wrappers::future_homes_standard::future_homes_standard_fee::{
     apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
 };
 
 pub fn run_project(
-    input: impl Read,
+    input: impl Read + Debug,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     _preprocess_only: bool,
@@ -54,16 +57,32 @@ pub fn run_project(
     detailed_output_heating_cooling: bool,
 ) -> Result<(), anyhow::Error> {
     // 1. ingest/ parse input and enter preprocessing stage
-    let mut input_for_processing = {
+    #[instrument]
+    fn ingest_input_and_start_preprocessing(
+        input: impl Read + Debug,
+        external_conditions_data: Option<&ExternalConditionsFromFile>,
+    ) -> anyhow::Result<InputForProcessing> {
         let mut input_for_processing = ingest_for_processing(input)?;
 
         input_for_processing
-            .merge_external_conditions_data(external_conditions_data.as_ref().map(|x| x.into()));
-        input_for_processing
-    };
+            .merge_external_conditions_data(external_conditions_data.map(|x| x.into()));
+        Ok(input_for_processing)
+    }
+
+    let input_for_processing =
+        ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
 
     // 2. apply preprocessing from wrappers
-    let input = {
+    #[instrument]
+    fn apply_preprocessing_from_wrappers(
+        mut input_for_processing: InputForProcessing,
+        fhs_assumptions: bool,
+        fhs_fee_assumptions: bool,
+        fhs_not_a_assumptions: bool,
+        fhs_not_b_assumptions: bool,
+        fhs_fee_not_a_assumptions: bool,
+        fhs_fee_not_b_assumptions: bool,
+    ) -> anyhow::Result<Input> {
         // Apply required preprocessing steps, if any
         // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
         if fhs_not_a_assumptions
@@ -85,20 +104,43 @@ pub fn run_project(
             apply_fhs_fee_preprocessing(&mut input_for_processing)?;
         }
 
-        input_for_processing.finalize()
-    };
+        Ok(input_for_processing.finalize())
+    }
+
+    let input = apply_preprocessing_from_wrappers(
+        input_for_processing,
+        fhs_assumptions,
+        fhs_fee_assumptions,
+        fhs_not_a_assumptions,
+        fhs_not_b_assumptions,
+        fhs_fee_not_a_assumptions,
+        fhs_fee_not_b_assumptions,
+    )?;
 
     // 3. Determine external conditions to use for calculations.
-    let external_conditions = external_conditions_from_input(
-        input.external_conditions.clone(),
-        external_conditions_data,
-        input.simulation_time,
-    );
+    #[instrument]
+    fn resolve_external_conditions(
+        input: &Input,
+        external_conditions_data: Option<ExternalConditionsFromFile>,
+    ) -> ExternalConditions {
+        external_conditions_from_input(
+            input.external_conditions.clone(),
+            external_conditions_data,
+            input.simulation_time,
+        )
+    }
+
+    let external_conditions = resolve_external_conditions(&input, external_conditions_data);
 
     // 4. Build corpus from input and external conditions.
     let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
 
     // 5. Run HEM calculation(s).
+    #[instrument]
+    fn run_hem_calculation(corpus: &mut Corpus) -> anyhow::Result<RunResults> {
+        corpus.run()
+    }
+
     let RunResults {
         timestep_array,
         results_totals,
@@ -123,9 +165,14 @@ pub fn run_project(
         _heat_source_wet_results_annual_dict,
         emitters_output_dict: _emitters_output_dict,
         vent_output_list: _vent_output_list,
-    } = corpus.run()?;
+    } = run_hem_calculation(&mut corpus)?;
 
     // 6. Write out to core output files.
+
+    // fn write_core_output_files(output: &impl Output) -> anyhow::Result<(f64, f64, f64)> {
+    //
+    // }
+
     let (total_floor_area, space_heat_demand_total, space_cool_demand_total) = {
         write_core_output_file(
             &output,
@@ -232,29 +279,64 @@ pub fn run_project(
     };
 
     // 7. Run wrapper post-processing and capture any output.
-    let wrapper_output = {
+    #[instrument]
+    fn run_wrapper_postprocessing(
+        input: &Input,
+        output: &impl Output,
+        fhs_assumptions: bool,
+        fhs_fee_assumptions: bool,
+        fhs_not_a_assumptions: bool,
+        fhs_not_b_assumptions: bool,
+        fhs_fee_not_a_assumptions: bool,
+        fhs_fee_not_b_assumptions: bool,
+        energy_import: &IndexMap<KeyString, Vec<f64>>,
+        energy_export: &IndexMap<KeyString, Vec<f64>>,
+        results_end_user: &ResultsEndUser,
+        timestep_array: &[f64],
+        total_floor_area: f64,
+        space_heat_demand_total: f64,
+        space_cool_demand_total: f64,
+    ) -> anyhow::Result<()> {
         if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
             let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
             apply_fhs_postprocessing(
-                &input,
-                &output,
-                &energy_import,
-                &energy_export,
-                &results_end_user,
-                &timestep_array,
+                input,
+                output,
+                energy_import,
+                energy_export,
+                results_end_user,
+                timestep_array,
                 notional,
             )?;
         } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
             apply_fhs_fee_postprocessing(
-                &output,
+                output,
                 total_floor_area,
                 space_heat_demand_total,
                 space_cool_demand_total,
             )?;
         }
-    };
 
-    Ok(wrapper_output)
+        Ok(())
+    }
+
+    run_wrapper_postprocessing(
+        &input,
+        &output,
+        fhs_assumptions,
+        fhs_fee_assumptions,
+        fhs_not_a_assumptions,
+        fhs_not_b_assumptions,
+        fhs_fee_not_a_assumptions,
+        fhs_fee_not_b_assumptions,
+        &energy_import,
+        &energy_export,
+        &results_end_user,
+        &timestep_array,
+        total_floor_area,
+        space_heat_demand_total,
+        space_cool_demand_total,
+    )
 }
 
 fn external_conditions_from_input(

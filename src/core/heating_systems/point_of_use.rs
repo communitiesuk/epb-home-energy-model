@@ -5,6 +5,7 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::simulation_time::SimulationTimeIteration;
 use indexmap::IndexMap;
 
+#[derive(Debug)]
 pub struct PointOfUse {
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,

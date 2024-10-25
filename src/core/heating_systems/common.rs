@@ -91,7 +91,7 @@ impl HeatSourceWet {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SpaceHeatSystem {
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),
@@ -177,6 +177,7 @@ impl SpaceHeatSystem {
     }
 }
 
+#[derive(Debug)]
 pub enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),

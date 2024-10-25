@@ -24,7 +24,7 @@ fuzz_target!(|data: &[u8]| {
 });
 
 /// An output that goes to nowhere/ a "sink"/ /dev/null.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SinkOutput;
 
 impl Output for SinkOutput {

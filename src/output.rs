@@ -1,10 +1,11 @@
 use formatx::formatx;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-pub trait Output {
+pub trait Output: Debug {
     fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write>;
     /// Whether this output can be considered a no-op and therefore that any code that only writes to the output can be skipped.
     fn is_noop(&self) -> bool {
@@ -12,6 +13,7 @@ pub trait Output {
     }
 }
 
+#[derive(Debug)]
 pub struct FileOutput {
     directory_path: PathBuf,
     file_template: String,
@@ -41,7 +43,7 @@ impl Output for &FileOutput {
 }
 
 /// An output that goes to nowhere/ a "sink"/ /dev/null.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SinkOutput;
 
 impl Output for SinkOutput {

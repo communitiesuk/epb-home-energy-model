@@ -58,6 +58,7 @@ async fn main() -> Result<(), Error> {
 
 /// This output uses a shared string that individual "file" writers (the FileLikeStringWriter type)
 /// can write to - this string can then be used as the response body for the Lambda.
+#[derive(Debug)]
 struct LambdaOutput(Arc<Mutex<String>>);
 
 impl LambdaOutput {

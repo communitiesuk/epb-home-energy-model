@@ -7,7 +7,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use std::sync::Arc;
 
 /// Type to represent instantaneous electric heaters
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InstantElecHeater {
     rated_power_in_kw: f64,
     frac_convective: f64,

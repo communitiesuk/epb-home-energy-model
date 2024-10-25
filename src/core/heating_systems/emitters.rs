@@ -11,6 +11,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use parking_lot::RwLock;
+use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -48,6 +49,37 @@ pub struct Emitters {
     max_flow_temp: Option<f64>,
     temp_emitter_prev: f64,
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
+}
+
+// Implement Debug for Emitters using standard strategy, overwriting debug value for temp_internal_air_fn.
+impl Debug for Emitters {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Emitters")
+            .field("thermal_mass", &self.thermal_mass)
+            .field("c", &self.c)
+            .field("n", &self.n)
+            .field("_temp_diff_emit_dsgn", &self._temp_diff_emit_dsgn)
+            .field("frac_convective", &self.frac_convective)
+            .field("heat_source", &self.heat_source)
+            .field(
+                "temp_internal_air_fn",
+                &"A function providing the internal air temperature.",
+            )
+            .field("external_conditions", &self.external_conditions)
+            .field("with_buffer_tank", &self.with_buffer_tank)
+            .field("design_flow_temp", &self.design_flow_temp)
+            .field(
+                "ecodesign_controller_class",
+                &self.ecodesign_controller_class,
+            )
+            .field("min_outdoor_temp", &self.min_outdoor_temp)
+            .field("max_outdoor_temp", &self.max_outdoor_temp)
+            .field("min_flow_temp", &self.min_flow_temp)
+            .field("max_flow_temp", &self.max_flow_temp)
+            .field("temp_emitter_prev", &self.temp_emitter_prev)
+            .field("target_flow_temp", &self.target_flow_temp)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Copy, Clone)]

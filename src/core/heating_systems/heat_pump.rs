@@ -1379,7 +1379,7 @@ impl HeatPumpServiceWater {
 const TIME_CONSTANT_SPACE_WATER: f64 = 1370.;
 const TIME_CONSTANT_SPACE_AIR: f64 = 120.;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatPumpServiceSpace {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
@@ -1589,7 +1589,7 @@ impl HeatPumpServiceSpace {
 ///
 ///    This object contains the parts of the heat pump calculation that are
 ///    specific to providing space heating via warm air.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HeatPumpServiceSpaceWarmAir {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,

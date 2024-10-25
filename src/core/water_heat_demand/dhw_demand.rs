@@ -21,6 +21,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct DomesticHotWaterDemand {
     showers: HashMap<String, Shower>,
     baths: HashMap<String, Bath>,

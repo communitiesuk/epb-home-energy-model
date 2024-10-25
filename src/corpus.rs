@@ -101,6 +101,7 @@ fn temp_setpnt_cool_none() -> f64 {
 // used for calculations re internal gains from pipework
 const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
+#[derive(Debug)]
 pub struct Corpus {
     pub simulation_time: Arc<SimulationTimeIterator>,
     pub external_conditions: Arc<ExternalConditions>,
@@ -2335,6 +2336,7 @@ fn convert_energy_to_wm2(
         .collect())
 }
 
+#[derive(Debug)]
 pub struct Controls {
     core: Vec<HeatSourceControl>,
     extra: HashMap<String, Arc<Control>>,
@@ -3440,7 +3442,7 @@ pub struct PositionedHeatSource {
     pub thermostat_position: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<Mutex<Boiler>>),
@@ -3863,6 +3865,7 @@ fn heat_source_from_input(
     }
 }
 
+#[derive(Debug)]
 pub enum HotWaterSource {
     StorageTank(Arc<Mutex<StorageTank>>),
     CombiBoiler(BoilerServiceWaterCombi),

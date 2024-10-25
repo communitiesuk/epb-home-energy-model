@@ -66,6 +66,7 @@ impl ControlBehaviour for Control {
     }
 }
 
+#[derive(Debug)]
 pub enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),
