@@ -603,6 +603,10 @@ fn edit_primary_pipework(
     Ok(primary_pipework.unwrap())
 }
 
+fn edit_hot_water_distribution(_input: &mut InputForProcessing, _tfa: f64) {
+    todo!()
+}
+
 /// Calculate effective air change rate according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -675,7 +679,7 @@ mod tests {
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
-    use crate::input::{self, EnergySupplyType};
+    use crate::input::{self, EnergySupplyType, WaterPipeworkSimple};
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
         ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
@@ -1412,10 +1416,34 @@ mod tests {
         }
     }
 
-    #[ignore = ""]
-    #[test]
-    fn test_edit_hot_water_distribution() {
-        todo!()
+    #[ignore = "Not yet implemented"]
+    #[rstest]
+    fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
+        let tfa = calc_tfa(&mut test_input);
+        edit_hot_water_distribution(&mut test_input, tfa);
+
+        let expected_hot_water_distribution_inner: WaterPipeworkSimple =
+            serde_json::from_value(json!(
+                    {
+                        "location": "internal",
+                        "external_diameter_mm": 27,
+                        "insulation_thermal_conductivity": 0.035,
+                        "insulation_thickness_mm": 20,
+                        "internal_diameter_mm": 25,
+                        "length": 8.0,
+                        "pipe_contents": "water",
+                        "surface_reflectivity": false
+                    }
+            ))
+            .unwrap();
+
+        let actual_hot_water_distribution_inner =
+            test_input.water_distribution().unwrap().first().unwrap();
+
+        assert_eq!(
+            *actual_hot_water_distribution_inner,
+            expected_hot_water_distribution_inner
+        );
     }
 
     #[rstest]
