@@ -16,7 +16,10 @@ extern crate is_close;
 
 use crate::core::units::convert_profile_to_daily;
 pub use crate::corpus::RunResults;
-use crate::corpus::{Corpus, HotWaterResultMap, KeyString, NumberOrDivisionByZero, ResultsEndUser};
+use crate::corpus::{
+    Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
+    NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
+};
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
@@ -134,7 +137,14 @@ pub fn run_project(
     let external_conditions = resolve_external_conditions(&input, external_conditions_data);
 
     // 4. Build corpus from input and external conditions.
-    let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
+    #[instrument(skip_all)]
+    fn build_corpus(
+        input: &Input,
+        external_conditions: ExternalConditions,
+    ) -> anyhow::Result<Corpus> {
+        Ok(Corpus::from_inputs(&input, Some(external_conditions))?)
+    }
+    let mut corpus = build_corpus(&input, external_conditions)?;
 
     // 5. Run HEM calculation(s).
     #[instrument(skip_all)]
@@ -208,17 +218,17 @@ pub fn run_project(
         }
 
         // Sum per-timestep figures as needed
-        let space_heat_demand_total = zone_dict["space heat demand"]
+        let space_heat_demand_total = zone_dict[&ZoneResultKey::SpaceHeatDemand]
             .values()
             .map(|v| v.iter().sum::<f64>())
             .sum::<f64>();
-        let space_cool_demand_total = zone_dict["space cool demand"]
+        let space_cool_demand_total = zone_dict[&ZoneResultKey::SpaceCoolDemand]
             .values()
             .map(|v| v.iter().sum::<f64>())
             .sum::<f64>();
         let total_floor_area = corpus.total_floor_area;
         let daily_hw_demand = convert_profile_to_daily(
-            match &hot_water_dict["Hot water energy demand incl pipework_loss"] {
+            match &hot_water_dict[&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss] {
                 HotWaterResultMap::Float(results) => results
                     .get(&KeyString::from("energy_demand_incl_pipework_loss")?)
                     .ok_or(anyhow!(
@@ -435,10 +445,10 @@ struct OutputFileArgs<'a> {
     energy_from_storage: &'a IndexMap<KeyString, Vec<f64>>,
     energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
     betafactor: &'a IndexMap<KeyString, Vec<f64>>,
-    zone_dict: &'a IndexMap<&'static str, IndexMap<KeyString, Vec<f64>>>,
+    zone_dict: &'a IndexMap<ZoneResultKey, IndexMap<KeyString, Vec<f64>>>,
     zone_list: &'a [KeyString],
-    hc_system_dict: IndexMap<&'static str, IndexMap<String, Vec<f64>>>,
-    hot_water_dict: &'a IndexMap<&'static str, HotWaterResultMap>,
+    hc_system_dict: IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
+    hot_water_dict: &'a IndexMap<HotWaterResultKey, HotWaterResultMap>,
     ductwork_gains: IndexMap<KeyString, Vec<f64>>,
 }
 
@@ -473,31 +483,22 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
 
     // hot_water_dict headings
     for system in hot_water_dict.keys() {
-        let mut system = *system;
-        if system == "Hot water demand" {
-            system = "DHW: demand volume (including distribution pipework losses)";
-        }
-        if system == "Hot water energy demand" {
-            system = "DHW: demand energy (excluding distribution pipework losses)";
-        }
-        if system == "Hot water energy demand incl pipework_loss" {
-            system = "DHW: demand energy (including distribution pipework losses)";
-        }
-        if system == "Hot water duration" {
-            system = "DHW: total event duration";
-        }
-        if system == "Hot Water Events" {
-            system = "DHW: number of events";
-        }
-        if system == "Pipework losses" {
-            system = "DHW: distribution pipework losses";
-        }
-        if system == "Primary pipework losses" {
-            system = "DHW: primary pipework losses";
-        }
-        if system == "Storage losses" {
-            system = "DHW: storage losses";
-        }
+        let system = match system {
+            HotWaterResultKey::HotWaterDemand => {
+                "DHW: demand volume (including distribution pipework losses)"
+            }
+            HotWaterResultKey::HotWaterEnergyDemand => {
+                "DHW: demand energy (excluding distribution pipework losses)"
+            }
+            HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss => {
+                "DHW: demand energy (including distribution pipework losses)"
+            }
+            HotWaterResultKey::HotWaterDuration => "DHW: total event duration",
+            HotWaterResultKey::HotWaterEvents => "DHW: number of events",
+            HotWaterResultKey::PipeworkLosses => "DHW: distribution pipework losses",
+            HotWaterResultKey::PrimaryPipeworkLosses => "DHW: primary pipework losses",
+            HotWaterResultKey::StorageLosses => "DHW: storage losses",
+        };
         headings.push(system.into());
         if UNITS_MAP.contains_key(system) {
             units_row.push(UNITS_MAP[system]);
@@ -526,7 +527,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
     // Reorganising this dictionary so system names can be grouped together
 
     // Initialize the reorganized dictionary for grouping systems in hc_system_dict
-    let mut reorganised_dict: IndexMap<String, IndexMap<&'static str, Vec<f64>>> =
+    let mut reorganised_dict: IndexMap<String, IndexMap<HeatingCoolingSystemResultKey, Vec<f64>>> =
         Default::default();
 
     // Iterate over the original map
@@ -550,10 +551,18 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
             "None"
         };
         for hc_name in reorganised_dict[system].keys() {
-            let hc_system = if ["Heating system", "Cooling system"].contains(hc_name) {
+            let hc_system = if matches!(
+                hc_name,
+                HeatingCoolingSystemResultKey::HeatingSystem
+                    | HeatingCoolingSystemResultKey::CoolingSystem
+            ) {
                 let alternate_name = "energy demand";
                 format!("{system_label}: {alternate_name}")
-            } else if ["Heating system output", "Cooling system output"].contains(hc_name) {
+            } else if matches!(
+                hc_name,
+                HeatingCoolingSystemResultKey::HeatingSystemOutput
+                    | HeatingCoolingSystemResultKey::CoolingSystemOutput
+            ) {
                 let alternate_name = "energy output";
                 format!("{system_label}: {alternate_name}")
             } else {
@@ -639,31 +648,36 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         }
 
         // Loop over hot water demand
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water demand"] {
+        if let HotWaterResultMap::Float(map) = &hot_water_dict[&HotWaterResultKey::HotWaterDemand] {
             hw_system_row.push(map["demand"][t_idx]);
         }
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water energy demand"] {
+        if let HotWaterResultMap::Float(map) =
+            &hot_water_dict[&HotWaterResultKey::HotWaterEnergyDemand]
+        {
             hw_system_row_energy.push(map["energy_demand"][t_idx]);
         }
         if let HotWaterResultMap::Float(map) =
-            &hot_water_dict["Hot water energy demand incl pipework_loss"]
+            &hot_water_dict[&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss]
         {
             hw_system_row_energy_with_pipework_losses
                 .push(map["energy_demand_incl_pipework_loss"][t_idx]);
         }
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Hot water duration"] {
+        if let HotWaterResultMap::Float(map) = &hot_water_dict[&HotWaterResultKey::HotWaterDuration]
+        {
             hw_system_row_duration.push(map["duration"][t_idx]);
         }
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Pipework losses"] {
+        if let HotWaterResultMap::Float(map) = &hot_water_dict[&HotWaterResultKey::PipeworkLosses] {
             pw_losses_row.push(map["pw_losses"][t_idx]);
         }
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Primary pipework losses"] {
+        if let HotWaterResultMap::Float(map) =
+            &hot_water_dict[&HotWaterResultKey::PrimaryPipeworkLosses]
+        {
             primary_pw_losses_row.push(map["primary_pw_losses"][t_idx]);
         }
-        if let HotWaterResultMap::Float(map) = &hot_water_dict["Storage losses"] {
+        if let HotWaterResultMap::Float(map) = &hot_water_dict[&HotWaterResultKey::StorageLosses] {
             storage_losses_row.push(map["storage_losses"][t_idx]);
         }
-        if let HotWaterResultMap::Int(map) = &hot_water_dict["Hot Water Events"] {
+        if let HotWaterResultMap::Int(map) = &hot_water_dict[&HotWaterResultKey::HotWaterEvents] {
             hw_system_row_events.push(map["no_events"][t_idx]);
         }
         ductwork_row.push(ductwork_gains["ductwork_gains"][t_idx]);

@@ -50,4 +50,8 @@ impl Output for SinkOutput {
     fn writer_for_location_key(&self, _location_key: &str) -> anyhow::Result<impl Write> {
         Ok(io::sink())
     }
+
+    fn is_noop(&self) -> bool {
+        true
+    }
 }

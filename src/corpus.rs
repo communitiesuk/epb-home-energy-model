@@ -73,12 +73,13 @@ use crate::input::{
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
-use indexmap::IndexMap;
+use indexmap::{Equivalent, IndexMap};
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -1923,52 +1924,64 @@ impl Corpus {
         );
 
         let zone_dict = IndexMap::from([
-            ("internal gains", gains_internal_dict),
-            ("solar gains", gains_solar_dict),
-            ("operative temp", operative_temp_dict),
-            ("internal air temp", internal_air_temp_dict),
-            ("space heat demand", space_heat_demand_dict),
-            ("space cool demand", space_cool_demand_dict),
+            (ZoneResultKey::InternalGains, gains_internal_dict),
+            (ZoneResultKey::SolarGains, gains_solar_dict),
+            (ZoneResultKey::OperativeTemp, operative_temp_dict),
+            (ZoneResultKey::InternalAirTemp, internal_air_temp_dict),
+            (ZoneResultKey::SpaceHeatDemand, space_heat_demand_dict),
+            (ZoneResultKey::SpaceCoolDemand, space_cool_demand_dict),
         ]);
 
         let hc_system_dict = IndexMap::from([
-            ("Heating system", space_heat_demand_system_dict),
-            ("Heating system output", space_heat_provided_dict),
-            ("Cooling system", space_cool_demand_system_dict),
-            ("Cooling system output", space_cool_provided_dict),
+            (
+                HeatingCoolingSystemResultKey::HeatingSystem,
+                space_heat_demand_system_dict,
+            ),
+            (
+                HeatingCoolingSystemResultKey::HeatingSystemOutput,
+                space_heat_provided_dict,
+            ),
+            (
+                HeatingCoolingSystemResultKey::CoolingSystem,
+                space_cool_demand_system_dict,
+            ),
+            (
+                HeatingCoolingSystemResultKey::CoolingSystemOutput,
+                space_cool_provided_dict,
+            ),
         ]);
 
         let hot_water_dict = IndexMap::from([
             (
-                "Hot water demand",
+                HotWaterResultKey::HotWaterDemand,
                 HotWaterResultMap::Float(hot_water_demand_dict),
             ),
             (
-                "Hot water energy demand incl pipework_loss",
+                HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss,
                 HotWaterResultMap::Float(hot_water_energy_demand_dict_incl_pipework),
             ),
             (
-                "Hot water energy demand",
+                HotWaterResultKey::HotWaterEnergyDemand,
                 HotWaterResultMap::Float(hot_water_energy_demand_dict),
             ),
             (
-                "Hot water duration",
+                HotWaterResultKey::HotWaterDuration,
                 HotWaterResultMap::Float(hot_water_duration_dict),
             ),
             (
-                "Hot Water Events",
+                HotWaterResultKey::HotWaterEvents,
                 HotWaterResultMap::Int(hot_water_no_events_dict),
             ),
             (
-                "Pipework losses",
+                HotWaterResultKey::PipeworkLosses,
                 HotWaterResultMap::Float(hot_water_pipework_dict),
             ),
             (
-                "Primary pipework losses",
+                HotWaterResultKey::PrimaryPipeworkLosses,
                 HotWaterResultMap::Float(hot_water_primary_pipework_dict),
             ),
             (
-                "Storage losses",
+                HotWaterResultKey::StorageLosses,
                 HotWaterResultMap::Float(hot_water_storage_losses_dict),
             ),
         ]);
@@ -2592,10 +2605,10 @@ pub struct RunResults<'a> {
     pub(crate) energy_from_storage: IndexMap<KeyString, Vec<f64>>,
     pub(crate) energy_diverted: IndexMap<KeyString, Vec<f64>>,
     pub(crate) betafactor: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) zone_dict: IndexMap<&'static str, IndexMap<KeyString, Vec<f64>>>,
+    pub(crate) zone_dict: IndexMap<ZoneResultKey, IndexMap<KeyString, Vec<f64>>>,
     pub(crate) zone_list: Vec<KeyString>,
-    pub(crate) hc_system_dict: IndexMap<&'static str, IndexMap<String, Vec<f64>>>,
-    pub(crate) hot_water_dict: IndexMap<&'static str, HotWaterResultMap>,
+    pub(crate) hc_system_dict: IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
+    pub(crate) hot_water_dict: IndexMap<HotWaterResultKey, HotWaterResultMap>,
     pub(crate) heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
@@ -2621,6 +2634,60 @@ struct SpaceHeatingCalculation {
     space_cool_provided_system: HashMap<String, f64>,
     internal_gains_ductwork: f64,
     heat_balance_map: HashMap<String, Option<HeatBalance>>,
+}
+
+#[derive(Clone, Copy, Deserialize_enum_str, Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+pub(crate) enum ZoneResultKey {
+    #[serde(rename = "internal gains")]
+    InternalGains,
+    #[serde(rename = "solar gains")]
+    SolarGains,
+    #[serde(rename = "operative temp")]
+    OperativeTemp,
+    #[serde(rename = "internal air temp")]
+    InternalAirTemp,
+    #[serde(rename = "space heat demand")]
+    SpaceHeatDemand,
+    #[serde(rename = "space cool demand")]
+    SpaceCoolDemand,
+}
+
+impl Equivalent<&str> for ZoneResultKey {
+    fn equivalent(&self, key: &&str) -> bool {
+        self.to_string().as_str() == *key
+    }
+}
+
+#[derive(Clone, Copy, Deserialize_enum_str, Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+pub(crate) enum HeatingCoolingSystemResultKey {
+    #[serde(rename = "Heating system")]
+    HeatingSystem,
+    #[serde(rename = "Heating system output")]
+    HeatingSystemOutput,
+    #[serde(rename = "Cooling system")]
+    CoolingSystem,
+    #[serde(rename = "Cooling system output")]
+    CoolingSystemOutput,
+}
+
+#[derive(Clone, Copy, Deserialize_enum_str, Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
+pub(crate) enum HotWaterResultKey {
+    #[serde(rename = "Hot water demand")]
+    HotWaterDemand,
+    #[serde(rename = "Hot water energy demand incl pipework_loss")]
+    HotWaterEnergyDemandIncludingPipeworkLoss,
+    #[serde(rename = "Hot water energy demand")]
+    HotWaterEnergyDemand,
+    #[serde(rename = "Hot water duration")]
+    HotWaterDuration,
+    #[serde(rename = "Hot Water Events")]
+    HotWaterEvents,
+    #[serde(rename = "Pipework losses")]
+    PipeworkLosses,
+    #[serde(rename = "Primary pipework losses")]
+    PrimaryPipeworkLosses,
+    #[serde(rename = "Storage losses")]
+    StorageLosses,
 }
 
 fn get_cold_water_source_ref_for_type(

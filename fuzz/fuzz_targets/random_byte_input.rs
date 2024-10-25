@@ -33,7 +33,7 @@ impl Output for SinkOutput {
     }
 
     fn is_noop(&self) -> bool {
-        // make the output pretend it's a no-op so fuzzing exercises code that calls it
+        // make the output pretend it's not a no-op so fuzzing exercises code that calls it
         false
     }
 }
