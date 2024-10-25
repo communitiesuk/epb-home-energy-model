@@ -1,6 +1,6 @@
 [package]
 name = "hem-lambda"
-version = "0.28.0-alpha"
+version = "0.30.0-alpha"
 edition = "2021"
 
 [dependencies]
