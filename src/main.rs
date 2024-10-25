@@ -9,6 +9,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -31,6 +32,8 @@ struct SapArgs {
         help = "Output heat balance for each zone"
     )]
     heat_balance: bool,
+    #[clap(long, default_value_t = false, help = "Whether to log out spans")]
+    log_spans: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
@@ -79,14 +82,20 @@ struct WeatherFileType {
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = SapArgs::parse();
+
     // set up basic tracing
-    let tracing_subscriber = tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .finish();
+    let tracing_subscriber = {
+        let mut builder = tracing_subscriber::fmt::fmt().with_max_level(tracing::Level::TRACE);
+
+        if args.log_spans {
+            builder = builder.with_span_events(FmtSpan::CLOSE);
+        }
+
+        builder.finish()
+    };
     tracing::subscriber::set_global_default(tracing_subscriber)
         .expect("setting tracing subscriber failed");
-
-    let args = SapArgs::parse();
 
     let input_file = args.input_file.as_str();
     let input_file_ext = Path::new(input_file).extension().and_then(OsStr::to_str);

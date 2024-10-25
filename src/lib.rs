@@ -42,6 +42,7 @@ use wrappers::future_homes_standard::future_homes_standard_fee::{
     apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
 };
 
+#[instrument(skip_all)]
 pub fn run_project(
     input: impl Read + Debug,
     output: impl Output,
@@ -57,7 +58,7 @@ pub fn run_project(
     detailed_output_heating_cooling: bool,
 ) -> Result<(), anyhow::Error> {
     // 1. ingest/ parse input and enter preprocessing stage
-    #[instrument]
+    #[instrument(skip_all)]
     fn ingest_input_and_start_preprocessing(
         input: impl Read + Debug,
         external_conditions_data: Option<&ExternalConditionsFromFile>,
@@ -73,7 +74,7 @@ pub fn run_project(
         ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
 
     // 2. apply preprocessing from wrappers
-    #[instrument]
+    #[instrument(skip_all)]
     fn apply_preprocessing_from_wrappers(
         mut input_for_processing: InputForProcessing,
         fhs_assumptions: bool,
@@ -118,7 +119,7 @@ pub fn run_project(
     )?;
 
     // 3. Determine external conditions to use for calculations.
-    #[instrument]
+    #[instrument(skip_all)]
     fn resolve_external_conditions(
         input: &Input,
         external_conditions_data: Option<ExternalConditionsFromFile>,
@@ -136,7 +137,7 @@ pub fn run_project(
     let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
 
     // 5. Run HEM calculation(s).
-    #[instrument]
+    #[instrument(skip_all)]
     fn run_hem_calculation(corpus: &mut Corpus) -> anyhow::Result<RunResults> {
         corpus.run()
     }
@@ -279,7 +280,7 @@ pub fn run_project(
     };
 
     // 7. Run wrapper post-processing and capture any output.
-    #[instrument]
+    #[instrument(skip_all)]
     fn run_wrapper_postprocessing(
         input: &Input,
         output: &impl Output,
