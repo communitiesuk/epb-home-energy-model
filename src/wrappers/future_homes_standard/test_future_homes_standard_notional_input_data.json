@@ -167,7 +167,12 @@
 			{
 				"location": "internal",
 				"internal_diameter_mm": 25,
-				"length": 8.0
+				"external_diameter_mm": 27,
+				"length": 8.0,
+				"insulation_thermal_conductivity": 0.035,
+				"insulation_thickness_mm": 25,
+				"surface_reflectivity": false,
+				"pipe_contents": "water"
 			}
 		]
 	},
