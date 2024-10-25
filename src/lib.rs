@@ -337,7 +337,10 @@ struct OutputFileArgs<'a> {
     ductwork_gains: IndexMap<KeyString, Vec<f64>>,
 }
 
-fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> Result<(), anyhow::Error> {
+fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow::Result<()> {
+    if output.is_noop() {
+        return Ok(());
+    }
     let OutputFileArgs {
         output_key,
         timestep_array,
@@ -706,6 +709,9 @@ fn write_core_output_file_summary(
     output: &impl Output,
     args: SummaryOutputFileArgs,
 ) -> Result<(), anyhow::Error> {
+    if output.is_noop() {
+        return Ok(());
+    }
     let SummaryOutputFileArgs {
         output_key,
         input,
