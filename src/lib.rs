@@ -53,44 +53,52 @@ pub fn run_project(
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
 ) -> Result<(), anyhow::Error> {
-    let mut input_for_processing = ingest_for_processing(input)?;
+    // 1. ingest/ parse input and enter preprocessing stage
+    let mut input_for_processing = {
+        let mut input_for_processing = ingest_for_processing(input)?;
 
-    input_for_processing
-        .merge_external_conditions_data(external_conditions_data.as_ref().map(|x| x.into()));
+        input_for_processing
+            .merge_external_conditions_data(external_conditions_data.as_ref().map(|x| x.into()));
+        input_for_processing
+    };
 
-    // Apply required preprocessing steps, if any
-    // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
-    if fhs_not_a_assumptions
-        || fhs_not_b_assumptions
-        || fhs_fee_not_a_assumptions
-        || fhs_fee_not_b_assumptions
-    {
-        apply_fhs_not_preprocessing(
-            &mut input_for_processing,
-            fhs_not_a_assumptions,
-            fhs_not_b_assumptions,
-            fhs_fee_not_a_assumptions,
-            fhs_not_b_assumptions,
-        )?;
-    }
-    if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-        apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
-    } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
-        apply_fhs_fee_preprocessing(&mut input_for_processing)?;
-    }
+    // 2. apply preprocessing from wrappers
+    let input = {
+        // Apply required preprocessing steps, if any
+        // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
+        if fhs_not_a_assumptions
+            || fhs_not_b_assumptions
+            || fhs_fee_not_a_assumptions
+            || fhs_fee_not_b_assumptions
+        {
+            apply_fhs_not_preprocessing(
+                &mut input_for_processing,
+                fhs_not_a_assumptions,
+                fhs_not_b_assumptions,
+                fhs_fee_not_a_assumptions,
+                fhs_not_b_assumptions,
+            )?;
+        }
+        if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+            apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
+        } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
+            apply_fhs_fee_preprocessing(&mut input_for_processing)?;
+        }
 
-    let input = input_for_processing.finalize();
+        input_for_processing.finalize()
+    };
 
+    // 3. Determine external conditions to use for calculations.
     let external_conditions = external_conditions_from_input(
         input.external_conditions.clone(),
         external_conditions_data,
         input.simulation_time,
     );
 
-    let summary_input_digest: SummaryInputDigest = (&input).into();
-
+    // 4. Build corpus from input and external conditions.
     let mut corpus: Corpus = Corpus::from_inputs(&input, Some(external_conditions))?;
 
+    // 5. Run HEM calculation(s).
     let RunResults {
         timestep_array,
         results_totals,
@@ -117,122 +125,136 @@ pub fn run_project(
         vent_output_list: _vent_output_list,
     } = corpus.run()?;
 
-    write_core_output_file(
-        &output,
-        OutputFileArgs {
-            output_key: "results".to_string(),
-            timestep_array: &timestep_array,
-            results_totals: &results_totals,
-            results_end_user: &results_end_user,
-            energy_import: &energy_import,
-            energy_export: &energy_export,
-            energy_generated_consumed: &energy_generated_consumed,
-            energy_to_storage: &energy_to_storage,
-            energy_from_storage: &energy_from_storage,
-            energy_diverted: &energy_diverted,
-            betafactor: &betafactor,
-            zone_dict: &zone_dict,
-            zone_list: &zone_list,
-            hc_system_dict,
-            hot_water_dict: &hot_water_dict,
-            ductwork_gains,
-        },
-    )?;
+    // 6. Write out to core output files.
+    let (total_floor_area, space_heat_demand_total, space_cool_demand_total) = {
+        write_core_output_file(
+            &output,
+            OutputFileArgs {
+                output_key: "results".to_string(),
+                timestep_array: &timestep_array,
+                results_totals: &results_totals,
+                results_end_user: &results_end_user,
+                energy_import: &energy_import,
+                energy_export: &energy_export,
+                energy_generated_consumed: &energy_generated_consumed,
+                energy_to_storage: &energy_to_storage,
+                energy_from_storage: &energy_from_storage,
+                energy_diverted: &energy_diverted,
+                betafactor: &betafactor,
+                zone_dict: &zone_dict,
+                zone_list: &zone_list,
+                hc_system_dict,
+                hot_water_dict: &hot_water_dict,
+                ductwork_gains,
+            },
+        )?;
 
-    if heat_balance {
-        for (_hb_name, _hb_map) in heat_balance_dict {
-            // TODO: write out heat balance files
+        if heat_balance {
+            for (_hb_name, _hb_map) in heat_balance_dict {
+                // TODO: write out heat balance files
+            }
         }
-    }
 
-    if detailed_output_heating_cooling {
-        // TODO: write out heat source wet outputs
-    }
+        if detailed_output_heating_cooling {
+            // TODO: write out heat source wet outputs
+        }
 
-    // Sum per-timestep figures as needed
-    let space_heat_demand_total = zone_dict["space heat demand"]
-        .values()
-        .map(|v| v.iter().sum::<f64>())
-        .sum::<f64>();
-    let space_cool_demand_total = zone_dict["space cool demand"]
-        .values()
-        .map(|v| v.iter().sum::<f64>())
-        .sum::<f64>();
-    let total_floor_area = corpus.total_floor_area;
-    let daily_hw_demand = convert_profile_to_daily(
-        match &hot_water_dict["Hot water energy demand incl pipework_loss"] {
-            HotWaterResultMap::Float(results) => results
-                .get(&KeyString::from("energy_demand_incl_pipework_loss")?)
-                .ok_or(anyhow!(
+        // Sum per-timestep figures as needed
+        let space_heat_demand_total = zone_dict["space heat demand"]
+            .values()
+            .map(|v| v.iter().sum::<f64>())
+            .sum::<f64>();
+        let space_cool_demand_total = zone_dict["space cool demand"]
+            .values()
+            .map(|v| v.iter().sum::<f64>())
+            .sum::<f64>();
+        let total_floor_area = corpus.total_floor_area;
+        let daily_hw_demand = convert_profile_to_daily(
+            match &hot_water_dict["Hot water energy demand incl pipework_loss"] {
+                HotWaterResultMap::Float(results) => results
+                    .get(&KeyString::from("energy_demand_incl_pipework_loss")?)
+                    .ok_or(anyhow!(
                     "Hot water energy demand incl pipework_loss field not set in hot water output"
                 ))?,
-            HotWaterResultMap::Int(_) => unreachable!(
-                "Hot water energy demand incl pipework_loss is not expected to be an integer"
-            ),
-        },
-        corpus.simulation_time.step_in_hours(),
-    );
-    let daily_hw_demand_75th_percentile = percentile(&daily_hw_demand, 75);
+                HotWaterResultMap::Int(_) => unreachable!(
+                    "Hot water energy demand incl pipework_loss is not expected to be an integer"
+                ),
+            },
+            corpus.simulation_time.step_in_hours(),
+        );
+        let daily_hw_demand_75th_percentile = percentile(&daily_hw_demand, 75);
 
-    write_core_output_file_summary(
-        &output,
-        SummaryOutputFileArgs {
-            output_key: "results_summary".to_string(),
-            input: summary_input_digest,
-            timestep_array: &timestep_array,
-            results_end_user: &results_end_user,
-            energy_generated_consumed: &energy_generated_consumed,
-            energy_to_storage: &energy_to_storage,
-            energy_from_storage: &energy_from_storage,
-            energy_diverted: &energy_diverted,
-            energy_import: &energy_import,
-            energy_export: &energy_export,
-            space_heat_demand_total,
-            space_cool_demand_total,
-            total_floor_area,
-            heat_cop_dict,
-            cool_cop_dict,
-            dhw_cop_dict,
-            daily_hw_demand_75th_percentile,
-        },
-    )?;
+        let summary_input_digest: SummaryInputDigest = (&input).into();
 
-    let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
-    let heat_capacity_parameter = corpus.calc_hcp();
-    let heat_loss_form_factor = corpus.calc_hlff();
-
-    write_core_output_file_static(
-        &output,
-        StaticOutputFileArgs {
-            output_key: "results_static".to_string(),
-            heat_transfer_coefficient,
-            heat_loss_parameter,
-            heat_capacity_parameter,
-            heat_loss_form_factor,
-        },
-    )?;
-
-    if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-        let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
-        apply_fhs_postprocessing(
-            &input,
+        write_core_output_file_summary(
             &output,
-            &energy_import,
-            &energy_export,
-            &results_end_user,
-            &timestep_array,
-            notional,
+            SummaryOutputFileArgs {
+                output_key: "results_summary".to_string(),
+                input: summary_input_digest,
+                timestep_array: &timestep_array,
+                results_end_user: &results_end_user,
+                energy_generated_consumed: &energy_generated_consumed,
+                energy_to_storage: &energy_to_storage,
+                energy_from_storage: &energy_from_storage,
+                energy_diverted: &energy_diverted,
+                energy_import: &energy_import,
+                energy_export: &energy_export,
+                space_heat_demand_total,
+                space_cool_demand_total,
+                total_floor_area,
+                heat_cop_dict,
+                cool_cop_dict,
+                dhw_cop_dict,
+                daily_hw_demand_75th_percentile,
+            },
         )?;
-    } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
-        apply_fhs_fee_postprocessing(
+
+        let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
+        let heat_capacity_parameter = corpus.calc_hcp();
+        let heat_loss_form_factor = corpus.calc_hlff();
+
+        write_core_output_file_static(
             &output,
+            StaticOutputFileArgs {
+                output_key: "results_static".to_string(),
+                heat_transfer_coefficient,
+                heat_loss_parameter,
+                heat_capacity_parameter,
+                heat_loss_form_factor,
+            },
+        )?;
+
+        (
             total_floor_area,
             space_heat_demand_total,
             space_cool_demand_total,
-        )?;
-    }
+        )
+    };
 
-    Ok(())
+    // 7. Run wrapper post-processing and capture any output.
+    let wrapper_output = {
+        if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+            let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
+            apply_fhs_postprocessing(
+                &input,
+                &output,
+                &energy_import,
+                &energy_export,
+                &results_end_user,
+                &timestep_array,
+                notional,
+            )?;
+        } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
+            apply_fhs_fee_postprocessing(
+                &output,
+                total_floor_area,
+                space_heat_demand_total,
+                space_cool_demand_total,
+            )?;
+        }
+    };
+
+    Ok(wrapper_output)
 }
 
 fn external_conditions_from_input(
