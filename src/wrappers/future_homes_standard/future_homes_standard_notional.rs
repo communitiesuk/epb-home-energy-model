@@ -1419,7 +1419,7 @@ mod tests {
     #[ignore = "Not yet implemented"]
     #[rstest]
     fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
-        let tfa = calc_tfa(&mut test_input);
+        let tfa = calc_tfa(&test_input);
         edit_hot_water_distribution(&mut test_input, tfa);
 
         let expected_hot_water_distribution_inner: WaterPipeworkSimple =
