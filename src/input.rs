@@ -2282,7 +2282,7 @@ pub enum WwhrsType {
 
 pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -2305,7 +2305,7 @@ pub enum OnSiteGenerationDetails {
     },
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum OnSiteGenerationVentilationStrategy {
@@ -3567,6 +3567,11 @@ impl InputForProcessing {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn on_site_generation(&self) -> Option<&OnSiteGeneration> {
+        self.input.on_site_generation.as_ref()
+    }
+
     pub fn remove_all_diverters_from_energy_supplies(&mut self) -> &mut Self {
         for energy_supply in self.input.energy_supply.values_mut() {
             energy_supply.diverter = None;
@@ -3630,6 +3635,19 @@ impl InputForProcessing {
                 )
             })
             .collect()
+    }
+
+    pub(crate) fn max_base_height_from_building_elements(&self) -> Option<f64> {
+        self.input
+            .zone
+            .values()
+            .flat_map(|zone| zone.building_elements.values())
+            .filter_map(|el| match el {
+                BuildingElement::Opaque { base_height, .. } => Some(*base_height),
+                BuildingElement::Transparent { base_height, .. } => Some(*base_height),
+                _ => None,
+            })
+            .max_by(|a, b| a.total_cmp(b))
     }
 
     #[cfg(test)]

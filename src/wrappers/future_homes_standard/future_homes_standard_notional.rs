@@ -56,7 +56,7 @@ pub(crate) fn apply_fhs_not_preprocessing(
     fhs_fee_not_a_assumptions: bool,
     fhs_fee_not_b_assumptions: bool,
 ) -> anyhow::Result<()> {
-    let _is_not_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
+    let _is_notional_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
     let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
     // Check if a heat network is present
     let _is_heat_network = check_heatnetwork_present(input);
@@ -339,7 +339,7 @@ fn edit_bath_shower_other(
 fn add_wwhrs(
     input: &mut InputForProcessing,
     cold_water_source_type: ColdWaterSourceType,
-    is_not_a: bool,
+    is_notional_a: bool,
     is_fee: bool,
 ) -> anyhow::Result<()> {
     // TODO (from Python) Storeys in dwelling is not currently collected as an input, so use
@@ -352,7 +352,7 @@ fn add_wwhrs(
     };
 
     // add WWHRS if more than 1 storeys in dwelling, notional A and not FEE
-    if storeys_in_building > 1 && is_not_a && !is_fee {
+    if storeys_in_building > 1 && is_notional_a && !is_fee {
         input.register_wwhrs_name_on_mixer_shower(NOTIONAL_WWHRS)?;
         input.set_wwhrs(json!({
             NOTIONAL_WWHRS: {
@@ -720,6 +720,33 @@ fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> 
     Ok(())
 }
 
+fn add_solar_pv(
+    input: &mut InputForProcessing,
+    is_notional_a: bool,
+    is_fee: bool,
+    total_floor_area: f64,
+) -> anyhow::Result<()> {
+    let number_of_storeys = input.storeys_in_building();
+
+    // PV is included in the notional if the building contains 15 stories or
+    // less that contain dwellings.
+    if number_of_storeys <= 15 && is_notional_a & !is_fee {
+        let ground_floor_area = input
+            .ground_floor_area()
+            .ok_or_else(|| anyhow!("Notional wrapped expected ground floor area to be set"))?;
+        let (peak_kw, base_height_pv) = match input.build_type() {
+            BuildType::House => {
+                let base_height_pv = input.max_base_height_from_building_elements().ok_or_else(|| anyhow!("Notional wrapper expected at least one building element with a base height"))?;
+
+                (ground_floor_area * 0.4 * 4.5, base_height_pv)
+            }
+            BuildType::Flat => todo!(),
+        };
+    }
+
+    todo!()
+}
+
 fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
     // Data from the table
     let percentiles_kwh = [3.7, 4.4, 5.2, 5.9, 6.7, 7.4, 8.1, 8.9, 9.6, 10.3, 11.1];
@@ -754,7 +781,7 @@ mod tests {
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
-    use crate::input::{self, EnergySupplyType, WaterPipeworkSimple};
+    use crate::input::{self, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple};
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
         ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
@@ -1531,5 +1558,33 @@ mod tests {
             assert_eq!(system.frac_convective, 0.95);
             assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
         }
+    }
+    #[ignore = "WIP"]
+    #[rstest]
+    fn test_add_solar_pv_house_only(mut test_input: InputForProcessing) {
+        let expected_result: OnSiteGeneration = serde_json::from_value(json!({"PV1": {
+                "EnergySupply": "mains elec",
+                "orientation360": 180,
+                "peak_power": 4.444444444444445,
+                "inverter_peak_power": 4.444444444444445,
+                "inverter_is_inside": false,
+                "pitch": 45,
+                "type": "PhotovoltaicSystem",
+                "ventilation_strategy": "moderately_ventilated",
+                "shading": [],
+                "base_height": 1,
+                "width": 6.324555320336759,
+                "height": 3.1622776601683795
+                }
+        }))
+        .unwrap();
+
+        let is_notional_a = true;
+        let is_fee = false;
+        let total_floor_area = calc_tfa(&test_input);
+
+        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area);
+
+        assert_eq!(*test_input.on_site_generation().unwrap(), expected_result);
     }
 }
