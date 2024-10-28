@@ -36,6 +36,7 @@ use crate::wrappers::future_homes_standard::{
     future_homes_standard_notional::apply_fhs_notional_preprocessing,
 };
 use anyhow::anyhow;
+use bitflags::bitflags;
 use csv::WriterBuilder;
 use indexmap::IndexMap;
 use std::borrow::Cow;
@@ -50,15 +51,7 @@ pub fn run_project(
     input: impl Read + Debug,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
-    _preprocess_only: bool,
-    fhs_assumptions: bool,
-    fhs_fee_assumptions: bool,
-    fhs_not_a_assumptions: bool,
-    fhs_not_b_assumptions: bool,
-    fhs_fee_not_a_assumptions: bool,
-    fhs_fee_not_b_assumptions: bool,
-    heat_balance: bool,
-    detailed_output_heating_cooling: bool,
+    flags: &ProjectFlags,
 ) -> Result<(), anyhow::Error> {
     // 1. ingest/ parse input and enter preprocessing stage
     #[instrument(skip_all)]
@@ -80,34 +73,37 @@ pub fn run_project(
     #[instrument(skip_all)]
     fn apply_preprocessing_from_wrappers(
         mut input_for_processing: InputForProcessing,
-        fhs_assumptions: bool,
-        fhs_fee_assumptions: bool,
-        fhs_not_a_assumptions: bool,
-        fhs_not_b_assumptions: bool,
-        fhs_fee_not_a_assumptions: bool,
-        fhs_fee_not_b_assumptions: bool,
+        flags: &ProjectFlags,
     ) -> anyhow::Result<Input> {
         #[cfg(feature = "fhs")]
         {
             // Apply required preprocessing steps, if any
             // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
-            if fhs_not_a_assumptions
-                || fhs_not_b_assumptions
-                || fhs_fee_not_a_assumptions
-                || fhs_fee_not_b_assumptions
-            {
+            if flags.intersects(
+                ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            ) {
                 apply_fhs_notional_preprocessing(
                     &mut input_for_processing,
-                    fhs_not_a_assumptions,
-                    fhs_not_b_assumptions,
-                    fhs_fee_not_a_assumptions,
-                    fhs_fee_not_b_assumptions,
+                    flags.contains(ProjectFlags::FHS_NOT_A_ASSUMPTIONS),
+                    flags.contains(ProjectFlags::FHS_NOT_B_ASSUMPTIONS),
+                    flags.contains(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
+                    flags.contains(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
                 )?;
             }
-            if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+            if flags.intersects(
+                ProjectFlags::FHS_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+            ) {
                 apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
-            } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions
-            {
+            } else if flags.intersects(
+                ProjectFlags::FHS_FEE_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            ) {
                 apply_fhs_fee_preprocessing(&mut input_for_processing)?;
             }
         }
@@ -115,15 +111,7 @@ pub fn run_project(
         Ok(input_for_processing.finalize())
     }
 
-    let input = apply_preprocessing_from_wrappers(
-        input_for_processing,
-        fhs_assumptions,
-        fhs_fee_assumptions,
-        fhs_not_a_assumptions,
-        fhs_not_b_assumptions,
-        fhs_fee_not_a_assumptions,
-        fhs_fee_not_b_assumptions,
-    )?;
+    let input = apply_preprocessing_from_wrappers(input_for_processing, flags)?;
 
     // 3. Determine external conditions to use for calculations.
     #[instrument(skip_all)]
@@ -184,8 +172,12 @@ pub fn run_project(
 
     // 6. Write out to core output files.
 
-    // fn write_core_output_files(output: &impl Output) -> anyhow::Result<(f64, f64, f64)> {
-    //
+    // fn _write_core_output_files(
+    //     output: &impl Output,
+    //     run_results: &RunResults,
+    //     context: &CalculationContext,
+    // ) -> anyhow::Result<(f64, f64, f64)> {
+    //     todo!()
     // }
 
     let (total_floor_area, space_heat_demand_total, space_cool_demand_total) = {
@@ -211,13 +203,13 @@ pub fn run_project(
             },
         )?;
 
-        if heat_balance {
+        if flags.contains(ProjectFlags::HEAT_BALANCE) {
             for (_hb_name, _hb_map) in heat_balance_dict {
                 // TODO: write out heat balance files
             }
         }
 
-        if detailed_output_heating_cooling {
+        if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
             // TODO: write out heat source wet outputs
         }
 
@@ -298,12 +290,7 @@ pub fn run_project(
     fn run_wrapper_postprocessing(
         input: &Input,
         output: &impl Output,
-        fhs_assumptions: bool,
-        fhs_fee_assumptions: bool,
-        fhs_not_a_assumptions: bool,
-        fhs_not_b_assumptions: bool,
-        fhs_fee_not_a_assumptions: bool,
-        fhs_fee_not_b_assumptions: bool,
+        flags: &ProjectFlags,
         energy_import: &IndexMap<KeyString, Vec<f64>>,
         energy_export: &IndexMap<KeyString, Vec<f64>>,
         results_end_user: &ResultsEndUser,
@@ -314,8 +301,14 @@ pub fn run_project(
     ) -> anyhow::Result<()> {
         #[cfg(feature = "fhs")]
         {
-            if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-                let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
+            if flags.intersects(
+                ProjectFlags::FHS_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+            ) {
+                let notional = flags.intersects(
+                    ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+                );
                 apply_fhs_postprocessing(
                     input,
                     output,
@@ -325,8 +318,11 @@ pub fn run_project(
                     timestep_array,
                     notional,
                 )?;
-            } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions
-            {
+            } else if flags.intersects(
+                ProjectFlags::FHS_FEE_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            ) {
                 apply_fhs_fee_postprocessing(
                     output,
                     total_floor_area,
@@ -342,12 +338,7 @@ pub fn run_project(
     run_wrapper_postprocessing(
         &input,
         &output,
-        fhs_assumptions,
-        fhs_fee_assumptions,
-        fhs_not_a_assumptions,
-        fhs_not_b_assumptions,
-        fhs_fee_not_a_assumptions,
-        fhs_fee_not_b_assumptions,
+        flags,
         &energy_import,
         &energy_export,
         &results_end_user,
@@ -356,6 +347,37 @@ pub fn run_project(
         space_heat_demand_total,
         space_cool_demand_total,
     )
+}
+
+// pub(crate) struct CalculationContext<'a> {
+//     input: &'a Input,
+//     corpus: &'a Corpus,
+// }
+//
+// pub(crate) struct CalculationResultsWithContext<'a> {
+//     results: &'a RunResults<'a>,
+//     context: &'a CalculationContext<'a>,
+// }
+
+bitflags! {
+    pub struct ProjectFlags: u32 {
+        const PRE_PROCESS_ONLY = 0b1;
+        const HEAT_BALANCE = 0b10;
+        const DETAILED_OUTPUT_HEATING_COOLING = 0b100;
+        // start FHS flags from 2^8
+        #[cfg(feature = "fhs")]
+        const FHS_ASSUMPTIONS = 0b100000000;
+        #[cfg(feature = "fhs")]
+        const FHS_FEE_ASSUMPTIONS = 0b1000000000;
+        #[cfg(feature = "fhs")]
+        const FHS_NOT_A_ASSUMPTIONS = 0b10000000000;
+        #[cfg(feature = "fhs")]
+        const FHS_NOT_B_ASSUMPTIONS = 0b100000000000;
+        #[cfg(feature = "fhs")]
+        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
+        #[cfg(feature = "fhs")]
+        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
+    }
 }
 
 fn external_conditions_from_input(

@@ -2,6 +2,7 @@
 
 use hem::output::Output;
 use hem::run_project;
+use hem::ProjectFlags;
 use libfuzzer_sys::fuzz_target;
 use std::io;
 use std::io::{BufReader, Cursor, Write};
@@ -11,15 +12,7 @@ fuzz_target!(|data: &[u8]| {
         BufReader::new(Cursor::new(data)),
         SinkOutput::default(),
         None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
+        &ProjectFlags::empty(),
     );
 });
 

@@ -3,7 +3,7 @@ extern crate hem;
 use clap::{Args, Parser};
 use hem::output::FileOutput;
 use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use hem::run_project;
+use hem::{run_project, ProjectFlags};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -154,14 +154,45 @@ fn main() -> anyhow::Result<()> {
         BufReader::new(File::open(Path::new(input_file))?),
         file_output,
         external_conditions,
-        args.preprocess_only,
-        args.wrapper_choice.future_homes_standard,
-        args.wrapper_choice.future_homes_standard_fee,
-        args.wrapper_choice.future_homes_standard_not_a,
-        args.wrapper_choice.future_homes_standard_not_b,
-        args.wrapper_choice.future_homes_standard_fee_not_a,
-        args.wrapper_choice.future_homes_standard_fee_not_b,
-        args.heat_balance,
-        args.detailed_output_heating_cooling,
+        args.into(),
     )
+}
+
+impl From<SapArgs> for ProjectFlags {
+    fn from(args: SapArgs) -> Self {
+        let mut flags = ProjectFlags::empty();
+        if args.preprocess_only {
+            flags.insert(ProjectFlags::PRE_PROCESS_ONLY);
+        }
+        if args.heat_balance {
+            flags.insert(ProjectFlags::HEAT_BALANCE);
+        }
+        if args.detailed_output_heating_cooling {
+            flags.insert(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING);
+        }
+        #[cfg(feature = "fhs")]
+        {
+            let fhs = args.wrapper_choice;
+            if fhs.future_homes_standard {
+                flags.insert(ProjectFlags::FHS_ASSUMPTIONS);
+            }
+            if fhs.future_homes_standard_fee {
+                flags.insert(ProjectFlags::FHS_FEE_ASSUMPTIONS);
+            }
+            if fhs.future_homes_standard_not_a {
+                flags.insert(ProjectFlags::FHS_NOT_A_ASSUMPTIONS);
+            }
+            if fhs.future_homes_standard_not_b {
+                flags.insert(ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
+            }
+            if fhs.future_homes_standard_fee_not_a {
+                flags.insert(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS)
+            }
+            if fhs.future_homes_standard_fee_not_b {
+                flags.insert(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS)
+            }
+        }
+
+        flags
+    }
 }

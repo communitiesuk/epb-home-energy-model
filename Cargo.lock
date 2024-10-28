@@ -678,6 +678,7 @@ dependencies = [
  "argmin",
  "arrayvec",
  "atomic_float",
+ "bitflags",
  "clap",
  "csv",
  "derivative",

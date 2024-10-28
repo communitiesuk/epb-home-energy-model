@@ -1,6 +1,6 @@
 use hem::output::Output;
 use hem::read_weather_file::weather_data_to_vec;
-use hem::run_project;
+use hem::{run_project, ProjectFlags};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use std::io;
@@ -24,20 +24,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    run_project(
-        input,
-        &output,
-        external_conditions,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-    )?;
+    run_project(input, &output, external_conditions, &ProjectFlags::empty())?;
 
     // Return something that implements IntoResponse.
     // It will be serialized to the right response event automatically by the runtime
