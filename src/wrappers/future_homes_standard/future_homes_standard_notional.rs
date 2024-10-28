@@ -736,12 +736,29 @@ fn add_solar_pv(
             .ok_or_else(|| anyhow!("Notional wrapped expected ground floor area to be set"))?;
         let (peak_kw, base_height_pv) = match input.build_type() {
             BuildType::House => {
+                let peak_kw = ground_floor_area * 0.4 * 4.5;
                 let base_height_pv = input.max_base_height_from_building_elements().ok_or_else(|| anyhow!("Notional wrapper expected at least one building element with a base height"))?;
 
-                (ground_floor_area * 0.4 * 4.5, base_height_pv)
+                (peak_kw, base_height_pv)
             }
-            BuildType::Flat => todo!(),
+            BuildType::Flat => {
+                let peak_kw = total_floor_area * 0.4 / (4.5 * number_of_storeys as f64);
+                let zone_total_volume = input.total_zone_volume();
+                let zone_total_area = input.total_zone_area();
+                let base_height_pv =
+                    (zone_total_volume / zone_total_area + 0.3) * number_of_storeys as f64;
+
+                (peak_kw, base_height_pv)
+            }
         };
+
+        // PV array area
+        let pv_area = 4.5 * peak_kw;
+
+        // PV width and height based on 2:1 aspect ratio
+        let pv_height = (pv_area / 2.).powf(0.5);
+        let pv_height = (pv_area / 2.).powf(0.5);
+        let pv_width = 2. * pv_height;
     }
 
     todo!()
