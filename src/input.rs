@@ -3922,16 +3922,19 @@ mod tests {
         for entry in files {
             let json_to_validate =
                 serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).unwrap();
-            if let Err(errors) = validator.validate(&json_to_validate) {
+            let errors = validator.iter_errors(&json_to_validate);
+            let mut at_least_one_error = false;
+            for error in errors {
+                at_least_one_error = true;
+                error_outputs.push(format!(
+                    "{} at path \"{}\":\n{error:?}",
+                    entry.file_name().to_str().unwrap().to_owned(),
+                    error.instance_path
+                ));
+            }
+            if at_least_one_error {
                 erroring_files += 1;
-                for error in errors {
-                    error_outputs.push(format!(
-                        "{} at path \"{}\":\n{error:?}",
-                        entry.file_name().to_str().unwrap().to_owned(),
-                        error.instance_path
-                    ));
-                }
-            };
+            }
         }
 
         assert!(
