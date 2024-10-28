@@ -1083,7 +1083,7 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
 #[serde(deny_unknown_fields)]
 pub struct WaterPipeworkSimple {
     pub location: WaterPipeworkLocation,
-    pub internal_diameter_mm: f64,
+    pub internal_diameter_mm: Option<f64>,
     pub external_diameter_mm: Option<f64>,
     pub length: f64,
     pub insulation_thermal_conductivity: Option<f64>,

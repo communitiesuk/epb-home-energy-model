@@ -15,6 +15,7 @@ use crate::input::{
     WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::anyhow;
 use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
@@ -448,7 +449,10 @@ fn input_to_water_distribution_pipework(
 
     PipeworkSimple::new(
         input.location.into(),
-        input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
+        input
+            .internal_diameter_mm
+            .ok_or_else(|| anyhow!("Internal diameter expected to be set"))?
+            / MILLIMETRES_IN_METRE as f64,
         length_average,
         WaterPipeContentsType::Water,
     )
@@ -557,7 +561,7 @@ mod tests {
         let hw_pipework = Some(vec![
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: 30.,
+                internal_diameter_mm: Some(30.),
                 length: 10.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -567,7 +571,7 @@ mod tests {
             },
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: 28.,
+                internal_diameter_mm: Some(28.),
                 length: 9.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -577,7 +581,7 @@ mod tests {
             },
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: 32.,
+                internal_diameter_mm: Some(32.),
                 length: 5.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -587,7 +591,7 @@ mod tests {
             },
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: 31.,
+                internal_diameter_mm: Some(31.),
                 length: 8.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,

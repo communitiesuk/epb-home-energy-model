@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplies;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
@@ -12,7 +13,7 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::ColdWaterSources;
 use crate::input::{
     BuildType, ColdWaterSourceType, EnergySupplyType, WaterHeatingEventType, WaterPipeContentsType,
-    WaterPipework,
+    WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -603,8 +604,82 @@ fn edit_primary_pipework(
     Ok(primary_pipework.unwrap())
 }
 
-fn edit_hot_water_distribution(_input: &mut InputForProcessing, _tfa: f64) {
-    todo!()
+fn edit_hot_water_distribution(
+    input: &mut InputForProcessing,
+    total_floor_area: f64,
+) -> anyhow::Result<()> {
+    // hot water dictionary
+    let mut hot_water_distribution_inner_list = vec![];
+
+    for item in input.water_distribution().into_iter().flatten() {
+        // only include internal pipework in notional buildings
+        if item.location == WaterPipeworkLocation::Internal {
+            hot_water_distribution_inner_list.push(item);
+        }
+    }
+
+    // Create an empty list to store updated dictionaries
+    let mut updated_hot_water_distribution_inner_list = vec![];
+
+    // Defaults
+    let internal_diameter_mm_min = 13.;
+    let external_diameter_mm_min = 15.;
+    let insulation_thickness_mm = 20.;
+
+    let length_max = match input.build_type() {
+        BuildType::Flat => 0.2 * total_floor_area,
+        BuildType::House => {
+            0.2 * input
+                .ground_floor_area()
+                .ok_or_else(|| anyhow!("Notional wrapper expected a ground floor area to be set"))?
+        }
+    };
+
+    // Iterate over hot_water_distribution_inner_list
+    for hot_water_distribution_inner in hot_water_distribution_inner_list {
+        // hot water distribution (inner) length should not be greater than maximum length
+
+        let length_actual = hot_water_distribution_inner.length;
+        let length = min_of_2(length_actual, length_max);
+
+        // Update internal diameter to minimum if not present and should not be lower than the minimum
+        let internal_diameter_mm = hot_water_distribution_inner
+            .internal_diameter_mm
+            .unwrap_or(internal_diameter_mm_min);
+        let internal_diameter_mm = internal_diameter_mm.max(internal_diameter_mm_min);
+
+        // Update external diameter to minimum if not present and should not be lower than the minimum
+        let external_diameter_mm = hot_water_distribution_inner
+            .external_diameter_mm
+            .unwrap_or(external_diameter_mm_min);
+        let external_diameter_mm = external_diameter_mm.max(external_diameter_mm_min);
+
+        // Update insulation thickness based on internal diameter
+        let adjusted_insulation_thickness_mm = if internal_diameter_mm > 25. {
+            24.
+        } else {
+            insulation_thickness_mm
+        };
+
+        let pipework_to_update = json!({
+            "location": "internal",
+            "external_diameter_mm": external_diameter_mm,
+            "insulation_thermal_conductivity": 0.035,
+            "insulation_thickness_mm": adjusted_insulation_thickness_mm,
+            "internal_diameter_mm": internal_diameter_mm,
+            "length": length,
+            "pipe_contents": "water",
+            "surface_reflectivity": false
+        });
+
+        updated_hot_water_distribution_inner_list.push(pipework_to_update);
+    }
+
+    input.set_water_distribution(serde_json::Value::Array(
+        updated_hot_water_distribution_inner_list,
+    ))?;
+
+    Ok(())
 }
 
 /// Calculate effective air change rate according to Part F 1.24 a
@@ -1416,11 +1491,10 @@ mod tests {
         }
     }
 
-    #[ignore = "Not yet implemented"]
     #[rstest]
     fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
         let tfa = calc_tfa(&test_input);
-        edit_hot_water_distribution(&mut test_input, tfa);
+        edit_hot_water_distribution(&mut test_input, tfa).unwrap();
 
         let expected_hot_water_distribution_inner: WaterPipeworkSimple =
             serde_json::from_value(json!(
