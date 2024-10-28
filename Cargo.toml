@@ -65,3 +65,7 @@ lto = true
 
 [workspace]
 members = ["hem-lambda", "schema-gen"]
+
+[features]
+fhs = []
+default = ["fhs"]

@@ -29,8 +29,12 @@ use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
-use crate::wrappers::future_homes_standard::future_homes_standard::apply_fhs_preprocessing;
-use crate::wrappers::future_homes_standard::future_homes_standard_notional::apply_fhs_not_preprocessing;
+#[cfg(feature = "fhs")]
+use crate::wrappers::future_homes_standard::{
+    future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing},
+    future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing},
+    future_homes_standard_notional::apply_fhs_not_preprocessing,
+};
 use anyhow::anyhow;
 use csv::WriterBuilder;
 use indexmap::IndexMap;
@@ -40,10 +44,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
-use wrappers::future_homes_standard::future_homes_standard::apply_fhs_postprocessing;
-use wrappers::future_homes_standard::future_homes_standard_fee::{
-    apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing,
-};
 
 #[instrument(skip_all)]
 pub fn run_project(
@@ -87,25 +87,29 @@ pub fn run_project(
         fhs_fee_not_a_assumptions: bool,
         fhs_fee_not_b_assumptions: bool,
     ) -> anyhow::Result<Input> {
-        // Apply required preprocessing steps, if any
-        // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
-        if fhs_not_a_assumptions
-            || fhs_not_b_assumptions
-            || fhs_fee_not_a_assumptions
-            || fhs_fee_not_b_assumptions
+        #[cfg(feature = "fhs")]
         {
-            apply_fhs_not_preprocessing(
-                &mut input_for_processing,
-                fhs_not_a_assumptions,
-                fhs_not_b_assumptions,
-                fhs_fee_not_a_assumptions,
-                fhs_not_b_assumptions,
-            )?;
-        }
-        if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-            apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
-        } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
-            apply_fhs_fee_preprocessing(&mut input_for_processing)?;
+            // Apply required preprocessing steps, if any
+            // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
+            if fhs_not_a_assumptions
+                || fhs_not_b_assumptions
+                || fhs_fee_not_a_assumptions
+                || fhs_fee_not_b_assumptions
+            {
+                apply_fhs_not_preprocessing(
+                    &mut input_for_processing,
+                    fhs_not_a_assumptions,
+                    fhs_not_b_assumptions,
+                    fhs_fee_not_a_assumptions,
+                    fhs_not_b_assumptions,
+                )?;
+            }
+            if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+                apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
+            } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions
+            {
+                apply_fhs_fee_preprocessing(&mut input_for_processing)?;
+            }
         }
 
         Ok(input_for_processing.finalize())
@@ -308,24 +312,28 @@ pub fn run_project(
         space_heat_demand_total: f64,
         space_cool_demand_total: f64,
     ) -> anyhow::Result<()> {
-        if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
-            let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
-            apply_fhs_postprocessing(
-                input,
-                output,
-                energy_import,
-                energy_export,
-                results_end_user,
-                timestep_array,
-                notional,
-            )?;
-        } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions {
-            apply_fhs_fee_postprocessing(
-                output,
-                total_floor_area,
-                space_heat_demand_total,
-                space_cool_demand_total,
-            )?;
+        #[cfg(feature = "fhs")]
+        {
+            if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
+                let notional = fhs_not_a_assumptions || fhs_not_b_assumptions;
+                apply_fhs_postprocessing(
+                    input,
+                    output,
+                    energy_import,
+                    energy_export,
+                    results_end_user,
+                    timestep_array,
+                    notional,
+                )?;
+            } else if fhs_fee_assumptions || fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions
+            {
+                apply_fhs_fee_postprocessing(
+                    output,
+                    total_floor_area,
+                    space_heat_demand_total,
+                    space_cool_demand_total,
+                )?;
+            }
         }
 
         Ok(())
