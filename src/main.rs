@@ -134,7 +134,7 @@ fn main() -> anyhow::Result<()> {
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {
         WeatherFileType {
-            epw_file: Some(file),
+            epw_file: Some(ref file),
             cibse_weather_file: None,
         } => {
             let external_conditions_data = weather_data_to_vec(File::open(file)?);
@@ -154,7 +154,7 @@ fn main() -> anyhow::Result<()> {
         BufReader::new(File::open(Path::new(input_file))?),
         file_output,
         external_conditions,
-        args.into(),
+        &(args.into()),
     )
 }
 
