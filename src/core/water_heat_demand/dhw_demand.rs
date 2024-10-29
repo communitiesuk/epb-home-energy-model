@@ -116,7 +116,7 @@ impl DomesticHotWaterDemand {
     }
 
     pub(crate) fn hot_water_demand(
-        &mut self,
+        &self,
         simtime: SimulationTimeIteration,
         temp_hot_water: f64,
     ) -> DomesticHotWaterDemandData {
@@ -128,20 +128,20 @@ impl DomesticHotWaterDemand {
         let mut all_events = 0usize;
         let mut vol_hot_water_equiv_elec_shower = 0.;
 
-        // Events have been organised now so that they are structured by timple step t_idx and
+        // Events have been organised now so that they are structured by simple step t_idx and
         // sorted for each time step from start to end.
         //
         // TODO (from Python) No overlapping is currently considered in terms of interaction with hot water
         // source (tank). The first event that starts is Served before the second event
         // is considered even if this starts before the previous event has finished.
 
-        let mut usage_events = self.event_schedules[simtime.index].as_mut();
+        let mut usage_events = self.event_schedules[simtime.index].clone();
 
         if let Some(usage_events) = &mut usage_events {
             for event in usage_events.iter_mut() {
                 match event.event_type {
                     WaterScheduleEventType::Shower => {
-                        for (name, shower) in self.showers.iter_mut() {
+                        for (name, shower) in self.showers.iter() {
                             if name != &event.name {
                                 continue;
                             }
@@ -188,7 +188,7 @@ impl DomesticHotWaterDemand {
                         }
                     }
                     WaterScheduleEventType::Other => {
-                        for (name, other) in self.other.iter_mut() {
+                        for (name, other) in self.other.iter() {
                             if name != &event.name {
                                 continue;
                             }
@@ -230,7 +230,7 @@ impl DomesticHotWaterDemand {
                         }
                     }
                     WaterScheduleEventType::Bath => {
-                        for (name, bath) in self.baths.iter_mut() {
+                        for (name, bath) in self.baths.iter() {
                             if name != &event.name {
                                 continue;
                             }
@@ -316,7 +316,7 @@ impl DomesticHotWaterDemand {
             hw_duration,
             all_events,
             hw_energy_demand,
-            usage_events: usage_events.cloned(),
+            usage_events,
             vol_hot_water_equiv_elec_shower,
         }
     }
@@ -718,10 +718,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hot_water_demand(
-        mut dhw_demand: DomesticHotWaterDemand,
-        simulation_time: SimulationTime,
-    ) {
+    fn test_hot_water_demand(dhw_demand: DomesticHotWaterDemand, simulation_time: SimulationTime) {
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
                 dhw_demand.hot_water_demand(t_it, 55.0),

@@ -54,7 +54,7 @@ impl HeatNetworkServiceWaterDirect {
 
     /// Demand energy for hot water (in kWh) from the heat network
     pub fn demand_hot_water(
-        &mut self,
+        &self,
         volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
@@ -519,7 +519,7 @@ mod tests {
     #[rstest]
     fn test_heat_network_service_water(
         two_len_simulation_time: SimulationTime,
-        mut heat_network_service_water_direct: HeatNetworkServiceWaterDirect,
+        heat_network_service_water_direct: HeatNetworkServiceWaterDirect,
         heat_network_for_water_direct: Arc<Mutex<HeatNetwork>>,
     ) {
         let volume_demanded = [

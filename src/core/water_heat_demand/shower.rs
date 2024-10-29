@@ -24,7 +24,7 @@ impl Shower {
     }
 
     pub fn hot_water_demand(
-        &mut self,
+        &self,
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
@@ -75,7 +75,7 @@ impl MixerShower {
     ///                             timestep, in minutes
     /// * `timestep_idx` - the index of the timestep for which we are querying the hot water demand
     pub fn hot_water_demand(
-        &mut self,
+        &self,
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
@@ -87,7 +87,7 @@ impl MixerShower {
         let mut vol_hot_water =
             vol_warm_water * frac_hot_water(temp_target, temp_hot_water, temp_cold);
 
-        if let Some(wwhrs) = &mut self.wwhrs {
+        if let Some(wwhrs) = &self.wwhrs {
             let mut wwhrs = wwhrs.lock();
 
             // Assumed temperature entering WWHRS
@@ -148,7 +148,7 @@ impl InstantElectricShower {
     /// * `total_shower_duration` - cumulative running time of this shower during
     ///                             the current timestep, in minutes
     pub fn hot_water_demand(
-        &mut self,
+        &self,
         temp_target: f64,
         temp_hot_water: f64,
         total_shower_duration: f64,
@@ -189,7 +189,7 @@ mod tests {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source =
             ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 0, 1.0);
-        let mut mixer_shower = MixerShower::new(6.5, cold_water_source, None);
+        let mixer_shower = MixerShower::new(6.5, cold_water_source, None);
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -214,7 +214,7 @@ mod tests {
             None,
         )));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
-        let mut instant_shower =
+        let instant_shower =
             InstantElectricShower::new(50.0, cold_water_source, energy_supply_conn);
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];

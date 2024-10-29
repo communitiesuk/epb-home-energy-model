@@ -555,7 +555,7 @@ fn calc_daily_hw_demand(
         )?;
     }
 
-    let mut dhw_demand = DomesticHotWaterDemand::new(
+    let dhw_demand = DomesticHotWaterDemand::new(
         input.showers().cloned().unwrap_or_default(),
         input.baths().cloned().unwrap_or_default(),
         input.other_water_uses().cloned().unwrap_or_default(),

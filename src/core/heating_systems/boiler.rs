@@ -12,11 +12,13 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
 use arrayvec::ArrayString;
+use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -26,7 +28,7 @@ pub enum ServiceType {
     Space,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BoilerServiceWaterCombi {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
@@ -38,7 +40,7 @@ pub struct BoilerServiceWaterCombi {
     rejected_factor_3: Option<f64>,
     daily_hot_water_usage: f64,
     simulation_timestep: f64,
-    combi_loss: f64,
+    combi_loss: AtomicF64,
 }
 
 #[derive(Debug)]
@@ -112,7 +114,7 @@ impl BoilerServiceWaterCombi {
     }
 
     pub fn demand_hot_water(
-        &mut self,
+        &self,
         volume_demanded_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -148,7 +150,7 @@ impl BoilerServiceWaterCombi {
             .map(|res| res.0)
     }
 
-    fn boiler_combi_loss(&mut self, energy_demand: f64, timestep: f64) -> f64 {
+    fn boiler_combi_loss(&self, energy_demand: f64, timestep: f64) -> f64 {
         // daily hot water usage factor
         let threshold_volume = 100.;
         let fu = if self.daily_hot_water_usage < threshold_volume {
@@ -198,21 +200,22 @@ impl BoilerServiceWaterCombi {
             }
         };
 
-        self.combi_loss = combi_loss;
+        self.combi_loss.store(combi_loss, Ordering::SeqCst);
 
         combi_loss
     }
 
-    pub fn internal_gains(&mut self) -> f64 {
+    pub fn internal_gains(&self) -> f64 {
         // TODO (from the Python) Fraction of hot water energy resulting in internal gains should
         // ideally be defined in one place, but it is duplicated here and in
         // main hot water demand calculation for now.
         let frac_dhw_energy_internal_gains = 0.25;
-        let gain_internal =
-            frac_dhw_energy_internal_gains * self.combi_loss * WATTS_PER_KILOWATT as f64
-                / self.simulation_timestep;
+        let gain_internal = frac_dhw_energy_internal_gains
+            * self.combi_loss.load(Ordering::SeqCst)
+            * WATTS_PER_KILOWATT as f64
+            / self.simulation_timestep;
 
-        self.combi_loss = Default::default();
+        self.combi_loss.store(Default::default(), Ordering::SeqCst);
 
         gain_internal
     }
@@ -229,7 +232,7 @@ impl BoilerServiceWaterCombi {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BoilerServiceWaterRegular {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
@@ -301,7 +304,7 @@ impl BoilerServiceWaterRegular {
 }
 
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BoilerServiceSpace {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
@@ -376,7 +379,7 @@ impl BoilerServiceSpace {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Boiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
@@ -393,14 +396,14 @@ pub struct Boiler {
     power_part_load: f64,
     power_full_load: f64,
     power_standby: f64,
-    total_time_running_current_timestep: f64,
     // some kind of memoisation? review this
+    total_time_running_current_timestep: AtomicF64,
     corrected_full_load_gross: f64,
     room_temperature: f64,
     temp_rise_standby_loss: f64,
     standby_loss_index: f64,
     ebv_curve_offset: f64,
-    service_results: Vec<ServiceResult>,
+    service_results: RwLock<Vec<ServiceResult>>,
 }
 
 impl Boiler {
@@ -485,7 +488,7 @@ impl Boiler {
                     power_part_load,
                     power_full_load,
                     power_standby,
-                    total_time_running_current_timestep,
+                    total_time_running_current_timestep: total_time_running_current_timestep.into(),
                     corrected_full_load_gross,
                     room_temperature,
                     temp_rise_standby_loss,
@@ -785,13 +788,18 @@ impl Boiler {
 
         match time_elapsed_hp {
             Some(time_elapsed) => timestep - time_elapsed,
-            None => timestep - self.total_time_running_current_timestep,
+            None => {
+                timestep
+                    - self
+                        .total_time_running_current_timestep
+                        .load(Ordering::SeqCst)
+            }
         }
     }
 
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
     pub fn demand_energy(
-        &mut self,
+        &self,
         service_name: &str,
         service_type: ServiceType,
         energy_output_required: f64,
@@ -810,7 +818,7 @@ impl Boiler {
         // If there is no demand on the boiler or no remaining time then no energy should be provided
         if energy_output_required <= 0.0 || time_available <= 0.0 {
             self.energy_supply_connections
-                .get_mut(service_name)
+                .get(service_name)
                 .unwrap()
                 .demand_energy(0.0, simtime.index)?;
         }
@@ -831,7 +839,7 @@ impl Boiler {
         let fuel_demand = energy_output_provided / blr_eff_final;
 
         self.energy_supply_connections
-            .get_mut(service_name)
+            .get(service_name)
             .unwrap()
             .demand_energy(fuel_demand, simtime.index)?;
 
@@ -844,12 +852,13 @@ impl Boiler {
                 time_available,
             )
         };
-        self.total_time_running_current_timestep += time_running_current_service;
+        self.total_time_running_current_timestep
+            .fetch_add(time_running_current_service, Ordering::SeqCst);
 
         // Save results that are needed later (in the timestep_end function)
         let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
         result_service_name.push_str(service_name);
-        self.service_results.push(ServiceResult {
+        self.service_results.write().push(ServiceResult {
             _service_name: result_service_name,
             time_running: time_running_current_service,
             current_boiler_power,
@@ -865,16 +874,22 @@ impl Boiler {
     /// Calculation of boiler electrical consumption
     fn calc_auxiliary_energy(&mut self, time_remaining_current_timestep: f64, timestep_idx: usize) {
         // Energy used by circulation pump
-        let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
+        let mut energy_aux = self
+            .total_time_running_current_timestep
+            .load(Ordering::SeqCst)
+            * self.power_circ_pump;
 
         // Energy used in standby mode
         energy_aux += self.power_standby * time_remaining_current_timestep;
 
         // Energy used by flue fan electricity for on-off boilers
-        let _elec_energy_flue_fan = self.total_time_running_current_timestep * self.power_full_load;
+        let _elec_energy_flue_fan = self
+            .total_time_running_current_timestep
+            .load(Ordering::SeqCst)
+            * self.power_full_load;
 
         // Overwrite (sic from Python - no overwrite actually happens with current logic) flue fan if boiler modulates
-        for service_data in self.service_results.iter() {
+        for service_data in self.service_results.read().iter() {
             let modulation_ratio =
                 min_of_2(service_data.current_boiler_power / self.boiler_power, 1.);
             if self.min_modulation_load < 1. {
@@ -895,7 +910,10 @@ impl Boiler {
     /// Calculations to be done at the end of each timestep
     pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
         let timestep = simtime.timestep;
-        let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
+        let time_remaining_current_timestep = timestep
+            - self
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst);
 
         self.calc_auxiliary_energy(time_remaining_current_timestep, simtime.index);
 
@@ -1079,7 +1097,7 @@ mod tests {
         boiler_energy_output_required: [f64; 2],
         temp_return_feed: [f64; 2],
     ) {
-        let (mut boiler, energy_supply) = boiler;
+        let (boiler, energy_supply) = boiler;
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             assert_ulps_eq!(
                 boiler
@@ -1298,7 +1316,7 @@ mod tests {
 
     #[rstest]
     pub fn combi_boiler_should_provide_demand_hot_water(
-        mut combi_boiler: BoilerServiceWaterCombi,
+        combi_boiler: BoilerServiceWaterCombi,
         simulation_time: SimulationTime,
         volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
     ) {

@@ -6962,11 +6962,11 @@ mod tests {
             1.0,
         )
         .unwrap();
-        let boiler_service_space = Boiler::create_service_space_heating(
+        let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace".to_owned(),
             Arc::new(Control::SetpointTimeControl(control)),
-        );
+        )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None);
 
@@ -7058,9 +7058,7 @@ mod tests {
                         t_it,
                         Some(TempSpreadCorrectionArg::Float(1.0)),
                         None,
-                        Some(HybridBoilerService::Space(Arc::new(Mutex::new(
-                            boiler_service_space.clone()
-                        )))),
+                        Some(HybridBoilerService::Space(boiler_service_space.clone())),
                         Some(1.0),
                         Some(0.0),
                         None

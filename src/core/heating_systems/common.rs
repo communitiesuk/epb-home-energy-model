@@ -11,7 +11,7 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum HeatSourceWet {
     WaterCombi(BoilerServiceWaterCombi),
     WaterRegular(BoilerServiceWaterRegular),

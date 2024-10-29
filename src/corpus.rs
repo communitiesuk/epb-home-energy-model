@@ -85,6 +85,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // TODO make this a runtime parameter?
@@ -133,8 +134,7 @@ pub struct Corpus {
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
-    initial_loop: bool,
-    internal_pressure_window: HashMap<ReportingFlag, f64>,
+    initial_loop: AtomicBool,
 }
 
 impl Corpus {
@@ -424,8 +424,7 @@ impl Corpus {
             energy_supply_conn_names_for_hot_water_source,
             energy_supply_conn_names_for_heat_systems,
             timestep_end_calcs,
-            initial_loop: false,
-            internal_pressure_window: Default::default(),
+            initial_loop: AtomicBool::new(false),
         })
     }
 
@@ -806,14 +805,15 @@ impl Corpus {
     /// initial_p_z_ref_guess is used for calculation in first timestep.
     /// Later timesteps use the previous timesteps p_z_ref of max and min ACH ,respective to calc.
     fn calc_air_changes_per_hour(
-        &mut self,
+        &self,
         temp_int_air: f64,
         r_w_arg: f64,
         initial_p_z_ref_guess: f64,
         reporting_flag: ReportingFlag,
+        internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        let current_internal_pressure_window = if self.initial_loop {
+        let current_internal_pressure_window = if self.initial_loop.load(Ordering::SeqCst) {
             self.ventilation.calculate_internal_reference_pressure(
                 initial_p_z_ref_guess,
                 temp_int_air,
@@ -822,15 +822,14 @@ impl Corpus {
             )
         } else {
             self.ventilation.calculate_internal_reference_pressure(
-                self.internal_pressure_window[&reporting_flag],
+                internal_pressure_window[&reporting_flag],
                 temp_int_air,
                 Some(r_w_arg),
                 simtime,
             )
         };
 
-        self.internal_pressure_window
-            .insert(reporting_flag, current_internal_pressure_window);
+        internal_pressure_window.insert(reporting_flag, current_internal_pressure_window);
 
         let incoming_air_flow = self.ventilation.incoming_air_flow(
             current_internal_pressure_window,
@@ -850,9 +849,10 @@ impl Corpus {
     /// * `delta_t_h` - calculation timestep, in hours
     /// * `gains_internal_dhw` - internal gains from hot water system for this timestep, in W
     fn calc_space_heating(
-        &mut self,
+        &self,
         delta_t_h: f64,
         gains_internal_dhw: f64,
+        internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<SpaceHeatingCalculation> {
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
@@ -866,15 +866,27 @@ impl Corpus {
         let internal_gains_buffer_tank = self.calc_internal_gains_buffer_tank();
 
         // Windows shut
-        let ach_windows_shut =
-            self.calc_air_changes_per_hour(temp_int_air, 0., 0., ReportingFlag::Min, simtime);
+        let ach_windows_shut = self.calc_air_changes_per_hour(
+            temp_int_air,
+            0.,
+            0.,
+            ReportingFlag::Min,
+            internal_pressure_window,
+            simtime,
+        );
 
         // Windows fully open
-        let ach_windows_open =
-            self.calc_air_changes_per_hour(temp_int_air, 1., 0., ReportingFlag::Max, simtime);
+        let ach_windows_open = self.calc_air_changes_per_hour(
+            temp_int_air,
+            1.,
+            0.,
+            ReportingFlag::Max,
+            internal_pressure_window,
+            simtime,
+        );
 
         // To indicate the future loop should involve the p_Z_ref from previous calc
-        self.initial_loop = false;
+        self.initial_loop.store(false, Ordering::SeqCst);
 
         let ach_target = if let Some(required_vent_data) = self.required_vent_data.as_ref() {
             let ach_target = required_vent_data.schedule[simtime.time_series_idx(
@@ -1516,7 +1528,7 @@ impl Corpus {
         Ok(())
     }
 
-    pub fn run(&mut self) -> anyhow::Result<RunResults> {
+    pub fn run(&self) -> anyhow::Result<RunResults> {
         let simulation_time = self.simulation_time.as_ref().to_owned();
         let vec_capacity = || Vec::with_capacity(simulation_time.total_steps());
 
@@ -1598,8 +1610,8 @@ impl Corpus {
         hot_water_primary_pipework_dict
             .insert("primary_pw_losses".try_into().unwrap(), vec_capacity());
         hot_water_storage_losses_dict.insert("storage_losses".try_into().unwrap(), vec_capacity());
-        self.initial_loop = true;
-        self.internal_pressure_window = Default::default();
+        self.initial_loop.store(true, Ordering::SeqCst);
+        let mut internal_pressure_window: HashMap<ReportingFlag, f64> = Default::default();
 
         let delta_t_h = simulation_time.step_in_hours();
 
@@ -1690,11 +1702,11 @@ impl Corpus {
             let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
                 * WATTS_PER_KILOWATT as f64
                 / t_it.timestep;
-            match self.hot_water_sources.get_mut("hw cylinder").unwrap() {
-                HotWaterSource::StorageTank(ref mut source) => {
+            match self.hot_water_sources.get("hw cylinder").unwrap() {
+                HotWaterSource::StorageTank(ref source) => {
                     gains_internal_dhw += source.lock().internal_gains();
                 }
-                HotWaterSource::CombiBoiler(ref mut source) => {
+                HotWaterSource::CombiBoiler(ref source) => {
                     gains_internal_dhw += source.internal_gains();
                 }
                 _ => {}
@@ -1733,7 +1745,12 @@ impl Corpus {
                 space_cool_provided_system: space_cool_provided,
                 internal_gains_ductwork: ductwork_gains,
                 heat_balance_map: heat_balance_dict,
-            } = self.calc_space_heating(t_it.timestep, gains_internal_dhw, t_it)?;
+            } = self.calc_space_heating(
+                t_it.timestep,
+                gains_internal_dhw,
+                &mut internal_pressure_window,
+                t_it,
+            )?;
 
             // Perform calculations that can only be done after all heating
             // services have been calculated
@@ -3464,7 +3481,7 @@ fn appliance_gains_from_single_input(
     ))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum HeatSource {
     Storage(HeatSourceWithStorageTank),
     Wet(Box<HeatSourceWet>),
@@ -3961,7 +3978,7 @@ impl HotWaterSource {
     }
 
     pub fn demand_hot_water(
-        &mut self,
+        &self,
         vol_demand_target: IndexMap<DemandVolTargetKey, VolumeReference>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
@@ -3970,13 +3987,13 @@ impl HotWaterSource {
                 // StorageTank does not match the same method signature or return type as all other Hot Water sources
                 panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
             }
-            HotWaterSource::CombiBoiler(ref mut source) => source
+            HotWaterSource::CombiBoiler(ref source) => source
                 .demand_hot_water(vol_demand_target, simulation_time_iteration)
                 .expect("Combi boiler could not calc demand hot water."),
-            HotWaterSource::PointOfUse(ref mut source) => {
+            HotWaterSource::PointOfUse(ref source) => {
                 source.demand_hot_water(vol_demand_target, &simulation_time_iteration)
             }
-            HotWaterSource::HeatNetwork(ref mut source) => {
+            HotWaterSource::HeatNetwork(ref source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration)
             }
             HotWaterSource::HeatBattery(_) => {
