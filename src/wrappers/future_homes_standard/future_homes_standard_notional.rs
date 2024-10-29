@@ -789,13 +789,13 @@ fn add_solar_pv(
 
     // PV is included in the notional if the building contains 15 stories or
     // less that contain dwellings.
-    if number_of_storeys <= 15 && is_notional_a & !is_fee {
+    if number_of_storeys <= 15 && is_notional_a && !is_fee {
         let ground_floor_area = input
             .ground_floor_area()
             .ok_or_else(|| anyhow!("Notional wrapped expected ground floor area to be set"))?;
         let (peak_kw, base_height_pv) = match input.build_type() {
             BuildType::House => {
-                let peak_kw = ground_floor_area * 0.4 * 4.5;
+                let peak_kw = ground_floor_area * 0.4 / 4.5;
                 let base_height_pv = input.max_base_height_from_building_elements().ok_or_else(|| anyhow!("Notional wrapper expected at least one building element with a base height"))?;
 
                 (peak_kw, base_height_pv)
@@ -816,11 +816,29 @@ fn add_solar_pv(
 
         // PV width and height based on 2:1 aspect ratio
         let pv_height = (pv_area / 2.).powf(0.5);
-        let pv_height = (pv_area / 2.).powf(0.5);
         let pv_width = 2. * pv_height;
+
+        let solar_pv = json!({
+            "PV1": {
+                "EnergySupply": "mains elec",
+                "orientation360": 180.,
+                "peak_power": peak_kw,
+                "inverter_peak_power": peak_kw,
+                "inverter_is_inside": false,
+                "pitch": 45.,
+                "type": "PhotovoltaicSystem",
+                "ventilation_strategy": "moderately_ventilated",
+                "base_height": base_height_pv,
+                "height":pv_height,
+                "width":pv_width,
+                "shading": [],
+                }
+        });
+
+        input.set_on_site_generation(solar_pv)?;
     }
 
-    todo!()
+    Ok(())
 }
 
 fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
@@ -1635,7 +1653,7 @@ mod tests {
             assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
         }
     }
-    #[ignore = "WIP"]
+
     #[rstest]
     fn test_add_solar_pv_house_only(mut test_input: InputForProcessing) {
         let expected_result: OnSiteGeneration = serde_json::from_value(json!({"PV1": {
@@ -1659,7 +1677,7 @@ mod tests {
         let is_fee = false;
         let total_floor_area = calc_tfa(&test_input);
 
-        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area);
+        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area).unwrap();
 
         assert_eq!(*test_input.on_site_generation().unwrap(), expected_result);
     }

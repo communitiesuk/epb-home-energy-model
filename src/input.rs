@@ -3562,6 +3562,16 @@ impl InputForProcessing {
         Ok(self)
     }
 
+    pub(crate) fn set_on_site_generation(
+        &mut self,
+        on_site_generation: Value,
+    ) -> anyhow::Result<()> {
+        let solar_pv: OnSiteGeneration = serde_json::from_value(on_site_generation)?;
+        self.input.on_site_generation = Some(solar_pv);
+
+        Ok(())
+    }
+
     pub fn remove_on_site_generation(&mut self) -> &mut Self {
         self.input.on_site_generation = None;
         self
