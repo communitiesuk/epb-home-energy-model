@@ -34,6 +34,12 @@ struct SapArgs {
     heat_balance: bool,
     #[clap(long, default_value_t = false, help = "Whether to log out spans")]
     log_spans: bool,
+    #[clap(
+        long,
+        default_value_t = false,
+        help = "Whether to output detailed information about heating and cooling"
+    )]
+    detailed_output_heating_cooling: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
@@ -156,6 +162,6 @@ fn main() -> anyhow::Result<()> {
         args.wrapper_choice.future_homes_standard_fee_not_a,
         args.wrapper_choice.future_homes_standard_fee_not_b,
         args.heat_balance,
-        false, // TODO implement CLI arg
+        args.detailed_output_heating_cooling,
     )
 }
