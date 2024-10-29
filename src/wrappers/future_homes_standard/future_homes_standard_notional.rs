@@ -163,22 +163,18 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
 /// Apply notional u-value to windows & glazed doors and rooflights
 /// for windows and glazed doors
 /// u-value is 1.2
-
 /// for rooflights
 /// u-value is 1.7
 /// the max rooflight area is exactly defined as:
 /// Max area of glazing if rooflight, as a % of TFA = 25% of TFA - % reduction
 /// where % reduction = area of actual rooflight as a % of TFA * ((actual u-value of rooflight - 1.2)/1.2)
-
 /// interpret the instruction for max rooflight area as:
 /// max_area_reduction_factor = total_rooflight_area / TFA * ((average_uvalue - 1.2)/1.2)
 /// where
 ///     total_rooflight_area = total area of all rooflights combined
 ///     average_uvalue = area weighted average actual rooflight u-value
-
 /// max_rooflight_area = maximum allowed total area of all rooflights combined
 /// max_rooflight_area = TFA*0.25*max_area_reduction_factor
-
 /// TODO (from Python) - awaiting confirmation from DLUHC/DESNZ that interpretation is correct
 fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut _total_rooflight_area = 0.;
