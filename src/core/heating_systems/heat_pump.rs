@@ -1808,7 +1808,7 @@ pub struct HeatPump {
     temp_distribution_heat_network: Option<f64>,
     // energy supply for heat networks
     heat_network: Option<Arc<RwLock<EnergySupply>>>,
-    boiler: Option<Arc<Mutex<Boiler>>>,
+    boiler: Option<Arc<RwLock<Boiler>>>,
     cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
     cost_schedule_metadata: Option<CostScheduleMetadata>,
     volume_heated_all_services: Option<f64>,
@@ -1865,7 +1865,7 @@ impl HeatPump {
         throughput_exhaust_air: Option<f64>,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
         output_detailed_results: bool,
-        boiler: Option<Arc<Mutex<Boiler>>>,
+        boiler: Option<Arc<RwLock<Boiler>>>,
         cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
         temp_internal_air_fn: TempInternalAirFn,
     ) -> anyhow::Result<Self> {
@@ -2227,15 +2227,14 @@ impl HeatPump {
         cold_feed: WaterSourceWithTemperature,
     ) -> anyhow::Result<BoilerServiceWaterCombi> {
         if let Some(boiler) = self.boiler.as_ref() {
-            boiler
-                .lock()
-                .create_service_hot_water_combi(
-                    boiler_data,
-                    service_name.to_owned(),
-                    temp_hot_water,
-                    cold_feed,
-                )
-                .map_err(|err| anyhow!(err))
+            Boiler::create_service_hot_water_combi(
+                boiler.clone(),
+                boiler_data,
+                service_name.to_owned(),
+                temp_hot_water,
+                cold_feed,
+            )
+            .map_err(|err| anyhow!(err))
         } else {
             bail!("Error: Missing Boiler object for hybrid heat pump. Non-hybrid heat pumps cannot be used as an instantaneous hot water system.")
         }
@@ -2251,7 +2250,8 @@ impl HeatPump {
     ) -> HeatPumpServiceWater {
         Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
-            Arc::new(Mutex::new(boiler.lock().create_service_hot_water_regular(
+            Arc::new(Mutex::new(Boiler::create_service_hot_water_regular(
+                boiler.clone(),
                 service_name.clone(),
                 temp_hot_water_in_c,
                 control.clone(),
@@ -2278,7 +2278,7 @@ impl HeatPump {
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
-            Arc::new(Mutex::new(boiler.lock().create_service_space_heating(
+            Arc::new(Mutex::new(boiler.write().create_service_space_heating(
                 service_name.to_owned(),
                 control.clone(),
             )))
@@ -2519,7 +2519,7 @@ impl HeatPump {
                 .boiler
                 .as_ref()
                 .expect("A boiler was expected to be present.")
-                .lock()
+                .read()
                 .calc_boiler_eff(
                     false,
                     kelvin_to_celsius(temp_return_feed),
@@ -2989,7 +2989,7 @@ impl HeatPump {
                 self.boiler
                     .as_ref()
                     .expect("Boiler expected to be present.")
-                    .lock()
+                    .read()
                     .calc_boiler_eff(
                         false,
                         kelvin_to_celsius(temp_return_feed),
@@ -5826,7 +5826,7 @@ mod tests {
         heat_pump_input: HeatSourceWetDetails,
         energy_supply_conn_name_auxiliary: &str,
         heat_network: Option<Arc<RwLock<EnergySupply>>>,
-        boiler: Option<Arc<Mutex<Boiler>>>,
+        boiler: Option<Arc<RwLock<Boiler>>>,
         throughput_exhaust_air: Option<f64>,
         temp_internal_air: Option<f64>,
         external_conditions: Arc<ExternalConditions>,
@@ -5884,7 +5884,7 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
-        let boiler = Arc::from(Mutex::from(create_boiler(
+        let boiler = Arc::from(RwLock::from(create_boiler(
             external_conditions.clone(),
             energy_supply(simulation_time_for_heat_pump),
             simulation_time_for_heat_pump,
@@ -6427,7 +6427,7 @@ mod tests {
         // With a hybrid boiler
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hybrid_boiler";
 
-        let boiler = Arc::from(Mutex::from(create_boiler(
+        let boiler = Arc::from(RwLock::from(create_boiler(
             external_conditions.clone(),
             energy_supply(simulation_time_for_heat_pump),
             simulation_time_for_heat_pump,
@@ -6449,7 +6449,7 @@ mod tests {
         ));
 
         let boiler_service_space = boiler
-            .lock()
+            .write()
             .create_service_space_heating("service_boilerspace".to_string(), control);
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
@@ -6970,7 +6970,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(Mutex::new(boiler))),
+            Some(Arc::new(RwLock::new(boiler))),
             None,
             None,
             external_conditions.clone(),
@@ -7450,7 +7450,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(Mutex::new(boiler))),
+            Some(Arc::new(RwLock::new(boiler))),
             None,
             None,
             external_conditions.clone(),
@@ -7751,7 +7751,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(Mutex::new(boiler))),
+            Some(Arc::new(RwLock::new(boiler))),
             None,
             None,
             external_conditions,

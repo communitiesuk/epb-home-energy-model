@@ -28,7 +28,7 @@ pub enum ServiceType {
 
 #[derive(Clone, Debug)]
 pub struct BoilerServiceWaterCombi {
-    boiler: Boiler,
+    boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     temperature_hot_water_in_c: f64,
     cold_feed: WaterSourceWithTemperature,
@@ -57,7 +57,7 @@ impl std::error::Error for IncorrectBoilerDataType {}
 
 impl BoilerServiceWaterCombi {
     pub fn new(
-        boiler: Boiler,
+        boiler: Arc<RwLock<Boiler>>,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
@@ -135,6 +135,7 @@ impl BoilerServiceWaterCombi {
         energy_demand += combi_loss;
 
         self.boiler
+            .write()
             .demand_energy(
                 &self.service_name,
                 ServiceType::WaterCombi,
@@ -218,6 +219,7 @@ impl BoilerServiceWaterCombi {
 
     pub fn energy_output_max(&self) -> f64 {
         self.boiler
+            .read()
             .energy_output_max(self.temperature_hot_water_in_c, None)
     }
 
@@ -229,7 +231,7 @@ impl BoilerServiceWaterCombi {
 
 #[derive(Clone, Debug)]
 pub struct BoilerServiceWaterRegular {
-    boiler: Boiler,
+    boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     temperature_hot_water_in_c: f64,
     control: Option<Arc<Control>>,
@@ -237,7 +239,7 @@ pub struct BoilerServiceWaterRegular {
 
 impl BoilerServiceWaterRegular {
     pub fn new(
-        boiler: Boiler,
+        boiler: Arc<RwLock<Boiler>>,
         service_name: String,
         temperature_hot_water_in_c: f64,
         control: Option<Arc<Control>>,
@@ -264,7 +266,7 @@ impl BoilerServiceWaterRegular {
             return Ok((0., None));
         }
 
-        self.boiler.demand_energy(
+        self.boiler.write().demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
@@ -286,6 +288,7 @@ impl BoilerServiceWaterRegular {
         }
 
         self.boiler
+            .read()
             .energy_output_max(self.temperature_hot_water_in_c, time_elapsed_hp)
     }
 
@@ -590,34 +593,38 @@ impl Boiler {
     }
 
     pub fn create_service_hot_water_combi(
-        &mut self,
+        boiler: Arc<RwLock<Self>>,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSourceWithTemperature,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
-        self.create_service_connection(service_name.clone().into())
+        boiler
+            .write()
+            .create_service_connection(service_name.clone().into())
             .unwrap();
         BoilerServiceWaterCombi::new(
-            (*self).clone(),
+            boiler.clone(),
             boiler_data,
             service_name,
             temperature_hot_water_in_c,
             cold_feed,
-            self.simulation_timestep,
+            boiler.read().simulation_timestep,
         )
     }
 
     pub fn create_service_hot_water_regular(
-        &mut self,
+        boiler: Arc<RwLock<Self>>,
         service_name: String,
         temperature_hot_water_in_c: f64,
         control: Option<Arc<Control>>,
     ) -> BoilerServiceWaterRegular {
-        self.create_service_connection(service_name.clone().into())
+        boiler
+            .write()
+            .create_service_connection(service_name.clone().into())
             .unwrap();
         BoilerServiceWaterRegular::new(
-            (*self).clone(),
+            boiler.clone(),
             service_name,
             temperature_hot_water_in_c,
             control,
@@ -1223,7 +1230,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> BoilerServiceWaterCombi {
         BoilerServiceWaterCombi::new(
-            boiler_for_combi,
+            Arc::new(RwLock::new(boiler_for_combi)),
             combi_boiler_data,
             "boiler_test".to_string(),
             60.,
@@ -1359,7 +1366,12 @@ mod tests {
 
     #[fixture]
     pub fn regular_boiler<'a>(boiler_for_regular: Boiler) -> BoilerServiceWaterRegular {
-        BoilerServiceWaterRegular::new(boiler_for_regular, "boiler_test".to_string(), 60., None)
+        BoilerServiceWaterRegular::new(
+            Arc::new(RwLock::new(boiler_for_regular)),
+            "boiler_test".to_string(),
+            60.,
+            None,
+        )
     }
 
     #[rstest]
