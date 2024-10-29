@@ -101,7 +101,7 @@ pub fn run_project(
                     fhs_not_a_assumptions,
                     fhs_not_b_assumptions,
                     fhs_fee_not_a_assumptions,
-                    fhs_not_b_assumptions,
+                    fhs_fee_not_b_assumptions,
                 )?;
             }
             if fhs_assumptions || fhs_not_a_assumptions || fhs_not_b_assumptions {
