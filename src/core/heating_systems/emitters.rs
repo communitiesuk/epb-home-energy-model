@@ -908,7 +908,8 @@ mod tests {
             0.25, // to match simulation time
         )));
 
-        let boiler_service_space = BoilerServiceSpace::new(boiler, service_name.into(), control);
+        let boiler_service_space =
+            BoilerServiceSpace::new(Arc::new(RwLock::new(boiler)), service_name.into(), control);
 
         SpaceHeatingService::Boiler(boiler_service_space)
     }

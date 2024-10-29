@@ -303,13 +303,13 @@ impl BoilerServiceWaterRegular {
 /// A struct representing a space heating service provided by a boiler to e.g. a cylinder.
 #[derive(Clone, Debug)]
 pub struct BoilerServiceSpace {
-    boiler: Boiler,
+    boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     control: Arc<Control>,
 }
 
 impl BoilerServiceSpace {
-    pub fn new(boiler: Boiler, service_name: String, control: Arc<Control>) -> Self {
+    pub fn new(boiler: Arc<RwLock<Boiler>>, service_name: String, control: Arc<Control>) -> Self {
         Self {
             boiler,
             service_name,
@@ -344,7 +344,7 @@ impl BoilerServiceSpace {
             });
         }
 
-        self.boiler.demand_energy(
+        self.boiler.write().demand_energy(
             &self.service_name,
             ServiceType::Space,
             energy_demand,
@@ -365,7 +365,9 @@ impl BoilerServiceSpace {
         if !self.is_on(simtime) {
             0.0
         } else {
-            self.boiler.energy_output_max(temp_output, time_elapsed_hp)
+            self.boiler
+                .read()
+                .energy_output_max(temp_output, time_elapsed_hp)
         }
     }
 
@@ -632,13 +634,15 @@ impl Boiler {
     }
 
     pub fn create_service_space_heating(
-        &mut self,
+        boiler: Arc<RwLock<Self>>,
         service_name: String,
         control: Arc<Control>,
     ) -> BoilerServiceSpace {
-        self.create_service_connection(service_name.clone().into())
+        boiler
+            .write()
+            .create_service_connection(service_name.clone().into())
             .unwrap();
-        BoilerServiceSpace::new((*self).clone(), service_name, control)
+        BoilerServiceSpace::new(boiler.clone(), service_name, control)
     }
 
     fn cycling_adjustment(
@@ -1481,7 +1485,7 @@ mod tests {
         control_for_service_space: Control,
     ) -> BoilerServiceSpace {
         BoilerServiceSpace::new(
-            boiler_for_service_space,
+            Arc::new(RwLock::new(boiler_for_service_space)),
             "boiler_test".to_string(),
             Arc::new(control_for_service_space),
         )

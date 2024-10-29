@@ -2278,7 +2278,8 @@ impl HeatPump {
         volume_heated: f64,
     ) -> HeatPumpServiceSpace {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
-            Arc::new(Mutex::new(boiler.write().create_service_space_heating(
+            Arc::new(Mutex::new(Boiler::create_service_space_heating(
+                boiler.clone(),
                 service_name.to_owned(),
                 control.clone(),
             )))
@@ -6448,9 +6449,11 @@ mod tests {
             .unwrap(),
         ));
 
-        let boiler_service_space = boiler
-            .write()
-            .create_service_space_heating("service_boilerspace".to_string(), control);
+        let boiler_service_space = Boiler::create_service_space_heating(
+            boiler.clone(),
+            "service_boilerspace".to_string(),
+            control,
+        );
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
         let input = create_heat_pump_input_from_json(None);
@@ -6942,12 +6945,12 @@ mod tests {
         // Test with hybrid_boiler_service and boiler_eff
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
 
-        let mut boiler = create_boiler(
+        let boiler = Arc::new(RwLock::new(create_boiler(
             external_conditions.clone(),
             energy_supply(simulation_time_for_heat_pump),
             simulation_time_for_heat_pump,
             energy_supply_conn_name_auxiliary,
-        );
+        )));
         let control = SetpointTimeControl::new(
             vec![Some(21.), Some(22.)],
             0,
@@ -6959,7 +6962,8 @@ mod tests {
             1.0,
         )
         .unwrap();
-        let boiler_service_space = boiler.create_service_space_heating(
+        let boiler_service_space = Boiler::create_service_space_heating(
+            boiler.clone(),
             "service_boilerspace".to_owned(),
             Arc::new(Control::SetpointTimeControl(control)),
         );
@@ -6970,7 +6974,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(RwLock::new(boiler))),
+            Some(boiler),
             None,
             None,
             external_conditions.clone(),
@@ -7418,12 +7422,12 @@ mod tests {
 
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler_and_sevice_off";
 
-        let mut boiler = create_boiler(
+        let boiler = Arc::new(RwLock::new(create_boiler(
             external_conditions.clone(),
             energy_supply(simulation_time_for_heat_pump),
             simulation_time_for_heat_pump,
             energy_supply_conn_name_auxiliary,
-        );
+        )));
 
         let ctrl = Control::SetpointTimeControl(
             SetpointTimeControl::new(
@@ -7439,7 +7443,8 @@ mod tests {
             .unwrap(),
         );
 
-        let boiler_service_space = Arc::new(Mutex::new(boiler.create_service_space_heating(
+        let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
+            boiler.clone(),
             "service_boilerspace_service_off".to_owned(),
             ctrl.into(),
         )));
@@ -7450,7 +7455,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(RwLock::new(boiler))),
+            Some(boiler),
             None,
             None,
             external_conditions.clone(),
@@ -7720,12 +7725,12 @@ mod tests {
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: boiler";
 
-        let mut boiler = create_boiler(
+        let boiler = Arc::new(RwLock::new(create_boiler(
             external_conditions.clone(),
             energy_supply,
             simulation_time_for_heat_pump,
             energy_supply_conn_name_auxiliary,
-        );
+        )));
 
         let ctrl = Control::SetpointTimeControl(
             SetpointTimeControl::new(
@@ -7741,9 +7746,11 @@ mod tests {
             .unwrap(),
         );
 
-        let boiler_service_space = Arc::new(Mutex::new(
-            boiler.create_service_space_heating("service_boilerspace".into(), Arc::new(ctrl)),
-        ));
+        let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
+            boiler.clone(),
+            "service_boilerspace".into(),
+            Arc::new(ctrl),
+        )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None);
 
@@ -7751,7 +7758,7 @@ mod tests {
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
             None,
-            Some(Arc::new(RwLock::new(boiler))),
+            Some(boiler),
             None,
             None,
             external_conditions,

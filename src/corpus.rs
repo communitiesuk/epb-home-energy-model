@@ -4325,7 +4325,7 @@ fn space_heat_systems_from_input(
                                 SpaceHeatingService::HeatPump(heat_source_service)
                             }
                             WetHeatSource::Boiler(boiler) => {
-                                let heat_source_service = boiler.write().create_service_space_heating(energy_supply_conn_name, control);
+                                let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), energy_supply_conn_name, control);
                                 SpaceHeatingService::Boiler(heat_source_service)
                             }
                             WetHeatSource::Hiu(heat_network) => {
