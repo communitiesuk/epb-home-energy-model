@@ -30,7 +30,7 @@ use crate::{
     input::{
         BuildingElement, GroundBuildingElement, HeatPumpSourceType,
         HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement, ZoneDictionary,
+        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement,
     },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
@@ -238,20 +238,13 @@ fn find_walls_roofs_with_same_orientation_and_pitch() {
 
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
 fn calc_max_glazing_area_fraction(
-    zones: &ZoneDictionary,
+    input: &InputForProcessing,
     total_floor_area: f64,
 ) -> anyhow::Result<f64> {
     let mut total_rooflight_area = 0.0;
     let mut sum_uval_times_area = 0.0;
 
-    let transparent_building_elements = zones
-        .values()
-        .flat_map(|zone| {
-            zone.building_elements
-                .values()
-                .filter(|element| matches!(element, BuildingElement::Transparent { .. }))
-        })
-        .collect_vec();
+    let transparent_building_elements = input.all_transparent_building_elements();
     for element in transparent_building_elements {
         if pitch_class(element.pitch()) != HeatFlowDirection::Upwards {
             continue;
@@ -1111,25 +1104,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calc_max_glazing_area_fraction() {
+    fn test_calc_max_glazing_area_fraction(mut test_input: InputForProcessing) {
+        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, None));
         assert_eq!(
-            calc_max_glazing_area_fraction(&zone_input_for_max_glazing_area_test(1.5, None), 80.0)
-                .unwrap(),
+            calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.24375,
             "incorrect max glazing area fraction"
         );
+        test_input.set_zone(zone_input_for_max_glazing_area_test(1.0, None));
         assert_eq!(
-            calc_max_glazing_area_fraction(&zone_input_for_max_glazing_area_test(1.0, None), 80.0)
-                .unwrap(),
+            calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
             "incorrect max glazing area fraction"
         );
+        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, Some(90.)));
         assert_eq!(
-            calc_max_glazing_area_fraction(
-                &zone_input_for_max_glazing_area_test(1.5, Some(90.)),
-                80.0
-            )
-            .unwrap(),
+            calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
             "incorrect max glazing area fraction when there are no rooflights"
         );

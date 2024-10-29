@@ -3937,6 +3937,12 @@ impl InputForProcessing {
         self.input.part_o_active_cooling_required = Some(required);
         self
     }
+
+    #[cfg(test)]
+    pub fn set_zone(&mut self, zone: ZoneDictionary) -> &Self {
+        self.input.zone = zone;
+        self
+    }
 }
 
 #[cfg(test)]
