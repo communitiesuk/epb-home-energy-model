@@ -181,8 +181,8 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
 
 /// TODO (from Python) - awaiting confirmation from DLUHC/DESNZ that interpretation is correct
 fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let mut total_rooflight_area = 0.;
-    let mut sum_uval_times_area = 0.;
+    let mut _total_rooflight_area = 0.;
+    let mut _sum_uval_times_area = 0.;
 
     let mut building_elements = input.all_transparent_building_elements_mut_u_values();
 
@@ -193,30 +193,30 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
                 // rooflight
                 let height = building_element.height().ok_or_else(|| {
                     anyhow!(
-                        "Notional wrapper expects height of transparent building element to be set"
+                        "FHS notional wrapper needs transparent building elements to have a height set."
                     )
                 })?;
                 let width = building_element.width().ok_or_else(|| {
                     anyhow!(
-                        "Notional wrapper expects width of transparent building element to be set"
+                        "FHS notional wrapper needs transparent building elements to have a width set."
                     )
                 })?;
                 let rooflight_area = height * width;
-                total_rooflight_area += rooflight_area;
+                _total_rooflight_area += rooflight_area;
 
-                // TODO: does something create u_values for transparent elements before this method is called?
-                sum_uval_times_area += building_element.u_value().ok_or_else(|| {
+                let current_u_value = building_element.u_value().ok_or_else(|| {
                     anyhow!(
-                        "Notional wrapper expects u_value of transparent building element to be set"
+                        "FHS notional wrapper needs transparent building elements to have u values set."
                     )
                 })?;
-                // let sum_uval_times_area += building_element.u_value
-                // sum_uval_times_area += building_element['u_value'] * rooflight_area
-                // building_element['u_value'] = 1.7
-                // building_element.pop('r_c', None)
+                _sum_uval_times_area += current_u_value * rooflight_area;
+                building_element.set_u_value(1.7);
+                building_element.remove_r_c();
             }
             _ => {
-                todo!()
+                // if it is not a roof light, it is a glazed door or window
+                building_element.set_u_value(1.2);
+                building_element.remove_r_c();
             }
         }
     }
@@ -232,7 +232,10 @@ fn calculate_area_diff_and_adjust_glazing_area() {
     todo!()
 }
 
-fn find_walls_roofs_with_same_orientation_and_pitch() {}
+fn find_walls_roofs_with_same_orientation_and_pitch() {
+    todo!()
+}
+
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
 fn calc_max_glazing_area_fraction(
     zones: &ZoneDictionary,
@@ -1032,19 +1035,20 @@ mod tests {
     }
 
     // this test does not exist in Python
-    #[ignore]
     #[rstest]
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
-        edit_transparent_element(&mut test_input);
+        edit_transparent_element(&mut test_input).unwrap();
 
         for building_element in test_input.all_building_elements() {
-            if let input::BuildingElement::Transparent { .. } = building_element {
+            if let input::BuildingElement::Transparent { u_value, r_c, .. } = building_element {
                 match pitch_class(building_element.pitch()) {
                     HeatFlowDirection::Upwards => {
-                        assert_eq!(building_element.u_value(), Some(1.7));
+                        assert_eq!(*u_value, Some(1.7));
+                        assert_eq!(*r_c, None);
                     }
                     _ => {
                         assert_eq!(building_element.u_value(), Some(1.2));
+                        assert_eq!(*r_c, None);
                     }
                 }
             }
