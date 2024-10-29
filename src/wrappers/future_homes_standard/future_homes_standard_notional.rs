@@ -49,15 +49,15 @@ const NOTIONAL_SHOWER_NAME: &str = "mixer";
 const NOTIONAL_OTHER_HW_NAME: &str = "other";
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
-pub(crate) fn apply_fhs_not_preprocessing(
+pub(crate) fn apply_fhs_notional_preprocessing(
     input: &mut InputForProcessing,
-    fhs_not_a_assumptions: bool,
-    _fhs_not_b_assumptions: bool,
-    fhs_fee_not_a_assumptions: bool,
-    fhs_fee_not_b_assumptions: bool,
+    fhs_notional_a_assumptions: bool,
+    _fhs_notional_b_assumptions: bool,
+    fhs_fee_notional_a_assumptions: bool,
+    fhs_fee_notional_b_assumptions: bool,
 ) -> anyhow::Result<()> {
-    let _is_notional_a = fhs_not_a_assumptions || fhs_fee_not_a_assumptions;
-    let _is_fee = fhs_fee_not_a_assumptions || fhs_fee_not_b_assumptions;
+    let _is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
+    let _is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
     // Check if a heat network is present
     let _is_heat_network = check_heatnetwork_present(input);
 
@@ -160,6 +160,19 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
     Ok(())
 }
 
+fn edit_transparent_element() {
+    todo!()
+}
+
+fn split_glazing_and_walls() {
+    todo!()
+}
+
+fn calculate_area_diff_and_adjust_glazing_area() {
+    todo!()
+}
+
+fn find_walls_roofs_with_same_orientation_and_pitch() {}
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
 fn calc_max_glazing_area_fraction(
     zones: &ZoneDictionary,
@@ -204,6 +217,10 @@ fn calc_max_glazing_area_fraction(
     };
 
     Ok(0.25 - rooflight_correction_factor)
+}
+
+fn edit_glazing_for_glazing_limit() {
+    todo!()
 }
 
 /// Apply notional building ground specifications
@@ -305,6 +322,21 @@ static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
     ])
 });
 
+fn edit_add_heatnetwork_heating() {
+    todo!()
+}
+
+fn edit_add_default_space_heating_system() {
+    todo!()
+}
+
+fn edit_default_space_heating_distribution_system() {
+    todo!()
+}
+
+fn edit_heatnetwork_space_heating_distribution_system() {
+    todo!()
+}
 fn edit_bath_shower_other(
     input: &mut InputForProcessing,
     cold_water_source_type: ColdWaterSourceType,
@@ -336,6 +368,9 @@ fn edit_bath_shower_other(
     Ok(())
 }
 
+fn remove_wwhrs_if_present() {
+    todo!()
+}
 fn add_wwhrs(
     input: &mut InputForProcessing,
     cold_water_source_type: ColdWaterSourceType,
@@ -682,6 +717,14 @@ fn edit_hot_water_distribution(
     Ok(())
 }
 
+fn remove_pv_diverter_if_present() {
+    todo!()
+}
+
+fn remove_electric_battery_if_present() {
+    todo!()
+}
+
 /// Calculate effective air change rate according to Part F 1.24 a
 pub fn minimum_air_change_rate(
     _input: &InputForProcessing,
@@ -708,6 +751,10 @@ pub fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64
 }
 
+fn edit_space_heating_system() {
+    todo!()
+}
+
 fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let part_o_active_cooling_required = input.part_o_active_cooling_required().unwrap_or(false);
 
@@ -718,6 +765,18 @@ fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+fn calc_design_capacity() {
+    todo!()
+}
+
+fn initialise_temperature_setpoints() {
+    todo!()
+}
+
+fn remove_onsite_generation_if_present() {
+    todo!()
 }
 
 fn add_solar_pv(
@@ -822,18 +881,18 @@ mod tests {
     #[ignore = "still to complete"]
     #[rstest]
     // test written in Rust, not present in Python
-    fn test_apply_fhs_not_preprocessing(mut test_input: InputForProcessing) {
-        let fhs_not_a_assumptions = true;
-        let _fhs_not_b_assumptions = false;
-        let fhs_fee_not_a_assumptions = false;
-        let fhs_fee_not_b_assumptions = false;
+    fn test_apply_fhs_notional_preprocessing(mut test_input: InputForProcessing) {
+        let fhs_notional_a_assumptions = true;
+        let _fhs_notional_b_assumptions = false;
+        let fhs_fee_notional_a_assumptions = false;
+        let fhs_fee_notional_b_assumptions = false;
 
-        let _actual = apply_fhs_not_preprocessing(
+        let _actual = apply_fhs_notional_preprocessing(
             &mut test_input,
-            fhs_not_a_assumptions,
-            _fhs_not_b_assumptions,
-            fhs_fee_not_a_assumptions,
-            fhs_fee_not_b_assumptions,
+            fhs_notional_a_assumptions,
+            _fhs_notional_b_assumptions,
+            fhs_fee_notional_a_assumptions,
+            fhs_fee_notional_b_assumptions,
         );
         todo!()
     }

@@ -33,7 +33,7 @@ use crate::statistics::percentile;
 use crate::wrappers::future_homes_standard::{
     future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing},
     future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing},
-    future_homes_standard_notional::apply_fhs_not_preprocessing,
+    future_homes_standard_notional::apply_fhs_notional_preprocessing,
 };
 use anyhow::anyhow;
 use csv::WriterBuilder;
@@ -96,7 +96,7 @@ pub fn run_project(
                 || fhs_fee_not_a_assumptions
                 || fhs_fee_not_b_assumptions
             {
-                apply_fhs_not_preprocessing(
+                apply_fhs_notional_preprocessing(
                     &mut input_for_processing,
                     fhs_not_a_assumptions,
                     fhs_not_b_assumptions,
