@@ -2028,8 +2028,8 @@ impl Corpus {
             heat_balance_dict: heat_balance_all_dict,
             _heat_source_wet_results_dict: heat_source_wet_results_dict,
             _heat_source_wet_results_annual_dict: heat_source_wet_results_annual_dict,
-            emitters_output_dict,
-            vent_output_list,
+            _emitters_output_dict: emitters_output_dict,
+            _vent_output_list: vent_output_list,
         })
     }
 
@@ -2634,8 +2634,24 @@ pub struct RunResults<'a> {
         IndexMap<KeyString, IndexMap<KeyString, IndexMap<KeyString, f64>>>,
     pub(crate) _heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep<'a>>,
     pub(crate) _heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual<'a>>,
-    pub(crate) emitters_output_dict: IndexMap<String, ()>,
-    pub(crate) vent_output_list: Vec<()>,
+    pub(crate) _emitters_output_dict: IndexMap<String, ()>,
+    pub(crate) _vent_output_list: Vec<()>,
+}
+
+impl RunResults<'_> {
+    pub(crate) fn space_heat_demand_total(&self) -> f64 {
+        self.zone_dict[&ZoneResultKey::SpaceHeatDemand]
+            .values()
+            .map(|v| v.iter().sum::<f64>())
+            .sum::<f64>()
+    }
+
+    pub(crate) fn space_cool_demand_total(&self) -> f64 {
+        self.zone_dict[&ZoneResultKey::SpaceCoolDemand]
+            .values()
+            .map(|v| v.iter().sum::<f64>())
+            .sum::<f64>()
+    }
 }
 
 struct SpaceHeatingCalculation {

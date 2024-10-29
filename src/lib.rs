@@ -18,7 +18,7 @@ use crate::core::units::convert_profile_to_daily;
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
-    NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
+    NumberOrDivisionByZero, ZoneResultKey,
 };
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::input::{
@@ -136,75 +136,76 @@ pub fn run_project(
     ) -> anyhow::Result<Corpus> {
         Corpus::from_inputs(input, Some(external_conditions))
     }
-    let mut corpus = build_corpus(&input, external_conditions)?;
+    let corpus = build_corpus(&input, external_conditions)?;
 
     // 5. Run HEM calculation(s).
     #[instrument(skip_all)]
-    fn run_hem_calculation(corpus: &mut Corpus) -> anyhow::Result<RunResults> {
+    fn run_hem_calculation(corpus: &Corpus) -> anyhow::Result<RunResults> {
         corpus.run()
     }
 
-    let RunResults {
-        timestep_array,
-        results_totals,
-        results_end_user,
-        energy_import,
-        energy_export,
-        energy_generated_consumed,
-        energy_to_storage,
-        energy_from_storage,
-        energy_diverted,
-        betafactor,
-        zone_dict,
-        zone_list,
-        hc_system_dict,
-        hot_water_dict,
-        heat_cop_dict,
-        cool_cop_dict,
-        dhw_cop_dict,
-        ductwork_gains,
-        heat_balance_dict,
-        _heat_source_wet_results_dict,
-        _heat_source_wet_results_annual_dict,
-        emitters_output_dict: _emitters_output_dict,
-        vent_output_list: _vent_output_list,
-    } = run_hem_calculation(&mut corpus)?;
+    let run_results = run_hem_calculation(&corpus)?;
+
+    let contextualised_results = CalculationResultsWithContext::new(&input, &corpus, &run_results);
 
     // 6. Write out to core output files.
-
-    // fn _write_core_output_files(
-    //     output: &impl Output,
-    //     run_results: &RunResults,
-    //     context: &CalculationContext,
-    // ) -> anyhow::Result<(f64, f64, f64)> {
-    //     todo!()
-    // }
-
-    let (total_floor_area, space_heat_demand_total, space_cool_demand_total) = {
-        write_core_output_file(
-            &output,
-            OutputFileArgs {
-                output_key: "results".to_string(),
-                timestep_array: &timestep_array,
-                results_totals: &results_totals,
-                results_end_user: &results_end_user,
-                energy_import: &energy_import,
-                energy_export: &energy_export,
-                energy_generated_consumed: &energy_generated_consumed,
-                energy_to_storage: &energy_to_storage,
-                energy_from_storage: &energy_from_storage,
-                energy_diverted: &energy_diverted,
-                betafactor: &betafactor,
-                zone_dict: &zone_dict,
-                zone_list: &zone_list,
-                hc_system_dict,
-                hot_water_dict: &hot_water_dict,
-                ductwork_gains,
-            },
-        )?;
+    #[instrument(skip_all)]
+    fn write_core_output_files(
+        output: &impl Output,
+        results: &CalculationResultsWithContext,
+        flags: &ProjectFlags,
+    ) -> anyhow::Result<()> {
+        {
+            if output.is_noop() {
+                return Ok(());
+            }
+            let CalculationResultsWithContext {
+                results:
+                    RunResults {
+                        timestep_array,
+                        results_totals,
+                        results_end_user,
+                        energy_import,
+                        energy_export,
+                        energy_generated_consumed,
+                        energy_to_storage,
+                        energy_from_storage,
+                        energy_diverted,
+                        betafactor,
+                        zone_dict,
+                        zone_list,
+                        hc_system_dict,
+                        hot_water_dict,
+                        ductwork_gains,
+                        ..
+                    },
+                ..
+            } = results;
+            write_core_output_file(
+                output,
+                OutputFileArgs {
+                    output_key: "results".to_string(),
+                    timestep_array,
+                    results_totals,
+                    results_end_user,
+                    energy_import,
+                    energy_export,
+                    energy_generated_consumed,
+                    energy_to_storage,
+                    energy_from_storage,
+                    energy_diverted,
+                    betafactor,
+                    zone_dict,
+                    zone_list,
+                    hc_system_dict,
+                    hot_water_dict,
+                    ductwork_gains,
+                },
+            )?;
+        }
 
         if flags.contains(ProjectFlags::HEAT_BALANCE) {
-            for (_hb_name, _hb_map) in heat_balance_dict {
+            for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
                 // TODO: write out heat balance files
             }
         }
@@ -213,62 +214,16 @@ pub fn run_project(
             // TODO: write out heat source wet outputs
         }
 
-        // Sum per-timestep figures as needed
-        let space_heat_demand_total = zone_dict[&ZoneResultKey::SpaceHeatDemand]
-            .values()
-            .map(|v| v.iter().sum::<f64>())
-            .sum::<f64>();
-        let space_cool_demand_total = zone_dict[&ZoneResultKey::SpaceCoolDemand]
-            .values()
-            .map(|v| v.iter().sum::<f64>())
-            .sum::<f64>();
-        let total_floor_area = corpus.total_floor_area;
-        let daily_hw_demand = convert_profile_to_daily(
-            match &hot_water_dict[&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss] {
-                HotWaterResultMap::Float(results) => results
-                    .get(&KeyString::from("energy_demand_incl_pipework_loss")?)
-                    .ok_or(anyhow!(
-                    "Hot water energy demand incl pipework_loss field not set in hot water output"
-                ))?,
-                HotWaterResultMap::Int(_) => unreachable!(
-                    "Hot water energy demand incl pipework_loss is not expected to be an integer"
-                ),
-            },
-            corpus.simulation_time.step_in_hours(),
-        );
-        let daily_hw_demand_75th_percentile = percentile(&daily_hw_demand, 75);
+        write_core_output_file_summary(output, results.try_into()?)?;
 
-        let summary_input_digest: SummaryInputDigest = (&input).into();
-
-        write_core_output_file_summary(
-            &output,
-            SummaryOutputFileArgs {
-                output_key: "results_summary".to_string(),
-                input: summary_input_digest,
-                timestep_array: &timestep_array,
-                results_end_user: &results_end_user,
-                energy_generated_consumed: &energy_generated_consumed,
-                energy_to_storage: &energy_to_storage,
-                energy_from_storage: &energy_from_storage,
-                energy_diverted: &energy_diverted,
-                energy_import: &energy_import,
-                energy_export: &energy_export,
-                space_heat_demand_total,
-                space_cool_demand_total,
-                total_floor_area,
-                heat_cop_dict,
-                cool_cop_dict,
-                dhw_cop_dict,
-                daily_hw_demand_75th_percentile,
-            },
-        )?;
+        let corpus = results.context.corpus;
 
         let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
         let heat_capacity_parameter = corpus.calc_hcp();
         let heat_loss_form_factor = corpus.calc_hlff();
 
         write_core_output_file_static(
-            &output,
+            output,
             StaticOutputFileArgs {
                 output_key: "results_static".to_string(),
                 heat_transfer_coefficient,
@@ -278,29 +233,29 @@ pub fn run_project(
             },
         )?;
 
-        (
-            total_floor_area,
-            space_heat_demand_total,
-            space_cool_demand_total,
-        )
-    };
+        Ok(())
+    }
+
+    write_core_output_files(&output, &contextualised_results, flags)?;
 
     // 7. Run wrapper post-processing and capture any output.
     #[instrument(skip_all)]
     fn run_wrapper_postprocessing(
-        input: &Input,
         output: &impl Output,
+        results: &CalculationResultsWithContext,
         flags: &ProjectFlags,
-        energy_import: &IndexMap<KeyString, Vec<f64>>,
-        energy_export: &IndexMap<KeyString, Vec<f64>>,
-        results_end_user: &ResultsEndUser,
-        timestep_array: &[f64],
-        total_floor_area: f64,
-        space_heat_demand_total: f64,
-        space_cool_demand_total: f64,
     ) -> anyhow::Result<()> {
         #[cfg(feature = "fhs")]
         {
+            let input = results.context.input;
+            let RunResults {
+                timestep_array,
+                results_end_user,
+                energy_import,
+                energy_export,
+                ..
+            } = results.results;
+
             if flags.intersects(
                 ProjectFlags::FHS_ASSUMPTIONS
                     | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
@@ -323,11 +278,15 @@ pub fn run_project(
                     | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
                     | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
             ) {
+                let CalculationResultsWithContext {
+                    results,
+                    context: CalculationContext { corpus, .. },
+                } = results;
                 apply_fhs_fee_postprocessing(
                     output,
-                    total_floor_area,
-                    space_heat_demand_total,
-                    space_cool_demand_total,
+                    corpus.total_floor_area,
+                    results.space_heat_demand_total(),
+                    results.space_cool_demand_total(),
                 )?;
             }
         }
@@ -335,29 +294,56 @@ pub fn run_project(
         Ok(())
     }
 
-    run_wrapper_postprocessing(
-        &input,
-        &output,
-        flags,
-        &energy_import,
-        &energy_export,
-        &results_end_user,
-        &timestep_array,
-        total_floor_area,
-        space_heat_demand_total,
-        space_cool_demand_total,
-    )
+    run_wrapper_postprocessing(&output, &contextualised_results, flags)
 }
 
-// pub(crate) struct CalculationContext<'a> {
-//     input: &'a Input,
-//     corpus: &'a Corpus,
-// }
-//
-// pub(crate) struct CalculationResultsWithContext<'a> {
-//     results: &'a RunResults<'a>,
-//     context: &'a CalculationContext<'a>,
-// }
+#[derive(Clone, Copy)]
+pub(crate) struct CalculationContext<'a> {
+    input: &'a Input,
+    corpus: &'a Corpus,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct CalculationResultsWithContext<'a> {
+    results: &'a RunResults<'a>,
+    context: CalculationContext<'a>,
+}
+
+impl<'a> CalculationResultsWithContext<'a> {
+    fn new(
+        input: &'a Input,
+        corpus: &'a Corpus,
+        results: &'a RunResults,
+    ) -> CalculationResultsWithContext<'a> {
+        Self {
+            results,
+            context: CalculationContext { input, corpus },
+        }
+    }
+}
+
+impl CalculationResultsWithContext<'_> {
+    fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
+        Ok(percentile(
+            &convert_profile_to_daily(
+                match &self.results.hot_water_dict
+                    [&HotWaterResultKey::HotWaterEnergyDemandIncludingPipeworkLoss]
+                {
+                    HotWaterResultMap::Float(results) => results
+                        .get(&KeyString::from("energy_demand_incl_pipework_loss")?)
+                        .ok_or(anyhow!(
+                    "Hot water energy demand incl pipework_loss field not set in hot water output"
+                ))?,
+                    HotWaterResultMap::Int(_) => unreachable!(
+                    "Hot water energy demand incl pipework_loss is not expected to be an integer"
+                ),
+                },
+                self.context.corpus.simulation_time.step_in_hours(),
+            ),
+            percentage,
+        ))
+    }
+}
 
 bitflags! {
     pub struct ProjectFlags: u32 {
@@ -477,15 +463,12 @@ struct OutputFileArgs<'a> {
     betafactor: &'a IndexMap<KeyString, Vec<f64>>,
     zone_dict: &'a IndexMap<ZoneResultKey, IndexMap<KeyString, Vec<f64>>>,
     zone_list: &'a [KeyString],
-    hc_system_dict: IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
+    hc_system_dict: &'a IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
     hot_water_dict: &'a IndexMap<HotWaterResultKey, HotWaterResultMap>,
-    ductwork_gains: IndexMap<KeyString, Vec<f64>>,
+    ductwork_gains: &'a IndexMap<KeyString, Vec<f64>>,
 }
 
 fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow::Result<()> {
-    if output.is_noop() {
-        return Ok(());
-    }
     let OutputFileArgs {
         output_key,
         timestep_array,
@@ -566,9 +549,9 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         for (nested_key, nested_value) in value {
             // Add the nested_value to the corresponding entry in reorganized_dict
             reorganised_dict
-                .entry(nested_key)
+                .entry(nested_key.clone())
                 .or_default()
-                .insert(key, nested_value);
+                .insert(*key, nested_value.clone());
         }
     }
 
@@ -812,9 +795,9 @@ struct SummaryOutputFileArgs<'a> {
     space_heat_demand_total: f64,
     space_cool_demand_total: f64,
     total_floor_area: f64,
-    heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    heat_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
+    cool_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
+    dhw_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
     daily_hw_demand_75th_percentile: f64,
 }
 
@@ -851,6 +834,46 @@ impl From<&HotWaterSourceDetails> for SummaryInputHotWaterSourceDigest {
             source_is_storage_tank: matches!(value, HotWaterSourceDetails::StorageTank { .. }),
             source_volume: value.volume(),
         }
+    }
+}
+
+impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'a> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
+        let RunResults {
+            timestep_array,
+            results_end_user,
+            energy_import,
+            energy_export,
+            energy_generated_consumed,
+            energy_to_storage,
+            energy_from_storage,
+            energy_diverted,
+            heat_cop_dict,
+            cool_cop_dict,
+            dhw_cop_dict,
+            ..
+        } = value.results;
+        Ok(SummaryOutputFileArgs {
+            output_key: "results_summary".to_string(),
+            input: value.context.input.into(),
+            timestep_array,
+            results_end_user,
+            energy_generated_consumed,
+            energy_to_storage,
+            energy_from_storage,
+            energy_diverted,
+            energy_import,
+            energy_export,
+            space_heat_demand_total: value.results.space_heat_demand_total(),
+            space_cool_demand_total: value.results.space_cool_demand_total(),
+            total_floor_area: value.context.corpus.total_floor_area,
+            heat_cop_dict,
+            cool_cop_dict,
+            dhw_cop_dict,
+            daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
+        })
     }
 }
 
