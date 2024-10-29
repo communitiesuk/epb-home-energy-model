@@ -1727,7 +1727,22 @@ impl BuildingElement {
         }
     }
 
-    #[cfg(test)]
+    pub(crate) fn height(&self) -> Option<f64> {
+        match self {
+            BuildingElement::Opaque { height, .. } => Some(*height),
+            BuildingElement::Transparent { height, .. } => Some(*height),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn width(&self) -> Option<f64> {
+        match self {
+            BuildingElement::Opaque { width, .. } => Some(*width),
+            BuildingElement::Transparent { width, .. } => Some(*width),
+            _ => None,
+        }
+    }
+
     pub(crate) fn u_value(&self) -> Option<f64> {
         match self {
             BuildingElement::Opaque { u_value, .. } => *u_value,
@@ -1809,6 +1824,9 @@ pub(crate) trait UValueEditableBuildingElement {
     fn is_opaque(&self) -> bool;
     fn is_external_door(&self) -> Option<bool>;
     fn remove_r_c(&mut self);
+    fn height(&self) -> Option<f64>;
+    fn width(&self) -> Option<f64>;
+    fn u_value(&self) -> Option<f64>;
 }
 impl UValueEditableBuildingElement for BuildingElement {
     fn set_u_value(&mut self, new_u_value: f64) {
@@ -1866,6 +1884,18 @@ impl UValueEditableBuildingElement for BuildingElement {
             }
             _ => {}
         }
+    }
+
+    fn height(&self) -> Option<f64> {
+        self.height()
+    }
+
+    fn width(&self) -> Option<f64> {
+        self.width()
+    }
+
+    fn u_value(&self) -> Option<f64> {
+        self.u_value()
     }
 }
 
@@ -3628,6 +3658,17 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|zone| zone.building_elements.values_mut())
             .filter(|el| matches!(el, BuildingElement::Ground { .. }))
+            .collect()
+    }
+
+    pub(crate) fn all_transparent_building_elements_mut_u_values(
+        &mut self,
+    ) -> Vec<&mut impl UValueEditableBuildingElement> {
+        self.input
+            .zone
+            .values_mut()
+            .flat_map(|zone| zone.building_elements.values_mut())
+            .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
             .collect()
     }
 

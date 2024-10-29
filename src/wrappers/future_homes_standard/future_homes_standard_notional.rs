@@ -160,8 +160,68 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
     Ok(())
 }
 
-fn edit_transparent_element() {
-    todo!()
+/// Apply notional u-value to windows & glazed doors and rooflights
+/// for windows and glazed doors
+/// u-value is 1.2
+
+/// for rooflights
+/// u-value is 1.7
+/// the max rooflight area is exactly defined as:
+/// Max area of glazing if rooflight, as a % of TFA = 25% of TFA - % reduction
+/// where % reduction = area of actual rooflight as a % of TFA * ((actual u-value of rooflight - 1.2)/1.2)
+
+/// interpret the instruction for max rooflight area as:
+/// max_area_reduction_factor = total_rooflight_area / TFA * ((average_uvalue - 1.2)/1.2)
+/// where
+///     total_rooflight_area = total area of all rooflights combined
+///     average_uvalue = area weighted average actual rooflight u-value
+
+/// max_rooflight_area = maximum allowed total area of all rooflights combined
+/// max_rooflight_area = TFA*0.25*max_area_reduction_factor
+
+/// TODO (from Python) - awaiting confirmation from DLUHC/DESNZ that interpretation is correct
+fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let mut total_rooflight_area = 0.;
+    let mut sum_uval_times_area = 0.;
+
+    let mut building_elements = input.all_transparent_building_elements_mut_u_values();
+
+    for building_element in building_elements.iter_mut() {
+        let pitch_class = pitch_class(building_element.pitch());
+        match pitch_class {
+            HeatFlowDirection::Upwards => {
+                // rooflight
+                let height = building_element.height().ok_or_else(|| {
+                    anyhow!(
+                        "Notional wrapper expects height of transparent building element to be set"
+                    )
+                })?;
+                let width = building_element.width().ok_or_else(|| {
+                    anyhow!(
+                        "Notional wrapper expects width of transparent building element to be set"
+                    )
+                })?;
+                let rooflight_area = height * width;
+                total_rooflight_area += rooflight_area;
+
+                // TODO: does something create u_values for transparent elements before this method is called?
+                sum_uval_times_area += building_element.u_value().ok_or_else(|| {
+                    anyhow!(
+                        "Notional wrapper expects u_value of transparent building element to be set"
+                    )
+                })?;
+                // let sum_uval_times_area += building_element.u_value
+                // sum_uval_times_area += building_element['u_value'] * rooflight_area
+                // building_element['u_value'] = 1.7
+                // building_element.pop('r_c', None)
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn split_glazing_and_walls() {
@@ -965,6 +1025,26 @@ mod tests {
                             };
                             assert_eq!(u_value, expected_u_value);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // this test does not exist in Python
+    #[ignore]
+    #[rstest]
+    fn test_edit_transparent_element(mut test_input: InputForProcessing) {
+        edit_transparent_element(&mut test_input);
+
+        for building_element in test_input.all_building_elements() {
+            if let input::BuildingElement::Transparent { .. } = building_element {
+                match pitch_class(building_element.pitch()) {
+                    HeatFlowDirection::Upwards => {
+                        assert_eq!(building_element.u_value(), Some(1.7));
+                    }
+                    _ => {
+                        assert_eq!(building_element.u_value(), Some(1.2));
                     }
                 }
             }
