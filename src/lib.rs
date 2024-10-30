@@ -187,14 +187,37 @@ pub fn run_project(
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
-        let results = results[&CalculationKey::Primary];
-        {
-            if output.is_noop() {
-                return Ok(());
-            }
-            let CalculationResultsWithContext {
-                results:
-                    RunResults {
+        if let Some(results) = results.get(&CalculationKey::Primary) {
+            {
+                if output.is_noop() {
+                    return Ok(());
+                }
+                let CalculationResultsWithContext {
+                    results:
+                        RunResults {
+                            timestep_array,
+                            results_totals,
+                            results_end_user,
+                            energy_import,
+                            energy_export,
+                            energy_generated_consumed,
+                            energy_to_storage,
+                            energy_from_storage,
+                            energy_diverted,
+                            betafactor,
+                            zone_dict,
+                            zone_list,
+                            hc_system_dict,
+                            hot_water_dict,
+                            ductwork_gains,
+                            ..
+                        },
+                    ..
+                } = results;
+                write_core_output_file(
+                    output,
+                    OutputFileArgs {
+                        output_key: "results".to_string(),
                         timestep_array,
                         results_totals,
                         results_end_user,
@@ -210,61 +233,39 @@ pub fn run_project(
                         hc_system_dict,
                         hot_water_dict,
                         ductwork_gains,
-                        ..
                     },
-                ..
-            } = results;
-            write_core_output_file(
+                )?;
+            }
+
+            if flags.contains(ProjectFlags::HEAT_BALANCE) {
+                for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
+                    // TODO: write out heat balance files
+                }
+            }
+
+            if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+                // TODO: write out heat source wet outputs
+            }
+
+            write_core_output_file_summary(output, results.try_into()?)?;
+
+            let corpus = results.context.corpus;
+
+            let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
+            let heat_capacity_parameter = corpus.calc_hcp();
+            let heat_loss_form_factor = corpus.calc_hlff();
+
+            write_core_output_file_static(
                 output,
-                OutputFileArgs {
-                    output_key: "results".to_string(),
-                    timestep_array,
-                    results_totals,
-                    results_end_user,
-                    energy_import,
-                    energy_export,
-                    energy_generated_consumed,
-                    energy_to_storage,
-                    energy_from_storage,
-                    energy_diverted,
-                    betafactor,
-                    zone_dict,
-                    zone_list,
-                    hc_system_dict,
-                    hot_water_dict,
-                    ductwork_gains,
+                StaticOutputFileArgs {
+                    output_key: "results_static".to_string(),
+                    heat_transfer_coefficient,
+                    heat_loss_parameter,
+                    heat_capacity_parameter,
+                    heat_loss_form_factor,
                 },
             )?;
         }
-
-        if flags.contains(ProjectFlags::HEAT_BALANCE) {
-            for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
-                // TODO: write out heat balance files
-            }
-        }
-
-        if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-            // TODO: write out heat source wet outputs
-        }
-
-        write_core_output_file_summary(output, (&results).try_into()?)?;
-
-        let corpus = results.context.corpus;
-
-        let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
-        let heat_capacity_parameter = corpus.calc_hcp();
-        let heat_loss_form_factor = corpus.calc_hlff();
-
-        write_core_output_file_static(
-            output,
-            StaticOutputFileArgs {
-                output_key: "results_static".to_string(),
-                heat_transfer_coefficient,
-                heat_loss_parameter,
-                heat_capacity_parameter,
-                heat_loss_form_factor,
-            },
-        )?;
 
         Ok(())
     }
@@ -278,50 +279,51 @@ pub fn run_project(
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
-        let results = results[&CalculationKey::Primary];
-        #[cfg(feature = "fhs")]
-        {
-            let input = results.context.input;
-            let RunResults {
-                timestep_array,
-                results_end_user,
-                energy_import,
-                energy_export,
-                ..
-            } = results.results;
-
-            if flags.intersects(
-                ProjectFlags::FHS_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-            ) {
-                let notional = flags.intersects(
-                    ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-                );
-                apply_fhs_postprocessing(
-                    input,
-                    output,
+        if let Some(results) = results.get(&CalculationKey::Primary) {
+            #[cfg(feature = "fhs")]
+            {
+                let input = results.context.input;
+                let RunResults {
+                    timestep_array,
+                    results_end_user,
                     energy_import,
                     energy_export,
-                    results_end_user,
-                    timestep_array,
-                    notional,
-                )?;
-            } else if flags.intersects(
-                ProjectFlags::FHS_FEE_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            ) {
-                let CalculationResultsWithContext {
-                    results,
-                    context: CalculationContext { corpus, .. },
-                } = results;
-                apply_fhs_fee_postprocessing(
-                    output,
-                    corpus.total_floor_area,
-                    results.space_heat_demand_total(),
-                    results.space_cool_demand_total(),
-                )?;
+                    ..
+                } = results.results;
+
+                if flags.intersects(
+                    ProjectFlags::FHS_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+                ) {
+                    let notional = flags.intersects(
+                        ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+                    );
+                    apply_fhs_postprocessing(
+                        input,
+                        output,
+                        energy_import,
+                        energy_export,
+                        results_end_user,
+                        timestep_array,
+                        notional,
+                    )?;
+                } else if flags.intersects(
+                    ProjectFlags::FHS_FEE_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+                ) {
+                    let CalculationResultsWithContext {
+                        results,
+                        context: CalculationContext { corpus, .. },
+                    } = results;
+                    apply_fhs_fee_postprocessing(
+                        output,
+                        corpus.total_floor_area,
+                        results.space_heat_demand_total(),
+                        results.space_cool_demand_total(),
+                    )?;
+                }
             }
         }
 
