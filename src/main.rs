@@ -25,6 +25,7 @@ struct SapArgs {
     )]
     preprocess_only: bool,
     #[command(flatten)]
+    #[cfg(feature = "fhs")]
     wrapper_choice: WrapperChoice,
     #[clap(
         long,
@@ -44,6 +45,7 @@ struct SapArgs {
 
 #[derive(Args, Clone, Default, Debug)]
 #[group(required = false, multiple = false)]
+#[cfg(feature = "fhs")]
 struct WrapperChoice {
     #[arg(long, help = "Use Future Homes Standard calculation assumptions")]
     future_homes_standard: bool,
@@ -72,6 +74,11 @@ struct WrapperChoice {
         help = "Use Future Homes Standard Fabric Energy Efficiency assumptions for notional option B"
     )]
     future_homes_standard_fee_not_b: bool,
+    #[arg(
+        long = "fhs-compliance",
+        help = "Run an FHS compliance calculation. This overrides all other FHS related flags"
+    )]
+    fhs_compliance: bool,
 }
 
 #[derive(Args, Clone, Default, Debug)]
@@ -190,6 +197,9 @@ impl From<SapArgs> for ProjectFlags {
             }
             if fhs.future_homes_standard_fee_not_b {
                 flags.insert(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS)
+            }
+            if fhs.fhs_compliance {
+                flags.insert(ProjectFlags::FHS_COMPLIANCE);
             }
         }
 

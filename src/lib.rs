@@ -78,6 +78,22 @@ pub fn run_project(
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         #[cfg(feature = "fhs")]
         {
+            // special case for FHS compliance wrapper
+            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                return vec![input_for_processing; FHS_CALCULATIONS.len()]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, mut input)| {
+                        let (key, flags) = &FHS_CALCULATIONS[i];
+                        do_fhs_preprocessing(&mut input, flags)?;
+                        Ok((*key, input.finalize()))
+                    })
+                    .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>();
+            }
+        }
+
+        #[cfg(feature = "fhs")]
+        {
             do_fhs_preprocessing(&mut input_for_processing, flags)?;
         }
 
@@ -251,6 +267,17 @@ pub fn run_project(
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
+        #[cfg(feature = "fhs")]
+        {
+            // special case for FHS compliance wrapper
+            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                for (key, flags) in FHS_CALCULATIONS.iter() {
+                    do_fhs_postprocessing(output, &results[key], flags)?;
+                }
+                return Ok(());
+            }
+        }
+
         if let Some(results) = results.get(&CalculationKey::Primary) {
             #[cfg(feature = "fhs")]
             {
@@ -330,6 +357,8 @@ bitflags! {
         const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
         #[cfg(feature = "fhs")]
         const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
+        #[cfg(feature = "fhs")]
+        const FHS_COMPLIANCE = 0b100000000000000;
     }
 }
 
@@ -349,6 +378,23 @@ pub(crate) enum CalculationKey {
     #[allow(dead_code)]
     FhsNotionalFee,
 }
+
+#[cfg(feature = "fhs")]
+static FHS_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 2]> = LazyLock::new(|| {
+    [
+        (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
+        (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
+        // comment out notional for now
+        // (
+        //     CalculationKey::FhsNotional,
+        //     ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        // ),
+        // (
+        //     CalculationKey::FhsNotionalFee,
+        //     ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        // ),
+    ]
+});
 
 fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
