@@ -78,35 +78,7 @@ pub fn run_project(
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         #[cfg(feature = "fhs")]
         {
-            // Apply required preprocessing steps, if any
-            // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
-            if flags.intersects(
-                ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            ) {
-                apply_fhs_notional_preprocessing(
-                    &mut input_for_processing,
-                    flags.contains(ProjectFlags::FHS_NOT_A_ASSUMPTIONS),
-                    flags.contains(ProjectFlags::FHS_NOT_B_ASSUMPTIONS),
-                    flags.contains(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
-                    flags.contains(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
-                )?;
-            }
-            if flags.intersects(
-                ProjectFlags::FHS_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-            ) {
-                apply_fhs_preprocessing(&mut input_for_processing, Some(false))?;
-            } else if flags.intersects(
-                ProjectFlags::FHS_FEE_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            ) {
-                apply_fhs_fee_preprocessing(&mut input_for_processing)?;
-            }
+            do_fhs_preprocessing(&mut input_for_processing, flags)?;
         }
 
         Ok(HashMap::from([(
@@ -282,48 +254,7 @@ pub fn run_project(
         if let Some(results) = results.get(&CalculationKey::Primary) {
             #[cfg(feature = "fhs")]
             {
-                let input = results.context.input;
-                let RunResults {
-                    timestep_array,
-                    results_end_user,
-                    energy_import,
-                    energy_export,
-                    ..
-                } = results.results;
-
-                if flags.intersects(
-                    ProjectFlags::FHS_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-                ) {
-                    let notional = flags.intersects(
-                        ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-                    );
-                    apply_fhs_postprocessing(
-                        input,
-                        output,
-                        energy_import,
-                        energy_export,
-                        results_end_user,
-                        timestep_array,
-                        notional,
-                    )?;
-                } else if flags.intersects(
-                    ProjectFlags::FHS_FEE_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-                ) {
-                    let CalculationResultsWithContext {
-                        results,
-                        context: CalculationContext { corpus, .. },
-                    } = results;
-                    apply_fhs_fee_postprocessing(
-                        output,
-                        corpus.total_floor_area,
-                        results.space_heat_demand_total(),
-                        results.space_cool_demand_total(),
-                    )?;
-                }
+                do_fhs_postprocessing(output, results, flags)?;
             }
         }
 
@@ -371,8 +302,8 @@ impl CalculationResultsWithContext<'_> {
                     "Hot water energy demand incl pipework_loss field not set in hot water output"
                 ))?,
                     HotWaterResultMap::Int(_) => unreachable!(
-                    "Hot water energy demand incl pipework_loss is not expected to be an integer"
-                ),
+                        "Hot water energy demand incl pipework_loss is not expected to be an integer"
+                    ),
                 },
                 self.context.corpus.simulation_time.step_in_hours(),
             ),
@@ -1491,6 +1422,95 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             ..Default::default()
         }
     }
+}
+
+#[cfg(feature = "fhs")]
+fn do_fhs_preprocessing(
+    input_for_processing: &mut InputForProcessing,
+    flags: &ProjectFlags,
+) -> anyhow::Result<()> {
+    // Apply required preprocessing steps, if any
+    // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
+    if flags.intersects(
+        ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+    ) {
+        apply_fhs_notional_preprocessing(
+            input_for_processing,
+            flags.contains(ProjectFlags::FHS_NOT_A_ASSUMPTIONS),
+            flags.contains(ProjectFlags::FHS_NOT_B_ASSUMPTIONS),
+            flags.contains(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
+            flags.contains(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
+        )?;
+    }
+    if flags.intersects(
+        ProjectFlags::FHS_ASSUMPTIONS
+            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+    ) {
+        apply_fhs_preprocessing(input_for_processing, Some(false))?;
+    } else if flags.intersects(
+        ProjectFlags::FHS_FEE_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+    ) {
+        apply_fhs_fee_preprocessing(input_for_processing)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "fhs")]
+fn do_fhs_postprocessing(
+    output: &impl Output,
+    results: &CalculationResultsWithContext,
+    flags: &ProjectFlags,
+) -> anyhow::Result<()> {
+    let input = results.context.input;
+    let RunResults {
+        timestep_array,
+        results_end_user,
+        energy_import,
+        energy_export,
+        ..
+    } = results.results;
+
+    if flags.intersects(
+        ProjectFlags::FHS_ASSUMPTIONS
+            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+    ) {
+        let notional = flags
+            .intersects(ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
+        apply_fhs_postprocessing(
+            input,
+            output,
+            energy_import,
+            energy_export,
+            results_end_user,
+            timestep_array,
+            notional,
+        )?;
+    } else if flags.intersects(
+        ProjectFlags::FHS_FEE_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+    ) {
+        let CalculationResultsWithContext {
+            results,
+            context: CalculationContext { corpus, .. },
+        } = results;
+        apply_fhs_fee_postprocessing(
+            output,
+            corpus.total_floor_area,
+            results.space_heat_demand_total(),
+            results.space_cool_demand_total(),
+        )?;
+    }
+
+    Ok(())
 }
 
 /// Utility function for iterating multiple hashmaps with same keys.
