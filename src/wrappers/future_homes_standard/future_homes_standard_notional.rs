@@ -220,15 +220,38 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
     Ok(())
 }
 
-fn split_glazing_and_walls() {
-    todo!()
+///Split windows/rooflights and walls/roofs into dictionaries.
+fn split_glazing_and_walls(
+    input: &InputForProcessing,
+) -> (Vec<&BuildingElement>, Vec<&BuildingElement>) {
+    let mut windows_rooflight: Vec<&BuildingElement> = vec![];
+    let mut walls_roofs: Vec<&BuildingElement> = vec![];
+
+    let building_elements = input.all_building_elements();
+
+    for building_element in building_elements {
+        match building_element {
+            BuildingElement::Transparent { .. } => windows_rooflight.push(building_element),
+            BuildingElement::Opaque { .. } => walls_roofs.push(building_element),
+            _ => continue,
+        }
+    }
+
+    (windows_rooflight, walls_roofs)
 }
 
-fn calculate_area_diff_and_adjust_glazing_area() {
-    todo!()
+///Calculate difference between old  and new glazing area and adjust the glazing areas
+fn calculate_area_diff_and_adjust_glazing_area(
+    linear_reduction_factor: f64,
+    window_rooflight_element: &BuildingElement,
+) -> f64 {
+    todo!();
 }
 
-fn find_walls_roofs_with_same_orientation_and_pitch() {
+fn find_walls_roofs_with_same_orientation_and_pitch(
+    linear_reduction_factor: f64,
+    window_rooflight_element: &BuildingElement,
+) -> Vec<&BuildingElement> {
     todo!()
 }
 
@@ -270,9 +293,75 @@ fn calc_max_glazing_area_fraction(
     Ok(0.25 - rooflight_correction_factor)
 }
 
-fn edit_glazing_for_glazing_limit() {
-    todo!()
+/// Resize window/rooflight and wall/roofs to meet glazing limits
+fn edit_glazing_for_glazing_limit(
+    input: InputForProcessing,
+    total_floor_area: f64,
+) -> anyhow::Result<()> {
+    let total_glazing_area: f64 = input
+        .all_building_elements()
+        .iter()
+        .filter_map(|el| match el {
+            BuildingElement::Transparent { .. } => Some(el.height().unwrap() * el.width().unwrap()),
+            _ => None,
+        })
+        .sum();
+
+    let max_glazing_area_fraction = calc_max_glazing_area_fraction(&input, total_floor_area)?;
+    let max_glazing_area = max_glazing_area_fraction * total_floor_area;
+
+    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(&input);
+
+    if total_glazing_area > max_glazing_area {
+        let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
+
+        for window_rooflight_element in windows_rooflight {
+            let area_diff = calculate_area_diff_and_adjust_glazing_area(
+                linear_reduction_factor,
+                window_rooflight_element,
+            );
+
+            let same_orientation = find_walls_roofs_with_same_orientation_and_pitch(
+                linear_reduction_factor,
+                window_rooflight_element,
+            );
+
+            let wall_roof_area_total: f64 = same_orientation
+                .iter()
+                .filter_map(|el| match el {
+                    BuildingElement::Opaque { area, .. } => Some(*area),
+                    _ => None,
+                })
+                .sum();
+
+            for wall_roof in same_orientation {
+                if let BuildingElement::Opaque { mut area, .. } = wall_roof {
+                    let wall_roof_prop = area / wall_roof_area_total;
+
+                    // TODO how do we modify the actual input?
+                    area += area_diff * wall_roof_prop
+                }
+            }
+        }
+    }
+    Ok(())
 }
+
+// def edit_glazing_for_glazing_limit(project_dict, TFA):
+// ..
+// if total_glazing_area > max_glazing_area:
+//     linear_reduction_factor = math.sqrt(max_glazing_area / total_glazing_area)
+//     for window_rooflight in windows_rooflight.values():
+//         area_diff = calculate_area_diff_and_adjust_glazing_area(linear_reduction_factor, window_rooflight)
+//         same_orientation = find_walls_roofs_with_same_orientation_and_pitch(
+//             walls_roofs,
+//             window_rooflight,
+//             )
+//         wall_roof_area_total = sum(wall_roof['area'] for wall_roof in same_orientation)
+
+//         for wall_roof in same_orientation:
+//             wall_roof_prop =  wall_roof['area'] / wall_roof_area_total
+//             wall_roof['area'] += area_diff * wall_roof_prop
 
 /// Apply notional building ground specifications
 ///
