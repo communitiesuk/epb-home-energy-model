@@ -2526,9 +2526,9 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
     let mut total_area = vec![0.; simtime().total_steps()];
 
     let data: Vec<Vec<f64>> = input
-        .all_transparent_building_elements()
+        .all_building_elements()
         .iter()
-        .map(|el| match el {
+        .filter_map(|el| match el {
             crate::input::BuildingElement::Transparent {
                 orientation,
                 g_value,
@@ -2547,12 +2547,17 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
                 let orientation = *orientation;
                 let w_area = width * height;
                 // retrieve half-hourly shading factor
-                let direct =
-                    shading_factor(input, base_height, height, width, orientation, shading)?;
+                let direct_result =
+                    shading_factor(input, base_height, height, width, orientation, shading);
+
                 let area = 0.9 * w_area * (1. - ff) * g_val;
-                Ok(direct.iter().map(|factor| factor * area).collect())
+
+                match direct_result {
+                    Ok(direct) => Some(Ok(direct.iter().map(|factor| factor * area).collect())),
+                    Err(err) => Some(Err(err)),
+                }
             }
-            _ => unreachable!(),
+            _ => None,
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 

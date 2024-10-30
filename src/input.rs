@@ -3630,15 +3630,6 @@ impl InputForProcessing {
         self.input.external_conditions.clone()
     }
 
-    pub(crate) fn all_transparent_building_elements(&self) -> Vec<&BuildingElement> {
-        self.input
-            .zone
-            .values()
-            .flat_map(|zone| zone.building_elements.values())
-            .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
-            .collect()
-    }
-
     pub(crate) fn all_transparent_building_elements_mut(
         &mut self,
     ) -> Vec<&mut impl TransparentBuildingElement> {
@@ -3701,7 +3692,6 @@ impl InputForProcessing {
             .max_by(|a, b| a.total_cmp(b))
     }
 
-    #[cfg(test)]
     pub(crate) fn all_building_elements(&self) -> Vec<&BuildingElement> {
         self.input
             .zone

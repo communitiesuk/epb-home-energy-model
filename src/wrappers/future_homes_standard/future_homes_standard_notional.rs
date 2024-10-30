@@ -240,11 +240,11 @@ fn calc_max_glazing_area_fraction(
     let mut total_rooflight_area = 0.0;
     let mut sum_uval_times_area = 0.0;
 
-    let transparent_building_elements = input.all_transparent_building_elements();
-    for element in transparent_building_elements {
+    for element in input.all_building_elements() {
         if pitch_class(element.pitch()) != HeatFlowDirection::Upwards {
             continue;
         }
+
         if let BuildingElement::Transparent {
             height,
             width,
@@ -252,12 +252,11 @@ fn calc_max_glazing_area_fraction(
             ..
         } = element
         {
+            let u_value = u_value.ok_or_else(|| anyhow!("FHS notional wrapper needs transparent building elements to have u values set."))?;
             let rooflight_area = height * width;
+
             total_rooflight_area += rooflight_area;
-            sum_uval_times_area += rooflight_area
-                * u_value.ok_or_else(|| {
-                    anyhow!("FHS notional wrapper needs transparent building elements to have u values set.")
-                })?;
+            sum_uval_times_area += rooflight_area * u_value;
         }
     }
     let rooflight_correction_factor = if total_rooflight_area == 0.0 {
