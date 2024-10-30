@@ -140,12 +140,12 @@ pub struct Corpus {
 impl Corpus {
     pub fn from_inputs(
         input: &Input,
-        external_conditions: Option<ExternalConditions>,
+        external_conditions: Option<&ExternalConditions>,
     ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
         let external_conditions = Arc::new(match external_conditions {
-            Some(external_conditions) => external_conditions,
+            Some(external_conditions) => external_conditions.clone(),
             None => external_conditions_from_input(
                 input.external_conditions.clone(),
                 &simulation_time_iterator,

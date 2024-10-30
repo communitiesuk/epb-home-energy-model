@@ -10,7 +10,7 @@ const COLUMN_DNI_RAD: usize = 14; // direct beam normal irradiation in Wh/m2
 const COLUMN_DIF_RAD: usize = 15; // diffuse irradiation (horizontal plane) in Wh/m2
 const _COLUMN_GROUND_REFLECT: usize = 32;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExternalConditions {
     pub air_temperatures: Vec<f64>,
     pub wind_speeds: Vec<f64>,

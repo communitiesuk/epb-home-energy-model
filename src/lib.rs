@@ -42,6 +42,7 @@ use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 use std::io::Read;
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
@@ -74,7 +75,7 @@ pub fn run_project(
     fn apply_preprocessing_from_wrappers(
         mut input_for_processing: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<Input> {
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         #[cfg(feature = "fhs")]
         {
             // Apply required preprocessing steps, if any
@@ -108,7 +109,10 @@ pub fn run_project(
             }
         }
 
-        Ok(input_for_processing.finalize())
+        Ok(HashMap::from([(
+            CalculationKey::Primary,
+            input_for_processing.finalize(),
+        )]))
     }
 
     let input = apply_preprocessing_from_wrappers(input_for_processing, flags)?;
@@ -116,45 +120,74 @@ pub fn run_project(
     // 3. Determine external conditions to use for calculations.
     #[instrument(skip_all)]
     fn resolve_external_conditions(
-        input: &Input,
+        input: &HashMap<CalculationKey, Input>,
         external_conditions_data: Option<ExternalConditionsFromFile>,
-    ) -> ExternalConditions {
-        external_conditions_from_input(
-            input.external_conditions.clone(),
-            external_conditions_data,
-            input.simulation_time,
-        )
+    ) -> HashMap<CalculationKey, ExternalConditions> {
+        input
+            .iter()
+            .map(|(key, input)| {
+                (
+                    *key,
+                    external_conditions_from_input(
+                        input.external_conditions.clone(),
+                        external_conditions_data.clone(),
+                        input.simulation_time,
+                    ),
+                )
+            })
+            .collect()
     }
 
-    let external_conditions = resolve_external_conditions(&input, external_conditions_data);
+    let corpora = {
+        let external_conditions = resolve_external_conditions(&input, external_conditions_data);
 
-    // 4. Build corpus from input and external conditions.
-    #[instrument(skip_all)]
-    fn build_corpus(
-        input: &Input,
-        external_conditions: ExternalConditions,
-    ) -> anyhow::Result<Corpus> {
-        Corpus::from_inputs(input, Some(external_conditions))
-    }
-    let corpus = build_corpus(&input, external_conditions)?;
+        // 4. Build corpus from input and external conditions.
+        #[instrument(skip_all)]
+        fn build_corpus(
+            input: &HashMap<CalculationKey, Input>,
+            external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+        ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
+            iterate_maps(input, external_conditions)
+                .map(|(key, input, external_conditions)| {
+                    anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions))?))
+                })
+                .collect()
+        }
+
+        build_corpus(&input, &external_conditions)?
+    };
 
     // 5. Run HEM calculation(s).
     #[instrument(skip_all)]
-    fn run_hem_calculation(corpus: &Corpus) -> anyhow::Result<RunResults> {
-        corpus.run()
+    fn run_hem_calculation(
+        corpora: &HashMap<CalculationKey, Corpus>,
+    ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
+        corpora
+            .iter()
+            .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
+            .collect()
     }
 
-    let run_results = run_hem_calculation(&corpus)?;
+    let run_results = run_hem_calculation(&corpora)?;
 
-    let contextualised_results = CalculationResultsWithContext::new(&input, &corpus, &run_results);
+    let contextualised_results: HashMap<_, _> = run_results
+        .iter()
+        .map(|(key, results)| {
+            (
+                *key,
+                CalculationResultsWithContext::new(&input[key], &corpora[key], results),
+            )
+        })
+        .collect();
 
     // 6. Write out to core output files.
     #[instrument(skip_all)]
     fn write_core_output_files(
         output: &impl Output,
-        results: &CalculationResultsWithContext,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
+        let results = results[&CalculationKey::Primary];
         {
             if output.is_noop() {
                 return Ok(());
@@ -214,7 +247,7 @@ pub fn run_project(
             // TODO: write out heat source wet outputs
         }
 
-        write_core_output_file_summary(output, results.try_into()?)?;
+        write_core_output_file_summary(output, (&results).try_into()?)?;
 
         let corpus = results.context.corpus;
 
@@ -242,9 +275,10 @@ pub fn run_project(
     #[instrument(skip_all)]
     fn run_wrapper_postprocessing(
         output: &impl Output,
-        results: &CalculationResultsWithContext,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
+        let results = results[&CalculationKey::Primary];
         #[cfg(feature = "fhs")]
         {
             let input = results.context.input;
@@ -364,6 +398,23 @@ bitflags! {
         #[cfg(feature = "fhs")]
         const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CalculationKey {
+    Primary,
+    #[cfg(feature = "fhs")]
+    #[allow(dead_code)]
+    Fhs,
+    #[cfg(feature = "fhs")]
+    #[allow(dead_code)]
+    FhsFee,
+    #[cfg(feature = "fhs")]
+    #[allow(dead_code)]
+    FhsNotional,
+    #[cfg(feature = "fhs")]
+    #[allow(dead_code)]
+    FhsNotionalFee,
 }
 
 fn external_conditions_from_input(
@@ -1438,4 +1489,12 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             ..Default::default()
         }
     }
+}
+
+/// Utility function for iterating multiple hashmaps with same keys.
+fn iterate_maps<'a: 'b, 'b, K: Eq + Hash, V, W>(
+    m1: &'a HashMap<K, V>,
+    m2: &'b HashMap<K, W>,
+) -> impl Iterator<Item = (&'a K, &'a V, &'b W)> {
+    m1.iter().map(move |(k, v1)| (k, v1, m2.get(k).unwrap()))
 }
