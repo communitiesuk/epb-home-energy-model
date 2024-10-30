@@ -1038,7 +1038,7 @@ mod tests {
 
     #[ignore = "still to complete"]
     #[rstest]
-    // test written in Rust, not present in Python
+    // this test does not exist in Python HEM
     fn test_apply_fhs_notional_preprocessing(mut test_input: InputForProcessing) {
         let fhs_notional_a_assumptions = true;
         let _fhs_notional_b_assumptions = false;
@@ -1056,7 +1056,7 @@ mod tests {
     }
 
     #[rstest]
-    /// test written in Rust, not present in Python
+    // this test does not exist in Python HEM
     fn test_check_heatnetwork_present(test_input: InputForProcessing) {
         assert!(!check_heatnetwork_present(&test_input));
     }
@@ -1111,7 +1111,7 @@ mod tests {
         }
     }
 
-    // this test does not exist in Python
+    // this test does not exist in Python HEM
     #[rstest]
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
@@ -1207,6 +1207,23 @@ mod tests {
             0.25,
             "incorrect max glazing area fraction when there are no rooflights"
         );
+    }
+
+    // this test does not exist in Python HEM
+    #[ignore = "WIP"]
+    #[rstest]
+    fn test_edit_glazing_for_glazing_limit(test_input: InputForProcessing) {
+        let total_floor_area = 1000.;
+        edit_glazing_for_glazing_limit(test_input, total_floor_area).unwrap();
+
+        // def test_edit_glazing_for_glazing_limit(self):
+        // project_dict = deepcopy(self.project_dict)
+
+        // future_homes_standard_notional.edit_glazing_for_glazing_limit(project_dict, 1000)
+        // assert(project_dict['Zone']['zone 2']['BuildingElement']['skylight 0']['width'] == 280.056016805602)
+        // assert(project_dict['Zone']['zone 2']['BuildingElement']['skylight 0']['height'] == 0.8751750525175062)
+        // assert(project_dict['Zone']['zone 2']['BuildingElement']['roof 0']['area'] == 269.9019607843137)
+        todo!("replicate above Python test assertions")
     }
 
     fn zone_input_for_max_glazing_area_test(
