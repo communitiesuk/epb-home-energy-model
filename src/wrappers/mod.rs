@@ -60,11 +60,11 @@ impl HemWrapper for PassthroughHemWrapper {
 #[derive(Serialize)]
 pub struct HemResponse {
     #[serde(flatten)]
-    payload: Box<dyn ErasedSerialize + 'static>,
+    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
 }
 
 impl HemResponse {
-    pub(crate) fn new(payload: impl ErasedSerialize + 'static) -> Self {
+    pub(crate) fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
         Self {
             payload: Box::new(payload),
         }

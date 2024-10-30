@@ -36,6 +36,7 @@ use anyhow::anyhow;
 use bitflags::bitflags;
 use csv::WriterBuilder;
 use indexmap::IndexMap;
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -112,7 +113,7 @@ pub fn run_project(
         external_conditions_data: Option<ExternalConditionsFromFile>,
     ) -> HashMap<CalculationKey, ExternalConditions> {
         input
-            .iter()
+            .par_iter()
             .map(|(key, input)| {
                 (
                     *key,
@@ -135,6 +136,7 @@ pub fn run_project(
             input: &HashMap<CalculationKey, Input>,
             external_conditions: &HashMap<CalculationKey, ExternalConditions>,
         ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
+            // TODO: parallel iterate this
             iterate_maps(input, external_conditions)
                 .map(|(key, input, external_conditions)| {
                     anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions))?))
@@ -151,7 +153,7 @@ pub fn run_project(
         corpora: &HashMap<CalculationKey, Corpus>,
     ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
         corpora
-            .iter()
+            .par_iter()
             .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
             .collect()
     }

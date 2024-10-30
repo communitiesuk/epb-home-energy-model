@@ -10,6 +10,7 @@ use crate::{
 };
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -74,7 +75,7 @@ impl HemWrapper for FhsComplianceWrapper {
         _flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         vec![input; FHS_COMPLIANCE_CALCULATIONS.len()]
-            .into_iter()
+            .into_par_iter()
             .enumerate()
             .map(|(i, mut input)| {
                 let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
@@ -90,9 +91,13 @@ impl HemWrapper for FhsComplianceWrapper {
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         _flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
-        for (key, flags) in FHS_COMPLIANCE_CALCULATIONS.iter() {
-            do_fhs_postprocessing(output, &results[key], flags)?;
-        }
+        FHS_COMPLIANCE_CALCULATIONS
+            .par_iter()
+            .map(|(key, flags)| {
+                do_fhs_postprocessing(output, &results[key], flags)?;
+                Ok(())
+            })
+            .collect::<anyhow::Result<()>>()?;
 
         let compliance_result = CalculatedComplianceResult::try_from(results)?;
         let compliance_response = FhsComplianceResponse::build_from(&compliance_result)?;
