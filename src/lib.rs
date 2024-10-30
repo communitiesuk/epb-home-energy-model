@@ -578,8 +578,8 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         for zone_outputs in zone_dict.keys() {
             let zone_headings = format!("{zone}: {zone_outputs}");
             headings.push(zone_headings.into());
-            if UNITS_MAP.contains_key(zone_outputs) {
-                units_row.push(UNITS_MAP[zone_outputs]);
+            if UNITS_MAP.contains_key(zone_outputs.as_str()) {
+                units_row.push(UNITS_MAP[zone_outputs.as_str()]);
             } else {
                 units_row.push("Unit not defined");
             }

@@ -73,7 +73,7 @@ use crate::input::{
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
-use indexmap::{Equivalent, IndexMap};
+use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
 use itertools::Itertools;
@@ -2685,9 +2685,18 @@ pub(crate) enum ZoneResultKey {
     SpaceCoolDemand,
 }
 
-impl Equivalent<&str> for ZoneResultKey {
-    fn equivalent(&self, key: &&str) -> bool {
-        self.to_string().as_str() == *key
+impl ZoneResultKey {
+    pub(crate) fn as_str(&self) -> &'static str {
+        // if there's a clean way of reusing the serde deserialization map above, this would be preferable
+        // but for now, this minor duplication will do
+        match self {
+            ZoneResultKey::InternalGains => "internal gains",
+            ZoneResultKey::SolarGains => "solar gains",
+            ZoneResultKey::OperativeTemp => "operative temp",
+            ZoneResultKey::InternalAirTemp => "internal air temp",
+            ZoneResultKey::SpaceHeatDemand => "space heat demand",
+            ZoneResultKey::SpaceCoolDemand => "space cool demand",
+        }
     }
 }
 
