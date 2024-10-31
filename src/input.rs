@@ -3700,6 +3700,14 @@ impl InputForProcessing {
             .collect()
     }
 
+    pub(crate) fn all_building_elements_mut(&mut self) -> Vec<&mut BuildingElement> {
+        self.input
+            .zone
+            .values_mut()
+            .flat_map(|zone| zone.building_elements.values_mut())
+            .collect()
+    }
+
     pub(crate) fn all_energy_supply_fuel_types(&self) -> HashSet<FuelType> {
         let mut fuel_types: HashSet<FuelType> = Default::default();
         for energy_supply in self.input.energy_supply.values() {

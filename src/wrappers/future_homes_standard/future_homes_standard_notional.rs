@@ -222,12 +222,12 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
 
 ///Split windows/rooflights and walls/roofs into dictionaries.
 fn split_glazing_and_walls(
-    input: &InputForProcessing,
-) -> (Vec<&BuildingElement>, Vec<&BuildingElement>) {
-    let mut windows_rooflight: Vec<&BuildingElement> = vec![];
-    let mut walls_roofs: Vec<&BuildingElement> = vec![];
+    input: &mut InputForProcessing,
+) -> (Vec<&mut BuildingElement>, Vec<&mut BuildingElement>) {
+    let mut windows_rooflight = vec![];
+    let mut walls_roofs = vec![];
 
-    let building_elements = input.all_building_elements();
+    let building_elements = input.all_building_elements_mut();
 
     for building_element in building_elements {
         match building_element {
@@ -243,10 +243,20 @@ fn split_glazing_and_walls(
 ///Calculate difference between old  and new glazing area and adjust the glazing areas
 fn calculate_area_diff_and_adjust_glazing_area(
     linear_reduction_factor: f64,
-    window_rooflight_element: &BuildingElement,
+    window_rooflight_element: &mut BuildingElement,
 ) -> f64 {
-    todo!();
+    let old_area =
+        window_rooflight_element.height().unwrap() * window_rooflight_element.width().unwrap();
+
+    todo!()
 }
+
+// old_area = window_rooflight['height'] * window_rooflight['width']
+// window_rooflight['height'] *= linear_reduction_factor
+// window_rooflight['width'] *= linear_reduction_factor
+// new_area = window_rooflight['height'] * window_rooflight['width']
+// area_diff = old_area - new_area
+// return area_diff
 
 fn find_walls_roofs_with_same_orientation_and_pitch(
     linear_reduction_factor: f64,
@@ -295,7 +305,7 @@ fn calc_max_glazing_area_fraction(
 
 /// Resize window/rooflight and wall/roofs to meet glazing limits
 fn edit_glazing_for_glazing_limit(
-    input: InputForProcessing,
+    input: &mut InputForProcessing,
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
     let total_glazing_area: f64 = input
@@ -310,7 +320,7 @@ fn edit_glazing_for_glazing_limit(
     let max_glazing_area_fraction = calc_max_glazing_area_fraction(&input, total_floor_area)?;
     let max_glazing_area = max_glazing_area_fraction * total_floor_area;
 
-    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(&input);
+    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input);
 
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
@@ -1212,9 +1222,9 @@ mod tests {
     // this test does not exist in Python HEM
     #[ignore = "WIP"]
     #[rstest]
-    fn test_edit_glazing_for_glazing_limit(test_input: InputForProcessing) {
+    fn test_edit_glazing_for_glazing_limit(mut test_input: InputForProcessing) {
         let total_floor_area = 1000.;
-        edit_glazing_for_glazing_limit(test_input, total_floor_area).unwrap();
+        edit_glazing_for_glazing_limit(&mut test_input, total_floor_area).unwrap();
 
         // def test_edit_glazing_for_glazing_limit(self):
         // project_dict = deepcopy(self.project_dict)
@@ -1224,6 +1234,33 @@ mod tests {
         // assert(project_dict['Zone']['zone 2']['BuildingElement']['skylight 0']['height'] == 0.8751750525175062)
         // assert(project_dict['Zone']['zone 2']['BuildingElement']['roof 0']['area'] == 269.9019607843137)
         todo!("replicate above Python test assertions")
+    }
+
+    // this test does not exist in Python HEM
+    #[ignore]
+    #[rstest]
+    fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
+        let linear_reduction_factor = 0.7001400420140049;
+
+        let all_building_elements = test_input.all_building_elements_mut();
+
+        let window_rooflight_element = all_building_elements
+            .into_iter()
+            .find(|el| {
+                if let BuildingElement::Transparent { pitch, .. } = el {
+                    pitch_class(*pitch) == HeatFlowDirection::Upwards
+                } else {
+                    false
+                }
+            })
+            .unwrap();
+
+        let area_diff = calculate_area_diff_and_adjust_glazing_area(
+            linear_reduction_factor,
+            window_rooflight_element,
+        );
+
+        assert_relative_eq!(area_diff, 2.549019607843137);
     }
 
     fn zone_input_for_max_glazing_area_test(
