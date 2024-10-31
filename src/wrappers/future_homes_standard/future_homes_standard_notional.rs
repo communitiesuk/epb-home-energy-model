@@ -245,24 +245,56 @@ fn calculate_area_diff_and_adjust_glazing_area(
     linear_reduction_factor: f64,
     window_rooflight_element: &mut BuildingElement,
 ) -> f64 {
-    let old_area =
-        window_rooflight_element.height().unwrap() * window_rooflight_element.width().unwrap();
+    if let BuildingElement::Transparent {
+        mut height,
+        mut width,
+        ..
+    } = window_rooflight_element
+    {
+        let old_area = height * width;
+        height = height * linear_reduction_factor;
+        width = width * linear_reduction_factor;
 
-    todo!()
+        let new_area = height * width;
+        let area_diff = old_area - new_area;
+        return area_diff;
+    } else {
+        panic!("This function expects to be called for a Transparent BuildingElement only.")
+    }
 }
 
-// old_area = window_rooflight['height'] * window_rooflight['width']
-// window_rooflight['height'] *= linear_reduction_factor
-// window_rooflight['width'] *= linear_reduction_factor
-// new_area = window_rooflight['height'] * window_rooflight['width']
-// area_diff = old_area - new_area
-// return area_diff
-
-fn find_walls_roofs_with_same_orientation_and_pitch(
-    linear_reduction_factor: f64,
+///Find all walls/roofs with same orientation and pitch as this window/rooflight.
+fn find_walls_roofs_with_same_orientation_and_pitch<'a>(
+    wall_roofs: &Vec<&mut BuildingElement>,
     window_rooflight_element: &BuildingElement,
-) -> Vec<&BuildingElement> {
-    todo!()
+) -> anyhow::Result<Vec<usize>> {
+    let window_rooflight_pitch = window_rooflight_element.pitch();
+    let window_rooflight_orientation = window_rooflight_element.orientation();
+
+    let mut indices: Vec<usize> = Default::default();
+
+    for (i, el) in wall_roofs.iter().enumerate() {
+        if match el {
+            BuildingElement::Opaque {
+                pitch, orientation, ..
+            } => {
+                window_rooflight_orientation.is_some_and(|window_rooflight_orientation| {
+                    *orientation == window_rooflight_orientation
+                }) && *pitch == window_rooflight_pitch
+            }
+            _ => false,
+        } {
+            indices.push(i);
+        }
+    }
+
+    if indices.is_empty() {
+        bail!(
+            "There are no walls/roofs with the same orientation and pitch as the window/rooflight"
+        );
+    }
+
+    Ok(indices)
 }
 
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
@@ -292,6 +324,7 @@ fn calc_max_glazing_area_fraction(
             sum_uval_times_area += rooflight_area * u_value;
         }
     }
+
     let rooflight_correction_factor = if total_rooflight_area == 0.0 {
         0.0
     } else {
@@ -320,7 +353,7 @@ fn edit_glazing_for_glazing_limit(
     let max_glazing_area_fraction = calc_max_glazing_area_fraction(&input, total_floor_area)?;
     let max_glazing_area = max_glazing_area_fraction * total_floor_area;
 
-    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input);
+    let (windows_rooflight, mut walls_roofs) = split_glazing_and_walls(input);
 
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
@@ -331,25 +364,25 @@ fn edit_glazing_for_glazing_limit(
                 window_rooflight_element,
             );
 
-            let same_orientation = find_walls_roofs_with_same_orientation_and_pitch(
-                linear_reduction_factor,
+            let walls_roofs_indices = find_walls_roofs_with_same_orientation_and_pitch(
+                &walls_roofs,
                 window_rooflight_element,
-            );
+            )?;
 
-            let wall_roof_area_total: f64 = same_orientation
+            let wall_roof_area_total = walls_roofs_indices
                 .iter()
-                .filter_map(|el| match el {
-                    BuildingElement::Opaque { area, .. } => Some(*area),
+                .filter_map(|i| match walls_roofs[*i] {
+                    BuildingElement::Opaque { ref area, .. } => Some(*area),
                     _ => None,
                 })
-                .sum();
+                .sum::<f64>();
 
-            for wall_roof in same_orientation {
-                if let BuildingElement::Opaque { mut area, .. } = wall_roof {
-                    let wall_roof_prop = area / wall_roof_area_total;
+            for i in walls_roofs_indices.iter() {
+                let wall_roof = walls_roofs.get_mut(*i).unwrap();
+                if let BuildingElement::Opaque { ref mut area, .. } = wall_roof {
+                    let wall_roof_prop = *area / wall_roof_area_total;
 
-                    // TODO how do we modify the actual input?
-                    area += area_diff * wall_roof_prop
+                    *area += area_diff * wall_roof_prop;
                 }
             }
         }
@@ -1237,22 +1270,15 @@ mod tests {
     }
 
     // this test does not exist in Python HEM
-    #[ignore]
     #[rstest]
     fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
-        let linear_reduction_factor = 0.7001400420140049;
+        let linear_reduction_factor: f64 = 0.7001400420140049;
 
         let all_building_elements = test_input.all_building_elements_mut();
 
         let window_rooflight_element = all_building_elements
             .into_iter()
-            .find(|el| {
-                if let BuildingElement::Transparent { pitch, .. } = el {
-                    pitch_class(*pitch) == HeatFlowDirection::Upwards
-                } else {
-                    false
-                }
-            })
+            .find(|el| matches!(el, BuildingElement::Transparent { .. }))
             .unwrap();
 
         let area_diff = calculate_area_diff_and_adjust_glazing_area(

@@ -1752,6 +1752,14 @@ impl BuildingElement {
             BuildingElement::AdjacentZTUSimple { u_value, .. } => *u_value,
         }
     }
+
+    pub(crate) fn orientation(&self) -> Option<f64> {
+        match self {
+            BuildingElement::Opaque { orientation, .. } => Some(*orientation),
+            BuildingElement::Transparent { orientation, .. } => Some(*orientation),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) trait TransparentBuildingElement {

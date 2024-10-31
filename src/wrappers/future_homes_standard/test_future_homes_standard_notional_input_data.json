@@ -670,7 +670,6 @@
 					"k_m": 19400,
 					"mass_distribution_class": "I"
 				},
-
 				"roof 0":{
 					"type": "BuildingElementOpaque",
 					"a_sol": 0.63,
