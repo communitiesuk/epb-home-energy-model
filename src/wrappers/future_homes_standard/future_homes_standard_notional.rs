@@ -364,12 +364,12 @@ fn edit_glazing_for_glazing_limit(
                 window_rooflight_element,
             );
 
-            let walls_roofs_indices = find_walls_roofs_with_same_orientation_and_pitch(
+            let same_orientation_indices = find_walls_roofs_with_same_orientation_and_pitch(
                 &walls_roofs,
                 window_rooflight_element,
             )?;
 
-            let wall_roof_area_total = walls_roofs_indices
+            let wall_roof_area_total = same_orientation_indices
                 .iter()
                 .filter_map(|i| match walls_roofs[*i] {
                     BuildingElement::Opaque { ref area, .. } => Some(*area),
@@ -377,7 +377,7 @@ fn edit_glazing_for_glazing_limit(
                 })
                 .sum::<f64>();
 
-            for i in walls_roofs_indices.iter() {
+            for i in same_orientation_indices.iter() {
                 let wall_roof = walls_roofs.get_mut(*i).unwrap();
                 if let BuildingElement::Opaque { ref mut area, .. } = wall_roof {
                     let wall_roof_prop = *area / wall_roof_area_total;
@@ -389,22 +389,6 @@ fn edit_glazing_for_glazing_limit(
     }
     Ok(())
 }
-
-// def edit_glazing_for_glazing_limit(project_dict, TFA):
-// ..
-// if total_glazing_area > max_glazing_area:
-//     linear_reduction_factor = math.sqrt(max_glazing_area / total_glazing_area)
-//     for window_rooflight in windows_rooflight.values():
-//         area_diff = calculate_area_diff_and_adjust_glazing_area(linear_reduction_factor, window_rooflight)
-//         same_orientation = find_walls_roofs_with_same_orientation_and_pitch(
-//             walls_roofs,
-//             window_rooflight,
-//             )
-//         wall_roof_area_total = sum(wall_roof['area'] for wall_roof in same_orientation)
-
-//         for wall_roof in same_orientation:
-//             wall_roof_prop =  wall_roof['area'] / wall_roof_area_total
-//             wall_roof['area'] += area_diff * wall_roof_prop
 
 /// Apply notional building ground specifications
 ///
@@ -426,7 +410,7 @@ pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Resu
 /// The notional building must follow the same thermal bridges as specified in
 /// SAP10.2 Table R2
 ///
-/// TODO - how to deal with ThermalBridging when lengths are not specified?
+/// TODO (from Python) - how to deal with ThermalBridging when lengths are not specified?
 pub(crate) fn edit_thermal_bridging(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut thermal_bridging_elements = input.all_thermal_bridging_elements();
 
