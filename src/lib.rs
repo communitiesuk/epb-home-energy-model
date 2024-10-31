@@ -80,11 +80,11 @@ pub fn run_project(
         {
             // special case for FHS compliance wrapper
             if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                return vec![input_for_processing; FHS_CALCULATIONS.len()]
+                return vec![input_for_processing; FHS_COMPLIANCE_CALCULATIONS.len()]
                     .into_iter()
                     .enumerate()
                     .map(|(i, mut input)| {
-                        let (key, flags) = &FHS_CALCULATIONS[i];
+                        let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
                         do_fhs_preprocessing(&mut input, flags)?;
                         Ok((*key, input.finalize()))
                     })
@@ -271,7 +271,7 @@ pub fn run_project(
         {
             // special case for FHS compliance wrapper
             if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                for (key, flags) in FHS_CALCULATIONS.iter() {
+                for (key, flags) in FHS_COMPLIANCE_CALCULATIONS.iter() {
                     do_fhs_postprocessing(output, &results[key], flags)?;
                 }
                 return Ok(());
@@ -380,21 +380,22 @@ pub(crate) enum CalculationKey {
 }
 
 #[cfg(feature = "fhs")]
-static FHS_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 2]> = LazyLock::new(|| {
-    [
-        (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
-        (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
-        // comment out notional for now
-        // (
-        //     CalculationKey::FhsNotional,
-        //     ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-        // ),
-        // (
-        //     CalculationKey::FhsNotionalFee,
-        //     ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-        // ),
-    ]
-});
+static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 2]> =
+    LazyLock::new(|| {
+        [
+            (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
+            (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
+            // comment out notional for now
+            // (
+            //     CalculationKey::FhsNotional,
+            //     ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+            // ),
+            // (
+            //     CalculationKey::FhsNotionalFee,
+            //     ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            // ),
+        ]
+    });
 
 fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
