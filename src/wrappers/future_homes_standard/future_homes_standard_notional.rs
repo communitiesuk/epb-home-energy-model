@@ -293,16 +293,16 @@ fn calculate_area_diff_and_adjust_glazing_area(
     window_rooflight_element: &mut BuildingElement,
 ) -> f64 {
     if let BuildingElement::Transparent {
-        mut height,
-        mut width,
+        ref mut height,
+        ref mut width,
         ..
     } = window_rooflight_element
     {
-        let old_area = height * width;
-        height *= linear_reduction_factor;
-        width *= linear_reduction_factor;
+        let old_area = *height * *width;
+        *height *= linear_reduction_factor;
+        *width *= linear_reduction_factor;
 
-        let new_area = height * width;
+        let new_area = *height * *width;
 
         old_area - new_area
     } else {
@@ -1284,20 +1284,22 @@ mod tests {
     }
 
     // this test does not exist in Python HEM
-    #[ignore = "WIP"]
     #[rstest]
     fn test_edit_glazing_for_glazing_limit(mut test_input: InputForProcessing) {
         let total_floor_area = 1000.;
         edit_glazing_for_glazing_limit(&mut test_input, total_floor_area).unwrap();
 
-        // def test_edit_glazing_for_glazing_limit(self):
-        // project_dict = deepcopy(self.project_dict)
+        let skylight = test_input.building_element_by_key("skylight 0");
+        let roof = test_input.building_element_by_key("roof 0");
 
-        // future_homes_standard_notional.edit_glazing_for_glazing_limit(project_dict, 1000)
-        // assert(project_dict['Zone']['zone 2']['BuildingElement']['skylight 0']['width'] == 280.056016805602)
-        // assert(project_dict['Zone']['zone 2']['BuildingElement']['skylight 0']['height'] == 0.8751750525175062)
-        // assert(project_dict['Zone']['zone 2']['BuildingElement']['roof 0']['area'] == 269.9019607843137)
-        todo!("replicate above Python test assertions")
+        assert_relative_eq!(skylight.width().unwrap(), 280.056016805602);
+        assert_relative_eq!(skylight.height().unwrap(), 0.8751750525175062);
+
+        if let BuildingElement::Opaque { area, .. } = roof {
+            assert_relative_eq!(*area, 269.9019607843137);
+        } else {
+            unreachable!()
+        }
     }
 
     // this test does not exist in Python HEM

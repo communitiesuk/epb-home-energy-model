@@ -1,5 +1,6 @@
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
+use crate::core::space_heat_demand::building_element;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
@@ -3714,6 +3715,17 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|zone| zone.building_elements.values_mut())
             .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn building_element_by_key(&self, key: &str) -> &BuildingElement {
+        let mut building_elements_with_keys = self.input.zone.values().flat_map(|zone| &zone.building_elements);
+
+        let element = building_elements_with_keys.find(|(element_key, _)| {
+            key == *element_key
+        }).unwrap().1;
+
+        &element
     }
 
     pub(crate) fn all_energy_supply_fuel_types(&self) -> HashSet<FuelType> {
