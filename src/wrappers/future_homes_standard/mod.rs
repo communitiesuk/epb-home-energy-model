@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 mod fhs_appliance;
+mod fhs_compliance_response;
 mod fhs_hw_events;
 #[allow(clippy::module_inception)]
 pub(crate) mod future_homes_standard;
