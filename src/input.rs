@@ -3721,7 +3721,7 @@ impl InputForProcessing {
         let zone = self.input.zone.get(zone_key).unwrap();
         let element = zone.building_elements.get(key).unwrap();
 
-        &element
+        element
     }
 
     #[cfg(test)]

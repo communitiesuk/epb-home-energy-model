@@ -1086,7 +1086,7 @@ fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::space_heat_demand::building_element::{pitch_class, BuildingElementGround, HeatFlowDirection};
+    use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
     use crate::input::{self, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple};
