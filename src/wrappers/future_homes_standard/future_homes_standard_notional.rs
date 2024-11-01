@@ -934,8 +934,12 @@ fn edit_hot_water_distribution(
     Ok(())
 }
 
-fn remove_pv_diverter_if_present() {
+fn remove_pv_diverter_if_present(input: &InputForProcessing) {
     todo!()
+
+    // for energy_supply_name, energy_supply in project_dict['EnergySupply'].items():
+    //     if 'diverter' in energy_supply:
+    //         del project_dict['EnergySupply'][energy_supply_name]['diverter']
 }
 
 fn remove_electric_battery_if_present() {
@@ -1091,10 +1095,13 @@ fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::energy_supply;
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
-    use crate::input::{self, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple};
+    use crate::input::{
+        self, EnergySupplyKey, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple,
+    };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
         ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
@@ -1956,6 +1963,21 @@ mod tests {
             *actual_hot_water_distribution_inner,
             expected_hot_water_distribution_inner
         );
+    }
+
+    #[ignore]
+    #[rstest]
+    fn test_remove_pv_diverter_if_present(mut test_input: InputForProcessing) {
+        let diverter = json!({
+            "StorageTank": "hw cylinder",
+            "HeatSource": "immersion"
+        });
+        let energy_supply_key = EnergySupplyKey::MainsElectricity;
+        test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
+
+        remove_pv_diverter_if_present(&mut test_input);
+        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
+        assert_eq!(energy_supply.diverter, None)
     }
 
     #[rstest]
