@@ -582,9 +582,10 @@ fn edit_bath_shower_other(
     Ok(())
 }
 
-fn remove_wwhrs_if_present() {
-    todo!()
+fn remove_wwhrs_if_present(input: &mut InputForProcessing) {
+    input.remove_wwhrs();
 }
+
 fn add_wwhrs(
     input: &mut InputForProcessing,
     cold_water_source_type: ColdWaterSourceType,
@@ -1193,18 +1194,30 @@ mod tests {
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
 
-        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 2", "skylight 0") else { panic!("Skylight 0 in Zone 2 should be set up as a transparent building element") };
-        
+        let BuildingElement::Transparent { u_value, r_c, .. } =
+            test_input.building_element_by_key("zone 2", "skylight 0")
+        else {
+            panic!("Skylight 0 in Zone 2 should be set up as a transparent building element")
+        };
+
         assert_eq!(*u_value, Some(1.7));
         assert_eq!(*r_c, None);
-        
-        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 1", "window 0") else { panic!("Window 0 in Zone 1 should be set up as a transparent building element") };
-        
+
+        let BuildingElement::Transparent { u_value, r_c, .. } =
+            test_input.building_element_by_key("zone 1", "window 0")
+        else {
+            panic!("Window 0 in Zone 1 should be set up as a transparent building element")
+        };
+
         assert_eq!(*u_value, Some(1.2));
         assert_eq!(*r_c, None);
 
-        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 2", "window 0") else { panic!("Window 0 in Zone 2 should be set up as a transparent building element") };
-        
+        let BuildingElement::Transparent { u_value, r_c, .. } =
+            test_input.building_element_by_key("zone 2", "window 0")
+        else {
+            panic!("Window 0 in Zone 2 should be set up as a transparent building element")
+        };
+
         assert_eq!(*u_value, Some(1.2));
         assert_eq!(*r_c, None);
     }
@@ -1215,12 +1228,28 @@ mod tests {
 
         edit_ground_floors(test_input).unwrap();
 
-        let BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = test_input.building_element_by_key("zone 1", "ground") else { panic!("ground in Zone 1 should be set up as a ground building element") };
+        let BuildingElement::Ground {
+            u_value,
+            r_f,
+            psi_wall_floor_junc,
+            ..
+        } = test_input.building_element_by_key("zone 1", "ground")
+        else {
+            panic!("ground in Zone 1 should be set up as a ground building element")
+        };
         assert_eq!(*u_value, 0.13);
         assert_eq!(*r_f, 6.12);
         assert_eq!(*psi_wall_floor_junc, 0.16);
 
-        let BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = test_input.building_element_by_key("zone 2", "ground") else { panic!("ground in Zone 2 should be set up as a ground building element") };
+        let BuildingElement::Ground {
+            u_value,
+            r_f,
+            psi_wall_floor_junc,
+            ..
+        } = test_input.building_element_by_key("zone 2", "ground")
+        else {
+            panic!("ground in Zone 2 should be set up as a ground building element")
+        };
         assert_eq!(*u_value, 0.13);
         assert_eq!(*r_f, 6.12);
         assert_eq!(*psi_wall_floor_junc, 0.16);
@@ -1308,10 +1337,8 @@ mod tests {
 
         let window = test_input.building_element_by_key_mut("zone 1", "window 0");
 
-        let area_diff = calculate_area_diff_and_adjust_glazing_area(
-            linear_reduction_factor,
-            window,
-        );
+        let area_diff =
+            calculate_area_diff_and_adjust_glazing_area(linear_reduction_factor, window);
 
         assert_relative_eq!(area_diff, 2.549019607843137);
     }
@@ -1376,6 +1403,26 @@ mod tests {
             test_input.other_water_uses().unwrap().clone(),
             expected_other
         );
+    }
+
+    #[rstest]
+    fn test_remove_wwhrs_if_present(mut test_input: InputForProcessing) {
+        test_input
+            .register_wwhrs_name_on_mixer_shower(NOTIONAL_WWHRS)
+            .unwrap();
+        test_input
+            .set_wwhrs(json!({
+                NOTIONAL_WWHRS: {
+                    "ColdWaterSource": ColdWaterSourceType::MainsWater,
+                    "efficiencies": [50, 50],
+                    "flow_rates": [0, 100],
+                    "type": "WWHRS_InstantaneousSystemB",
+                    "utilisation_factor": 0.98
+                }
+            }))
+            .unwrap();
+        remove_wwhrs_if_present(&mut test_input);
+        assert_eq!(test_input.wwhrs(), None);
     }
 
     #[rstest]
