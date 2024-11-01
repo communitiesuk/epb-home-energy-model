@@ -103,8 +103,8 @@ pub(crate) fn apply_fhs_notional_preprocessing(
 
     // remove on-site generation, pv diverter or electric battery if present
     // TODO enable following calls once functions implemented
-    // remove_onsite_generation_if_present(input);
-    // remove_pv_diverter_if_present(input);
+    remove_onsite_generation_if_present(input);
+    remove_pv_diverter_if_present(input);
     // remove_electric_battery_if_present(input);
 
     // modify ventilation
@@ -934,12 +934,8 @@ fn edit_hot_water_distribution(
     Ok(())
 }
 
-fn remove_pv_diverter_if_present(input: &InputForProcessing) {
-    todo!()
-
-    // for energy_supply_name, energy_supply in project_dict['EnergySupply'].items():
-    //     if 'diverter' in energy_supply:
-    //         del project_dict['EnergySupply'][energy_supply_name]['diverter']
+fn remove_pv_diverter_if_present(input: &mut InputForProcessing) {
+    input.remove_all_diverters_from_energy_supplies();
 }
 
 fn remove_electric_battery_if_present() {
@@ -1095,7 +1091,6 @@ fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::energy_supply;
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
@@ -1965,7 +1960,6 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[rstest]
     fn test_remove_pv_diverter_if_present(mut test_input: InputForProcessing) {
         let diverter = json!({
