@@ -299,19 +299,19 @@ fn calculate_area_diff_and_adjust_glazing_area(
     } = window_rooflight_element
     {
         let old_area = height * width;
-        height = height * linear_reduction_factor;
-        width = width * linear_reduction_factor;
+        height *= linear_reduction_factor;
+        width *= linear_reduction_factor;
 
         let new_area = height * width;
-        let area_diff = old_area - new_area;
-        return area_diff;
+
+        old_area - new_area
     } else {
         panic!("This function expects to be called for a Transparent BuildingElement only.")
     }
 }
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
-fn find_walls_roofs_with_same_orientation_and_pitch<'a>(
+fn find_walls_roofs_with_same_orientation_and_pitch(
     wall_roofs: &Vec<&mut BuildingElement>,
     window_rooflight_element: &BuildingElement,
 ) -> anyhow::Result<Vec<usize>> {
@@ -397,7 +397,7 @@ fn edit_glazing_for_glazing_limit(
         })
         .sum();
 
-    let max_glazing_area_fraction = calc_max_glazing_area_fraction(&input, total_floor_area)?;
+    let max_glazing_area_fraction = calc_max_glazing_area_fraction(input, total_floor_area)?;
     let max_glazing_area = max_glazing_area_fraction * total_floor_area;
 
     let (windows_rooflight, mut walls_roofs) = split_glazing_and_walls(input);
