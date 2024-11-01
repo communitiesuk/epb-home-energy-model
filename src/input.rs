@@ -3635,7 +3635,7 @@ impl InputForProcessing {
     }
 
     #[cfg(test)]
-    pub fn add_diverter_to_energy_supply(
+    pub(crate) fn add_diverter_to_energy_supply(
         &mut self,
         energy_supply_key: EnergySupplyKey,
         diverter: Value,
@@ -3647,6 +3647,21 @@ impl InputForProcessing {
             .unwrap();
         let diverter: EnergyDiverter = serde_json::from_value(diverter).unwrap();
         energy_supply.diverter = Some(diverter);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_electric_battery_to_energy_supply(
+        &mut self,
+        energy_supply_key: EnergySupplyKey,
+        electric_battery: Value,
+    ) {
+        let energy_supply: &mut EnergySupplyDetails = self
+            .input
+            .energy_supply
+            .get_mut(&energy_supply_key)
+            .unwrap();
+        let battery: ElectricBattery = serde_json::from_value(electric_battery).unwrap();
+        energy_supply.electric_battery = Some(battery);
     }
 
     pub fn remove_all_batteries_from_energy_supplies(&mut self) -> &mut Self {

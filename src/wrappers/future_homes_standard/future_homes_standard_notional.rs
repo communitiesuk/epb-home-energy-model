@@ -105,7 +105,7 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     // TODO enable following calls once functions implemented
     remove_onsite_generation_if_present(input);
     remove_pv_diverter_if_present(input);
-    // remove_electric_battery_if_present(input);
+    remove_electric_battery_if_present(input);
 
     // modify ventilation
     let minimum_ach =
@@ -938,8 +938,8 @@ fn remove_pv_diverter_if_present(input: &mut InputForProcessing) {
     input.remove_all_diverters_from_energy_supplies();
 }
 
-fn remove_electric_battery_if_present() {
-    todo!()
+fn remove_electric_battery_if_present(input: &mut InputForProcessing) {
+    input.remove_all_batteries_from_energy_supplies();
 }
 
 /// Calculate effective air change rate according to Part F 1.24 a
@@ -1960,6 +1960,7 @@ mod tests {
         );
     }
 
+    // this test does not exist in Python HEM
     #[rstest]
     fn test_remove_pv_diverter_if_present(mut test_input: InputForProcessing) {
         let diverter = json!({
@@ -1971,7 +1972,27 @@ mod tests {
 
         remove_pv_diverter_if_present(&mut test_input);
         let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
-        assert_eq!(energy_supply.diverter, None)
+        assert!(energy_supply.diverter.is_none())
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_remove_electric_battery_if_present(mut test_input: InputForProcessing) {
+        let electric_battery = json!({
+            "capacity": 5,
+            "charge_discharge_efficiency_round_trip": 10,
+            "battery_age": 2,
+            "minimum_charge_rate_one_way_trip": 42,
+            "maximum_charge_rate_one_way_trip": 43,
+            "maximum_discharge_rate_one_way_trip": 44,
+            "battery_location": "inside"
+        });
+        let energy_supply_key = EnergySupplyKey::MainsElectricity;
+        test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
+
+        remove_electric_battery_if_present(&mut test_input);
+        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
+        assert!(energy_supply.electric_battery.is_none());
     }
 
     #[rstest]
