@@ -1086,7 +1086,7 @@ fn calculate_cylinder_volume(daily_hwd: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
+    use crate::core::space_heat_demand::building_element::{pitch_class, BuildingElementGround, HeatFlowDirection};
 
     use super::*;
     use crate::input::{self, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple};
@@ -1155,6 +1155,8 @@ mod tests {
     fn test_edit_opaque_ajdztu_elements(mut test_input: InputForProcessing) {
         edit_opaque_adjztu_elements(&mut test_input).unwrap();
 
+        // not using the building_element_by_key method here to closly match the Python test
+
         for building_element in test_input.all_building_elements() {
             if let input::BuildingElement::Opaque { .. }
             | input::BuildingElement::AdjacentZTUSimple { .. } = building_element
@@ -1162,6 +1164,7 @@ mod tests {
                 if let Some(u_value) = building_element.u_value() {
                     match pitch_class(building_element.pitch()) {
                         HeatFlowDirection::Downwards => {
+                            // this assertion is not reached with the current test data
                             assert_eq!(u_value, 0.13);
                         }
                         HeatFlowDirection::Upwards => {
@@ -1190,20 +1193,20 @@ mod tests {
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
 
-        for building_element in test_input.all_building_elements() {
-            if let input::BuildingElement::Transparent { u_value, r_c, .. } = building_element {
-                match pitch_class(building_element.pitch()) {
-                    HeatFlowDirection::Upwards => {
-                        assert_eq!(*u_value, Some(1.7));
-                        assert_eq!(*r_c, None);
-                    }
-                    _ => {
-                        assert_eq!(building_element.u_value(), Some(1.2));
-                        assert_eq!(*r_c, None);
-                    }
-                }
-            }
-        }
+        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 2", "skylight 0") else { panic!("Skylight 0 in Zone 2 should be set up as a transparent building element") };
+        
+        assert_eq!(*u_value, Some(1.7));
+        assert_eq!(*r_c, None);
+        
+        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 1", "window 0") else { panic!("Window 0 in Zone 1 should be set up as a transparent building element") };
+        
+        assert_eq!(*u_value, Some(1.2));
+        assert_eq!(*r_c, None);
+
+        let BuildingElement::Transparent {u_value, r_c, ..} = test_input.building_element_by_key("zone 2", "window 0") else { panic!("Window 0 in Zone 2 should be set up as a transparent building element") };
+        
+        assert_eq!(*u_value, Some(1.2));
+        assert_eq!(*r_c, None);
     }
 
     #[rstest]
@@ -1212,19 +1215,15 @@ mod tests {
 
         edit_ground_floors(test_input).unwrap();
 
-        for building_element in test_input.all_building_elements() {
-            if let input::BuildingElement::Ground {
-                u_value,
-                r_f,
-                psi_wall_floor_junc,
-                ..
-            } = building_element
-            {
-                assert_eq!(*u_value, 0.13);
-                assert_eq!(*r_f, 6.12);
-                assert_eq!(*psi_wall_floor_junc, 0.16);
-            }
-        }
+        let BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = test_input.building_element_by_key("zone 1", "ground") else { panic!("ground in Zone 1 should be set up as a ground building element") };
+        assert_eq!(*u_value, 0.13);
+        assert_eq!(*r_f, 6.12);
+        assert_eq!(*psi_wall_floor_junc, 0.16);
+
+        let BuildingElement::Ground { u_value, r_f, psi_wall_floor_junc, .. } = test_input.building_element_by_key("zone 2", "ground") else { panic!("ground in Zone 2 should be set up as a ground building element") };
+        assert_eq!(*u_value, 0.13);
+        assert_eq!(*r_f, 6.12);
+        assert_eq!(*psi_wall_floor_junc, 0.16);
     }
 
     #[rstest]
@@ -1289,8 +1288,8 @@ mod tests {
         let total_floor_area = 1000.;
         edit_glazing_for_glazing_limit(&mut test_input, total_floor_area).unwrap();
 
-        let skylight = test_input.building_element_by_key("skylight 0");
-        let roof = test_input.building_element_by_key("roof 0");
+        let skylight = test_input.building_element_by_key("zone 2", "skylight 0");
+        let roof = test_input.building_element_by_key("zone 2", "roof 0");
 
         assert_relative_eq!(skylight.width().unwrap(), 280.056016805602);
         assert_relative_eq!(skylight.height().unwrap(), 0.8751750525175062);
@@ -1307,16 +1306,11 @@ mod tests {
     fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
         let linear_reduction_factor: f64 = 0.7001400420140049;
 
-        let all_building_elements = test_input.all_building_elements_mut();
-
-        let window_rooflight_element = all_building_elements
-            .into_iter()
-            .find(|el| matches!(el, BuildingElement::Transparent { .. }))
-            .unwrap();
+        let window = test_input.building_element_by_key_mut("zone 1", "window 0");
 
         let area_diff = calculate_area_diff_and_adjust_glazing_area(
             linear_reduction_factor,
-            window_rooflight_element,
+            window,
         );
 
         assert_relative_eq!(area_diff, 2.549019607843137);

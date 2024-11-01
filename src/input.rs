@@ -3717,14 +3717,19 @@ impl InputForProcessing {
     }
 
     #[cfg(test)]
-    pub(crate) fn building_element_by_key(&self, key: &str) -> &BuildingElement {
-        let mut building_elements_with_keys = self.input.zone.values().flat_map(|zone| &zone.building_elements);
-
-        let element = building_elements_with_keys.find(|(element_key, _)| {
-            key == *element_key
-        }).unwrap().1;
+    pub(crate) fn building_element_by_key(&self, zone_key: &str, key: &str) -> &BuildingElement {
+        let zone = self.input.zone.get(zone_key).unwrap();
+        let element = zone.building_elements.get(key).unwrap();
 
         &element
+    }
+
+    #[cfg(test)]
+    pub(crate) fn building_element_by_key_mut(&mut self, zone_key: &str, key: &str) -> &mut BuildingElement {
+        let zone = self.input.zone.get_mut(zone_key).unwrap();
+        let element = zone.building_elements.get_mut(key).unwrap();
+
+        element
     }
 
     pub(crate) fn all_energy_supply_fuel_types(&self) -> HashSet<FuelType> {
