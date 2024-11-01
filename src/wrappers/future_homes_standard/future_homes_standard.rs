@@ -172,6 +172,41 @@ pub fn apply_fhs_postprocessing(
 ) -> anyhow::Result<()> {
     let no_of_timesteps = timestep_array.len();
 
+    let FinalRates {
+        emission_rate: total_emissions_rate,
+        primary_energy_rate: total_pe_rate,
+        emissions_results: emis_results,
+        emissions_out_of_scope_results: emis_oos_results,
+        primary_energy_results: pe_results,
+    } = calc_final_rates(
+        input,
+        energy_import,
+        energy_export,
+        results_end_user,
+        no_of_timesteps,
+    );
+
+    // Write results to output files
+    write_postproc_file(output, "emissions", emis_results, no_of_timesteps)?;
+    write_postproc_file(
+        output,
+        "emissions_incl_out_of_scope",
+        emis_oos_results,
+        no_of_timesteps,
+    )?;
+    write_postproc_file(output, "primary_energy", pe_results, no_of_timesteps)?;
+    write_postproc_summary_file(output, total_emissions_rate, total_pe_rate, notional)?;
+
+    Ok(())
+}
+
+pub(super) fn calc_final_rates(
+    input: &Input,
+    energy_import: &IndexMap<ArrayString<64>, Vec<f64>>,
+    energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
+    results_end_user: &ResultsEndUser,
+    number_of_timesteps: usize,
+) -> FinalRates {
     // Add unmet demand to list of EnergySupply objects
 
     // For each EnergySupply object:
@@ -277,14 +312,14 @@ pub fn apply_fhs_postprocessing(
             )
         } else {
             (
-                vec![0.; no_of_timesteps],
-                vec![0.; no_of_timesteps],
-                vec![0.; no_of_timesteps],
+                vec![0.; number_of_timesteps],
+                vec![0.; number_of_timesteps],
+                vec![0.; number_of_timesteps],
             )
         };
 
         // Calculate energy generated and associated emissions/PE
-        let mut energy_generated = vec![0.; no_of_timesteps];
+        let mut energy_generated = vec![0.; number_of_timesteps];
         for end_user_energy in
             results_end_user[&KeyString::from(&energy_supply_key).unwrap()].values()
         {
@@ -326,13 +361,13 @@ pub fn apply_fhs_postprocessing(
             )
         } else {
             (
-                vec![0.; no_of_timesteps],
-                vec![0.; no_of_timesteps],
-                vec![0.; no_of_timesteps],
+                vec![0.; number_of_timesteps],
+                vec![0.; number_of_timesteps],
+                vec![0.; number_of_timesteps],
             )
         };
 
-        let mut energy_unregulated = vec![0.; no_of_timesteps];
+        let mut energy_unregulated = vec![0.; number_of_timesteps];
         for (end_user_name, end_user_energy) in
             results_end_user[&KeyString::from(&energy_supply_key).unwrap()].iter()
         {
@@ -360,10 +395,10 @@ pub fn apply_fhs_postprocessing(
 
         // Calculate total CO2/PE for each EnergySupply based on import and export,
         // subtracting unregulated
-        supply_emis_result.total = Vec::with_capacity(no_of_timesteps);
-        supply_emis_oos_result.total = Vec::with_capacity(no_of_timesteps);
-        supply_pe_result.total = Vec::with_capacity(no_of_timesteps);
-        for t_idx in 0..no_of_timesteps {
+        supply_emis_result.total = Vec::with_capacity(number_of_timesteps);
+        supply_emis_oos_result.total = Vec::with_capacity(number_of_timesteps);
+        supply_pe_result.total = Vec::with_capacity(number_of_timesteps);
+        for t_idx in 0..number_of_timesteps {
             supply_emis_result.total.push(
                 supply_emis_result.import[t_idx]
                     + supply_emis_result.export[t_idx]
@@ -397,22 +432,25 @@ pub fn apply_fhs_postprocessing(
         .sum::<f64>()
         / tfa;
 
-    // Write results to output files
-    write_postproc_file(output, "emissions", emis_results, no_of_timesteps)?;
-    write_postproc_file(
-        output,
-        "emissions_incl_out_of_scope",
-        emis_oos_results,
-        no_of_timesteps,
-    )?;
-    write_postproc_file(output, "primary_energy", pe_results, no_of_timesteps)?;
-    write_postproc_summary_file(output, total_emissions_rate, total_pe_rate, notional)?;
+    FinalRates {
+        emission_rate: total_emissions_rate,
+        primary_energy_rate: total_pe_rate,
+        emissions_results: emis_results,
+        emissions_out_of_scope_results: emis_oos_results,
+        primary_energy_results: pe_results,
+    }
+}
 
-    Ok(())
+pub(super) struct FinalRates {
+    pub(super) emission_rate: f64,
+    pub(super) primary_energy_rate: f64,
+    pub(super) emissions_results: IndexMap<String, FhsCalculationResult>,
+    pub(super) emissions_out_of_scope_results: IndexMap<String, FhsCalculationResult>,
+    pub(super) primary_energy_results: IndexMap<String, FhsCalculationResult>,
 }
 
 #[derive(Default)]
-struct FhsCalculationResult {
+pub(super) struct FhsCalculationResult {
     import: Vec<f64>,
     export: Vec<f64>,
     generated: Vec<f64>,

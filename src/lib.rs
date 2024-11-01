@@ -348,16 +348,12 @@ bitflags! {
 pub(crate) enum CalculationKey {
     Primary,
     #[cfg(feature = "fhs")]
-    #[allow(dead_code)]
     Fhs,
     #[cfg(feature = "fhs")]
-    #[allow(dead_code)]
     FhsFee,
     #[cfg(feature = "fhs")]
-    #[allow(dead_code)]
     FhsNotional,
     #[cfg(feature = "fhs")]
-    #[allow(dead_code)]
     FhsNotionalFee,
 }
 

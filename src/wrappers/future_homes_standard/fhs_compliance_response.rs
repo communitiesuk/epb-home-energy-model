@@ -1,7 +1,12 @@
 #![allow(dead_code)]
 
+use crate::wrappers::future_homes_standard::future_homes_standard::{calc_final_rates, FinalRates};
+use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
+use crate::{CalculationKey, CalculationResultsWithContext};
+use anyhow::anyhow;
 use indexmap::IndexMap;
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Serialize)]
 struct FhsComplianceResponse {
@@ -84,6 +89,104 @@ struct DeliveredEnergyUse {
 struct PerformanceValue {
     actual: f64,
     notional: f64,
+}
+
+struct CalculatedComplianceResult {
+    dwelling_final_rates: FinalRates,
+    target_final_rates: FinalRates,
+    dwelling_fabric_energy_efficiency: f64,
+    target_fabric_energy_efficiency: f64,
+}
+
+impl FhsComplianceCalculationResult for CalculatedComplianceResult {
+    fn dwelling_emission_rate(&self) -> f64 {
+        self.dwelling_final_rates.emission_rate
+    }
+
+    fn target_emission_rate(&self) -> f64 {
+        self.target_final_rates.emission_rate
+    }
+
+    fn dwelling_primary_energy_rate(&self) -> f64 {
+        self.dwelling_final_rates.primary_energy_rate
+    }
+
+    fn target_primary_energy_rate(&self) -> f64 {
+        self.target_final_rates.primary_energy_rate
+    }
+
+    fn dwelling_fabric_energy_efficiency(&self) -> f64 {
+        self.dwelling_fabric_energy_efficiency
+    }
+
+    fn target_fabric_energy_efficiency(&self) -> f64 {
+        self.target_fabric_energy_efficiency
+    }
+
+    fn energy_demand(&self) -> EnergyDemand {
+        todo!()
+    }
+
+    fn delivered_energy_use(&self) -> DeliveredEnergyUse {
+        todo!()
+    }
+
+    fn energy_use_by_fuel(&self) -> IndexMap<String, PerformanceValue> {
+        todo!()
+    }
+}
+
+impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
+    for CalculatedComplianceResult
+{
+    type Error = anyhow::Error;
+
+    fn try_from(
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+    ) -> Result<Self, Self::Error> {
+        let dwelling_fhs_results = results
+            .get(&CalculationKey::Fhs)
+            .ok_or_else(|| anyhow!("Results were not available for the FHS calculation key."))?;
+        let notional_fhs_results = results.get(&CalculationKey::FhsNotional).ok_or_else(|| {
+            anyhow!("Results were not available for the FHS Notional calculation key.")
+        })?;
+        let dwelling_fhs_fee_results = results.get(&CalculationKey::FhsFee).ok_or_else(|| {
+            anyhow!("Results were not available for the FHS FEE calculation key.")
+        })?;
+        let notional_fhs_fee_results =
+            results
+                .get(&CalculationKey::FhsNotionalFee)
+                .ok_or_else(|| {
+                    anyhow!("Results were not available for the FHS Notional FEE calculation key.")
+                })?;
+
+        Ok(Self {
+            dwelling_final_rates: calc_final_rates(
+                dwelling_fhs_results.context.input,
+                &dwelling_fhs_results.results.energy_import,
+                &dwelling_fhs_results.results.energy_export,
+                &dwelling_fhs_results.results.results_end_user,
+                dwelling_fhs_results.results.timestep_array.len(),
+            ),
+            target_final_rates: calc_final_rates(
+                notional_fhs_results.context.input,
+                &notional_fhs_results.results.energy_import,
+                &notional_fhs_results.results.energy_export,
+                &notional_fhs_results.results.results_end_user,
+                notional_fhs_results.results.timestep_array.len(),
+            ),
+            dwelling_fabric_energy_efficiency: calc_fabric_energy_efficiency(
+                dwelling_fhs_fee_results.results.space_heat_demand_total(),
+                dwelling_fhs_fee_results.results.space_cool_demand_total(),
+                dwelling_fhs_fee_results.context.corpus.total_floor_area,
+            ),
+            target_fabric_energy_efficiency: calc_fabric_energy_efficiency(
+                notional_fhs_fee_results.results.space_heat_demand_total(),
+                notional_fhs_fee_results.results.space_cool_demand_total(),
+                notional_fhs_fee_results.context.corpus.total_floor_area,
+            ),
+        })
+    }
 }
 
 #[cfg(test)]
