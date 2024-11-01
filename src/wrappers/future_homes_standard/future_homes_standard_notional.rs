@@ -56,30 +56,77 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     fhs_fee_notional_a_assumptions: bool,
     fhs_fee_notional_b_assumptions: bool,
 ) -> anyhow::Result<()> {
-    let _is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
-    let _is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
+    let is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
+    let is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
     // Check if a heat network is present
     let _is_heat_network = check_heatnetwork_present(input);
 
     // Determine cold water source
-    let cold_water_type = input.cold_water_source();
+    let cold_water_source = input.cold_water_source();
 
-    if cold_water_type.len() != 1 {
+    if cold_water_source.len() != 1 {
         bail!("The FHS Notional wrapper expects exactly one cold water type to be set.");
     }
 
-    let _cold_water_source = cold_water_type.first().as_ref().unwrap();
+    let cold_water_source = {
+        let first_cold_water_source = cold_water_source.first();
+        let (cold_water_source, _) = first_cold_water_source.as_ref().unwrap();
+        **cold_water_source
+    };
 
     // Retrieve the number of bedrooms and total volume
-    let _bedroom_number = input.number_of_bedrooms();
-    // Loop through zones to sum up volume.
-    let _total_volume = input.total_zone_area();
+    let bedroom_number = input.number_of_bedrooms().ok_or_else(|| {
+        anyhow!("FHS Notional wrapper expects number of bedrooms to be provided.")
+    })?;
+    let total_volume = input.total_zone_volume();
 
     // Determine the TFA
-    let _tfa = calc_tfa(input);
-    edit_lighting_efficacy(input);
+    let total_floor_area = calc_tfa(input);
 
-    todo!()
+    edit_lighting_efficacy(input);
+    edit_opaque_adjztu_elements(input)?;
+    edit_transparent_element(input)?;
+    edit_glazing_for_glazing_limit(input, total_floor_area)?;
+    edit_ground_floors(input)?;
+    edit_thermal_bridging(input)?;
+
+    // modify bath, shower and other dhw characteristics
+    edit_bath_shower_other(input, cold_water_source)?;
+
+    // add WWHRS if needed (and remove any existing systems)
+    // TODO enable once function is implemented
+    // remove_wwhrs_if_present(input);
+    add_wwhrs(input, cold_water_source, is_notional_a, is_fee)?;
+
+    // modify hot water distribution
+    edit_hot_water_distribution(input, total_floor_area)?;
+
+    // remove on-site generation, pv diverter or electric battery if present
+    // TODO enable following calls once functions implemented
+    // remove_onsite_generation_if_present(input);
+    // remove_pv_diverter_if_present(input);
+    // remove_electric_battery_if_present(input);
+
+    // modify ventilation
+    let minimum_ach =
+        minimum_air_change_rate(input, total_floor_area, total_volume, bedroom_number);
+    // convert to m3/h
+    let _minimum_air_flow_rate = minimum_ach * total_volume;
+    // TODO enable following call once function implemented
+    // edit_infiltration_ventilation(input, is_notional_a, _minimum_air_flow_rate);
+
+    // edit space heating system
+    // TODO enable following call once function implemented
+    // edit_space_heating_system(input, cold_water_source, total_floor_area, _is_heat_network, is_fee);
+
+    // modify air-conditioning
+    // TODO enable following call once function implemented
+    // edit_space_cool_system(input);
+
+    // add solar pv
+    add_solar_pv(input, is_notional_a, is_fee, total_floor_area)?;
+
+    Ok(())
 }
 
 fn check_heatnetwork_present(input: &InputForProcessing) -> bool {

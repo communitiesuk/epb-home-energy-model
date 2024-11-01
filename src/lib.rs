@@ -380,20 +380,19 @@ pub(crate) enum CalculationKey {
 }
 
 #[cfg(feature = "fhs")]
-static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 2]> =
+static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 4]> =
     LazyLock::new(|| {
         [
             (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
             (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
-            // comment out notional for now
-            // (
-            //     CalculationKey::FhsNotional,
-            //     ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-            // ),
-            // (
-            //     CalculationKey::FhsNotionalFee,
-            //     ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            // ),
+            (
+                CalculationKey::FhsNotional,
+                ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+            ),
+            (
+                CalculationKey::FhsNotionalFee,
+                ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            ),
         ]
     });
 
