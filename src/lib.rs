@@ -29,12 +29,8 @@ use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
-#[cfg(feature = "fhs")]
-use crate::wrappers::future_homes_standard::{
-    future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing},
-    future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing},
-    future_homes_standard_notional::apply_fhs_notional_preprocessing,
-};
+use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
+use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
 use csv::WriterBuilder;
@@ -70,40 +66,43 @@ pub fn run_project(
     let input_for_processing =
         ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
 
+    fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
+        #[cfg(feature = "fhs")]
+        {
+            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
+            } else if flags.intersects(
+                ProjectFlags::FHS_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+            ) {
+                ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
+            } else {
+                ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
+            }
+        }
+        #[cfg(not(feature = "fhs"))]
+        {
+            ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
+        }
+    }
+
+    let wrapper = choose_wrapper(flags);
+
     // 2. apply preprocessing from wrappers
     #[instrument(skip_all)]
     fn apply_preprocessing_from_wrappers(
-        mut input_for_processing: InputForProcessing,
+        input_for_processing: InputForProcessing,
+        wrapper: &impl HemWrapper,
         flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        #[cfg(feature = "fhs")]
-        {
-            // special case for FHS compliance wrapper
-            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                return vec![input_for_processing; FHS_COMPLIANCE_CALCULATIONS.len()]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, mut input)| {
-                        let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
-                        do_fhs_preprocessing(&mut input, flags)?;
-                        Ok((*key, input.finalize()))
-                    })
-                    .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>();
-            }
-        }
-
-        #[cfg(feature = "fhs")]
-        {
-            do_fhs_preprocessing(&mut input_for_processing, flags)?;
-        }
-
-        Ok(HashMap::from([(
-            CalculationKey::Primary,
-            input_for_processing.finalize(),
-        )]))
+        wrapper.apply_preprocessing(input_for_processing, flags)
     }
 
-    let input = apply_preprocessing_from_wrappers(input_for_processing, flags)?;
+    let input = apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)?;
 
     // 3. Determine external conditions to use for calculations.
     #[instrument(skip_all)]
@@ -265,30 +264,13 @@ pub fn run_project(
     fn run_wrapper_postprocessing(
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        wrapper: &impl HemWrapper,
         flags: &ProjectFlags,
     ) -> anyhow::Result<()> {
-        #[cfg(feature = "fhs")]
-        {
-            // special case for FHS compliance wrapper
-            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                for (key, flags) in FHS_COMPLIANCE_CALCULATIONS.iter() {
-                    do_fhs_postprocessing(output, &results[key], flags)?;
-                }
-                return Ok(());
-            }
-        }
-
-        if let Some(results) = results.get(&CalculationKey::Primary) {
-            #[cfg(feature = "fhs")]
-            {
-                do_fhs_postprocessing(output, results, flags)?;
-            }
-        }
-
-        Ok(())
+        wrapper.apply_postprocessing(output, results, flags)
     }
 
-    run_wrapper_postprocessing(&output, &contextualised_results, flags)
+    run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
 }
 
 #[derive(Clone, Copy)]
@@ -378,23 +360,6 @@ pub(crate) enum CalculationKey {
     #[allow(dead_code)]
     FhsNotionalFee,
 }
-
-#[cfg(feature = "fhs")]
-static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 4]> =
-    LazyLock::new(|| {
-        [
-            (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
-            (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
-            (
-                CalculationKey::FhsNotional,
-                ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-            ),
-            (
-                CalculationKey::FhsNotionalFee,
-                ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            ),
-        ]
-    });
 
 fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
@@ -1468,95 +1433,6 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             ..Default::default()
         }
     }
-}
-
-#[cfg(feature = "fhs")]
-fn do_fhs_preprocessing(
-    input_for_processing: &mut InputForProcessing,
-    flags: &ProjectFlags,
-) -> anyhow::Result<()> {
-    // Apply required preprocessing steps, if any
-    // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
-    if flags.intersects(
-        ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-    ) {
-        apply_fhs_notional_preprocessing(
-            input_for_processing,
-            flags.contains(ProjectFlags::FHS_NOT_A_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_NOT_B_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
-        )?;
-    }
-    if flags.intersects(
-        ProjectFlags::FHS_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-    ) {
-        apply_fhs_preprocessing(input_for_processing, Some(false))?;
-    } else if flags.intersects(
-        ProjectFlags::FHS_FEE_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-    ) {
-        apply_fhs_fee_preprocessing(input_for_processing)?;
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "fhs")]
-fn do_fhs_postprocessing(
-    output: &impl Output,
-    results: &CalculationResultsWithContext,
-    flags: &ProjectFlags,
-) -> anyhow::Result<()> {
-    let input = results.context.input;
-    let RunResults {
-        timestep_array,
-        results_end_user,
-        energy_import,
-        energy_export,
-        ..
-    } = results.results;
-
-    if flags.intersects(
-        ProjectFlags::FHS_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
-    ) {
-        let notional = flags
-            .intersects(ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
-        apply_fhs_postprocessing(
-            input,
-            output,
-            energy_import,
-            energy_export,
-            results_end_user,
-            timestep_array,
-            notional,
-        )?;
-    } else if flags.intersects(
-        ProjectFlags::FHS_FEE_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-    ) {
-        let CalculationResultsWithContext {
-            results,
-            context: CalculationContext { corpus, .. },
-        } = results;
-        apply_fhs_fee_postprocessing(
-            output,
-            corpus.total_floor_area,
-            results.space_heat_demand_total(),
-            results.space_cool_demand_total(),
-        )?;
-    }
-
-    Ok(())
 }
 
 /// Utility function for iterating multiple hashmaps with same keys.
