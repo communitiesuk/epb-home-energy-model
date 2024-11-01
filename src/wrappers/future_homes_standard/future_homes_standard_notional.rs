@@ -583,7 +583,9 @@ fn edit_bath_shower_other(
 }
 
 fn remove_wwhrs_if_present(input: &mut InputForProcessing) {
-    input.remove_wwhrs();
+    if input.wwhrs().is_some() {
+        input.remove_wwhrs();
+    }
 }
 
 fn add_wwhrs(
@@ -990,8 +992,10 @@ fn initialise_temperature_setpoints() {
     todo!()
 }
 
-fn remove_onsite_generation_if_present() {
-    todo!()
+fn remove_onsite_generation_if_present(input: &mut InputForProcessing) {
+    if input.on_site_generation().is_some() {
+        input.remove_on_site_generation();
+    }
 }
 
 fn add_solar_pv(
@@ -1405,6 +1409,7 @@ mod tests {
         );
     }
 
+    // this test does not exist in Python HEM
     #[rstest]
     fn test_remove_wwhrs_if_present(mut test_input: InputForProcessing) {
         test_input
@@ -1964,6 +1969,32 @@ mod tests {
             assert_eq!(system.frac_convective, 0.95);
             assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
         }
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_remove_onsite_generation_if_present(mut test_input: InputForProcessing) {
+        test_input
+            .set_on_site_generation(json!({
+                    "PV 1": {
+                        "type": "PhotovoltaicSystem",
+                        "peak_power": 2.5,
+                        "ventilation_strategy": "moderately_ventilated",
+                        "pitch": 30,
+                        "orientation360": 180,
+                        "base_height":10,
+                        "height":1,
+                        "width":1,
+                        "EnergySupply": "mains elec",
+                        "shading": [],
+                        "inverter_peak_power": 2,
+                        "inverter_is_inside": false
+                    }
+            }))
+            .unwrap();
+
+        remove_onsite_generation_if_present(&mut test_input);
+        assert_eq!(test_input.on_site_generation(), None);
     }
 
     #[rstest]

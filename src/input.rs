@@ -3615,7 +3615,6 @@ impl InputForProcessing {
         self
     }
 
-    #[cfg(test)]
     pub(crate) fn on_site_generation(&self) -> Option<&OnSiteGeneration> {
         self.input.on_site_generation.as_ref()
     }
@@ -3725,7 +3724,11 @@ impl InputForProcessing {
     }
 
     #[cfg(test)]
-    pub(crate) fn building_element_by_key_mut(&mut self, zone_key: &str, key: &str) -> &mut BuildingElement {
+    pub(crate) fn building_element_by_key_mut(
+        &mut self,
+        zone_key: &str,
+        key: &str,
+    ) -> &mut BuildingElement {
         let zone = self.input.zone.get_mut(zone_key).unwrap();
         let element = zone.building_elements.get_mut(key).unwrap();
 
