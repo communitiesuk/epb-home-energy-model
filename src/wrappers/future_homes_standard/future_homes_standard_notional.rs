@@ -120,8 +120,7 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     // edit_space_heating_system(input, cold_water_source, total_floor_area, _is_heat_network, is_fee);
 
     // modify air-conditioning
-    // TODO enable following call once function implemented
-    // edit_space_cool_system(input);
+    edit_space_cool_system(input)?;
 
     // add solar pv
     add_solar_pv(input, is_notional_a, is_fee, total_floor_area)?;
