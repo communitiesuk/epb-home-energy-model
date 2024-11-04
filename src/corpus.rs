@@ -4261,7 +4261,11 @@ fn hot_water_source_from_input(
             HotWaterSource::HeatNetwork(HeatNetwork::create_service_hot_water_direct(
                 heat_source_wet.clone(),
                 energy_supply_conn_name,
-                *setpoint_temp,
+                (*setpoint_temp).ok_or_else(|| {
+                    anyhow!(
+                        "A setpoint_temp value was expected on a point of use hot water source."
+                    )
+                })?,
                 cold_water_source,
             ))
         }

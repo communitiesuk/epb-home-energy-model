@@ -12,8 +12,9 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::ColdWaterSources;
 use crate::input::{
-    BuildType, ColdWaterSourceType, EnergySupplyType, WaterHeatingEventType, WaterPipeContentsType,
-    WaterPipework, WaterPipeworkLocation,
+    BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
+    HotWaterSource, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
+    WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -536,7 +537,10 @@ static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
 });
 
 ///  Apply heat network settings to notional building calculation in project_dict.
-fn edit_add_heatnetwork_heating(input: &mut InputForProcessing) -> anyhow::Result<()> {
+fn edit_add_heatnetwork_heating(
+    input: &mut InputForProcessing,
+    cold_water_source: &str,
+) -> anyhow::Result<()> {
     let heat_network_name = "heat network";
 
     let notional_heat_network = serde_json::from_value(json!(
@@ -550,7 +554,27 @@ fn edit_add_heatnetwork_heating(input: &mut InputForProcessing) -> anyhow::Resul
         }
     }))?;
 
+    let notional_hot_water_source: HotWaterSource = serde_json::from_value(json!({
+        "hw cylinder": {
+            "type": "HIU",
+            "ColdWaterSource": cold_water_source,
+            "HeatSourceWet": "notionalHIU",
+            }
+    }))?;
+
+    let heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
+        "fuel": "custom",
+        "factor":{
+            "Emissions Factor kgCO2e/kWh": 0.033,
+            "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.033,
+            "Primary Energy Factor kWh/kWh delivered": 0.75
+            }
+    }))?;
+
     input.set_heat_source_wet(notional_heat_network);
+    input.set_hot_water_source(notional_hot_water_source);
+    input.add_energy_supply_for_key(EnergySupplyKey::HeatNetwork, heat_network_fuel_data);
+
     Ok(())
 }
 
@@ -1115,8 +1139,8 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyKey, EnergySupplyType, HeatSourceWet, OnSiteGeneration,
-        WaterPipeworkSimple,
+        self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
+        OnSiteGeneration, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1412,23 +1436,39 @@ mod tests {
         }))
         .unwrap();
 
-        // let expected_hot_water_source: HotWaterSource = serde_json::from_value(json!({
-        // "hw cylinder": {
-        //     "type": "HIU",
-        //     "ColdWaterSource": "mains water",
-        //     "HeatSourceWet": "boiler",
-        //     }
-        // }))
-        // .unwrap();
+        let expected_hot_water_source: HotWaterSource = serde_json::from_value(json!({
+        "hw cylinder": {
+            "type": "HIU",
+            "ColdWaterSource": "mains water",
+            "HeatSourceWet": "notionalHIU",
+            }
+        }))
+        .unwrap();
 
-        edit_add_heatnetwork_heating(&mut test_input).unwrap();
+        let heat_network_name = EnergySupplyKey::HeatNetwork;
+        let expected_heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
+            "fuel": "custom",
+            "factor":{
+                "Emissions Factor kgCO2e/kWh": 0.033,
+                "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.033,
+                "Primary Energy Factor kWh/kWh delivered": 0.75
+                }
+        }))
+        .unwrap();
+
+        edit_add_heatnetwork_heating(&mut test_input, "mains water").unwrap();
 
         assert_eq!(
             test_input.heat_source_wet().unwrap(),
             &expected_heat_source_wet
         );
 
-        // assert_eq!(test_input.hot_water_source(), &expected_hot_water_source);
+        assert_eq!(test_input.hot_water_source(), &expected_hot_water_source);
+
+        assert_eq!(
+            test_input.energy_supply_by_key(heat_network_name),
+            Some(&expected_heat_network_fuel_data)
+        );
     }
 
     #[rstest]

@@ -693,8 +693,8 @@ pub enum HotWaterSourceDetails {
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
         #[serde(rename = "Control")]
-        control: HeatSourceControlType,
-        setpoint_temp: f64,
+        control: Option<HeatSourceControlType>,
+        setpoint_temp: Option<f64>,
     },
     PointOfUse {
         efficiency: f64,
@@ -819,7 +819,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
                 setpoint_temp: ref mut source_setpoint_temp,
                 ..
             } => {
-                *source_setpoint_temp = setpoint_temp;
+                *source_setpoint_temp = Some(setpoint_temp);
             }
             HotWaterSourceDetails::PointOfUse {
                 setpoint_temp: ref mut source_setpoint_temp,
@@ -851,6 +851,8 @@ pub enum HeatSourceWetType {
     HeatNetwork,
     #[serde(rename = "hp")]
     HeatPump,
+    #[serde(untagged)]
+    Other(String),
 }
 
 impl HeatSourceWetType {
@@ -3261,6 +3263,10 @@ impl InputForProcessing {
             .advanced_start())
     }
 
+    pub(crate) fn set_hot_water_source(&mut self, hot_water_source: HotWaterSource) {
+        self.input.hot_water_source = hot_water_source;
+    }
+
     #[cfg(test)]
     pub(crate) fn hot_water_source(&self) -> &HotWaterSource {
         &self.input.hot_water_source
@@ -3633,6 +3639,16 @@ impl InputForProcessing {
             energy_supply.diverter = None;
         }
         self
+    }
+
+    pub(crate) fn add_energy_supply_for_key(
+        &mut self,
+        energy_supply_key: EnergySupplyKey,
+        energy_supply_details: EnergySupplyDetails,
+    ) {
+        self.input
+            .energy_supply
+            .insert(energy_supply_key, energy_supply_details);
     }
 
     #[cfg(test)]
