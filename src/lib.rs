@@ -18,7 +18,7 @@ use crate::core::units::convert_profile_to_daily;
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
-    NumberOrDivisionByZero, ZoneResultKey,
+    NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
 use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
 use crate::input::{
@@ -898,192 +898,33 @@ fn write_core_output_file_summary(
 
     debug!("writing out to {output_key}");
 
-    // Electricity breakdown
-    let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
-        (0.0, 0.0),
-        |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
-            let values_sum = values.iter().sum::<f64>();
-            if values_sum < 0.0 {
-                (elec_generated_acc + values_sum.abs(), elec_consumed_acc)
-            } else {
-                (elec_generated_acc, elec_consumed_acc + values_sum)
-            }
-        },
+    let SummaryData {
+        delivered_energy_map,
+        elec_generated,
+        elec_consumed,
+        gen_to_consumption,
+        gen_to_diverter,
+        gen_to_storage,
+        grid_to_consumption,
+        generation_to_grid,
+        storage_to_consumption,
+        storage_eff,
+        net_import,
+        peak_elec_consumption,
+        index_peak_elec_consumption,
+        step_peak_elec_consumption,
+        timestep_to_date,
+    } = build_summary_data(
+        timestep_array,
+        &input,
+        results_end_user,
+        energy_generated_consumed,
+        energy_to_storage,
+        energy_from_storage,
+        energy_diverted,
+        energy_import,
+        energy_export,
     );
-    let gen_to_consumption = energy_generated_consumed["mains elec"].iter().sum::<f64>();
-    let grid_to_consumption = energy_import["mains elec"].iter().sum::<f64>();
-    let generation_to_grid = energy_export["mains elec"].iter().sum::<f64>().abs();
-    let net_import = grid_to_consumption - generation_to_grid;
-    let gen_to_storage = energy_to_storage["mains elec"].iter().sum::<f64>();
-    let storage_to_consumption = energy_from_storage["mains elec"].iter().sum::<f64>().abs();
-    let gen_to_diverter = energy_diverted["mains elec"].iter().sum::<f64>();
-    let storage_eff = if gen_to_storage > 0.0 {
-        NumberOrDivisionByZero::Number(storage_to_consumption / gen_to_storage)
-    } else {
-        NumberOrDivisionByZero::DivisionByZero
-    };
-
-    // get peak electricity consumption, and when it happens
-    let start_timestep = input.simulation_time.start_time();
-    let stepping = input.simulation_time.step;
-    // Calculate net import by adding gross import and export figures. Add
-    // because export figures are already negative
-    let net_import_per_timestep = {
-        let mains_energy_import = &energy_import["mains elec"];
-        let mains_energy_export = &energy_export["mains elec"];
-        (0..timestep_array.len())
-            .map(|i| mains_energy_import[i] + mains_energy_export[i])
-            .collect::<Vec<_>>()
-    };
-    let peak_elec_consumption = net_import_per_timestep
-        .iter()
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap();
-    let index_peak_elec_consumption = net_import_per_timestep
-        .iter()
-        .position(|&x| x == *peak_elec_consumption)
-        .unwrap();
-
-    // must reflect hour or half hour in the year (hour 0 to hour 8759)
-    // to work with the dictionary below timestep_to_date
-    // hence + start_timestep
-    let step_peak_elec_consumption = index_peak_elec_consumption as f64 + start_timestep;
-
-    let months_start_end_timesteps = IndexMap::from([
-        ("JAN", (0., HOURS_TO_END_JAN / stepping - 1.)),
-        (
-            "FEB",
-            (
-                HOURS_TO_END_JAN / stepping,
-                HOURS_TO_END_FEB / stepping - 1.,
-            ),
-        ),
-        (
-            "MAR",
-            (
-                HOURS_TO_END_FEB / stepping,
-                HOURS_TO_END_MAR / stepping - 1.,
-            ),
-        ),
-        (
-            "APR",
-            (
-                HOURS_TO_END_MAR / stepping,
-                HOURS_TO_END_APR / stepping - 1.,
-            ),
-        ),
-        (
-            "MAY",
-            (
-                HOURS_TO_END_APR / stepping,
-                HOURS_TO_END_MAY / stepping - 1.,
-            ),
-        ),
-        (
-            "JUN",
-            (
-                HOURS_TO_END_MAY / stepping,
-                HOURS_TO_END_JUN / stepping - 1.,
-            ),
-        ),
-        (
-            "JUL",
-            (
-                HOURS_TO_END_JUN / stepping,
-                HOURS_TO_END_JUL / stepping - 1.,
-            ),
-        ),
-        (
-            "AUG",
-            (
-                HOURS_TO_END_JUL / stepping,
-                HOURS_TO_END_AUG / stepping - 1.,
-            ),
-        ),
-        (
-            "SEP",
-            (
-                HOURS_TO_END_AUG / stepping,
-                HOURS_TO_END_SEP / stepping - 1.,
-            ),
-        ),
-        (
-            "OCT",
-            (
-                HOURS_TO_END_SEP / stepping,
-                HOURS_TO_END_OCT / stepping - 1.,
-            ),
-        ),
-        (
-            "NOV",
-            (
-                HOURS_TO_END_OCT / stepping,
-                HOURS_TO_END_NOV / stepping - 1.,
-            ),
-        ),
-        (
-            "DEC",
-            (
-                HOURS_TO_END_NOV / stepping,
-                HOURS_TO_END_DEC / stepping - 1.,
-            ),
-        ),
-    ]);
-    let mut timestep_to_date: HashMap<usize, HourForTimestep> = Default::default();
-    let mut step = start_timestep;
-    for _ in timestep_array {
-        for (month, (start, end)) in months_start_end_timesteps.iter() {
-            if step <= end.floor() && step >= start.floor() {
-                let hour_of_year = step * stepping;
-                let hour_start_month = start * stepping;
-                let hour_of_month = hour_of_year - hour_start_month;
-                // add +1 to day_of_month for first day to be day 1 (not day 0)
-                let day_of_month = (hour_of_month / 24.).floor() as usize + 1;
-                // add +1 to hour_of_month for first hour to be hour 1 (not hour 0)
-                let hour_of_day = ((step % (24. / stepping)) * stepping) + 1.;
-                timestep_to_date.insert(
-                    step as usize,
-                    HourForTimestep {
-                        month,
-                        day: day_of_month,
-                        hour: hour_of_day,
-                    },
-                );
-            }
-        }
-        step += 1.;
-    }
-
-    // Delivered energy by end-use and by fuel
-    let mut delivered_energy_map: IndexMap<KeyString, IndexMap<KeyString, f64>> =
-        IndexMap::from([(KeyString::from("total").unwrap(), Default::default())]);
-    for (fuel, end_uses) in results_end_user {
-        if ["_unmet_demand", "hw cylinder"].contains(&fuel.as_str()) {
-            continue;
-        }
-        let mut fuel_results: IndexMap<KeyString, f64> =
-            IndexMap::from([(KeyString::from("total").unwrap(), Default::default())]);
-        for (end_use, delivered_energy) in end_uses {
-            let delivered_energy_sum = delivered_energy.iter().sum::<f64>();
-            if delivered_energy_sum >= 0. {
-                fuel_results.insert(
-                    KeyString::from(end_use).expect("End use was too long to fit in a KeyString."),
-                    delivered_energy_sum,
-                );
-                *fuel_results.get_mut("total").unwrap() += delivered_energy_sum;
-                *delivered_energy_map["total"]
-                    .entry(
-                        KeyString::from(end_use)
-                            .expect("End use was too long to fit in a KeyString."),
-                    )
-                    .or_default() += delivered_energy_sum;
-                *delivered_energy_map["total"]
-                    .entry(KeyString::from("total").unwrap())
-                    .or_default() += delivered_energy_sum;
-            }
-        }
-        delivered_energy_map.insert(*fuel, fuel_results);
-    }
 
     let mut delivered_energy_rows_title =
         vec![
@@ -1288,6 +1129,241 @@ fn write_core_output_file_summary(
     writer.flush()?;
 
     Ok(())
+}
+
+fn build_summary_data(
+    timestep_array: &[f64],
+    input: &SummaryInputDigest,
+    results_end_user: &ResultsEndUser,
+    energy_generated_consumed: &IndexMap<KeyString, Vec<f64>>,
+    energy_to_storage: &IndexMap<KeyString, Vec<f64>>,
+    energy_from_storage: &IndexMap<KeyString, Vec<f64>>,
+    energy_diverted: &IndexMap<KeyString, Vec<f64>>,
+    energy_import: &IndexMap<KeyString, Vec<f64>>,
+    energy_export: &IndexMap<KeyString, Vec<f64>>,
+) -> SummaryData {
+    // Electricity breakdown
+    let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
+        (0.0, 0.0),
+        |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
+            let values_sum = values.iter().sum::<f64>();
+            if values_sum < 0.0 {
+                (elec_generated_acc + values_sum.abs(), elec_consumed_acc)
+            } else {
+                (elec_generated_acc, elec_consumed_acc + values_sum)
+            }
+        },
+    );
+    let gen_to_consumption = energy_generated_consumed["mains elec"].iter().sum::<f64>();
+    let grid_to_consumption = energy_import["mains elec"].iter().sum::<f64>();
+    let generation_to_grid = energy_export["mains elec"].iter().sum::<f64>().abs();
+    let net_import = grid_to_consumption - generation_to_grid;
+    let gen_to_storage = energy_to_storage["mains elec"].iter().sum::<f64>();
+    let storage_to_consumption = energy_from_storage["mains elec"].iter().sum::<f64>().abs();
+    let gen_to_diverter = energy_diverted["mains elec"].iter().sum::<f64>();
+    let storage_eff = if gen_to_storage > 0.0 {
+        NumberOrDivisionByZero::Number(storage_to_consumption / gen_to_storage)
+    } else {
+        NumberOrDivisionByZero::DivisionByZero
+    };
+
+    // get peak electricity consumption, and when it happens
+    let start_timestep = input.simulation_time.start_time();
+    let stepping = input.simulation_time.step;
+    // Calculate net import by adding gross import and export figures. Add
+    // because export figures are already negative
+    let net_import_per_timestep = {
+        let mains_energy_import = &energy_import["mains elec"];
+        let mains_energy_export = &energy_export["mains elec"];
+        (0..timestep_array.len())
+            .map(|i| mains_energy_import[i] + mains_energy_export[i])
+            .collect::<Vec<_>>()
+    };
+    let peak_elec_consumption = *net_import_per_timestep
+        .iter()
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap();
+    let index_peak_elec_consumption = net_import_per_timestep
+        .iter()
+        .position(|&x| x == peak_elec_consumption)
+        .unwrap();
+
+    // must reflect hour or half hour in the year (hour 0 to hour 8759)
+    // to work with the dictionary below timestep_to_date
+    // hence + start_timestep
+    let step_peak_elec_consumption = index_peak_elec_consumption as f64 + start_timestep;
+
+    let months_start_end_timesteps = IndexMap::from([
+        ("JAN", (0., HOURS_TO_END_JAN / stepping - 1.)),
+        (
+            "FEB",
+            (
+                HOURS_TO_END_JAN / stepping,
+                HOURS_TO_END_FEB / stepping - 1.,
+            ),
+        ),
+        (
+            "MAR",
+            (
+                HOURS_TO_END_FEB / stepping,
+                HOURS_TO_END_MAR / stepping - 1.,
+            ),
+        ),
+        (
+            "APR",
+            (
+                HOURS_TO_END_MAR / stepping,
+                HOURS_TO_END_APR / stepping - 1.,
+            ),
+        ),
+        (
+            "MAY",
+            (
+                HOURS_TO_END_APR / stepping,
+                HOURS_TO_END_MAY / stepping - 1.,
+            ),
+        ),
+        (
+            "JUN",
+            (
+                HOURS_TO_END_MAY / stepping,
+                HOURS_TO_END_JUN / stepping - 1.,
+            ),
+        ),
+        (
+            "JUL",
+            (
+                HOURS_TO_END_JUN / stepping,
+                HOURS_TO_END_JUL / stepping - 1.,
+            ),
+        ),
+        (
+            "AUG",
+            (
+                HOURS_TO_END_JUL / stepping,
+                HOURS_TO_END_AUG / stepping - 1.,
+            ),
+        ),
+        (
+            "SEP",
+            (
+                HOURS_TO_END_AUG / stepping,
+                HOURS_TO_END_SEP / stepping - 1.,
+            ),
+        ),
+        (
+            "OCT",
+            (
+                HOURS_TO_END_SEP / stepping,
+                HOURS_TO_END_OCT / stepping - 1.,
+            ),
+        ),
+        (
+            "NOV",
+            (
+                HOURS_TO_END_OCT / stepping,
+                HOURS_TO_END_NOV / stepping - 1.,
+            ),
+        ),
+        (
+            "DEC",
+            (
+                HOURS_TO_END_NOV / stepping,
+                HOURS_TO_END_DEC / stepping - 1.,
+            ),
+        ),
+    ]);
+    let mut timestep_to_date: HashMap<usize, HourForTimestep> = Default::default();
+    let mut step = start_timestep;
+    for _ in timestep_array {
+        for (month, (start, end)) in months_start_end_timesteps.iter() {
+            if step <= end.floor() && step >= start.floor() {
+                let hour_of_year = step * stepping;
+                let hour_start_month = start * stepping;
+                let hour_of_month = hour_of_year - hour_start_month;
+                // add +1 to day_of_month for first day to be day 1 (not day 0)
+                let day_of_month = (hour_of_month / 24.).floor() as usize + 1;
+                // add +1 to hour_of_month for first hour to be hour 1 (not hour 0)
+                let hour_of_day = ((step % (24. / stepping)) * stepping) + 1.;
+                timestep_to_date.insert(
+                    step as usize,
+                    HourForTimestep {
+                        month,
+                        day: day_of_month,
+                        hour: hour_of_day,
+                    },
+                );
+            }
+        }
+        step += 1.;
+    }
+
+    // Delivered energy by end-use and by fuel
+    let mut delivered_energy_map: IndexMap<KeyString, IndexMap<KeyString, f64>> =
+        IndexMap::from([(KeyString::from("total").unwrap(), Default::default())]);
+    for (fuel, end_uses) in results_end_user {
+        if ["_unmet_demand", "hw cylinder"].contains(&fuel.as_str()) {
+            continue;
+        }
+        let mut fuel_results: IndexMap<KeyString, f64> =
+            IndexMap::from([(KeyString::from("total").unwrap(), Default::default())]);
+        for (end_use, delivered_energy) in end_uses {
+            let delivered_energy_sum = delivered_energy.iter().sum::<f64>();
+            if delivered_energy_sum >= 0. {
+                fuel_results.insert(
+                    KeyString::from(end_use).expect("End use was too long to fit in a KeyString."),
+                    delivered_energy_sum,
+                );
+                *fuel_results.get_mut("total").unwrap() += delivered_energy_sum;
+                *delivered_energy_map["total"]
+                    .entry(
+                        KeyString::from(end_use)
+                            .expect("End use was too long to fit in a KeyString."),
+                    )
+                    .or_default() += delivered_energy_sum;
+                *delivered_energy_map["total"]
+                    .entry(KeyString::from("total").unwrap())
+                    .or_default() += delivered_energy_sum;
+            }
+        }
+        delivered_energy_map.insert(*fuel, fuel_results);
+    }
+
+    SummaryData {
+        delivered_energy_map,
+        elec_generated,
+        elec_consumed,
+        gen_to_consumption,
+        gen_to_diverter,
+        gen_to_storage,
+        grid_to_consumption,
+        generation_to_grid,
+        storage_to_consumption,
+        storage_eff,
+        net_import,
+        peak_elec_consumption,
+        index_peak_elec_consumption,
+        step_peak_elec_consumption,
+        timestep_to_date,
+    }
+}
+
+struct SummaryData {
+    delivered_energy_map: IndexMap<KeyString, IndexMap<KeyString, f64>>,
+    elec_generated: f64,
+    elec_consumed: f64,
+    gen_to_consumption: f64,
+    gen_to_diverter: f64,
+    gen_to_storage: f64,
+    grid_to_consumption: f64,
+    generation_to_grid: f64,
+    storage_to_consumption: f64,
+    storage_eff: NumberOrDivisionByZero,
+    net_import: f64,
+    peak_elec_consumption: f64,
+    index_peak_elec_consumption: usize,
+    step_peak_elec_consumption: f64,
+    timestep_to_date: HashMap<usize, HourForTimestep>,
 }
 
 struct StaticOutputFileArgs {
