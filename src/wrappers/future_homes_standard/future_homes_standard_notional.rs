@@ -311,7 +311,7 @@ fn calculate_area_diff_and_adjust_glazing_area(
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
 fn find_walls_roofs_with_same_orientation_and_pitch(
-    wall_roofs: &Vec<&mut BuildingElement>,
+    wall_roofs: &[&mut BuildingElement],
     window_rooflight_element: &BuildingElement,
 ) -> anyhow::Result<Vec<usize>> {
     let window_rooflight_pitch = window_rooflight_element.pitch();
