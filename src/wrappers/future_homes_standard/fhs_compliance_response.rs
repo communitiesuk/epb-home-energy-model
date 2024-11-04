@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
+use crate::corpus::KeyString;
 use crate::wrappers::future_homes_standard::future_homes_standard::{calc_final_rates, FinalRates};
 use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
-use crate::{CalculationKey, CalculationResultsWithContext};
+use crate::{build_summary_data, CalculationKey, CalculationResultsWithContext, SummaryData};
 use anyhow::anyhow;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -53,9 +54,9 @@ impl FhsComplianceResponse {
             dwelling_fabric_energy_efficiency,
             target_fabric_energy_efficiency,
             fabric_energy_efficiency_compliant,
-            energy_demand: result.energy_demand(),
-            delivered_energy_use: result.delivered_energy_use(),
-            energy_use_by_fuel: result.energy_use_by_fuel(),
+            energy_demand: result.energy_demand().clone(),
+            delivered_energy_use: result.delivered_energy_use().clone(),
+            energy_use_by_fuel: result.energy_use_by_fuel().clone(),
         })
     }
 }
@@ -68,21 +69,103 @@ trait FhsComplianceCalculationResult {
     fn target_primary_energy_rate(&self) -> f64;
     fn dwelling_fabric_energy_efficiency(&self) -> f64;
     fn target_fabric_energy_efficiency(&self) -> f64;
-    fn energy_demand(&self) -> EnergyDemand;
-    fn delivered_energy_use(&self) -> DeliveredEnergyUse;
-    fn energy_use_by_fuel(&self) -> IndexMap<String, PerformanceValue>;
+    fn energy_demand(&self) -> &EnergyDemand;
+    fn delivered_energy_use(&self) -> &DeliveredEnergyUse;
+    fn energy_use_by_fuel(&self) -> &IndexMap<String, PerformanceValue>;
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct EnergyDemand {
     space_heating: PerformanceValue,
     space_cooling: PerformanceValue,
 }
 
-#[derive(Serialize)]
+impl<'a>
+    From<(
+        &'a CalculationResultsWithContext<'a>,
+        &'a CalculationResultsWithContext<'a>,
+        f64,
+    )> for EnergyDemand
+{
+    fn from(
+        (dwelling_results, target_results, total_floor_area): (
+            &CalculationResultsWithContext,
+            &CalculationResultsWithContext,
+            f64,
+        ),
+    ) -> Self {
+        EnergyDemand {
+            space_heating: PerformanceValue {
+                actual: dwelling_results.results.space_heat_demand_total() / total_floor_area,
+                notional: target_results.results.space_heat_demand_total() / total_floor_area,
+            },
+            space_cooling: PerformanceValue {
+                actual: dwelling_results.results.space_cool_demand_total() / total_floor_area,
+                notional: target_results.results.space_cool_demand_total() / total_floor_area,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
 struct DeliveredEnergyUse {
     total: PerformanceValue,
     by_system: IndexMap<String, PerformanceValue>,
+}
+
+impl
+    From<(
+        &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+        &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+        f64,
+    )> for DeliveredEnergyUse
+{
+    fn from(
+        (dwelling_energy_use, target_energy_use, total_floor_area): (
+            &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+            &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+            f64,
+        ),
+    ) -> Self {
+        let total = PerformanceValue {
+            actual: dwelling_energy_use
+                .values()
+                .map(|fuel_energy_use| fuel_energy_use["total"])
+                .sum::<f64>()
+                / total_floor_area,
+            notional: target_energy_use
+                .values()
+                .map(|fuel_energy_use| fuel_energy_use["total"])
+                .sum::<f64>()
+                / total_floor_area,
+        };
+        let by_system = dwelling_energy_use
+            .first()
+            .unwrap()
+            .1
+            .keys()
+            .map(|key| {
+                (key.to_string(), {
+                    let dwelling_use = dwelling_energy_use
+                        .values()
+                        .map(|fuel_energy_use| fuel_energy_use[key])
+                        .sum::<f64>()
+                        / total_floor_area;
+                    let target_use = target_energy_use
+                        .values()
+                        .map(|fuel_energy_use| fuel_energy_use[key])
+                        .sum::<f64>()
+                        / total_floor_area;
+                    PerformanceValue {
+                        actual: dwelling_use,
+                        notional: target_use,
+                    }
+                })
+            })
+            .collect::<IndexMap<_, _>>();
+
+        DeliveredEnergyUse { total, by_system }
+    }
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -96,6 +179,9 @@ struct CalculatedComplianceResult {
     target_final_rates: FinalRates,
     dwelling_fabric_energy_efficiency: f64,
     target_fabric_energy_efficiency: f64,
+    delivered_energy_use: DeliveredEnergyUse,
+    energy_demand: EnergyDemand,
+    energy_use_by_fuel: IndexMap<String, PerformanceValue>,
 }
 
 impl FhsComplianceCalculationResult for CalculatedComplianceResult {
@@ -123,20 +209,20 @@ impl FhsComplianceCalculationResult for CalculatedComplianceResult {
         self.target_fabric_energy_efficiency
     }
 
-    fn energy_demand(&self) -> EnergyDemand {
-        todo!()
+    fn energy_demand(&self) -> &EnergyDemand {
+        &self.energy_demand
     }
 
-    fn delivered_energy_use(&self) -> DeliveredEnergyUse {
-        todo!()
+    fn delivered_energy_use(&self) -> &DeliveredEnergyUse {
+        &self.delivered_energy_use
     }
 
-    fn energy_use_by_fuel(&self) -> IndexMap<String, PerformanceValue> {
-        todo!()
+    fn energy_use_by_fuel(&self) -> &IndexMap<String, PerformanceValue> {
+        &self.energy_use_by_fuel
     }
 }
 
-impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
+impl<'a> TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'a>>>
     for CalculatedComplianceResult
 {
     type Error = anyhow::Error;
@@ -159,6 +245,16 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
                 .ok_or_else(|| {
                     anyhow!("Results were not available for the FHS Notional FEE calculation key.")
                 })?;
+
+        let SummaryData {
+            delivered_energy_map: dwelling_energy_use,
+            ..
+        } = build_summary_data(dwelling_fhs_results.try_into()?);
+        let SummaryData {
+            delivered_energy_map: target_energy_use,
+            ..
+        } = build_summary_data(notional_fhs_results.try_into()?);
+        let total_floor_area = dwelling_fhs_results.context.corpus.total_floor_area();
 
         Ok(Self {
             dwelling_final_rates: calc_final_rates(
@@ -185,6 +281,22 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
                 notional_fhs_fee_results.results.space_cool_demand_total(),
                 notional_fhs_fee_results.context.corpus.total_floor_area,
             ),
+            delivered_energy_use: (&dwelling_energy_use, &target_energy_use, total_floor_area)
+                .into(),
+            energy_demand: (dwelling_fhs_results, notional_fhs_results, total_floor_area).into(),
+            energy_use_by_fuel: dwelling_energy_use
+                .keys()
+                .map(|fuel| {
+                    (fuel.to_string(), {
+                        let dwelling_fuel_total = dwelling_energy_use[fuel].values().sum::<f64>();
+                        let target_fuel_total = target_energy_use[fuel].values().sum::<f64>();
+                        PerformanceValue {
+                            actual: dwelling_fuel_total,
+                            notional: target_fuel_total,
+                        }
+                    })
+                })
+                .collect(),
         })
     }
 }
@@ -194,6 +306,7 @@ mod tests {
     use super::*;
     use rstest::*;
     use serde_json::json;
+    use std::sync::LazyLock;
 
     #[fixture]
     fn canned_result() -> impl FhsComplianceCalculationResult {
@@ -308,8 +421,8 @@ mod tests {
             43.529
         }
 
-        fn energy_demand(&self) -> EnergyDemand {
-            EnergyDemand {
+        fn energy_demand(&self) -> &EnergyDemand {
+            &EnergyDemand {
                 space_heating: PerformanceValue {
                     actual: 34.962,
                     notional: 42.550,
@@ -321,37 +434,41 @@ mod tests {
             }
         }
 
-        fn delivered_energy_use(&self) -> DeliveredEnergyUse {
-            DeliveredEnergyUse {
-                total: PerformanceValue {
-                    actual: 73.750,
-                    notional: 54.866,
-                },
-                by_system: IndexMap::from(
-                    [
-                        ("space_heating", 17.255, 10.897),
-                        ("auxiliary", 4.54, 1.904),
-                        ("water_heating", 20.624, 13.293),
-                        ("electric_showers", 0.0, 0.0),
-                        ("space_cooling", 0.0, 0.0),
-                        ("ventilation", 1.336, 0.0),
-                        ("lighting", 2.446, 1.223),
-                        ("cooking", 4.769, 4.769),
-                        ("appliances", 22.78, 22.78),
-                    ]
-                    .map(|(k, actual, notional)| {
-                        (k.to_owned(), PerformanceValue { actual, notional })
-                    }),
-                ),
-            }
+        fn delivered_energy_use(&self) -> &DeliveredEnergyUse {
+            &DELIVERED_ENERGY_USE
         }
 
-        fn energy_use_by_fuel(&self) -> IndexMap<String, PerformanceValue> {
-            IndexMap::from(
-                [("mains_electricity", 73.750, 54.866)].map(|(k, actual, notional)| {
-                    (k.to_owned(), PerformanceValue { actual, notional })
-                }),
-            )
+        fn energy_use_by_fuel(&self) -> &IndexMap<String, PerformanceValue> {
+            &ENERGY_USE_BY_FUEL
         }
     }
+
+    static DELIVERED_ENERGY_USE: LazyLock<DeliveredEnergyUse> =
+        LazyLock::new(|| DeliveredEnergyUse {
+            total: PerformanceValue {
+                actual: 73.750,
+                notional: 54.866,
+            },
+            by_system: IndexMap::from(
+                [
+                    ("space_heating", 17.255, 10.897),
+                    ("auxiliary", 4.54, 1.904),
+                    ("water_heating", 20.624, 13.293),
+                    ("electric_showers", 0.0, 0.0),
+                    ("space_cooling", 0.0, 0.0),
+                    ("ventilation", 1.336, 0.0),
+                    ("lighting", 2.446, 1.223),
+                    ("cooking", 4.769, 4.769),
+                    ("appliances", 22.78, 22.78),
+                ]
+                .map(|(k, actual, notional)| (k.to_owned(), PerformanceValue { actual, notional })),
+            ),
+        });
+
+    static ENERGY_USE_BY_FUEL: LazyLock<IndexMap<String, PerformanceValue>> = LazyLock::new(|| {
+        IndexMap::from(
+            [("mains_electricity", 73.750, 54.866)]
+                .map(|(k, actual, notional)| (k.to_owned(), PerformanceValue { actual, notional })),
+        )
+    });
 }

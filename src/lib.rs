@@ -794,6 +794,7 @@ struct SummaryOutputFileArgs<'a> {
 }
 
 /// A digest of data from the input that is used when generating a summary file.
+#[derive(Clone)]
 struct SummaryInputDigest {
     simulation_time: SimulationTime,
     hot_water_source_digests: IndexMap<String, SummaryInputHotWaterSourceDigest>,
@@ -869,6 +870,35 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'
     }
 }
 
+impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
+    type Error = anyhow::Error;
+
+    fn try_from(results: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
+        let RunResults {
+            timestep_array,
+            results_end_user,
+            energy_import,
+            energy_export,
+            energy_generated_consumed,
+            energy_to_storage,
+            energy_from_storage,
+            energy_diverted,
+            ..
+        } = results.results;
+        Ok(SummaryDataArgs {
+            timestep_array,
+            input: results.context.input.into(),
+            results_end_user,
+            energy_generated_consumed,
+            energy_to_storage,
+            energy_from_storage,
+            energy_diverted,
+            energy_import,
+            energy_export,
+        })
+    }
+}
+
 fn write_core_output_file_summary(
     output: &impl Output,
     args: SummaryOutputFileArgs,
@@ -914,9 +944,9 @@ fn write_core_output_file_summary(
         index_peak_elec_consumption,
         step_peak_elec_consumption,
         timestep_to_date,
-    } = build_summary_data(
+    } = build_summary_data(SummaryDataArgs {
         timestep_array,
-        &input,
+        input: input.clone(),
         results_end_user,
         energy_generated_consumed,
         energy_to_storage,
@@ -924,7 +954,7 @@ fn write_core_output_file_summary(
         energy_diverted,
         energy_import,
         energy_export,
-    );
+    });
 
     let mut delivered_energy_rows_title =
         vec![
@@ -1131,17 +1161,31 @@ fn write_core_output_file_summary(
     Ok(())
 }
 
-fn build_summary_data(
-    timestep_array: &[f64],
-    input: &SummaryInputDigest,
-    results_end_user: &ResultsEndUser,
-    energy_generated_consumed: &IndexMap<KeyString, Vec<f64>>,
-    energy_to_storage: &IndexMap<KeyString, Vec<f64>>,
-    energy_from_storage: &IndexMap<KeyString, Vec<f64>>,
-    energy_diverted: &IndexMap<KeyString, Vec<f64>>,
-    energy_import: &IndexMap<KeyString, Vec<f64>>,
-    energy_export: &IndexMap<KeyString, Vec<f64>>,
-) -> SummaryData {
+struct SummaryDataArgs<'a> {
+    timestep_array: &'a [f64],
+    input: SummaryInputDigest,
+    results_end_user: &'a ResultsEndUser,
+    energy_generated_consumed: &'a IndexMap<KeyString, Vec<f64>>,
+    energy_to_storage: &'a IndexMap<KeyString, Vec<f64>>,
+    energy_from_storage: &'a IndexMap<KeyString, Vec<f64>>,
+    energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
+    energy_import: &'a IndexMap<KeyString, Vec<f64>>,
+    energy_export: &'a IndexMap<KeyString, Vec<f64>>,
+}
+
+fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
+    let SummaryDataArgs {
+        timestep_array,
+        input,
+        results_end_user,
+        energy_generated_consumed,
+        energy_to_storage,
+        energy_from_storage,
+        energy_diverted,
+        energy_import,
+        energy_export,
+    } = args;
+
     // Electricity breakdown
     let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
         (0.0, 0.0),
