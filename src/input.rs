@@ -2998,6 +2998,15 @@ impl InputForProcessing {
         self.input.zone.keys().cloned().collect()
     }
 
+    #[cfg(test)]
+    pub(crate) fn all_init_temp_setpoints(&self) -> Vec<Option<f64>> {
+        self.input
+            .zone
+            .values()
+            .map(|zone| zone.temp_setpnt_init)
+            .collect()
+    }
+
     pub fn set_init_temp_setpoint_for_zone(
         &mut self,
         zone: &str,

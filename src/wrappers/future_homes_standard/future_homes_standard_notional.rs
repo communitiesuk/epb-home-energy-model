@@ -987,8 +987,14 @@ fn calc_design_capacity() {
     todo!()
 }
 
-fn initialise_temperature_setpoints() {
-    todo!()
+/// Intitilise temperature setpoints for all zones.
+/// The initial set point is needed to call the Project class.
+/// Set as 18C for now. The FHS wrapper will overwrite temp_setpnt_init '''
+fn initialise_temperature_setpoints(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    for zone_key in input.zone_keys() {
+        input.set_init_temp_setpoint_for_zone(zone_key.as_str(), 18.)?;
+    }
+    Ok(())
 }
 
 fn remove_onsite_generation_if_present(input: &mut InputForProcessing) {
@@ -2004,6 +2010,18 @@ mod tests {
             assert_eq!(system.efficiency, 5.1);
             assert_eq!(system.frac_convective, 0.95);
             assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
+        }
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_initialise_temperature_setpoints(mut test_input: InputForProcessing) {
+        initialise_temperature_setpoints(&mut test_input).unwrap();
+
+        let temp_setpoints = test_input.all_init_temp_setpoints();
+
+        for temp_setpoint in temp_setpoints {
+            assert_eq!(temp_setpoint, Some(18.));
         }
     }
 
