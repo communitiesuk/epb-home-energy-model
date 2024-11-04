@@ -31,7 +31,7 @@ use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 #[cfg(feature = "fhs")]
 use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
+use crate::wrappers::{ChosenWrapper, HemResponse, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
 use csv::WriterBuilder;
@@ -50,7 +50,7 @@ pub fn run_project(
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     flags: &ProjectFlags,
-) -> Result<(), anyhow::Error> {
+) -> anyhow::Result<Option<HemResponse>> {
     // 1. ingest/ parse input and enter preprocessing stage
     #[instrument(skip_all)]
     fn ingest_input_and_start_preprocessing(
@@ -267,7 +267,7 @@ pub fn run_project(
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         wrapper: &impl HemWrapper,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<HemResponse>> {
         wrapper.apply_postprocessing(output, results, flags)
     }
 

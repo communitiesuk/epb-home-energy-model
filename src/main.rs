@@ -9,6 +9,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Parser, Default, Debug)]
@@ -157,12 +158,21 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
-    run_project(
+    let response = run_project(
         BufReader::new(File::open(Path::new(input_file))?),
         file_output,
         external_conditions,
         &(args.into()),
-    )
+    )?;
+
+    if let Some(response) = response {
+        debug!(
+            "JSON response: {}",
+            serde_json::to_string_pretty(&response)?
+        );
+    }
+
+    Ok(())
 }
 
 impl From<SapArgs> for ProjectFlags {

@@ -15,6 +15,7 @@ bitflags = "2.6.0"
 clap = { version = "4.5.19", features = ["derive"], optional = true }
 csv = "1.3.0"
 derivative = "2.2.0"
+erased-serde = "0.4.5"
 formatx = "0.2.2"
 indexmap = { version = "2.6.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.8", optional = true }

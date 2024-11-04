@@ -3,6 +3,8 @@ use crate::output::Output;
 #[cfg(feature = "fhs")]
 use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 use crate::{CalculationKey, CalculationResultsWithContext, ProjectFlags};
+use erased_serde::Serialize as ErasedSerialize;
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 
 #[cfg(feature = "fhs")]
@@ -23,7 +25,7 @@ pub(crate) trait HemWrapper {
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<Option<HemResponse>>;
 }
 
 /// A HEM wrapper that does nothing, so can be used in cases when the input for core HEM
@@ -50,8 +52,26 @@ impl HemWrapper for PassthroughHemWrapper {
         _output: &impl Output,
         _results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         _flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
-        Ok(())
+    ) -> anyhow::Result<Option<HemResponse>> {
+        Ok(None)
+    }
+}
+
+#[derive(Serialize)]
+pub struct HemResponse {
+    #[serde(flatten)]
+    payload: Box<dyn ErasedSerialize + 'static>,
+}
+
+impl HemResponse {
+    pub(crate) fn new(payload: impl ErasedSerialize + 'static) -> Self {
+        Self {
+            payload: Box::new(payload),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.payload.serialize(serializer)
     }
 }
 
@@ -71,11 +91,17 @@ impl HemWrapper for ChosenWrapper {
         flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         match self {
-            ChosenWrapper::Passthrough(wrapper) => wrapper.apply_preprocessing(input, flags),
+            ChosenWrapper::Passthrough(wrapper) => {
+                <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
+            }
             #[cfg(feature = "fhs")]
-            ChosenWrapper::FhsSingleCalc(wrapper) => wrapper.apply_preprocessing(input, flags),
+            ChosenWrapper::FhsSingleCalc(wrapper) => {
+                <FhsSingleCalcWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
+            }
             #[cfg(feature = "fhs")]
-            ChosenWrapper::FhsCompliance(wrapper) => wrapper.apply_preprocessing(input, flags),
+            ChosenWrapper::FhsCompliance(wrapper) => {
+                <FhsComplianceWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
+            }
         }
     }
 
@@ -84,7 +110,7 @@ impl HemWrapper for ChosenWrapper {
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<HemResponse>> {
         match self {
             ChosenWrapper::Passthrough(wrapper) => {
                 wrapper.apply_postprocessing(output, results, flags)

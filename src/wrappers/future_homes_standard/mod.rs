@@ -4,7 +4,7 @@ use crate::wrappers::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
 use crate::wrappers::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
-use crate::wrappers::{HemWrapper, PassthroughHemWrapper};
+use crate::wrappers::{HemResponse, HemWrapper, PassthroughHemWrapper};
 use crate::{
     CalculationContext, CalculationKey, CalculationResultsWithContext, ProjectFlags, RunResults,
 };
@@ -12,7 +12,6 @@ use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use tracing::debug;
 
 mod fhs_appliance;
 mod fhs_compliance_response;
@@ -39,7 +38,11 @@ impl HemWrapper for FhsSingleCalcWrapper {
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         do_fhs_preprocessing(&mut input, flags)?;
 
-        PassthroughHemWrapper::new().apply_preprocessing(input, flags)
+        <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(
+            &PassthroughHemWrapper::new(),
+            input,
+            flags,
+        )
     }
 
     fn apply_postprocessing(
@@ -47,7 +50,7 @@ impl HemWrapper for FhsSingleCalcWrapper {
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<HemResponse>> {
         let results = results
             .get(&CalculationKey::Primary)
             .expect("A primary calculation was expected in the FHS single calc wrapper");
@@ -86,16 +89,15 @@ impl HemWrapper for FhsComplianceWrapper {
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         _flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<HemResponse>> {
         for (key, flags) in FHS_COMPLIANCE_CALCULATIONS.iter() {
             do_fhs_postprocessing(output, &results[key], flags)?;
         }
 
         let compliance_result = CalculatedComplianceResult::try_from(results)?;
         let compliance_response = FhsComplianceResponse::build_from(&compliance_result)?;
-        debug!("{}", serde_json::to_string(&compliance_response)?);
 
-        Ok(())
+        Ok(Some(HemResponse::new(compliance_response)))
     }
 }
 
@@ -156,7 +158,7 @@ fn do_fhs_postprocessing(
     output: &impl Output,
     results: &CalculationResultsWithContext,
     flags: &ProjectFlags,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<HemResponse>> {
     let input = results.context.input;
     let RunResults {
         timestep_array,
@@ -199,5 +201,5 @@ fn do_fhs_postprocessing(
         )?;
     }
 
-    Ok(())
+    Ok(None)
 }
