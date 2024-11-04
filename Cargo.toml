@@ -24,7 +24,7 @@ itertools = "0.13.0"
 log = "0.4.22"
 nalgebra = "0.33.1"
 ode_solvers = "0.5.0"
-ordered-float = "4.4.0"
+ordered-float = "4.5.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
