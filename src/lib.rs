@@ -29,6 +29,7 @@ use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
+#[cfg(feature = "fhs")]
 use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
