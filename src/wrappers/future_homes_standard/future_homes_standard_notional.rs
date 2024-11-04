@@ -535,8 +535,23 @@ static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
     ])
 });
 
-fn edit_add_heatnetwork_heating() {
-    todo!()
+///  Apply heat network settings to notional building calculation in project_dict.
+fn edit_add_heatnetwork_heating(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let heat_network_name = "heat network";
+
+    let notional_heat_network = serde_json::from_value(json!(
+     {
+        "notionalHIU": {
+            "type": "HIU",
+            "EnergySupply": heat_network_name,
+            "power_max": 45,
+            "HIU_daily_loss": 0.8,
+            "building_level_distribution_losses": 62,
+        }
+    }))?;
+
+    input.set_heat_source_wet(notional_heat_network);
+    Ok(())
 }
 
 fn edit_add_default_space_heating_system() {
@@ -1100,7 +1115,8 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyKey, EnergySupplyType, OnSiteGeneration, WaterPipeworkSimple,
+        self, EnergySupplyKey, EnergySupplyType, HeatSourceWet, OnSiteGeneration,
+        WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1378,6 +1394,41 @@ mod tests {
             "volume": 20.0
         }}))
         .unwrap()
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_edit_add_heatnetwork_heating(mut test_input: InputForProcessing) {
+        let heat_network_name = "heat network";
+
+        let expected_heat_source_wet: HeatSourceWet = serde_json::from_value(json!({
+            "notionalHIU": {
+                "type": "HIU",
+                "EnergySupply": heat_network_name,
+                "power_max": 45,
+                "HIU_daily_loss": 0.8,
+                "building_level_distribution_losses": 62,
+            }
+        }))
+        .unwrap();
+
+        // let expected_hot_water_source: HotWaterSource = serde_json::from_value(json!({
+        // "hw cylinder": {
+        //     "type": "HIU",
+        //     "ColdWaterSource": "mains water",
+        //     "HeatSourceWet": "boiler",
+        //     }
+        // }))
+        // .unwrap();
+
+        edit_add_heatnetwork_heating(&mut test_input).unwrap();
+
+        assert_eq!(
+            test_input.heat_source_wet().unwrap(),
+            &expected_heat_source_wet
+        );
+
+        // assert_eq!(test_input.hot_water_source(), &expected_hot_water_source);
     }
 
     #[rstest]

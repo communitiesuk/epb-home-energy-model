@@ -2078,7 +2078,7 @@ pub enum WaterHeatingSchedule {
 
 pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
-#[derive(Clone, Debug, Deserialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Validate, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
@@ -2216,7 +2216,7 @@ pub enum HeatPumpBackupControlType {
     Substitute,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2247,7 +2247,7 @@ pub struct HeatPumpTestDatum {
     pub ext_air_ratio: Option<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2268,7 +2268,7 @@ pub struct HeatPumpBoiler {
     pub(crate) cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2279,7 +2279,7 @@ pub(crate) struct BoilerCostScheduleHybrid {
     pub cost_schedule_boiler: NumericSchedule,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceLocation {
@@ -3947,6 +3947,10 @@ impl InputForProcessing {
             .infiltration_ventilation
             .noise_nuisance
             .unwrap_or(false)
+    }
+
+    pub(crate) fn set_heat_source_wet(&mut self, heat_source_wet: HeatSourceWet) {
+        self.input.heat_source_wet = Some(heat_source_wet);
     }
 
     pub(crate) fn heat_source_wet(&self) -> Option<&IndexMap<String, HeatSourceWetDetails>> {
