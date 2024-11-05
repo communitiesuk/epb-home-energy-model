@@ -3315,8 +3315,7 @@ impl InputForProcessing {
         self.input.space_cool_system.as_ref()
     }
 
-    #[cfg(test)]
-    pub fn space_heat_system_keys(&self) -> anyhow::Result<Vec<&str>> {
+    pub fn space_heat_system_keys(&self) -> anyhow::Result<Vec<String>> {
         let keys = self
             .input
             .space_heat_system
@@ -3325,7 +3324,7 @@ impl InputForProcessing {
                 "There is no space heat system provided at the root of the input"
             ))?
             .into_iter()
-            .map(|(system_key, _)| system_key.as_str())
+            .map(|(system_key, _)| system_key.clone())
             .collect_vec();
 
         Ok(keys)
@@ -3385,8 +3384,9 @@ impl InputForProcessing {
             .advanced_start())
     }
 
-    pub fn set_advance_start_for_space_heat_systems(
+    pub fn set_advance_start_for_space_heat_system(
         &mut self,
+        space_heat_system: &str,
         new_advanced_start: f64,
     ) -> anyhow::Result<()> {
         self.input
@@ -3395,8 +3395,11 @@ impl InputForProcessing {
             .ok_or_else(|| {
                 anyhow!("There is no space heat system provided at the root of the input")
             })?
-            .into_iter()
-            .for_each(|(_, system_details)| system_details.set_advanced_start(new_advanced_start));
+            .get_mut(space_heat_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_heat_system}'"
+            ))?
+            .set_advanced_start(new_advanced_start);
         Ok(())
     }
 

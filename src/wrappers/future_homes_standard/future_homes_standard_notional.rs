@@ -592,7 +592,16 @@ fn edit_default_space_heating_distribution_system() {
 fn edit_heatnetwork_space_heating_distribution_system(
     input: &mut InputForProcessing,
 ) -> anyhow::Result<()> {
-    input.set_advance_start_for_space_heat_systems(1.)?;
+    let space_heat_system_keys: Vec<String> = input.space_heat_system_keys()?;
+
+    for system in space_heat_system_keys {
+        let advanced_start = input.advanced_start_for_space_heat_system(&system)?;
+
+        match advanced_start {
+            Some(_) => input.set_advance_start_for_space_heat_system(&system, 1.)?,
+            None => return Err(anyhow!("Notional wrapper expects there to be an advanced start field on the space heat system")),
+        }
+    }
 
     input.set_temperature_setback_for_space_heat_systems(None)?;
 
@@ -1537,17 +1546,17 @@ mod tests {
 
         for system in test_input.space_heat_system_keys().unwrap() {
             let advanced_start = test_input
-                .advanced_start_for_space_heat_system(system)
+                .advanced_start_for_space_heat_system(&system)
                 .unwrap();
             assert_eq!(advanced_start, Some(1.));
 
             let temp_setback = test_input
-                .temperature_setback_for_space_heat_system(system)
+                .temperature_setback_for_space_heat_system(&system)
                 .unwrap();
             assert_eq!(temp_setback, None);
 
             let heat_source = test_input
-                .heat_source_for_space_heat_system(system)
+                .heat_source_for_space_heat_system(&system)
                 .unwrap()
                 .unwrap();
 
