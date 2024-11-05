@@ -3388,32 +3388,32 @@ impl InputForProcessing {
         &mut self,
         new_advanced_start: f64,
     ) -> anyhow::Result<()> {
-        Ok(self
-            .input
+        self.input
             .space_heat_system
             .as_mut()
-            .ok_or(anyhow!(
-                "There is no space heat system provided at the root of the input"
-            ))?
+            .ok_or_else(|| {
+                anyhow!("There is no space heat system provided at the root of the input")
+            })?
             .into_iter()
-            .map(|(_, system_details)| system_details.set_advanced_start(new_advanced_start))
-            .collect())
+            .for_each(|(_, system_details)| system_details.set_advanced_start(new_advanced_start));
+        Ok(())
     }
 
     pub fn set_temperature_setback_for_space_heat_systems(
         &mut self,
         new_temperature_setback: Option<f64>,
     ) -> anyhow::Result<()> {
-        Ok(self
-            .input
+        self.input
             .space_heat_system
             .as_mut()
-            .ok_or(anyhow!(
-                "There is no space heat system provided at the root of the input"
-            ))?
+            .ok_or_else(|| {
+                anyhow!("There is no space heat system provided at the root of the input")
+            })?
             .into_iter()
-            .map(|(_, system_details)| system_details.set_temp_setback(new_temperature_setback))
-            .collect())
+            .for_each(|(_, system_details)| {
+                system_details.set_temp_setback(new_temperature_setback)
+            });
+        Ok(())
     }
 
     #[cfg(test)]
@@ -3425,13 +3425,15 @@ impl InputForProcessing {
             .input
             .space_heat_system
             .as_ref()
-            .ok_or(anyhow!(
-                "There is no space heat system provided at the root of the input"
-            ))?
+            .ok_or_else(|| {
+                anyhow!("There is no space heat system provided at the root of the input")
+            })?
             .get(space_heat_system)
-            .ok_or(anyhow!(
-                "There is no provided space heat system with the name '{space_heat_system}'"
-            ))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "There is no provided space heat system with the name '{space_heat_system}'"
+                )
+            })?
             .heat_source())
     }
 
@@ -3439,16 +3441,15 @@ impl InputForProcessing {
         &mut self,
         heat_source: SpaceHeatSystemHeatSource,
     ) -> anyhow::Result<()> {
-        Ok(self
-            .input
+        self.input
             .space_heat_system
             .as_mut()
             .ok_or(anyhow!(
                 "There is no space heat system provided at the root of the input"
             ))?
             .into_iter()
-            .map(|(_, system_details)| system_details.set_heat_source(heat_source.clone()))
-            .collect())
+            .for_each(|(_, system_details)| system_details.set_heat_source(heat_source.clone()));
+        Ok(())
     }
 
     pub(crate) fn set_hot_water_source(&mut self, hot_water_source: HotWaterSource) {
