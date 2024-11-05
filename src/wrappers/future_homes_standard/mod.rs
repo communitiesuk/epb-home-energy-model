@@ -1,5 +1,8 @@
 use crate::input::{Input, InputForProcessing};
 use crate::output::Output;
+use crate::wrappers::future_homes_standard::fhs_compliance_response::{
+    CalculatedComplianceResult, FhsComplianceResponse,
+};
 use crate::wrappers::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
 use crate::wrappers::{HemWrapper, PassthroughHemWrapper};
 use crate::{
@@ -9,6 +12,7 @@ use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use tracing::debug;
 
 mod fhs_appliance;
 mod fhs_compliance_response;
@@ -86,6 +90,11 @@ impl HemWrapper for FhsComplianceWrapper {
         for (key, flags) in FHS_COMPLIANCE_CALCULATIONS.iter() {
             do_fhs_postprocessing(output, &results[key], flags)?;
         }
+
+        let compliance_result = CalculatedComplianceResult::try_from(results)?;
+        let compliance_response = FhsComplianceResponse::build_from(&compliance_result)?;
+        debug!("{}", serde_json::to_string(&compliance_response)?);
+
         Ok(())
     }
 }

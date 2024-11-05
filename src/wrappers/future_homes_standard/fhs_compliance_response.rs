@@ -6,11 +6,12 @@ use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabr
 use crate::{build_summary_data, CalculationKey, CalculationResultsWithContext, SummaryData};
 use anyhow::anyhow;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::Serialize;
 use std::collections::HashMap;
 
 #[derive(Serialize)]
-struct FhsComplianceResponse {
+pub struct FhsComplianceResponse {
     dwelling_emission_rate: f64,
     target_emission_rate: f64,
     emission_rate_compliant: bool,
@@ -26,7 +27,7 @@ struct FhsComplianceResponse {
 }
 
 impl FhsComplianceResponse {
-    fn build_from<T>(result: &T) -> anyhow::Result<Self>
+    pub(super) fn build_from<T>(result: &T) -> anyhow::Result<Self>
     where
         T: FhsComplianceCalculationResult,
     {
@@ -62,7 +63,7 @@ impl FhsComplianceResponse {
 }
 
 /// A trait to define data on the underlying calculation result that an FHS compliance result requires.
-trait FhsComplianceCalculationResult {
+pub(super) trait FhsComplianceCalculationResult {
     fn dwelling_emission_rate(&self) -> f64;
     fn target_emission_rate(&self) -> f64;
     fn dwelling_primary_energy_rate(&self) -> f64;
@@ -75,7 +76,7 @@ trait FhsComplianceCalculationResult {
 }
 
 #[derive(Clone, Serialize)]
-struct EnergyDemand {
+pub(super) struct EnergyDemand {
     space_heating: PerformanceValue,
     space_cooling: PerformanceValue,
 }
@@ -108,7 +109,7 @@ impl<'a>
 }
 
 #[derive(Clone, Serialize)]
-struct DeliveredEnergyUse {
+pub(super) struct DeliveredEnergyUse {
     total: PerformanceValue,
     by_system: IndexMap<String, PerformanceValue>,
 }
@@ -140,20 +141,19 @@ impl
                 / total_floor_area,
         };
         let by_system = dwelling_energy_use
-            .first()
-            .unwrap()
-            .1
-            .keys()
+            .iter()
+            .flat_map(|(_, energy_use)| energy_use.keys())
+            .unique()
             .map(|key| {
                 (key.to_string(), {
                     let dwelling_use = dwelling_energy_use
                         .values()
-                        .map(|fuel_energy_use| fuel_energy_use[key])
+                        .map(|fuel_energy_use| fuel_energy_use.get(key).unwrap_or(&0.))
                         .sum::<f64>()
                         / total_floor_area;
                     let target_use = target_energy_use
                         .values()
-                        .map(|fuel_energy_use| fuel_energy_use[key])
+                        .map(|fuel_energy_use| fuel_energy_use.get(key).unwrap_or(&0.))
                         .sum::<f64>()
                         / total_floor_area;
                     PerformanceValue {
@@ -169,12 +169,12 @@ impl
 }
 
 #[derive(Clone, Copy, Serialize)]
-struct PerformanceValue {
+pub(super) struct PerformanceValue {
     actual: f64,
     notional: f64,
 }
 
-struct CalculatedComplianceResult {
+pub(super) struct CalculatedComplianceResult {
     dwelling_final_rates: FinalRates,
     target_final_rates: FinalRates,
     dwelling_fabric_energy_efficiency: f64,
