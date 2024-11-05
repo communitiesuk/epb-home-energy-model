@@ -4,13 +4,13 @@ use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplies;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
-use crate::core::units::convert_profile_to_daily;
+use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
-use crate::corpus::ColdWaterSources;
+use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
     BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
     HotWaterSource, SpaceHeatSystemHeatSource, WaterHeatingEventType, WaterPipeContentsType,
@@ -20,7 +20,8 @@ use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
 use crate::wrappers::future_homes_standard::future_homes_standard::{
     calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    HW_TEMPERATURE, SIMTIME_END, SIMTIME_START, SIMTIME_STEP,
+    create_window_opening_schedule, HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS,
+    REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START, SIMTIME_STEP,
 };
 use crate::{
     compare_floats::max_of_2,
@@ -42,6 +43,7 @@ use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
+use tracing::instrument;
 
 const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
 const NOTIONAL_HP: &str = "notional_HP";
@@ -1035,11 +1037,55 @@ fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn calc_design_capacity() {
-    todo!()
+#[instrument(skip(input))]
+fn calc_design_capacity(
+    input: &InputForProcessing,
+) -> anyhow::Result<(IndexMap<String, f64>, f64)> {
+    let mut clone = input.clone();
+    clone.remove_space_heat_systems();
+    clone.clear_appliance_gains();
+
+    // Remove WWHRS. It is not needed in this part of the calculation and
+    // initialisation relies on existence of ColdWaterSource object, which has not
+    // been set yet.
+    clone.remove_wwhrs();
+    clone.remove_wwhrs_references_from_all_showers();
+
+    // Set window opening schedule (required for initialisation of Project, but does not affect
+    // HTC/HLP calculation
+    create_window_opening_schedule(&mut clone)?;
+
+    // Set initial temperature set point for all zones
+    initialise_temperature_setpoints(&mut clone)?;
+
+    // create a corpus instance
+    let corpus: Corpus = (&clone).try_into()?;
+
+    // Calculate heat transfer coefficients and heat loss parameters
+    let (_heat_trans_coeff, _heat_loss_param, htc_dict, _hlp_dict) = corpus.calc_htc_hlp();
+
+    // Calculate design capacity
+    let min_air_temp = *input.external_conditions().air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
+    let set_point = LIVING_ROOM_SETPOINT_FHS.max(REST_OF_DWELLING_SETPOINT_FHS);
+    let temperature_difference = set_point - min_air_temp;
+    let design_capacity_map: IndexMap<String, f64> = input
+        .zone_keys()
+        .into_iter()
+        .map(|key| {
+            (key.to_owned(), {
+                let design_heat_loss = htc_dict[&key] * temperature_difference;
+                let design_capacity = 2. * design_heat_loss;
+                design_capacity / WATTS_PER_KILOWATT as f64
+            })
+        })
+        .collect();
+
+    let design_capacity_overall = design_capacity_map.values().sum::<f64>();
+
+    Ok((design_capacity_map, design_capacity_overall))
 }
 
-/// Intitilise temperature setpoints for all zones.
+/// Initialise temperature setpoints for all zones.
 /// The initial set point is needed to call the Project class.
 /// Set as 18C for now. The FHS wrapper will overwrite temp_setpnt_init '''
 fn initialise_temperature_setpoints(input: &mut InputForProcessing) -> anyhow::Result<()> {

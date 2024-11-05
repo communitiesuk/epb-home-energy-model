@@ -1,5 +1,6 @@
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
+use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
@@ -3582,6 +3583,23 @@ impl InputForProcessing {
         Ok(())
     }
 
+    pub(crate) fn remove_wwhrs_references_from_all_showers(&mut self) {
+        self.input
+            .hot_water_demand
+            .shower
+            .iter_mut()
+            .flat_map(|hwd| hwd.0.values_mut())
+            .for_each(|shower| {
+                if let Shower::MixerShower {
+                    ref mut waste_water_heat_recovery,
+                    ..
+                } = shower
+                {
+                    *waste_water_heat_recovery = None;
+                }
+            });
+    }
+
     pub(crate) fn baths(&self) -> Option<&Baths> {
         self.input.hot_water_demand.bath.as_ref()
     }
@@ -4223,6 +4241,14 @@ impl InputForProcessing {
     pub fn set_zone(&mut self, zone: ZoneDictionary) -> &Self {
         self.input.zone = zone;
         self
+    }
+}
+
+impl TryFrom<&InputForProcessing> for Corpus {
+    type Error = anyhow::Error;
+
+    fn try_from(input: &InputForProcessing) -> Result<Self, Self::Error> {
+        Corpus::from_inputs(&input.input, None)
     }
 }
 

@@ -40,8 +40,8 @@ const GAS_COOK_OBJ_NAME: &str = "Gascooking";
 const HW_TIMER_MAIN_NAME: &str = "hw timer";
 const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
 
-const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
-const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
+pub(super) const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
+pub(super) const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
 
 pub(crate) const SIMTIME_START: f64 = 0.;
 pub(crate) const SIMTIME_END: f64 = 8760.;
@@ -2048,7 +2048,7 @@ pub(super) fn create_hot_water_use_pattern(
     Ok(())
 }
 
-fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
+pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let window_opening_setpoint = 22.0;
 
     input.add_control(
