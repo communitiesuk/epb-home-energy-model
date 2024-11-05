@@ -1318,10 +1318,13 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
+        advanced_start: Option<f64>,
         temp_setback: Option<f64>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
+        #[serde(rename = "HeatSource")]
+        heat_source: Option<SpaceHeatSystemHeatSource>,
         #[serde(rename = "Control")]
         control: Option<String>,
         // not sure what the possible options are here yet
@@ -1332,6 +1335,7 @@ pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "ElecStorageHeater")]
     #[allow(dead_code)]
     ElectricStorageHeater {
+        advanced_start: Option<f64>,
         temp_charge_cut: f64,
         rated_power: f64,
         rated_power_instant: f64,
@@ -1354,6 +1358,8 @@ pub(crate) enum SpaceHeatSystemDetails {
         n_units: u32,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
+        #[serde(rename = "HeatSource")]
+        heat_source: Option<SpaceHeatSystemHeatSource>,
         #[serde(rename = "Control")]
         control: Option<String>,
         // don't know possible options here
@@ -1362,6 +1368,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         // don't know possible options here
         #[serde(rename = "Zone")]
         zone: String, // think these are just arbitrary names?
+        temp_setback: Option<f64>,
     },
     #[allow(dead_code)]
     WetDistribution {
@@ -1381,15 +1388,18 @@ pub(crate) enum SpaceHeatSystemDetails {
         design_flow_temp: i32,
         #[serde(rename = "Zone")]
         zone: String, // as above, these are likely arbitrary names
+        temp_setback: Option<f64>,
     },
     #[allow(dead_code)]
     WarmAir {
+        advanced_start: Option<f64>,
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
         #[serde(rename = "Control")]
         control: Option<String>,
+        temp_setback: Option<f64>,
     },
 }
 
@@ -1423,19 +1433,114 @@ impl SpaceHeatSystemDetails {
     pub fn temp_setback(&self) -> Option<f64> {
         match self {
             SpaceHeatSystemDetails::InstantElectricHeater { temp_setback, .. } => *temp_setback,
-            _ => None,
+            SpaceHeatSystemDetails::WetDistribution { temp_setback, .. } => *temp_setback,
+            SpaceHeatSystemDetails::ElectricStorageHeater { temp_setback, .. } => *temp_setback,
+            SpaceHeatSystemDetails::WarmAir { temp_setback, .. } => *temp_setback,
+        }
+    }
+
+    pub(crate) fn set_temp_setback(&mut self, new_temp_setback: Option<f64>) {
+        match self {
+            SpaceHeatSystemDetails::InstantElectricHeater { temp_setback, .. } => {
+                *temp_setback = new_temp_setback;
+            }
+            SpaceHeatSystemDetails::WetDistribution { temp_setback, .. } => {
+                *temp_setback = new_temp_setback;
+            }
+            SpaceHeatSystemDetails::ElectricStorageHeater { temp_setback, .. } => {
+                *temp_setback = new_temp_setback;
+            }
+            SpaceHeatSystemDetails::WarmAir { temp_setback, .. } => {
+                *temp_setback = new_temp_setback;
+            }
         }
     }
 
     pub fn advanced_start(&self) -> Option<f64> {
         match self {
             SpaceHeatSystemDetails::WetDistribution { advanced_start, .. } => *advanced_start,
-            _ => None,
+            SpaceHeatSystemDetails::InstantElectricHeater { advanced_start, .. } => *advanced_start,
+            SpaceHeatSystemDetails::ElectricStorageHeater { advanced_start, .. } => *advanced_start,
+            SpaceHeatSystemDetails::WarmAir { advanced_start, .. } => *advanced_start,
+        }
+    }
+
+    pub(crate) fn set_advanced_start(&mut self, new_advance_start: f64) {
+        match self {
+            SpaceHeatSystemDetails::WetDistribution {
+                ref mut advanced_start,
+                ..
+            } => {
+                *advanced_start = Some(new_advance_start);
+            }
+            SpaceHeatSystemDetails::InstantElectricHeater {
+                ref mut advanced_start,
+                ..
+            } => {
+                *advanced_start = Some(new_advance_start);
+            }
+            SpaceHeatSystemDetails::ElectricStorageHeater {
+                ref mut advanced_start,
+                ..
+            } => {
+                *advanced_start = Some(new_advance_start);
+            }
+            SpaceHeatSystemDetails::WarmAir {
+                ref mut advanced_start,
+                ..
+            } => {
+                *advanced_start = Some(new_advance_start);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn heat_source(&self) -> Option<SpaceHeatSystemHeatSource> {
+        match self {
+            SpaceHeatSystemDetails::InstantElectricHeater { heat_source, .. } => {
+                heat_source.clone()
+            }
+            SpaceHeatSystemDetails::WetDistribution { heat_source, .. } => {
+                Some(heat_source.clone())
+            }
+            SpaceHeatSystemDetails::ElectricStorageHeater { heat_source, .. } => {
+                heat_source.clone()
+            }
+            SpaceHeatSystemDetails::WarmAir { heat_source, .. } => Some(heat_source.clone()),
+        }
+    }
+
+    pub(crate) fn set_heat_source(&mut self, new_heat_source: SpaceHeatSystemHeatSource) {
+        match self {
+            SpaceHeatSystemDetails::InstantElectricHeater {
+                ref mut heat_source,
+                ..
+            } => {
+                *heat_source = Some(new_heat_source);
+            }
+            SpaceHeatSystemDetails::WetDistribution {
+                ref mut heat_source,
+                ..
+            } => {
+                *heat_source = new_heat_source;
+            }
+            SpaceHeatSystemDetails::ElectricStorageHeater {
+                ref mut heat_source,
+                ..
+            } => {
+                *heat_source = Some(new_heat_source);
+            }
+            SpaceHeatSystemDetails::WarmAir {
+                ref mut heat_source,
+                ..
+            } => {
+                *heat_source = new_heat_source;
+            }
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -3209,6 +3314,22 @@ impl InputForProcessing {
         self.input.space_cool_system.as_ref()
     }
 
+    #[cfg(test)]
+    pub fn space_heat_system_keys(&self) -> anyhow::Result<Vec<&str>> {
+        let keys = self
+            .input
+            .space_heat_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .into_iter()
+            .map(|(system_key, _)| system_key.as_str())
+            .collect_vec();
+
+        Ok(keys)
+    }
+
     pub fn temperature_setback_for_space_heat_system(
         &self,
         space_heat_system: &str,
@@ -3261,6 +3382,73 @@ impl InputForProcessing {
                 "There is no provided space heat system with the name '{space_heat_system}'"
             ))?
             .advanced_start())
+    }
+
+    pub fn set_advance_start_for_space_heat_systems(
+        &mut self,
+        new_advanced_start: f64,
+    ) -> anyhow::Result<()> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_mut()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .into_iter()
+            .map(|(_, system_details)| system_details.set_advanced_start(new_advanced_start))
+            .collect())
+    }
+
+    pub fn set_temperature_setback_for_space_heat_systems(
+        &mut self,
+        new_temperature_setback: Option<f64>,
+    ) -> anyhow::Result<()> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_mut()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .into_iter()
+            .map(|(_, system_details)| system_details.set_temp_setback(new_temperature_setback))
+            .collect())
+    }
+
+    #[cfg(test)]
+    pub fn heat_source_for_space_heat_system(
+        &self,
+        space_heat_system: &str,
+    ) -> anyhow::Result<Option<SpaceHeatSystemHeatSource>> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .get(space_heat_system)
+            .ok_or(anyhow!(
+                "There is no provided space heat system with the name '{space_heat_system}'"
+            ))?
+            .heat_source())
+    }
+
+    pub(crate) fn set_heat_source_for_space_heat_system(
+        &mut self,
+        heat_source: SpaceHeatSystemHeatSource,
+    ) -> anyhow::Result<()> {
+        Ok(self
+            .input
+            .space_heat_system
+            .as_mut()
+            .ok_or(anyhow!(
+                "There is no space heat system provided at the root of the input"
+            ))?
+            .into_iter()
+            .map(|(_, system_details)| system_details.set_heat_source(heat_source.clone()))
+            .collect())
     }
 
     pub(crate) fn set_hot_water_source(&mut self, hot_water_source: HotWaterSource) {

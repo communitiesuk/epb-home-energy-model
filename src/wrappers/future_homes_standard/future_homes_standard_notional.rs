@@ -13,8 +13,8 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::ColdWaterSources;
 use crate::input::{
     BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
-    HotWaterSource, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
-    WaterPipeworkLocation,
+    HotWaterSource, SpaceHeatSystemHeatSource, WaterHeatingEventType, WaterPipeContentsType,
+    WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -586,8 +586,21 @@ fn edit_default_space_heating_distribution_system() {
     todo!()
 }
 
-fn edit_heatnetwork_space_heating_distribution_system() {
-    todo!()
+/// Edit distribution system details to notional building heat network
+fn edit_heatnetwork_space_heating_distribution_system(
+    input: &mut InputForProcessing,
+) -> anyhow::Result<()> {
+    input.set_advance_start_for_space_heat_systems(1.)?;
+
+    input.set_temperature_setback_for_space_heat_systems(None)?;
+
+    let notional_heat_source: SpaceHeatSystemHeatSource =
+        serde_json::from_value(json!({"name": "notionalHIU"})).unwrap();
+    input
+        .set_heat_source_for_space_heat_system(notional_heat_source)
+        .unwrap();
+
+    Ok(())
 }
 fn edit_bath_shower_other(
     input: &mut InputForProcessing,
@@ -1140,7 +1153,7 @@ mod tests {
     use super::*;
     use crate::input::{
         self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
-        OnSiteGeneration, WaterPipeworkSimple,
+        OnSiteGeneration, SpaceHeatSystemHeatSource, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1469,6 +1482,34 @@ mod tests {
             test_input.energy_supply_by_key(heat_network_name),
             Some(&expected_heat_network_fuel_data)
         );
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_edit_heatnetwork_space_heating_distribution_system(mut test_input: InputForProcessing) {
+        edit_heatnetwork_space_heating_distribution_system(&mut test_input).unwrap();
+
+        for system in test_input.space_heat_system_keys().unwrap() {
+            let advanced_start = test_input
+                .advanced_start_for_space_heat_system(system)
+                .unwrap();
+            assert_eq!(advanced_start, Some(1.));
+
+            let temp_setback = test_input
+                .temperature_setback_for_space_heat_system(system)
+                .unwrap();
+            assert_eq!(temp_setback, None);
+
+            let heat_source = test_input
+                .heat_source_for_space_heat_system(system)
+                .unwrap()
+                .unwrap();
+
+            let expected_heat_source: SpaceHeatSystemHeatSource =
+                serde_json::from_value(json!({"name": "notionalHIU"})).unwrap();
+
+            assert_eq!(heat_source, expected_heat_source)
+        }
     }
 
     #[rstest]
