@@ -580,8 +580,38 @@ fn edit_add_heatnetwork_heating(
     Ok(())
 }
 
-fn edit_add_default_space_heating_system() {
-    todo!()
+fn edit_add_default_space_heating_system(input: &mut InputForProcessing, design_capacity_overall: f64) -> anyhow::Result<()> {
+
+    let notional_hp = serde_json::from_value(json!(
+     {
+        "notional_HP": {
+            "EnergySupply": "mains elec",
+            "backup_ctrl_type": "TopUp",
+            "min_modulation_rate_35": 0.4,
+            "min_modulation_rate_55": 0.4,
+            "min_temp_diff_flow_return_for_hp_to_operate": 0,
+            "modulating_control": true,
+            "power_crankcase_heater": 0.01,
+            //"power_heating_circ_pump": capacity_results_dict_55['F'] * 0.003,
+            "power_heating_circ_pump": 5.0 * 0.003, // TODO use above line instead
+            "power_max_backup": 3,
+            "power_off": 0,
+            "power_source_circ_pump": 0.01,
+            "power_standby": 0.01,
+            "sink_type": "Water",
+            "source_type": "OutsideAir",
+            "temp_lower_operating_limit": -10,
+            "temp_return_feed_max": 60,
+            "test_data": [], // TODO implement test data
+            "time_constant_onoff_operation": 120,
+            "time_delay_backup": 1,
+            "type": "HeatPump",
+            "var_flow_temp_ctrl_during_test": true
+        }
+    }))?;
+
+    input.set_heat_source_wet(notional_hp);
+    Ok(())
 }
 
 fn edit_default_space_heating_distribution_system() {
@@ -2264,5 +2294,18 @@ mod tests {
         add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area).unwrap();
 
         assert_eq!(*test_input.on_site_generation().unwrap(), expected_result);
+    }
+
+    #[rstest]
+    fn test_edit_add_default_space_heating_system(mut test_input: InputForProcessing) {
+        let design_capacity_overall = 7.4;
+        edit_add_default_space_heating_system(&mut test_input, design_capacity_overall).unwrap();
+
+        assert_eq!(test_input.heat_source_wet().unwrap().len(), 1);
+
+        let notional_hp = test_input.heat_source_wet().unwrap().get(NOTIONAL_HP);
+        assert!(notional_hp.is_some());
+
+        // TODO more specific assertions
     }
 }
