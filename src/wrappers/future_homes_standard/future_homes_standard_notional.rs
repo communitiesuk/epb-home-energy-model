@@ -580,8 +580,10 @@ fn edit_add_heatnetwork_heating(
     Ok(())
 }
 
-fn edit_add_default_space_heating_system(input: &mut InputForProcessing, design_capacity_overall: f64) -> anyhow::Result<()> {
-
+fn edit_add_default_space_heating_system(
+    input: &mut InputForProcessing,
+    design_capacity_overall: f64,
+) -> anyhow::Result<()> {
     let notional_hp = serde_json::from_value(json!(
      {
         "notional_HP": {
@@ -625,21 +627,14 @@ fn edit_heatnetwork_space_heating_distribution_system(
     let space_heat_system_keys: Vec<String> = input.space_heat_system_keys()?;
 
     for system in space_heat_system_keys {
-        let advanced_start = input.advanced_start_for_space_heat_system(&system)?;
-
-        match advanced_start {
-            Some(_) => input.set_advance_start_for_space_heat_system(&system, 1.)?,
-            None => return Err(anyhow!("Notional wrapper expects there to be an advanced start field on the space heat system")),
-        }
+        input.set_advance_start_for_space_heat_system(&system, 1.)?;
     }
 
     input.set_temperature_setback_for_space_heat_systems(None)?;
 
     let notional_heat_source: SpaceHeatSystemHeatSource =
-        serde_json::from_value(json!({"name": "notionalHIU"})).unwrap();
-    input
-        .set_heat_source_for_space_heat_system(notional_heat_source)
-        .unwrap();
+        serde_json::from_value(json!({"name": "notionalHIU"}))?;
+    input.set_heat_source_for_space_heat_system(notional_heat_source)?;
 
     Ok(())
 }
