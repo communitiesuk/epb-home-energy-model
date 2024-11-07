@@ -3794,6 +3794,14 @@ impl InputForProcessing {
         self
     }
 
+    #[cfg(test)]
+    pub fn space_heat_system_for_key(&self, key: &str) -> Option<&SpaceHeatSystemDetails> {
+        self.input
+            .space_heat_system
+            .as_ref()
+            .and_then(|systems| systems.get(key))
+    }
+
     pub fn set_space_heat_system_for_key(
         &mut self,
         key: &str,

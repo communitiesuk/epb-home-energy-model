@@ -4,7 +4,9 @@ use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplies;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
-use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
+use crate::core::units::{
+    convert_profile_to_daily, JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT,
+};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
@@ -50,6 +52,7 @@ const NOTIONAL_HP: &str = "notional_HP";
 const NOTIONAL_BATH_NAME: &str = "medium";
 const NOTIONAL_SHOWER_NAME: &str = "mixer";
 const NOTIONAL_OTHER_HW_NAME: &str = "other";
+const HEATING_PATTERN: &str = "HeatingPattern_Null";
 
 /// Apply assumptions and pre-processing steps for the Future Homes Standard Notional building
 pub(crate) fn apply_fhs_notional_preprocessing(
@@ -729,8 +732,77 @@ fn edit_add_default_space_heating_system(input: &mut InputForProcessing, design_
     Ok(())
 }
 
-fn edit_default_space_heating_distribution_system() {
-    todo!()
+/// Apply distribution system details to notional building calculation
+fn edit_default_space_heating_distribution_system(
+    input: &mut InputForProcessing,
+    design_capacity: &IndexMap<String, f64>,
+) -> anyhow::Result<()> {
+    let setpoint_for_sizing = max_of_2(LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS);
+
+    let design_flow_temp = 45.;
+    let n: f64 = 1.34;
+    let c_per_rad = 1.89 / (50. as f64).powf(n);
+    let power_output_per_rad = c_per_rad * (design_flow_temp - setpoint_for_sizing).powf(n);
+
+    // thermal mass specified in kJ/K but required in kWh/K
+    let thermal_mass_per_rad = 51.8 * JOULES_PER_KILOJOULE as f64 / JOULES_PER_KILOWATT_HOUR as f64;
+
+    // Initialise space heating system in project dict
+    input.remove_space_heat_systems();
+
+    for zone_name in input.zone_keys() {
+        let system_name = format!("{zone_name}_SpaceHeatSystem_Notional");
+        input.set_space_heat_system_for_zone(&zone_name, &system_name)?;
+        let heatsourcewet_name = input
+            .heat_source_wet()
+            .ok_or_else(|| {
+                anyhow!("FHS Notional wrapper expected HeatSourceWet field to be set on input.")
+            })?
+            .first()
+            .ok_or_else(|| {
+                anyhow!("FHS Notional wrapper expected at least one heat source wet to be defined.")
+            })?
+            .0;
+
+        // Calculate number of radiators
+        let emitter_cap = design_capacity.get(&zone_name).ok_or_else(|| {
+            anyhow!("FHS Notional wrapper expected a design capacity with name: {zone_name}.")
+        })?;
+        let number_of_rads = (emitter_cap / power_output_per_rad).ceil();
+
+        // Calculate c and thermal mass
+        let c = number_of_rads * c_per_rad;
+        let thermal_mass = number_of_rads * thermal_mass_per_rad;
+
+        let space_heat_system_value = json!({
+            "type": "WetDistribution",
+            "advanced_start": 1,
+            "thermal_mass": thermal_mass,
+            "c": c,
+            "n": n,
+            "temp_diff_emit_dsgn": 5,
+            "frac_convective": 0.7,
+            "HeatSource": {
+                "name": heatsourcewet_name,
+                "temp_flow_limit_upper": 65.0
+            },
+            "ecodesign_controller": {
+                    "ecodesign_control_class": 2,
+                    "max_outdoor_temp": 20,
+                    "min_flow_temp": 21,
+                    "min_outdoor_temp": 0
+                    },
+            "Control": HEATING_PATTERN,
+            "design_flow_temp": design_flow_temp as i32,
+            "Zone": zone_name,
+            "temp_setback" : 18
+        });
+
+        // Create radiator dict for zone
+        input.set_space_heat_system_for_key(&system_name, space_heat_system_value)?;
+    }
+
+    Ok(())
 }
 
 /// Edit distribution system details to notional building heat network
@@ -2545,5 +2617,27 @@ mod tests {
         // this test passes when test data does not match exactly
 
         assert_eq!(*test_input.heat_source_wet().unwrap(), expected);
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
+    fn test_edit_default_space_heating_distribution_system(mut test_input: InputForProcessing) {
+        let design_capacity: IndexMap<String, f64> =
+            serde_json::from_value(json!({"zone 1": 0., "zone 2": 0})).unwrap();
+
+        edit_default_space_heating_distribution_system(&mut test_input, &design_capacity).unwrap();
+
+        for zone_key in test_input.zone_keys() {
+            let key = zone_key.clone() + "_SpaceHeatSystem_Notional";
+
+            assert_eq!(
+                test_input
+                    .space_heat_system_for_zone(&zone_key)
+                    .unwrap()
+                    .unwrap(),
+                key
+            );
+            assert!(test_input.space_heat_system_for_key(&key).is_some());
+        }
     }
 }
