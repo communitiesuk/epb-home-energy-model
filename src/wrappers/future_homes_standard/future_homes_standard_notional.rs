@@ -167,7 +167,22 @@ fn edit_lighting_efficacy(input: &mut InputForProcessing) {
     input.set_lighting_efficacy_for_all_zones(lighting_efficacy);
 }
 
-fn edit_infiltration_ventilation() {
+/// Apply Notional infiltration specifications
+/// Notional option A pressure test result at 50Pa = 4 m3/h.m2
+/// Notional option B pressure test result at 50Pa = 5 m3/h.m2
+/// All passive openings count are set to zero
+/// Mechanical extract fans count follows the Actual dwelling,
+/// with the exception that there must be at least one per wet room
+fn edit_infiltration_ventilation(
+    input: &mut InputForProcessing,
+    is_notional_a: bool,
+    minimum_air_flow_rate: f64,
+) {
+    // pressure test results dependent on Notional option A or B
+    let test_result = if is_notional_a { 4. } else { 5. };
+
+    // let leaks = input.infiltration_ventilation_mut().leaks;
+
     todo!()
 }
 
@@ -1457,8 +1472,8 @@ mod tests {
     use super::*;
     use crate::input::{
         self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
-        HeatSourceWetDetails, OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource,
-        WaterPipeworkSimple,
+        HeatSourceWetDetails, InfiltrationVentilation, OnSiteGeneration, SpaceHeatSystem,
+        SpaceHeatSystemHeatSource, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1519,6 +1534,64 @@ mod tests {
                 120.
             )
         }
+    }
+
+    #[ignore]
+    #[rstest]
+    // this test does not exist in Python HEM
+    fn test_edit_infiltration_ventilation_for_notional_a(mut test_input: InputForProcessing) {
+        let is_notional_a = true;
+        let minimum_airflow_rate = 12.3;
+        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate);
+
+        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+            "cross_vent_factor": true,
+            "shield_class": "Normal",
+            "terrain_class": "Country",
+            "altitude": 30,
+            "noise_nuisance": true,
+            "Vents": {
+                "vent1": {
+                    "mid_height_air_flow_path": 1.5,
+                    "area_cm2": 100,
+                    "pressure_difference_ref": 20,
+                    "orientation360": 180,
+                    "pitch": 60
+                },
+                "vent2": {
+                    "mid_height_air_flow_path": 1.5,
+                    "area_cm2": 100,
+                    "pressure_difference_ref": 20,
+                    "orientation360": 0,
+                    "pitch": 60
+                }
+            },
+            "Leaks": {
+                "ventilation_zone_height": 6,
+                "test_pressure": 50,
+                "test_result": 4,
+                "env_area": 220
+            },
+            "MechanicalVentilation": {
+                "Decentralised_Continuous_MEV_for_notional": {
+                    "sup_air_flw_ctrl": "ODA",
+                    "sup_air_temp_ctrl": "CONST",
+                    "vent_type": "Decentralised continuous MEV",
+                    "SFP": 0.15,
+                    "EnergySupply": "mains elec",
+                    "design_outdoor_air_flow_rate": 12.3
+                }
+            },
+            "PDUs": {},
+            "Cowls": {},
+            "CombustionAppliances": {}
+        }
+        ))
+        .unwrap();
+
+        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+
+        assert_eq!(expected, infiltration_ventilation)
     }
 
     #[rstest]
