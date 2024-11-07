@@ -544,7 +544,7 @@ static TABLE_R2: LazyLock<HashMap<&'static str, f64>> = LazyLock::new(|| {
 ///  Apply heat network settings to notional building calculation in project_dict.
 fn edit_add_heatnetwork_heating(
     input: &mut InputForProcessing,
-    cold_water_source: &str,
+    cold_water_source: ColdWaterSourceType,
 ) -> anyhow::Result<()> {
     let heat_network_name = "heat network";
 
@@ -1254,8 +1254,29 @@ pub fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64
 }
 
-fn edit_space_heating_system() {
-    todo!()
+fn edit_space_heating_system(
+    input: &mut InputForProcessing,
+    cold_water_source: ColdWaterSourceType,
+    total_floor_area: f64,
+    is_heat_network: bool,
+    is_fee: bool,
+) -> anyhow::Result<()> {
+    // FEE calculation which doesn't need the space heating system at this stage.
+    if !is_fee {
+        // If Actual dwelling is heated with heat networks - Notional heated with HIU.
+        // Otherwise, notional heated with an air to water heat pump
+        if is_heat_network {
+            edit_add_heatnetwork_heating(input, cold_water_source)?;
+            edit_heatnetwork_space_heating_distribution_system(input)?;
+        } else {
+            let (design_capacity_map, design_capacity_overall) = calc_design_capacity(input)?;
+            edit_add_default_space_heating_system(input, design_capacity_overall)?;
+            edit_default_space_heating_distribution_system(input, &design_capacity_map)?;
+            edit_storagetank(input, cold_water_source, total_floor_area)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> {
@@ -1753,7 +1774,7 @@ mod tests {
         }))
         .unwrap();
 
-        edit_add_heatnetwork_heating(&mut test_input, "mains water").unwrap();
+        edit_add_heatnetwork_heating(&mut test_input, ColdWaterSourceType::MainsWater).unwrap();
 
         assert_eq!(
             test_input.heat_source_wet().unwrap(),
