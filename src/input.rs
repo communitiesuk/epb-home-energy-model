@@ -1312,7 +1312,7 @@ pub enum WaterHeatingEventType {
 
 pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
@@ -1551,7 +1551,7 @@ pub struct SpaceHeatSystemHeatSource {
 }
 
 // it is unclear whether this struct should be used - see reference to the struct above
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]

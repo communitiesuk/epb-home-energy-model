@@ -1436,7 +1436,8 @@ mod tests {
     use super::*;
     use crate::input::{
         self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
-        HeatSourceWetDetails, OnSiteGeneration, SpaceHeatSystemHeatSource, WaterPipeworkSimple,
+        HeatSourceWetDetails, OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource,
+        WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -2653,16 +2654,70 @@ mod tests {
         edit_default_space_heating_distribution_system(&mut test_input, &design_capacity).unwrap();
 
         for zone_key in test_input.zone_keys() {
-            let key = zone_key.clone() + "_SpaceHeatSystem_Notional";
+            let expected_space_heat_system_name = zone_key.clone() + "_SpaceHeatSystem_Notional";
+
+            let actual_space_heat_system_name_in_zone = test_input
+                .space_heat_system_for_zone(&zone_key)
+                .unwrap()
+                .unwrap();
+
+            let actual_space_heat_system =
+                test_input.space_heat_system_for_key(&expected_space_heat_system_name);
+
+            let expected_space_heat_systems: SpaceHeatSystem = serde_json::from_value(json!({
+                "zone 1_SpaceHeatSystem_Notional":
+                {
+                    "Control": "HeatingPattern_Null",
+                    "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
+                    "Zone": "zone 1",
+                    "advanced_start": 1,
+                    "c": 0.0,
+                    "design_flow_temp": 45,
+                    "ecodesign_controller": {
+                        "ecodesign_control_class": 2,
+                        "max_outdoor_temp": 20,
+                        "min_flow_temp": 21,
+                        "min_outdoor_temp": 0},
+                    "frac_convective": 0.7,
+                    "n": 1.34,
+                    "temp_diff_emit_dsgn": 5,
+                    "temp_setback": 18,
+                    "thermal_mass": 0.0,
+                    "type": "WetDistribution"
+                },
+                "zone 2_SpaceHeatSystem_Notional":
+                {
+                    "Control": "HeatingPattern_Null",
+                    "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
+                    "Zone": "zone 2",
+                    "advanced_start": 1,
+                    "c": 0.0,
+                    "design_flow_temp": 45,
+                    "ecodesign_controller": {
+                        "ecodesign_control_class": 2,
+                        "max_outdoor_temp": 20,
+                        "min_flow_temp": 21,
+                        "min_outdoor_temp": 0},
+                    "frac_convective": 0.7,
+                    "n": 1.34,
+                    "temp_diff_emit_dsgn": 5,
+                    "temp_setback": 18,
+                    "thermal_mass": 0.0,
+                    "type": "WetDistribution"
+                }
+            }
+            ))
+            .unwrap();
+
+            let expected_space_heat_system = expected_space_heat_systems
+                .get(&expected_space_heat_system_name)
+                .unwrap();
 
             assert_eq!(
-                test_input
-                    .space_heat_system_for_zone(&zone_key)
-                    .unwrap()
-                    .unwrap(),
-                key
+                actual_space_heat_system_name_in_zone,
+                expected_space_heat_system_name
             );
-            assert!(test_input.space_heat_system_for_key(&key).is_some());
+            assert_eq!(actual_space_heat_system, Some(expected_space_heat_system))
         }
     }
 }
