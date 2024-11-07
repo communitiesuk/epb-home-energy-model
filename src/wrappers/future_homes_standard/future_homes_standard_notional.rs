@@ -583,10 +583,24 @@ fn edit_add_heatnetwork_heating(
     Ok(())
 }
 
-fn edit_add_default_space_heating_system(input: &mut InputForProcessing, design_capacity_overall: f64) -> anyhow::Result<()> {
-
-    let factors_35 = IndexMap::from([("A", 1.00), ("B", 0.62), ("C", 0.55), ("D", 0.47), ("F", 1.05)]);
-    let factors_55 = IndexMap::from([("A", 0.99), ("B", 0.60), ("C", 0.49), ("D", 0.51), ("F", 1.03)]);
+fn edit_add_default_space_heating_system(
+    input: &mut InputForProcessing,
+    design_capacity_overall: f64,
+) -> anyhow::Result<()> {
+    let factors_35 = IndexMap::from([
+        ("A", 1.00),
+        ("B", 0.62),
+        ("C", 0.55),
+        ("D", 0.47),
+        ("F", 1.05),
+    ]);
+    let factors_55 = IndexMap::from([
+        ("A", 0.99),
+        ("B", 0.60),
+        ("C", 0.49),
+        ("D", 0.51),
+        ("F", 1.03),
+    ]);
 
     let mut capacity_results_dict_35: IndexMap<&str, f64> = Default::default();
     for (record, factor) in factors_35 {
@@ -741,7 +755,7 @@ fn edit_default_space_heating_distribution_system(
 
     let design_flow_temp = 45.;
     let n: f64 = 1.34;
-    let c_per_rad = 1.89 / (50. as f64).powf(n);
+    let c_per_rad = 1.89 / (50_f64).powf(n);
     let power_output_per_rad = c_per_rad * (design_flow_temp - setpoint_for_sizing).powf(n);
 
     // thermal mass specified in kJ/K but required in kWh/K
@@ -1421,7 +1435,8 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet, HeatSourceWetDetails, OnSiteGeneration, SpaceHeatSystemHeatSource, WaterPipeworkSimple
+        self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
+        HeatSourceWetDetails, OnSiteGeneration, SpaceHeatSystemHeatSource, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -2481,134 +2496,134 @@ mod tests {
 
     #[rstest]
     fn test_edit_add_default_space_heating_system(mut test_input: InputForProcessing) {
-
         let expected: IndexMap<String, HeatSourceWetDetails> = serde_json::from_value(json!(
-            {
-               "notional_HP": {
-                   "EnergySupply": "mains elec",
-                   "backup_ctrl_type": "TopUp",
-                   "min_modulation_rate_35": 0.4,
-                   "min_modulation_rate_55": 0.4,
-                   "min_temp_diff_flow_return_for_hp_to_operate": 0,
-                   "modulating_control": true,
-                   "power_crankcase_heater": 0.01,
-                   "power_heating_circ_pump": 0.022866,
-                   "power_max_backup": 3,
-                   "power_off": 0,
-                   "power_source_circ_pump": 0.01,
-                   "power_standby": 0.01,
-                   "sink_type": "Water",
-                   "source_type": "OutsideAir",
-                   "temp_lower_operating_limit": -10,
-                   "temp_return_feed_max": 60,
-                   "test_data": [
-                    {
-                        "capacity": 7.4,
-                        "cop": 2.79,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 35,
-                        "temp_outlet": 34,
-                        "temp_source": -7,
-                        "temp_test": -7,
-                        "test_letter": "A"
-                    },
-                    {
-                        "capacity": 4.588,
-                        "cop": 4.29,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 35,
-                        "temp_outlet": 30,
-                        "temp_source": 2,
-                        "temp_test": 2,
-                        "test_letter": "B"
-                    },
-                    {
-                        "capacity": 4.07,
-                        "cop": 5.91,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 35,
-                        "temp_outlet": 27,
-                        "temp_source": 7,
-                        "temp_test": 7,
-                        "test_letter": "C"
-                    },
-                    {
-                        "capacity": 3.478,
-                        "cop": 8.02,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 35,
-                        "temp_outlet": 24,
-                        "temp_source": 12,
-                        "temp_test": 12,
-                        "test_letter": "D"
-                    },
-                    {
-                        "capacity": 7.77,
-                        "cop": 2.49,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 35,
-                        "temp_outlet": 35,
-                        "temp_source": -10,
-                        "temp_test": -10,
-                        "test_letter": "F"
-                    },
-                    {
-                        "capacity": 7.326,
-                        "cop": 2.03,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 55,
-                        "temp_outlet": 52,
-                        "temp_source": -7,
-                        "temp_test": -7,
-                        "test_letter": "A"
-                    },
-                    {
-                        "capacity": 4.44,
-                        "cop": 3.12,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 55,
-                        "temp_outlet": 42,
-                        "temp_source": 2,
-                        "temp_test": 2,
-                        "test_letter": "B"
-                    },
-                    {
-                        "capacity": 3.626,
-                        "cop": 4.41,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 55,
-                        "temp_outlet": 36,
-                        "temp_source": 7,
-                        "temp_test": 7,
-                        "test_letter": "C"
-                    },
-                    {
-                        "capacity": 3.774,
-                        "cop": 6.30,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 55,
-                        "temp_outlet": 30,
-                        "temp_source": 12,
-                        "temp_test": 12,
-                        "test_letter": "D"
-                    },
-                    {
-                        "capacity": 7.622,
-                        "cop": 1.87,
-                        "degradation_coeff": 0.9,
-                        "design_flow_temp": 55,
-                        "temp_outlet": 55,
-                        "temp_source": -10,
-                        "temp_test": -10,
-                        "test_letter": "F"
-                    }
-                ],
-                   "time_constant_onoff_operation": 120,
-                   "time_delay_backup": 1,
-                   "type": "HeatPump",
-                   "var_flow_temp_ctrl_during_test": true
-               }
-           })).unwrap();
+         {
+            "notional_HP": {
+                "EnergySupply": "mains elec",
+                "backup_ctrl_type": "TopUp",
+                "min_modulation_rate_35": 0.4,
+                "min_modulation_rate_55": 0.4,
+                "min_temp_diff_flow_return_for_hp_to_operate": 0,
+                "modulating_control": true,
+                "power_crankcase_heater": 0.01,
+                "power_heating_circ_pump": 0.022866,
+                "power_max_backup": 3,
+                "power_off": 0,
+                "power_source_circ_pump": 0.01,
+                "power_standby": 0.01,
+                "sink_type": "Water",
+                "source_type": "OutsideAir",
+                "temp_lower_operating_limit": -10,
+                "temp_return_feed_max": 60,
+                "test_data": [
+                 {
+                     "capacity": 7.4,
+                     "cop": 2.79,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 35,
+                     "temp_outlet": 34,
+                     "temp_source": -7,
+                     "temp_test": -7,
+                     "test_letter": "A"
+                 },
+                 {
+                     "capacity": 4.588,
+                     "cop": 4.29,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 35,
+                     "temp_outlet": 30,
+                     "temp_source": 2,
+                     "temp_test": 2,
+                     "test_letter": "B"
+                 },
+                 {
+                     "capacity": 4.07,
+                     "cop": 5.91,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 35,
+                     "temp_outlet": 27,
+                     "temp_source": 7,
+                     "temp_test": 7,
+                     "test_letter": "C"
+                 },
+                 {
+                     "capacity": 3.478,
+                     "cop": 8.02,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 35,
+                     "temp_outlet": 24,
+                     "temp_source": 12,
+                     "temp_test": 12,
+                     "test_letter": "D"
+                 },
+                 {
+                     "capacity": 7.77,
+                     "cop": 2.49,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 35,
+                     "temp_outlet": 35,
+                     "temp_source": -10,
+                     "temp_test": -10,
+                     "test_letter": "F"
+                 },
+                 {
+                     "capacity": 7.326,
+                     "cop": 2.03,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 55,
+                     "temp_outlet": 52,
+                     "temp_source": -7,
+                     "temp_test": -7,
+                     "test_letter": "A"
+                 },
+                 {
+                     "capacity": 4.44,
+                     "cop": 3.12,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 55,
+                     "temp_outlet": 42,
+                     "temp_source": 2,
+                     "temp_test": 2,
+                     "test_letter": "B"
+                 },
+                 {
+                     "capacity": 3.626,
+                     "cop": 4.41,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 55,
+                     "temp_outlet": 36,
+                     "temp_source": 7,
+                     "temp_test": 7,
+                     "test_letter": "C"
+                 },
+                 {
+                     "capacity": 3.774,
+                     "cop": 6.30,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 55,
+                     "temp_outlet": 30,
+                     "temp_source": 12,
+                     "temp_test": 12,
+                     "test_letter": "D"
+                 },
+                 {
+                     "capacity": 7.622,
+                     "cop": 1.87,
+                     "degradation_coeff": 0.9,
+                     "design_flow_temp": 55,
+                     "temp_outlet": 55,
+                     "temp_source": -10,
+                     "temp_test": -10,
+                     "test_letter": "F"
+                 }
+             ],
+                "time_constant_onoff_operation": 120,
+                "time_delay_backup": 1,
+                "type": "HeatPump",
+                "var_flow_temp_ctrl_during_test": true
+            }
+        }))
+        .unwrap();
 
         let design_capacity_overall = 7.4;
         edit_add_default_space_heating_system(&mut test_input, design_capacity_overall).unwrap();
