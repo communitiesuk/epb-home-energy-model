@@ -3,10 +3,12 @@ use hem::read_weather_file::weather_data_to_vec;
 use hem::{run_project, ProjectFlags};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
+use serde_json::json;
 use std::io;
 use std::io::{BufReader, Cursor, ErrorKind, Write};
 use std::str::from_utf8;
 use std::sync::Arc;
+use uuid::Uuid;
 
 async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     // Extract some useful information from the request
@@ -24,15 +26,24 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    run_project(input, &output, external_conditions, &ProjectFlags::empty())?;
+    let resp = match run_project(input, &output, external_conditions, &ProjectFlags::empty()) {
+        Ok(Some(resp)) => Response::builder()
+            .status(200)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_string(&json!({"data": resp}))?))
+            .map_err(Box::new)?,
+        Ok(None) => Response::builder()
+            .status(200)
+            .header("content-type", "text/plain")
+            .body(Body::from(output))
+            .map_err(Box::new)?,
+        Err(e) => Response::builder()
+            .status(422)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_string(&json!({"errors": [{"id": Uuid::new_v4(), "status": "422", "detail": e.to_string()}]}))?))
+            .map_err(Box::new)?,
+    };
 
-    // Return something that implements IntoResponse.
-    // It will be serialized to the right response event automatically by the runtime
-    let resp = Response::builder()
-        .status(200)
-        .header("content-type", "text/plain")
-        .body(output.into())
-        .map_err(Box::new)?;
     Ok(resp)
 }
 
