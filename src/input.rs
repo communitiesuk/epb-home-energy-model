@@ -3032,6 +3032,10 @@ impl InputForProcessing {
         self.input.number_of_bedrooms
     }
 
+    pub fn number_of_wet_rooms(&self) -> Option<usize> {
+        self.input.number_of_wet_rooms
+    }
+
     pub fn set_metabolic_gains(
         &mut self,
         start_day: u32,
@@ -4183,6 +4187,7 @@ impl InputForProcessing {
             .unwrap_or(false)
     }
 
+    #[cfg(test)]
     pub(crate) fn infiltration_ventilation(&self) -> &InfiltrationVentilation {
         &self.input.infiltration_ventilation
     }

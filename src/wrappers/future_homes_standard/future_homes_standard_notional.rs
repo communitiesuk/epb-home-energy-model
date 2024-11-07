@@ -15,7 +15,7 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
     BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
-    HotWaterSource, InfiltrationVentilation, SpaceHeatSystemHeatSource, WaterHeatingEventType,
+    HotWaterSource, MechanicalVentilation, SpaceHeatSystemHeatSource, WaterHeatingEventType,
     WaterPipeContentsType, WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
@@ -204,6 +204,34 @@ fn edit_infiltration_ventilation(
                 "EnergySupply": "mains elec",
                 "design_outdoor_air_flow_rate": minimum_air_flow_rate
             }}))?;
+    } else {
+        // extract_fans follow the same as the actual dwelling
+        // but there must be a minimum of one extract fan
+        // per wet room, as per ADF guidance
+        if input.number_of_wet_rooms().is_none() {
+            return Err(anyhow!(
+                "missing NumberOfWetRooms - required for FHS notional building"
+            ));
+        }
+        let wet_rooms_count = input.number_of_wet_rooms().unwrap();
+        if wet_rooms_count <= 1 {
+            return Err(anyhow!("invalid/missing NumberOfWetRooms"));
+        }
+        let mut mech_vents: IndexMap<String, MechanicalVentilation> = Default::default();
+        for i in 0..wet_rooms_count {
+            let mech_vent: MechanicalVentilation = serde_json::from_value(json!(
+                    {
+                    "sup_air_flw_ctrl": "ODA",
+                    "sup_air_temp_ctrl": "CONST",
+                    "vent_type": "Intermittent MEV",
+                    "SFP":0.15,
+                    "EnergySupply": "mains elec",
+                    "design_outdoor_air_flow_rate": 80
+                }
+            ))?;
+            mech_vents.insert(i.to_string(), mech_vent);
+        }
+        input.infiltration_ventilation_mut().mechanical_ventilation = mech_vents;
     }
 
     Ok(())
@@ -1564,7 +1592,8 @@ mod tests {
     fn test_edit_infiltration_ventilation_for_notional_a(mut test_input: InputForProcessing) {
         let is_notional_a = true;
         let minimum_airflow_rate = 12.3;
-        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate);
+        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
+            .unwrap();
 
         let expected: InfiltrationVentilation = serde_json::from_value(json!({
             "cross_vent_factor": true,
@@ -1609,6 +1638,71 @@ mod tests {
             "CombustionAppliances": {}
         }
         ))
+        .unwrap();
+
+        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+
+        assert_eq!(expected, infiltration_ventilation)
+    }
+
+    #[rstest]
+    // this test does not exist in Python HEM
+    fn test_edit_infiltration_ventilation_for_not_notional_a(mut test_input: InputForProcessing) {
+        let is_notional_a = false;
+        let minimum_airflow_rate = 12.3;
+        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
+            .unwrap();
+
+        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+            "cross_vent_factor": true,
+            "shield_class": "Normal",
+            "terrain_class": "Country",
+            "altitude": 30,
+            "noise_nuisance": true,
+            "Vents": {
+                "vent1": {
+                    "mid_height_air_flow_path": 1.5,
+                    "area_cm2": 100,
+                    "pressure_difference_ref": 20,
+                    "orientation360": 180,
+                    "pitch": 60
+                },
+                "vent2": {
+                    "mid_height_air_flow_path": 1.5,
+                    "area_cm2": 100,
+                    "pressure_difference_ref": 20,
+                    "orientation360": 0,
+                    "pitch": 60
+                }
+            },
+            "Leaks": {
+                "ventilation_zone_height": 6,
+                "test_pressure": 50,
+                "test_result": 5,
+                "env_area": 220
+            },
+            "MechanicalVentilation": {
+                "0": {
+                    "sup_air_flw_ctrl": "ODA",
+                    "sup_air_temp_ctrl": "CONST",
+                    "vent_type": "Intermittent MEV",
+                    "SFP": 0.15,
+                    "EnergySupply": "mains elec",
+                    "design_outdoor_air_flow_rate": 80
+                },
+                "1": {
+                    "sup_air_flw_ctrl": "ODA",
+                    "sup_air_temp_ctrl": "CONST",
+                    "vent_type": "Intermittent MEV",
+                    "SFP": 0.15,
+                    "EnergySupply": "mains elec",
+                    "design_outdoor_air_flow_rate": 80
+                }
+            },
+            "PDUs": {},
+            "Cowls": {},
+            "CombustionAppliances": {}
+        }))
         .unwrap();
 
         let infiltration_ventilation = test_input.infiltration_ventilation().clone();
