@@ -2514,9 +2514,9 @@ pub struct InfiltrationVentilation {
     #[serde(rename = "AirTerminalDevices")]
     _air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
     #[serde(rename = "PDUs")]
-    _pdus: IndexMap<String, ()>, // don't know what this looks like yet
+    pub(crate) pdus: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "Cowls")]
-    _cowls: IndexMap<String, ()>, // don't know what this looks like yet
+    pub(crate) cowls: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "CombustionAppliances")]
     pub(crate) combustion_appliances: IndexMap<String, CombustionAppliance>,
 }

@@ -15,8 +15,8 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
     BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
-    HotWaterSource, SpaceHeatSystemHeatSource, WaterHeatingEventType, WaterPipeContentsType,
-    WaterPipework, WaterPipeworkLocation,
+    HotWaterSource, InfiltrationVentilation, SpaceHeatSystemHeatSource, WaterHeatingEventType,
+    WaterPipeContentsType, WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -177,13 +177,36 @@ fn edit_infiltration_ventilation(
     input: &mut InputForProcessing,
     is_notional_a: bool,
     minimum_air_flow_rate: f64,
-) {
+) -> anyhow::Result<()> {
     // pressure test results dependent on Notional option A or B
     let test_result = if is_notional_a { 4. } else { 5. };
 
-    // let leaks = input.infiltration_ventilation_mut().leaks;
+    input.infiltration_ventilation_mut().leaks.test_pressure = 50.;
+    input.infiltration_ventilation_mut().leaks.test_result = test_result;
 
-    todo!()
+    // all openings set to 0
+    // delete all combustion appliances Cowls and PDUs.
+    input.infiltration_ventilation_mut().pdus = IndexMap::new();
+    input.infiltration_ventilation_mut().cowls = IndexMap::new();
+    input.infiltration_ventilation_mut().combustion_appliances = IndexMap::new();
+
+    if is_notional_a {
+        // Notional option A uses continuous extract, so no intermittent extract fans
+        // Continous decentralised mechanical extract ventilation
+
+        input.infiltration_ventilation_mut().mechanical_ventilation =
+            serde_json::from_value(json!({
+            "Decentralised_Continuous_MEV_for_notional":{
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "CONST",
+                "vent_type": "Decentralised continuous MEV",
+                "SFP":0.15,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": minimum_air_flow_rate
+            }}))?;
+    }
+
+    Ok(())
 }
 
 /// Apply notional u-value (W/m2K) to:
@@ -1536,7 +1559,6 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[rstest]
     // this test does not exist in Python HEM
     fn test_edit_infiltration_ventilation_for_notional_a(mut test_input: InputForProcessing) {
