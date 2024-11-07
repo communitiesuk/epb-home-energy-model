@@ -2430,6 +2430,16 @@ mod tests {
 
     // this test does not exist in Python HEM
     #[rstest]
+    #[ignore = "This currently fails because our test data does not have a latitude field on ExternalConditions. Without it design capacity fails to build a new corpus. We expect other expected fields are also missing."]
+    fn test_design_capacity(test_input: InputForProcessing) {
+        let actual_design_capacity = calc_design_capacity(&test_input).unwrap().0;
+        // TODO: get expected design capacity from Python
+        let expected_design_capacity: IndexMap<String, f64> = Default::default();
+        assert_eq!(actual_design_capacity, expected_design_capacity)
+    }
+
+    // this test does not exist in Python HEM
+    #[rstest]
     fn test_initialise_temperature_setpoints(mut test_input: InputForProcessing) {
         initialise_temperature_setpoints(&mut test_input).unwrap();
 
