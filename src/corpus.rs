@@ -2159,7 +2159,7 @@ fn external_conditions_from_input(
             .unwrap_or_default(),
         input.latitude.unwrap(),
         input.longitude.unwrap(),
-        input.timezone.unwrap(),
+        input.timezone.unwrap_or(0), // default to GMT/ UTC
         input.start_day.unwrap_or(0),
         input.end_day,
         input.time_series_step.unwrap_or(1.0),
