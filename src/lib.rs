@@ -20,7 +20,7 @@ use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
     NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
-use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
+use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
     InputForProcessing,
@@ -381,7 +381,7 @@ fn external_conditions_from_input(
             Some(365),
             1.0,
             None,
-            DaylightSavingsConfig::NotApplicable,
+            None,
             false,
             ec.direct_beam_conversion_needed,
             input.shading_segments.clone(),
@@ -407,7 +407,7 @@ fn external_conditions_from_input(
             Some(365),
             1.0,
             None,
-            DaylightSavingsConfig::NotApplicable,
+            None,
             false,
             input.direct_beam_conversion_needed.unwrap_or(false),
             input.shading_segments.clone(), //imperfect but this should be quite small...

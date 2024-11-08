@@ -996,7 +996,7 @@ mod tests {
             Some(0),
             1.,
             Some(1),
-            DaylightSavingsConfig::NotApplicable,
+            Some(DaylightSavingsConfig::NotApplicable),
             false,
             false,
             vec![

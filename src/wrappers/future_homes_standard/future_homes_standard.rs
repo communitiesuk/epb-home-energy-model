@@ -1,7 +1,7 @@
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{DAYS_IN_MONTH, DAYS_PER_YEAR, MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::corpus::{KeyString, ResultsEndUser};
-use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, WindowShadingObject};
+use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
@@ -2687,7 +2687,7 @@ fn shading_factor(
         Some(365),
         1.,
         None,
-        DaylightSavingsConfig::NotApplicable,
+        None,
         false,
         dir_beam_conversion,
         input_external_conditions.shading_segments.to_vec(),

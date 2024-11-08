@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use serde::Deserialize;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum DaylightSavingsConfig {
@@ -88,7 +88,7 @@ pub struct ExternalConditions {
     pub end_day: Option<u32>,
     time_series_step: f64,
     pub january_first: Option<u32>,
-    pub daylight_savings: DaylightSavingsConfig,
+    pub daylight_savings: Option<DaylightSavingsConfig>,
     pub leap_day_included: bool,
     shading_segments: Vec<ShadingSegment>,
     solar_declinations: Vec<f64>,
@@ -144,7 +144,7 @@ impl ExternalConditions {
         end_day: Option<u32>,
         time_series_step: f64,
         january_first: Option<u32>,
-        daylight_savings: DaylightSavingsConfig,
+        daylight_savings: Option<DaylightSavingsConfig>,
         leap_day_included: bool,
         direct_beam_conversion_needed: bool,
         shading_segments: Vec<ShadingSegment>,
@@ -2013,8 +2013,8 @@ mod tests {
     }
 
     #[fixture]
-    pub fn daylight_savings() -> DaylightSavingsConfig {
-        NotApplicable
+    pub fn daylight_savings() -> Option<DaylightSavingsConfig> {
+        Some(NotApplicable)
     }
 
     #[fixture]

@@ -850,7 +850,7 @@ mod tests {
             None,
             1.0,
             Some(1),
-            DaylightSavingsConfig::NotApplicable,
+            Some(DaylightSavingsConfig::NotApplicable),
             false,
             false,
             shading_segments,

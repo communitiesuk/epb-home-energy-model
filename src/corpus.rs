@@ -2164,7 +2164,7 @@ fn external_conditions_from_input(
         input.end_day,
         input.time_series_step.unwrap_or(1.0),
         input.january_first,
-        input.daylight_savings.clone().unwrap(),
+        input.daylight_savings,
         input.leap_day_included.unwrap_or(false),
         input.direct_beam_conversion_needed.unwrap_or(false),
         input.shading_segments.clone(),
