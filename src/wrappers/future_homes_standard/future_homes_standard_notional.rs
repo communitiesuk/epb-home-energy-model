@@ -1548,7 +1548,7 @@ mod tests {
         )
     }
 
-    #[ignore = "still to complete"]
+    #[ignore = "currently failing as calc_design_capacity is failing to build the corpus (our test data is missing: longitude & external conditions)"]
     #[rstest]
     // this test does not exist in Python HEM
     fn test_apply_fhs_notional_preprocessing(mut test_input: InputForProcessing) {
@@ -1557,14 +1557,14 @@ mod tests {
         let fhs_fee_notional_a_assumptions = false;
         let fhs_fee_notional_b_assumptions = false;
 
-        let _actual = apply_fhs_notional_preprocessing(
+        let actual = apply_fhs_notional_preprocessing(
             &mut test_input,
             fhs_notional_a_assumptions,
             _fhs_notional_b_assumptions,
             fhs_fee_notional_a_assumptions,
             fhs_fee_notional_b_assumptions,
         );
-        todo!()
+        assert!(actual.is_ok())
     }
 
     #[rstest]
