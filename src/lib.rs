@@ -45,6 +45,13 @@ use std::io::Read;
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
 
+pub const HEM_VERSION: &str = "0.30";
+pub const HEM_VERSION_DATE: &str = "2024-06-25";
+#[cfg(feature = "fhs")]
+pub const FHS_VERSION: &str = "0.21";
+#[cfg(feature = "fhs")]
+pub const FHS_VERSION_DATE: &str = "2024-06-25";
+
 #[instrument(skip_all)]
 pub fn run_project(
     input: impl Read + Debug,
