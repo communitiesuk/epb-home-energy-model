@@ -693,7 +693,7 @@
 					"frame_area_fraction": 0.25,
 					"base_height": 1,
 					"height": 1.25,
-					"width": 400,
+					"width": 2,
 					"u_value": 1,
 					"shading": [
 						{"type": "overhang", "depth": 0.5, "distance": 0.5},

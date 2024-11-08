@@ -1880,11 +1880,11 @@ mod tests {
         let skylight = test_input.building_element_by_key("zone 2", "skylight 0");
         let roof = test_input.building_element_by_key("zone 2", "roof 0");
 
-        assert_relative_eq!(skylight.width().unwrap(), 280.056016805602);
-        assert_relative_eq!(skylight.height().unwrap(), 0.8751750525175062);
+        assert_relative_eq!(skylight.width().unwrap(), 2.);
+        assert_relative_eq!(skylight.height().unwrap(), 1.25);
 
         if let BuildingElement::Opaque { area, .. } = roof {
-            assert_relative_eq!(*area, 269.9019607843137);
+            assert_relative_eq!(*area, 15.);
         } else {
             unreachable!()
         }
