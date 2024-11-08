@@ -100,15 +100,13 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     edit_bath_shower_other(input, cold_water_source)?;
 
     // add WWHRS if needed (and remove any existing systems)
-    // TODO enable once function is implemented
-    // remove_wwhrs_if_present(input);
+    remove_wwhrs_if_present(input);
     add_wwhrs(input, cold_water_source, is_notional_a, is_fee)?;
 
     // modify hot water distribution
     edit_hot_water_distribution(input, total_floor_area)?;
 
     // remove on-site generation, pv diverter or electric battery if present
-    // TODO enable following calls once functions implemented
     remove_onsite_generation_if_present(input);
     remove_pv_diverter_if_present(input);
     remove_electric_battery_if_present(input);
@@ -118,12 +116,16 @@ pub(crate) fn apply_fhs_notional_preprocessing(
         minimum_air_change_rate(input, total_floor_area, total_volume, bedroom_number);
     // convert to m3/h
     let _minimum_air_flow_rate = minimum_ach * total_volume;
-    // TODO enable following call once function implemented
-    // edit_infiltration_ventilation(input, is_notional_a, _minimum_air_flow_rate);
+    edit_infiltration_ventilation(input, is_notional_a, _minimum_air_flow_rate)?;
 
     // edit space heating system
-    // TODO enable following call once function implemented
-    // edit_space_heating_system(input, cold_water_source, total_floor_area, _is_heat_network, is_fee);
+    edit_space_heating_system(
+        input,
+        cold_water_source,
+        total_floor_area,
+        _is_heat_network,
+        is_fee,
+    )?;
 
     // modify air-conditioning
     edit_space_cool_system(input)?;
