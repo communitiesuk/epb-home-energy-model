@@ -65,7 +65,7 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     let is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
     let is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
     // Check if a heat network is present
-    let _is_heat_network = check_heatnetwork_present(input);
+    let is_heat_network = check_heatnetwork_present(input);
 
     // Determine cold water source
     let cold_water_source = input.cold_water_source();
@@ -123,7 +123,7 @@ pub(crate) fn apply_fhs_notional_preprocessing(
         input,
         cold_water_source,
         total_floor_area,
-        _is_heat_network,
+        is_heat_network,
         is_fee,
     )?;
 
