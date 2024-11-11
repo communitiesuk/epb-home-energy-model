@@ -998,6 +998,21 @@
         }
       ]
     },
+    "ChargeLevel": {
+      "anyOf": [
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      ]
+    },
     "ColdWaterSourceDetails": {
       "type": "object",
       "required": [
@@ -1280,7 +1295,16 @@
             "type"
           ],
           "properties": {
-            "charge_level": true,
+            "charge_level": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ChargeLevel"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "logic_type": {
               "anyOf": [
                 {
@@ -2741,11 +2765,27 @@
       ]
     },
     "HeatSourceWetType": {
-      "type": "string",
-      "enum": [
-        "boiler",
-        "HeatNetwork",
-        "hp"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "boiler",
+            "HeatNetwork",
+            "hp"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "Other"
+          ],
+          "properties": {
+            "Other": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
       ]
     },
     "HeatingControlType": {
@@ -2820,8 +2860,6 @@
             "ColdWaterSource",
             "HeatSource",
             "daily_losses",
-            "min_temp",
-            "setpoint_temp",
             "type",
             "volume"
           ],
@@ -2853,7 +2891,10 @@
               "format": "double"
             },
             "min_temp": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "double"
             },
             "primary_pipework": {
@@ -2866,7 +2907,10 @@
               }
             },
             "setpoint_temp": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "double"
             },
             "type": {
@@ -2955,8 +2999,6 @@
           "required": [
             "ColdWaterSource",
             "HeatSourceWet",
-            "Control",
-            "setpoint_temp",
             "type"
           ],
           "properties": {
@@ -2967,10 +3009,20 @@
               "$ref": "#/definitions/HeatSourceWetType"
             },
             "Control": {
-              "$ref": "#/definitions/HeatSourceControlType"
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HeatSourceControlType"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "setpoint_temp": {
-              "type": "number",
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "double"
             },
             "type": {
@@ -3729,7 +3781,12 @@
             "ColdWaterSource": {
               "$ref": "#/definitions/ColdWaterSourceType"
             },
-            "WWHRS": true,
+            "WWHRS": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "flowrate": {
               "type": "number",
               "format": "double"
@@ -3880,6 +3937,16 @@
             "EnergySupply": {
               "$ref": "#/definitions/EnergySupplyType"
             },
+            "HeatSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SpaceHeatSystemHeatSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "Zone": {
               "type": [
                 "string",
@@ -3891,6 +3958,13 @@
                 "string",
                 "null"
               ]
+            },
+            "advanced_start": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
             },
             "frac_convective": {
               "type": "number",
@@ -4030,6 +4104,30 @@
             },
             "Zone": {
               "type": "string"
+            },
+            "HeatSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SpaceHeatSystemHeatSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "temp_setback": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "advanced_start": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
             }
           },
           "additionalProperties": false
@@ -4088,6 +4186,13 @@
               "type": "number",
               "format": "double"
             },
+            "temp_setback": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
             "thermal_mass": {
               "type": "number",
               "format": "double"
@@ -4128,6 +4233,20 @@
             },
             "temp_diff_emit_dsgn": {
               "type": "number",
+              "format": "double"
+            },
+            "advanced_start": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "temp_setback": {
+              "type": [
+                "number",
+                "null"
+              ],
               "format": "double"
             },
             "type": {
@@ -4256,7 +4375,8 @@
                 "null"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -4275,7 +4395,8 @@
                 "ThermalBridgePoint"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -4575,13 +4696,36 @@
     "WaterPipeworkSimple": {
       "type": "object",
       "required": [
-        "internal_diameter_mm",
         "length",
         "location"
       ],
       "properties": {
+        "external_diameter_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "insulation_thermal_conductivity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "insulation_thickness_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "internal_diameter_mm": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "double"
         },
         "length": {
@@ -4590,6 +4734,22 @@
         },
         "location": {
           "$ref": "#/definitions/WaterPipeworkLocation"
+        },
+        "pipe_contents": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WaterPipeContentsType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "surface_reflectivity": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "additionalProperties": false
