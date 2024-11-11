@@ -112,11 +112,11 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     remove_electric_battery_if_present(input);
 
     // modify ventilation
-    let minimum_ach =
+    let minimum_air_change_rate =
         minimum_air_change_rate(input, total_floor_area, total_volume, bedroom_number);
     // convert to m3/h
-    let _minimum_air_flow_rate = minimum_ach * total_volume;
-    edit_infiltration_ventilation(input, is_notional_a, _minimum_air_flow_rate)?;
+    let minimum_air_flow_rate = minimum_air_change_rate * total_volume;
+    edit_infiltration_ventilation(input, is_notional_a, minimum_air_flow_rate)?;
 
     // edit space heating system
     edit_space_heating_system(
@@ -477,6 +477,8 @@ fn edit_glazing_for_glazing_limit(
 
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
+        // TODO: deal with case where linear_reduction_factor is NaN (sqrt() is NaN if called on a
+        // negative number, max_glazing_area could come back as a negative number from calc_max_glazing_area_fraction
 
         for window_rooflight_element in windows_rooflight {
             let area_diff = calculate_area_diff_and_adjust_glazing_area(
@@ -1879,6 +1881,7 @@ mod tests {
 
         let skylight = test_input.building_element_by_key("zone 2", "skylight 0");
         let roof = test_input.building_element_by_key("zone 2", "roof 0");
+        let window = test_input.building_element_by_key("zone 1", "window 0");
 
         assert_relative_eq!(skylight.width().unwrap(), 2.);
         assert_relative_eq!(skylight.height().unwrap(), 1.25);
