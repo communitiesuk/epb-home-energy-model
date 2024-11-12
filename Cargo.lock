@@ -735,6 +735,7 @@ dependencies = [
  "pretty_assertions",
  "rand",
  "rand_distr",
+ "rand_mt",
  "rand_pcg",
  "rayon",
  "rstest",
@@ -1707,6 +1708,15 @@ checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
  "rand",
+]
+
+[[package]]
+name = "rand_mt"
+version = "4.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e018c6ded60e5252609887c12eb3ca2592e9248c5894a7db3975c8a7a1e2df"
+dependencies = [
+ "rand_core",
 ]
 
 [[package]]

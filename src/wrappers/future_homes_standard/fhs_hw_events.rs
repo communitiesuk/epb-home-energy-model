@@ -8,7 +8,8 @@ use parking_lot::Mutex;
 use partial_application::partial;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Poisson};
-use rand_pcg::{Lcg128Xsl64, Pcg64};
+use rand_mt::Mt64;
+use rand_pcg::Pcg64;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -274,7 +275,7 @@ impl From<SimpleLabelBasedOn900KSample> for WaterHeatingEventType {
 
 pub struct HotWaterEventGenerator {
     week: IndexMap<DayOfWeek, HashMap<SimpleLabelBasedOn900KSample, DayDigest>>,
-    rng: Lcg128Xsl64,
+    rng: Mt64,
 }
 
 impl HotWaterEventGenerator {
@@ -295,7 +296,8 @@ impl HotWaterEventGenerator {
                 (DayOfWeek::Sunday, Default::default()),
             ]);
 
-        let mut rng = Pcg64::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
+        let rng = SeedableRng::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
+        let mut rng_poisson = Pcg64::seed_from_u64(hw_seed.unwrap_or(RNG_SEED));
 
         let mut decile: i8 = -1;
         let mut banding_correction = 1.0;
@@ -404,7 +406,7 @@ impl HotWaterEventGenerator {
                                 )
                             });
                             (0..POISSON_DISTRIBUTION_SIZE)
-                                .map(|_| poisson.sample(&mut rng))
+                                .map(|_| poisson.sample(&mut rng_poisson))
                                 .collect::<Vec<f64>>()
                         },
                         poisson_arr_idx: 0,
