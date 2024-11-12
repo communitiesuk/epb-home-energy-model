@@ -1881,7 +1881,7 @@ mod tests {
 
         let skylight = test_input.building_element_by_key("zone 2", "skylight 0");
         let roof = test_input.building_element_by_key("zone 2", "roof 0");
-        let window = test_input.building_element_by_key("zone 1", "window 0");
+        let _window = test_input.building_element_by_key("zone 1", "window 0");
 
         assert_relative_eq!(skylight.width().unwrap(), 2.);
         assert_relative_eq!(skylight.height().unwrap(), 1.25);
