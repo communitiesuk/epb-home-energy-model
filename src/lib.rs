@@ -3,6 +3,7 @@
 mod compare_floats;
 pub mod core;
 pub mod corpus;
+pub mod errors;
 mod external_conditions;
 pub mod input;
 pub mod output;
@@ -20,6 +21,7 @@ use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
     NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
+use crate::errors::{HemCoreError, HemError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
@@ -42,6 +44,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io::Read;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, instrument};
 
@@ -58,140 +61,191 @@ pub fn run_project(
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     flags: &ProjectFlags,
-) -> anyhow::Result<Option<HemResponse>> {
-    // 1. ingest/ parse input and enter preprocessing stage
-    #[instrument(skip_all)]
-    fn ingest_input_and_start_preprocessing(
-        input: impl Read + Debug,
-        external_conditions_data: Option<&ExternalConditionsFromFile>,
-    ) -> anyhow::Result<InputForProcessing> {
-        let mut input_for_processing = ingest_for_processing(input)?;
+) -> Result<Option<HemResponse>, HemError> {
+    catch_unwind(AssertUnwindSafe(|| {
+        // 1. ingest/ parse input and enter preprocessing stage
+        #[instrument(skip_all)]
+        fn ingest_input_and_start_preprocessing(
+            input: impl Read + Debug,
+            external_conditions_data: Option<&ExternalConditionsFromFile>,
+        ) -> anyhow::Result<InputForProcessing> {
+            let mut input_for_processing = ingest_for_processing(input)?;
 
-        input_for_processing
-            .merge_external_conditions_data(external_conditions_data.map(|x| x.into()));
-        Ok(input_for_processing)
-    }
+            input_for_processing
+                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()));
+            Ok(input_for_processing)
+        }
 
-    let input_for_processing =
-        ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
+        let input_for_processing =
+            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
 
-    fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
-        #[cfg(feature = "fhs")]
-        {
-            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
-            } else if flags.intersects(
-                ProjectFlags::FHS_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                    | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-            ) {
-                ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
-            } else {
+        fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
+            #[cfg(feature = "fhs")]
+            {
+                if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                    ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
+                } else if flags.intersects(
+                    ProjectFlags::FHS_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+                ) {
+                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
+                } else {
+                    ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
+                }
+            }
+            #[cfg(not(feature = "fhs"))]
+            {
                 ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
             }
         }
-        #[cfg(not(feature = "fhs"))]
-        {
-            ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-        }
-    }
 
-    let wrapper = choose_wrapper(flags);
+        let wrapper = choose_wrapper(flags);
 
-    // 2. apply preprocessing from wrappers
-    #[instrument(skip_all)]
-    fn apply_preprocessing_from_wrappers(
-        input_for_processing: InputForProcessing,
-        wrapper: &impl HemWrapper,
-        flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        wrapper.apply_preprocessing(input_for_processing, flags)
-    }
-
-    let input = apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)?;
-
-    // 3. Determine external conditions to use for calculations.
-    #[instrument(skip_all)]
-    fn resolve_external_conditions(
-        input: &HashMap<CalculationKey, Input>,
-        external_conditions_data: Option<ExternalConditionsFromFile>,
-    ) -> HashMap<CalculationKey, ExternalConditions> {
-        input
-            .par_iter()
-            .map(|(key, input)| {
-                (
-                    *key,
-                    external_conditions_from_input(
-                        input.external_conditions.clone(),
-                        external_conditions_data.clone(),
-                        input.simulation_time,
-                    ),
-                )
-            })
-            .collect()
-    }
-
-    let corpora = {
-        let external_conditions = resolve_external_conditions(&input, external_conditions_data);
-
-        // 4. Build corpus from input and external conditions.
+        // 2. apply preprocessing from wrappers
         #[instrument(skip_all)]
-        fn build_corpus(
+        fn apply_preprocessing_from_wrappers(
+            input_for_processing: InputForProcessing,
+            wrapper: &impl HemWrapper,
+            flags: &ProjectFlags,
+        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+            wrapper.apply_preprocessing(input_for_processing, flags)
+        }
+
+        let input = match catch_unwind(AssertUnwindSafe(|| {
+            apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
+                .map_err(|e| HemError::InvalidRequest(e))
+        })) {
+            Ok(result) => result?,
+            Err(panic) => {
+                return Err(HemError::PanicInWrapper(
+                    panic
+                        .downcast_ref::<&str>()
+                        .map_or("Error not captured", |v| v)
+                        .to_owned(),
+                ))
+            }
+        };
+
+        // 3. Determine external conditions to use for calculations.
+        #[instrument(skip_all)]
+        fn resolve_external_conditions(
             input: &HashMap<CalculationKey, Input>,
-            external_conditions: &HashMap<CalculationKey, ExternalConditions>,
-        ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
-            // TODO: parallel iterate this
-            iterate_maps(input, external_conditions)
-                .map(|(key, input, external_conditions)| {
-                    anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions))?))
+            external_conditions_data: Option<ExternalConditionsFromFile>,
+        ) -> HashMap<CalculationKey, ExternalConditions> {
+            input
+                .par_iter()
+                .map(|(key, input)| {
+                    (
+                        *key,
+                        external_conditions_from_input(
+                            input.external_conditions.clone(),
+                            external_conditions_data.clone(),
+                            input.simulation_time,
+                        ),
+                    )
                 })
                 .collect()
         }
 
-        build_corpus(&input, &external_conditions)?
-    };
+        let corpora = {
+            let external_conditions = resolve_external_conditions(&input, external_conditions_data);
 
-    // 5. Run HEM calculation(s).
-    #[instrument(skip_all)]
-    fn run_hem_calculation(
-        corpora: &HashMap<CalculationKey, Corpus>,
-    ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
-        corpora
-            .par_iter()
-            .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
-            .collect()
-    }
+            // 4. Build corpus from input and external conditions.
+            #[instrument(skip_all)]
+            fn build_corpus(
+                input: &HashMap<CalculationKey, Input>,
+                external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+            ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
+                // TODO: parallel iterate this
+                iterate_maps(input, external_conditions)
+                    .map(|(key, input, external_conditions)| {
+                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions))?))
+                    })
+                    .collect()
+            }
 
-    let run_results = run_hem_calculation(&corpora)?;
+            build_corpus(&input, &external_conditions).map_err(|e| HemError::InvalidRequest(e))?
+        };
 
-    let contextualised_results: HashMap<_, _> = run_results
-        .iter()
-        .map(|(key, results)| {
-            (
-                *key,
-                CalculationResultsWithContext::new(&input[key], &corpora[key], results),
-            )
-        })
-        .collect();
+        // 5. Run HEM calculation(s).
+        #[instrument(skip_all)]
+        fn run_hem_calculation(
+            corpora: &HashMap<CalculationKey, Corpus>,
+        ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
+            corpora
+                .par_iter()
+                .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
+                .collect()
+        }
 
-    // 6. Write out to core output files.
-    #[instrument(skip_all)]
-    fn write_core_output_files(
-        output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        flags: &ProjectFlags,
-    ) -> anyhow::Result<()> {
-        if let Some(results) = results.get(&CalculationKey::Primary) {
-            {
-                if output.is_noop() {
-                    return Ok(());
-                }
-                let CalculationResultsWithContext {
-                    results:
-                        RunResults {
+        // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
+        let run_results = match catch_unwind(AssertUnwindSafe(|| {
+            run_hem_calculation(&corpora)
+                .map_err(|e| HemError::FailureInCalculation(HemCoreError::new(e)))
+        })) {
+            Ok(results) => results?,
+            Err(panic) => {
+                return Err(HemError::PanicInCalculation(
+                    panic
+                        .downcast_ref::<&str>()
+                        .map_or("Error not captured", |v| v)
+                        .to_owned(),
+                ))
+            }
+        };
+
+        let contextualised_results: HashMap<_, _> = run_results
+            .iter()
+            .map(|(key, results)| {
+                (
+                    *key,
+                    CalculationResultsWithContext::new(&input[key], &corpora[key], results),
+                )
+            })
+            .collect();
+
+        // 6. Write out to core output files.
+        #[instrument(skip_all)]
+        fn write_core_output_files(
+            output: &impl Output,
+            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+            flags: &ProjectFlags,
+        ) -> anyhow::Result<()> {
+            if let Some(results) = results.get(&CalculationKey::Primary) {
+                {
+                    if output.is_noop() {
+                        return Ok(());
+                    }
+                    let CalculationResultsWithContext {
+                        results:
+                            RunResults {
+                                timestep_array,
+                                results_totals,
+                                results_end_user,
+                                energy_import,
+                                energy_export,
+                                energy_generated_consumed,
+                                energy_to_storage,
+                                energy_from_storage,
+                                energy_diverted,
+                                betafactor,
+                                zone_dict,
+                                zone_list,
+                                hc_system_dict,
+                                hot_water_dict,
+                                ductwork_gains,
+                                ..
+                            },
+                        ..
+                    } = results;
+                    write_core_output_file(
+                        output,
+                        OutputFileArgs {
+                            output_key: "results".to_string(),
                             timestep_array,
                             results_totals,
                             results_end_user,
@@ -207,80 +261,66 @@ pub fn run_project(
                             hc_system_dict,
                             hot_water_dict,
                             ductwork_gains,
-                            ..
                         },
-                    ..
-                } = results;
-                write_core_output_file(
+                    )?;
+                }
+
+                if flags.contains(ProjectFlags::HEAT_BALANCE) {
+                    for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
+                        // TODO: write out heat balance files
+                    }
+                }
+
+                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+                    // TODO: write out heat source wet outputs
+                }
+
+                write_core_output_file_summary(output, results.try_into()?)?;
+
+                let corpus = results.context.corpus;
+
+                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
+                let heat_capacity_parameter = corpus.calc_hcp();
+                let heat_loss_form_factor = corpus.calc_hlff();
+
+                write_core_output_file_static(
                     output,
-                    OutputFileArgs {
-                        output_key: "results".to_string(),
-                        timestep_array,
-                        results_totals,
-                        results_end_user,
-                        energy_import,
-                        energy_export,
-                        energy_generated_consumed,
-                        energy_to_storage,
-                        energy_from_storage,
-                        energy_diverted,
-                        betafactor,
-                        zone_dict,
-                        zone_list,
-                        hc_system_dict,
-                        hot_water_dict,
-                        ductwork_gains,
+                    StaticOutputFileArgs {
+                        output_key: "results_static".to_string(),
+                        heat_transfer_coefficient,
+                        heat_loss_parameter,
+                        heat_capacity_parameter,
+                        heat_loss_form_factor,
                     },
                 )?;
             }
 
-            if flags.contains(ProjectFlags::HEAT_BALANCE) {
-                for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
-                    // TODO: write out heat balance files
-                }
-            }
-
-            if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                // TODO: write out heat source wet outputs
-            }
-
-            write_core_output_file_summary(output, results.try_into()?)?;
-
-            let corpus = results.context.corpus;
-
-            let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
-            let heat_capacity_parameter = corpus.calc_hcp();
-            let heat_loss_form_factor = corpus.calc_hlff();
-
-            write_core_output_file_static(
-                output,
-                StaticOutputFileArgs {
-                    output_key: "results_static".to_string(),
-                    heat_transfer_coefficient,
-                    heat_loss_parameter,
-                    heat_capacity_parameter,
-                    heat_loss_form_factor,
-                },
-            )?;
+            Ok(())
         }
 
-        Ok(())
-    }
+        write_core_output_files(&output, &contextualised_results, flags)?;
 
-    write_core_output_files(&output, &contextualised_results, flags)?;
+        // 7. Run wrapper post-processing and capture any output.
+        #[instrument(skip_all)]
+        fn run_wrapper_postprocessing(
+            output: &impl Output,
+            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+            wrapper: &impl HemWrapper,
+            flags: &ProjectFlags,
+        ) -> anyhow::Result<Option<HemResponse>> {
+            wrapper.apply_postprocessing(output, results, flags)
+        }
 
-    // 7. Run wrapper post-processing and capture any output.
-    #[instrument(skip_all)]
-    fn run_wrapper_postprocessing(
-        output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        wrapper: &impl HemWrapper,
-        flags: &ProjectFlags,
-    ) -> anyhow::Result<Option<HemResponse>> {
-        wrapper.apply_postprocessing(output, results, flags)
-    }
-
-    run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
+        run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
+            .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
+    }))
+    .map_err(|e| {
+        HemError::GeneralPanic(
+            e.downcast_ref::<&str>()
+                .map_or("Error not captured", |v| v)
+                .to_owned(),
+        )
+    })?
 }
 
 #[derive(Clone, Copy)]
