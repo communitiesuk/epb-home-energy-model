@@ -2157,9 +2157,9 @@ fn external_conditions_from_input(
             .solar_reflectivity_of_ground
             .clone()
             .unwrap_or_default(),
-        input.latitude.unwrap(),
-        input.longitude.unwrap(),
-        input.timezone.unwrap_or(0), // default to GMT/ UTC
+        input.latitude.unwrap_or(51.5), // default to London (though we expect this to be set!)
+        input.longitude.unwrap_or(-0.13), // default to London (though we expect this to be set!)
+        input.timezone.unwrap_or(0),    // default to GMT/ UTC
         input.start_day.unwrap_or(0),
         input.end_day,
         input.time_series_step.unwrap_or(1.0),
