@@ -229,7 +229,7 @@ fn edit_infiltration_ventilation(
 ///
 /// external elements: walls (0.18), doors (1.0), roofs (0.11), exposed floors (0.13)
 /// elements adjacent to unheated space: walls (0.18), ceilings (0.11), floors (0.13)
-/// to differenciate external doors from walls, user input: is_external_door
+/// to differentiate external doors from walls, user input: is_external_door
 fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut opaque_adjztu_building_elements =
         input.all_opaque_and_adjztu_building_elements_mut_u_values();
@@ -602,7 +602,7 @@ fn edit_add_heatnetwork_heating(
     input: &mut InputForProcessing,
     cold_water_source: ColdWaterSourceType,
 ) -> anyhow::Result<()> {
-    let heat_network_name = "heat network";
+    let heat_network_name = "_notional_heat_network";
 
     let notional_heat_network = serde_json::from_value(json!(
      {
