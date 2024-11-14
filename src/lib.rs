@@ -117,7 +117,7 @@ pub fn run_project(
 
         let input = match catch_unwind(AssertUnwindSafe(|| {
             apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
-                .map_err(|e| HemError::InvalidRequest(e))
+                .map_err(HemError::InvalidRequest)
         })) {
             Ok(result) => result?,
             Err(panic) => {
@@ -168,7 +168,7 @@ pub fn run_project(
                     .collect()
             }
 
-            build_corpus(&input, &external_conditions).map_err(|e| HemError::InvalidRequest(e))?
+            build_corpus(&input, &external_conditions).map_err(HemError::InvalidRequest)?
         };
 
         // 5. Run HEM calculation(s).
