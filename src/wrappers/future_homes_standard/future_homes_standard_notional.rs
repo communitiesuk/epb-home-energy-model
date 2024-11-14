@@ -12,8 +12,10 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
-    BuildType, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType,
-    HotWaterSource, MechanicalVentilation, SpaceHeatSystemHeatSource, WaterHeatingEventType,
+    BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey,
+    EnergySupplyType, GroundBuildingElement, HeatPumpSourceType, HeatSourceWetDetails,
+    HotWaterSource, InputForProcessing, MechanicalVentilation, SpaceHeatSystemHeatSource,
+    ThermalBridgingDetails, UValueEditableBuildingElement, WaterHeatingEventType,
     WaterPipeContentsType, WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
@@ -29,16 +31,10 @@ use crate::{
         space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
         units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
     },
-    input::{
-        BuildingElement, GroundBuildingElement, HeatPumpSourceType,
-        HeatSourceWetDetails::{HeatPump, Hiu},
-        InputForProcessing, ThermalBridgingDetails, UValueEditableBuildingElement,
-    },
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
-use itertools::Itertools;
 use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::HashMap;
@@ -136,29 +132,20 @@ pub(crate) fn apply_fhs_notional_preprocessing(
 }
 
 fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
-    let mut is_heat_network = false;
-
-    let heat_source_wet = input.heat_source_wet();
-
-    if heat_source_wet.is_some() {
-        let sources = heat_source_wet
-            .unwrap()
-            .iter()
-            .map(|(_, source)| source)
-            .collect_vec();
-
-        for source in sources {
-            match source {
-                Hiu { .. } => is_heat_network = true,
-                HeatPump {
-                    source_type: HeatPumpSourceType::HeatNetwork,
-                    ..
-                } => is_heat_network = true,
-                _ => {}
-            };
-        }
-    }
-    is_heat_network
+    input
+        .heat_source_wet()
+        .iter()
+        .flat_map(|heat_source_wet| heat_source_wet.values())
+        .any(|source| {
+            matches!(
+                source,
+                HeatSourceWetDetails::Hiu { .. }
+                    | HeatSourceWetDetails::HeatPump {
+                        source_type: HeatPumpSourceType::HeatNetwork,
+                        ..
+                    }
+            )
+        })
 }
 
 /// Apply notional lighting efficacy
