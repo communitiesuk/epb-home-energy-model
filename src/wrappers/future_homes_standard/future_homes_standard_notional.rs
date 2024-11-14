@@ -46,6 +46,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::instrument;
 
 const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
+const NOTIONAL_HIU: &str = "notionalHIU";
 const NOTIONAL_HP: &str = "notional_HP";
 const NOTIONAL_BATH_NAME: &str = "medium";
 const NOTIONAL_SHOWER_NAME: &str = "mixer";
@@ -618,7 +619,7 @@ fn edit_add_heatnetwork_heating(
 
     let notional_heat_network = serde_json::from_value(json!(
      {
-        "notionalHIU": {
+        NOTIONAL_HIU: {
             "type": "HIU",
             "EnergySupply": heat_network_name,
             "power_max": 45,
@@ -631,7 +632,7 @@ fn edit_add_heatnetwork_heating(
         "hw cylinder": {
             "type": "HIU",
             "ColdWaterSource": cold_water_source,
-            "HeatSourceWet": "notionalHIU",
+            "HeatSourceWet": NOTIONAL_HIU,
             }
     }))?;
 
@@ -900,7 +901,7 @@ fn edit_heatnetwork_space_heating_distribution_system(
     input.set_temperature_setback_for_space_heat_systems(None)?;
 
     let notional_heat_source: SpaceHeatSystemHeatSource =
-        serde_json::from_value(json!({"name": "notionalHIU"}))?;
+        serde_json::from_value(json!({"name": NOTIONAL_HIU}))?;
     input.set_heat_source_for_space_heat_system(notional_heat_source)?;
 
     Ok(())
@@ -1936,7 +1937,7 @@ mod tests {
         let heat_network_name = "heat network";
 
         let expected_heat_source_wet: HeatSourceWet = serde_json::from_value(json!({
-            "notionalHIU": {
+            NOTIONAL_HIU: {
                 "type": "HIU",
                 "EnergySupply": heat_network_name,
                 "power_max": 45,
@@ -1950,7 +1951,7 @@ mod tests {
         "hw cylinder": {
             "type": "HIU",
             "ColdWaterSource": "mains water",
-            "HeatSourceWet": "notionalHIU",
+            "HeatSourceWet": NOTIONAL_HIU,
             }
         }))
         .unwrap();
@@ -2003,7 +2004,7 @@ mod tests {
                 .unwrap();
 
             let expected_heat_source: SpaceHeatSystemHeatSource =
-                serde_json::from_value(json!({"name": "notionalHIU"})).unwrap();
+                serde_json::from_value(json!({"name": NOTIONAL_HIU})).unwrap();
 
             assert_eq!(heat_source, expected_heat_source)
         }
