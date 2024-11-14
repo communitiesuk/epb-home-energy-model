@@ -169,41 +169,41 @@ fn edit_infiltration_ventilation(
     // pressure test results dependent on Notional option A or B
     let test_result = if is_notional_a { 4. } else { 5. };
 
-    input.infiltration_ventilation_mut().leaks.test_pressure = 50.;
-    input.infiltration_ventilation_mut().leaks.test_result = test_result;
+    let number_of_wet_rooms = input.number_of_wet_rooms();
+
+    let infiltration_ventilation = input.infiltration_ventilation_mut();
+
+    infiltration_ventilation.leaks.test_pressure = 50.;
+    infiltration_ventilation.leaks.test_result = test_result;
 
     // all openings set to 0
     // delete all combustion appliances Cowls and PDUs.
-    input.infiltration_ventilation_mut().pdus = IndexMap::new();
-    input.infiltration_ventilation_mut().cowls = IndexMap::new();
-    input.infiltration_ventilation_mut().combustion_appliances = IndexMap::new();
+    infiltration_ventilation.pdus = IndexMap::new();
+    infiltration_ventilation.cowls = IndexMap::new();
+    infiltration_ventilation.combustion_appliances = IndexMap::new();
 
     if is_notional_a {
         // Notional option A uses continuous extract, so no intermittent extract fans
-        // Continous decentralised mechanical extract ventilation
+        // Continuous decentralised mechanical extract ventilation
 
-        input.infiltration_ventilation_mut().mechanical_ventilation =
-            serde_json::from_value(json!({
-            "Decentralised_Continuous_MEV_for_notional":{
-                "sup_air_flw_ctrl": "ODA",
-                "sup_air_temp_ctrl": "CONST",
-                "vent_type": "Decentralised continuous MEV",
-                "SFP":0.15,
-                "EnergySupply": "mains elec",
-                "design_outdoor_air_flow_rate": minimum_air_flow_rate
-            }}))?;
+        infiltration_ventilation.mechanical_ventilation = serde_json::from_value(json!({
+        "Decentralised_Continuous_MEV_for_notional":{
+            "sup_air_flw_ctrl": "ODA",
+            "sup_air_temp_ctrl": "CONST",
+            "vent_type": "Decentralised continuous MEV",
+            "SFP":0.15,
+            "EnergySupply": "mains elec",
+            "design_outdoor_air_flow_rate": minimum_air_flow_rate
+        }}))?;
     } else {
         // extract_fans follow the same as the actual dwelling
         // but there must be a minimum of one extract fan
         // per wet room, as per ADF guidance
-        if input.number_of_wet_rooms().is_none() {
-            return Err(anyhow!(
-                "missing NumberOfWetRooms - required for FHS notional building"
-            ));
-        }
-        let wet_rooms_count = input.number_of_wet_rooms().unwrap();
+        let wet_rooms_count = number_of_wet_rooms.ok_or_else(|| {
+            anyhow!("missing NumberOfWetRooms - required for FHS notional building")
+        })?;
         if wet_rooms_count <= 1 {
-            return Err(anyhow!("invalid/missing NumberOfWetRooms"));
+            bail!("invalid/missing NumberOfWetRooms ({wet_rooms_count})");
         }
         let mut mech_vents: IndexMap<String, MechanicalVentilation> = Default::default();
         for i in 0..wet_rooms_count {
@@ -212,14 +212,14 @@ fn edit_infiltration_ventilation(
                     "sup_air_flw_ctrl": "ODA",
                     "sup_air_temp_ctrl": "CONST",
                     "vent_type": "Intermittent MEV",
-                    "SFP":0.15,
+                    "SFP": 0.15,
                     "EnergySupply": "mains elec",
                     "design_outdoor_air_flow_rate": 80
                 }
             ))?;
             mech_vents.insert(i.to_string(), mech_vent);
         }
-        input.infiltration_ventilation_mut().mechanical_ventilation = mech_vents;
+        infiltration_ventilation.mechanical_ventilation = mech_vents;
     }
 
     Ok(())
