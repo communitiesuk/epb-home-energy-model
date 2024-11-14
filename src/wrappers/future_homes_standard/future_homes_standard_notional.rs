@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplies;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
