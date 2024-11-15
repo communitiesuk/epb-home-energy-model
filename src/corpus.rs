@@ -91,7 +91,7 @@ use std::sync::Arc;
 // TODO make this a runtime parameter?
 const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
 
-/// As of Rust 1.82 we'll be able to declare this using constants as it is due to support floating-point arithmetic at compile time
+/// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
     kelvin_to_celsius(0.0)
 }
