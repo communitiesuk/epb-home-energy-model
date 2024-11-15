@@ -672,7 +672,7 @@ fn edit_add_default_space_heating_system(
 
     let notional_hp = serde_json::from_value(json!(
      {
-        "notional_HP": {
+        NOTIONAL_HP: {
             "EnergySupply": "mains elec",
             "backup_ctrl_type": "TopUp",
             "min_modulation_rate_35": 0.4,
