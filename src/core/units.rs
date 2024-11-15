@@ -1,4 +1,5 @@
 use crate::compare_floats::min_of_2;
+use thiserror::Error;
 
 pub const JOULES_PER_KILOWATT_HOUR: u32 = 3_600_000;
 pub const KILOJOULES_PER_KILOWATT_HOUR: u32 = 3_600;
@@ -35,14 +36,36 @@ pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f
         .collect()
 }
 
-pub fn kelvin_to_celsius(temp_k: f64) -> f64 {
-    assert!(temp_k >= 0.0);
-    temp_k - 273.15
+pub(crate) fn kelvin_to_celsius(temp_k: f64) -> Result<f64, BelowAbsoluteZeroError> {
+    if temp_k < 0.0 {
+        Err(BelowAbsoluteZeroError::from_k(temp_k))
+    } else {
+        Ok(temp_k - 273.15)
+    }
 }
 
-pub fn celsius_to_kelvin(temp_c: f64) -> f64 {
-    assert!(temp_c >= -273.15);
-    temp_c + 273.15
+pub(crate) fn celsius_to_kelvin(temp_c: f64) -> Result<f64, BelowAbsoluteZeroError> {
+    if temp_c < -273.15 {
+        Err(BelowAbsoluteZeroError::from_c(temp_c))
+    } else {
+        Ok(temp_c + 273.15)
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("A temperature of {k}ºK/{}ºC was encountered, which is less than absolute zero", k - 273.15)]
+pub(crate) struct BelowAbsoluteZeroError {
+    k: f64,
+}
+
+impl BelowAbsoluteZeroError {
+    fn from_k(k: f64) -> Self {
+        Self { k }
+    }
+
+    fn from_c(c: f64) -> Self {
+        Self { k: c + 273.15 }
+    }
 }
 
 #[cfg(test)]
@@ -54,18 +77,18 @@ mod tests {
     #[rstest]
     pub fn should_do_correct_temperature_conversions() {
         assert_eq!(
-            celsius_to_kelvin(20.0),
+            celsius_to_kelvin(20.0).unwrap(),
             293.15,
             "incorrect conversion of Celsius to Kelvin"
         );
         assert_eq!(
-            kelvin_to_celsius(5.0),
+            kelvin_to_celsius(5.0).unwrap(),
             -268.15,
             "incorrect conversion to Kelvin to Celsius"
         );
         for i in -10..80 {
             assert_eq!(
-                kelvin_to_celsius(celsius_to_kelvin(i as f64)),
+                kelvin_to_celsius(celsius_to_kelvin(i as f64).unwrap()).unwrap(),
                 i as f64,
                 "round trip temperature conversion (C to K to C) failed to return orig value"
             );

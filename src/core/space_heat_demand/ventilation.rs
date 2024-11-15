@@ -503,7 +503,7 @@ impl Window {
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
         let wind_direction = self.external_conditions.wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time));
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
@@ -735,7 +735,7 @@ impl Vent {
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
         let wind_direction = self.external_conditions.wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time));
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path_from_pitch_and_orientation(
@@ -901,7 +901,7 @@ impl Leaks {
         shield_class: VentilationShieldClass,
         simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime));
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path(f_cross, shield_class, self.h_path, self.facade_direction); // #TABLE from annex B
@@ -1227,7 +1227,7 @@ impl MechanicalVentilation {
         t_z: f64,
         simulation_time: &SimulationTimeIteration,
     ) -> (f64, f64, f64) {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time));
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Required air flow at air terminal devices
         let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
@@ -1510,7 +1510,7 @@ impl InfiltrationVentilation {
         h_z: f64,
         simtime: &SimulationTimeIteration,
     ) -> f64 {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simtime));
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
         let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
 
@@ -1580,7 +1580,7 @@ impl InfiltrationVentilation {
         r_w_arg_min_max: f64,
         flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let (qm_in, qm_out, _) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 p_z_ref,
@@ -1588,8 +1588,8 @@ impl InfiltrationVentilation {
                 r_w_arg_min_max,
                 flag,
                 simtime,
-            );
-        qm_in + qm_out
+            )?;
+        Ok(qm_in + qm_out)
     }
 
     /// Calculate incoming air flow, in m3/hr, at specified conditions
@@ -1601,7 +1601,7 @@ impl InfiltrationVentilation {
         reporting_flag: Option<ReportingFlag>,
         report_effective_flow_rate: Option<bool>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let report_effective_flow_rate = report_effective_flow_rate.unwrap_or(false);
         let (mut qm_in, _, qm_effective_flow_rate) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
@@ -1610,16 +1610,16 @@ impl InfiltrationVentilation {
                 r_w_arg_min_max,
                 reporting_flag,
                 simtime,
-            );
+            )?;
 
         if report_effective_flow_rate {
             qm_in -= qm_effective_flow_rate
         }
-        convert_mass_flow_rate_to_volume_flow_rate(
+        Ok(convert_mass_flow_rate_to_volume_flow_rate(
             qm_in,
-            celsius_to_kelvin(self.external_conditions.air_temp(&simtime)),
+            celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures."),
             self.p_a_alt,
-        )
+        ))
     }
 
     /// Implicit mass balance for calculation of the internal reference pressure
@@ -1650,11 +1650,11 @@ impl InfiltrationVentilation {
         r_w_arg_min_max: f64,
         _reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64, f64) {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime));
-        let t_z = celsius_to_kelvin(temp_int_air);
+        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let t_z = celsius_to_kelvin(temp_int_air)?;
         let mut qm_in_through_window_opening = 0.;
         let mut qm_out_through_window_opening = 0.;
         let mut qm_in_through_vents = 0.;
@@ -1767,7 +1767,7 @@ impl InfiltrationVentilation {
         //      which is currently not implemented here
         // }
 
-        (qm_in, qm_out, qm_in_effective_heat_recovery_saving_total)
+        Ok((qm_in, qm_out, qm_in_effective_heat_recovery_saving_total))
     }
 }
 
@@ -1791,7 +1791,7 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
                 self.r_w_arg,
                 None,
                 self.simtime,
-            );
+            )?;
         Ok(cost)
     }
 }
@@ -2755,13 +2755,15 @@ mod tests {
         let temp_int_air = 20.;
         let r_w_arg_min_max = 1.;
         assert_relative_eq!(
-            infiltration_ventilation.implicit_mass_balance_for_internal_reference_pressure(
-                p_z_ref,
-                temp_int_air,
-                r_w_arg_min_max,
-                None,
-                simulation_time_iterator.current_iteration()
-            ),
+            infiltration_ventilation
+                .implicit_mass_balance_for_internal_reference_pressure(
+                    p_z_ref,
+                    temp_int_air,
+                    r_w_arg_min_max,
+                    None,
+                    simulation_time_iterator.current_iteration()
+                )
+                .unwrap(),
             -30430.689049309116
         )
     }
@@ -2776,14 +2778,16 @@ mod tests {
         let r_w_arg_min_max = 1.;
 
         assert_relative_eq!(
-            infiltration_ventilation.incoming_air_flow(
-                p_z_ref,
-                temp_int_air,
-                r_w_arg_min_max,
-                None,
-                Some(false),
-                simulation_time_iterator.current_iteration()
-            ),
+            infiltration_ventilation
+                .incoming_air_flow(
+                    p_z_ref,
+                    temp_int_air,
+                    r_w_arg_min_max,
+                    None,
+                    Some(false),
+                    simulation_time_iterator.current_iteration()
+                )
+                .unwrap(),
             4.973297477194108
         )
     }

@@ -726,13 +726,13 @@ pub fn space_heat_cool_demand(
     let temp_setpnt_cool_vent = if let Some(control) = control {
         let temp_setpnt_cool_vent_response = control
             .setpnt(simulation_time)
-            .unwrap_or_else(|| kelvin_to_celsius(1.4e32));
+            .unwrap_or_else(|| kelvin_to_celsius(1.4e32).expect("Not below absolute zero"));
         if temp_setpnt_cool_vent_response < temp_setpnt_heat {
             bail!("Setpoint for additional ventilation is below heating setpoint.");
         }
         temp_setpnt_cool_vent_response
     } else {
-        kelvin_to_celsius(1.4e32)
+        kelvin_to_celsius(1.4e32).expect("Not below absolute zero")
     };
 
     if temp_setpnt_cool_vent < temp_setpnt_heat {

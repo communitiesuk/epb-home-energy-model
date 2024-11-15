@@ -93,11 +93,11 @@ const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
 
 /// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
-    kelvin_to_celsius(0.0)
+    kelvin_to_celsius(0.0).expect("Not below absolute zero")
 }
 
 fn temp_setpnt_cool_none() -> f64 {
-    kelvin_to_celsius(1.4e32)
+    kelvin_to_celsius(1.4e32).expect("Not below absolute zero")
 }
 
 // used for calculations re internal gains from pipework
@@ -838,7 +838,7 @@ impl Corpus {
             Some(reporting_flag),
             Some(true),
             simtime,
-        );
+        )?;
 
         Ok(incoming_air_flow / self.total_volume)
     }

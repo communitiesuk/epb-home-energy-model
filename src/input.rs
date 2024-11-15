@@ -2338,7 +2338,7 @@ pub struct HeatPumpBufferTank {
     pub pump_power_at_flow_rate: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -2350,7 +2350,9 @@ pub struct HeatPumpTestDatum {
     #[serde(rename = "degradation_coeff")]
     pub degradation_coefficient: f64,
     pub design_flow_temp: f64,
+    #[validate(minimum = -273.15)]
     pub temp_outlet: f64,
+    #[validate(minimum = -273.15)]
     pub temp_source: f64,
     pub temp_test: f64,
     pub eahp_mixed_ext_air_ratio: Option<f64>,

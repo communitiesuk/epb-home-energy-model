@@ -12,8 +12,8 @@ use crate::core::heating_systems::emitters::convert_flow_to_return_temp;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
-    celsius_to_kelvin, kelvin_to_celsius, HOURS_PER_DAY, KILOJOULES_PER_KILOWATT_HOUR,
-    SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
+    celsius_to_kelvin, kelvin_to_celsius, BelowAbsoluteZeroError, HOURS_PER_DAY,
+    KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::corpus::TempInternalAirFn;
@@ -691,8 +691,10 @@ impl HeatPumpTestData {
                 let (carnot_cops, exergetic_effs) =
                     data.iter().fold((vec![], vec![]), |mut acc, datum| {
                         // Get the source and outlet temperatures from the test record
-                        let temp_source = celsius_to_kelvin(datum.temp_source);
-                        let temp_outlet = celsius_to_kelvin(datum.temp_outlet);
+                        let temp_source = celsius_to_kelvin(datum.temp_source)
+                            .expect("Invalid temperature encountered");
+                        let temp_outlet = celsius_to_kelvin(datum.temp_outlet)
+                            .expect("Invalid temperature encountered");
 
                         // Calculate the Carnot CoP
                         let carnot_cop = carnot_cop(temp_source, temp_outlet, None);
@@ -701,15 +703,19 @@ impl HeatPumpTestData {
                         acc
                     });
 
-                let temp_source_cld = celsius_to_kelvin(data[0].temp_source);
-                let temp_outlet_cld = celsius_to_kelvin(data[0].temp_outlet);
+                let temp_source_cld = celsius_to_kelvin(data[0].temp_source)
+                    .expect("Invalid temperature not expected");
+                let temp_outlet_cld = celsius_to_kelvin(data[0].temp_outlet)
+                    .expect("Invalid temperature not expected");
                 let carnot_cop_cld = carnot_cops[0];
 
                 let theoretical_load_ratios =
                     data.iter().enumerate().fold(vec![], |mut acc, (i, datum)| {
                         // Get the source and outlet temperatures from the test record
-                        let temp_source = celsius_to_kelvin(datum.temp_source);
-                        let temp_outlet = celsius_to_kelvin(datum.temp_outlet);
+                        let temp_source = celsius_to_kelvin(datum.temp_source)
+                            .expect("Invalid temperature not expected");
+                        let temp_outlet = celsius_to_kelvin(datum.temp_outlet)
+                            .expect("Invalid temperature not expected");
 
                         let theoretical_load_ratio = (carnot_cops[i] / carnot_cop_cld)
                             * (temp_outlet_cld * temp_source / (temp_source_cld * temp_outlet))
@@ -747,13 +753,13 @@ impl HeatPumpTestData {
     ///
     /// Arguments:
     /// * `flow_temp` - flow temp in K
-    pub fn average_degradation_coeff(&self, flow_temp: f64) -> f64 {
+    pub fn average_degradation_coeff(&self, flow_temp: f64) -> Result<f64, BelowAbsoluteZeroError> {
         if self.dsgn_flow_temps.len() == 1 {
-            return self.average_deg_coeff[0];
+            return Ok(self.average_deg_coeff[0]);
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -761,20 +767,20 @@ impl HeatPumpTestData {
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.average_deg_coeff,
-        )
+        ))
     }
 
     /// Return average capacity for tests A-D, interpolated between design flow temps
     ///
     /// Arguments:
     /// * `flow_temp` - flow temp in K
-    pub fn average_capacity(&self, flow_temp: f64) -> f64 {
+    pub fn average_capacity(&self, flow_temp: f64) -> Result<f64, BelowAbsoluteZeroError> {
         if self.dsgn_flow_temps.len() == 1 {
-            return self.average_cap[0];
+            return Ok(self.average_cap[0]);
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -782,20 +788,23 @@ impl HeatPumpTestData {
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.average_cap,
-        )
+        ))
     }
 
     /// Return temperature spread under test conditions, interpolated between design flow temps
     ///
     /// Arguments:
     /// * `flow_temp` - flow temp in K
-    pub fn temp_spread_test_conditions(&self, flow_temp: f64) -> f64 {
+    pub fn temp_spread_test_conditions(
+        &self,
+        flow_temp: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         if self.dsgn_flow_temps.len() == 1 {
-            return self.temp_spread_test_conditions[0];
+            return Ok(self.temp_spread_test_conditions[0]);
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -803,7 +812,7 @@ impl HeatPumpTestData {
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &self.temp_spread_test_conditions,
-        )
+        ))
     }
 
     fn find_test_record_index(&self, test_condition: &str, dsgn_flow_temp: f64) -> Option<usize> {
@@ -822,12 +831,12 @@ impl HeatPumpTestData {
         data_item_name: DatumItem,
         test_condition: &str,
         flow_temp: f64,
-    ) -> f64 {
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         if self.dsgn_flow_temps.len() == 1 {
             let idx = self
                 .find_test_record_index(test_condition, self.dsgn_flow_temps[0].0)
                 .expect("Expected a test condition to be found in the test data for heat pumps");
-            return self.test_data[&self.dsgn_flow_temps[0]][idx].data_item(&data_item_name);
+            return Ok(self.test_data[&self.dsgn_flow_temps[0]][idx].data_item(&data_item_name));
         }
 
         let data_list = &self
@@ -843,8 +852,8 @@ impl HeatPumpTestData {
             })
             .collect::<Vec<_>>();
 
-        let flow_temp = kelvin_to_celsius(flow_temp);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -852,39 +861,55 @@ impl HeatPumpTestData {
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             data_list,
-        )
+        ))
     }
 
     /// Return Carnot CoP at specified test condition (A, B, C, D, F or cld),
     /// interpolated between design flow temps
-    fn carnot_cop_at_test_condition(&self, test_condition: &str, flow_temp: f64) -> f64 {
-        self.data_at_test_condition(DatumItem::CarnotCop, test_condition, flow_temp)
+    fn carnot_cop_at_test_condition(
+        &self,
+        test_condition: &str,
+        flow_temp: f64,
+    ) -> anyhow::Result<f64> {
+        Ok(self.data_at_test_condition(DatumItem::CarnotCop, test_condition, flow_temp)?)
     }
 
     /// Return outlet temp, in Kelvin, at specified test condition (A, B, C, D,
     /// F or cld), interpolated between design flow temps.
-    fn outlet_temp_at_test_condition(&self, test_condition: &str, flow_temp: f64) -> f64 {
+    fn outlet_temp_at_test_condition(
+        &self,
+        test_condition: &str,
+        flow_temp: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         celsius_to_kelvin(self.data_at_test_condition(
             DatumItem::TempOutlet,
             test_condition,
             flow_temp,
-        ))
+        )?)
     }
 
     /// Return source temp, in Kelvin, at specified test condition (A, B, C, D,
     /// F or cld), interpolated between design flow temps.
-    fn source_temp_at_test_condition(&self, test_condition: &str, flow_temp: f64) -> f64 {
+    fn source_temp_at_test_condition(
+        &self,
+        test_condition: &str,
+        flow_temp: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         celsius_to_kelvin(self.data_at_test_condition(
             DatumItem::TempSource,
             test_condition,
             flow_temp,
-        ))
+        )?)
     }
 
     #[cfg(test)]
     /// Return capacity, in kW, at specified test condition (A, B, C, D, F or
     /// cld), interpolated between design flow temps.
-    fn capacity_at_test_condition(&self, test_condition: &str, flow_temp: f64) -> f64 {
+    fn capacity_at_test_condition(
+        &self,
+        test_condition: &str,
+        flow_temp: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         self.data_at_test_condition(DatumItem::Capacity, test_condition, flow_temp)
     }
 
@@ -894,23 +919,23 @@ impl HeatPumpTestData {
         flow_temp: f64,
         temp_source: f64,
         carnot_cop_op_cond: f64,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let lr_op_cond_list = self
             .dsgn_flow_temps
             .iter()
             .map(|dsgn_flow_temp| {
-                let dsgn_flow_temp = celsius_to_kelvin(dsgn_flow_temp.0);
-                let temp_output_cld = self.outlet_temp_at_test_condition("cld", dsgn_flow_temp);
-                let temp_source_cld = self.source_temp_at_test_condition("cld", dsgn_flow_temp);
-                let carnot_cop_cld = self.carnot_cop_at_test_condition("cld", dsgn_flow_temp);
+                let dsgn_flow_temp = celsius_to_kelvin(dsgn_flow_temp.0)?;
+                let temp_output_cld = self.outlet_temp_at_test_condition("cld", dsgn_flow_temp)?;
+                let temp_source_cld = self.source_temp_at_test_condition("cld", dsgn_flow_temp)?;
+                let carnot_cop_cld = self.carnot_cop_at_test_condition("cld", dsgn_flow_temp)?;
 
                 let lr_op_cond = (carnot_cop_op_cond / carnot_cop_cld)
                     * (temp_output_cld * temp_source / (flow_temp * temp_source_cld)).powf(N_EXER);
-                max_of_2(1.0, lr_op_cond)
+                Ok(max_of_2(1.0, lr_op_cond))
             })
-            .collect::<Vec<_>>();
-        let flow_temp = kelvin_to_celsius(flow_temp);
-        np_interp(
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -918,7 +943,7 @@ impl HeatPumpTestData {
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &lr_op_cond_list,
-        )
+        ))
     }
 
     /// Return test results either side of operating conditions.
@@ -938,7 +963,7 @@ impl HeatPumpTestData {
         &self,
         flow_temp: f64,
         exergy_lr_op_cond: f64,
-    ) -> (f64, f64, f64, f64, f64, f64) {
+    ) -> anyhow::Result<(f64, f64, f64, f64, f64, f64)> {
         let mut load_ratios_below: Vec<f64> = Default::default();
         let mut load_ratios_above: Vec<f64> = Default::default();
         let mut efficiencies_below: Vec<f64> = Default::default();
@@ -975,17 +1000,17 @@ impl HeatPumpTestData {
         }
 
         if self.dsgn_flow_temps.len() == 1 {
-            return (
+            return Ok((
                 load_ratios_below[0],
                 load_ratios_above[0],
                 efficiencies_below[0],
                 efficiencies_above[0],
                 degradation_coeffs_below[0],
                 degradation_coeffs_above[0],
-            );
+            ));
         }
 
-        let flow_temp = kelvin_to_celsius(flow_temp);
+        let flow_temp = kelvin_to_celsius(flow_temp)?;
         let dsgn_temps_for_interp = &self
             .dsgn_flow_temps
             .iter()
@@ -998,9 +1023,9 @@ impl HeatPumpTestData {
         let deg_below = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_below);
         let deg_above = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_above);
 
-        (
+        Ok((
             lr_below, lr_above, eff_below, eff_above, deg_below, deg_above,
-        )
+        ))
     }
 
     /// Calculate CoP at operating conditions when heat pump is not air-source
@@ -1017,7 +1042,7 @@ impl HeatPumpTestData {
         temp_ext_c: f64,
         temp_source: f64,
         temp_output: f64,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         // For each design flow temperature, calculate CoP at operating conditions
         // Note: Loop over sorted list of design flow temps and then index into
         //        self.test_data, rather than looping over self.test_data,
@@ -1029,25 +1054,25 @@ impl HeatPumpTestData {
             .map(|dsgn_flow_temp| {
                 let dsgn_flow_temp_data = &self.test_data[dsgn_flow_temp];
                 // Get the source and outlet temperatures from the coldest test record
-                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet);
-                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source);
+                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet)?;
+                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source)?;
 
-                (self.regression_coeffs[dsgn_flow_temp][0]
+                Ok((self.regression_coeffs[dsgn_flow_temp][0]
                     + self.regression_coeffs[dsgn_flow_temp][1] * temp_ext_c
                     + self.regression_coeffs[dsgn_flow_temp][2] * temp_ext_c.powi(2))
                     * temp_output
                     * (temp_outlet_cld - temp_source_cld)
-                    / (temp_outlet_cld * max_of_2(temp_output - temp_source, temp_diff_limit_low))
+                    / (temp_outlet_cld * max_of_2(temp_output - temp_source, temp_diff_limit_low)))
             })
-            .collect::<Vec<_>>();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         if self.dsgn_flow_temps.len() == 1 {
-            return cop_op_cond[0];
+            return Ok(cop_op_cond[0]);
         }
 
         // Interpolate between the values found for the different design flow temperatures
-        let flow_temp = kelvin_to_celsius(temp_output);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(temp_output)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -1055,7 +1080,7 @@ impl HeatPumpTestData {
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &cop_op_cond,
-        )
+        ))
     }
 
     /// Calculate thermal capacity at operating conditions when heat pump is not air-source
@@ -1071,7 +1096,7 @@ impl HeatPumpTestData {
         temp_output: f64,
         temp_source: f64,
         mod_ctrl: bool,
-    ) -> f64 {
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         // In eqns below, method uses condition A rather than coldest. From
         // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.4:
         // The Temperature Operation Limit (TOL) is defined in EN14825 as
@@ -1091,18 +1116,18 @@ impl HeatPumpTestData {
             self.dsgn_flow_temps.iter().map(|dsgn_flow_temp| {
                 let dsgn_flow_temp_data = &self.test_data[dsgn_flow_temp];
                 // Get the source and outlet temperatures from the coldest test record
-                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet);
-                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source);
+                let temp_outlet_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_outlet)?;
+                let temp_source_cld = celsius_to_kelvin(dsgn_flow_temp_data[0].temp_source)?;
                 // Get the thermal capacity from the coldest test record
                 let thermal_capacity_cld = dsgn_flow_temp_data[0].capacity;
 
-                if mod_ctrl {
+                Ok(if mod_ctrl {
                     thermal_capacity_cld * ((temp_outlet_cld * temp_source) / (temp_output * temp_source_cld)).powf(N_EXER)
                 } else {
                     let d_idx = self.find_test_record_index("D", dsgn_flow_temp.0).expect("Expected to find a test record with the condition 'D' within heat pump test data");
                     // Get the source and outlet temperatures for test condition D
-                    let temp_outlet_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_outlet);
-                    let temp_source_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_source);
+                    let temp_outlet_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_outlet)?;
+                    let temp_source_d = celsius_to_kelvin(dsgn_flow_temp_data[d_idx].temp_source)?;
                     // Get the thermal capacity for test condition D
                     let thermal_capacity_d = dsgn_flow_temp_data[d_idx].capacity;
 
@@ -1111,12 +1136,12 @@ impl HeatPumpTestData {
                     let temp_diff_op_cond = temp_output - temp_source;
 
                     thermal_capacity_cld + (thermal_capacity_d - thermal_capacity_cld) * ((temp_diff_cld - temp_diff_op_cond) / (temp_diff_cld - temp_diff_d))
-                }
-            }).collect::<Vec<_>>();
+                })
+            }).collect::<Result<Vec<f64>, BelowAbsoluteZeroError>>()?;
 
         // Interpolate between the values found for the different design flow temperatures
-        let flow_temp = kelvin_to_celsius(temp_output);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(temp_output)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -1124,7 +1149,7 @@ impl HeatPumpTestData {
                 .map(|temp| temp.0)
                 .collect::<Vec<_>>(),
             &therm_cap_op_cond,
-        )
+        ))
     }
 
     /// Calculate temperature spread correction factor
@@ -1148,7 +1173,7 @@ impl HeatPumpTestData {
         temp_diff_evaporator: f64,
         temp_diff_condenser: f64,
         temp_spread_emitter: f64,
-    ) -> f64 {
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         let temp_spread_correction_list = self
             .dsgn_flow_temps
             .iter()
@@ -1161,8 +1186,8 @@ impl HeatPumpTestData {
             })
             .collect::<Vec<_>>();
 
-        let flow_temp = kelvin_to_celsius(temp_output);
-        np_interp(
+        let flow_temp = kelvin_to_celsius(temp_output)?;
+        Ok(np_interp(
             flow_temp,
             &self
                 .dsgn_flow_temps
@@ -1170,7 +1195,7 @@ impl HeatPumpTestData {
                 .map(|d| d.0)
                 .collect::<Vec<f64>>(),
             &temp_spread_correction_list,
-        )
+        ))
     }
 }
 
@@ -1298,8 +1323,12 @@ impl HeatPumpServiceWater {
             heat_pump,
             service_name,
             control,
-            temp_hot_water_in_k: celsius_to_kelvin(temp_hot_water_in_c),
-            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c),
+            temp_hot_water_in_k: celsius_to_kelvin(temp_hot_water_in_c).expect(
+                "Hot water temp for heat pump is never expected to be below absolute zero.",
+            ),
+            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
+                "Upper temp limit for heat pump is never expected to be below absolute zero.",
+            ),
             cold_feed,
             hybrid_boiler_service: boiler_service_water_regular,
         }
@@ -1321,7 +1350,7 @@ impl HeatPumpServiceWater {
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
-        let temp_return_k = celsius_to_kelvin(temp_return);
+        let temp_return_k = celsius_to_kelvin(temp_return)?;
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
         }
@@ -1348,8 +1377,8 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let temp_cold_water =
-            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration));
-        let temp_return_k = celsius_to_kelvin(temp_return);
+            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration))?;
+        let temp_return_k = celsius_to_kelvin(temp_return)?;
 
         let service_on = self.is_on(simulation_time_iteration);
 
@@ -1418,7 +1447,8 @@ impl HeatPumpServiceSpace {
             heat_pump,
             service_name,
             control,
-            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c),
+            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c)
+                .expect("Upper temp limit for heat pump never expected to be below absolute zero"),
             temp_diff_emit_dsgn,
             hybrid_boiler_service: boiler_service_space,
             volume_heated,
@@ -1453,7 +1483,7 @@ impl HeatPumpServiceSpace {
             return Ok((0.0, None));
         }
 
-        let temp_output = celsius_to_kelvin(temp_output);
+        let temp_output = celsius_to_kelvin(temp_output)?;
         let mut heat_pump = self.heat_pump.lock();
         let source_type = heat_pump.source_type;
         heat_pump.energy_output_max(
@@ -1499,8 +1529,8 @@ impl HeatPumpServiceSpace {
             &self.service_name,
             &Self::SERVICE_TYPE,
             energy_demand,
-            celsius_to_kelvin(temp_flow),
-            celsius_to_kelvin(temp_return),
+            celsius_to_kelvin(temp_flow)?,
+            celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
             service_on,
@@ -1540,8 +1570,8 @@ impl HeatPumpServiceSpace {
             &self.service_name,
             &ServiceType::Space,
             energy_demand,
-            celsius_to_kelvin(temp_flow),
-            celsius_to_kelvin(temp_return),
+            celsius_to_kelvin(temp_flow)?,
+            celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
             service_on,
@@ -1579,7 +1609,7 @@ impl HeatPumpServiceSpace {
                     temp_diff_evaporator,
                     temp_diff_condenser,
                     temp_diff_emit_dsgn,
-                )
+                ).expect("Did not expect temp spread correction function to encounter an illegal temperature")
             },
         )
     }
@@ -1618,7 +1648,9 @@ impl HeatPumpServiceSpaceWarmAir {
             heat_pump,
             service_name,
             control,
-            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c),
+            temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
+                "Upper limit given for heat pump never expceted to be below absolute zero.",
+            ),
             temp_diff_emit_dsgn,
             frac_convective,
             temp_flow,
@@ -1665,8 +1697,8 @@ impl HeatPumpServiceSpaceWarmAir {
             &self.service_name,
             &ServiceType::Space,
             energy_demand,
-            celsius_to_kelvin(temp_flow),
-            celsius_to_kelvin(temp_return),
+            celsius_to_kelvin(temp_flow)?,
+            celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
             service_on,
@@ -1712,8 +1744,8 @@ impl HeatPumpServiceSpaceWarmAir {
             &self.service_name,
             &ServiceType::Space,
             energy_demand,
-            celsius_to_kelvin(temp_flow),
-            celsius_to_kelvin(temp_return),
+            celsius_to_kelvin(temp_flow)?,
+            celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
             service_on,
@@ -1752,7 +1784,7 @@ impl HeatPumpServiceSpaceWarmAir {
                     temp_diff_evaporator,
                     temp_diff_condenser,
                     temp_diff_emit_dsgn,
-                )
+                ).expect("Temp spread correction never expects to encounter temperature below absolute zero")
             },
         )
     }
@@ -1941,7 +1973,7 @@ impl HeatPump {
                 *modulating_control,
                 *time_constant_onoff_operation,
                 *temp_return_feed_max,
-                celsius_to_kelvin(*temp_lower_operating_limit),
+                celsius_to_kelvin(*temp_lower_operating_limit)?,
                 *min_temp_diff_flow_return_for_hp_to_operate,
                 *var_flow_temp_ctrl_during_test,
                 *power_heating_circ_pump,
@@ -1982,7 +2014,7 @@ impl HeatPump {
 
         let temp_return_feed_max = match sink_type {
             HeatPumpSinkType::Air => None,
-            _ => Some(celsius_to_kelvin(temp_return_feed_max)),
+            _ => Some(celsius_to_kelvin(temp_return_feed_max)?),
         };
         let temp_distribution_heat_network = match source_type {
             HeatPumpSourceType::HeatNetwork => *temp_distribution_heat_network,
@@ -2340,7 +2372,7 @@ impl HeatPump {
             heat_pump
                 .lock()
                 .test_data
-                .temp_spread_test_conditions(temp_flow),
+                .temp_spread_test_conditions(temp_flow)?,
         );
 
         Self::create_service_connection(heat_pump.clone(), service_name.as_str())?;
@@ -2397,12 +2429,17 @@ impl HeatPump {
         };
 
         celsius_to_kelvin(temp_source)
+            .expect("In context, temperature is never expected to be less than absolute zero.")
     }
 
     /// Calculate the thermal capacity of the heat pump at operating conditions
     ///
     /// Based on CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.4
-    fn thermal_capacity_op_cond(&self, temp_output: f64, temp_source: f64) -> f64 {
+    fn thermal_capacity_op_cond(
+        &self,
+        temp_output: f64,
+        temp_source: f64,
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
             && !self.var_flow_temp_ctrl_during_test
         {
@@ -2423,7 +2460,7 @@ impl HeatPump {
         time_available: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> Result<f64, BelowAbsoluteZeroError> {
         let time_elapsed_hp = match self.backup_ctrl {
             HeatPumpBackupControlType::TopUp => None,
             HeatPumpBackupControlType::None | HeatPumpBackupControlType::Substitute => {
@@ -2431,24 +2468,24 @@ impl HeatPump {
             }
         };
 
-        match hybrid_boiler_service {
+        Ok(match hybrid_boiler_service {
             Some(HybridBoilerService::Regular(service_water_regular)) => {
                 service_water_regular.lock().energy_output_max(
-                    kelvin_to_celsius(temp_return_feed),
+                    kelvin_to_celsius(temp_return_feed)?,
                     time_elapsed_hp,
                     simtime,
                 )
             }
             Some(HybridBoilerService::Space(service_space)) => {
                 service_space.lock().energy_output_max(
-                    kelvin_to_celsius(temp_output),
-                    kelvin_to_celsius(temp_return_feed),
+                    kelvin_to_celsius(temp_output)?,
+                    kelvin_to_celsius(temp_return_feed)?,
                     time_elapsed_hp,
                     simtime,
                 )
             }
             None => self.power_max_backup * time_available,
-        }
+        })
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -2508,14 +2545,14 @@ impl HeatPump {
                 temp_source,
                 temp_spread_correction.expect("A temp spread correction argument was expected."),
                 simtime,
-            );
+            )?;
             let energy_output_max_boiler = self.backup_energy_output_max(
                 temp_output,
                 temp_return_feed,
                 time_available,
                 hybrid_boiler_service.clone(),
                 simtime,
-            );
+            )?;
             let boiler_eff = self
                 .boiler
                 .as_ref()
@@ -2523,7 +2560,7 @@ impl HeatPump {
                 .read()
                 .calc_boiler_eff(
                     false,
-                    kelvin_to_celsius(temp_return_feed),
+                    kelvin_to_celsius(temp_return_feed)?,
                     energy_output_max_boiler,
                     Some(timestep),
                     simtime,
@@ -2540,12 +2577,12 @@ impl HeatPump {
                 time_available,
                 hybrid_boiler_service,
                 simtime,
-            )
+            )?
         } else {
             let power_max_hp = if self.outside_operating_limits(temp_return_feed, simtime) {
                 0.0
             } else {
-                self.thermal_capacity_op_cond(temp_output, temp_source)
+                self.thermal_capacity_op_cond(temp_output, temp_source)?
             };
 
             match (self.backup_ctrl, self.backup_heater_delay_time_elapsed()) {
@@ -2557,7 +2594,7 @@ impl HeatPump {
                         time_available,
                         hybrid_boiler_service,
                         simtime,
-                    );
+                    )?;
                     (power_max_hp * time_available) + energy_max_backup
                 }
                 (HeatPumpBackupControlType::Substitute, _) => {
@@ -2567,7 +2604,7 @@ impl HeatPump {
                         time_available,
                         hybrid_boiler_service,
                         simtime,
-                    );
+                    )?;
                     max_of_2(power_max_hp * time_available, energy_max_backup)
                 }
             }
@@ -2593,7 +2630,7 @@ impl HeatPump {
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64) {
+    ) -> anyhow::Result<(f64, f64)> {
         let temp_spread_correction_factor = match temp_spread_correction {
             TempSpreadCorrectionArg::Float(correction) => correction,
             TempSpreadCorrectionArg::Callable(callable) => {
@@ -2601,73 +2638,76 @@ impl HeatPump {
             }
         };
 
-        if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
-            && !self.var_flow_temp_ctrl_during_test
-        {
-            let cop_op_cond = temp_spread_correction_factor
-                * self.test_data.cop_op_cond_if_not_air_source(
-                    HEAT_PUMP_TEMP_DIFF_LIMIT_LOW,
-                    self.external_conditions
-                        .air_temp(&simulation_time_iteration), // TODO Python uses .temperature() method here although need to check if this is a bug
+        Ok(
+            if !matches!(self.source_type, HeatPumpSourceType::OutsideAir)
+                && !self.var_flow_temp_ctrl_during_test
+            {
+                let cop_op_cond = temp_spread_correction_factor
+                    * self.test_data.cop_op_cond_if_not_air_source(
+                        HEAT_PUMP_TEMP_DIFF_LIMIT_LOW,
+                        self.external_conditions
+                            .air_temp(&simulation_time_iteration), // TODO Python uses .temperature() method here although need to check if this is a bug
+                        temp_source,
+                        temp_output,
+                    )?;
+                let deg_coeff_op_cond = self.test_data.average_degradation_coeff(temp_output)?;
+
+                (cop_op_cond, deg_coeff_op_cond)
+            } else {
+                let carnot_cop_op_cond = carnot_cop(
                     temp_source,
                     temp_output,
+                    Some(HEAT_PUMP_TEMP_DIFF_LIMIT_LOW),
                 );
-            let deg_coeff_op_cond = self.test_data.average_degradation_coeff(temp_output);
+                // Get exergy load ratio at operating conditions and exergy load ratio,
+                // exergy efficiency and degradation coeff at test conditions above and
+                // below operating conditions
+                let lr_op_cond = self.test_data.load_ratio_at_operating_conditions(
+                    temp_output,
+                    temp_source,
+                    carnot_cop_op_cond,
+                )?;
+                let (lr_below, lr_above, eff_below, eff_above, deg_coeff_below, deg_coeff_above) =
+                    self.test_data
+                        .lr_eff_degcoeff_either_side_of_op_cond(temp_output, lr_op_cond)?;
 
-            (cop_op_cond, deg_coeff_op_cond)
-        } else {
-            let carnot_cop_op_cond = carnot_cop(
-                temp_source,
-                temp_output,
-                Some(HEAT_PUMP_TEMP_DIFF_LIMIT_LOW),
-            );
-            // Get exergy load ratio at operating conditions and exergy load ratio,
-            // exergy efficiency and degradation coeff at test conditions above and
-            // below operating conditions
-            let lr_op_cond = self.test_data.load_ratio_at_operating_conditions(
-                temp_output,
-                temp_source,
-                carnot_cop_op_cond,
-            );
-            let (lr_below, lr_above, eff_below, eff_above, deg_coeff_below, deg_coeff_above) = self
-                .test_data
-                .lr_eff_degcoeff_either_side_of_op_cond(temp_output, lr_op_cond);
+                // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
+                // Get exergy efficiency by interpolating between figures above and
+                // below operating conditions
+                let exer_eff_op_cond = eff_below
+                    + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above);
 
-            // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
-            // Get exergy efficiency by interpolating between figures above and
-            // below operating conditions
-            let exer_eff_op_cond = eff_below
-                + (eff_below - eff_above) * (lr_op_cond - lr_below) / (lr_below - lr_above);
+                // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.5
+                // Note: DAHPSE method document section 4.5.5 doesn't have
+                // temp_spread_correction_factor in formula below. However, section 4.5.7
+                // states that the correction factor is to be applied to the CoP.
+                let cop_op_cond = max_of_2(
+                    1.0,
+                    exer_eff_op_cond * carnot_cop_op_cond * temp_spread_correction_factor,
+                );
 
-            // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.5
-            // Note: DAHPSE method document section 4.5.5 doesn't have
-            // temp_spread_correction_factor in formula below. However, section 4.5.7
-            // states that the correction factor is to be applied to the CoP.
-            let cop_op_cond = max_of_2(
-                1.0,
-                exer_eff_op_cond * carnot_cop_op_cond * temp_spread_correction_factor,
-            );
+                let (limit_upper, limit_lower) = if matches!(self.sink_type, HeatPumpSinkType::Air)
+                    && !matches!(service_type, ServiceType::Water)
+                {
+                    (0.25, 0.0)
+                } else {
+                    (1.0, 0.9)
+                };
 
-            let (limit_upper, limit_lower) = if matches!(self.sink_type, HeatPumpSinkType::Air)
-                && !matches!(service_type, ServiceType::Water)
-            {
-                (0.25, 0.0)
-            } else {
-                (1.0, 0.9)
-            };
+                let deg_coeff_op_cond = if lr_below == lr_above {
+                    deg_coeff_below
+                } else {
+                    deg_coeff_below
+                        + (deg_coeff_below - deg_coeff_above) * (lr_op_cond - lr_below)
+                            / (lr_below - lr_above)
+                };
 
-            let deg_coeff_op_cond = if lr_below == lr_above {
-                deg_coeff_below
-            } else {
-                deg_coeff_below
-                    + (deg_coeff_below - deg_coeff_above) * (lr_op_cond - lr_below)
-                        / (lr_below - lr_above)
-            };
+                let deg_coeff_op_cond =
+                    max_of_2(min_of_2(deg_coeff_op_cond, limit_upper), limit_lower);
 
-            let deg_coeff_op_cond = max_of_2(min_of_2(deg_coeff_op_cond, limit_upper), limit_lower);
-
-            (cop_op_cond, deg_coeff_op_cond)
-        }
+                (cop_op_cond, deg_coeff_op_cond)
+            },
+        )
     }
 
     /// Calculate energy output limited by upper temperature
@@ -2743,7 +2783,7 @@ impl HeatPump {
         temp_return_feed: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let timestep = self.simulation_timestep;
 
         // For top-up backup heater, use backup if delay time has elapsed.
@@ -2757,18 +2797,20 @@ impl HeatPump {
             time_available,
             hybrid_boiler_service,
             simtime,
-        );
+        )?;
 
-        if (matches!(self.backup_ctrl, HeatPumpBackupControlType::TopUp)
-            && self.backup_heater_delay_time_elapsed())
-            || (matches!(self.backup_ctrl, HeatPumpBackupControlType::Substitute)
-                && self.backup_heater_delay_time_elapsed()
-                && energy_max_backup > (thermal_capacity_op_cond * time_available))
-        {
-            energy_output_required > thermal_capacity_op_cond * timestep
-        } else {
-            false
-        }
+        Ok(
+            if (matches!(self.backup_ctrl, HeatPumpBackupControlType::TopUp)
+                && self.backup_heater_delay_time_elapsed())
+                || (matches!(self.backup_ctrl, HeatPumpBackupControlType::Substitute)
+                    && self.backup_heater_delay_time_elapsed()
+                    && energy_max_backup > (thermal_capacity_op_cond * time_available))
+            {
+                energy_output_required > thermal_capacity_op_cond * timestep
+            } else {
+                false
+            },
+        )
     }
 
     fn is_heat_pump_cost_effective(
@@ -2803,7 +2845,7 @@ impl HeatPump {
         hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let outside_operating_limits = self.outside_operating_limits(temp_return_feed, simtime);
         let inadequate_capacity = self.inadequate_capacity(
             energy_output_required,
@@ -2813,7 +2855,7 @@ impl HeatPump {
             temp_return_feed,
             hybrid_boiler_service,
             simtime,
-        );
+        )?;
 
         let hp_not_cost_effective = if self.cost_schedule_hybrid_hp.is_some() {
             !self.is_heat_pump_cost_effective(
@@ -2825,11 +2867,11 @@ impl HeatPump {
             false
         };
 
-        self.backup_ctrl != HeatPumpBackupControlType::None
+        Ok(self.backup_ctrl != HeatPumpBackupControlType::None
             && (outside_operating_limits
                 || (inadequate_capacity
                     && self.backup_ctrl == HeatPumpBackupControlType::Substitute)
-                || hp_not_cost_effective)
+                || hp_not_cost_effective))
     }
 
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
@@ -2914,14 +2956,14 @@ impl HeatPump {
         let temp_output = min_of_2(temp_output, temp_limit_upper);
 
         // Get thermal capacity, CoP and degradation coeff at operating conditions
-        let thermal_capacity_op_cond = self.thermal_capacity_op_cond(temp_output, temp_source);
+        let thermal_capacity_op_cond = self.thermal_capacity_op_cond(temp_output, temp_source)?;
         let (cop_op_cond, deg_coeff_op_cond) = self.cop_deg_coeff_op_cond(
             service_type,
             temp_output,
             temp_source,
             temp_spread_correction,
             simtime,
-        );
+        )?;
 
         // Calculate running time of HP
         let time_required = energy_output_limited / thermal_capacity_op_cond;
@@ -2993,7 +3035,7 @@ impl HeatPump {
                     .read()
                     .calc_boiler_eff(
                         false,
-                        kelvin_to_celsius(temp_return_feed),
+                        kelvin_to_celsius(temp_return_feed)?,
                         energy_output_required,
                         Some(timestep),
                         simtime,
@@ -3011,7 +3053,7 @@ impl HeatPump {
             hybrid_boiler_service.clone(),
             boiler_eff,
             simtime,
-        );
+        )?;
 
         // Calculate energy delivered by HP and energy input
         let (energy_delivered_hp, energy_input_hp, energy_input_hp_divisor) =
@@ -3067,7 +3109,7 @@ impl HeatPump {
                     time_available,
                     hybrid_boiler_service.clone(),
                     simtime,
-                );
+                )?;
                 max_of_2(
                     min_of_2(
                         energy_max_backup,
@@ -3219,7 +3261,7 @@ impl HeatPump {
                 HybridBoilerService::Regular(boiler_regular) => {
                     boiler_regular.lock().demand_energy(
                         service_results.energy_output_required_boiler,
-                        kelvin_to_celsius(temp_return_feed),
+                        kelvin_to_celsius(temp_return_feed)?,
                         Some(hybrid_service_bool),
                         time_elapsed_hp,
                         simtime,
@@ -3227,8 +3269,8 @@ impl HeatPump {
                 }
                 HybridBoilerService::Space(boiler_space) => boiler_space.lock().demand_energy(
                     service_results.energy_output_required_boiler,
-                    kelvin_to_celsius(temp_output),
-                    kelvin_to_celsius(temp_return_feed),
+                    kelvin_to_celsius(temp_output)?,
+                    kelvin_to_celsius(temp_return_feed)?,
                     Some(hybrid_service_bool),
                     time_elapsed_hp,
                     simtime,
@@ -4701,7 +4743,9 @@ mod tests {
         let results = [0.9125, 0.919375, 0.92625, 0.933125, 0.94];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_ulps_eq!(
-                test_data.average_degradation_coeff(celsius_to_kelvin(*flow_temp)),
+                test_data
+                    .average_degradation_coeff(celsius_to_kelvin(*flow_temp).unwrap())
+                    .unwrap(),
                 results[i],
             );
         }
@@ -4712,7 +4756,9 @@ mod tests {
         let results = [8.3, 8.375, 8.45, 8.525, 8.6];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_ulps_eq!(
-                test_data.average_capacity(celsius_to_kelvin(*flow_temp)),
+                test_data
+                    .average_capacity(celsius_to_kelvin(*flow_temp).unwrap())
+                    .unwrap(),
                 results[i],
             )
         }
@@ -4723,7 +4769,9 @@ mod tests {
         let results = [5.0, 5.75, 6.5, 7.25, 8.0];
         for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
             assert_eq!(
-                test_data.temp_spread_test_conditions(celsius_to_kelvin(*flow_temp)),
+                test_data
+                    .temp_spread_test_conditions(celsius_to_kelvin(*flow_temp).unwrap())
+                    .unwrap(),
                 results[i],
                 "incorrect temp spread at test conditions returned"
             );
@@ -4764,7 +4812,11 @@ mod tests {
         for (flow_temp, test_condition, result) in carnot_cop_cases {
             assert_ulps_eq!(
                 test_data
-                    .carnot_cop_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                    .carnot_cop_at_test_condition(
+                        test_condition,
+                        celsius_to_kelvin(flow_temp).unwrap(),
+                    )
+                    .unwrap(),
                 result,
             );
         }
@@ -4795,7 +4847,11 @@ mod tests {
         for (flow_temp, test_condition, result) in outlet_temp_cases {
             assert_ulps_eq!(
                 test_data
-                    .outlet_temp_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                    .outlet_temp_at_test_condition(
+                        test_condition,
+                        celsius_to_kelvin(flow_temp).unwrap(),
+                    )
+                    .unwrap(),
                 result,
             );
         }
@@ -4836,7 +4892,11 @@ mod tests {
         for (flow_temp, test_condition, result) in source_temp_cases {
             assert_ulps_eq!(
                 test_data
-                    .source_temp_at_test_condition(test_condition, celsius_to_kelvin(flow_temp),),
+                    .source_temp_at_test_condition(
+                        test_condition,
+                        celsius_to_kelvin(flow_temp).unwrap(),
+                    )
+                    .unwrap(),
                 result,
             );
         }
@@ -4865,7 +4925,12 @@ mod tests {
     ) {
         for (flow_temp, test_condition, result) in capacity_cases {
             assert_ulps_eq!(
-                test_data.capacity_at_test_condition(test_condition, celsius_to_kelvin(flow_temp)),
+                test_data
+                    .capacity_at_test_condition(
+                        test_condition,
+                        celsius_to_kelvin(flow_temp).unwrap()
+                    )
+                    .unwrap(),
                 result,
             );
         }
@@ -4890,11 +4955,13 @@ mod tests {
     ) {
         for [flow_temp, temp_source, carnot_cop_op_cond, result] in lr_op_cond_cases {
             assert_relative_eq!(
-                test_data.load_ratio_at_operating_conditions(
-                    celsius_to_kelvin(flow_temp),
-                    temp_source,
-                    carnot_cop_op_cond,
-                ),
+                test_data
+                    .load_ratio_at_operating_conditions(
+                        celsius_to_kelvin(flow_temp).unwrap(),
+                        temp_source,
+                        carnot_cop_op_cond,
+                    )
+                    .unwrap(),
                 result,
                 max_relative = 1e-7
             );
@@ -4969,9 +5036,10 @@ mod tests {
         let mut i = 0;
         for exergy_lr_op_cond in [1.2, 1.4] {
             for flow_temp in [35., 40., 45., 50., 55.] {
-                let flow_temp = celsius_to_kelvin(flow_temp);
-                let (lr_below, lr_above, eff_below, eff_above, deg_below, deg_above) =
-                    test_data.lr_eff_degcoeff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond);
+                let flow_temp = celsius_to_kelvin(flow_temp).unwrap();
+                let (lr_below, lr_above, eff_below, eff_above, deg_below, deg_above) = test_data
+                    .lr_eff_degcoeff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond)
+                    .unwrap();
                 assert_relative_eq!(lr_below, results_lr_below[i], max_relative = 1e-7);
                 assert_ulps_eq!(lr_above, results_lr_above[i],);
                 assert_relative_eq!(eff_below, results_eff_below[i], max_relative = 1e-7);
@@ -5004,12 +5072,14 @@ mod tests {
             temp_cases.iter().enumerate()
         {
             assert_relative_eq!(
-                test_data.cop_op_cond_if_not_air_source(
-                    *temp_diff_limit_low,
-                    *temp_ext,
-                    *temp_source,
-                    *temp_output,
-                ),
+                test_data
+                    .cop_op_cond_if_not_air_source(
+                        *temp_diff_limit_low,
+                        *temp_ext,
+                        *temp_source,
+                        *temp_output,
+                    )
+                    .unwrap(),
                 results[i],
                 max_relative = 1e-7
             );
@@ -5038,7 +5108,7 @@ mod tests {
                     *temp_output,
                     *temp_source,
                     *mod_ctrl,
-                ),
+                ).unwrap(),
                 results[i],
                 max_relative = 1e-7
             );
@@ -5061,13 +5131,15 @@ mod tests {
 
         for (i, temp_output) in [308.15, 313.15, 318.15, 323.15, 328.15].iter().enumerate() {
             assert_relative_eq!(
-                test_data.temp_spread_correction(
-                    temp_source,
-                    *temp_output,
-                    temp_diff_evaporator,
-                    temp_diff_condenser,
-                    temp_spread_emitter,
-                ),
+                test_data
+                    .temp_spread_correction(
+                        temp_source,
+                        *temp_output,
+                        temp_diff_evaporator,
+                        temp_diff_condenser,
+                        temp_spread_emitter,
+                    )
+                    .unwrap(),
                 results[i],
                 max_relative = 1e-7
             );
@@ -6361,7 +6433,7 @@ mod tests {
             simulation_time_for_heat_pump,
             None,
         );
-        let result = heat_pump.thermal_capacity_op_cond(290., 260.);
+        let result = heat_pump.thermal_capacity_op_cond(290., 260.).unwrap();
         assert_relative_eq!(result, 8.607029286155587);
 
         // Check with ExhaustAirMixed
@@ -6373,7 +6445,9 @@ mod tests {
             external_conditions,
             simulation_time_for_heat_pump,
         );
-        let result = heat_pump_with_exhaust.thermal_capacity_op_cond(300., 270.);
+        let result = heat_pump_with_exhaust
+            .thermal_capacity_op_cond(300., 270.)
+            .unwrap();
         assert_relative_eq!(result, 8.70672362099314);
     }
 
@@ -6394,13 +6468,15 @@ mod tests {
             None,
         );
 
-        let result = heat_pump.backup_energy_output_max(
-            temp_output,
-            temp_return_feed,
-            time_available,
-            None,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump
+            .backup_energy_output_max(
+                temp_output,
+                temp_return_feed,
+                time_available,
+                None,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(result, 3.);
 
@@ -6415,13 +6491,15 @@ mod tests {
             simulation_time_for_heat_pump,
         );
 
-        let result = heat_pump_with_exhaust.backup_energy_output_max(
-            temp_output,
-            temp_return_feed,
-            time_available,
-            None,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump_with_exhaust
+            .backup_energy_output_max(
+                temp_output,
+                temp_return_feed,
+                time_available,
+                None,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(result, 3.);
 
@@ -6470,13 +6548,15 @@ mod tests {
             None,
         );
 
-        let result = heat_pump_with_boiler.backup_energy_output_max(
-            temp_output,
-            temp_return_feed,
-            time_available,
-            Some(hybrid_boiler_service),
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump_with_boiler
+            .backup_energy_output_max(
+                temp_output,
+                temp_return_feed,
+                time_available,
+                Some(hybrid_boiler_service),
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(result, 24.);
     }
@@ -6499,13 +6579,15 @@ mod tests {
             None,
         );
 
-        let (cop_op_cond, deg_coeff_op_cond) = heat_pump.cop_deg_coeff_op_cond(
-            &service_type,
-            temp_output, // Kelvin
-            temp_source, // Kelvin
-            temp_spread_correction,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let (cop_op_cond, deg_coeff_op_cond) = heat_pump
+            .cop_deg_coeff_op_cond(
+                &service_type,
+                temp_output, // Kelvin
+                temp_source, // Kelvin
+                temp_spread_correction,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(cop_op_cond, 3.6209597192830136);
         assert_relative_eq!(deg_coeff_op_cond, 0.9);
@@ -6521,13 +6603,15 @@ mod tests {
             simulation_time_for_heat_pump,
         );
 
-        let (cop_op_cond, deg_coeff_op_cond) = heat_pump_sink_air.cop_deg_coeff_op_cond(
-            &service_type,
-            temp_output,
-            temp_source,
-            temp_spread_correction,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let (cop_op_cond, deg_coeff_op_cond) = heat_pump_sink_air
+            .cop_deg_coeff_op_cond(
+                &service_type,
+                temp_output,
+                temp_source,
+                temp_spread_correction,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert_relative_eq!(cop_op_cond, 3.6209597192830136);
         assert_relative_eq!(deg_coeff_op_cond, 0.25);
@@ -6670,15 +6754,17 @@ mod tests {
         let temp_return_feed = 315.0;
         let hybrid_boiler_service = None;
 
-        assert!(!heat_pump.inadequate_capacity(
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            hybrid_boiler_service,
-            simulation_time_for_heat_pump.iter().current_iteration()
-        ));
+        assert!(!heat_pump
+            .inadequate_capacity(
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                hybrid_boiler_service,
+                simulation_time_for_heat_pump.iter().current_iteration()
+            )
+            .unwrap());
     }
 
     #[rstest]
@@ -6702,15 +6788,17 @@ mod tests {
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
 
-        let result = heat_pump.inadequate_capacity(
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            hybrid_boiler_service,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump
+            .inadequate_capacity(
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                hybrid_boiler_service,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert!(result);
     }
@@ -6736,15 +6824,17 @@ mod tests {
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
 
-        let result = heat_pump.inadequate_capacity(
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            hybrid_boiler_service,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump
+            .inadequate_capacity(
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                hybrid_boiler_service,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert!(result);
     }
@@ -6770,15 +6860,17 @@ mod tests {
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
 
-        let result = heat_pump.inadequate_capacity(
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            hybrid_boiler_service,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump
+            .inadequate_capacity(
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                hybrid_boiler_service,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert!(!result);
     }
@@ -6804,15 +6896,17 @@ mod tests {
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
 
-        let result = heat_pump.inadequate_capacity(
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            hybrid_boiler_service,
-            simulation_time_for_heat_pump.iter().current_iteration(),
-        );
+        let result = heat_pump
+            .inadequate_capacity(
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                hybrid_boiler_service,
+                simulation_time_for_heat_pump.iter().current_iteration(),
+            )
+            .unwrap();
 
         assert!(!result);
     }
@@ -6888,17 +6982,19 @@ mod tests {
             None,
         );
 
-        assert!(!heat_pump.use_backup_heater_only(
-            cop_op_cond,
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            None,
-            None,
-            simulation_time_for_heat_pump.iter().current_iteration()
-        ));
+        assert!(!heat_pump
+            .use_backup_heater_only(
+                cop_op_cond,
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                None,
+                None,
+                simulation_time_for_heat_pump.iter().current_iteration()
+            )
+            .unwrap());
 
         let cost_schedule_hybrid_hp = json!({
            "cost_schedule_start_day": 0,
@@ -6924,17 +7020,19 @@ mod tests {
             Some(cost_schedule_hybrid_hp),
         );
 
-        assert!(heat_pump_with_cost_schedule.use_backup_heater_only(
-            cop_op_cond,
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            temp_return_feed,
-            None,
-            Some(3.0),
-            simulation_time_for_heat_pump.iter().current_iteration()
-        ));
+        assert!(heat_pump_with_cost_schedule
+            .use_backup_heater_only(
+                cop_op_cond,
+                energy_output_required,
+                thermal_capacity_op_cond,
+                temp_output,
+                time_available,
+                temp_return_feed,
+                None,
+                Some(3.0),
+                simulation_time_for_heat_pump.iter().current_iteration()
+            )
+            .unwrap());
     }
 
     #[rstest]
