@@ -56,6 +56,8 @@ impl EnergySupplies {
             EnergySupplyType::LpgBottled => &mut self.bottled_lpg,
             EnergySupplyType::LpgCondition11F => &mut self.condition_11f_lpg,
             EnergySupplyType::HeatNetwork => &mut self.heat_network,
+            #[cfg(feature = "fhs")]
+            EnergySupplyType::NotionalHeatNetwork => &mut None, // nothing seems to request this, so match with nothing
         };
         match energy_supply {
             Some(supply) => Ok(supply.clone()),

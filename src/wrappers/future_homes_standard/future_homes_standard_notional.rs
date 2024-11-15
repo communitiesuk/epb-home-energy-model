@@ -1921,7 +1921,7 @@ mod tests {
     // this test does not exist in Python HEM
     #[rstest]
     fn test_edit_add_heatnetwork_heating(mut test_input: InputForProcessing) {
-        let heat_network_name = "heat network";
+        let heat_network_name = "_notional_heat_network";
 
         let expected_heat_source_wet: HeatSourceWet = serde_json::from_value(json!({
             NOTIONAL_HIU: {

@@ -355,6 +355,9 @@ pub enum EnergySupplyType {
     LpgCondition11F,
     #[serde(rename = "heat network")]
     HeatNetwork,
+    #[cfg(feature = "fhs")]
+    #[serde(rename = "_notional_heat_network")]
+    NotionalHeatNetwork,
 }
 
 impl Display for EnergySupplyType {
