@@ -1573,8 +1573,6 @@ impl InfiltrationVentilation {
     }
 
     /// Used in calculate_internal_reference_pressure function for p_z_ref solve
-    // Remove following directive once this function is used
-    #[allow(dead_code)]
     pub(crate) fn implicit_mass_balance_for_internal_reference_pressure(
         &self,
         p_z_ref: f64,
