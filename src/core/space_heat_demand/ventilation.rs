@@ -23,6 +23,7 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
 use std::sync::Arc;
+use thiserror::Error;
 
 fn p_a_ref() -> f64 {
     AIR.density_kg_per_m3()
@@ -1542,7 +1543,7 @@ impl InfiltrationVentilation {
         temp_int_air: f64,
         r_w_arg: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> Result<f64, InternalReferencePressureCalculationError> {
         for interval_expansion in INTERVAL_EXPANSION_LIST {
             let bracket = (
                 initial_p_z_ref_guess - interval_expansion,
@@ -1560,11 +1561,15 @@ impl InfiltrationVentilation {
 
             if let Ok(root) = result {
                 let p_z_ref = root;
-                return p_z_ref;
+                return Ok(p_z_ref);
             }
         }
 
-        panic!("Solver failed");
+        Err(InternalReferencePressureCalculationError {
+            initial_p_z_ref_guess,
+            temp_int_air,
+            r_w_arg,
+        })
     }
 
     /// Used in calculate_internal_reference_pressure function for p_z_ref solve
@@ -1834,6 +1839,14 @@ fn root_scalar_for_implicit_mass_balance(
 fn fsolve(_func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, _args: (f64, f64, f64)) -> f64 {
     // Stub implementation for the timebeing
     x0
+}
+
+#[derive(Debug, Error)]
+#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_int_air: {temp_int_air}, r_w_arg: {r_w_arg:?}")]
+pub struct InternalReferencePressureCalculationError {
+    initial_p_z_ref_guess: f64,
+    temp_int_air: f64,
+    r_w_arg: Option<f64>,
 }
 
 #[cfg(test)]
@@ -2720,12 +2733,14 @@ mod tests {
     ) {
         let intial_p_z_ref_guess = 0.;
         assert_relative_eq!(
-            infiltration_ventilation.calculate_internal_reference_pressure(
-                intial_p_z_ref_guess,
-                temp_int_air,
-                Some(r_w_arg),
-                simulation_time_iterator.current_iteration()
-            ),
+            infiltration_ventilation
+                .calculate_internal_reference_pressure(
+                    intial_p_z_ref_guess,
+                    temp_int_air,
+                    Some(r_w_arg),
+                    simulation_time_iterator.current_iteration()
+                )
+                .unwrap(),
             expected,
             max_relative = EIGHT_DECIMAL_PLACES
         )

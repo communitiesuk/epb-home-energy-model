@@ -812,21 +812,21 @@ impl Corpus {
         reporting_flag: ReportingFlag,
         internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let current_internal_pressure_window = if self.initial_loop.load(Ordering::SeqCst) {
             self.ventilation.calculate_internal_reference_pressure(
                 initial_p_z_ref_guess,
                 temp_int_air,
                 Some(r_w_arg),
                 simtime,
-            )
+            )?
         } else {
             self.ventilation.calculate_internal_reference_pressure(
                 internal_pressure_window[&reporting_flag],
                 temp_int_air,
                 Some(r_w_arg),
                 simtime,
-            )
+            )?
         };
 
         internal_pressure_window.insert(reporting_flag, current_internal_pressure_window);
@@ -840,7 +840,7 @@ impl Corpus {
             simtime,
         );
 
-        incoming_air_flow / self.total_volume
+        Ok(incoming_air_flow / self.total_volume)
     }
 
     /// Calculate space heating demand, heating system output and temperatures
@@ -873,7 +873,7 @@ impl Corpus {
             ReportingFlag::Min,
             internal_pressure_window,
             simtime,
-        );
+        )?;
 
         // Windows fully open
         let ach_windows_open = self.calc_air_changes_per_hour(
@@ -883,7 +883,7 @@ impl Corpus {
             ReportingFlag::Max,
             internal_pressure_window,
             simtime,
-        );
+        )?;
 
         // To indicate the future loop should involve the p_Z_ref from previous calc
         self.initial_loop.store(false, Ordering::SeqCst);
