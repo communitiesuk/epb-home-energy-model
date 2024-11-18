@@ -128,13 +128,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&output_path)?;
     let input_file_name = input_file_stem.file_name().unwrap().to_str().unwrap();
     // following is rough initial mapping given existing fhs options
-    let output_type = if args.wrapper_choice.future_homes_standard {
-        "FHS"
-    } else if args.wrapper_choice.future_homes_standard_fee {
-        "FHS_FEE"
-    } else {
-        "core"
-    };
+    let output_type = output_type_from_wrapper_choice(&args.wrapper_choice);
     let file_output = FileOutput::new(
         output_path,
         format!("{input_file_name}__{output_type}__{{}}.csv"),
@@ -173,6 +167,24 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
+    if wrapper_choice.future_homes_standard {
+        "FHS"
+    } else if wrapper_choice.future_homes_standard_fee {
+        "FHS_FEE"
+    } else if wrapper_choice.future_homes_standard_not_a {
+        "FHS_notA"
+    } else if wrapper_choice.future_homes_standard_not_b {
+        "FHS_notB"
+    } else if wrapper_choice.future_homes_standard_fee_not_a {
+        "FHS_FEE_notB"
+    } else if wrapper_choice.future_homes_standard_fee_not_b {
+        "FHS_FEE_notB"
+    } else {
+        "core"
+    }
 }
 
 impl From<SapArgs> for ProjectFlags {
