@@ -18,7 +18,7 @@ derivative = "2.2.0"
 erased-serde = "0.4.5"
 formatx = "0.2.2"
 indexmap = { version = "2.6.0", features = ["serde", "arbitrary"] }
-indicatif = { version = "0.17.8", optional = true }
+indicatif = { version = "0.17.9", optional = true }
 interp = "2.0.1"
 is_close = "0.1.3"
 itertools = "0.13.0"
