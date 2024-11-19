@@ -53,6 +53,7 @@ use crate::core::water_heat_demand::dhw_demand::{
     DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
+use crate::errors::NotImplementedError;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -4329,7 +4330,7 @@ fn space_heat_systems_from_input(
                                 .and_then(|ctrl| controls.get_with_string(ctrl)),
                         ))
                     },
-                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => unimplemented!(), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
+                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => return Err(NotImplementedError::new("Electric storage heater module not yet implemented.").into()), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
                     SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control, thermal_mass, c, n, frac_convective, ecodesign_controller, design_flow_temp, .. } => {
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;

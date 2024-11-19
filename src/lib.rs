@@ -21,7 +21,7 @@ use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
     NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
-use crate::errors::{HemCoreError, HemError, PostprocessingError};
+use crate::errors::{HemCoreError, HemError, PostprocessingError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
@@ -168,7 +168,10 @@ pub fn run_project(
                     .collect()
             }
 
-            build_corpus(&input, &external_conditions).map_err(HemError::InvalidRequest)?
+            build_corpus(&input, &external_conditions).map_err(|e| match e.downcast_ref::<NotImplementedError>() {
+                Some(e) => HemError::NotImplemented(e.clone()),
+                None => HemError::InvalidRequest(e),
+            })?
         };
 
         // 5. Run HEM calculation(s).

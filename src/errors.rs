@@ -14,6 +14,8 @@ pub enum HemError {
     ErrorInPostprocessing(PostprocessingError),
     #[error("General uncaught error: {0}")]
     GeneralPanic(String),
+    #[error("{0}")]
+    NotImplemented(NotImplementedError),
 }
 
 #[derive(Debug, Error)]
@@ -37,5 +39,16 @@ pub struct PostprocessingError {
 impl PostprocessingError {
     pub(crate) fn new(error: anyhow::Error) -> Self {
         Self { error }
+    }
+}
+
+/// An error representing that an area of functionality has not been implemented.
+#[derive(Clone, Debug, Error)]
+#[error("Not implemented: {0}")]
+pub struct NotImplementedError(String);
+
+impl NotImplementedError {
+    pub(crate) fn new(message: &str) -> Self {
+        NotImplementedError(message.to_string())
     }
 }
