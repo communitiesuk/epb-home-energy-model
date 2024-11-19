@@ -1028,7 +1028,7 @@ impl ExternalConditions {
                         // do nothing
                     }
                     WindowShadingObjectType::Reveal => {
-                        unimplemented!("reveal type not implemented")
+                        // do nothing
                     }
                 }
             }
