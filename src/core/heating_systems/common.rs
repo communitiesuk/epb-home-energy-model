@@ -1,3 +1,5 @@
+use super::emitters::Emitters;
+use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
@@ -12,6 +14,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::{bail, Error};
 
 #[derive(Debug)]
 pub enum HeatSourceWet {
@@ -62,7 +65,7 @@ impl HeatSourceWet {
     ) -> anyhow::Result<f64> {
         match self {
             HeatSourceWet::WaterCombi(_combi) => {
-                unimplemented!("BoilerServiceWaterCombi does not implement demand_energy")
+                bail!("BoilerServiceWaterCombi does not implement demand_energy")
             }
             HeatSourceWet::WaterRegular(regular) => regular
                 .demand_energy(energy_demand, temperature, None, None, simtime)
@@ -306,8 +309,3 @@ impl SpaceHeatingService {
         }
     }
 }
-
-use anyhow::Error;
-
-use super::emitters::Emitters;
-use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
