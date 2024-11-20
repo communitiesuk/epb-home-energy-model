@@ -708,9 +708,6 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         setpoint_temp: Option<f64>,
     },
-    HeatBattery {
-        // tbc
-    },
 }
 
 impl HotWaterSourceDetails {
@@ -728,8 +725,6 @@ pub trait HotWaterSourceDetailsForProcessing {
     fn is_combi_boiler(&self) -> bool;
     fn is_hiu(&self) -> bool;
     fn is_point_of_use(&self) -> bool;
-    #[allow(dead_code)]
-    fn is_heat_battery(&self) -> bool;
     fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
     fn set_control_name_for_heat_sources(
         &mut self,
@@ -754,11 +749,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
 
     fn is_point_of_use(&self) -> bool {
         matches!(self, Self::PointOfUse { .. })
-    }
-
-    #[allow(dead_code)]
-    fn is_heat_battery(&self) -> bool {
-        matches!(self, Self::HeatBattery { .. })
     }
 
     fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
@@ -831,7 +821,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *source_setpoint_temp = Some(setpoint_temp);
             }
-            HotWaterSourceDetails::HeatBattery { .. } => {}
         }
     }
 }

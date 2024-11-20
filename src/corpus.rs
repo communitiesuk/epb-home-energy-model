@@ -3979,7 +3979,6 @@ pub enum HotWaterSource {
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
-    HeatBattery(()),
 }
 
 impl HotWaterSource {
@@ -3989,7 +3988,6 @@ impl HotWaterSource {
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
-            HotWaterSource::HeatBattery(_) => unimplemented!(),
         }
     }
 
@@ -3999,7 +3997,6 @@ impl HotWaterSource {
             HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
-            HotWaterSource::HeatBattery(_) => unimplemented!(),
         }
     }
 
@@ -4021,9 +4018,6 @@ impl HotWaterSource {
             }
             HotWaterSource::HeatNetwork(ref source) => {
                 source.demand_hot_water(vol_demand_target, simulation_time_iteration)
-            }
-            HotWaterSource::HeatBattery(_) => {
-                unreachable!("demand_hot_water is not expected to be called on a heat battery")
             }
         }
     }
@@ -4270,7 +4264,6 @@ fn hot_water_source_from_input(
                 cold_water_source,
             ))
         }
-        HotWaterSourceDetails::HeatBattery { .. } => unimplemented!(), // NB. Python here passes for now rather than erroring
     };
 
     Ok((hot_water_source, energy_supply_conn_names))
