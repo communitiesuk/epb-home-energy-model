@@ -4379,8 +4379,9 @@ fn space_heat_systems_from_input(
                                 let heat_source_service = HeatNetwork::create_service_space_heating(heat_network.clone(), energy_supply_conn_name, control);
                                 SpaceHeatingService::HeatNetwork(heat_source_service)
                             }
-                            WetHeatSource::HeatBattery(_) => {
-                                unimplemented!()
+                            WetHeatSource::HeatBattery(heat_battery) => {
+                                let heat_source_service = HeatBattery::create_service_space_heating(heat_battery.clone(), &energy_supply_conn_name, control);
+                                SpaceHeatingService::HeatBattery(heat_source_service)
                             }
                         };
                         let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());

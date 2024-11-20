@@ -144,6 +144,19 @@ impl HeatBatteryServiceSpace {
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
         per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(&simulation_time_iteration) })
     }
+
+    pub(crate) fn energy_output_max(
+        &self,
+        temp_output: f64,
+        _temp_return_feed: f64,
+        simtime: SimulationTimeIteration,
+    ) -> f64 {
+        if !self.is_on(simtime) {
+            return 0.0;
+        }
+
+        self.heat_battery.lock().energy_output_max(temp_output)
+    }
 }
 
 // TODO - check upstream whether it's an error that these numbers are not used

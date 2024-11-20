@@ -1,7 +1,9 @@
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
-use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
+use crate::core::heating_systems::heat_battery::{
+    HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
+};
 use crate::core::heating_systems::heat_network::{
     HeatNetworkServiceSpace, HeatNetworkServiceWaterStorage,
 };
@@ -182,7 +184,7 @@ pub enum SpaceHeatingService {
     HeatPump(HeatPumpServiceSpace),
     Boiler(BoilerServiceSpace),
     HeatNetwork(HeatNetworkServiceSpace),
-    HeatBattery(()),
+    HeatBattery(HeatBatteryServiceSpace),
 }
 
 impl SpaceHeatingService {
@@ -221,7 +223,14 @@ impl SpaceHeatingService {
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(_) => unimplemented!(),
+            SpaceHeatingService::HeatBattery(heat_battery_service_space) => Ok((
+                heat_battery_service_space.energy_output_max(
+                    temp_output,
+                    temp_return_feed,
+                    simulation_time_iteration,
+                ),
+                None,
+            )),
         }
     }
 
@@ -264,7 +273,15 @@ impl SpaceHeatingService {
                 ),
                 None,
             )),
-            SpaceHeatingService::HeatBattery(_) => unimplemented!(),
+            SpaceHeatingService::HeatBattery(ref heat_battery_service_space) => Ok((
+                heat_battery_service_space.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    simulation_time_iteration,
+                ),
+                None,
+            )),
         }
     }
 
@@ -285,7 +302,7 @@ impl SpaceHeatingService {
                     temp_return,
                     simulation_time_iteration,
                 ),
-            _ => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 }

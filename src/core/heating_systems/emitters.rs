@@ -214,7 +214,9 @@ impl Emitters {
             SpaceHeatingService::HeatNetwork(heat_network) => {
                 heat_network.temperature_setpnt(simulation_time_iteration)
             }
-            SpaceHeatingService::HeatBattery(_) => unreachable!(),
+            SpaceHeatingService::HeatBattery(heat_battery) => {
+                heat_battery.temp_setpnt(*simulation_time_iteration)
+            }
         }
     }
 
@@ -232,7 +234,9 @@ impl Emitters {
             SpaceHeatingService::HeatNetwork(heat_network) => {
                 heat_network.in_required_period(simulation_time_iteration)
             }
-            SpaceHeatingService::HeatBattery(_) => unreachable!(),
+            SpaceHeatingService::HeatBattery(heat_battery) => {
+                heat_battery.in_required_period(*simulation_time_iteration)
+            }
         }
     }
 
