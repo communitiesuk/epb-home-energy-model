@@ -1877,7 +1877,7 @@ impl Corpus {
                 .push(storage_losses);
 
             self.energy_supplies
-                .calc_energy_import_export_betafactor(t_it);
+                .calc_energy_import_export_betafactor(t_it)?;
 
             for diverter in &self.diverters {
                 diverter.write().timestep_end();

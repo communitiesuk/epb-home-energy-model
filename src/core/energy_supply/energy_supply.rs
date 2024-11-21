@@ -1,6 +1,7 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
+use crate::errors::NotImplementedError;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType, FuelType,
@@ -27,19 +28,30 @@ pub struct EnergySupplies {
 }
 
 impl EnergySupplies {
-    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
+    pub fn calc_energy_import_export_betafactor(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(), NotImplementedError> {
         if let Some(ref supply) = self.mains_electricity {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply
+                .read()
+                .calc_energy_import_export_betafactor(simtime)?;
         }
         if let Some(ref supply) = self.mains_gas {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply
+                .read()
+                .calc_energy_import_export_betafactor(simtime)?;
         }
         if let Some(ref supply) = self.bulk_lpg {
-            supply.read().calc_energy_import_export_betafactor(simtime);
+            supply
+                .read()
+                .calc_energy_import_export_betafactor(simtime)?;
         }
         self.unmet_demand
             .read()
-            .calc_energy_import_export_betafactor(simtime);
+            .calc_energy_import_export_betafactor(simtime)?;
+
+        Ok(())
     }
 
     pub fn ensured_get_for_type(
@@ -433,7 +445,10 @@ impl EnergySupply {
 
     /// Calculate how much of that supply can be offset against demand.
     /// And then calculate what demand and supply is left after offsetting, which are the amount exported imported
-    pub fn calc_energy_import_export_betafactor(&self, simtime: SimulationTimeIteration) {
+    pub fn calc_energy_import_export_betafactor(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> Result<(), NotImplementedError> {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -461,7 +476,7 @@ impl EnergySupply {
             .sum::<f64>();
 
         self.beta_factor.get(timestep_idx).unwrap().store(
-            self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv),
+            self.beta_factor_function(-supplies_sum, demands_sum, BetaFactorFunction::Pv)?,
             Ordering::SeqCst,
         );
 
@@ -551,6 +566,8 @@ impl EnergySupply {
             .get(timestep_idx)
             .unwrap()
             .fetch_sub(supply_consumed, Ordering::SeqCst);
+
+        Ok(())
     }
 
     /// wrapper that applies relevant function to obtain
@@ -560,23 +577,25 @@ impl EnergySupply {
         supply: f64,
         demand: f64,
         beta_factor_function: BetaFactorFunction,
-    ) -> f64 {
+    ) -> Result<f64, NotImplementedError> {
         if supply == 0. {
-            return 1.;
+            return Ok(1.);
         }
         if demand == 0. {
-            return 0.;
+            return Ok(0.);
         }
 
         let demand_ratio = supply / demand;
         let beta_factor = match beta_factor_function {
             BetaFactorFunction::Pv => min_of_2(0.6748 * demand_ratio.powf(-0.703), 1.),
             BetaFactorFunction::Wind => {
-                unimplemented!("Wind beta factor function is not implemented")
+                return Err(NotImplementedError::new(
+                    "Wind beta factor function is not implemented upstream",
+                ));
             } // wind is mentioned in Python but currently commented out
         };
 
-        min_of_2(beta_factor, 1. / demand_ratio)
+        Ok(min_of_2(beta_factor, 1. / demand_ratio))
     }
 }
 
@@ -836,7 +855,9 @@ mod tests {
                 .unwrap();
 
             let energy_supply = energy_supply.read();
-            energy_supply.calc_energy_import_export_betafactor(t_it);
+            energy_supply
+                .calc_energy_import_export_betafactor(t_it)
+                .unwrap();
 
             assert_eq!(
                 energy_supply.get_beta_factor()[t_idx],

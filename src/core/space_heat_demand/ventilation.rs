@@ -14,6 +14,7 @@ use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{CompletedVentilationLeaks, ReportingFlag};
+use crate::errors::NotImplementedError;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
@@ -1226,7 +1227,7 @@ impl MechanicalVentilation {
         &self,
         t_z: f64,
         simulation_time: &SimulationTimeIteration,
-    ) -> (f64, f64, f64) {
+    ) -> Result<(f64, f64, f64), NotImplementedError> {
         let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Required air flow at air terminal devices
@@ -1244,7 +1245,8 @@ impl MechanicalVentilation {
             SupplyAirFlowRateControlType::Load => {
                 // NOTE - this is not currently implemented in the Python code
                 // reported up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45523
-                unimplemented!("calc_mech_vent_air_flw_rates_req_to_supply_vent_zone is not implemented for SupplyAirFlowRateControlType::Load")
+                // and not yet fixed as of 0.33
+                return Err(NotImplementedError::new("calc_mech_vent_air_flw_rates_req_to_supply_vent_zone is not implemented for SupplyAirFlowRateControlType::Load as outstanding bug in upstream Python"));
             }
         };
 
@@ -1265,11 +1267,11 @@ impl MechanicalVentilation {
             self.p_a_alt,
         );
 
-        (
+        Ok((
             qm_sup_dis_req,
             qm_eta_dis_req,
             qm_in_effective_heat_recovery_saving,
-        )
+        ))
     }
 
     /// Calculate gains and energy use due to fans
@@ -1740,7 +1742,7 @@ impl InfiltrationVentilation {
 
         for mech_vent in &self.mech_vents {
             let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) =
-                mech_vent.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, &simtime);
+                mech_vent.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, &simtime)?;
             qm_sup_to_vent_zone += qm_sup;
             qm_eta_from_vent_zone += qm_eta;
             qm_in_effective_heat_recovery_saving_total += qm_in_effective_heat_recovery_saving;
@@ -2616,10 +2618,12 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
-            mechanical_ventilation.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
-                293.15,
-                &simulation_time_iterator.current_iteration(),
-            );
+            mechanical_ventilation
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
+                    293.15,
+                    &simulation_time_iterator.current_iteration(),
+                )
+                .unwrap();
         assert_relative_eq!(qm_sup_dis_req, 0.7106861797547136);
         assert_relative_eq!(qm_eta_dis_req, -0.6622);
         assert_relative_eq!(qm_in_effective_heat_recovery_saving, 0.);

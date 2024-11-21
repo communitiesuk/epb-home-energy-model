@@ -21,7 +21,7 @@ use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
     NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
-use crate::errors::{HemCoreError, HemError, PostprocessingError, NotImplementedError};
+use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
@@ -168,9 +168,8 @@ pub fn run_project(
                     .collect()
             }
 
-            build_corpus(&input, &external_conditions).map_err(|e| match e.downcast_ref::<NotImplementedError>() {
-                Some(e) => HemError::NotImplemented(e.clone()),
-                None => HemError::InvalidRequest(e),
+            build_corpus(&input, &external_conditions).map_err(|e| {
+                capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };
 
@@ -187,8 +186,10 @@ pub fn run_project(
 
         // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
         let run_results = match catch_unwind(AssertUnwindSafe(|| {
-            run_hem_calculation(&corpora)
-                .map_err(|e| HemError::FailureInCalculation(HemCoreError::new(e)))
+            run_hem_calculation(&corpora).map_err(|e| {
+                capture_specific_error_case(&e)
+                    .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
+            })
         })) {
             Ok(results) => results?,
             Err(panic) => {
@@ -324,6 +325,14 @@ pub fn run_project(
                 .to_owned(),
         )
     })?
+}
+
+fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
+    if let Some(e) = e.downcast_ref::<NotImplementedError>() {
+        return Some(HemError::NotImplemented(e.clone()));
+    }
+
+    None
 }
 
 #[derive(Clone, Copy)]
