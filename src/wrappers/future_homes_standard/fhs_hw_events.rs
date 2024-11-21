@@ -11,7 +11,6 @@ use rand_distr::{Distribution, Poisson};
 use rand_mt::Mt64;
 use rand_pcg::Pcg64;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::{BufReader, Cursor};
 use std::iter::Iterator;
@@ -273,8 +272,9 @@ impl From<SimpleLabelBasedOn900KSample> for WaterHeatingEventType {
     }
 }
 
+#[derive(Debug)]
 pub struct HotWaterEventGenerator {
-    week: IndexMap<DayOfWeek, HashMap<SimpleLabelBasedOn900KSample, DayDigest>>,
+    week: IndexMap<DayOfWeek, IndexMap<SimpleLabelBasedOn900KSample, DayDigest>>,
     rng: Mt64,
 }
 
@@ -285,7 +285,7 @@ impl HotWaterEventGenerator {
         banding: Option<BandingOrigin>,
     ) -> anyhow::Result<Self> {
         let banding = banding.unwrap_or(BandingOrigin::Correct);
-        let mut week: IndexMap<DayOfWeek, HashMap<SimpleLabelBasedOn900KSample, DayDigest>> =
+        let mut week: IndexMap<DayOfWeek, IndexMap<SimpleLabelBasedOn900KSample, DayDigest>> =
             IndexMap::from([
                 (DayOfWeek::Monday, Default::default()),
                 (DayOfWeek::Tuesday, Default::default()),
@@ -474,7 +474,7 @@ impl HotWaterEventGenerator {
     }
 
     pub fn build_annual_hw_events(&mut self, start_day: usize) -> anyhow::Result<Vec<HourEvent>> {
-        let mut list_days: Vec<HashMap<SimpleLabelBasedOn900KSample, DayDigest>> =
+        let mut list_days: Vec<IndexMap<SimpleLabelBasedOn900KSample, DayDigest>> =
             self.week.values().cloned().collect::<Vec<_>>();
         let mut annual_hw_events: Vec<HourEvent> =
             Vec::with_capacity(8760 * SimpleLabelBasedOn900KSample::COUNT);
@@ -566,7 +566,7 @@ pub enum BandingOrigin {
     NotCorrect,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Debug)]
 enum DayOfWeek {
     Monday,
     Tuesday,
