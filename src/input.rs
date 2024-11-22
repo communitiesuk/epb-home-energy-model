@@ -37,35 +37,54 @@ pub struct Input {
     pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
     pub(crate) water_heating_events: WaterHeatingEvents,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub space_cool_system: Option<SpaceCoolSystem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ventilation: Option<Ventilation>,
     pub zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
     #[allow(dead_code)]
-    #[serde(rename = "PartGcompliance")]
+    #[serde(rename = "PartGcompliance", skip_serializing_if = "Option::is_none")]
     part_g_compliance: Option<bool>,
     #[allow(dead_code)]
-    #[serde(rename = "PartO_active_cooling_required")]
+    #[serde(
+        rename = "PartO_active_cooling_required",
+        skip_serializing_if = "Option::is_none"
+    )]
     part_o_active_cooling_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ground_floor_area: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     number_of_bedrooms: Option<usize>,
     #[allow(dead_code)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     number_of_wet_rooms: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     heating_control_type: Option<HeatingControlType>,
     #[allow(dead_code)]
-    #[serde(rename = "WaterHeatSchedDefault")]
+    #[serde(
+        rename = "WaterHeatSchedDefault",
+        skip_serializing_if = "Option::is_none"
+    )]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub heat_source_wet: Option<HeatSourceWet>,
-    #[serde(rename = "WWHRS")]
+    #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub on_site_generation: Option<OnSiteGeneration>,
-    #[serde(rename = "Window_Opening_For_Cooling")]
+    #[serde(
+        rename = "Window_Opening_For_Cooling",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
     pub general: General,
     pub infiltration_ventilation: InfiltrationVentilation,
-    #[serde(rename = "Appliances")]
+    #[serde(rename = "Appliances", skip_serializing_if = "Option::is_none")]
     pub(crate) appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tariff: Option<Tariff>,
 }
 
@@ -74,24 +93,43 @@ pub struct Input {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub air_temperatures: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wind_speeds: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wind_directions: Option<Vec<f64>>,
     // check upstream whether anything uses this
-    #[serde(rename = "ground_temperatures")]
+    #[serde(
+        rename = "ground_temperatures",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) _ground_temperatures: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diffuse_horizontal_radiation: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_beam_radiation: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub solar_reflectivity_of_ground: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timezone: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_day: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_day: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time_series_step: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub january_first: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub daylight_savings: Option<DaylightSavingsConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub leap_day_included: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_beam_conversion_needed: Option<bool>,
     pub shading_segments: Vec<ShadingSegment>,
 }
@@ -101,13 +139,18 @@ pub struct ExternalConditionsInput {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct InternalGains {
-    #[serde(alias = "total internal gains")]
+    #[serde(
+        alias = "total internal gains",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub total_internal_gains: Option<InternalGainsDetails>,
-    #[serde(rename = "metabolic gains")]
+    #[serde(rename = "metabolic gains", skip_serializing_if = "Option::is_none")]
     pub metabolic_gains: Option<InternalGainsDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evaporative_losses: Option<InternalGainsDetails>,
-    #[serde(rename = "ColdWaterLosses")]
+    #[serde(rename = "ColdWaterLosses", skip_serializing_if = "Option::is_none")]
     pub cold_water_losses: Option<InternalGainsDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub other: Option<InternalGainsDetails>,
 }
 
@@ -135,14 +178,15 @@ pub struct ApplianceGainsDetails {
     pub gains_fraction: f64,
     #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) schedule: Option<NumericSchedule>,
     // In the Python code these fields are
     // set in the FHS wrapper
-    #[serde(rename = "Standby")]
+    #[serde(rename = "Standby", skip_serializing_if = "Option::is_none")]
     pub standby: Option<f64>,
-    #[serde(rename = "Events")]
+    #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
     pub events: Option<Vec<ApplianceGainsDetailsEvent>>,
-    #[serde(rename = "loadshifting")]
+    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
     pub load_shifting: Option<ApplianceLoadShifting>,
 }
 
@@ -266,11 +310,15 @@ pub type EnergySupplyInput = IndexMap<EnergySupplyKey, EnergySupplyDetails>;
 #[serde(tag = "fuel", deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
     pub fuel: FuelType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diverter: Option<EnergyDiverter>,
-    #[serde(rename = "ElectricBattery")]
+    #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
     pub electric_battery: Option<ElectricBattery>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub factor: Option<CustomEnergySourceFactor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Vec<SecondarySupplyType>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_export_capable: Option<bool>,
 }
 
@@ -476,7 +524,9 @@ pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Control {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hot_water_timer: Option<ControlDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) window_opening: Option<ControlDetails>,
     #[serde(flatten)]
     pub(crate) extra: ExtraControls,
@@ -492,6 +542,7 @@ pub(crate) enum ControlDetails {
         start_day: u32,
         time_series_step: f64,
         #[allow(dead_code)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
         schedule: BooleanSchedule,
     },
@@ -500,7 +551,9 @@ pub(crate) enum ControlDetails {
         start_day: u32,
         time_series_step: f64,
         #[allow(dead_code)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         time_on_daily: Option<f64>,
         schedule: NumericSchedule,
     },
@@ -508,11 +561,16 @@ pub(crate) enum ControlDetails {
     SetpointTime {
         start_day: u32,
         time_series_step: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
         #[allow(dead_code)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_min: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_max: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         default_to_max: Option<bool>,
         schedule: NumericSchedule,
     },
@@ -521,9 +579,11 @@ pub(crate) enum ControlDetails {
         start_day: u32,
         time_series_step: f64,
         #[allow(dead_code)]
+        #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         charge_level: Option<ChargeLevel>,
-        #[serde(rename = "target_charge")]
+        #[serde(rename = "target_charge", skip_serializing_if = "Option::is_none")]
         _target_charge: Option<f64>,
         schedule: BooleanSchedule,
     },
@@ -632,15 +692,22 @@ pub enum HotWaterSourceDetails {
     StorageTank {
         volume: f64,
         daily_losses: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         heat_exchanger_surface_area: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         min_temp: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
-        #[serde(rename = "Control_hold_at_setpnt")]
+        #[serde(
+            rename = "Control_hold_at_setpnt",
+            skip_serializing_if = "Option::is_none"
+        )]
         control_hold_at_setpoint: Option<String>,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         primary_pipework: Option<Vec<WaterPipework>>,
     },
     CombiBoiler {
@@ -657,6 +724,7 @@ pub enum HotWaterSourceDetails {
         rejected_energy_2: f64,
         storage_loss_factor_2: f64,
         rejected_factor_3: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
         #[serde(rename = "daily_HW_usage")]
         daily_hot_water_usage: f64,
@@ -667,8 +735,9 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
     },
     PointOfUse {
@@ -677,6 +746,7 @@ pub enum HotWaterSourceDetails {
         energy_supply: EnergySupplyType,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
+        #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
     },
 }
@@ -855,7 +925,7 @@ pub enum HeatSource {
         power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
@@ -884,21 +954,23 @@ pub enum HeatSource {
         solar_loop_piping_hlc: f64,
         heater_position: f64,
         thermostat_position: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
     },
     #[serde(rename(deserialize = "HeatSourceWet"))]
     Wet {
         name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_flow_limit_upper: Option<f64>,
-        #[serde(rename = "ColdWaterSource")]
+        #[serde(rename = "ColdWaterSource", skip_serializing_if = "Option::is_none")]
         cold_water_source: Option<ColdWaterSourceType>,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
-        #[serde(rename = "temp_return")]
+        #[serde(rename = "temp_return", skip_serializing_if = "Option::is_none")]
         temperature_return: Option<f64>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
@@ -1010,7 +1082,7 @@ pub enum SolarCellLocation {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterTestData {
-    #[serde(rename = "L")]
+    #[serde(rename = "L", skip_serializing_if = "Option::is_none")]
     pub l: Option<HeatPumpHotWaterOnlyTestDatum>,
     #[serde(rename = "M")]
     pub m: HeatPumpHotWaterOnlyTestDatum,
@@ -1044,12 +1116,18 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
 #[serde(deny_unknown_fields)]
 pub struct WaterPipeworkSimple {
     pub location: WaterPipeworkLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_diameter_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub external_diameter_mm: Option<f64>,
     pub length: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub insulation_thermal_conductivity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub insulation_thickness_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub surface_reflectivity: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pipe_contents: Option<WaterPipeContentsType>,
 }
 
@@ -1093,13 +1171,13 @@ pub enum WaterPipeContentsType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HotWaterDemand {
-    #[serde(rename = "Shower")]
+    #[serde(rename = "Shower", skip_serializing_if = "Option::is_none")]
     pub shower: Option<Showers>,
-    #[serde(rename = "Bath")]
+    #[serde(rename = "Bath", skip_serializing_if = "Option::is_none")]
     pub bath: Option<Baths>,
-    #[serde(rename = "Other")]
+    #[serde(rename = "Other", skip_serializing_if = "Option::is_none")]
     pub other_water_use: Option<OtherWaterUses>,
-    #[serde(rename = "Distribution")]
+    #[serde(rename = "Distribution", skip_serializing_if = "Option::is_none")]
     pub water_distribution: Option<WaterDistribution>,
 }
 
@@ -1130,7 +1208,7 @@ pub enum Shower {
         flowrate: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(rename = "WWHRS")]
+        #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
         waste_water_heat_recovery: Option<String>,
     },
     #[serde(rename = "InstantElecShower")]
@@ -1255,6 +1333,7 @@ impl WaterHeatingEventsForProcessing for WaterHeatingEvents {
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
     pub start: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
     pub temperature: f64,
 }
@@ -1277,23 +1356,26 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
+        #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_setback: Option<f64>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename = "HeatSource")]
+        #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
         heat_source: Option<SpaceHeatSystemHeatSource>,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<String>,
         // not sure what the possible options are here yet
         frac_convective: f64,
-        #[serde(rename = "Zone")]
+        #[serde(rename = "Zone", skip_serializing_if = "Option::is_none")]
         _zone: Option<String>,
     },
     #[serde(rename = "ElecStorageHeater")]
     #[allow(dead_code)]
     ElectricStorageHeater {
+        #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
         temp_charge_cut: f64,
         rated_power: f64,
@@ -1317,16 +1399,17 @@ pub(crate) enum SpaceHeatSystemDetails {
         n_units: u32,
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
-        #[serde(rename = "HeatSource")]
+        #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
         heat_source: Option<SpaceHeatSystemHeatSource>,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<String>,
         // don't know possible options here
         #[serde(rename = "ControlCharger")]
         control_charger: String,
         // don't know possible options here
         #[serde(rename = "Zone")]
-        zone: String, // think these are just arbitrary names?
+        zone: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_setback: Option<f64>,
     },
     #[allow(dead_code)]
@@ -1340,24 +1423,27 @@ pub(crate) enum SpaceHeatSystemDetails {
         // unclear which values are possible here
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<String>,
         // check upstream if this is used
         ecodesign_controller: EcoDesignController,
         design_flow_temp: i32,
         #[serde(rename = "Zone")]
-        zone: String, // as above, these are likely arbitrary names
+        zone: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_setback: Option<f64>,
     },
     #[allow(dead_code)]
     WarmAir {
+        #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
         temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(rename = "Control")]
+        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_setback: Option<f64>,
     },
 }
@@ -1505,6 +1591,7 @@ impl SpaceHeatSystemDetails {
 #[serde(deny_unknown_fields)]
 pub struct SpaceHeatSystemHeatSource {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_flow_limit_upper: Option<f64>,
 }
 
@@ -1516,8 +1603,11 @@ pub struct SpaceHeatSystemHeatSource {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EcoDesignController {
     pub(crate) ecodesign_control_class: EcoDesignControllerClass,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) min_outdoor_temp: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) max_outdoor_temp: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) min_flow_temp: Option<f64>,
 }
 
@@ -1578,6 +1668,7 @@ pub enum MVHRLocation {
 #[serde(deny_unknown_fields)]
 pub struct Infiltration {
     pub storeys_in_building: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub storey_of_dwelling: Option<u32>,
     pub shelter: InfiltrationShelterType,
     pub build_type: InfiltrationBuildType,
@@ -1634,25 +1725,29 @@ pub type ZoneDictionary = IndexMap<String, ZoneInput>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ZoneInput {
-    #[serde(rename = "SpaceHeatSystem")]
+    #[serde(rename = "SpaceHeatSystem", skip_serializing_if = "Option::is_none")]
     pub space_heat_system: Option<String>,
-    #[serde(rename = "SpaceCoolSystem")]
+    #[serde(rename = "SpaceCoolSystem", skip_serializing_if = "Option::is_none")]
     pub space_cool_system: Option<String>,
-    #[serde(rename = "SpaceHeatControl")]
+    #[serde(rename = "SpaceHeatControl", skip_serializing_if = "Option::is_none")]
     pub space_heat_control: Option<SpaceHeatControlType>,
     // don't know what the options are yet
-    #[serde(rename = "Control_WindowOpening")]
+    #[serde(
+        rename = "Control_WindowOpening",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub control_window_opening: Option<HeatSourceControlType>,
     pub area: f64,
     pub volume: f64,
     // check upstream whether this is used
-    #[serde(rename = "Lighting")]
+    #[serde(rename = "Lighting", skip_serializing_if = "Option::is_none")]
     pub lighting: Option<ZoneLighting>,
     // check upstream whether these two are used
-    #[serde(rename = "temp_setpnt_heat")]
+    #[serde(rename = "temp_setpnt_heat", skip_serializing_if = "Option::is_none")]
     _temp_setpnt_heat: Option<f64>,
-    #[serde(rename = "temp_setpnt_cool")]
+    #[serde(rename = "temp_setpnt_cool", skip_serializing_if = "Option::is_none")]
     _temp_setpnt_cool: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_setpnt_init: Option<f64>,
     #[serde(rename = "BuildingElement")]
     pub building_elements: IndexMap<String, BuildingElement>,
@@ -1686,9 +1781,12 @@ pub struct ZoneLighting {
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
+        #[serde(skip_serializing_if = "Option::is_none")]
         is_unheated_pitched_roof: Option<bool>,
         a_sol: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         r_c: Option<f64>,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
@@ -1704,19 +1802,28 @@ pub enum BuildingElement {
         height: f64,
         width: f64,
         area: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         h_ci: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         h_ri: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         h_ce: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         h_re: Option<f64>,
     },
     #[serde(rename = "BuildingElementTransparent")]
     Transparent {
+        #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
-        #[serde(rename = "area")]
+        #[serde(rename = "area", skip_serializing_if = "Option::is_none")]
         // area is sometimes present but not expected to be used
         _area: Option<f64>,
-        #[serde(rename = "Control_WindowOpenable")]
+        #[serde(
+            rename = "Control_WindowOpenable",
+            skip_serializing_if = "Option::is_none"
+        )]
         window_openable_control: Option<String>, // unclear how this might be used
+        #[serde(skip_serializing_if = "Option::is_none")]
         r_c: Option<f64>,
         pitch: f64,
         #[serde(
@@ -1731,10 +1838,15 @@ pub enum BuildingElement {
         height: f64,
         width: f64,
         // following attributes may be FHS only
+        #[serde(skip_serializing_if = "Option::is_none")]
         free_area_height: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         mid_height: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         max_window_open_area: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         security_risk: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         window_part_list: Option<Vec<WindowPart>>,
         // end possible FHS only attributes
         shading: Vec<WindowShadingObject>,
@@ -1749,29 +1861,49 @@ pub enum BuildingElement {
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
         floor_type: FloorType,
+        #[serde(skip_serializing_if = "Option::is_none")]
         height_upper_surface: Option<f64>,
-        #[serde(rename = "thermal_transm_walls")]
+        #[serde(
+            rename = "thermal_transm_walls",
+            skip_serializing_if = "Option::is_none"
+        )]
         thermal_transmission_walls: Option<f64>,
-        #[serde(rename = "thermal_resist_insul")]
+        #[serde(
+            rename = "thermal_resist_insul",
+            skip_serializing_if = "Option::is_none"
+        )]
         thermal_resistance_of_insulation: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         area_per_perimeter_vent: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         shield_fact_location: Option<WindShieldLocation>,
         thickness_walls: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         depth_basement_floor: Option<f64>,
-        #[serde(rename = "thermal_resist_walls_base")]
+        #[serde(
+            rename = "thermal_resist_walls_base",
+            skip_serializing_if = "Option::is_none"
+        )]
         thermal_resistance_of_basement_walls: Option<f64>,
-        #[serde(rename = "thermal_transm_envi_base")]
+        #[serde(
+            rename = "thermal_transm_envi_base",
+            skip_serializing_if = "Option::is_none"
+        )]
         thermal_transmittance_of_floor_above_basement: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         height_basement_walls: Option<f64>,
         perimeter: f64,
         psi_wall_floor_junc: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         edge_insulation: Option<Vec<EdgeInsulation>>,
     },
     #[serde(rename = "BuildingElementAdjacentZTC")]
     AdjacentZTC {
         area: f64,
         pitch: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         r_c: Option<f64>,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
@@ -1780,7 +1912,9 @@ pub enum BuildingElement {
     AdjacentZTUSimple {
         area: f64,
         pitch: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         r_c: Option<f64>,
         r_u: f64,
         k_m: f64,
@@ -2081,6 +2215,7 @@ pub enum ThermalBridgingDetails {
     Linear {
         linear_thermal_transmittance: f64,
         length: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         junction_type: Option<String>,
     },
     #[serde(rename = "ThermalBridgePoint")]
@@ -2109,13 +2244,14 @@ pub type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 pub struct SpaceCoolSystemDetails {
     #[serde(rename(deserialize = "type"))]
     pub system_type: SpaceCoolSystemType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temp_setback: Option<f64>,
     pub cooling_capacity: f64,
     pub efficiency: f64,
     pub frac_convective: f64,
     #[serde(rename = "EnergySupply")]
     pub energy_supply: EnergySupplyType,
-    #[serde(rename = "Control")]
+    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub control: Option<String>,
 }
 
@@ -2169,35 +2305,49 @@ pub enum HeatSourceWetDetails {
         #[serde(rename = "EnergySupply")]
         energy_supply: EnergySupplyType,
         source_type: HeatPumpSourceType,
-        #[serde(rename = "EnergySupply_heat_network")]
+        #[serde(
+            rename = "EnergySupply_heat_network",
+            skip_serializing_if = "Option::is_none"
+        )]
         energy_supply_heat_network: Option<String>,
         // unclear what this is
+        #[serde(skip_serializing_if = "Option::is_none")]
         temp_distribution_heat_network: Option<f64>,
         sink_type: HeatPumpSinkType,
         #[serde(rename = "backup_ctrl_type")]
         backup_control_type: HeatPumpBackupControlType,
         time_delay_backup: f64,
         modulating_control: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
         min_modulation_rate_20: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         min_modulation_rate_35: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         min_modulation_rate_55: Option<f64>,
         time_constant_onoff_operation: f64,
         temp_return_feed_max: f64,
         temp_lower_operating_limit: f64,
         min_temp_diff_flow_return_for_hp_to_operate: f64,
         var_flow_temp_ctrl_during_test: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
         power_heating_warm_air_fan: Option<f64>,
         power_heating_circ_pump: f64,
         power_source_circ_pump: f64,
         power_standby: f64,
         power_crankcase_heater: f64,
         power_off: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
         power_max_backup: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         eahp_mixed_max_temp: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         eahp_mixed_min_temp: Option<f64>,
-        #[serde(rename = "MechanicalVentilation")]
+        #[serde(
+            rename = "MechanicalVentilation",
+            skip_serializing_if = "Option::is_none"
+        )]
         mechanical_ventilation: Option<String>,
-        #[serde(rename = "BufferTank")]
+        #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
         test_data: Vec<HeatPumpTestDatum>,
         boiler: Option<Box<HeatPumpBoiler>>,
@@ -2313,6 +2463,7 @@ pub struct HeatPumpBufferTank {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpTestDatum {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub air_flow_rate: Option<f64>,
     pub(crate) test_letter: TestLetter,
     pub capacity: f64,
@@ -2325,6 +2476,7 @@ pub struct HeatPumpTestDatum {
     #[validate(minimum = -273.15)]
     pub temp_source: f64,
     pub temp_test: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub eahp_mixed_ext_air_ratio: Option<f64>,
     #[serde(skip)]
     pub ext_air_ratio: Option<f64>,
@@ -2348,6 +2500,7 @@ pub struct HeatPumpBoiler {
     electricity_part_load: f64,
     electricity_full_load: f64,
     electricity_standby: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
 }
 
@@ -2386,6 +2539,7 @@ pub struct WasteWaterHeatRecoveryDetails {
     pub flow_rates: Vec<f64>,
     pub efficiencies: Vec<f64>,
     pub utilisation_factor: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub electrical_consumption: Option<f64>,
 }
 
@@ -2457,6 +2611,7 @@ pub struct WindowOpeningForCooling {
 #[serde(deny_unknown_fields)]
 pub struct General {
     pub storeys_in_building: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub storey_of_dwelling: Option<usize>,
     pub build_type: BuildType,
 }
@@ -2482,6 +2637,7 @@ pub struct InfiltrationVentilation {
     pub(crate) altitude: f64,
     #[serde(rename = "Control_WindowAdjust")]
     pub(crate) window_adjust_control: Option<String>, // don't know what this can be
+    #[serde(skip_serializing_if = "Option::is_none")]
     noise_nuisance: Option<bool>,
     #[serde(rename = "Vents")]
     pub(crate) vents: IndexMap<String, Vent>,
@@ -2489,7 +2645,7 @@ pub struct InfiltrationVentilation {
     pub(crate) leaks: VentilationLeaks,
     #[serde(rename = "MechanicalVentilation", default)]
     pub(crate) mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
-    #[serde(rename = "AirTerminalDevices")]
+    #[serde(rename = "AirTerminalDevices", skip_serializing_if = "Option::is_none")]
     _air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
     #[serde(rename = "PDUs")]
     pub(crate) pdus: IndexMap<String, ()>, // don't know what this looks like yet
@@ -2545,9 +2701,9 @@ pub struct VentilationLeaks {
     pub test_result: f64,
     pub env_area: f64,
     // following values appear to be usually overridden
-    #[serde(rename = "area_roof")]
+    #[serde(rename = "area_roof", skip_serializing_if = "Option::is_none")]
     _area_roof: Option<f64>,
-    #[serde(rename = "area_facades")]
+    #[serde(rename = "area_facades", skip_serializing_if = "Option::is_none")]
     _area_facades: Option<f64>,
 }
 
@@ -2556,31 +2712,42 @@ pub struct VentilationLeaks {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilation {
-    #[serde(rename = "vent_sys_op")]
+    #[serde(rename = "vent_sys_op", skip_serializing_if = "Option::is_none")]
     _vent_sys_op: Option<String>, // this seems useless/unreferenced
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
-    #[serde(rename = "design_zone_cooling_covered_by_mech_vent")]
+    #[serde(
+        rename = "design_zone_cooling_covered_by_mech_vent",
+        skip_serializing_if = "Option::is_none"
+    )]
     _design_zone_cooling_covered_by_mechanical_vent: Option<f64>,
-    #[serde(rename = "design_zone_heating_covered_by_mech_vent")]
+    #[serde(
+        rename = "design_zone_heating_covered_by_mech_vent",
+        skip_serializing_if = "Option::is_none"
+    )]
     _design_zone_heating_covered_by_mechanical_vent: Option<f64>,
     pub(crate) vent_type: VentType,
-    #[serde(rename = "mvhr_eff")]
+    #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_efficiency: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_location: Option<MVHRLocation>,
-    #[serde(rename = "Control")]
+    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub(crate) control: Option<String>,
-    #[serde(rename = "SFP")]
+    #[serde(rename = "SFP", skip_serializing_if = "Option::is_none")]
     pub(crate) sfp: Option<f64>,
-    #[serde(rename = "measured_fan_power")]
+    #[serde(rename = "measured_fan_power", skip_serializing_if = "Option::is_none")]
     pub(crate) measured_fan_power: Option<f64>,
-    #[serde(rename = "measured_air_flow_rate")]
+    #[serde(
+        rename = "measured_air_flow_rate",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: EnergySupplyType,
     pub(crate) design_outdoor_air_flow_rate: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
 }
 
@@ -2667,8 +2834,11 @@ impl Display for VentType {
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilationDuctwork {
     pub(crate) cross_section_shape: DuctShape,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) duct_perimeter_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) internal_diameter_mm: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) external_diameter_mm: Option<f64>,
     pub(crate) length: f64,
     pub(crate) insulation_thermal_conductivity: f64,
@@ -2828,17 +2998,19 @@ pub enum ApplianceEntry {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct Appliance {
-    #[serde(rename = "kWh_per_100cycle")]
+    #[serde(rename = "kWh_per_100cycle", skip_serializing_if = "Option::is_none")]
     pub(crate) kwh_per_100_cycle: Option<f64>,
-    #[serde(rename = "loadshifting")]
+    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
     pub(crate) load_shifting: Option<ApplianceLoadShifting>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) kg_load: Option<f64>,
-    #[serde(rename = "kWh_per_annum")]
+    #[serde(rename = "kWh_per_annum", skip_serializing_if = "Option::is_none")]
     pub(crate) kwh_per_annum: Option<f64>,
-    #[serde(rename = "Energysupply")]
+    #[serde(rename = "Energysupply", skip_serializing_if = "Option::is_none")]
     pub(crate) energy_supply: Option<EnergySupplyType>,
-    #[serde(rename = "kWh_per_cycle")]
+    #[serde(rename = "kWh_per_cycle", skip_serializing_if = "Option::is_none")]
     pub(crate) kwh_per_cycle: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) standard_use: Option<f64>,
 }
 
@@ -2902,7 +3074,9 @@ pub struct ApplianceLoadShifting {
     #[serde(rename = "weight")]
     _weight: String, // not sure yet what these can be
     // In Python these are set from the FHS wrapper
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weight_timeseries: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub demand_timeseries: Option<Vec<f64>>,
 }
 
