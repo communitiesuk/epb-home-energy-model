@@ -46,7 +46,7 @@ use std::hash::Hash;
 use std::io::Read;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 
 pub const HEM_VERSION: &str = "0.30";
 pub const HEM_VERSION_DATE: &str = "2024-06-25";
@@ -129,6 +129,28 @@ pub fn run_project(
                 ))
             }
         };
+
+        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
+        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
+            if let Some(input) = input.get(&CalculationKey::Primary) {
+                write_preproc_file(input, &output, "preproc", "json")?;
+            } else {
+                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
+            }
+
+            return Ok(None);
+        }
+
+        #[instrument(skip_all)]
+        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
+            let writer = output.writer_for_location_key(location_key, file_extension)?;
+            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
+                error!("Could not write out preprocess file: {}", e);
+            }
+
+            Ok(())
+        }
+
 
         // 3. Determine external conditions to use for calculations.
         #[instrument(skip_all)]

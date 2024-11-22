@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
-use crate::input::deserialize_orientation;
+use crate::input::{deserialize_orientation, serialize_orientation};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum DaylightSavingsConfig {
@@ -18,21 +18,27 @@ pub enum DaylightSavingsConfig {
     NotApplicable,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShadingSegment {
     pub number: usize,
     #[serde(rename = "start360")]
-    #[serde(deserialize_with = "deserialize_orientation")]
+    #[serde(
+        deserialize_with = "deserialize_orientation",
+        serialize_with = "serialize_orientation"
+    )]
     pub start: f64,
     #[serde(rename = "end360")]
-    #[serde(deserialize_with = "deserialize_orientation")]
+    #[serde(
+        deserialize_with = "deserialize_orientation",
+        serialize_with = "serialize_orientation"
+    )]
     pub end: f64,
     pub objects: Option<Vec<ShadingObject>>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShadingObject {
@@ -42,7 +48,7 @@ pub struct ShadingObject {
     pub distance: f64,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct WindowShadingObject {
@@ -52,7 +58,7 @@ pub struct WindowShadingObject {
     pub distance: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
@@ -61,7 +67,7 @@ pub enum ShadingObjectType {
     Overhang,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]

@@ -32,7 +32,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use polyfit_rs::polyfit_rs::polyfit;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -448,7 +448,7 @@ impl BufferTank {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum TestLetter {

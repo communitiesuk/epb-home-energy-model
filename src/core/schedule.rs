@@ -189,10 +189,10 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
 /// Data structures representing how schedules can be provided as input (in JSON).
 pub(crate) mod input {
     use itertools::Itertools;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct Schedule<T: Copy> {
@@ -244,7 +244,7 @@ pub(crate) mod input {
         }
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
@@ -255,7 +255,7 @@ pub(crate) mod input {
         Reference(String),
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
@@ -264,7 +264,7 @@ pub(crate) mod input {
         Single(ScheduleEntry<T>),
     }
 
-    #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
@@ -273,7 +273,7 @@ pub(crate) mod input {
         Value(T),
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct ScheduleRepeater<T: Copy> {
@@ -281,7 +281,7 @@ pub(crate) mod input {
         pub(crate) repeat: usize,
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
