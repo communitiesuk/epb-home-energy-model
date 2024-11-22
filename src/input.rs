@@ -32,7 +32,6 @@ pub struct Input {
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     pub energy_supply: EnergySupplyInput,
-    #[serde(deserialize_with = "deserialize_control")]
     pub control: Control,
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
@@ -471,44 +470,16 @@ pub struct ColdWaterSourceDetails {
     pub(crate) time_series_step: f64,
 }
 
-pub(crate) type CoreControls = Vec<HeatSourceControl>;
-
 pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Control {
-    pub(crate) core: CoreControls,
+    pub(crate) hot_water_timer: Option<ControlDetails>,
+    pub(crate) window_opening: Option<ControlDetails>,
+    #[serde(flatten)]
     pub(crate) extra: ExtraControls,
-}
-
-// specialised deserialisation logic for converting a map of controls into a list of HeatSourceControl structs
-fn deserialize_control<'de, D>(deserializer: D) -> Result<Control, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let map: IndexMap<String, ControlDetails> = Deserialize::deserialize(deserializer)?;
-    let mut core: CoreControls = Default::default();
-    let mut extra: ExtraControls = Default::default();
-    for (control_type, control_details) in map {
-        match control_type.as_str() {
-            // following strings need to be in sync with HeatSourceControlType known values
-            "hw timer" => {
-                core.push(HeatSourceControl::HotWaterTimer(control_details));
-            }
-            "window opening" => {
-                core.push(HeatSourceControl::WindowOpening(control_details));
-            }
-            // there are some extra control definitions from time to time called things like
-            // "hw timer 2" and "zone 1 radiators timer" - can only presume now to store these keys as-is
-            // and perhaps match on other references
-            other => {
-                extra.insert(other.to_string(), control_details);
-            }
-        }
-    }
-    Ok(Control { core, extra })
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -873,14 +844,6 @@ pub enum HeatSourceControlType {
     WindowOpeningRestOfDwelling,
     #[serde(rename = "always off")]
     AlwaysOff,
-}
-
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum HeatSourceControl {
-    HotWaterTimer(ControlDetails),
-    WindowOpening(ControlDetails),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

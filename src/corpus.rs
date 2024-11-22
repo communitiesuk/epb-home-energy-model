@@ -61,9 +61,8 @@ use crate::input::{
     ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape,
     DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey,
     EnergySupplyType, ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControl as HeatSourceControlInput,
-    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
+    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
@@ -2406,19 +2405,15 @@ fn control_from_input(
     // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
     // and the way the variants-struct crate works;
     // we should be able to improve it in time
-    for control in &control_input.core {
-        match control {
-            HeatSourceControlInput::HotWaterTimer(control) => {
-                core.push(HeatSourceControl::HotWaterTimer(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator)?,
-                )));
-            }
-            HeatSourceControlInput::WindowOpening(control) => {
-                core.push(HeatSourceControl::WindowOpening(Arc::new(
-                    single_control_from_details(control, simulation_time_iterator)?,
-                )));
-            }
-        }
+    if let Some(control) = &control_input.hot_water_timer.as_ref() {
+        core.push(HeatSourceControl::HotWaterTimer(Arc::new(
+            single_control_from_details(control, simulation_time_iterator)?,
+        )));
+    }
+    if let Some(control) = &control_input.window_opening.as_ref() {
+        core.push(HeatSourceControl::WindowOpening(Arc::new(
+            single_control_from_details(control, simulation_time_iterator)?,
+        )));
     }
     for (name, control) in &control_input.extra {
         extra.insert(
