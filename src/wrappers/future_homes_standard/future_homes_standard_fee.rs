@@ -202,7 +202,7 @@ pub fn apply_fhs_fee_postprocessing(
         total_floor_area,
     );
 
-    let writer = output.writer_for_location_key("postproc")?;
+    let writer = output.writer_for_location_key("postproc", "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record([

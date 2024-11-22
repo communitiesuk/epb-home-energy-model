@@ -6,7 +6,11 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 pub trait Output: Debug + Sync + Send {
-    fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write>;
+    fn writer_for_location_key(
+        &self,
+        location_key: &str,
+        file_extension: &str,
+    ) -> anyhow::Result<impl Write>;
     /// Whether this output can be considered a no-op and therefore that any code that only writes to the output can be skipped.
     fn is_noop(&self) -> bool {
         false
@@ -29,16 +33,24 @@ impl FileOutput {
 }
 
 impl Output for FileOutput {
-    fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write> {
+    fn writer_for_location_key(
+        &self,
+        location_key: &str,
+        file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
         Ok(BufWriter::new(File::create(self.directory_path.join(
-            formatx!(&self.file_template, location_key).unwrap(),
+            formatx!(&self.file_template, location_key, file_extension).unwrap(),
         ))?))
     }
 }
 
 impl Output for &FileOutput {
-    fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write> {
-        <FileOutput as Output>::writer_for_location_key(self, location_key)
+    fn writer_for_location_key(
+        &self,
+        location_key: &str,
+        file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
+        <FileOutput as Output>::writer_for_location_key(self, location_key, file_extension)
     }
 }
 
@@ -47,7 +59,11 @@ impl Output for &FileOutput {
 pub struct SinkOutput;
 
 impl Output for SinkOutput {
-    fn writer_for_location_key(&self, _location_key: &str) -> anyhow::Result<impl Write> {
+    fn writer_for_location_key(
+        &self,
+        _location_key: &str,
+        _file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
         Ok(io::sink())
     }
 

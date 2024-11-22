@@ -131,7 +131,7 @@ fn main() -> anyhow::Result<()> {
     let output_type = output_type_from_wrapper_choice(&args.wrapper_choice);
     let file_output = FileOutput::new(
         output_path,
-        format!("{input_file_name}__{output_type}__{{}}.csv"),
+        format!("{input_file_name}__{output_type}__{{}}.{{}}"),
     );
 
     let external_conditions: Option<ExternalConditions> = match args.weather_file {

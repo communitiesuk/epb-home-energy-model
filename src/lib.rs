@@ -541,7 +541,7 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         ductwork_gains,
     } = args;
     debug!("writing out to {output_key}");
-    let writer = output.writer_for_location_key(&output_key)?;
+    let writer = output.writer_for_location_key(&output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let mut headings: Vec<Cow<'static, str>> = vec!["Timestep".into()];
@@ -1074,7 +1074,7 @@ fn write_core_output_file_summary(
         .map(|(hw_name, hw_cop)| vec![hw_name.as_str().into(), (*hw_cop).into()])
         .collect::<Vec<_>>();
 
-    let writer = output.writer_for_location_key(&output_key)?;
+    let writer = output.writer_for_location_key(&output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     let blank_line: Vec<&'static str> = vec![];
@@ -1493,7 +1493,7 @@ fn write_core_output_file_static(
 
     debug!("writing out to {output_key}");
 
-    let writer = output.writer_for_location_key(&output_key)?;
+    let writer = output.writer_for_location_key(&output_key, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record([

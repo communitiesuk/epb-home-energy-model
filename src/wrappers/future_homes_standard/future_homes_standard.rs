@@ -502,7 +502,7 @@ fn write_postproc_file(
         rows_results.push(row.iter().flatten().cloned().collect());
     }
 
-    let writer = output.writer_for_location_key(&file_location)?;
+    let writer = output.writer_for_location_key(&file_location, "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record(row_headers)?;
@@ -527,7 +527,7 @@ fn write_postproc_summary_file(
         ("DER", "DPER")
     };
 
-    let writer = output.writer_for_location_key("postproc_summary")?;
+    let writer = output.writer_for_location_key("postproc_summary", "csv")?;
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     writer.write_record(["", "", "Total"])?;
