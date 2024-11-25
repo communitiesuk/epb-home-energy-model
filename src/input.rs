@@ -41,8 +41,6 @@ pub struct Input {
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub space_cool_system: Option<SpaceCoolSystem>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ventilation: Option<Ventilation>,
     pub zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
     #[allow(dead_code)]
@@ -1627,32 +1625,6 @@ pub(crate) enum EcoDesignControllerClass {
     ClassVIII = 8,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type", deny_unknown_fields)]
-pub enum Ventilation {
-    #[serde(rename = "NatVent")]
-    Natural { req_ach: f64 },
-    #[serde(rename = "WHEV")]
-    Whev {
-        req_ach: f64,
-        #[serde(rename = "SFP")]
-        sfp: f64,
-        #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
-    },
-}
-
-impl Ventilation {
-    pub fn req_ach(&self) -> f64 {
-        match self {
-            Ventilation::Natural { req_ach, .. } => *req_ach,
-            Ventilation::Whev { req_ach, .. } => *req_ach,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1660,62 +1632,6 @@ impl Ventilation {
 pub enum MVHRLocation {
     Inside,
     Outside,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
-pub struct Infiltration {
-    pub storeys_in_building: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storey_of_dwelling: Option<u32>,
-    pub shelter: InfiltrationShelterType,
-    pub build_type: InfiltrationBuildType,
-    pub test_result: f64,
-    pub test_type: InfiltrationTestType,
-    pub env_area: f64,
-    pub volume: f64,
-    pub sheltered_sides: u32,
-    pub open_chimneys: u32,
-    pub open_flues: u32,
-    pub closed_fire: u32,
-    pub flues_d: u32,
-    pub flues_e: u32,
-    pub blocked_chimneys: u32,
-    pub extract_fans: u32,
-    pub passive_vents: u32,
-    pub gas_fires: u32,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(rename_all = "lowercase")]
-pub enum InfiltrationShelterType {
-    VerySheltered,
-    Sheltered,
-    Normal,
-    Exposed,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(rename_all = "lowercase")]
-pub enum InfiltrationBuildType {
-    House,
-    Flat,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum InfiltrationTestType {
-    #[serde(rename = "50Pa")]
-    FiftyPascals,
-    #[serde(rename = "4Pa")]
-    FourPascals,
 }
 
 pub type ZoneDictionary = IndexMap<String, ZoneInput>;

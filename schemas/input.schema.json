@@ -160,16 +160,6 @@
         }
       ]
     },
-    "Ventilation": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Ventilation"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "WWHRS": {
       "type": [
         "object",
@@ -4441,59 +4431,6 @@
         "Decentralised continuous MEV",
         "MVHR",
         "PIV"
-      ]
-    },
-    "Ventilation": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "req_ach",
-            "type"
-          ],
-          "properties": {
-            "req_ach": {
-              "type": "number",
-              "format": "double"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "NatVent"
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "EnergySupply",
-            "SFP",
-            "req_ach",
-            "type"
-          ],
-          "properties": {
-            "EnergySupply": {
-              "$ref": "#/definitions/EnergySupplyType"
-            },
-            "SFP": {
-              "type": "number",
-              "format": "double"
-            },
-            "req_ach": {
-              "type": "number",
-              "format": "double"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "WHEV"
-              ]
-            }
-          },
-          "additionalProperties": false
-        }
       ]
     },
     "VentilationLeaks": {
