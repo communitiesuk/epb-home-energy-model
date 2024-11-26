@@ -1378,8 +1378,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         temp_charge_cut: f64,
         rated_power: f64,
         rated_power_instant: f64,
-        air_flow_type: String,
-        // don't know what the possible values are here yet
+        air_flow_type: ElectricStorageHeaterAirFlowType,
         temp_dis_safe: f64,
         thermal_mass: f64,
         frac_convective: f64,
@@ -1632,6 +1631,15 @@ pub(crate) enum EcoDesignControllerClass {
 pub enum MVHRLocation {
     Inside,
     Outside,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ElectricStorageHeaterAirFlowType {
+    FanAssisted,
+    DamperOnly,
 }
 
 pub type ZoneDictionary = IndexMap<String, ZoneInput>;
