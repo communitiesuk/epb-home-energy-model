@@ -5480,13 +5480,13 @@ mod tests {
                 number: 1,
                 start: 180.,
                 end: 135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
-                objects: None,
+                shading_objects: None,
             },
         ];
         Arc::new(ExternalConditions::new(

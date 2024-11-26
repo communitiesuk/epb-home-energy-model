@@ -1551,25 +1551,25 @@ mod tests {
                 number: 1,
                 start: 180.,
                 end: 135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 3,
                 start: 90.,
                 end: 45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 4,
                 start: 45.,
                 end: 0.,
-                objects: Some(vec![ShadingObject {
+                shading_objects: Some(vec![ShadingObject {
                     object_type: ShadingObjectType::Obstacle,
                     height: 10.5,
                     distance: 120.,
@@ -1579,25 +1579,25 @@ mod tests {
                 number: 5,
                 start: 0.,
                 end: -45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 6,
                 start: -45.,
                 end: -90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 7,
                 start: -90.,
                 end: -135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 8,
                 start: -135.,
                 end: -180.,
-                objects: None,
+                shading_objects: None,
             },
         ];
 
@@ -1995,25 +1995,25 @@ mod tests {
                 number: 1,
                 start: 180.,
                 end: 135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 3,
                 start: 90.,
                 end: 45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 4,
                 start: 45.,
                 end: 0.,
-                objects: Some(vec![ShadingObject {
+                shading_objects: Some(vec![ShadingObject {
                     object_type: ShadingObjectType::Obstacle,
                     height: 10.5,
                     distance: 12.,
@@ -2023,25 +2023,25 @@ mod tests {
                 number: 5,
                 start: 0.,
                 end: -45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 6,
                 start: -45.,
                 end: -90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 7,
                 start: -90.,
                 end: -135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 8,
                 start: -135.,
                 end: -180.,
-                objects: None,
+                shading_objects: None,
             },
         ];
 

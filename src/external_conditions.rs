@@ -36,7 +36,8 @@ pub struct ShadingSegment {
     )]
     pub end: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub objects: Option<Vec<ShadingObject>>,
+    #[serde(rename = "shading")]
+    pub shading_objects: Option<Vec<ShadingObject>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -849,7 +850,7 @@ impl ExternalConditions {
         // #first process the distant (environment) shading for this building element
         let segment = self.get_segment(&simulation_time).unwrap();
 
-        if let Some(shading_objects) = segment.objects {
+        if let Some(shading_objects) = segment.shading_objects {
             for shading_object in shading_objects {
                 match shading_object.object_type {
                     ShadingObjectType::Obstacle => {
@@ -2041,49 +2042,49 @@ mod tests {
                 number: 1,
                 start: 180.,
                 end: 135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 3,
                 start: 90.,
                 end: 45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 4,
                 start: 45.,
                 end: 0.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 5,
                 start: 0.,
                 end: -45.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 6,
                 start: -45.,
                 end: -90.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 7,
                 start: -90.,
                 end: -135.,
-                objects: None,
+                shading_objects: None,
             },
             ShadingSegment {
                 number: 8,
                 start: -135.,
                 end: -180.,
-                objects: None,
+                shading_objects: None,
             },
         ]
     }

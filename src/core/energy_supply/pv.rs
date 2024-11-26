@@ -262,7 +262,7 @@ mod tests {
                     number: 2,
                     start: 135.,
                     end: 90.,
-                    objects: Some(vec![ShadingObject {
+                    shading_objects: Some(vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
                         distance: 6.,
@@ -278,7 +278,7 @@ mod tests {
                     number: 4,
                     start: 45.,
                     end: 0.,
-                    objects: Some(vec![
+                    shading_objects: Some(vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
                             height: 40.,
@@ -295,7 +295,7 @@ mod tests {
                     number: 5,
                     start: 0.,
                     end: -45.,
-                    objects: Some(vec![ShadingObject {
+                    shading_objects: Some(vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
                         distance: 8.,
