@@ -522,9 +522,9 @@ pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Control {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
     pub(crate) hot_water_timer: Option<ControlDetails>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "window opening")]
     pub(crate) window_opening: Option<ControlDetails>,
     #[serde(flatten)]
     pub(crate) extra: ExtraControls,
