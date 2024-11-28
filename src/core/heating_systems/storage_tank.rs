@@ -1074,8 +1074,14 @@ impl StorageTank {
                 match location {
                     PipeworkLocation::External => {}
                     PipeworkLocation::Internal => {
-                        primary_gains_w +=
-                            pipework_data.cool_down_loss(self.temp_set_on, STORAGE_TANK_TEMP_AMB)
+                        primary_gains_w += pipework_data.cool_down_loss(
+                            self.temp_set_on,
+                            self.temp_surrounding_primary_pipework(
+                                pipework_data,
+                                simulation_time_iteration,
+                            ),
+                        ) * WATTS_PER_KILOWATT as f64
+                            / self.simulation_timestep as f64
                     }
                 }
             }
