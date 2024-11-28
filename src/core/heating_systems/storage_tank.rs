@@ -1056,14 +1056,13 @@ impl StorageTank {
 
                 // Check if pipework location is internal
                 let location = pipework_data.location();
-                match location {
-                    PipeworkLocation::Internal => primary_gains_w += primary_pipework_losses_w,
-                    PipeworkLocation::External => {
-                        primary_pipework_losses_kwh += primary_pipework_losses_w
-                            * self.simulation_timestep
-                            / WATTS_PER_KILOWATT as f64
-                    }
+
+                if matches!(location, PipeworkLocation::Internal) {
+                    primary_gains_w += primary_pipework_losses_w
                 }
+
+                primary_pipework_losses_kwh +=
+                    primary_pipework_losses_w * self.simulation_timestep / WATTS_PER_KILOWATT as f64
             }
         }
 
