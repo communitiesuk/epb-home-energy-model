@@ -2256,7 +2256,7 @@ fn energy_supply_from_input(
                 )
             }),
             details.priority.as_ref().cloned(),
-            details.is_export_capable,
+            details.is_export_capable,     
         )))
     })
 }
@@ -4062,7 +4062,7 @@ fn hot_water_source_from_input(
             }
             let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
-            let mut heat_source_for_diverter: Option<Arc<Mutex<HeatSource>>> = Default::default();
+            
             for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
@@ -4099,7 +4099,6 @@ fn hot_water_source_from_input(
                         thermostat_position,
                     },
                 );
-                heat_source_for_diverter = Some(heat_source);
                 energy_supply_conn_names.push(energy_supply_conn_name);
             }
             let ctrl_hold_at_setpoint = control_hold_at_setpoint
@@ -4112,7 +4111,7 @@ fn hot_water_source_from_input(
                 setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                 cold_water_source,
                 simulation_time.step_in_hours(),
-                heat_sources,
+                heat_sources.clone(),
                 temp_internal_air_fn(temp_internal_air_accessor),
                 external_conditions,
                 Some(24),
@@ -4134,11 +4133,10 @@ fn hot_water_source_from_input(
                             hs.energy_supply_type(),
                             simulation_time.total_steps(),
                         )?;
-                        let immersion_heater = heat_source_for_diverter
-                            .clone()
-                            .expect("More than one heat source was expected to be present")
-                            .lock()
-                            .as_immersion_heater();
+
+                        let positioned_heat_source = &heat_sources.get(&heat_source_name.to_owned());
+                        let immersion_heater = positioned_heat_source.unwrap().heat_source.lock().as_immersion_heater();
+
                         if let Some(im) = immersion_heater {
                             let pv_diverter =
                                 PVDiverter::new(storage_tank.clone(), im, heat_source_name.clone());
