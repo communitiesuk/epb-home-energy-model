@@ -2256,7 +2256,7 @@ fn energy_supply_from_input(
                 )
             }),
             details.priority.as_ref().cloned(),
-            details.is_export_capable,     
+            details.is_export_capable,
         )))
     })
 }
@@ -3810,7 +3810,7 @@ fn heat_source_from_input(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        (*control).and_then(|ctrl| controls.get(&ctrl)),
+                        (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string())),
                     ),
                 )))),
                 name.into(),
@@ -4062,7 +4062,7 @@ fn hot_water_source_from_input(
             }
             let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
-            
+
             for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
@@ -4104,6 +4104,7 @@ fn hot_water_source_from_input(
             let ctrl_hold_at_setpoint = control_hold_at_setpoint
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl.as_str()));
+
             let storage_tank = Arc::new(Mutex::new(StorageTank::new(
                 *volume,
                 *daily_losses,
@@ -4134,8 +4135,13 @@ fn hot_water_source_from_input(
                             simulation_time.total_steps(),
                         )?;
 
-                        let positioned_heat_source = &heat_sources.get(&heat_source_name.to_owned());
-                        let immersion_heater = positioned_heat_source.unwrap().heat_source.lock().as_immersion_heater();
+                        let positioned_heat_source =
+                            &heat_sources.get(&heat_source_name.to_owned());
+                        let immersion_heater = positioned_heat_source
+                            .unwrap()
+                            .heat_source
+                            .lock()
+                            .as_immersion_heater();
 
                         if let Some(im) = immersion_heater {
                             let pv_diverter =
