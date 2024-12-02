@@ -4048,6 +4048,8 @@ fn hot_water_source_from_input(
         } => {
             let mut cold_water_source: WaterSourceWithTemperature =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
+            // TODO (from Python) Need to handle error if ColdWaterSource name is invalid.
+            // TODO (from Python) assuming here there is only one WWHRS
             if !wwhrs.is_empty() {
                 for heat_recovery_system in wwhrs.values() {
                     match *heat_recovery_system.lock() {
@@ -4060,6 +4062,8 @@ fn hot_water_source_from_input(
                     }
                 }
             }
+            // At this point in the Python, the internal_diameter and external_diameter fields on
+            // primary_pipework are updated, this is done in Pipework.rs in the Rust
             let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
 
