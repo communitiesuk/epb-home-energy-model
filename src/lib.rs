@@ -1309,11 +1309,11 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let peak_elec_consumption = *net_import_per_timestep
         .iter()
         .max_by(|a, b| a.total_cmp(b))
-        .unwrap();
+        .expect("Net import per timestep collection was empty.");
     let index_peak_elec_consumption = net_import_per_timestep
         .iter()
         .position(|&x| x == peak_elec_consumption)
-        .unwrap();
+        .expect("Could not find index for peak electricity consumption.");
 
     // must reflect hour or half hour in the year (hour 0 to hour 8759)
     // to work with the dictionary below timestep_to_date
@@ -1441,7 +1441,9 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
                     KeyString::from(end_use).expect("End use was too long to fit in a KeyString."),
                     delivered_energy_sum,
                 );
-                *fuel_results.get_mut("total").unwrap() += delivered_energy_sum;
+                *fuel_results
+                    .get_mut("total")
+                    .expect("Total key was not present in fuel results.") += delivered_energy_sum;
                 *delivered_energy_map["total"]
                     .entry(
                         KeyString::from(end_use)
