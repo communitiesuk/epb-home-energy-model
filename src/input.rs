@@ -4351,7 +4351,7 @@ impl TryFrom<&InputForProcessing> for Corpus {
     type Error = anyhow::Error;
 
     fn try_from(input: &InputForProcessing) -> Result<Self, Self::Error> {
-        Corpus::from_inputs(&input.input, None)
+        Corpus::from_inputs(&input.input, None, &Default::default())
     }
 }
 

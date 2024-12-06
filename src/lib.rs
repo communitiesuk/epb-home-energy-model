@@ -181,16 +181,18 @@ pub fn run_project(
             fn build_corpus(
                 input: &HashMap<CalculationKey, Input>,
                 external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+                flags: &ProjectFlags,
             ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
                 // TODO: parallel iterate this
+                let output_options = flags.into();
                 iterate_maps(input, external_conditions)
                     .map(|(key, input, external_conditions)| {
-                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions))?))
+                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions), &output_options)?))
                     })
                     .collect()
             }
 
-            build_corpus(&input, &external_conditions).map_err(|e| {
+            build_corpus(&input, &external_conditions, flags).map_err(|e| {
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };

@@ -71,6 +71,7 @@ use crate::input::{
     WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use crate::ProjectFlags;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
@@ -87,9 +88,6 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-// TODO make this a runtime parameter?
-const DETAILED_OUTPUT_HEATING_COOLING: bool = true;
 
 /// As of adopting Rust 1.82 as an MSRV we'll be able to declare this using constants as it supports floating-point arithmetic at compile time
 fn temp_setpnt_heat_none() -> f64 {
@@ -141,6 +139,7 @@ impl Corpus {
     pub fn from_inputs(
         input: &Input,
         external_conditions: Option<&ExternalConditions>,
+        output_options: &OutputOptions,
     ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
 
@@ -232,7 +231,7 @@ impl Corpus {
                         external_conditions.clone(),
                         infiltration_ventilation.clone(),
                         window_adjust_control.clone(),
-                        false, // temporarily specify not printing heat balance TODO: replace with option
+                        output_options.print_heat_balance,
                         simulation_time_iterator.clone().as_ref(),
                     )?;
                     heat_system_name_for_zone
@@ -293,6 +292,7 @@ impl Corpus {
                     },
                     &controls,
                     &mut energy_supplies,
+                    output_options.detailed_output_heating_cooling,
                 )?));
                 match *heat_source.lock() {
                     WetHeatSource::HeatPump(_)
@@ -2080,6 +2080,22 @@ impl Corpus {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct OutputOptions {
+    print_heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+}
+
+impl From<&ProjectFlags> for OutputOptions {
+    fn from(flags: &ProjectFlags) -> Self {
+        Self {
+            print_heat_balance: flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
+            detailed_output_heating_cooling: flags
+                .contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
+        }
+    }
+}
+
 struct SetpointsAndConvectiveFractions {
     temp_setpnt_heat: IndexMap<String, f64>,
     temp_setpnt_cool: IndexMap<String, f64>,
@@ -3609,6 +3625,7 @@ fn heat_source_wet_from_input(
     temp_internal_air_accessor: TempInternalAirAccessor,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
+    detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<WetHeatSource> {
     match &input {
         HeatSourceWetDetails::HeatPump {
@@ -3694,7 +3711,7 @@ fn heat_source_wet_from_input(
                     number_of_zones,
                     throughput_exhaust_air,
                     energy_supply_hn,
-                    DETAILED_OUTPUT_HEATING_COOLING,
+                    detailed_output_heating_cooling,
                     boiler.map(|boiler: Boiler| Arc::new(RwLock::new(boiler))),
                     cost_schedule_hybrid_hp,
                     temp_internal_air_fn(temp_internal_air_accessor),
