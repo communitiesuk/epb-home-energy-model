@@ -21,7 +21,11 @@ fuzz_target!(|data: &[u8]| {
 pub struct SinkOutput;
 
 impl Output for SinkOutput {
-    fn writer_for_location_key(&self, _location_key: &str) -> anyhow::Result<impl Write> {
+    fn writer_for_location_key(
+        &self,
+        _location_key: &str,
+        _file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
         Ok(io::sink())
     }
 
