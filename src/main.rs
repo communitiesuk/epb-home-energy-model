@@ -119,10 +119,6 @@ fn main() -> anyhow::Result<()> {
     };
     let input_file_stem = PathBuf::from(input_file_stem);
 
-    // let output_file_detailed = format!("{input_file_stem}_results.csv");
-    // let _output_file_static = format!("{input_file_stem}_results_static.csv");
-    // let _output_file_summary = format!("{input_file_stem}_results_summary.csv");
-
     let mut output_path = PathBuf::new();
     output_path.push(format!("{}__results", input_file_stem.to_str().unwrap()));
     fs::create_dir_all(&output_path)?;
