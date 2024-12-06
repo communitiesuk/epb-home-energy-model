@@ -61,6 +61,7 @@ pub struct Zone {
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_prev: Arc<Mutex<Vec<f64>>>,
+    print_heat_balance: bool,
 }
 
 impl Zone {
@@ -89,6 +90,7 @@ impl Zone {
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
         control: Option<Arc<Control>>,
+        print_heat_balance: bool,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         let tb_heat_trans_coeff = match thermal_bridging {
@@ -139,6 +141,7 @@ impl Zone {
             c_int,
             tb_heat_trans_coeff,
             control.clone(),
+            print_heat_balance,
         )?));
 
         Ok(Zone {
@@ -154,6 +157,7 @@ impl Zone {
             zone_idx,
             no_of_temps,
             temp_prev,
+            print_heat_balance,
         })
     }
 
@@ -237,6 +241,7 @@ impl Zone {
         volume: f64,
         c_int: f64,
         tb_heat_trans_coeff: f64,
+        print_heat_balance: bool,
     ) -> (f64, f64, Option<f64>) {
         let mut temp_operative_free = temp_operative_free;
 
@@ -267,7 +272,7 @@ impl Zone {
                     volume,
                     c_int,
                     tb_heat_trans_coeff,
-                    None,
+                    print_heat_balance,
                 );
 
                 let temp_operative_vent_max = temp_operative(
@@ -328,7 +333,7 @@ impl Zone {
                         volume,
                         c_int,
                         tb_heat_trans_coeff,
-                        None,
+                        print_heat_balance,
                     );
 
                     // Calculate internal operative temperature at free-floating conditions
@@ -497,6 +502,7 @@ impl Zone {
             self.tb_heat_trans_coeff,
             self.zone_idx,
             self.control.clone(),
+            self.print_heat_balance,
         )
     }
 
@@ -541,7 +547,7 @@ impl Zone {
             self.volume,
             self.c_int,
             self.tb_heat_trans_coeff,
-            None, // TODO param for whether to print heat balance
+            self.print_heat_balance,
         );
 
         let _ = mem::replace(&mut *self.temp_prev.lock(), temp_prev);
@@ -582,6 +588,7 @@ pub fn init_node_temps(
     c_int: f64,
     tb_heat_trans_coeff: f64,
     control: Option<Arc<Control>>,
+    print_heat_balance: bool,
 ) -> anyhow::Result<Vec<f64>> {
     let simulation_time = simulation_time.peek().unwrap();
     // Set starting point for all node temperatures (elements of
@@ -625,6 +632,7 @@ pub fn init_node_temps(
             tb_heat_trans_coeff,
             passed_zone_idx,
             control.clone(),
+            print_heat_balance,
         )?;
 
         // Note: space_cool_demand returned by function above is negative,
@@ -652,7 +660,7 @@ pub fn init_node_temps(
             volume,
             c_int,
             tb_heat_trans_coeff,
-            None, // TODO placeholder for whether to print heat balance
+            print_heat_balance,
         );
 
         if !isclose(&temps_updated, &temp_prev, Some(1e-08), None) {
@@ -715,6 +723,7 @@ pub fn space_heat_cool_demand(
     tb_heat_trans_coeff: f64,
     passed_zone_idx: usize,
     control: Option<Arc<Control>>,
+    print_heat_balance: bool,
 ) -> anyhow::Result<(f64, f64, f64, Option<f64>)> {
     let gains_heat_cool_convective = gains_heat_cool_convective.unwrap_or(0.0);
     let gains_heat_cool_radiative = gains_heat_cool_radiative.unwrap_or(0.0);
@@ -773,7 +782,7 @@ pub fn space_heat_cool_demand(
         volume,
         c_int,
         tb_heat_trans_coeff,
-        None, // TODO placeholder for whether to print heat balance
+        print_heat_balance,
     );
 
     // Calculate internal operative temperature at free-floating conditions
@@ -812,6 +821,7 @@ pub fn space_heat_cool_demand(
             volume,
             c_int,
             tb_heat_trans_coeff,
+            print_heat_balance,
         );
 
     // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
@@ -855,7 +865,7 @@ pub fn space_heat_cool_demand(
         volume,
         c_int,
         tb_heat_trans_coeff,
-        None, // TODO placeholder for option whether to print heat balance
+        print_heat_balance,
     );
 
     // Calculate internal operative temperature with maximum heating/cooling
@@ -969,11 +979,9 @@ fn calc_temperatures(
     volume: f64,
     c_int: f64,
     tb_heat_trans_coeff: f64,
-    print_heat_balance: Option<bool>,
+    print_heat_balance: bool,
 ) -> (Vec<f64>, Option<HeatBalance>) {
     let h_ve = calc_vent_heat_transfer_coeff(ach, volume);
-
-    let print_heat_balance = print_heat_balance.unwrap_or(false);
 
     // Init matrix with zeroes
     // Number of rows in matrix = number of columns
@@ -1124,22 +1132,143 @@ fn calc_temperatures(
         + F_SOL_C * gains_solar
         + f_hc_c * gains_heat_cool;
 
-    // TODO build heat balance map
-    if print_heat_balance {
-        unimplemented!();
-    }
+    let vector_x = fast_solver(
+        matrix_a,
+        vector_b,
+        no_of_temps,
+        building_elements,
+        element_positions,
+        passed_zone_idx,
+    );
 
-    (
-        fast_solver(
-            matrix_a,
-            vector_b,
-            no_of_temps,
-            building_elements,
-            element_positions,
-            passed_zone_idx,
-        ),
-        None,
-    ) // pass empty heat balance map for now
+    let heat_balance = print_heat_balance.then(|| {
+        // Collect outputs, in W, for heat balance at air node
+        let temp_internal = vector_x[passed_zone_idx];
+        let hb_gains_solar = F_SOL_C * gains_solar;
+        let hb_gains_internal = F_INT_C * gains_internal;
+        let hb_gains_heat_cool = f_hc_c * gains_heat_cool;
+        let hb_energy_to_change_temp =
+            -(c_int / delta_t) * (temp_internal - temp_prev[passed_zone_idx]);
+        let hb_loss_thermal_bridges = tb_heat_trans_coeff * (temp_internal - temp_ext_air);
+        let hb_loss_infiltration_ventilation = h_ve * (temp_internal - avg_supply_temp);
+        let hb_loss_fabric =
+            (hb_gains_solar + hb_gains_internal + hb_gains_heat_cool + hb_energy_to_change_temp)
+                - (hb_loss_thermal_bridges + hb_loss_infiltration_ventilation);
+        let air_node = HeatBalanceAirNode {
+            solar_gains: hb_gains_solar,
+            internal_gains: hb_gains_internal,
+            heating_or_cooling_system_gains: hb_gains_heat_cool,
+            energy_to_change_internal_temperature: hb_energy_to_change_temp,
+            thermal_bridges: -hb_loss_thermal_bridges,
+            infiltration_ventilation: -hb_loss_infiltration_ventilation,
+            fabric_heat_loss: -hb_loss_fabric,
+        };
+
+        // Collect outputs, in W, for heat balance at internal fabric boundary
+        let fabric_int_sol = (1.0 - F_SOL_C) * gains_solar;
+        let fabric_int_int_gains = (1.0 - F_INT_C) * gains_internal;
+        let fabric_int_heat_cool = (1.0 - f_hc_c) * gains_heat_cool;
+
+        let fabric_int_air_convective = building_elements
+            .iter()
+            .enumerate()
+            .map(|(eli_idx, eli)| {
+                let idx = element_positions[eli_idx].1;
+                let temp_int_surface = vector_x[idx];
+                let air_node_temp = vector_x[passed_zone_idx];
+
+                eli.element.area()
+                    * ((eli.element.h_ci(
+                        temp_prev[passed_zone_idx],
+                        temp_prev[element_positions[eli_idx].1],
+                    )) * (air_node_temp * temp_int_surface))
+            })
+            .sum::<f64>();
+
+        let internal_boundary = HeatBalanceInternalBoundary {
+            fabric_int_air_convective,
+            fabric_int_sol,
+            fabric_int_int_gains,
+            fabric_int_heat_cool,
+        };
+
+        // Collect outputs, in W, for heat balance at external boundary
+        let mut hb_fabric_ext_air_convective = 0.0;
+        let mut hb_fabric_ext_air_radiative = 0.0;
+        let mut hb_fabric_ext_sol = 0.0;
+        let mut hb_fabric_ext_sky = 0.0;
+        let mut hb_fabric_ext_opaque = 0.0;
+        let mut hb_fabric_ext_transparent = 0.0;
+        let mut hb_fabric_ext_ground = 0.0;
+        let mut hb_fabric_ext_ztc = 0.0;
+        let mut hb_fabric_ext_ztu = 0.0;
+
+        for (eli_idx, NamedBuildingElement { element: eli, .. }) in
+            building_elements.iter().enumerate()
+        {
+            // Get position in vector for the first (external) node of the building element
+            let idx = element_positions[eli_idx].1;
+            let temp_ext_surface = vector_x[idx];
+            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(*simulation_time);
+            let (f_sh_dir, f_sh_dif) = eli
+                .shading_factors_direct_diffuse(*simulation_time)
+                .expect("Expected shading factors direct diffuse to be calculable.");
+            hb_fabric_ext_air_convective +=
+                eli.area() * (eli.h_ce() * (eli.temp_ext(*simulation_time) - temp_ext_surface));
+            hb_fabric_ext_air_radiative +=
+                eli.area() * eli.h_re() * (eli.temp_ext(*simulation_time) - temp_ext_surface);
+            hb_fabric_ext_sol +=
+                eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
+            hb_fabric_ext_sky += eli.area() * (-eli.therm_rad_to_sky());
+            // fabric heat loss per building element type
+            let hb_fabric_ext = eli.area()
+                * ((eli.h_ce()) * (eli.temp_ext(*simulation_time) - temp_ext_surface))
+                + eli.area() * (eli.h_re()) * (eli.temp_ext(*simulation_time) - temp_ext_surface)
+                + eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+                + eli.area() * (-eli.therm_rad_to_sky());
+            match eli {
+                BuildingElement::Opaque(_) => {
+                    hb_fabric_ext_opaque += hb_fabric_ext;
+                }
+                BuildingElement::Transparent(_) => {
+                    hb_fabric_ext_transparent += hb_fabric_ext;
+                }
+                BuildingElement::Ground(_) => {
+                    hb_fabric_ext_ground += hb_fabric_ext;
+                }
+                BuildingElement::AdjacentZTC(_) => {
+                    hb_fabric_ext_ztc += hb_fabric_ext;
+                }
+                BuildingElement::AdjacentZTUSimple(_) => {
+                    hb_fabric_ext_ztu += hb_fabric_ext;
+                }
+            };
+        }
+        let external_boundary = HeatBalanceExternalBoundary {
+            solar_gains: gains_solar,
+            internal_gains: gains_internal,
+            heating_or_cooling_system_gains: gains_heat_cool,
+            thermal_bridges: hb_loss_thermal_bridges,
+            infiltration_ventilation: hb_loss_infiltration_ventilation,
+            fabric_ext_air_convective: hb_fabric_ext_air_convective,
+            fabric_ext_air_radiative: hb_fabric_ext_air_radiative,
+            fabric_ext_sol: hb_fabric_ext_sol,
+            fabric_ext_sky: hb_fabric_ext_sky,
+            opaque_fabric_ext: hb_fabric_ext_opaque,
+            transparent_fabric_ext: hb_fabric_ext_transparent,
+            ground_fabric_ext: hb_fabric_ext_ground,
+            ztc_fabric_ext: hb_fabric_ext_ztc,
+            ztu_fabric_ext: hb_fabric_ext_ztu,
+        };
+
+        HeatBalance {
+            air_node,
+            internal_boundary,
+            external_boundary,
+        }
+    });
+
+    (vector_x, heat_balance) // pass empty heat balance map for now
 }
 
 /// Optimised heat balance solver
@@ -1457,9 +1586,8 @@ pub struct HeatBalanceAirNode {
     pub internal_gains: f64,
     pub heating_or_cooling_system_gains: f64,
     pub energy_to_change_internal_temperature: f64,
-    pub heat_loss_through_thermal_bridges: f64,
-    pub heat_loss_through_infiltration: f64,
-    pub heat_loss_through_ventilation: f64,
+    pub thermal_bridges: f64,
+    pub infiltration_ventilation: f64,
     pub fabric_heat_loss: f64,
 }
 
@@ -1475,8 +1603,7 @@ pub struct HeatBalanceExternalBoundary {
     pub internal_gains: f64,
     pub heating_or_cooling_system_gains: f64,
     pub thermal_bridges: f64,
-    pub ventilation: f64,
-    pub infiltration: f64,
+    pub infiltration_ventilation: f64,
     pub fabric_ext_air_convective: f64,
     pub fabric_ext_air_radiative: f64,
     pub fabric_ext_sol: f64,

@@ -232,6 +232,7 @@ impl Corpus {
                         external_conditions.clone(),
                         infiltration_ventilation.clone(),
                         window_adjust_control.clone(),
+                        false, // temporarily specify not printing heat balance TODO: replace with option
                         simulation_time_iterator.clone().as_ref(),
                     )?;
                     heat_system_name_for_zone
@@ -2853,6 +2854,7 @@ fn zone_from_input(
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
     window_adjust_control: Option<Arc<Control>>,
+    print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<(Zone, Option<String>, Option<String>)> {
     let heat_system_name = input.space_heat_system.clone();
@@ -2877,6 +2879,7 @@ fn zone_from_input(
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
             window_adjust_control,
+            print_heat_balance,
             simulation_time_iterator,
         )?,
         heat_system_name,
