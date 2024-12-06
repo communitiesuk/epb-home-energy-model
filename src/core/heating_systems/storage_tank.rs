@@ -1080,7 +1080,7 @@ impl StorageTank {
                                 simulation_time_iteration,
                             ),
                         ) * WATTS_PER_KILOWATT as f64
-                            / self.simulation_timestep as f64
+                            / self.simulation_timestep
                     }
                 }
             }

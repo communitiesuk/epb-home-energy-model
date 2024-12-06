@@ -222,7 +222,7 @@ impl FhsComplianceCalculationResult for CalculatedComplianceResult {
     }
 }
 
-impl<'a> TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'a>>>
+impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
     for CalculatedComplianceResult
 {
     type Error = anyhow::Error;
