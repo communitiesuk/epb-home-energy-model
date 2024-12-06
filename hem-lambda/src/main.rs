@@ -69,17 +69,26 @@ impl LambdaOutput {
 }
 
 impl Output for LambdaOutput {
-    fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write> {
+    fn writer_for_location_key(
+        &self,
+        location_key: &str,
+        file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
         Ok(FileLikeStringWriter::new(
             self.0.clone(),
-            location_key.to_string(),
+            location_key,
+            file_extension,
         ))
     }
 }
 
 impl Output for &LambdaOutput {
-    fn writer_for_location_key(&self, location_key: &str) -> anyhow::Result<impl Write> {
-        <LambdaOutput as Output>::writer_for_location_key(self, location_key)
+    fn writer_for_location_key(
+        &self,
+        location_key: &str,
+        file_extension: &str,
+    ) -> anyhow::Result<impl Write> {
+        <LambdaOutput as Output>::writer_for_location_key(self, location_key, file_extension)
     }
 }
 
@@ -93,14 +102,16 @@ impl From<LambdaOutput> for Body {
 struct FileLikeStringWriter {
     string: Arc<Mutex<String>>,
     location_key: String,
+    file_extension: String,
     has_output_file_header: bool,
 }
 
 impl FileLikeStringWriter {
-    fn new(string: Arc<Mutex<String>>, location_key: String) -> Self {
+    fn new(string: Arc<Mutex<String>>, location_key: &str, file_extension: &str) -> Self {
         Self {
             string,
-            location_key,
+            location_key: location_key.to_string(),
+            file_extension: file_extension.to_string(),
             has_output_file_header: false,
         }
     }
@@ -116,8 +127,13 @@ impl Write for FileLikeStringWriter {
             if !output_string.is_empty() {
                 output_string.push_str("\n\n");
             }
-            output_string
-                .push_str(format!("Writing out file '{}':\n\n", self.location_key).as_str());
+            output_string.push_str(
+                format!(
+                    "Writing out file '{}.{}':\n\n",
+                    self.location_key, self.file_extension
+                )
+                .as_str(),
+            );
             self.has_output_file_header = true;
         }
         let utf8 = match from_utf8(buf) {
