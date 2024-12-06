@@ -785,7 +785,7 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                 }
                 input.add_control(rest_of_dwelling_space_heat_system_name, rest_of_dwelling_control)?;
             }
-            (None, _) => todo!("condition to deal with zone that doesnt have specified living room/rest of dwelling"),
+            (None, _) => bail!("FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"),
         }
     }
 
