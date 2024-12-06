@@ -1937,6 +1937,7 @@ mod tests {
             temp_ext_air_init,
             temp_setpnt_init,
             None,
+            false,
             &simulation_time.iter(),
         )
         .unwrap()
