@@ -6,7 +6,7 @@ rust-version = "1.80.0"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 argmin = "0.10.0"
 arrayvec = { version = "0.7.6", features = ["serde"] }
