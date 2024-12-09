@@ -321,10 +321,9 @@ impl HotWaterEventGenerator {
             if decile == -1 {
                 if daily_dhw_vol < bands_file_data[0].min_daily_dhw_vol {
                     decile = 0;
-                    // TODO confirm whether it really is the last decile data we need for decile 0
                     banding_correction = daily_dhw_vol
                         / bands_file_data
-                            .last()
+                            .first()
                             .expect("No decile bands were read from the file")
                             .calibration_daily_dhw_vol;
                 } else if daily_dhw_vol > bands_file_data[9].min_daily_dhw_vol {
