@@ -812,8 +812,10 @@ impl ExternalConditions {
         }
     }
 
+    // this method was not implemented in the Python (erroneously) although was referenced,
+    // but replaced with equiv of implementation here - therefore, would expect this method to
+    // become unreferenced and therefore will be able to be deleted.
     fn solar_altitude(&self, simulation_time: SimulationTimeIteration) -> f64 {
-        // TODO original Python method seems nonexistent, though inferring this may be the correct implementation for now
         self.solar_altitudes[simulation_time.current_hour() as usize]
     }
 
@@ -980,34 +982,34 @@ impl ExternalConditions {
         let diffuse_irr_ref = diffuse_breakdown.ground_refl;
         let diffuse_irr_total = diffuse_irr_sky + diffuse_irr_hor + diffuse_irr_ref;
 
-        // # TODO Calculate shading from distant objects (PD CEN ISO/TR 52016-2:2017 Section F.6.2)
-        // # TODO Loop over segments
-        // # TODO     Calculate sky-diffuse shading factor for the segment
-        // # TODO     Calculate horiz-diffuse shading factor for the segment
-        // # TODO Sum product of shading factor and irradiance for each element
+        // TODO (from Python) Calculate shading from distant objects (PD CEN ISO/TR 52016-2:2017 Section F.6.2)
+        // TODO (from Python) Loop over segments
+        // TODO (from Python)     Calculate sky-diffuse shading factor for the segment
+        // TODO (from Python)     Calculate horiz-diffuse shading factor for the segment
+        // TODO (from Python) Sum product of shading factor and irradiance for each element
         //
-        // # Calculate shading from fins and overhangs (PD CEN ISO/TR 52016-2:2017 Section F.6.3)
-        // # TODO Alpha is not defined in this standard but is possibly the angular
-        // #      height of the horizon. This would make some sense as raising the
-        // #      horizon angle would have essentially the same effect as increasing
-        // #      the tilt of the building element so it would make sense to add it
-        // #      to beta when calculating the sky view factor. The overall effect
-        // #      of changing alpha when there are no fins or overhangs seems to be
-        // #      to decrease the shading factor (meaning more shading) for diffuse
-        // #      radiation from sky and horizon, and to increase the shading factor
-        // #      for radiation reflected from the ground (sometimes to above 1),
-        // #      which would also seem to make sense as in this case there is less
-        // #      sky and more ground in view than in the basic assumption of
-        // #      perfectly flat surroundings.
-        // # TODO Should angular height of horizon be user input or derived from
-        // #      calculation of distant shading objects above? Set to zero for now
+        // Calculate shading from fins and overhangs (PD CEN ISO/TR 52016-2:2017 Section F.6.3)
+        // TODO (from Python) Alpha is not defined in this standard but is possibly the angular
+        //      height of the horizon. This would make some sense as raising the
+        //      horizon angle would have essentially the same effect as increasing
+        //      the tilt of the building element so it would make sense to add it
+        //      to beta when calculating the sky view factor. The overall effect
+        //      of changing alpha when there are no fins or overhangs seems to be
+        //      to decrease the shading factor (meaning more shading) for diffuse
+        //      radiation from sky and horizon, and to increase the shading factor
+        //      for radiation reflected from the ground (sometimes to above 1),
+        //      which would also seem to make sense as in this case there is less
+        //      sky and more ground in view than in the basic assumption of
+        //      perfectly flat surroundings.
+        // TODO (from Python) Should angular height of horizon be user input or derived from
+        //      calculation of distant shading objects above? Set to zero for now
         let angular_height_of_horizon = 0.0f64;
         let alpha = angular_height_of_horizon.to_radians();
 
-        // # TODO Beta is not defined in this standard but is used for tilt of the
-        // #      building element in BS EN ISO 52016-1:2017, so assuming the same.
-        // #      This seems to give sensible numbers for the sky view factor
-        // #      F_w_sky when alpha = 0
+        // TODO (from Python) Beta is not defined in this standard but is used for tilt of the
+        //      building element in BS EN ISO 52016-1:2017, so assuming the same.
+        //      This seems to give sensible numbers for the sky view factor
+        //      F_w_sky when alpha = 0
         let beta = tilt.to_radians();
 
         // #create lists of diffuse shading factors to keep the largest one
@@ -1302,7 +1304,7 @@ pub fn init_direct_beam_radiation(
     // # If only direct (beam) solar irradiance at horizontal plane is available in the climatic data set,
     // # it shall be converted to normal incidence by dividing the value by the sine of the solar altitude.
     // """ ISO 52010 section 6.4.2
-    // TODO investigate the impact of these notes further. Applicable for weather from CIBSE file.
+    // TODO (from Python) investigate the impact of these notes further. Applicable for weather from CIBSE file.
     // NOTE 1 If the solar altitude angle is low, this conversion is very sensative for tiny
     // errors in the calculation of the solar altitude. Such tiny errors are feasible given the
     // sensitivity for the parameters needed to calculate the solar angle and given the atmospheric
@@ -1318,7 +1320,7 @@ pub fn init_direct_beam_radiation(
         if sin_asol > 0.0 {
             raw_value / sin_asol
         } else {
-            raw_value // # TODO should this be zero?
+            raw_value // # TODO (from Python) should this be zero?
         }
     } else {
         raw_value
@@ -1396,8 +1398,8 @@ fn init_solar_hour_angle(solar_time: f64) -> f64 {
     // """ Calculate the solar hour angle, in the middle of the
     // current hour as a function of the solar time """
     //
-    // # TODO How is this to be adjusted for timesteps that are not hourly?
-    // # would allowing solar_time to be a decimal be all that is needed?
+    // TODO (from Python) How is this to be adjusted for timesteps that are not hourly?
+    //      would allowing solar_time to be a decimal be all that is needed?
     //
     // """
     // w is the solar hour angle, in degrees
@@ -1427,8 +1429,8 @@ fn init_solar_altitude(latitude: f64, solar_declination: f64, solar_hour_angle: 
     //  in the middle of the current hour as a function of the solar hour angle,
     //  the solar declination and the latitude """
     //
-    // # TODO How is this to be adjusted for timesteps that are not hourly?
-    // # would allowing solar_time to be a decimal be all that is needed?
+    // TODO (from Python) How is this to be adjusted for timesteps that are not hourly?
+    //      would allowing solar_time to be a decimal be all that is needed?
     //
     // """
     // asol is the solar altitude angle, the angle between the solar beam
@@ -1616,8 +1618,8 @@ fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> f64 {
     // fij  -- the coefficient to be returned. e.g. f12 or f23
     // """
     //
-    // #TODO I've not had a need for the clearness index parameters contained in this table yet,
-    // #if they are needed as input or output later then this function can be reworked
+    // TODO (from Python) I've not had a need for the clearness index parameters contained in this table yet,
+    //      if they are needed as input or output later then this function can be reworked
     let row = &BRIGHTNESS_COEFFICIENTS[if e < 1.065 {
         0usize
     } else if e < 1.23 {

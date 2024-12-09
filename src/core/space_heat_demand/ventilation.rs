@@ -1133,9 +1133,9 @@ impl MechanicalVentilation {
         let e_v = 1.; // Section B.3.3.7 defaults E_v = 1 (this is the assumption for perfect mixing)
 
         Self {
-            _theta_z_t: 0., // (From Python) TODO get Thermal zone temperature - used for LOAD
-            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // (From Python) TODO currently hard coded until load comp implemented
-            _sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // (From Python) TODO currently hard coded until load comp implemented
+            _theta_z_t: 0., // TODO (from Python) get Thermal zone temperature - used for LOAD
+            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO (from Python) currently hard coded until load comp implemented
+            _sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO (from Python) currently hard coded until load comp implemented
             // Arguments
             external_conditions,
             _q_h_des: q_h_des,
@@ -1516,7 +1516,7 @@ impl InfiltrationVentilation {
         let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
         let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
 
-        // (From Python) TODO Standard isn't clear if delta_p_ATD can be totalled or not.
+        // TODO (from Python) Standard isn't clear if delta_p_ATD can be totalled or not.
         let delta_p_atd_list: Vec<f64> = self
             .air_terminal_devices
             .iter()
@@ -1529,7 +1529,7 @@ impl InfiltrationVentilation {
         // between levels of the ventilation zone Equation B.1 is used.
         let h_pdu_stack = h_z + 2.;
 
-        // (From Python) TODO include delta_p_dpu and delta_p_cowl in the return.
+        // TODO (from Python) include delta_p_dpu and delta_p_cowl in the return.
         delta_p_atd - p_z_ref - h_pdu_stack * G * (external_air_density - zone_air_density)
     }
 
@@ -1730,8 +1730,8 @@ impl InfiltrationVentilation {
         }
 
         for combustion_appliance in &self.combustion_appliances {
-            let p_h_fi = 0.; // (From Python) TODO to work out from previous zone temperature? - Combustion appliance heating fuel input power
-            let f_op_comb = 1.; // (From Python) TODO work out what turns the appliance on or off. Schedule or Logic?
+            let p_h_fi = 0.; // TODO (from Python) to work out from previous zone temperature? - Combustion appliance heating fuel input power
+            let f_op_comb = 1.; // TODO (from Python) work out what turns the appliance on or off. Schedule or Logic?
             let (qv_in, qv_out) =
                 combustion_appliance.calculate_air_flow_req_for_comb_appliance(f_op_comb, p_h_fi);
             let (qm_in_comb, qm_out_comb) =
