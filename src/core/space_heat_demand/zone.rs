@@ -831,12 +831,12 @@ pub fn space_heat_cool_demand(
     let (temp_setpnt, heat_cool_load_upper, frac_convective) =
         if temp_operative_free > temp_setpnt_cool {
             // Cooling
-            // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
             (temp_setpnt_cool, -10. * area, frac_convective_cool)
         } else if temp_operative_free < temp_setpnt_heat {
             // Heating
-            // TODO Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
             //      Could max. power be available at this point for all heating/cooling systems?
             (temp_setpnt_heat, 10. * area, frac_convective_heat)
         } else {
@@ -996,7 +996,7 @@ fn calc_temperatures(
     // One term in eqn 39 is sum from k = 1 to n of (A_elk / A_tot). Given
     // that A_tot is defined as the sum of A_elk from k = 1 to n, this term
     // will always evaluate to 1.
-    // TODO Check this is correct. It seems a bit pointless if it is but we
+    // TODO (from Python) Check this is correct. It seems a bit pointless if it is but we
     //      should probably retain it as an explicit term anyway to match
     //      the standard.
     let sum_area_frac = 1.0;
@@ -1091,7 +1091,7 @@ fn calc_temperatures(
     // - Calculate RHS of zone heat balance eqn and add to vector_b
     //
     // Coeff for temperature of thermal zone
-    // TODO Throughput factor only applies to MVHR and WHEV, therefore only
+    // TODO (from Python) Throughput factor only applies to MVHR and WHEV, therefore only
     //      these systems accept throughput_factor as an argument to the h_ve
     //      function, hence the branch on the type in the loop below. This
     //      means that the MVHR and WHEV classes no longer have the same

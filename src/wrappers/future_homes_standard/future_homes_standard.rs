@@ -1579,7 +1579,7 @@ fn create_appliance_gains(
                     ENERGY_SUPPLY_NAME_ELECTRICITY.to_owned()
                 },
                 "start_day": 0,
-                // TODO - variable timestep
+                // TODO (from Python) - variable timestep
                 "time_series_step": 1,
                 "gains_fraction": app.gains_frac,
                 "Events": app.event_list,

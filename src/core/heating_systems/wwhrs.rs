@@ -80,7 +80,7 @@ impl WWHRSInstantaneousSystemB {
 
         let temp_cold = self.cold_water_source.temperature(simtime);
 
-        // # TODO If flowrates have been provided for waste and cold water:
+        // # TODO (from Python) If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
         // #      individually? Need WWHRS_Connection object?
         let wwhrs_efficiency =
@@ -144,7 +144,7 @@ impl WWHRSInstantaneousSystemC {
 
         let temp_cold = self.cold_water_source.temperature(simtime);
 
-        // # TODO If flowrates have been provided for waste and cold water:
+        // # TODO (from Python) If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
         // #      individually? Need WWHRS_Connection object?
         let wwhrs_efficiency =
@@ -213,7 +213,7 @@ impl WWHRSInstantaneousSystemA {
 
         let temp_cold = self.cold_water_source.temperature(simtime);
 
-        // # TODO If flowrates have been provided for waste and cold water:
+        // # TODO (from Python) If flowrates have been provided for waste and cold water:
         // #    - Calc heat recovered from waste water. Need to do this per shower
         // #      individually? Need WWHRS_Connection object?
         let wwhrs_efficiency =

@@ -329,11 +329,11 @@ pub enum SecondarySupplyType {
     Diverter,
 }
 
-// TODO clarify further
 // It's not completely clear at the moment what the difference between fuel type and energy supply type is,
 // but electricity and gas each seem to be indicated using different strings between fuel and energy supply
 // in the input examples, so keeping them separate for the time being
 // (It's also hard to see some of these as types of fuel)
+// We expect to reach more clarity when the input specification is finalised.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

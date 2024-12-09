@@ -74,8 +74,8 @@ impl SimulationTimeIterator {
 
     pub fn time_series_idx_days(&self, start_day: u32, step: f64) -> usize {
         let current_day = self.current_time as u32 / HOURS_IN_DAY;
-        // # TODO: (Potential) Decide from which hour of the day the system should be targeting next day charge level
-        // # Currently 9pm
+        // TODO (from Python): (Potential) Decide from which hour of the day the system should be targeting next day charge level
+        // Currently 9pm
         if self.current_time.floor() >= 21.0 {
             ((current_day + 1 - start_day) as f64 / step) as usize
         } else {
@@ -176,8 +176,8 @@ impl SimulationTimeIteration {
 
     pub fn time_series_idx_days(&self, start_day: u32, step: f64) -> usize {
         let current_day = self.time as u32 / HOURS_IN_DAY;
-        // # TODO: (Potential) Decide from which hour of the day the system should be targeting next day charge level
-        // # Currently 9pm
+        // TODO (from Python): (Potential) Decide from which hour of the day the system should be targeting next day charge level
+        // Currently 9pm
         if self.time.floor() >= 21.0 {
             ((current_day + 1 - start_day) as f64 / step) as usize
         } else {

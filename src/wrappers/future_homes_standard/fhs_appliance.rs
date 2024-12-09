@@ -97,7 +97,7 @@ impl FhsAppliance {
                 / WATTS_PER_KILOWATT as f64)
             / annual_expected_demand;
 
-        // TODO (from python) - this could be modifying the duration instead as with HW
+        // TODO (from Python) - this could be modifying the duration instead as with HW
         let expected_demand_w_event =
             op_kwh * WATTS_PER_KILOWATT as f64 / event_duration / f_appliance;
         let standby_adjusted = standby_w / f_appliance;
