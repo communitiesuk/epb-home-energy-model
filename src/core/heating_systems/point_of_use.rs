@@ -43,7 +43,7 @@ impl PointOfUse {
     ) -> f64 {
         let demand_temp = self.temp_hot_water;
 
-        // (From Python) TODO set required temperature rather than hard coding - also elsewhere in the code
+        // TODO (from Python set required temperature rather than hard coding - also elsewhere in the code
         let volume_demanded = volume_demanded_target
             .get(&DemandVolTargetKey::TempHotWater)
             .map(|volume_reference| volume_reference.warm_vol)

@@ -1521,7 +1521,7 @@ impl BuildingElementBehaviour for BuildingElementTransparent {
     fn fabric_heat_loss(&self) -> f64 {
         // Effective window U-value includes assumed use of curtains/blinds, see
         // SAP10.2 spec, paragraph 3.2
-        // TODO Confirm this is still the desired approach for SAP 11
+        // TODO (from Python) Confirm this is still the desired approach for SAP 11
         let r_curtains_blinds = 0.04;
         let u_value = 1. / ((self.r_c + self.r_si() + self.r_se()) + r_curtains_blinds);
         self.area * u_value
@@ -1595,8 +1595,8 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 
 /// Calculate longwave sky view factor from pitch in degrees
 fn sky_view_factor(pitch: &f64) -> f64 {
-    // # TODO account for shading
-    // # TODO check longwave is correct
+    // TODO (from Python) account for shading
+    // TODO (from Python) check longwave is correct
     let pitch_rads = pitch * PI / 180.0;
 
     0.5 * (1.0 + pitch_rads.cos())
