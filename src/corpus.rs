@@ -44,7 +44,9 @@ use crate::core::space_heat_demand::ventilation::{
     AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
     Window,
 };
-use crate::core::space_heat_demand::zone::{AirChangesPerHourArgument, HeatBalance, Zone};
+use crate::core::space_heat_demand::zone::{
+    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone,
+};
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
@@ -1556,13 +1558,10 @@ impl Corpus {
         let mut ductwork_gains_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut hot_water_primary_pipework_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut hot_water_storage_losses_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut heat_balance_all_dict: IndexMap<
-            KeyString,
-            IndexMap<KeyString, IndexMap<KeyString, f64>>,
-        > = IndexMap::from([
-            ("air_node".try_into().unwrap(), Default::default()),
-            ("internal_boundary".try_into().unwrap(), Default::default()),
-            ("external_boundary".try_into().unwrap(), Default::default()),
+        let mut heat_balance_all_dict: HeatBalanceAllResults = IndexMap::from([
+            (HeatBalanceFieldName::AirNode, Default::default()),
+            (HeatBalanceFieldName::InternalBoundary, Default::default()),
+            (HeatBalanceFieldName::ExternalBoundary, Default::default()),
         ]);
         let heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep> = Default::default();
         let heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual> =
@@ -1580,7 +1579,7 @@ impl Corpus {
             space_cool_demand_dict.insert(z_name, vec_capacity());
             zone_list.push(z_name);
             for heat_balance_value in heat_balance_all_dict.values_mut() {
-                heat_balance_value.insert(z_name, Default::default());
+                heat_balance_value.insert(z_name.to_string(), Default::default());
             }
         }
 
@@ -1829,9 +1828,20 @@ impl Corpus {
                     .push(output);
             }
 
-            for (_z_name, hb_dict) in heat_balance_dict {
-                if hb_dict.is_some() {
-                    // TODO complete implementation here
+            for (z_name, hb_dict) in heat_balance_dict {
+                if let Some(hb_dict) = hb_dict {
+                    for (hb_name, gains_losses) in hb_dict.as_index_map() {
+                        for (heat_gains_losses_name, heat_gains_losses_value) in gains_losses {
+                            heat_balance_all_dict
+                                .get_mut(&hb_name)
+                                .unwrap()
+                                .get_mut(&z_name)
+                                .unwrap()
+                                .entry(heat_gains_losses_name)
+                                .or_default()
+                                .push(heat_gains_losses_value);
+                        }
+                    }
                 }
             }
 
@@ -2643,8 +2653,7 @@ pub struct RunResults<'a> {
     pub(crate) cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) ductwork_gains: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) heat_balance_dict:
-        IndexMap<KeyString, IndexMap<KeyString, IndexMap<KeyString, f64>>>,
+    pub(crate) heat_balance_dict: HeatBalanceAllResults,
     pub(crate) _heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep<'a>>,
     pub(crate) _heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual<'a>>,
     pub(crate) _emitters_output_dict: IndexMap<String, ()>,
@@ -2666,6 +2675,9 @@ impl RunResults<'_> {
             .sum::<f64>()
     }
 }
+
+type HeatBalanceAllResults =
+    IndexMap<HeatBalanceFieldName, IndexMap<String, IndexMap<String, Vec<f64>>>>;
 
 struct SpaceHeatingCalculation {
     gains_internal_zone: HashMap<String, f64>,
