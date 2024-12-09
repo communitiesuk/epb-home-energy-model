@@ -15,6 +15,8 @@ mod wrappers;
 #[macro_use]
 extern crate is_close;
 
+use crate::core::heating_systems::heat_pump::{ResultsAnnual, ResultsPerTimestep};
+use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
@@ -270,6 +272,9 @@ pub fn run_project(
                                 hot_water_dict,
                                 ductwork_gains,
                                 heat_balance_dict,
+                                heat_source_wet_results_dict,
+                                heat_source_wet_results_annual_dict,
+                                vent_output_list,
                                 ..
                             },
                         ..
@@ -310,7 +315,17 @@ pub fn run_project(
                     }
 
                     if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                        // TODO: write out heat source wet outputs
+                        for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
+                            let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                            write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
+                        }
+                        for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
+                            let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
+                            write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
+                        }
+                        // Function call to write detailed ventilation results
+                        let vent_output_file = "ventilation_results";
+                        write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
                     }
 
                     write_core_output_file_summary(output, results.try_into()?)?;
@@ -1592,8 +1607,6 @@ fn write_core_output_file_heat_balance(
 
     let mut number_of_zones = 0usize;
 
-    println!("heat balance map: {:?}", heat_balance_map);
-
     for (z_name, heat_loss_gain_map) in heat_balance_map {
         for heat_loss_gain_name in heat_loss_gain_map.keys() {
             headings.push(format!("{}: {}", z_name, heat_loss_gain_name));
@@ -1645,6 +1658,148 @@ fn write_core_output_file_heat_balance(
     writer.write_record(&units_row)?;
     for row in rows {
         writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+    }
+
+    Ok(())
+}
+
+fn write_core_output_file_heat_source_wet(
+    output: &impl Output,
+    output_key: &str,
+    timestep_array: &[f64],
+    heat_source_wet_results: &ResultsPerTimestep,
+) -> Result<(), anyhow::Error> {
+    // Repeat column headings for each service
+    let mut col_headings = vec!["Timestep count".to_string()];
+    let mut col_units_row = vec!["".to_string()];
+    let mut columns: IndexMap<String, Vec<(&str, &str)>> = Default::default();
+
+    for (service_name, service_results) in heat_source_wet_results.iter() {
+        columns.insert(
+            service_name.to_string(),
+            service_results.keys().cloned().collect(),
+        );
+        col_headings.extend(
+            service_results
+                .keys()
+                .cloned()
+                .collect::<IndexMap<_, _>>()
+                .values()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>(),
+        );
+        col_units_row.extend(
+            service_results
+                .keys()
+                .cloned()
+                .collect::<IndexMap<_, _>>()
+                .keys()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>(),
+        );
+    }
+
+    let writer = output.writer_for_location_key(output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    // Write column headings and units
+    writer.write_record(&col_headings)?;
+    writer.write_record(&col_units_row)?;
+
+    // Write rows
+    for t_idx in 0..timestep_array.len() {
+        let mut row: Vec<String> = vec![t_idx.to_string()];
+        for (&service_name, service_results) in heat_source_wet_results.iter() {
+            row.extend(
+                columns[service_name]
+                    .iter()
+                    .map(|col| service_results[col][t_idx].to_string()),
+            );
+        }
+        writer.write_record(row.iter().map(|x| x.to_string().into_bytes()))?;
+    }
+
+    Ok(())
+}
+
+fn write_core_output_file_heat_source_wet_summary(
+    output: &impl Output,
+    output_key: &str,
+    heat_source_wet_results_annual: &ResultsAnnual,
+) -> Result<(), anyhow::Error> {
+    let writer = output.writer_for_location_key(output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    for (service_name, service_results) in heat_source_wet_results_annual.iter() {
+        writer.write_record([service_name])?;
+        for (name, value) in service_results.iter() {
+            writer.write_record([name.0, name.1, &value.to_string()])?;
+        }
+        writer.write_record([""])?;
+    }
+
+    Ok(())
+}
+
+fn write_core_output_file_ventilation_detailed(
+    output: &impl Output,
+    output_key: &str,
+    vent_output_list: &[VentilationDetailedResult],
+) -> Result<(), anyhow::Error> {
+    let writer = output.writer_for_location_key(output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    writer.write_record([
+        "Timestep",
+        "Incoming air changes per hour",
+        "incoming air flow",
+        "total_volume",
+        "air changes per hour",
+        "Internal temperature",
+        "Internal reference pressure",
+        "Air mass flow rate entering through window opening",
+        "Air mass flow rate leaving through window opening",
+        "Air mass flow rate entering through vents (openings in the external envelope)",
+        "Air mass flow rate leaving through vents (openings in the external envelope)",
+        "Air mass flow rate entering through envelope leakage",
+        "Air mass flow rate leaving through envelope leakage",
+        "Air mass flow rate entering through combustion appliances",
+        "Air mass flow rate leaving through combustion appliances",
+        "Air mass flow rate entering through passive or hybrid duct",
+        "Air mass flow rate leaving through passive or hybrid duct",
+        "Supply air mass flow rate going to ventilation zone",
+        "Extract air mass flow rate from a ventilation zone",
+        "Extract air mass flow rate from heat recovery",
+        "Total air mass flow rate entering the zone",
+        "Total air mass flow rate leaving the zone",
+    ])?;
+    writer.write_record([
+        "[count]",
+        "[indicator]",
+        "[m3/h]",
+        "[m3]",
+        "[ACH]",
+        "[Celsius]",
+        "[Pa]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+        "[kg/h]",
+    ])?;
+
+    for ventilation_results in vent_output_list.iter() {
+        writer.write_record(ventilation_results.as_string_values())?;
     }
 
     Ok(())

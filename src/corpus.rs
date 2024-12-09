@@ -42,7 +42,7 @@ use crate::core::space_heat_demand::internal_gains::{
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation::{
     AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
-    Window,
+    VentilationDetailedResult, Window,
 };
 use crate::core::space_heat_demand::zone::{
     AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone,
@@ -135,6 +135,7 @@ pub struct Corpus {
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
     timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
     initial_loop: AtomicBool,
+    detailed_output_heating_cooling: bool,
 }
 
 impl Corpus {
@@ -217,6 +218,7 @@ impl Corpus {
             simulation_time_iterator.as_ref(),
             total_volume,
             external_conditions.clone(),
+            output_options.detailed_output_heating_cooling,
         )?;
 
         let infiltration_ventilation = Arc::from(infiltration_ventilation);
@@ -428,6 +430,7 @@ impl Corpus {
             energy_supply_conn_names_for_heat_systems,
             timestep_end_calcs,
             initial_loop: AtomicBool::new(false),
+            detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
         })
     }
 
@@ -1567,7 +1570,7 @@ impl Corpus {
         let heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual> =
             Default::default();
         let emitters_output_dict: IndexMap<String, ()> = Default::default();
-        let vent_output_list: Vec<()> = Default::default();
+        let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
 
         for z_name in self.zones.keys() {
             let z_name = z_name.as_str().try_into().unwrap();
@@ -2015,7 +2018,18 @@ impl Corpus {
         ]);
 
         // Report detailed outputs from heat source wet objects, if requested and available
-        // TODO implement once detailed_output_heating_cooling instance var implemented
+        // TODO (from Python) Note that the below assumes that there is only one water
+        //      heating service and therefore that all hot water energy
+        //      output is assigned to that service. If the model changes in
+        //      future to allow more than one hot water system, this code may
+        //      need to be revised to handle that scenario.
+        if self.detailed_output_heating_cooling {
+            // TODO add detailed output from heat_source_wet
+
+            // TODO add detailed output from emitters
+
+            vent_output_list = self.ventilation.output_vent_results().read().clone();
+        }
 
         Ok(RunResults {
             timestep_array,
@@ -2037,10 +2051,10 @@ impl Corpus {
             dhw_cop_dict,
             ductwork_gains: ductwork_gains_dict,
             heat_balance_dict: heat_balance_all_dict,
-            _heat_source_wet_results_dict: heat_source_wet_results_dict,
-            _heat_source_wet_results_annual_dict: heat_source_wet_results_annual_dict,
+            heat_source_wet_results_dict,
+            heat_source_wet_results_annual_dict,
             _emitters_output_dict: emitters_output_dict,
-            _vent_output_list: vent_output_list,
+            vent_output_list,
         })
     }
 
@@ -2099,7 +2113,7 @@ pub struct OutputOptions {
 impl From<&ProjectFlags> for OutputOptions {
     fn from(flags: &ProjectFlags) -> Self {
         Self {
-            print_heat_balance: flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
+            print_heat_balance: flags.contains(ProjectFlags::HEAT_BALANCE),
             detailed_output_heating_cooling: flags
                 .contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING),
         }
@@ -2601,6 +2615,19 @@ pub(crate) enum ReportingFlag {
     Max,
 }
 
+impl Display for ReportingFlag {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ReportingFlag::Min => "min",
+                ReportingFlag::Max => "max",
+            }
+        )
+    }
+}
+
 fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume: f64) -> f64 {
     let internal_air_temperature = zones
         .values()
@@ -2654,10 +2681,10 @@ pub struct RunResults<'a> {
     pub(crate) dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) ductwork_gains: IndexMap<KeyString, Vec<f64>>,
     pub(crate) heat_balance_dict: HeatBalanceAllResults,
-    pub(crate) _heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep<'a>>,
-    pub(crate) _heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual<'a>>,
+    pub(crate) heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep<'a>>,
+    pub(crate) heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual<'a>>,
     pub(crate) _emitters_output_dict: IndexMap<String, ()>,
-    pub(crate) _vent_output_list: Vec<()>,
+    pub(crate) vent_output_list: Vec<VentilationDetailedResult>,
 }
 
 impl RunResults<'_> {
@@ -2924,6 +2951,7 @@ fn infiltration_ventilation_from_input(
     simulation_time: &SimulationTimeIterator,
     total_volume: f64,
     external_conditions: Arc<ExternalConditions>,
+    detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
     Option<Arc<Control>>,
@@ -3160,6 +3188,7 @@ fn infiltration_ventilation_from_input(
         combustion_appliances.into_values().collect(),
         atds.into_values().collect(),
         mechanical_ventilations.values().cloned().collect(),
+        detailed_output_heating_cooling,
         *altitude,
         zones.values().map(|zone| zone.area).sum::<f64>(),
     );

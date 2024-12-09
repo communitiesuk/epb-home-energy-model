@@ -23,6 +23,7 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
+use parking_lot::RwLock;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -1346,26 +1347,28 @@ pub struct InfiltrationVentilation {
     combustion_appliances: Vec<CombustionAppliances>,
     air_terminal_devices: Vec<AirTerminalDevices>,
     mech_vents: Vec<Arc<MechanicalVentilation>>,
+    detailed_output_heating_cooling: bool,
     p_a_alt: f64,
-    _total_volume: f64,
+    total_volume: f64,
+    detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
 }
 
-///Constructs a InfiltrationVentilation object
-///
-///         Arguments:
-///             external_conditions -- reference to ExternalConditions object
-///             simulation_time -- reference to SimulationTime object
-///             f_cross -- cross-ventilation factor
-///             shield_class -- indicates the exposure to wind of an air flow path on a facade
-///                 (can can be open, normal and shielded)
-///             ventilation_zone_height -- height of ventilation zone (m)
-///             windows -- list of windows
-///             vents -- list of vents
-///             leaks -- required inputs for leaks
-///             ATDs -- list of air terminal devices
-///             mech_vents -- list of mech vents
-///             altitude -- altitude of dwelling above sea level (m)
-///             total_volume -- total zone volume
+/// Arguments:
+/// * `external_conditions` - reference to ExternalConditions object
+/// * `f_cross` - cross-ventilation factor
+/// * `shield_class` - indicates the exposure to wind of an air flow path on a facade
+///                    (can can be open, normal or shielded)
+/// * `terrain class`
+/// * `average_roof_pitch`
+/// * `windows` - list of windows
+/// * `vents` - list of vents
+/// * `leaks` - required inputs for leaks
+/// * `combustion_appliances`
+/// * `air_terminal_devices` - list of air terminal devices
+/// * `mech_vents` - list of mech vents
+/// * `detailed_output_heating_cooling` - whether to output detailed heating/cooling data
+/// * `altitude` - altitude of dwelling above sea level (m)
+/// * `total_volume` - total zone volume
 impl InfiltrationVentilation {
     pub(crate) fn new(
         external_conditions: Arc<ExternalConditions>,
@@ -1379,6 +1382,7 @@ impl InfiltrationVentilation {
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
         mech_vents: Vec<Arc<MechanicalVentilation>>,
+        detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
     ) -> Self {
@@ -1395,8 +1399,10 @@ impl InfiltrationVentilation {
             combustion_appliances,
             air_terminal_devices,
             mech_vents,
+            detailed_output_heating_cooling,
             p_a_alt: adjust_air_density_for_altitude(altitude),
-            _total_volume: total_volume,
+            total_volume,
+            detailed_results: Default::default(),
         }
     }
 
@@ -1650,7 +1656,7 @@ impl InfiltrationVentilation {
         p_z_ref: f64,
         temp_int_air: f64,
         r_w_arg_min_max: f64,
-        _reporting_flag: Option<ReportingFlag>,
+        reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
@@ -1762,14 +1768,50 @@ impl InfiltrationVentilation {
             + qm_out_through_passive_hybrid_ducts
             + qm_eta_from_vent_zone;
 
-        // TODO implement detailed reporting if required
         // Output detailed ventilation file
-        // if self.detailed_output_heating_cooling {
-        //      Python has optional detailed reporting
-        //      which is currently not implemented here
-        // }
+        if self.detailed_output_heating_cooling {
+            if let Some(reporting_flag) = reporting_flag {
+                let incoming_air_flow = convert_mass_flow_rate_to_volume_flow_rate(
+                    qm_in,
+                    celsius_to_kelvin(self.external_conditions.air_temp(&simtime))?,
+                    self.p_a_alt,
+                );
+                let air_changes_per_hour = incoming_air_flow / self.total_volume;
+
+                self.detailed_results
+                    .write()
+                    .push(VentilationDetailedResult {
+                        timestep_index: simtime.index,
+                        reporting_flag,
+                        incoming_air_flow,
+                        total_volume: self.total_volume,
+                        air_changes_per_hour,
+                        temp_int_air,
+                        p_z_ref,
+                        qm_in_through_window_opening,
+                        qm_out_through_window_opening,
+                        qm_in_through_vents,
+                        qm_out_through_vents,
+                        qm_in_through_leaks,
+                        qm_out_through_leaks,
+                        qm_in_through_comb,
+                        qm_out_through_comb,
+                        qm_in_through_passive_hybrid_ducts,
+                        qm_out_through_passive_hybrid_ducts,
+                        qm_sup_to_vent_zone,
+                        qm_eta_from_vent_zone,
+                        qm_in_effective_heat_recovery_saving_total,
+                        qm_in,
+                        qm_out,
+                    });
+            }
+        }
 
         Ok((qm_in, qm_out, qm_in_effective_heat_recovery_saving_total))
+    }
+
+    pub(crate) fn output_vent_results(&self) -> Arc<RwLock<Vec<VentilationDetailedResult>>> {
+        Arc::clone(&self.detailed_results)
     }
 }
 
@@ -1831,6 +1873,61 @@ fn root_scalar_for_implicit_mass_balance(
     match best_p_z_ref {
         Some(p_z_ref) => Ok(p_z_ref),
         None => Err("No best_param in result"),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VentilationDetailedResult {
+    timestep_index: usize,
+    reporting_flag: ReportingFlag,
+    incoming_air_flow: f64,
+    total_volume: f64,
+    air_changes_per_hour: f64,
+    temp_int_air: f64,
+    p_z_ref: f64,
+    qm_in_through_window_opening: f64,
+    qm_out_through_window_opening: f64,
+    qm_in_through_vents: f64,
+    qm_out_through_vents: f64,
+    qm_in_through_leaks: f64,
+    qm_out_through_leaks: f64,
+    qm_in_through_comb: f64,
+    qm_out_through_comb: f64,
+    qm_in_through_passive_hybrid_ducts: f64,
+    qm_out_through_passive_hybrid_ducts: f64,
+    qm_sup_to_vent_zone: f64,
+    qm_eta_from_vent_zone: f64,
+    qm_in_effective_heat_recovery_saving_total: f64,
+    qm_in: f64,
+    qm_out: f64,
+}
+
+impl VentilationDetailedResult {
+    pub(crate) fn as_string_values(&self) -> Vec<String> {
+        vec![
+            self.timestep_index.to_string(),
+            self.reporting_flag.to_string(),
+            self.incoming_air_flow.to_string(),
+            self.total_volume.to_string(),
+            self.air_changes_per_hour.to_string(),
+            self.temp_int_air.to_string(),
+            self.p_z_ref.to_string(),
+            self.qm_in_through_window_opening.to_string(),
+            self.qm_out_through_window_opening.to_string(),
+            self.qm_in_through_vents.to_string(),
+            self.qm_out_through_vents.to_string(),
+            self.qm_in_through_leaks.to_string(),
+            self.qm_out_through_leaks.to_string(),
+            self.qm_in_through_comb.to_string(),
+            self.qm_out_through_comb.to_string(),
+            self.qm_in_through_passive_hybrid_ducts.to_string(),
+            self.qm_out_through_passive_hybrid_ducts.to_string(),
+            self.qm_sup_to_vent_zone.to_string(),
+            self.qm_eta_from_vent_zone.to_string(),
+            self.qm_in_effective_heat_recovery_saving_total.to_string(),
+            self.qm_in.to_string(),
+            self.qm_out.to_string(),
+        ]
     }
 }
 
@@ -2674,6 +2771,7 @@ mod tests {
             combustion_appliances_list,
             air_terminal_devices,
             mechanical_ventilations,
+            false,
             0.,
             250.,
         )

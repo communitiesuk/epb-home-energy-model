@@ -1587,7 +1587,7 @@ pub(crate) trait GainsLossesAsIndexMap {
     fn as_index_map(&self) -> IndexMap<String, f64>;
 }
 
-#[derive(FieldName)]
+#[derive(Debug, FieldName)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceAirNode {
     pub solar_gains: f64,
@@ -1650,7 +1650,7 @@ impl GainsLossesAsIndexMap for HeatBalanceAirNode {
     }
 }
 
-#[derive(FieldName)]
+#[derive(Debug, FieldName)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceInternalBoundary {
     pub fabric_int_air_convective: f64,
@@ -1698,7 +1698,7 @@ impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
     }
 }
 
-#[derive(FieldName)]
+#[derive(Debug, FieldName)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceExternalBoundary {
     pub solar_gains: f64,
@@ -1806,7 +1806,7 @@ impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
     }
 }
 
-#[derive(FieldName)]
+#[derive(Debug, FieldName)]
 #[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalance {
     pub air_node: HeatBalanceAirNode,
@@ -2210,6 +2210,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
+            false,
             30.0,
             250.0,
         )

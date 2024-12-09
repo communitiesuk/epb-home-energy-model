@@ -35,7 +35,7 @@ use polyfit_rs::polyfit_rs::polyfit;
 use serde::{Deserialize, Serialize};
 use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::Arc;
@@ -3989,6 +3989,20 @@ impl PartialEq<f64> for ResultParamValue {
 impl From<f64> for ResultParamValue {
     fn from(value: f64) -> Self {
         Self::Number(value)
+    }
+}
+
+impl Display for ResultParamValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ResultParamValue::String(string) => string.to_string(),
+                ResultParamValue::Number(number) => number.to_string(),
+                ResultParamValue::Boolean(boolean) => boolean.to_string(),
+            }
+        )
     }
 }
 
