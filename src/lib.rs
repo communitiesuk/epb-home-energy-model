@@ -15,7 +15,7 @@ mod wrappers;
 #[macro_use]
 extern crate is_close;
 
-use crate::core::units::convert_profile_to_daily;
+use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
@@ -36,6 +36,7 @@ use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalc
 use crate::wrappers::{ChosenWrapper, HemResponse, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
+use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use indexmap::IndexMap;
 use rayon::prelude::*;
@@ -44,6 +45,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::io::Read;
+use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
@@ -241,6 +243,7 @@ pub fn run_project(
         fn write_core_output_files(
             output: &impl Output,
             results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+            corpora: &HashMap<CalculationKey, Corpus>,
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
             if let Some(results) = results.get(&CalculationKey::Primary) {
@@ -266,6 +269,7 @@ pub fn run_project(
                                 hc_system_dict,
                                 hot_water_dict,
                                 ductwork_gains,
+                                heat_balance_dict,
                                 ..
                             },
                         ..
@@ -291,19 +295,28 @@ pub fn run_project(
                             ductwork_gains,
                         },
                     )?;
-                }
 
-                if flags.contains(ProjectFlags::HEAT_BALANCE) {
-                    for (_hb_name, _hb_map) in results.results.heat_balance_dict.iter() {
-                        // TODO: write out heat balance files
+                    if flags.contains(ProjectFlags::HEAT_BALANCE) {
+                        let hour_per_step = corpora[&CalculationKey::Primary].simulation_time.step_in_hours();
+                        for (hb_name, hb_map) in heat_balance_dict.iter() {
+                            let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake));
+                            write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
+                                output_key,
+                                timestep_array,
+                                hour_per_step,
+                                heat_balance_map: hb_map,
+                            })?;
+                        }
                     }
+
+                    if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+                        // TODO: write out heat source wet outputs
+                    }
+
+                    write_core_output_file_summary(output, results.try_into()?)?;
                 }
 
-                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                    // TODO: write out heat source wet outputs
-                }
 
-                write_core_output_file_summary(output, results.try_into()?)?;
 
                 let corpus = results.context.corpus;
 
@@ -326,7 +339,7 @@ pub fn run_project(
             Ok(())
         }
 
-        write_core_output_files(&output, &contextualised_results, flags)?;
+        write_core_output_files(&output, &contextualised_results, &corpora, flags)?;
 
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
@@ -1052,7 +1065,7 @@ fn write_core_output_file_summary(
     for (fuel, end_uses) in delivered_energy_map {
         delivered_energy_rows_title.push(fuel);
         for row in delivered_energy_rows.iter_mut() {
-            row.push(StringOrNumber::Number(0.));
+            row.push(StringOrNumber::Float(0.));
         }
         for (end_use, value) in end_uses {
             let mut end_use_found = false;
@@ -1065,12 +1078,12 @@ fn write_core_output_file_summary(
                             .position(|&x| x == fuel)
                             .unwrap(),
                     )
-                    .unwrap() = StringOrNumber::Number(value / total_floor_area);
+                    .unwrap() = StringOrNumber::Float(value / total_floor_area);
                 }
             }
             if !end_use_found {
                 let mut new_row =
-                    vec![StringOrNumber::Number(0.); delivered_energy_rows_title.len()];
+                    vec![StringOrNumber::Float(0.); delivered_energy_rows_title.len()];
                 *new_row.get_mut(0).unwrap() = StringOrNumber::String(end_use);
                 *new_row
                     .get_mut(
@@ -1079,7 +1092,7 @@ fn write_core_output_file_summary(
                             .position(|&x| x == fuel)
                             .unwrap(),
                     )
-                    .unwrap() = StringOrNumber::Number(value / total_floor_area);
+                    .unwrap() = StringOrNumber::Float(value / total_floor_area);
                 delivered_energy_rows.push(new_row);
             }
         }
@@ -1203,7 +1216,7 @@ fn write_core_output_file_summary(
             "HW cylinder volume (litres)",
         ])?;
         for row in dhw_cop_rows.iter_mut() {
-            row.push(StringOrNumber::Number(daily_hw_demand_75th_percentile));
+            row.push(StringOrNumber::Float(daily_hw_demand_75th_percentile));
             row.push({
                 let hot_water_source: SummaryInputHotWaterSourceDigest = *input
                     .hot_water_source_digests
@@ -1215,7 +1228,7 @@ fn write_core_output_file_summary(
                         )
                     })?;
                 if hot_water_source.source_is_storage_tank {
-                    StringOrNumber::Number(hot_water_source.source_volume.unwrap())
+                    StringOrNumber::Float(hot_water_source.source_volume.unwrap())
                 } else {
                     StringOrNumber::String(KeyString::from("N/A").unwrap())
                 }
@@ -1549,6 +1562,94 @@ fn write_core_output_file_static(
     Ok(())
 }
 
+struct HeatBalanceOutputFileArgs<'a> {
+    output_key: String,
+    timestep_array: &'a [f64],
+    hour_per_step: f64,
+    heat_balance_map: &'a IndexMap<String, IndexMap<String, Vec<f64>>>,
+}
+
+fn write_core_output_file_heat_balance(
+    output: &impl Output,
+    args: HeatBalanceOutputFileArgs,
+) -> Result<(), anyhow::Error> {
+    let HeatBalanceOutputFileArgs {
+        output_key,
+        timestep_array,
+        hour_per_step,
+        heat_balance_map,
+    } = args;
+
+    let writer = output.writer_for_location_key(&output_key, "csv")?;
+    let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+    let mut headings = vec!["Timestep".to_string()];
+    let mut units_row = vec!["index".to_string()];
+    let mut rows = vec![vec![StringOrNumber::String(KeyString::from("").unwrap())]];
+
+    let mut headings_annual = vec!["".to_string()];
+    let mut units_annual = vec!["".to_string()];
+
+    let mut number_of_zones = 0usize;
+
+    println!("heat balance map: {:?}", heat_balance_map);
+
+    for (z_name, heat_loss_gain_map) in heat_balance_map {
+        for heat_loss_gain_name in heat_loss_gain_map.keys() {
+            headings.push(format!("{}: {}", z_name, heat_loss_gain_name));
+            units_row.push("[W]".to_string());
+        }
+        number_of_zones += 1;
+    }
+
+    let mut annual_totals: Vec<StringOrNumber> = vec![
+        StringOrNumber::Float(0.);
+        heat_balance_map
+            .values()
+            .map(|x| x.len())
+            .max()
+            .ok_or_else(|| anyhow!(
+                "Could not write heat balance file as heat balance data was empty."
+            ))?
+            * number_of_zones
+    ];
+    annual_totals.insert(0, StringOrNumber::String(KeyString::from("").unwrap()));
+
+    for (z_name, heat_loss_gain_map) in heat_balance_map {
+        for heat_loss_gain_name in heat_loss_gain_map.keys() {
+            headings_annual.push(format!("{}: total {}", z_name, heat_loss_gain_name));
+            units_annual.push("[kWh]".to_string());
+        }
+    }
+
+    for (t_idx, _) in timestep_array.iter().enumerate() {
+        let mut row = vec![StringOrNumber::Integer(t_idx)];
+        let mut annual_totals_index = 1;
+        for heat_loss_gain_map in heat_balance_map.values() {
+            for heat_loss_gain_value in heat_loss_gain_map.values() {
+                row.push(StringOrNumber::Float(heat_loss_gain_value[t_idx]));
+                annual_totals[annual_totals_index] += StringOrNumber::Float(
+                    heat_loss_gain_value[t_idx] * hour_per_step / WATTS_PER_KILOWATT as f64,
+                );
+                annual_totals_index += 1;
+            }
+        }
+        rows.push(row);
+    }
+
+    writer.write_record(&headings_annual)?;
+    writer.write_record(&units_annual)?;
+    writer.write_record(annual_totals.iter().map(|x| format!("{}", x).into_bytes()))?;
+    writer.write_record([""])?;
+    writer.write_record(&headings)?;
+    writer.write_record(&units_row)?;
+    for row in rows {
+        writer.write_record(row.iter().map(|x| format!("{}", x).into_bytes()))?;
+    }
+
+    Ok(())
+}
+
 const HOURS_TO_END_JAN: f64 = 744.;
 const HOURS_TO_END_FEB: f64 = 1416.;
 const HOURS_TO_END_MAR: f64 = 2160.;
@@ -1571,13 +1672,14 @@ struct HourForTimestep {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum StringOrNumber {
     String(KeyString),
-    Number(f64),
+    Float(f64),
+    Integer(usize),
 }
 
 impl From<NumberOrDivisionByZero> for StringOrNumber {
     fn from(value: NumberOrDivisionByZero) -> Self {
         match value {
-            NumberOrDivisionByZero::Number(number) => StringOrNumber::Number(number),
+            NumberOrDivisionByZero::Number(number) => StringOrNumber::Float(number),
             NumberOrDivisionByZero::DivisionByZero => {
                 StringOrNumber::String(KeyString::from("DIV/0").unwrap())
             }
@@ -1592,7 +1694,8 @@ impl Display for StringOrNumber {
             "{}",
             match self {
                 StringOrNumber::String(string) => Cow::Borrowed(string.as_str()),
-                StringOrNumber::Number(number) => Cow::Owned(number.to_string()),
+                StringOrNumber::Float(number) => Cow::Owned(number.to_string()),
+                StringOrNumber::Integer(number) => Cow::Owned(number.to_string()),
             }
         )
     }
@@ -1618,7 +1721,19 @@ impl From<&str> for StringOrNumber {
 
 impl From<f64> for StringOrNumber {
     fn from(value: f64) -> Self {
-        StringOrNumber::Number(value)
+        StringOrNumber::Float(value)
+    }
+}
+
+impl AddAssign for StringOrNumber {
+    fn add_assign(&mut self, rhs: Self) {
+        match (self, rhs) {
+            (StringOrNumber::Float(a), StringOrNumber::Float(b)) => *a += b,
+            (StringOrNumber::Float(a), StringOrNumber::Integer(b)) => *a += b as f64,
+            _ => panic!(
+                "Cannot add to a non-float StringOrNumber, and cannot add strings to floats."
+            ),
+        }
     }
 }
 

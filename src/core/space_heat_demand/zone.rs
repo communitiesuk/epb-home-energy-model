@@ -1588,7 +1588,7 @@ pub(crate) trait GainsLossesAsIndexMap {
 }
 
 #[derive(FieldName)]
-#[field_name_derive(Eq, Hash, PartialEq, Serialize_enum_str)]
+#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceAirNode {
     pub solar_gains: f64,
     pub internal_gains: f64,
@@ -1651,7 +1651,7 @@ impl GainsLossesAsIndexMap for HeatBalanceAirNode {
 }
 
 #[derive(FieldName)]
-#[field_name_derive(Eq, Hash, PartialEq, Serialize_enum_str)]
+#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceInternalBoundary {
     pub fabric_int_air_convective: f64,
     pub fabric_int_sol: f64,
@@ -1699,7 +1699,7 @@ impl GainsLossesAsIndexMap for HeatBalanceInternalBoundary {
 }
 
 #[derive(FieldName)]
-#[field_name_derive(Eq, Hash, PartialEq, Serialize_enum_str)]
+#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalanceExternalBoundary {
     pub solar_gains: f64,
     pub internal_gains: f64,
@@ -1807,7 +1807,7 @@ impl GainsLossesAsIndexMap for HeatBalanceExternalBoundary {
 }
 
 #[derive(FieldName)]
-#[field_name_derive(Eq, Hash, PartialEq, Serialize_enum_str)]
+#[field_name_derive(Debug, Eq, Hash, PartialEq, Serialize_enum_str)]
 pub struct HeatBalance {
     pub air_node: HeatBalanceAirNode,
     pub internal_boundary: HeatBalanceInternalBoundary,

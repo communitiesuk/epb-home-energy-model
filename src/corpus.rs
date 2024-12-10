@@ -2676,7 +2676,7 @@ impl RunResults<'_> {
     }
 }
 
-type HeatBalanceAllResults =
+pub(crate) type HeatBalanceAllResults =
     IndexMap<HeatBalanceFieldName, IndexMap<String, IndexMap<String, Vec<f64>>>>;
 
 struct SpaceHeatingCalculation {
