@@ -1807,7 +1807,7 @@ const HEAT_PUMP_TEMP_DIFF_LIMIT_LOW: f64 = 6.0; // Kelvin
 const HEAT_PUMP_F_AUX: f64 = 0.0;
 
 /// A type to represent an electric heat pump
-#[derive(Derivative)]
+#[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct HeatPump {
     // energy supply
@@ -3557,12 +3557,12 @@ impl HeatPump {
             "Detailed results cannot be output when the option to collect them was not selected",
         );
         let mut results_per_timestep: ResultsPerTimestep = Default::default();
-        results_per_timestep.insert("auxiliary", Default::default());
+        results_per_timestep.insert("auxiliary".into(), Default::default());
         for (parameter, param_unit, _) in AUX_PARAMETERS {
             let auxiliary_param_results = results_per_timestep
                 .get_mut("auxiliary")
                 .unwrap()
-                .entry((parameter, param_unit))
+                .entry((parameter.into(), param_unit.into()))
                 .or_default();
             for service_results in detailed_results {
                 if let ServiceResult::Full(calc) = service_results
@@ -3577,13 +3577,15 @@ impl HeatPump {
             }
         }
 
+        let energy_supply_connections = self.energy_supply_connections.clone();
+
         // For each service, report required output parameters
-        for (service_idx, service_name) in self.energy_supply_connections.keys().enumerate() {
-            let results_entry = results_per_timestep.entry(service_name).or_default();
+        for (service_idx, service_name) in energy_supply_connections.keys().enumerate() {
+            let results_entry = results_per_timestep.entry(service_name.into()).or_default();
             // Look up each required parameter
             for (parameter, param_unit, _) in OUTPUT_PARAMETERS {
                 let param_entry = results_entry
-                    .entry((parameter, param_unit.unwrap_or("")))
+                    .entry((parameter.into(), param_unit.unwrap_or("").into()))
                     .or_default();
                 // Look up value of required parameter in each timestep
                 for service_results in self
@@ -3601,9 +3603,9 @@ impl HeatPump {
             }
             // For water heating service, record hot water energy delivered from tank
             *results_per_timestep
-                .get_mut(service_name.as_str())
+                .get_mut(service_name)
                 .unwrap()
-                .entry(("energy_delivered_H4", "kWh"))
+                .entry(("energy_delivered_H4".into(), "kWh".into()))
                 .or_default() = if matches!(
                 match &self.detailed_results.as_ref().unwrap()[0].lock()[service_idx] {
                     ServiceResult::Full(calc) => calc.service_type,
@@ -3613,28 +3615,28 @@ impl HeatPump {
             ) {
                 hot_water_energy_output.clone()
             } else {
-                results_per_timestep[service_name.as_str()][&("energy_delivered_total", "kWh")]
+                results_per_timestep[service_name][&("energy_delivered_total".into(), "kWh".into())]
                     .clone()
             };
         }
 
         let mut results_annual: ResultsAnnual = Default::default();
         results_annual.insert(
-            "Overall",
+            "Overall".into(),
             OUTPUT_PARAMETERS
                 .iter()
                 .filter(|param| param.2)
                 .map(|(parameter, param_units, _)| {
                     (
-                        (*parameter, param_units.unwrap_or("")),
+                        ((*parameter).into(), param_units.unwrap_or("").into()),
                         ResultParamValue::Number(0.0),
                     )
                 })
                 .collect::<ResultAnnual>(),
         );
-        results_annual.insert("auxiliary", Default::default());
+        results_annual.insert("auxiliary".into(), Default::default());
         results_annual.get_mut("Overall").unwrap().insert(
-            ("energy_delivered_H4", "kWh"),
+            ("energy_delivered_H4".into(), "kWh".into()),
             ResultParamValue::Number(0.0),
         );
         // Report auxiliary parameters (not specific to a service)
@@ -3644,8 +3646,8 @@ impl HeatPump {
             for (parameter, param_unit, incl_in_annual) in AUX_PARAMETERS {
                 if incl_in_annual {
                     auxiliary_annual_results.insert(
-                        (parameter, param_unit),
-                        results_per_timestep["auxiliary"][&(parameter, param_unit)]
+                        (parameter.into(), param_unit.into()),
+                        results_per_timestep["auxiliary"][&(parameter.into(), param_unit.into())]
                             .iter()
                             .copied()
                             .sum::<ResultParamValue>(),
@@ -3655,20 +3657,20 @@ impl HeatPump {
         }
 
         // For each service, report required output parameters
-        for service_name in self.energy_supply_connections.keys() {
+        for service_name in energy_supply_connections.keys() {
             let param_totals_for_overall = {
-                let annual_results_entry = results_annual.entry(service_name).or_default();
+                let annual_results_entry = results_annual.entry(service_name.into()).or_default();
                 let mut param_totals_for_overall: HashMap<(&str, &str), ResultParamValue> =
                     Default::default();
                 for (parameter, param_unit, incl_in_annual) in OUTPUT_PARAMETERS {
                     if incl_in_annual {
                         let parameter_annual_total = results_per_timestep[service_name.as_str()]
-                            [&(parameter, param_unit.unwrap_or(""))]
+                            [&(parameter.into(), param_unit.unwrap_or("").into())]
                             .iter()
                             .copied()
                             .sum::<ResultParamValue>();
                         annual_results_entry.insert(
-                            (parameter, param_unit.unwrap_or("")),
+                            (parameter.into(), param_unit.unwrap_or("").into()),
                             parameter_annual_total,
                         );
                         param_totals_for_overall.insert(
@@ -3684,26 +3686,26 @@ impl HeatPump {
                 *results_annual
                     .get_mut("Overall")
                     .unwrap()
-                    .get_mut(&param_index)
+                    .get_mut(&(param_index.0.into(), param_index.1.into()))
                     .unwrap() += param_total_for_overall;
             }
             *results_annual
-                .get_mut(service_name.as_str())
+                .get_mut(service_name)
                 .unwrap()
-                .get_mut(&("energy_delivered_H4", "kWh"))
+                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
                 .unwrap() = results_per_timestep[service_name.as_str()]
-                [&("energy_delivered_H4", "kWh")]
+                [&("energy_delivered_H4".into(), "kWh".into())]
                 .iter()
                 .copied()
                 .sum::<ResultParamValue>();
-            let service_energy_delivered_results =
-                results_annual[service_name.as_str()][&("energy_delivered_H4", "kWh")];
+            let service_energy_delivered_results = results_annual[service_name.as_str()]
+                [&("energy_delivered_H4".into(), "kWh".into())];
             *results_annual
                 .get_mut("Overall")
                 .unwrap()
-                .get_mut(&("energy_delivered_H4", "kWh"))
+                .get_mut(&("energy_delivered_H4".into(), "kWh".into()))
                 .unwrap() += service_energy_delivered_results;
-            self.calc_service_cop(results_annual.get_mut(service_name.as_str()).unwrap(), None);
+            self.calc_service_cop(results_annual.get_mut(service_name).unwrap(), None);
         }
 
         // Calculate overall CoP for all services combined
@@ -3734,24 +3736,25 @@ impl HeatPump {
         };
 
         // Calculate CoP at different system boundaries
-        let cop_h1_numerator = results_totals[&("energy_delivered_HP", "kWh")];
-        let cop_h1_denominator = results_totals[&("energy_input_HP", "kWh")] + energy_auxiliary;
+        let cop_h1_numerator = results_totals[&("energy_delivered_HP".into(), "kWh".into())];
+        let cop_h1_denominator =
+            results_totals[&("energy_input_HP".into(), "kWh".into())] + energy_auxiliary;
         let cop_h2_numerator = cop_h1_numerator;
         let cop_h2_denominator =
-            cop_h1_denominator + results_totals[&("energy_source_circ_pump", "kWh")];
+            cop_h1_denominator + results_totals[&("energy_source_circ_pump".into(), "kWh".into())];
         let cop_h3_numerator =
-            cop_h2_numerator + results_totals[&("energy_delivered_backup", "kWh")];
+            cop_h2_numerator + results_totals[&("energy_delivered_backup".into(), "kWh".into())];
         let cop_h3_denominator =
-            cop_h2_denominator + results_totals[&("energy_input_backup", "kWh")];
-        let cop_h4_numerator = results_totals[&("energy_delivered_H4", "kWh")];
+            cop_h2_denominator + results_totals[&("energy_input_backup".into(), "kWh".into())];
+        let cop_h4_numerator = results_totals[&("energy_delivered_H4".into(), "kWh".into())];
         let cop_h4_denominator =
-            cop_h3_denominator + results_totals[&("energy_heating_circ_pump", "kWh")];
+            cop_h3_denominator + results_totals[&("energy_heating_circ_pump".into(), "kWh".into())];
 
         let cop_h4_note =
             "Note: For water heating services, only valid when HP is only heat source";
 
         results_totals.insert(
-            ("CoP (H1)", ""),
+            ("CoP (H1)".into(), "".into()),
             if cop_h1_denominator == 0.0 {
                 0.0.into()
             } else {
@@ -3759,7 +3762,7 @@ impl HeatPump {
             },
         );
         results_totals.insert(
-            ("CoP (H2)", ""),
+            ("CoP (H2)".into(), "".into()),
             if cop_h2_denominator == 0.0 {
                 0.0.into()
             } else {
@@ -3767,7 +3770,7 @@ impl HeatPump {
             },
         );
         results_totals.insert(
-            ("CoP (H3)", ""),
+            ("CoP (H3)".into(), "".into()),
             if cop_h3_denominator == 0.0 {
                 0.0.into()
             } else {
@@ -3779,7 +3782,7 @@ impl HeatPump {
         } else {
             (cop_h4_numerator / cop_h4_denominator, cop_h4_note)
         };
-        results_totals.insert(("CoP (H4)", h4_subkey), h4_division);
+        results_totals.insert(("CoP (H4)".into(), h4_subkey.into()), h4_division);
     }
 }
 
@@ -3812,10 +3815,9 @@ const AUX_PARAMETERS: [(&str, &str, bool); 3] = [
     ("energy_off_mode", "kWh", true),
 ];
 
-pub type ResultsPerTimestep<'a> =
-    HashMap<&'a str, HashMap<(&'a str, &'a str), Vec<ResultParamValue>>>;
-pub type ResultsAnnual<'a> = HashMap<&'a str, ResultAnnual<'a>>;
-type ResultAnnual<'a> = HashMap<(&'a str, &'a str), ResultParamValue>;
+pub type ResultsPerTimestep = HashMap<String, HashMap<(String, String), Vec<ResultParamValue>>>;
+pub type ResultsAnnual = HashMap<String, ResultAnnual>;
+type ResultAnnual = HashMap<(String, String), ResultParamValue>;
 
 pub type ResultString = ArrayString<64>;
 

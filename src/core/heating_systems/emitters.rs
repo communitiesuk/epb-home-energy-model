@@ -49,6 +49,8 @@ pub struct Emitters {
     max_flow_temp: Option<f64>,
     temp_emitter_prev: f64,
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
+    output_detailed_results: bool,
+    emitters_detailed_results: Option<Arc<RwLock<Vec<EmittersDetailedResult>>>>,
 }
 
 // Implement Debug for Emitters using standard strategy, overwriting debug value for temp_internal_air_fn.
@@ -165,6 +167,7 @@ impl Emitters {
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
+        output_detailed_results: bool,
         with_buffer_tank: bool,
     ) -> Self {
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
@@ -202,6 +205,8 @@ impl Emitters {
             max_flow_temp,
             temp_emitter_prev: 20.0,
             target_flow_temp: None,
+            output_detailed_results,
+            emitters_detailed_results: output_detailed_results.then(Default::default),
         }
     }
 
@@ -697,6 +702,24 @@ impl Emitters {
         //      Python has optional detailed reporting
         //      which is currently not implemented here
         // }
+        if self.output_detailed_results {
+            self.emitters_detailed_results
+                .as_ref()
+                .unwrap()
+                .write()
+                .push(EmittersDetailedResult {
+                    timestep_index: simulation_time.index,
+                    energy_demand,
+                    energy_provided_by_heat_source,
+                    temp_emitter,
+                    temp_emitter_max,
+                    energy_released_from_emitters,
+                    temp_flow_target,
+                    temp_return_target,
+                    temp_emitter_max_is_final_temp,
+                    energy_req_from_heat_source,
+                });
+        }
 
         Ok(energy_released_from_emitters)
     }
@@ -742,6 +765,43 @@ impl Emitters {
             temp_return_target,
             simulation_time,
         )
+    }
+
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
+        self.emitters_detailed_results
+            .as_ref()
+            .map(|results| results.read().clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EmittersDetailedResult {
+    timestep_index: usize,
+    energy_demand: f64,
+    energy_provided_by_heat_source: f64,
+    temp_emitter: f64,
+    temp_emitter_max: f64,
+    energy_released_from_emitters: f64,
+    temp_flow_target: f64,
+    temp_return_target: f64,
+    temp_emitter_max_is_final_temp: bool,
+    energy_req_from_heat_source: f64,
+}
+
+impl EmittersDetailedResult {
+    pub(crate) fn as_string_values(&self) -> Vec<String> {
+        vec![
+            self.timestep_index.to_string(),
+            self.energy_demand.to_string(),
+            self.energy_provided_by_heat_source.to_string(),
+            self.temp_emitter.to_string(),
+            self.temp_emitter_max.to_string(),
+            self.energy_released_from_emitters.to_string(),
+            self.temp_flow_target.to_string(),
+            self.temp_return_target.to_string(),
+            self.temp_emitter_max_is_final_temp.to_string(),
+            self.energy_req_from_heat_source.to_string(),
+        ]
     }
 }
 
@@ -951,6 +1011,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
+            false,
             with_buffer_tank,
         )
     }
@@ -1036,6 +1097,7 @@ mod tests {
             ecodesign_controller,
             55.,
             false,
+            false,
         );
 
         let (flow_temp, return_temp) =
@@ -1063,6 +1125,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             55.,
+            false,
             false,
         );
 
@@ -1106,6 +1169,7 @@ mod tests {
             external_conditions.into(),
             ecodesign_controller,
             55.0,
+            false,
             false,
         );
 

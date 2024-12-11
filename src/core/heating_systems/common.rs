@@ -1,4 +1,4 @@
-use super::emitters::Emitters;
+use super::emitters::{Emitters, EmittersDetailedResult};
 use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult};
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
@@ -178,6 +178,14 @@ impl SpaceHeatSystem {
             SpaceHeatSystem::WetDistribution(emitters) => {
                 emitters.in_required_period(&simulation_time_iteration)
             }
+        }
+    }
+
+    pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
+        if let SpaceHeatSystem::WetDistribution(emitters) = self {
+            emitters.output_emitter_results()
+        } else {
+            None
         }
     }
 }

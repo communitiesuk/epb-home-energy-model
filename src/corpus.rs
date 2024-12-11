@@ -12,7 +12,7 @@ use crate::core::energy_supply::energy_supply::{
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
-use crate::core::heating_systems::emitters::Emitters;
+use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
 use crate::core::heating_systems::heat_pump::{
@@ -362,6 +362,7 @@ impl Corpus {
                         total_volume,
                     },
                     external_conditions.clone(),
+                    output_options.detailed_output_heating_cooling,
                 )?)
             })
             .transpose()?
@@ -1566,10 +1567,12 @@ impl Corpus {
             (HeatBalanceFieldName::InternalBoundary, Default::default()),
             (HeatBalanceFieldName::ExternalBoundary, Default::default()),
         ]);
-        let heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep> = Default::default();
-        let heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual> =
+        let mut heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep> =
             Default::default();
-        let emitters_output_dict: IndexMap<String, ()> = Default::default();
+        let mut heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual> =
+            Default::default();
+        let mut emitters_output_dict: IndexMap<String, Vec<EmittersDetailedResult>> =
+            Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
 
         for z_name in self.zones.keys() {
@@ -2024,9 +2027,22 @@ impl Corpus {
         //      future to allow more than one hot water system, this code may
         //      need to be revised to handle that scenario.
         if self.detailed_output_heating_cooling {
-            // TODO add detailed output from heat_source_wet
+            for (name, heat_source_wet) in self.wet_heat_sources.iter() {
+                if let Some((results, results_annual)) = heat_source_wet
+                    .lock()
+                    .output_detailed_results(&hot_water_energy_output_dict["energy_output"])
+                {
+                    heat_source_wet_results_dict.insert(name.clone(), results);
+                    heat_source_wet_results_annual_dict.insert(name.clone(), results_annual);
+                }
+            }
 
-            // TODO add detailed output from emitters
+            // Emitter detailed output results are stored with respect to heat_system_name
+            for (heat_system_name, heat_system) in self.space_heat_systems.iter() {
+                if let Some(emitters_output) = heat_system.lock().output_emitter_results() {
+                    emitters_output_dict.insert(heat_system_name.to_owned(), emitters_output);
+                }
+            }
 
             vent_output_list = self.ventilation.output_vent_results().read().clone();
         }
@@ -2053,7 +2069,7 @@ impl Corpus {
             heat_balance_dict: heat_balance_all_dict,
             heat_source_wet_results_dict,
             heat_source_wet_results_annual_dict,
-            _emitters_output_dict: emitters_output_dict,
+            emitters_output_dict,
             vent_output_list,
         })
     }
@@ -2661,7 +2677,7 @@ fn temp_internal_air_fn(accessor: impl Into<Arc<TempInternalAirAccessor>>) -> Te
 pub type KeyString = ArrayString<64>;
 
 /// A struct definition to encapsulate results from a corpus run.
-pub struct RunResults<'a> {
+pub struct RunResults {
     pub(crate) timestep_array: Vec<f64>,
     pub(crate) results_totals: IndexMap<KeyString, Vec<f64>>,
     pub(crate) results_end_user: ResultsEndUser,
@@ -2681,13 +2697,13 @@ pub struct RunResults<'a> {
     pub(crate) dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) ductwork_gains: IndexMap<KeyString, Vec<f64>>,
     pub(crate) heat_balance_dict: HeatBalanceAllResults,
-    pub(crate) heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep<'a>>,
-    pub(crate) heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual<'a>>,
-    pub(crate) _emitters_output_dict: IndexMap<String, ()>,
+    pub(crate) heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep>,
+    pub(crate) heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual>,
+    pub(crate) emitters_output_dict: IndexMap<String, Vec<EmittersDetailedResult>>,
     pub(crate) vent_output_list: Vec<VentilationDetailedResult>,
 }
 
-impl RunResults<'_> {
+impl RunResults {
     pub(crate) fn space_heat_demand_total(&self) -> f64 {
         self.zone_dict[&ZoneResultKey::SpaceHeatDemand]
             .values()
@@ -3654,6 +3670,24 @@ impl WetHeatSource {
             }
         }
     }
+
+    fn output_detailed_results(
+        &self,
+        hot_water_energy_output: &[f64],
+    ) -> Option<(ResultsPerTimestep, ResultsAnnual)> {
+        if let WetHeatSource::HeatPump(heat_pump) = self {
+            Some(
+                heat_pump.lock().clone().output_detailed_results(
+                    hot_water_energy_output
+                        .iter()
+                        .map(|&x| x.into())
+                        .collect_vec(),
+                ),
+            )
+        } else {
+            None
+        }
+    }
 }
 
 fn heat_source_wet_from_input(
@@ -4357,6 +4391,7 @@ fn space_heat_systems_from_input(
     heat_sources_wet_with_buffer_tank: &[String],
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
+    detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
@@ -4442,7 +4477,7 @@ fn space_heat_systems_from_input(
                             }
                         };
                         let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
-                        let space_heater = Emitters::new(*thermal_mass, *c, *n, *temp_diff_emit_dsgn, *frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank);
+                        let space_heater = Emitters::new(*thermal_mass, *c, *n, *temp_diff_emit_dsgn, *frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling);
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {

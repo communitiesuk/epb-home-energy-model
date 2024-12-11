@@ -15,6 +15,7 @@ mod wrappers;
 #[macro_use]
 extern crate is_close;
 
+use crate::core::heating_systems::emitters::EmittersDetailedResult;
 use crate::core::heating_systems::heat_pump::{ResultsAnnual, ResultsPerTimestep};
 use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
@@ -249,40 +250,12 @@ pub fn run_project(
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
             if let Some(results) = results.get(&CalculationKey::Primary) {
-                {
-                    if output.is_noop() {
-                        return Ok(());
-                    }
-                    let CalculationResultsWithContext {
-                        results:
-                            RunResults {
-                                timestep_array,
-                                results_totals,
-                                results_end_user,
-                                energy_import,
-                                energy_export,
-                                energy_generated_consumed,
-                                energy_to_storage,
-                                energy_from_storage,
-                                energy_diverted,
-                                betafactor,
-                                zone_dict,
-                                zone_list,
-                                hc_system_dict,
-                                hot_water_dict,
-                                ductwork_gains,
-                                heat_balance_dict,
-                                heat_source_wet_results_dict,
-                                heat_source_wet_results_annual_dict,
-                                vent_output_list,
-                                ..
-                            },
-                        ..
-                    } = results;
-                    write_core_output_file(
-                        output,
-                        OutputFileArgs {
-                            output_key: "results".to_string(),
+                if output.is_noop() {
+                    return Ok(());
+                }
+                let CalculationResultsWithContext {
+                    results:
+                        RunResults {
                             timestep_array,
                             results_totals,
                             results_end_user,
@@ -298,40 +271,65 @@ pub fn run_project(
                             hc_system_dict,
                             hot_water_dict,
                             ductwork_gains,
+                            heat_balance_dict,
+                            heat_source_wet_results_dict,
+                            heat_source_wet_results_annual_dict,
+                            vent_output_list,
+                            emitters_output_dict,
+                            ..
                         },
-                    )?;
+                    ..
+                } = results;
+                write_core_output_file(
+                    output,
+                    OutputFileArgs {
+                        output_key: "results".to_string(),
+                        timestep_array,
+                        results_totals,
+                        results_end_user,
+                        energy_import,
+                        energy_export,
+                        energy_generated_consumed,
+                        energy_to_storage,
+                        energy_from_storage,
+                        energy_diverted,
+                        betafactor,
+                        zone_dict,
+                        zone_list,
+                        hc_system_dict,
+                        hot_water_dict,
+                        ductwork_gains,
+                    },
+                )?;
 
-                    if flags.contains(ProjectFlags::HEAT_BALANCE) {
-                        let hour_per_step = corpora[&CalculationKey::Primary].simulation_time.step_in_hours();
-                        for (hb_name, hb_map) in heat_balance_dict.iter() {
-                            let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake));
-                            write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
-                                output_key,
-                                timestep_array,
-                                hour_per_step,
-                                heat_balance_map: hb_map,
-                            })?;
-                        }
+                if flags.contains(ProjectFlags::HEAT_BALANCE) {
+                    let hour_per_step = corpora[&CalculationKey::Primary].simulation_time.step_in_hours();
+                    for (hb_name, hb_map) in heat_balance_dict.iter() {
+                        let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake));
+                        write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
+                            output_key,
+                            timestep_array,
+                            hour_per_step,
+                            heat_balance_map: hb_map,
+                        })?;
                     }
-
-                    if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
-                        for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
-                            let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
-                            write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
-                        }
-                        for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
-                            let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
-                            write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
-                        }
-                        // Function call to write detailed ventilation results
-                        let vent_output_file = "ventilation_results";
-                        write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
-                    }
-
-                    write_core_output_file_summary(output, results.try_into()?)?;
                 }
 
+                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+                    for (heat_source_wet_name, heat_source_wet_results) in heat_source_wet_results_dict.iter() {
+                        let output_key = format!("results_heat_source_wet__{heat_source_wet_name}");
+                        write_core_output_file_heat_source_wet(output, &output_key, timestep_array, heat_source_wet_results)?;
+                    }
+                    for (heat_source_wet_name, heat_source_wet_results_annual) in heat_source_wet_results_annual_dict.iter() {
+                        let output_key = format!("results_heat_source_wet_summary__{heat_source_wet_name}");
+                        write_core_output_file_heat_source_wet_summary(output, &output_key, heat_source_wet_results_annual)?;
+                    }
+                    // Function call to write detailed ventilation results
+                    let vent_output_file = "ventilation_results";
+                    write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
+                }
 
+                write_core_output_file_summary(output, results.try_into()?)?;
 
                 let corpus = results.context.corpus;
 
@@ -349,6 +347,11 @@ pub fn run_project(
                         heat_loss_form_factor,
                     },
                 )?;
+
+                if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
+                    let output_prefix = "results_emitters_";
+                    write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
+                }
             }
 
             Ok(())
@@ -395,7 +398,7 @@ pub(crate) struct CalculationContext<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct CalculationResultsWithContext<'a> {
-    results: &'a RunResults<'a>,
+    results: &'a RunResults,
     context: CalculationContext<'a>,
 }
 
@@ -1672,11 +1675,11 @@ fn write_core_output_file_heat_source_wet(
     // Repeat column headings for each service
     let mut col_headings = vec!["Timestep count".to_string()];
     let mut col_units_row = vec!["".to_string()];
-    let mut columns: IndexMap<String, Vec<(&str, &str)>> = Default::default();
+    let mut columns: IndexMap<String, Vec<(String, String)>> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
         columns.insert(
-            service_name.to_string(),
+            service_name.clone(),
             service_results.keys().cloned().collect(),
         );
         col_headings.extend(
@@ -1709,7 +1712,7 @@ fn write_core_output_file_heat_source_wet(
     // Write rows
     for t_idx in 0..timestep_array.len() {
         let mut row: Vec<String> = vec![t_idx.to_string()];
-        for (&service_name, service_results) in heat_source_wet_results.iter() {
+        for (service_name, service_results) in heat_source_wet_results {
             row.extend(
                 columns[service_name]
                     .iter()
@@ -1731,11 +1734,57 @@ fn write_core_output_file_heat_source_wet_summary(
     let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
 
     for (service_name, service_results) in heat_source_wet_results_annual.iter() {
-        writer.write_record([service_name])?;
+        writer.write_record([service_name.to_string()])?;
         for (name, value) in service_results.iter() {
-            writer.write_record([name.0, name.1, &value.to_string()])?;
+            writer.write_record([
+                name.0.as_bytes(),
+                name.1.as_bytes(),
+                value.to_string().as_bytes(),
+            ])?;
         }
         writer.write_record([""])?;
+    }
+
+    Ok(())
+}
+
+fn write_core_output_file_emitters_detailed(
+    output: &impl Output,
+    output_prefix: &str,
+    emitters_output_dict: &IndexMap<String, Vec<EmittersDetailedResult>>,
+) -> Result<(), anyhow::Error> {
+    for (emitter_name, emitters_detailed_results) in emitters_output_dict {
+        let output_key = format!("{}{}", output_prefix, emitter_name);
+        let writer = output.writer_for_location_key(&output_key, "csv")?;
+        let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+
+        writer.write_record([
+            "timestep",
+            "demand_energy",
+            "energy_provided_by_heat_source",
+            "temp_emitter",
+            "temp_emitter_max",
+            "energy_released_from_emitters",
+            "temp_flow_target",
+            "temp_return_target",
+            "temp_emitter_max_is_final_temp",
+            "energy_req_from_heat_source",
+        ])?;
+        writer.write_record([
+            "[count]",
+            "[kWh]",
+            "[kWh]",
+            "[Celsius]",
+            "[Celsius]",
+            "[kWh]",
+            "[Celsius]",
+            "[Celsius]",
+            "[Boolean]",
+            "[kWh]",
+        ])?;
+        for emitters_detailed_result in emitters_detailed_results {
+            writer.write_record(emitters_detailed_result.as_string_values())?;
+        }
     }
 
     Ok(())
