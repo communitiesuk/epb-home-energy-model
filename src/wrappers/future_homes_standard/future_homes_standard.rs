@@ -1320,7 +1320,8 @@ fn create_lighting_gains(
                 .ok_or(anyhow!(
                     "Lighting efficacy for zone {zone_key} not provided"
                 ))?;
-        lighting_efficacy += zone_lighting_efficacy * input.area_for_zone(zone_key.as_str())?;
+        lighting_efficacy +=
+            zone_lighting_efficacy * input.area_for_zone(zone_key.as_str())? / total_floor_area;
     }
     if lighting_efficacy == 0. {
         bail!("invalid/missing lighting efficacy for all zones");
