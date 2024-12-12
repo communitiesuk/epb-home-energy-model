@@ -464,7 +464,9 @@ fn edit_glazing_for_glazing_limit(
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
         // TODO: deal with case where linear_reduction_factor is NaN (sqrt() is NaN if called on a
-        // negative number, max_glazing_area could come back as a negative number from calc_max_glazing_area_fraction
+        //       negative number, max_glazing_area could come back as a negative number from calc_max_glazing_area_fraction
+        //       To do this, we may need to capture a sample input that induces this to happen in the Python, and request
+        //       upstream for how to deal with this.
 
         for window_rooflight_element in windows_rooflight {
             let area_diff = calculate_area_diff_and_adjust_glazing_area(

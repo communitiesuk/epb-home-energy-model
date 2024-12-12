@@ -1718,7 +1718,7 @@ impl InfiltrationVentilation {
         }
 
         for _atd in &self.air_terminal_devices {
-            let qv_pdu_initial = 0.; // (From Python) TODO get from prev timestep
+            let qv_pdu_initial = 0.; // TODO (from Python) get from prev timestep
             let h_z = self.ventilation_zone_height;
             let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, h_z, &simtime);
 

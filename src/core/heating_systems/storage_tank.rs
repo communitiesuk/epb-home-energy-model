@@ -1106,7 +1106,6 @@ impl StorageTank {
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration.index)),
             HeatSource::Wet(ref mut wet_heat_source) => {
-                // TODO need to be able to call demand_energy on the other heat sources
                 let (primary_pipework_losses_kwh, primary_gains) =
                     self.primary_pipework_losses(input_energy_adj, simulation_time_iteration);
                 let input_energy_adj = input_energy_adj + primary_pipework_losses_kwh;

@@ -188,7 +188,6 @@ pub fn run_project(
                 external_conditions: &HashMap<CalculationKey, ExternalConditions>,
                 flags: &ProjectFlags,
             ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
-                // TODO: parallel iterate this
                 let output_options = flags.into();
                 iterate_maps(input, external_conditions)
                     .map(|(key, input, external_conditions)| {

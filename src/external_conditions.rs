@@ -1112,7 +1112,7 @@ impl ExternalConditions {
             // # Setback and remote obstacles (eqns F.9 and F.10): Top half of each eqn
             // # is view factor to sky (F.9) or ground (F.10) with setback and distant
             // # obstacles
-            // # TODO Uncomment these lines when definitions of P1 and P2 in formula
+            // # TODO (from Python) Uncomment these lines when definitions of P1 and P2 in formula
             // #      for F_w_r have been confirmed.
             // # if view_factor_sky_no_obstacles == 0:
             // #     # Shading makes no difference if sky not visible (avoid divide-by-zero)
@@ -1141,31 +1141,31 @@ impl ExternalConditions {
                 (1.0 - f_w_s) * (1.0 - f_w_sky) / view_factor_ground_no_obstacles
             };
 
-            // # Overhangs and remote obstacles (eqns F.13 and F.14)
-            // # Top half of eqn F.13 is view factor to sky with overhangs
+            // Overhangs and remote obstacles (eqns F.13 and F.14)
+            // Top half of eqn F.13 is view factor to sky with overhangs
             let f_sh_dif_overhangs = if view_factor_sky_no_obstacles == 0.0 {
                 1.0
             } else {
                 (f_w_sky - f_w_o) / view_factor_sky_no_obstacles
             };
 
-            // # Top half of eqn F.14 is view factor to ground with distant obstacles,
-            // # but does not account for overhangs blocking any part of the view of
-            // # the ground, presumably because this will not happen in the vast
-            // # majority of cases
+            // Top half of eqn F.14 is view factor to ground with distant obstacles,
+            // but does not account for overhangs blocking any part of the view of
+            // the ground, presumably because this will not happen in the vast
+            // majority of cases
             let f_sh_ref_overhangs = if view_factor_ground_no_obstacles == 0.0 {
                 1.0
             } else {
                 (1.0 - f_w_sky) / view_factor_ground_no_obstacles
             };
 
-            // # Keep the smallest of the three shading reduction factors as the
-            // # diffuse or reflected shading factor. Also enforce that these cannot be
-            // # negative (which may happen with some extreme tilt values)
-            // # TODO Add setback shading factors to the arguments to min function when
-            // #      definitions of P1 and P2 in formula for F_w_r have been confirmed.
-            // # F_sh_dif = max(0.0, min(F_sh_dif_setback, F_sh_dif_fins, F_sh_dif_overhangs))
-            // # F_sh_ref = max(0.0, min(F_sh_ref_setback, F_sh_ref_fins, F_sh_ref_overhangs))
+            // Keep the smallest of the three shading reduction factors as the
+            // diffuse or reflected shading factor. Also enforce that these cannot be
+            // negative (which may happen with some extreme tilt values)
+            // TODO (from Python) Add setback shading factors to the arguments to min function when
+            //      definitions of P1 and P2 in formula for F_w_r have been confirmed.
+            // F_sh_dif = max(0.0, min(F_sh_dif_setback, F_sh_dif_fins, F_sh_dif_overhangs))
+            // F_sh_ref = max(0.0, min(F_sh_ref_setback, F_sh_ref_fins, F_sh_ref_overhangs))
             let f_sh_dif = max_of_2(0., min_of_2(f_sh_dif_fins, f_sh_dif_overhangs));
             let f_sh_ref = max_of_2(0., min_of_2(f_sh_ref_fins, f_sh_ref_overhangs));
 

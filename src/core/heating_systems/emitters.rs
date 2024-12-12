@@ -482,7 +482,7 @@ impl Emitters {
         // When there is some demand, calculate max. emitter temperature
         // achievable and emitter temperature required, and base calculation
         // on the lower of the two.
-        // TODO The final calculation of emitter temperature below assumes
+        // TODO (from Python) The final calculation of emitter temperature below assumes
         // constant power output from heating source over the timestep.
         // It does not account for:
         // - overshoot/undershoot and then stabilisation of emitter temp.
@@ -492,7 +492,7 @@ impl Emitters {
         // and record time this is reached, then assume target temp is
         // maintained? Would there be an overshoot to make up for
         // underheating during warm-up?
-        // - On cool-down to lower target temp, calculate lowest temp achieveable,
+        // - On cool-down to lower target temp, calculate lowest temp achievable,
         // with target temp as floor and record time this is reached, then
         // assume target temp is maintained? Would there be an undershoot
         // to make up for overheating during cool-down?
@@ -696,12 +696,6 @@ impl Emitters {
         // Save emitter temperature for next timestep
         self.temp_emitter_prev = temp_emitter;
 
-        // TODO implement detailed reporting if required
-        // If detailed results flag is set populate dict with values
-        // if self.__output_detailed_results {
-        //      Python has optional detailed reporting
-        //      which is currently not implemented here
-        // }
         if self.output_detailed_results {
             self.emitters_detailed_results
                 .as_ref()
