@@ -87,7 +87,6 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -122,7 +121,7 @@ pub struct Corpus {
     pub cool_system_name_for_zone: IndexMap<String, String>,
     pub total_floor_area: f64,
     pub total_volume: f64,
-    pub wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    pub wet_heat_sources: IndexMap<String, WetHeatSource>,
     pub hot_water_sources: IndexMap<String, HotWaterSource>,
     pub heat_system_names_requiring_overvent: Vec<String>,
     pub heat_sources_wet_with_buffer_tank: Vec<String>,
@@ -133,7 +132,7 @@ pub struct Corpus {
     required_vent_data: Option<RequiredVentData>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
-    timestep_end_calcs: Vec<Arc<Mutex<WetHeatSource>>>,
+    timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
 }
@@ -274,16 +273,16 @@ impl Corpus {
             simulation_time_iterator.as_ref(),
         )?;
 
-        let mut timestep_end_calcs = vec![];
+        let timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>> = Default::default();
         let mut heat_sources_wet_with_buffer_tank = vec![];
 
-        let wet_heat_sources: IndexMap<String, Arc<Mutex<WetHeatSource>>> = input
+        let mut wet_heat_sources: IndexMap<String, WetHeatSource> = input
             .heat_source_wet
             .clone()
             .unwrap_or_default()
             .iter()
             .map(|(name, heat_source_wet_details)| {
-                let heat_source = Arc::new(Mutex::new(heat_source_wet_from_input(
+                let heat_source = heat_source_wet_from_input(
                     name,
                     (*heat_source_wet_details).clone(),
                     external_conditions.clone(),
@@ -297,8 +296,8 @@ impl Corpus {
                     &controls,
                     &mut energy_supplies,
                     output_options.detailed_output_heating_cooling,
-                )?));
-                timestep_end_calcs.push(heat_source.clone());
+                )?;
+                timestep_end_calcs.write().push(heat_source.clone());
                 if let HeatSourceWetDetails::HeatPump {
                     buffer_tank: Some(_),
                     ..
@@ -308,7 +307,7 @@ impl Corpus {
                 }
                 anyhow::Ok(((*name).clone(), heat_source))
             })
-            .collect::<anyhow::Result<IndexMap<String, Arc<Mutex<WetHeatSource>>>>>()?;
+            .collect::<anyhow::Result<IndexMap<String, WetHeatSource>>>()?;
 
         let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>> =
@@ -317,7 +316,7 @@ impl Corpus {
             "hw cylinder".to_string(),
             &input.hot_water_source.hot_water_cylinder,
             &cold_water_sources,
-            &wet_heat_sources,
+            &mut wet_heat_sources,
             &wwhrs,
             &controls,
             &mut energy_supplies,
@@ -602,7 +601,7 @@ impl Corpus {
             .iter()
             .map(
                 |heat_source_name| match self.wet_heat_sources.get(heat_source_name) {
-                    Some(heat_source) => match heat_source.lock().deref() {
+                    Some(heat_source) => match heat_source {
                         WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().buffer_int_gains(),
                         _ => unreachable!(),
                     },
@@ -1753,8 +1752,8 @@ impl Corpus {
 
             // Perform calculations that can only be done after all heating
             // services have been calculated
-            for system in &self.timestep_end_calcs {
-                system.lock().timestep_end(t_it);
+            for system in self.timestep_end_calcs.read().iter() {
+                system.timestep_end(t_it);
             }
 
             for (z_name, gains_internal) in gains_internal_zone {
@@ -2022,7 +2021,6 @@ impl Corpus {
         if self.detailed_output_heating_cooling {
             for (name, heat_source_wet) in self.wet_heat_sources.iter() {
                 if let Some((results, results_annual)) = heat_source_wet
-                    .lock()
                     .output_detailed_results(&hot_water_energy_output_dict["energy_output"])
                 {
                     heat_source_wet_results_dict.insert(name.clone(), results);
@@ -3625,7 +3623,7 @@ pub enum WetHeatSource {
 }
 
 impl WetHeatSource {
-    pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
+    pub fn timestep_end(&self, simtime: SimulationTimeIteration) {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
             WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime),
@@ -3871,7 +3869,7 @@ fn heat_source_from_input(
     volume: f64,
     daily_losses: f64,
     heat_exchanger_surface_area: Option<f64>,
-    wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    wet_heat_sources: &IndexMap<String, WetHeatSource>,
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
@@ -3965,8 +3963,7 @@ fn heat_source_from_input(
                 .clone();
             let source_control = (*control).and_then(|ctrl| controls.get(&ctrl));
 
-            let lock = heat_source_wet.lock();
-            let mut heat_source_wet_clone = (*lock).clone();
+            let mut heat_source_wet_clone = heat_source_wet.clone();
 
             Ok((
                 match heat_source_wet_clone {
@@ -4109,7 +4106,7 @@ fn hot_water_source_from_input(
     source_name: String,
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
-    wet_heat_sources: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    wet_heat_sources: &mut IndexMap<String, WetHeatSource>,
     wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
@@ -4263,13 +4260,12 @@ fn hot_water_source_from_input(
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let heat_source_wet = match heat_source_wet_type {
                 HeatSourceWetType::Boiler => wet_heat_sources
-                    .get(&heat_source_wet_type.to_canonical_string())
+                    .get_mut(&heat_source_wet_type.to_canonical_string())
                     .ok_or_else(|| {
                         anyhow!("Expected a boiler to have been defined as a wet heat source")
                     })?,
                 HeatSourceWetType::HeatPump => wet_heat_sources
-                    .get(&heat_source_wet_type.to_canonical_string())
-                    .as_ref()
+                    .get_mut(&heat_source_wet_type.to_canonical_string())
                     .ok_or_else(|| {
                         anyhow!("Expected a heat pump to have been defined as a wet heat source")
                     })?,
@@ -4279,7 +4275,6 @@ fn hot_water_source_from_input(
             };
             HotWaterSource::CombiBoiler(
                 heat_source_wet
-                    .lock()
                     .create_service_hot_water_combi(
                         cloned_input,
                         energy_supply_conn_name.as_str(),
@@ -4332,10 +4327,9 @@ fn hot_water_source_from_input(
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources);
             let heat_source_wet = match heat_source_wet_type {
                 HeatSourceWetType::HeatNetwork => {
-                    match &*wet_heat_sources
+                    match wet_heat_sources
                         .get("HeatNetwork")
                         .expect("expected a heat network in this context")
-                        .lock()
                     {
                         WetHeatSource::Hiu(heat_network) => heat_network.clone(),
                         _ => panic!("expected a heat network in this context"),
@@ -4376,7 +4370,7 @@ fn space_heat_systems_from_input(
     controls: &Controls,
     energy_supplies: &mut EnergySupplies,
     simulation_time: &SimulationTimeIterator,
-    heat_sources_wet: &IndexMap<String, Arc<Mutex<WetHeatSource>>>,
+    heat_sources_wet: &IndexMap<String, WetHeatSource>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_name_for_zone: &IndexMap<String, String>,
     zones: &Arc<IndexMap<String, Zone>>,
@@ -4430,7 +4424,7 @@ fn space_heat_systems_from_input(
                             .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump system");
 
                         let heat_source_service: SpaceHeatingService =
-                        match heat_source.lock().deref() {
+                        match heat_source {
                             WetHeatSource::HeatPump(heat_pump) => {
                                 // TODO (from Python) If EAHP, feed zone volume into function below
 
@@ -4486,7 +4480,7 @@ fn space_heat_systems_from_input(
                             .as_ref()
                             .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system");
 
-                        match heat_source.lock().deref() {
+                        match heat_source {
                             WetHeatSource::HeatPump(heat_pump) => {
                                 if heat_pump.lock().source_is_exhaust_air() {
                                     heat_system_names_requiring_overvent.push((*system_name).clone());
