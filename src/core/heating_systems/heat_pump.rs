@@ -2347,8 +2347,7 @@ impl HeatPump {
             if heat_pump.sink_type != HeatPumpSinkType::Air {
                 bail!("Warm air space heating service requires heat pump with sink type Air");
             }
-            // TODO: check if a system exit/bail is intended to happen when there is no boiler (as the error message is suggesting) - this looks erroneous
-            // have reported this upstream to BRE - https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45522
+            // following is erroneous logic that is following upstream for now - error message is fixed in upstream
             if heat_pump.boiler.is_some() {
                 // TODO (from Python) More evidence is required before warm air space heating systems can work with hybrid heat pumps
                 bail!("Missing boiler object");

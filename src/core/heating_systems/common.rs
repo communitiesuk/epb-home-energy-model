@@ -214,18 +214,15 @@ impl SpaceHeatingService {
                     emitters_data_for_buffer_tank,
                     simulation_time_iteration,
                 ),
-            SpaceHeatingService::Boiler(boiler_service_space) => {
-                let time_elapsed_hp: Option<f64> = None; // TODO is this assumption correct?
-                Ok((
-                    boiler_service_space.energy_output_max(
-                        temp_output,
-                        temp_return_feed,
-                        time_elapsed_hp,
-                        simulation_time_iteration,
-                    ),
+            SpaceHeatingService::Boiler(boiler_service_space) => Ok((
+                boiler_service_space.energy_output_max(
+                    temp_output,
+                    temp_return_feed,
                     None,
-                ))
-            }
+                    simulation_time_iteration,
+                ),
+                None,
+            )),
             SpaceHeatingService::HeatNetwork(heat_network_service_space) => Ok((
                 heat_network_service_space.energy_output_max(
                     temp_output,

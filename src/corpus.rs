@@ -1926,7 +1926,6 @@ impl Corpus {
                 .unwrap()
                 .to_owned(),
         )]);
-        // TODO replace in energy supply names when available
         let dhw_cop_dict = self.heat_cool_cop(
             &hot_water_energy_out,
             &results_end_user,
@@ -3876,8 +3875,6 @@ fn heat_source_from_input(
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
-    // TODO add in all the stuff to do with energy supply
-
     match input {
         HeatSourceInput::ImmersionHeater {
             power,
