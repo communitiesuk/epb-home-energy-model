@@ -298,14 +298,7 @@ impl Corpus {
                     &mut energy_supplies,
                     output_options.detailed_output_heating_cooling,
                 )?));
-                match *heat_source.lock() {
-                    WetHeatSource::HeatPump(_)
-                    | WetHeatSource::Boiler(_)
-                    | WetHeatSource::HeatBattery(_) => {
-                        timestep_end_calcs.push(heat_source.clone());
-                    }
-                    _ => {}
-                }
+                timestep_end_calcs.push(heat_source.clone());
                 if let HeatSourceWetDetails::HeatPump {
                     buffer_tank: Some(_),
                     ..
@@ -3840,7 +3833,6 @@ fn heat_source_wet_from_input(
                 energy_supply_conn_name_building_level_distribution_losses,
                 simulation_time.step_in_hours(),
             )))))
-            // TODO add heat network to timestep_end_calcs
         }
         HeatSourceWetDetails::HeatBattery {
             control_charge,
