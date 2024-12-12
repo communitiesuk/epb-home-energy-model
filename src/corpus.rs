@@ -4128,7 +4128,7 @@ fn hot_water_source_from_input(
             heat_source,
         } => {
             let mut cold_water_source: WaterSourceWithTemperature =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources);
+                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             // TODO (from Python) Need to handle error if ColdWaterSource name is invalid.
             // TODO (from Python) assuming here there is only one WWHRS
             if !wwhrs.is_empty() {
@@ -4249,7 +4249,7 @@ fn hot_water_source_from_input(
             ..
         } => {
             let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources);
+                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             let energy_supply_conn_name = format!(
                 "{}_water_heating",
                 heat_source_wet_type.to_canonical_string()
@@ -4297,7 +4297,7 @@ fn hot_water_source_from_input(
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), &energy_supply_conn_name)?;
             let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources);
+                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             HotWaterSource::PointOfUse(PointOfUse::new(
                 *efficiency,
                 energy_supply_conn,
@@ -4321,7 +4321,7 @@ fn hot_water_source_from_input(
             );
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources);
+                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             let heat_source_wet = match heat_source_wet_type {
                 HeatSourceWetType::HeatNetwork => {
                     match wet_heat_sources
@@ -4353,13 +4353,13 @@ fn hot_water_source_from_input(
 fn cold_water_source_for_type(
     cold_water_source_type: &ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
-) -> WaterSourceWithTemperature {
-    WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+) -> anyhow::Result<WaterSourceWithTemperature> {
+    Ok(WaterSourceWithTemperature::ColdWaterSource(Arc::new(
         cold_water_sources
             .get(cold_water_source_type)
-            .expect("referenced cold water source was expected to exist")
+            .ok_or_else(|| anyhow!("referenced cold water source was expected to exist"))?
             .clone(),
-    ))
+    )))
 }
 
 fn space_heat_systems_from_input(
