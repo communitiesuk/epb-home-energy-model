@@ -1191,7 +1191,7 @@ impl Showers {
     }
 
     pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
-        self.0.get(name).map_or(false, |shower| {
+        self.0.get(name).is_some_and(|shower| {
             matches!(shower, Shower::InstantElectricShower { .. })
         })
     }
