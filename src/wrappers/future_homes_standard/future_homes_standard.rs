@@ -609,7 +609,7 @@ fn create_metabolic_gains(
     // Calculate total body surface area of occupants
     let a = 2.0001;
     let b = 0.8492;
-    let total_body_surface_area_occupants = (a * number_of_occupants).powf(b);
+    let total_body_surface_area_occupants = a * number_of_occupants.powf(b);
 
     let metabolic_gains_weekday_absolute = METABOLIC_GAINS
         .weekday
@@ -646,7 +646,7 @@ fn load_metabolic_gains_profile(file: impl Read) -> anyhow::Result<([f64; 48], [
         .enumerate()
         .fold(([0.; 48], [0.; 48]), |mut acc, (i, item)| {
             acc.0[i] = item.weekday;
-            acc.1[1] = item.weekend;
+            acc.1[i] = item.weekend;
             acc
         }))
 }
