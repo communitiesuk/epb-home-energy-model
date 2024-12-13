@@ -102,7 +102,7 @@ impl ApplianceGains {
             [simtime.time_series_idx(self.start_day, self.time_series_step)];
         let total_energy_supplied_w = total_energy_supplied * zone_area;
         let total_energy_supplied_kwh =
-            total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * self.time_series_step;
+            total_energy_supplied_w / WATTS_PER_KILOWATT as f64 * simtime.timestep;
 
         self.energy_supply_connection
             .demand_energy(total_energy_supplied_kwh, simtime.index)?;
