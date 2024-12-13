@@ -13,9 +13,9 @@ const MONTH_START_END_HOURS: [u32; 13] = [
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SimulationTime {
-    #[serde(rename(deserialize = "start"))]
+    #[serde(rename = "start")]
     start_time: f64,
-    #[serde(rename(deserialize = "end"))]
+    #[serde(rename = "end")]
     end_time: f64,
     pub step: f64,
 }

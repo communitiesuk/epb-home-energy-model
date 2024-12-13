@@ -6,21 +6,22 @@ use anyhow::{anyhow, bail};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum DaylightSavingsConfig {
-    #[serde(rename(deserialize = "applicable and taken into account"))]
+    #[serde(rename = "applicable and taken into account")]
     ApplicableAndTakenIntoAccount,
-    #[serde(rename(deserialize = "applicable but not taken into account"))]
+    #[serde(rename = "applicable but not taken into account")]
     ApplicableButNotTakenIntoAccount,
-    #[serde(rename(deserialize = "not applicable"))]
+    #[serde(rename = "not applicable")]
     NotApplicable,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ShadingSegment {
     pub number: usize,
     #[serde(rename = "start360")]
@@ -43,8 +44,9 @@ pub struct ShadingSegment {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ShadingObject {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     pub object_type: ShadingObjectType,
     pub height: f64,
     pub distance: f64,
@@ -54,13 +56,13 @@ pub struct ShadingObject {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct WindowShadingObject {
-    #[serde(rename(deserialize = "type"))]
+    #[serde(rename = "type")]
     pub object_type: WindowShadingObjectType,
     pub depth: f64,
     pub distance: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
