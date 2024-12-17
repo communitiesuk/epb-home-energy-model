@@ -8,7 +8,9 @@ use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
-use crate::statistics::np_interp;
+use anyhow::Error;
+use argmin::core::{CostFunction, Executor};
+use argmin::solver::brent::BrentRoot;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use parking_lot::RwLock;
 use std::fmt::{Debug, Formatter};
@@ -136,6 +138,21 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
 
 fn signs_are_different(a: f64, b: f64) -> bool {
     (b > 0. && a < 0.) || (b < 0. && a > 0.)
+}
+
+struct RootProblem<'a> {
+    pub stepper: &'a Dopri5<f64, nalgebra::Matrix<f64, nalgebra::Const<1>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 1, 1>>, EmittersAndPowerInput<'a>>,
+    pub max_temp: f64
+}
+
+impl CostFunction for RootProblem<'_> {
+    type Param = f64;
+    type Output = f64;
+
+    fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
+        let cost = self.stepper.dense_output_for_last_step(*x)[0];
+        Ok(cost - self.max_temp)
+    }
 }
 
 impl Emitters {
@@ -448,20 +465,35 @@ impl Emitters {
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
 
-            let mut y_out_reversed: Vec<f64> = stepper.y_out().iter().flatten().copied().collect();
-            y_out_reversed.reverse();
-
-            let mut x_out_reversed = stepper.x_out().clone();
-            x_out_reversed.reverse();
-
-            // based on the time steps and "outputs" we have from the solver
-            // interpolate a reasonable guess as to what time we hit max temp diff
-            let interpolated_guess =
-                np_interp(temp_diff_max.unwrap(), &y_out_reversed[..], &x_out_reversed);
-            time_temp_diff_max_reached = Some(interpolated_guess);
-
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
+
+            let root_problem = RootProblem {
+                stepper: &stepper,
+                max_temp: temp_diff_max.unwrap()
+            };
+
+            let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
+            let current_step_x = *stepper.x_out().last().unwrap();
+
+            let tol = 1e-3; // From scipy docs (rtol default)
+            let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
+
+            let executor = Executor::new(root_problem, solver);
+            let res = executor.run();
+
+            if res.is_err() {
+                // The Python code only continues for specific errors
+                // but in Rust we continue on any error
+
+                // TODO handle error
+                // return Err("Error calculating root for implicit mass balance");
+                println!("Error!")
+            }
+
+            let best_x = res.unwrap().state().best_param;
+            time_temp_diff_max_reached = best_x;
+
         } else {
             let last_y = stepper.y_out().last().expect("y_out was empty")[0];
             let temp_diff_emitter_rm_final = last_y;
@@ -1223,7 +1255,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "we don't currently match the time_temp_diff_max_reached for emitters"]
+    //#[ignore = "we don't currently match the time_temp_diff_max_reached for emitters"]
     fn test_temp_emitter_with_max_reached_time(emitters: Emitters) {
         // this is split out from the test above
         // because of a known issue matching the time_temp_diff_max_reached
@@ -1232,7 +1264,7 @@ mod tests {
             emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
 
         // TODO can we set a threshold here for a close enough match?
-        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
+        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138, max_relative = EIGHT_DECIMAL_PLACES);
     }
 
     #[rstest]
