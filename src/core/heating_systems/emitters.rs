@@ -17,9 +17,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
 
-type State = Vector1<f64>; // type State = OVector<f32, U3>;
+type State = Vector1<f64>;
 type Time = f64;
-// type Result = SolverResult<Time, State>;
 
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
@@ -103,6 +102,8 @@ impl EmittersAndPowerInput<'_> {
     }
 }
 
+// Here we're using the ode_solvers crate to replicate
+// ODE solving functionality in scipy's solve_ivp
 impl System<Time, State> for EmittersAndPowerInput<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         dy[0] = self
@@ -140,6 +141,8 @@ fn signs_are_different(a: f64, b: f64) -> bool {
     (b > 0. && a < 0.) || (b < 0. && a > 0.)
 }
 
+// Here we're using argmin for root solving on our ode_solver `stepper`
+// This is to replicate the `events` feature in scipy's solve_ivp
 struct RootProblem<'a> {
     pub stepper: &'a Dopri5<f64, nalgebra::Matrix<f64, nalgebra::Const<1>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 1, 1>>, EmittersAndPowerInput<'a>>,
     pub max_temp: f64
@@ -150,6 +153,7 @@ impl CostFunction for RootProblem<'_> {
     type Output = f64;
 
     fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
+        // this code interpolates the time an emitters reaches its max_temp
         let cost = self.stepper.dense_output_for_last_step(*x)[0];
         Ok(cost - self.max_temp)
     }
