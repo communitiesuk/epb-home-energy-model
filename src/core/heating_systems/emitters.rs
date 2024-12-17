@@ -153,7 +153,7 @@ impl CostFunction for RootProblem<'_> {
     type Output = f64;
 
     fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
-        // this code interpolates the time an emitters reaches its max_temp
+        // this code interpolates the time an emitter reaches its max_temp
         let cost = self.stepper.dense_output_for_last_step(*x)[0];
         Ok(cost - self.max_temp)
     }
