@@ -153,7 +153,8 @@ impl CostFunction for RootProblem<'_> {
     type Output = f64;
 
     fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
-        // this code interpolates the time an emitter reaches its max_temp
+        // Difference between the (interpolated) temperature at time x
+        // and the maximum temperature of the emitter
         let cost = self.stepper.dense_output_for_last_step(*x)[0];
         Ok(cost - self.max_temp)
     }
@@ -468,6 +469,7 @@ impl Emitters {
             // when an "event" (in this case, max temp diff) happens a root solver
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
+            // We use a combination of ode_solvers and argmin to achieve the same.
 
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
@@ -481,18 +483,15 @@ impl Emitters {
             let current_step_x = *stepper.x_out().last().unwrap();
 
             let tol = 1e-3; // From scipy docs (rtol default)
+            // Some time (x) between the previous step and the current step we passed the max temp
+            // Use a root solver to find when that was - i.e. when temp - max = 0
             let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
 
             let executor = Executor::new(root_problem, solver);
             let res = executor.run();
 
             if res.is_err() {
-                // The Python code only continues for specific errors
-                // but in Rust we continue on any error
-
-                // TODO handle error
-                // return Err("Error calculating root for implicit mass balance");
-                println!("Error!")
+                panic!("An error occurred in the root solver for emitters")
             }
 
             let best_x = res.unwrap().state().best_param;
