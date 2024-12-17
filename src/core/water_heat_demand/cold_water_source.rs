@@ -17,10 +17,7 @@ impl ColdWaterSource {
         timestep: f64,
     ) -> Self {
         Self {
-            cold_water_temps: cold_water_temps
-                .iter()
-                .flat_map(|t| vec![*t; (timestep / simulation_time.step) as usize])
-                .collect(),
+            cold_water_temps: cold_water_temps,
             start_day,
             time_series_step: timestep,
         }
