@@ -858,6 +858,7 @@ mod tests {
     use crate::simulation_time::SimulationTimeIterator;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
+    const FOUR_DECIMAL_PLACES: f64 = 1e-3;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -1245,29 +1246,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_temp_emitter_with_max(emitters: Emitters) {
+    #[case(0., 2., 70., 10., 0.2, 25., 25., 1.29981138)]
+    #[case(0., 5., 25., 3., 0.8, 19., 19., 0.44239778)]
+    #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
+    fn test_temp_emitter_with_max(emitters: Emitters, #[case] time_start: f64, #[case] time_end: f64, #[case] temp_emitter_start: f64, #[case] temp_rm: f64, #[case] power_input: f64, #[case] temp_emitter_max: f64, #[case] expected_temp: f64, #[case] expected_time: f64) {
         // Check not None conditions are invoked
         // Test when max temp is reached (early exit)
-        let (temp_emitter, _time_temp_diff_max_reached) =
-            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
+        let (temp_emitter, time_temp_diff_max_reached) =
+            emitters.temp_emitter(time_start, time_end , temp_emitter_start, temp_rm, power_input, Some(temp_emitter_max));
 
-        assert_relative_eq!(temp_emitter, 25., max_relative = EIGHT_DECIMAL_PLACES);
-
-        // This assertion has been split into a separate test below
-        //assert_relative_eq!(_time_temp_diff_max_reached.unwrap(), 1.29981138);
-    }
-
-    #[rstest]
-    //#[ignore = "we don't currently match the time_temp_diff_max_reached for emitters"]
-    fn test_temp_emitter_with_max_reached_time(emitters: Emitters) {
-        // this is split out from the test above
-        // because of a known issue matching the time_temp_diff_max_reached
-
-        let (_temp_emitter, time_temp_diff_max_reached) =
-            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
-
-        // TODO can we set a threshold here for a close enough match?
-        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138, max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(temp_emitter, expected_temp, max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), expected_time, max_relative = FOUR_DECIMAL_PLACES);
     }
 
     #[rstest]
