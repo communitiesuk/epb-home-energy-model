@@ -245,9 +245,8 @@ mod tests {
     }
 
     #[fixture]
-    fn wwhrs_b(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemB {
-        let cold_water_source =
-            ColdWaterSource::new(vec![17.0, 17.0, 17.0], &simulation_time, 0, 1.0);
+    fn wwhrs_b() -> WWHRSInstantaneousSystemB {
+        let cold_water_source = ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -279,8 +278,7 @@ mod tests {
 
     #[fixture]
     fn wwhrs_c(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemC {
-        let cold_water_source =
-            ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -317,8 +315,7 @@ mod tests {
 
     #[fixture]
     fn wwhrs_a(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemA {
-        let cold_water_source =
-            ColdWaterSource::new(vec![17.1, 17.2, 17.3], &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0);
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;

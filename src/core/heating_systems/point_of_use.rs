@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn point_of_use(energy_supply: EnergySupply, simtime: SimulationTime) -> PointOfUse {
+    pub fn point_of_use(energy_supply: EnergySupply) -> PointOfUse {
         let efficiency = 1.;
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
@@ -122,7 +122,6 @@ mod tests {
         let cold_water_temps = vec![15., 20., 25.];
         let coldfeed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
             cold_water_temps,
-            &simtime,
             0,
             1.,
         )));

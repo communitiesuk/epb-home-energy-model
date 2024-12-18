@@ -63,8 +63,7 @@ mod tests {
 
     #[rstest]
     pub fn should_give_correct_flowrate() {
-        let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
-        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], 0, 1.0);
         let other_water = OtherHotWater::new(5.0, cold_water_source);
         assert_eq!(
             other_water.get_flowrate(),
@@ -75,8 +74,7 @@ mod tests {
 
     #[rstest]
     pub fn should_give_cold_water_source() {
-        let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
-        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], 0, 1.0);
         let expected_cold_water_source = cold_water_source.clone();
         let other_water = OtherHotWater::new(5.0, cold_water_source);
         assert_eq!(
@@ -89,7 +87,7 @@ mod tests {
     #[rstest]
     pub fn should_calculate_correct_hot_water_demand() {
         let simulation_time = SimulationTime::new(0.0, 3.0, 1.0);
-        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], 0, 1.0);
         let other_water = OtherHotWater::new(5.0, cold_water_source);
         let expected_demands = [15.2, 15.102, 15.0];
         for (idx, t_it) in simulation_time.iter().enumerate() {

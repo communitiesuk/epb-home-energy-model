@@ -72,7 +72,7 @@ use crate::input::{
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
     WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
 };
-use crate::simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::ProjectFlags;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
@@ -156,8 +156,7 @@ impl Corpus {
         let diverter_types: DiverterTypes = (&input.energy_supply).into();
         let mut diverters: Vec<Arc<RwLock<PVDiverter>>> = Default::default();
 
-        let cold_water_sources =
-            cold_water_sources_from_input(&input.cold_water_source, &input.simulation_time);
+        let cold_water_sources = cold_water_sources_from_input(&input.cold_water_source);
         let wwhrs = wwhrs_from_input(
             input.waste_water_heat_recovery.as_ref(),
             &cold_water_sources,
@@ -2220,28 +2219,21 @@ fn external_conditions_from_input(
 
 pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, ColdWaterSource>;
 
-fn cold_water_sources_from_input(
-    input: &ColdWaterSourceInput,
-    simulation_time: &SimulationTime,
-) -> ColdWaterSources {
+fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSources {
     input
         .iter()
         .map(|(source_type, source_details)| {
             (
                 *source_type,
-                cold_water_source_from_input_details(source_details, simulation_time),
+                cold_water_source_from_input_details(source_details),
             )
         })
         .collect()
 }
 
-fn cold_water_source_from_input_details(
-    details: &ColdWaterSourceDetails,
-    simulation_time: &SimulationTime,
-) -> ColdWaterSource {
+fn cold_water_source_from_input_details(details: &ColdWaterSourceDetails) -> ColdWaterSource {
     ColdWaterSource::new(
         details.temperatures.clone(),
-        simulation_time,
         details.start_day,
         details.time_series_step,
     )

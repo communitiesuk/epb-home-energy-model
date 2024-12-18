@@ -6144,13 +6144,7 @@ mod tests {
         let service_name = "service_hot_water_combi";
         let temp_hot_water = 50.;
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
-            ColdWaterSource::new(
-                vec![1.0, 1.2],
-                &simulation_time_for_heat_pump,
-                0,
-                simulation_time_for_heat_pump.step,
-            )
-            .into(),
+            ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
         let boiler_service_water_combi: Result<BoilerServiceWaterCombi, anyhow::Error> =
             heat_pump_with_boiler.create_service_hot_water_combi(
@@ -6195,12 +6189,7 @@ mod tests {
 
         let service_name = "service_hot_water";
 
-        let cold_feed = ColdWaterSource::new(
-            vec![1.0, 1.2],
-            &simulation_time_for_heat_pump,
-            0,
-            simulation_time_for_heat_pump.step,
-        );
+        let cold_feed = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step);
 
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),

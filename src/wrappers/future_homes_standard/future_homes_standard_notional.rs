@@ -1001,7 +1001,6 @@ fn calc_daily_hw_demand(
                 *key,
                 ColdWaterSource::new(
                     source.temperatures.clone(),
-                    &simtime,
                     source.start_day,
                     source.time_series_step,
                 ),

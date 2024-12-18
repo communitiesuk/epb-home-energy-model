@@ -500,12 +500,7 @@ mod tests {
         HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test").unwrap();
 
         let cold_water_temps = vec![1.0, 1.2];
-        let cold_feed = ColdWaterSource::new(
-            cold_water_temps,
-            &two_len_simulation_time,
-            0,
-            two_len_simulation_time.step,
-        );
+        let cold_feed = ColdWaterSource::new(cold_water_temps, 0, two_len_simulation_time.step);
         let return_temp = 60.;
 
         HeatNetworkServiceWaterDirect::new(
@@ -890,13 +885,9 @@ mod tests {
         let heat_network = heat_network.clone();
         let service_name = "hot_water_direct";
         let temp_hot_water = 50.;
-        let cold_feed =
-            WaterSourceWithTemperature::ColdWaterSource(Arc::new(ColdWaterSource::new(
-                vec![1.0, 1.2],
-                &two_len_simulation_time,
-                0,
-                two_len_simulation_time.step,
-            )));
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, two_len_simulation_time.step),
+        ));
 
         HeatNetwork::create_service_hot_water_direct(
             heat_network.clone(),

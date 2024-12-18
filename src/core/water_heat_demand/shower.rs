@@ -187,8 +187,7 @@ mod tests {
     pub fn should_calculate_correct_hot_water_demand_for_mixer() {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
-        let cold_water_source =
-            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
         let mixer_shower = MixerShower::new(6.5, cold_water_source, None);
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, t_it) in simulation_time.iter().enumerate() {
@@ -204,8 +203,7 @@ mod tests {
     pub fn should_calculate_correct_hot_water_demand_for_instant() {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
-        let cold_water_source =
-            ColdWaterSource::new(cold_water_temps.into(), &simulation_time, 0, 1.0);
+        let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),

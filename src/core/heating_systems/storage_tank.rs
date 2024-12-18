@@ -1529,12 +1529,9 @@ mod tests {
     }
 
     #[fixture]
-    pub fn cold_water_source(
-        simulation_time_for_storage_tank: SimulationTime,
-    ) -> Arc<ColdWaterSource> {
+    pub fn cold_water_source() -> Arc<ColdWaterSource> {
         Arc::new(ColdWaterSource::new(
             vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1],
-            &simulation_time_for_storage_tank,
             0,
             1.,
         ))
@@ -2087,7 +2084,7 @@ mod tests {
         ];
         let simulation_time = SimulationTime::new(5088., 5112., 1.);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps.to_vec(), &simulation_time, 212, 1.),
+            ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
         ));
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,

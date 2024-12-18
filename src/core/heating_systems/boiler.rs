@@ -1241,7 +1241,7 @@ mod tests {
 
     #[fixture]
     pub fn cold_water_source(simulation_time: SimulationTime) -> ColdWaterSource {
-        ColdWaterSource::new(vec![1.0, 1.2], &simulation_time, 0, simulation_time.step)
+        ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time.step)
     }
 
     #[fixture]
