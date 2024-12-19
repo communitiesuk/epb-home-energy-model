@@ -502,6 +502,7 @@ impl Boiler {
     }
 
     /// Return boiler efficiency at different return temperatures
+    /// In Python this is effvsreturntemp
     fn efficiency_over_return_temperatures(
         energy_supply_type: EnergySupplyType,
         return_temp: f64,
@@ -723,7 +724,7 @@ impl Boiler {
         let standing_loss = if current_boiler_power == 0.0 {
             0.0
         } else {
-            (4.0 * current_boiler_power.powf(0.4)) / 100.0
+            (4.0 * current_boiler_power.powf(-0.4)) / 100.0
         };
 
         // use weather temperature at timestep
@@ -774,7 +775,8 @@ impl Boiler {
             )?
         };
 
-        Ok(1.0 / ((1.0 / boiler_eff) + cyclic_location_adjustment))
+        let blr_eff_final = 1.0 / ((1.0 / boiler_eff) + cyclic_location_adjustment);
+        Ok(blr_eff_final)
     }
 
     fn calc_energy_output_provided(&self, energy_output_required: f64, time_available: f64) -> f64 {
