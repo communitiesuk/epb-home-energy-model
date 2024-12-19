@@ -8,16 +8,17 @@ use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{EcoDesignController, EcoDesignControllerClass};
 use crate::simulation_time::SimulationTimeIteration;
-use crate::statistics::np_interp;
+use anyhow::Error;
+use argmin::core::{CostFunction, Executor};
+use argmin::solver::brent::BrentRoot;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use parking_lot::RwLock;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
 
-type State = Vector1<f64>; // type State = OVector<f32, U3>;
+type State = Vector1<f64>;
 type Time = f64;
-// type Result = SolverResult<Time, State>;
 
 /// Convert flow temperature to return temperature using the 6/7th rule.
 ///
@@ -101,6 +102,8 @@ impl EmittersAndPowerInput<'_> {
     }
 }
 
+// Here we're using the ode_solvers crate to replicate
+// ODE solving functionality in scipy's solve_ivp
 impl System<Time, State> for EmittersAndPowerInput<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         dy[0] = self
@@ -136,6 +139,25 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
 
 fn signs_are_different(a: f64, b: f64) -> bool {
     (b > 0. && a < 0.) || (b < 0. && a > 0.)
+}
+
+// Here we're using argmin for root solving on our ode_solver `stepper`
+// This is to replicate the `events` feature in scipy's solve_ivp
+struct RootProblem<'a> {
+    pub stepper: &'a Dopri5<f64, nalgebra::Matrix<f64, nalgebra::Const<1>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 1, 1>>, EmittersAndPowerInput<'a>>,
+    pub max_temp: f64
+}
+
+impl CostFunction for RootProblem<'_> {
+    type Param = f64;
+    type Output = f64;
+
+    fn cost(&self, x: &Self::Param) -> Result<Self::Output, Error> {
+        // Difference between the (interpolated) temperature at time x
+        // and the maximum temperature of the emitter
+        let cost = self.stepper.dense_output_for_last_step(*x)[0];
+        Ok(cost - self.max_temp)
+    }
 }
 
 impl Emitters {
@@ -447,21 +469,34 @@ impl Emitters {
             // when an "event" (in this case, max temp diff) happens a root solver
             // finds the exact x (time) value for that event occuring
             // and sets time_temp_diff_max_reached
-
-            let mut y_out_reversed: Vec<f64> = stepper.y_out().iter().flatten().copied().collect();
-            y_out_reversed.reverse();
-
-            let mut x_out_reversed = stepper.x_out().clone();
-            x_out_reversed.reverse();
-
-            // based on the time steps and "outputs" we have from the solver
-            // interpolate a reasonable guess as to what time we hit max temp diff
-            let interpolated_guess =
-                np_interp(temp_diff_max.unwrap(), &y_out_reversed[..], &x_out_reversed);
-            time_temp_diff_max_reached = Some(interpolated_guess);
+            // We use a combination of ode_solvers and argmin to achieve the same.
 
             // max temp diff was reached, so that should be our result
             temp_emitter = temp_rm + temp_diff_max.unwrap();
+
+            let root_problem = RootProblem {
+                stepper: &stepper,
+                max_temp: temp_diff_max.unwrap()
+            };
+
+            let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
+            let current_step_x = *stepper.x_out().last().unwrap();
+
+            let tol = 1e-3; // From scipy docs (rtol default)
+            // Some time (x) between the previous step and the current step we passed the max temp
+            // Use a root solver to find when that was - i.e. when temp - max = 0
+            let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
+
+            let executor = Executor::new(root_problem, solver);
+            let res = executor.run();
+
+            if res.is_err() {
+                panic!("An error occurred in the root solver for emitters")
+            }
+
+            let best_x = res.unwrap().state().best_param;
+            time_temp_diff_max_reached = best_x;
+
         } else {
             let last_y = stepper.y_out().last().expect("y_out was empty")[0];
             let temp_diff_emitter_rm_final = last_y;
@@ -823,6 +858,7 @@ mod tests {
     use crate::simulation_time::SimulationTimeIterator;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
+    const FOUR_DECIMAL_PLACES: f64 = 1e-3;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -1210,29 +1246,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_temp_emitter_with_max(emitters: Emitters) {
+    #[case(0., 2., 70., 10., 0.2, 25., 25., 1.29981138)]
+    #[case(0., 5., 25., 3., 0.8, 19., 19., 0.44239778)]
+    #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
+    fn test_temp_emitter_with_max(emitters: Emitters, #[case] time_start: f64, #[case] time_end: f64, #[case] temp_emitter_start: f64, #[case] temp_rm: f64, #[case] power_input: f64, #[case] temp_emitter_max: f64, #[case] expected_temp: f64, #[case] expected_time: f64) {
         // Check not None conditions are invoked
         // Test when max temp is reached (early exit)
-        let (temp_emitter, _time_temp_diff_max_reached) =
-            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
+        let (temp_emitter, time_temp_diff_max_reached) =
+            emitters.temp_emitter(time_start, time_end , temp_emitter_start, temp_rm, power_input, Some(temp_emitter_max));
 
-        assert_relative_eq!(temp_emitter, 25., max_relative = EIGHT_DECIMAL_PLACES);
-
-        // This assertion has been split into a separate test below
-        //assert_relative_eq!(_time_temp_diff_max_reached.unwrap(), 1.29981138);
-    }
-
-    #[rstest]
-    #[ignore = "we don't currently match the time_temp_diff_max_reached for emitters"]
-    fn test_temp_emitter_with_max_reached_time(emitters: Emitters) {
-        // this is split out from the test above
-        // because of a known issue matching the time_temp_diff_max_reached
-
-        let (_temp_emitter, time_temp_diff_max_reached) =
-            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
-
-        // TODO can we set a threshold here for a close enough match?
-        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), 1.29981138);
+        assert_relative_eq!(temp_emitter, expected_temp, max_relative = EIGHT_DECIMAL_PLACES);
+        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), expected_time, max_relative = FOUR_DECIMAL_PLACES);
     }
 
     #[rstest]

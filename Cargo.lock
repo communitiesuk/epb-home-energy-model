@@ -1477,8 +1477,7 @@ dependencies = [
 [[package]]
 name = "ode_solvers"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f899b49b30ecbcfc2db3328b9517741764266e8b42a91cde85573da67790019"
+source = "git+https://github.com/russ-madetech/ode-solvers?branch=events#e27a4af3cb662b67946f34d7c6e11f0093cbb2da"
 dependencies = [
  "nalgebra 0.33.2",
  "num-traits",
