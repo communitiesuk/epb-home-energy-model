@@ -109,7 +109,7 @@ impl EmittersAndPowerInput<'_> {
             emitters,
             power_input,
             temp_diff_max,
-            previous_difference_from_temp_diff_max,
+            previous_difference_from_temp_diff_max
         }
     }
 
@@ -471,17 +471,26 @@ impl Emitters {
 
         let _ = stepper.integrate();
 
+        // similar logic to EmittersAndPowerOutput System
+        // in future we could consolidate these
+        let temp_diff_max_was_reached = match temp_diff_max {
+            Some(temp_diff_max) => {
+                let y_count = stepper.y_out().len();
+                let current_y = stepper.y_out().last().expect("y_out was empty")[0];
+                let previous_y = stepper.y_out().get(y_count - 2).unwrap()[0];
+                
+                let current_temp_diff = current_y - temp_diff_max;
+                let previous_temp_diff = previous_y - temp_diff_max;
+                let temp_diff_max_was_reached = previous_temp_diff == 0. || current_temp_diff == 0. || signs_are_different(previous_temp_diff, current_temp_diff);
+                temp_diff_max_was_reached
+            }
+            None => false
+        };
+
         let temp_emitter;
         let mut time_temp_diff_max_reached: Option<f64> = None;
-
-        let y_count = stepper.y_out().len();
-        let last_y = stepper.y_out().last().expect("y_out was empty")[0];
-        let second_last_y = stepper.y_out().get(y_count - 2).unwrap()[0];
-
-        let max_temp_diff_was_reached = *stepper.x_out().last().unwrap() < time_end;
-
-        if max_temp_diff_was_reached {
-            // We stopped early because the max diff was passed.
+        if temp_diff_max_was_reached {
+            // We stopped early because the temp diff max was passed.
             // The Python code uses a built in feature of scipy's solve_ivp here.
             // when an "event" (in this case, max temp diff) happens a root solver
             // finds the exact x (time) value for that event occuring
