@@ -94,17 +94,22 @@ struct EmittersAndPowerInput<'a> {
 }
 
 impl EmittersAndPowerInput<'_> {
-    pub fn new(emitters: &Emitters, power_input: f64, temp_diff_max: Option<f64>, temp_diff_start: f64) -> EmittersAndPowerInput {
+    pub fn new(
+        emitters: &Emitters,
+        power_input: f64,
+        temp_diff_max: Option<f64>,
+        temp_diff_start: f64,
+    ) -> EmittersAndPowerInput {
         let previous_difference_from_temp_diff_max = match temp_diff_max {
             Some(max) => Some(temp_diff_start - max),
-            None => None
+            None => None,
         };
 
         EmittersAndPowerInput {
             emitters,
             power_input,
             temp_diff_max,
-            previous_difference_from_temp_diff_max
+            previous_difference_from_temp_diff_max,
         }
     }
 
@@ -129,21 +134,22 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
             return false;
         }
 
-        let difference_from_temp_diff_max = self.difference_from_temp_diff_max(y[0]);
+        let current_difference = self.difference_from_temp_diff_max(y[0]);
 
         if self.previous_difference_from_temp_diff_max.is_some() {
-            let previous = self.previous_difference_from_temp_diff_max.unwrap();
+            let previous_difference = self.previous_difference_from_temp_diff_max.unwrap();
 
             // signs are different - we must have passed zero
-            if difference_from_temp_diff_max == 0.
-                || signs_are_different(difference_from_temp_diff_max, previous)
+            if current_difference == 0.
+                || signs_are_different(current_difference, previous_difference)
+                || previous_difference == 0.
             {
                 // passing zero means we hit temp_diff_max, so stop solver
                 return true;
             }
         }
 
-        self.previous_difference_from_temp_diff_max = Some(difference_from_temp_diff_max);
+        self.previous_difference_from_temp_diff_max = Some(current_difference);
         false
     }
 }
@@ -155,8 +161,17 @@ fn signs_are_different(a: f64, b: f64) -> bool {
 // Here we're using argmin for root solving on our ode_solver `stepper`
 // This is to replicate the `events` feature in scipy's solve_ivp
 struct RootProblem<'a> {
-    pub stepper: &'a Dopri5<f64, nalgebra::Matrix<f64, nalgebra::Const<1>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 1, 1>>, EmittersAndPowerInput<'a>>,
-    pub max_temp: f64
+    pub stepper: &'a Dopri5<
+        f64,
+        nalgebra::Matrix<
+            f64,
+            nalgebra::Const<1>,
+            nalgebra::Const<1>,
+            nalgebra::ArrayStorage<f64, 1, 1>,
+        >,
+        EmittersAndPowerInput<'a>,
+    >,
+    pub max_temp: f64,
 }
 
 impl CostFunction for RootProblem<'_> {
@@ -408,17 +423,14 @@ impl Emitters {
         temp_emitter_start: f64,
         temp_rm: f64,
         power_input: f64,
-        temp_emitter_max: Option<f64>
+        temp_emitter_max: Option<f64>,
     ) -> (f64, Option<f64>) {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
         let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
 
-        let emitter_with_power_input = EmittersAndPowerInput::new(
-            self,
-            power_input,
-            temp_diff_max,
-            temp_diff_start);
+        let emitter_with_power_input =
+            EmittersAndPowerInput::new(self, power_input, temp_diff_max, temp_diff_start);
 
         let f = emitter_with_power_input; // f - Structure implementing the System trait
         let x: Time = time_start; // x - Initial value of the independent variable (usually time)
@@ -466,11 +478,8 @@ impl Emitters {
         let last_y = stepper.y_out().last().expect("y_out was empty")[0];
         let second_last_y = stepper.y_out().get(y_count - 2).unwrap()[0];
 
-        let max_temp_diff_was_reached = temp_diff_max.is_some()
-            && signs_are_different(
-                f.difference_from_temp_diff_max(last_y),
-                f.difference_from_temp_diff_max(second_last_y),
-            );
+        let max_temp_diff_was_reached = *stepper.x_out().last().unwrap() < time_end;
+
         if max_temp_diff_was_reached {
             // We stopped early because the max diff was passed.
             // The Python code uses a built in feature of scipy's solve_ivp here.
@@ -484,15 +493,15 @@ impl Emitters {
 
             let root_problem = RootProblem {
                 stepper: &stepper,
-                max_temp: temp_diff_max.unwrap()
+                max_temp: temp_diff_max.unwrap(),
             };
 
             let previous_step_x = *stepper.x_out().get(stepper.x_out().len() - 2).unwrap();
             let current_step_x = *stepper.x_out().last().unwrap();
 
             let tol = 1e-3; // From scipy docs (rtol default)
-            // Some time (x) between the previous step and the current step we passed the max temp
-            // Use a root solver to find when that was - i.e. when temp - max = 0
+                            // Some time (x) between the previous step and the current step we passed the max temp
+                            // Use a root solver to find when that was - i.e. when temp - max = 0
             let solver = BrentRoot::new(previous_step_x, current_step_x, tol);
 
             let executor = Executor::new(root_problem, solver);
@@ -504,7 +513,6 @@ impl Emitters {
 
             let best_x = res.unwrap().state().best_param;
             time_temp_diff_max_reached = best_x;
-
         } else {
             let last_y = stepper.y_out().last().expect("y_out was empty")[0];
             let temp_diff_emitter_rm_final = last_y;
@@ -611,7 +619,7 @@ impl Emitters {
             self.temp_emitter_prev,
             temp_rm_prev,
             power_output_max_min,
-            Some(temp_emitter_max)
+            Some(temp_emitter_max),
         );
 
         let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
@@ -728,7 +736,7 @@ impl Emitters {
                 self.temp_emitter_prev,
                 temp_rm_prev,
                 power_provided_by_heat_source,
-                None
+                None,
             )
             .0
         };
@@ -1260,14 +1268,68 @@ mod tests {
     #[case(0., 5., 25., 3., 0.8, 19., 19., 0.44239778)]
     #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
     #[case(0., 1., 45.8, 13., 0., 45.2, 45.2, 0.016104431558688848)]
-    fn test_temp_emitter_with_max(emitters: Emitters, #[case] time_start: f64, #[case] time_end: f64, #[case] temp_emitter_start: f64, #[case] temp_rm: f64, #[case] power_input: f64, #[case] temp_emitter_max: f64, #[case] expected_temp: f64, #[case] expected_time: f64) {
+    #[case(0., 1., 40., 30., 0., 40., 40., 0.)]
+    fn test_temp_emitter_with_max(
+        emitters: Emitters,
+        #[case] time_start: f64,
+        #[case] time_end: f64,
+        #[case] temp_emitter_start: f64,
+        #[case] temp_rm: f64,
+        #[case] power_input: f64,
+        #[case] temp_emitter_max: f64,
+        #[case] expected_temp: f64,
+        #[case] expected_time: f64,
+    ) {
         // Check not None conditions are invoked
         // Test when max temp is reached (early exit)
-        let (temp_emitter, time_temp_diff_max_reached) =
-            emitters.temp_emitter(time_start, time_end , temp_emitter_start, temp_rm, power_input, Some(temp_emitter_max));
+        let (temp_emitter, time_temp_diff_max_reached) = emitters.temp_emitter(
+            time_start,
+            time_end,
+            temp_emitter_start,
+            temp_rm,
+            power_input,
+            Some(temp_emitter_max),
+        );
 
-        assert_relative_eq!(temp_emitter, expected_temp, max_relative = EIGHT_DECIMAL_PLACES);
-        assert_relative_eq!(time_temp_diff_max_reached.unwrap(), expected_time, max_relative = FOUR_DECIMAL_PLACES);
+        assert_relative_eq!(
+            temp_emitter,
+            expected_temp,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+        assert_relative_eq!(
+            time_temp_diff_max_reached.unwrap(),
+            expected_time,
+            max_relative = FOUR_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
+    #[case(0., 2., 5., 10., 0., 21., 5.)]
+    fn test_temp_emitter_with_max_not_reached(
+        emitters: Emitters,
+        #[case] time_start: f64,
+        #[case] time_end: f64,
+        #[case] temp_emitter_start: f64,
+        #[case] temp_rm: f64,
+        #[case] power_input: f64,
+        #[case] temp_emitter_max: f64,
+        #[case] expected_temp: f64,
+    ) {
+        let (temp_emitter, time_temp_diff_max_reached) = emitters.temp_emitter(
+            time_start,
+            time_end,
+            temp_emitter_start,
+            temp_rm,
+            power_input,
+            Some(temp_emitter_max),
+        );
+
+        assert_relative_eq!(
+            temp_emitter,
+            expected_temp,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+        assert!(time_temp_diff_max_reached.is_none());
     }
 
     #[rstest]
