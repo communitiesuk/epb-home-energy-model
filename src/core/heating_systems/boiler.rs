@@ -386,7 +386,7 @@ pub struct Boiler {
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
-    energy_supply_type: EnergySupplyType,
+    energy_supply_type: String,
     // service_results: (),
     boiler_location: HeatSourceLocation,
     min_modulation_load: f64,
@@ -434,12 +434,12 @@ impl Boiler {
             } => {
                 let total_time_running_current_timestep = 0.;
 
-                let net_to_gross = Self::net_to_gross(energy_supply_type)?;
+                let net_to_gross = Self::net_to_gross(&energy_supply_type)?;
                 let full_load_net = full_load_gross / net_to_gross;
                 let part_load_net = part_load_gross / net_to_gross;
                 let corrected_full_load_net = Self::high_value_correction_full_load(full_load_net);
                 let corrected_part_load_net =
-                    Self::high_value_correction_part_load(energy_supply_type, part_load_net)?;
+                    Self::high_value_correction_part_load(&energy_supply_type, part_load_net)?;
                 let corrected_full_load_gross = corrected_full_load_net * net_to_gross;
                 let corrected_part_load_gross = corrected_part_load_net * net_to_gross;
 
@@ -461,12 +461,12 @@ impl Boiler {
                 let temp_full_load_test = 60.;
                 let offset_for_theoretical_eff = 0.;
                 let theoretical_eff_part_load = Self::efficiency_over_return_temperatures(
-                    energy_supply_type,
+                    &energy_supply_type,
                     temp_part_load_test,
                     offset_for_theoretical_eff,
                 )?;
                 let theoretical_eff_full_load = Self::efficiency_over_return_temperatures(
-                    energy_supply_type,
+                    &energy_supply_type,
                     temp_full_load_test,
                     offset_for_theoretical_eff,
                 )?;
@@ -504,33 +504,36 @@ impl Boiler {
     /// Return boiler efficiency at different return temperatures
     /// In Python this is effvsreturntemp
     fn efficiency_over_return_temperatures(
-        energy_supply_type: EnergySupplyType,
-        return_temp: f64,
-        offset: f64,
+        _energy_supply_type: &str,
+        _return_temp: f64,
+        _offset: f64,
     ) -> anyhow::Result<f64> {
-        let mains_gas_dewpoint = 52.2;
-        let lpg_dewpoint = 48.3;
-        let theoretical_eff = match energy_supply_type {
-            EnergySupplyType::MainsGas => {
-                if return_temp < mains_gas_dewpoint {
-                    -0.00007 * return_temp.powi(2) + 0.0017 * return_temp + 0.979
-                } else {
-                    -0.0006 * return_temp + 0.9129
-                }
-            }
-            EnergySupplyType::LpgBulk
-            | EnergySupplyType::LpgBottled
-            | EnergySupplyType::LpgCondition11F => {
-                if return_temp < lpg_dewpoint {
-                    -0.00006 * return_temp.powi(2) + 0.0013 * return_temp + 0.9859
-                } else {
-                    -0.0006 * return_temp + 0.933
-                }
-            }
-            _ => bail!("Unexpected energy supply type {energy_supply_type:?} encountered"),
-        };
+        // TODO 0.32 to be migrated to reference fuel types
 
-        Ok(theoretical_eff - offset)
+        // let mains_gas_dewpoint = 52.2;
+        // let lpg_dewpoint = 48.3;
+        // let theoretical_eff = match energy_supply_type {
+        //     EnergySupplyType::MainsGas => {
+        //         if return_temp < mains_gas_dewpoint {
+        //             -0.00007 * return_temp.powi(2) + 0.0017 * return_temp + 0.979
+        //         } else {
+        //             -0.0006 * return_temp + 0.9129
+        //         }
+        //     }
+        //     EnergySupplyType::LpgBulk
+        //     | EnergySupplyType::LpgBottled
+        //     | EnergySupplyType::LpgCondition11F => {
+        //         if return_temp < lpg_dewpoint {
+        //             -0.00006 * return_temp.powi(2) + 0.0013 * return_temp + 0.9859
+        //         } else {
+        //             -0.0006 * return_temp + 0.933
+        //         }
+        //     }
+        //     _ => bail!("Unexpected energy supply type {energy_supply_type:?} encountered"),
+        // };
+
+        // Ok(theoretical_eff - offset)
+        Ok(0.01)
     }
 
     pub fn boiler_efficiency_over_return_temperatures(
@@ -538,25 +541,28 @@ impl Boiler {
         return_temp: f64,
         offset: f64,
     ) -> anyhow::Result<f64> {
-        Self::efficiency_over_return_temperatures(self.energy_supply_type, return_temp, offset)
+        Self::efficiency_over_return_temperatures(&self.energy_supply_type, return_temp, offset)
     }
 
     pub fn high_value_correction_part_load(
-        energy_supply_type: EnergySupplyType,
-        net_efficiency_part_load: f64,
+        _energy_supply_type: &str,
+        _net_efficiency_part_load: f64,
     ) -> anyhow::Result<f64> {
-        let maximum_part_load_eff = match energy_supply_type {
-            EnergySupplyType::MainsGas => 1.08,
-            EnergySupplyType::LpgBulk
-            | EnergySupplyType::LpgBottled
-            | EnergySupplyType::LpgCondition11F => 1.06,
-            _ => bail!("could not calculate maximum_part_load_eff for energy supply type {energy_supply_type:?}"),
-        };
+        // TODO 0.32 to be migrated to referencing fuel type
 
-        Ok(min_of_2(
-            net_efficiency_part_load - 0.213 * (net_efficiency_part_load - 0.966),
-            maximum_part_load_eff,
-        ))
+        // let maximum_part_load_eff = match energy_supply_type {
+        //     EnergySupplyType::MainsGas => 1.08,
+        //     EnergySupplyType::LpgBulk
+        //     | EnergySupplyType::LpgBottled
+        //     | EnergySupplyType::LpgCondition11F => 1.06,
+        //     _ => bail!("could not calculate maximum_part_load_eff for energy supply type {energy_supply_type:?}"),
+        // };
+        //
+        // Ok(min_of_2(
+        //     net_efficiency_part_load - 0.213 * (net_efficiency_part_load - 0.966),
+        //     maximum_part_load_eff,
+        // ))
+        Ok(1.08)
     }
 
     pub fn high_value_correction_full_load(net_efficiency_full_load: f64) -> f64 {
@@ -566,16 +572,19 @@ impl Boiler {
         )
     }
 
-    fn net_to_gross(energy_supply_type: EnergySupplyType) -> anyhow::Result<f64> {
-        match energy_supply_type {
-            EnergySupplyType::MainsGas => Ok(0.901),
-            EnergySupplyType::LpgBulk
-            | EnergySupplyType::LpgBottled
-            | EnergySupplyType::LpgCondition11F => Ok(0.921),
-            _ => bail!(
-                "could not convert net to gross for energy supply type '{energy_supply_type:?}'"
-            ),
-        }
+    fn net_to_gross(_energy_supply_type: &str) -> anyhow::Result<f64> {
+        // TODO 0.32 this function to be migrated to reference fuel types
+
+        // match energy_supply_type {
+        //     EnergySupplyType::MainsGas => Ok(0.901),
+        //     EnergySupplyType::LpgBulk
+        //     | EnergySupplyType::LpgBottled
+        //     | EnergySupplyType::LpgCondition11F => Ok(0.921),
+        //     _ => bail!(
+        //         "could not convert net to gross for energy supply type '{energy_supply_type:?}'"
+        //     ),
+        // }
+        Ok(0.901)
     }
 
     /// Create an EnergySupplyConnection for the service name given

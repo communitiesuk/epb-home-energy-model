@@ -18,7 +18,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;
 use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -63,19 +63,19 @@ impl DomesticHotWaterDemand {
         water_distribution_input: Option<WaterDistributionInput>,
         cold_water_sources: &ColdWaterSources,
         wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
-        energy_supplies: &EnergySupplies,
+        energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         event_schedules: EventSchedule,
     ) -> anyhow::Result<Self> {
         let showers: HashMap<String, Shower> = showers_input
             .0
             .iter()
             .map(|(name, shower)| {
-                (
+                Ok((
                     name.clone(),
-                    shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs),
-                )
+                    shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs)?,
+                ))
             })
-            .collect();
+            .collect::<anyhow::Result<HashMap<_, _>>>()?;
         let baths: HashMap<String, Bath> = bath_input
             .0
             .iter()
@@ -373,10 +373,10 @@ fn shower_from_input(
     name: &str,
     input: &ShowerInput,
     cold_water_sources: &ColdWaterSources,
-    energy_supplies: &EnergySupplies,
+    energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
     wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
-) -> Shower {
-    match input {
+) -> anyhow::Result<Shower> {
+    Ok(match input {
         ShowerInput::MixerShower {
             cold_water_source,
             waste_water_heat_recovery,
@@ -400,14 +400,12 @@ fn shower_from_input(
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
 
-            let energy_supply = match energy_supply {
-                EnergySupplyType::Electricity => energy_supplies.mains_electricity.clone().unwrap(),
-                EnergySupplyType::MainsGas => energy_supplies.mains_gas.clone().unwrap(),
-                EnergySupplyType::UnmetDemand => energy_supplies.unmet_demand.clone(),
-                EnergySupplyType::LpgBulk => energy_supplies.bulk_lpg.clone().unwrap(),
-                EnergySupplyType::HeatNetwork => energy_supplies.heat_network.clone().unwrap(),
-                _ => panic!("Unexpected energy supply type for a shower"),
-            };
+            let energy_supply = energy_supplies
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!("The energy supply with name '{energy_supply}' is not known.")
+                })?
+                .clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
 
             Shower::InstantElectricShower(InstantElectricShower::new(
@@ -416,7 +414,7 @@ fn shower_from_input(
                 energy_supply_conn,
             ))
         }
-    }
+    })
 }
 
 fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> Bath {
@@ -505,22 +503,8 @@ mod tests {
             None,
             None,
         )));
-        let energy_supplies = EnergySupplies {
-            mains_electricity: Some(electricity_supply.clone()),
-            mains_gas: None,
-            bulk_lpg: None,
-            bottled_lpg: None,
-            condition_11f_lpg: None,
-            custom: None,
-            heat_network: None,
-            unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
-                FuelType::UnmetDemand,
-                simulation_time.total_steps(),
-                None,
-                None,
-                None,
-            ))),
-        };
+        let energy_supplies =
+            IndexMap::from([("mains elec".to_owned(), electricity_supply.clone())]);
 
         let showers_input = Showers(IndexMap::from([
             (
@@ -536,7 +520,7 @@ mod tests {
                 ShowerInput::InstantElectricShower {
                     rated_power: 9.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    energy_supply: EnergySupplyType::Electricity,
+                    energy_supply: "mains elec".to_string(),
                 },
             ),
         ]));

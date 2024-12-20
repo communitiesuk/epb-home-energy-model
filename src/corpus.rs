@@ -7,7 +7,7 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupplies, EnergySupply, EnergySupplyConnection,
+    EnergySupplies, EnergySupply, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -107,7 +107,7 @@ pub struct Corpus {
     pub simulation_time: Arc<SimulationTimeIterator>,
     pub external_conditions: Arc<ExternalConditions>,
     pub cold_water_sources: ColdWaterSources,
-    pub energy_supplies: EnergySupplies,
+    pub energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub internal_gains: InternalGainsCollection,
     pub controls: Controls,
     pub wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
@@ -153,7 +153,13 @@ impl Corpus {
             ),
         });
 
-        let diverter_types: DiverterTypes = (&input.energy_supply).into();
+        let diverter_types: DiverterTypes = input
+            .energy_supply
+            .iter()
+            .flat_map(|(name, supply)| {
+                diverter_from_energy_supply(supply).map(|diverter| (name.to_owned(), diverter))
+            })
+            .collect();
         let mut diverters: Vec<Arc<RwLock<PVDiverter>>> = Default::default();
 
         let cold_water_sources = cold_water_sources_from_input(&input.cold_water_source);
@@ -254,7 +260,7 @@ impl Corpus {
         }
 
         let energy_supply_conn_unmet_demand_zone = set_up_energy_supply_unmet_demand_zones(
-            energy_supplies.unmet_demand.clone(),
+            energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
             &input.zone,
         );
         // TODO: there needs to be some equivalent here of the Python code that builds the dict __energy_supply_conn_unmet_demand_zone
@@ -1884,7 +1890,9 @@ impl Corpus {
                 .push(storage_losses);
 
             self.energy_supplies
-                .calc_energy_import_export_betafactor(t_it)?;
+                .values()
+                .map(|supply| Ok(supply.read().calc_energy_import_export_betafactor(t_it)?))
+                .collect::<anyhow::Result<()>>()?;
 
             for diverter in &self.diverters {
                 diverter.write().timestep_end();
@@ -1902,9 +1910,9 @@ impl Corpus {
         let mut energy_from_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut energy_diverted: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut betafactor: IndexMap<KeyString, Vec<f64>> = Default::default();
-        for (name, supply) in self.energy_supplies.supplies_by_name() {
+        for (name, supply) in self.energy_supplies.iter() {
             let supply = supply.read();
-            let name: KeyString = name.try_into().unwrap();
+            let name: KeyString = KeyString::from(name)?;
             results_totals.insert(name, supply.results_total());
             results_end_user.insert(name, supply.results_by_end_user().to_owned());
             energy_import.insert(name, supply.get_energy_import().to_owned());
@@ -2243,97 +2251,91 @@ fn energy_supplies_from_input(
     input: &EnergySupplyInput,
     simulation_time_iterator: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
-) -> EnergySupplies {
-    EnergySupplies {
-        mains_electricity: energy_supply_from_input(
-            input.get(&EnergySupplyKey::MainsElectricity),
-            simulation_time_iterator,
-            external_conditions.clone(),
-        ),
-        mains_gas: energy_supply_from_input(
-            input.get(&EnergySupplyKey::MainsGas),
-            simulation_time_iterator,
-            external_conditions.clone(),
-        ),
-        bulk_lpg: energy_supply_from_input(
-            input.get(&EnergySupplyKey::BulkLpg),
-            simulation_time_iterator,
-            external_conditions.clone(),
-        ),
-        heat_network: energy_supply_from_input(
-            input.get(&EnergySupplyKey::HeatNetwork),
-            simulation_time_iterator,
-            external_conditions,
-        ),
-        unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
+) -> IndexMap<String, Arc<RwLock<EnergySupply>>> {
+    let mut supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = input
+        .iter()
+        .map(|(name, supply)| {
+            (
+                name.to_owned(),
+                energy_supply_from_input(
+                    supply,
+                    simulation_time_iterator,
+                    external_conditions.clone(),
+                ),
+            )
+        })
+        .collect();
+    // set up supply representing unmet demand
+    supplies.insert(
+        UNMET_DEMAND_SUPPLY_NAME.to_string(),
+        Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
-            simulation_time_iterator.total_steps(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            0,
+            None,
+            None,
+            None,
         ))),
-        bottled_lpg: None,
-        condition_11f_lpg: None,
-        custom: None,
-    }
+    );
+
+    supplies
 }
 
 fn energy_supply_from_input(
-    input: Option<&EnergySupplyDetails>,
+    input: &EnergySupplyDetails,
     simulation_time_iterator: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
-) -> Option<Arc<RwLock<EnergySupply>>> {
-    input.map(|details| {
-        Arc::new(RwLock::new(EnergySupply::new(
-            details.fuel,
-            simulation_time_iterator.total_steps(),
-            details.electric_battery.as_ref().map(|battery_input| {
-                ElectricBattery::from_input(
-                    battery_input,
-                    simulation_time_iterator.step_in_hours(),
-                    external_conditions,
-                )
-            }),
-            details.priority.as_ref().cloned(),
-            details.is_export_capable,
-        )))
-    })
+) -> Arc<RwLock<EnergySupply>> {
+    Arc::new(RwLock::new(EnergySupply::new(
+        input.fuel,
+        simulation_time_iterator.total_steps(),
+        input.electric_battery.as_ref().map(|battery_input| {
+            ElectricBattery::from_input(
+                battery_input,
+                simulation_time_iterator.step_in_hours(),
+                external_conditions,
+            )
+        }),
+        input.priority.as_ref().cloned(),
+        input.is_export_capable,
+    )))
 }
 
-struct DiverterTypes {
-    pub mains_electricity: Option<EnergyDiverter>,
-    pub mains_gas: Option<EnergyDiverter>,
-    pub bulk_lpg: Option<EnergyDiverter>,
-}
+type DiverterTypes = IndexMap<String, EnergyDiverter>;
 
-impl From<&EnergySupplyInput> for DiverterTypes {
-    fn from(input: &EnergySupplyInput) -> Self {
-        Self {
-            mains_electricity: diverter_from_energy_supply(
-                input.get(&EnergySupplyKey::MainsElectricity),
-            ),
-            mains_gas: diverter_from_energy_supply(input.get(&EnergySupplyKey::MainsGas)),
-            bulk_lpg: diverter_from_energy_supply(input.get(&EnergySupplyKey::BulkLpg)),
-        }
-    }
-}
+// struct DiverterTypes {
+//     pub mains_electricity: Option<EnergyDiverter>,
+//     pub mains_gas: Option<EnergyDiverter>,
+//     pub bulk_lpg: Option<EnergyDiverter>,
+// }
 
-impl DiverterTypes {
-    pub fn get_for_supply_type(
-        &self,
-        energy_supply_type: EnergySupplyType,
-    ) -> Option<&EnergyDiverter> {
-        match energy_supply_type {
-            EnergySupplyType::Electricity => self.mains_electricity.as_ref(),
-            EnergySupplyType::MainsGas => self.mains_gas.as_ref(),
-            EnergySupplyType::LpgBulk => self.bulk_lpg.as_ref(),
-            _ => None,
-        }
-    }
-}
+// impl From<&EnergySupplyInput> for DiverterTypes {
+//     fn from(input: &EnergySupplyInput) -> Self {
+//         Self {
+//             mains_electricity: diverter_from_energy_supply(
+//                 input.get(&EnergySupplyKey::MainsElectricity),
+//             ),
+//             mains_gas: diverter_from_energy_supply(input.get(&EnergySupplyKey::MainsGas)),
+//             bulk_lpg: diverter_from_energy_supply(input.get(&EnergySupplyKey::BulkLpg)),
+//         }
+//     }
+// }
+//
+// impl DiverterTypes {
+//     pub fn get_for_supply_type(
+//         &self,
+//         energy_supply_type: EnergySupplyType,
+//     ) -> Option<&EnergyDiverter> {
+//         match energy_supply_type {
+//             EnergySupplyType::Electricity => self.mains_electricity.as_ref(),
+//             EnergySupplyType::MainsGas => self.mains_gas.as_ref(),
+//             EnergySupplyType::LpgBulk => self.bulk_lpg.as_ref(),
+//             _ => None,
+//         }
+//     }
+// }
 
-fn diverter_from_energy_supply(supply: Option<&EnergySupplyDetails>) -> Option<EnergyDiverter> {
-    supply.and_then(|supply| supply.diverter.clone())
+fn diverter_from_energy_supply(supply: &EnergySupplyDetails) -> Option<EnergyDiverter> {
+    supply.diverter.as_ref().map(|diverter| diverter.clone())
 }
 
 pub type InternalGainsCollection = IndexMap<String, Gains>;
@@ -2945,7 +2947,7 @@ fn infiltration_ventilation_from_input(
     zones: &ZoneDictionary,
     input: &InfiltrationVentilationInput,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     simulation_time: &SimulationTimeIterator,
     total_volume: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -3114,7 +3116,13 @@ fn infiltration_ventilation_from_input(
             .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
 
         let energy_supply = energy_supplies
-            .ensured_get_for_type(mech_vents_data.energy_supply, simulation_time.total_steps())?;
+            .get(&mech_vents_data.energy_supply)
+            .ok_or_else(|| {
+                anyhow!(
+                    "The energy supply '{}' indicated for mechanical ventilation was not declared.",
+                    mech_vents_data.energy_supply
+                )
+            })?;
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
 
@@ -3504,14 +3512,21 @@ fn set_up_energy_supply_unmet_demand_zones(
 fn apply_appliance_gains_from_input(
     internal_gains_collection: &mut InternalGainsCollection,
     input: &ApplianceGainsInput,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     total_floor_area: f64,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     for (name, gains_details) in input {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies
-                .ensured_get_for_type(gains_details.energy_supply, simulation_time.total_steps())?,
+                .get(&gains_details.energy_supply)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Appliance gains reference an undeclared energy supply '{}'.",
+                        gains_details.energy_supply
+                    )
+                })?
+                .clone(),
             name.as_str(),
         )?;
 
@@ -3681,7 +3696,7 @@ fn heat_source_wet_from_input(
     number_of_zones: usize,
     temp_internal_air_accessor: TempInternalAirAccessor,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<WetHeatSource> {
     match &input {
@@ -3716,23 +3731,31 @@ fn heat_source_wet_from_input(
             };
 
             let energy_supply_hn = if matches!(source_type, HeatPumpSourceType::HeatNetwork) {
-                debug_assert_eq!(
-                    energy_supply_heat_network,
-                    &Some("heat network".to_string()),
-                    "value for EnergySupply_heat_network is always expected to be 'heat network'"
-                );
-                energy_supplies.heat_network.clone()
+                let energy_supply_heat_network = energy_supply_heat_network.as_ref().ok_or_else(|| anyhow!("A heat pump with a heat network source is expected to reference an energy supply for the heat network."))?;
+                Some(energy_supplies.get(energy_supply_heat_network).ok_or_else(|| anyhow!("A heat network with a heat network source references an undeclared energy supply '{energy_supply_heat_network}'."))?.clone())
             } else {
                 None
             };
 
             let (boiler, cost_schedule_hybrid_hp) = if let Some(boiler) = boiler {
                 let energy_supply_boiler = energy_supplies
-                    .ensured_get_for_type(boiler.energy_supply, simulation_time.total_steps())?;
-                let energy_supply_aux_boiler = energy_supplies.ensured_get_for_type(
-                    boiler.energy_supply_auxiliary,
-                    simulation_time.total_steps(),
-                )?;
+                    .get(&boiler.energy_supply)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "A boiler references an undeclared energy supply '{}'.",
+                            boiler.energy_supply
+                        )
+                    })?
+                    .clone();
+                let energy_supply_aux_boiler = energy_supplies
+                    .get(&boiler.energy_supply_auxiliary)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "A boiler references an undeclared energy supply '{}'.",
+                            boiler.energy_supply_auxiliary
+                        )
+                    })?
+                    .clone();
                 let energy_supply_conn_aux_boiler = EnergySupply::connection(
                     energy_supply_aux_boiler,
                     format!("Boiler_auxiliary: {energy_supply_name}").as_str(),
@@ -3754,7 +3777,11 @@ fn heat_source_wet_from_input(
             };
 
             let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!("Heat pump references an undeclared energy supply '{energy_supply}'.")
+                })?
+                .clone();
             let energy_supply_conn_name_auxiliary =
                 format!("HeatPump_auxiliary: {energy_supply_name}");
 
@@ -3781,9 +3808,12 @@ fn heat_source_wet_from_input(
             ..
         } => {
             let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
-            let energy_supply_aux = energy_supplies
-                .ensured_get_for_type(*energy_supply_auxiliary, simulation_time.total_steps())?;
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!("Boiler references undeclared energy supply '{energy_supply}'.")
+                })?
+                .clone();
+            let energy_supply_aux = energy_supplies.get(energy_supply_auxiliary).ok_or_else(|| anyhow!("Boiler references undeclared auxiliary energy supply '{energy_supply_auxiliary}'."))?.clone();
             let aux_supply_name = format!("Boiler_auxiliary: {energy_supply_name}");
             let energy_supply_conn_aux =
                 EnergySupply::connection(energy_supply_aux.clone(), aux_supply_name.as_str())?;
@@ -3807,7 +3837,11 @@ fn heat_source_wet_from_input(
             ..
         } => {
             let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!("HIU references an undeclared energy supply '{energy_supply}'.")
+                })?
+                .clone();
             let energy_supply_conn_name_auxiliary =
                 format!("HeatNetwork_auxiliary: {energy_supply_name}");
             let energy_supply_conn_name_building_level_distribution_losses =
@@ -3829,7 +3863,13 @@ fn heat_source_wet_from_input(
             ..
         } => {
             let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+                .get(energy_supply)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Heat battery references an undeclared energy supply '{energy_supply}'."
+                    )
+                })?
+                .clone();
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_name).unwrap();
 
@@ -3863,7 +3903,7 @@ fn heat_source_from_input(
     wet_heat_sources: &IndexMap<String, WetHeatSource>,
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
@@ -3874,8 +3914,7 @@ fn heat_source_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             Ok((
@@ -3907,8 +3946,7 @@ fn heat_source_from_input(
             energy_supply,
             ..
         } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Solar thermal system references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
 
             Ok((
@@ -4011,8 +4049,7 @@ fn heat_source_from_input(
             in_use_factor_mismatch,
             ..
         } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Heat pump (hot water only) references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
@@ -4098,7 +4135,7 @@ fn hot_water_source_from_input(
     wet_heat_sources: &mut IndexMap<String, WetHeatSource>,
     wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     diverter_types: &DiverterTypes,
     diverters: &mut Vec<Arc<RwLock<PVDiverter>>>,
     temp_internal_air_accessor: TempInternalAirAccessor,
@@ -4195,7 +4232,7 @@ fn hot_water_source_from_input(
                 Some(24),
                 primary_pipework_lst,
                 Some(EnergySupply::connection(
-                    energy_supplies.unmet_demand.clone(),
+                    energy_supplies.get(UNMET_DEMAND_SUPPLY_NAME).expect("Energy supply representing unmet demand was expected to have been declared.").clone(),
                     &source_name,
                 )?),
                 ctrl_hold_at_setpoint,
@@ -4357,7 +4394,7 @@ fn cold_water_source_for_type(
 fn space_heat_systems_from_input(
     input: &SpaceHeatSystemInput,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     simulation_time: &SimulationTimeIterator,
     heat_sources_wet: &IndexMap<String, WetHeatSource>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
@@ -4496,7 +4533,7 @@ fn space_cool_systems_from_input(
     input: &SpaceCoolSystemInput,
     cool_system_names_for_zone: Vec<&str>,
     controls: &Controls,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<IndexMap<String, AirConditioning>> {
     input
@@ -4545,7 +4582,7 @@ fn space_cool_systems_from_input(
 
 fn on_site_generation_from_input(
     input: &OnSiteGeneration,
-    energy_supplies: &mut EnergySupplies,
+    energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     external_conditions: Arc<ExternalConditions>,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<IndexMap<String, PhotovoltaicSystem>> {

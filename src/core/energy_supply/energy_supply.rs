@@ -2,11 +2,7 @@ use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
 use crate::errors::NotImplementedError;
-use crate::external_conditions::ExternalConditions;
-use crate::input::{
-    EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey, EnergySupplyType, FuelType,
-    SecondarySupplyType,
-};
+use crate::input::{EnergySupplyType, FuelType, SecondarySupplyType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use atomic_float::AtomicF64;
@@ -14,6 +10,8 @@ use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+
+pub(crate) const UNMET_DEMAND_SUPPLY_NAME: &str = "_unmet_demand";
 
 #[derive(Debug)]
 pub struct EnergySupplies {
@@ -610,78 +608,6 @@ fn init_demand_list(timestep_count: usize) -> Vec<AtomicF64> {
     (0..timestep_count)
         .map(|_| Default::default())
         .collect::<Vec<_>>()
-}
-
-pub fn from_input(
-    input: EnergySupplyInput,
-    simulation_timesteps: usize,
-    simulation_timestep: f64,
-    external_conditions: Arc<ExternalConditions>,
-) -> EnergySupplies {
-    EnergySupplies {
-        mains_electricity: input.get(&EnergySupplyKey::MainsElectricity).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        mains_gas: input.get(&EnergySupplyKey::MainsGas).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        bulk_lpg: input.get(&EnergySupplyKey::BulkLpg).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        heat_network: input.get(&EnergySupplyKey::HeatNetwork).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions,
-            )
-        }),
-        unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::UnmetDemand,
-            simulation_timesteps,
-            Default::default(),
-            Default::default(),
-            Default::default(),
-        ))),
-        custom: None,
-        condition_11f_lpg: None,
-        bottled_lpg: None,
-    }
-}
-
-fn supply_from_details(
-    energy_supply_details: &EnergySupplyDetails,
-    simulation_timesteps: usize,
-    simulation_timestep: f64,
-    external_conditions: Arc<ExternalConditions>,
-) -> Arc<RwLock<EnergySupply>> {
-    let fuel_type: FuelType = energy_supply_details.into();
-    let electric_battery = energy_supply_details
-        .electric_battery
-        .as_ref()
-        .map(|input| ElectricBattery::from_input(input, simulation_timestep, external_conditions));
-    Arc::new(RwLock::new(EnergySupply::new(
-        fuel_type,
-        simulation_timesteps,
-        electric_battery,
-        energy_supply_details.priority.as_ref().cloned(),
-        energy_supply_details.is_export_capable,
-    )))
 }
 
 #[cfg(test)]

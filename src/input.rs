@@ -32,7 +32,7 @@ pub struct Input {
     pub(crate) internal_gains: InternalGains,
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
-    pub energy_supply: EnergySupplyInput,
+    pub(crate) energy_supply: EnergySupplyInput,
     pub control: Control,
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
@@ -180,7 +180,7 @@ pub struct ApplianceGainsDetails {
     pub time_series_step: f64,
     pub gains_fraction: f64,
     #[serde(rename = "EnergySupply")]
-    pub energy_supply: EnergySupplyType,
+    pub energy_supply: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) schedule: Option<NumericSchedule>,
     // In the Python code these fields are
@@ -206,7 +206,7 @@ pub struct ApplianceGainsDetailsEvent {
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum EnergySupplyKey {
+pub(crate) enum EnergySupplyKey {
     #[serde(rename = "mains elec")]
     MainsElectricity,
     #[serde(rename = "mains gas")]
@@ -305,7 +305,7 @@ mod energy_supply_key_tests {
     }
 }
 
-pub type EnergySupplyInput = IndexMap<EnergySupplyKey, EnergySupplyDetails>;
+pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -388,7 +388,7 @@ impl TryFrom<EnergySupplyType> for FuelType {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum EnergySupplyType {
+pub(crate) enum EnergySupplyType {
     #[serde(rename = "mains elec")]
     Electricity,
     #[serde(rename = "mains gas", alias = "mains_gas")]
@@ -931,7 +931,7 @@ pub enum HeatSource {
     ImmersionHeater {
         power: f64,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
@@ -950,7 +950,7 @@ pub enum HeatSource {
         power_pump: f64,
         power_pump_control: f64,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         tilt: f64,
         #[serde(
             rename = "orientation360",
@@ -990,7 +990,7 @@ pub enum HeatSource {
         in_use_factor_mismatch: f64,
         test_data: HeatPumpHotWaterTestData,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "Control")]
         control: HeatSourceControlType,
         heater_position: f64,
@@ -1225,7 +1225,7 @@ pub enum Shower {
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
     },
 }
 
@@ -2245,7 +2245,7 @@ pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 pub enum HeatSourceWetDetails {
     HeatPump {
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         source_type: HeatPumpSourceType,
         #[serde(
             rename = "EnergySupply_heat_network",
@@ -2296,9 +2296,9 @@ pub enum HeatSourceWetDetails {
     },
     Boiler {
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "EnergySupply_aux")]
-        energy_supply_auxiliary: EnergySupplyType,
+        energy_supply_auxiliary: String,
         rated_power: f64,
         efficiency_full_load: f64,
         efficiency_part_load: f64,
@@ -2312,7 +2312,7 @@ pub enum HeatSourceWetDetails {
     },
     HeatBattery {
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         heat_battery_location: HeatSourceLocation,
         electricity_circ_pump: f64,
         electricity_standby: f64,
@@ -2332,7 +2332,7 @@ pub enum HeatSourceWetDetails {
     #[serde(rename = "HIU")]
     Hiu {
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         power_max: f64,
         #[serde(rename = "HIU_daily_loss")]
         hiu_daily_loss: f64,
@@ -2430,9 +2430,9 @@ pub struct HeatPumpTestDatum {
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: EnergySupplyType,
+    pub(crate) energy_supply: String,
     #[serde(rename = "EnergySupply_aux")]
-    pub(crate) energy_supply_auxiliary: EnergySupplyType,
+    pub(crate) energy_supply_auxiliary: String,
     rated_power: f64,
     efficiency_full_load: f64,
     efficiency_part_load: f64,
@@ -2691,7 +2691,7 @@ pub struct MechanicalVentilation {
     )]
     pub(crate) measured_air_flow_rate: Option<f64>,
     #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: EnergySupplyType,
+    pub(crate) energy_supply: String,
     pub(crate) design_outdoor_air_flow_rate: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
