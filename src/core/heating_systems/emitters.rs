@@ -100,10 +100,7 @@ impl EmittersAndPowerInput<'_> {
         temp_diff_max: Option<f64>,
         temp_diff_start: f64,
     ) -> EmittersAndPowerInput {
-        let previous_difference_from_temp_diff_max = match temp_diff_max {
-            Some(max) => Some(temp_diff_start - max),
-            None => None,
-        };
+        let previous_difference_from_temp_diff_max = temp_diff_max.map(|max| temp_diff_start - max);
 
         EmittersAndPowerInput {
             emitters,
@@ -481,8 +478,8 @@ impl Emitters {
                 
                 let current_temp_diff = current_y - temp_diff_max;
                 let previous_temp_diff = previous_y - temp_diff_max;
-                let temp_diff_max_was_reached = previous_temp_diff == 0. || current_temp_diff == 0. || signs_are_different(previous_temp_diff, current_temp_diff);
-                temp_diff_max_was_reached
+                
+                previous_temp_diff == 0. || current_temp_diff == 0. || signs_are_different(previous_temp_diff, current_temp_diff)
             }
             None => false
         };
