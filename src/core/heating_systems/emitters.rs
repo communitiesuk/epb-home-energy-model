@@ -87,16 +87,27 @@ impl Debug for Emitters {
 
 #[derive(Copy, Clone)]
 struct EmittersAndPowerInput<'a> {
-    pub emitters: &'a Emitters,
-    pub power_input: f64,
-    pub temp_diff_max: Option<f64>,
-
-    // TODO can we calculate what this should be
-    // based on initial value and timestep
+    emitters: &'a Emitters,
+    power_input: f64,
+    temp_diff_max: Option<f64>,
     previous_difference_from_temp_diff_max: Option<f64>,
 }
 
 impl EmittersAndPowerInput<'_> {
+    pub fn new(emitters: &Emitters, power_input: f64, temp_diff_max: Option<f64>, temp_diff_start: f64) -> EmittersAndPowerInput {
+        let previous_difference_from_temp_diff_max = match temp_diff_max {
+            Some(max) => Some(temp_diff_start - max),
+            None => None
+        };
+
+        EmittersAndPowerInput {
+            emitters,
+            power_input,
+            temp_diff_max,
+            previous_difference_from_temp_diff_max
+        }
+    }
+
     fn difference_from_temp_diff_max(&self, y: f64) -> f64 {
         y - self.temp_diff_max.unwrap()
     }
@@ -397,20 +408,17 @@ impl Emitters {
         temp_emitter_start: f64,
         temp_rm: f64,
         power_input: f64,
-        temp_emitter_max: Option<f64>,
+        temp_emitter_max: Option<f64>
     ) -> (f64, Option<f64>) {
         // Calculate emitter temp at start of timestep
         let temp_diff_start = temp_emitter_start - temp_rm;
         let temp_diff_max = temp_emitter_max.map(|emitter_max| emitter_max - temp_rm);
 
-        let emitter_with_power_input = EmittersAndPowerInput {
-            emitters: self,
+        let emitter_with_power_input = EmittersAndPowerInput::new(
+            self,
             power_input,
             temp_diff_max,
-
-            // TODO set these up in the struct with a new function
-            previous_difference_from_temp_diff_max: None,
-        };
+            temp_diff_start);
 
         let f = emitter_with_power_input; // f - Structure implementing the System trait
         let x: Time = time_start; // x - Initial value of the independent variable (usually time)
@@ -502,6 +510,7 @@ impl Emitters {
             let temp_diff_emitter_rm_final = last_y;
             temp_emitter = temp_rm + temp_diff_emitter_rm_final;
         }
+
         (temp_emitter, time_temp_diff_max_reached)
     }
 
@@ -602,7 +611,7 @@ impl Emitters {
             self.temp_emitter_prev,
             temp_rm_prev,
             power_output_max_min,
-            Some(temp_emitter_max),
+            Some(temp_emitter_max)
         );
 
         let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
@@ -660,6 +669,7 @@ impl Emitters {
         let mut temp_emitter_max_is_final_temp = false;
         let mut emitters_data_for_buffer_tank_with_result = None;
 
+        let temp_rm_prev = temp_rm_prev();
         if energy_demand > 0. {
             // Emitters warming up or cooling down to a target temperature
             (
@@ -669,7 +679,7 @@ impl Emitters {
             ) = self.energy_required_from_heat_source(
                 energy_demand,
                 timestep,
-                temp_rm_prev(),
+                temp_rm_prev,
                 temp_emitter_max,
                 temp_return_target,
                 simulation_time,
@@ -716,13 +726,13 @@ impl Emitters {
                 0.0,
                 timestep,
                 self.temp_emitter_prev,
-                temp_rm_prev(),
+                temp_rm_prev,
                 power_provided_by_heat_source,
-                None,
+                None
             )
             .0
         };
-        temp_emitter = max_of_2(temp_emitter, temp_rm_prev());
+        temp_emitter = max_of_2(temp_emitter, temp_rm_prev);
 
         // Calculate emitter output achieved at end of timestep.
         let energy_released_from_emitters = energy_provided_by_heat_source
@@ -1249,6 +1259,7 @@ mod tests {
     #[case(0., 2., 70., 10., 0.2, 25., 25., 1.29981138)]
     #[case(0., 5., 25., 3., 0.8, 19., 19., 0.44239778)]
     #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
+    #[case(0., 1., 45.8, 13., 0., 45.2, 45.2, 0.016104431558688848)]
     fn test_temp_emitter_with_max(emitters: Emitters, #[case] time_start: f64, #[case] time_end: f64, #[case] temp_emitter_start: f64, #[case] temp_rm: f64, #[case] power_input: f64, #[case] temp_emitter_max: f64, #[case] expected_temp: f64, #[case] expected_time: f64) {
         // Check not None conditions are invoked
         // Test when max temp is reached (early exit)
