@@ -1,4 +1,5 @@
 {
+    "temp_internal_air_static_calcs": 20.0,
 	"SimulationTime": {
 		"start": 0,
 		"end": 8760,
@@ -8822,12 +8823,20 @@
 		}
 	},
 	"Control": {
-		"hw timer": {
-			"type": "OnOffTimeControl",
+		"min_temp":{
+			"type": "SetpointTimeControl",
 			"start_day": 0,
 			"time_series_step": 1,
-			"schedule": {
-				"main": [{"value": false, "repeat": 8760}]
+			"schedule":{
+				"main": [{"value": null, "repeat": 8760}]
+			}
+		},
+		"setpoint_temp_max":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 55.0, "repeat": 8760}]
 			}
 		},
 		"heating timer": {
@@ -8850,6 +8859,22 @@
 					null
 				]
 			}
+		},
+		"vent opening min":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 1.2, "repeat": 4380}, {"value": null, "repeat": 4380}]
+			}
+		},
+		"vent opening max":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 1.4, "repeat": 4380}, {"value": null, "repeat": 4380}]
+			}
 		}
 	},
 	"HotWaterSource": {
@@ -8857,15 +8882,15 @@
 			"type": "StorageTank",
 			"volume": 300.0,
 			"daily_losses": 1.68,
-			"min_temp": 52.0,
-			"setpoint_temp": 55.0,
+			"init_temp": 55.0,
 			"ColdWaterSource": "mains water",
 			"HeatSource": {
 				"immersion": {
 					"type": "ImmersionHeater",
 					"power": 3.0,
 					"EnergySupply": "mains elec",
-					"Control": "hw timer",
+					"Controlmin": "min_temp",
+					"Controlmax": "setpoint_temp_max",
 					"heater_position": 0.1,
 					"thermostat_position": 0.33
 				}
@@ -8967,8 +8992,14 @@
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
-		"terrain_class": "Country",
+		"terrain_class": "OpenField",
+        "ventilation_zone_base_height": 2.5,
 		"altitude": 30,
+		"ach_min_static_calcs": 1.2,
+		"ach_max_static_calcs": 1.4,
+		"Control_VentAdjustMin": "vent opening min",
+		"Control_VentAdjustMax": "vent opening max",
+		"vent_opening_ratio_init": 0.5,
 		"Vents": {
 			"vent1": {
 				"mid_height_air_flow_path": 1.5,

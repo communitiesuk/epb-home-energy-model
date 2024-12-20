@@ -1523,6 +1523,10 @@ impl HeatPumpServiceSpace {
         let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+
+            HeatPumpSinkType::Glycol25 => {
+                unimplemented!("to be implemented as part of 0.32 migration")
+            }
         };
         let source_type = heat_pump.source_type;
         heat_pump.demand_energy(
@@ -1562,6 +1566,9 @@ impl HeatPumpServiceSpace {
         let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+            HeatPumpSinkType::Glycol25 => {
+                unimplemented!("to be implemented as part of 0.32 migration")
+            }
         };
         let source_type = heat_pump.source_type;
 
@@ -1689,6 +1696,9 @@ impl HeatPumpServiceSpaceWarmAir {
         let time_constant_for_service = match pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+            HeatPumpSinkType::Glycol25 => {
+                unimplemented!("to be implemented as part of 0.32 migration")
+            }
         };
 
         let source_type = pump.source_type;
@@ -1735,6 +1745,9 @@ impl HeatPumpServiceSpaceWarmAir {
         let time_constant_for_service = match self.heat_pump.lock().sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
+            HeatPumpSinkType::Glycol25 => {
+                unimplemented!("to be implemented as part of 0.32 migration")
+            }
         };
         let mut pump = self.heat_pump.lock();
         let source_type = pump.source_type;
@@ -2101,6 +2114,9 @@ impl HeatPump {
                             .ok_or(anyhow!("expected a min_modulation_rate_35 provided"))?,
                     ),
                 ),
+                HeatPumpSinkType::Glycol25 => {
+                    unimplemented!("to be implemented as part of 0.32 migration")
+                }
             };
             let (temp_min_modulation_rate_high, min_modulation_rate_55) =
                 if test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
@@ -2768,6 +2784,9 @@ impl HeatPump {
                         .expect("a temp return feed max was expected to have been set")
             }
             HeatPumpSinkType::Air => false,
+            HeatPumpSinkType::Glycol25 => {
+                unimplemented!("to be implemented as part of 0.32 migration")
+            }
         };
 
         below_min_ext_temp || above_temp_return_feed_max

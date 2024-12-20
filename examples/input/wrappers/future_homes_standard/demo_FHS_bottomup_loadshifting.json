@@ -14,18 +14,25 @@
 		"Dishwasher":{
 			"kWh_per_100cycle" : 92.0,
 			"loadshifting": {
+				"priority": 1,
 				"max_shift_hrs": 12,
-				"demand_limit_weighted": 2000,
+				"demand_limit_weighted": 14,
 				"weight": "Tariff"
 			}
 		},
 		"Clothes_washing":{
 			"kWh_per_100cycle" : 79.0,
-            "kg_load" : 7.0
+			"kg_load" : 7.0,
+			"loadshifting": {
+				"priority": 2,
+				"max_shift_hrs": 12,
+				"demand_limit_weighted": 14,
+				"weight": "Tariff"
+			}
 		},
 		"Clothes_drying":{
 			"kWh_per_100cycle" : 213.0,
-            "kg_load" : 7.0
+			"kg_load" : 7.0
 		},
 		"Fridge":{
 			"kWh_per_annum" : 223.0
@@ -139,7 +146,8 @@
 				"minimum_charge_rate_one_way_trip": 0.001,
 				"maximum_charge_rate_one_way_trip": 1.5,
 				"maximum_discharge_rate_one_way_trip": 1.25,
-				"battery_location": "inside"
+				"battery_location": "inside",
+				"grid_charging_possible": false
 			},
 			"is_export_capable": true
 		},
@@ -160,8 +168,10 @@
 			"width":1,
 			"EnergySupply": "mains elec",
 			"shading": [],
-			"inverter_peak_power":3.5,
-			"inverter_is_inside": false
+			"inverter_peak_power_dc": 3.5,
+			"inverter_peak_power_ac": 2.4,
+			"inverter_is_inside": false,
+			"inverter_type": "optimised_inverter"
 		}
 	},
 	"Control": {
@@ -205,7 +215,7 @@
 		},
 		"Bath": {
 			"medium": {
-				"size": 100,
+				"size": 180,
 				"ColdWaterSource": "header tank",
 				"flowrate": 8.0
 			}
@@ -310,9 +320,10 @@
 	
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
-        "noise_nuisance" : true,
+		"noise_nuisance" : true,
 		"shield_class": "Normal",
-		"terrain_class": "Country",
+		"terrain_class": "OpenField",
+		"ventilation_zone_base_height": 2.5,
 		"altitude": 30,
 		"Control_WindowAdjust": "window_opening_adjust",
 		"Vents": {
@@ -364,7 +375,19 @@
 			"area": 8.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"roof 0": {
@@ -460,13 +483,16 @@
 						{"type": "overhang", "depth": 0.5, "distance": 0.5},
 						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
 						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					],
+					"treatment": [
+						{"type":"blinds", "controls": "manual", "delta_r":0.05, "trans_red":0.5}
 					]
 				},
 				"window 1":{
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation360": -90,
+					"orientation360": 270,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,
@@ -485,6 +511,10 @@
 						{"type": "overhang", "depth": 0.5, "distance": 0.5},
 						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
 						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					],
+					"treatment": [
+						{"type":"blinds", "controls": "manual", "delta_r":0.05, "trans_red":0.5},
+						{"type":"curtains", "controls": "auto_motorised", "delta_r":0.05, "trans_red":0.8}
 					]
 				},
 				"ground":{
@@ -536,7 +566,19 @@
 			"area": 400.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"wall 0": {
@@ -576,13 +618,21 @@
 						{"type": "overhang", "depth": 0.5, "distance": 0.5},
 						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
 						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					],
+					"treatment": [
+						{
+							"type": "blinds",
+							"controls": "auto_motorised",
+							"delta_r":0.05,
+							"trans_red":0.5
+						}
 					]
 				},
 				"window 1":{
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation360": -90,
+					"orientation360": 270,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,
@@ -601,6 +651,14 @@
 						{"type": "overhang", "depth": 0.5, "distance": 0.5},
 						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
 						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					],
+					"treatment": [
+						{
+							"type": "curtains",
+							"controls": "manual",
+							"delta_r":0.05,
+							"trans_red":0.8
+						}
 					]
 				}
 			},

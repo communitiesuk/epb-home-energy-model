@@ -1,4 +1,5 @@
 {
+    "temp_internal_air_static_calcs": 20.0,
 	"SimulationTime": {
 		"start": 0,
 		"end": 8,
@@ -76,6 +77,22 @@
 			"schedule": {
 				"main": [21.0, null, null, {"value": 21.0, "repeat": 5}]
 			}
+		},
+		"min_temp":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 52.0, "repeat": 8}]
+			}
+		},
+		"setpoint_temp_max":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 55.0, "repeat": 8}]
+			}
 		}
 	},
 	"HotWaterSource": {
@@ -83,8 +100,7 @@
 			"type": "StorageTank",
 			"volume": 80.0,
 			"daily_losses": 1.68,
-			"min_temp": 52.0,
-			"setpoint_temp": 55.0,
+			"init_temp": 55.0,
 			"ColdWaterSource": "mains water",
 			"HeatSource": {
 				"hp": {
@@ -92,7 +108,8 @@
 					"name": "hp",
 					"temp_flow_limit_upper": 65,
 					"EnergySupply": "mains elec",
-					"Control": "hw timer",
+					"Controlmin": "min_temp",
+					"Controlmax": "setpoint_temp_max",
 					"heater_position": 0.1,
 					"thermostat_position": 0.33
 				}
@@ -301,10 +318,24 @@
 		"zone 1 radiators": {
 			"type": "WetDistribution",
 			"thermal_mass": 0.14,
-			"c": 0.08,
-			"n": 1.2,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.08,
+					"n": 1.2,
+					"frac_convective": 0.4
+				},
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.1,
+					"n": 1.3,
+					"frac_convective": 0.4
+				}
+			],
 			"temp_diff_emit_dsgn": 10.0,
-			"frac_convective": 0.4,
+			"variable_flow": true,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
 			"HeatSource": {
 				"name": "hp",
 				"temp_flow_limit_upper": 65.0
@@ -321,10 +352,26 @@
 		"zone 2 radiators": {
 			"type": "WetDistribution",
 			"thermal_mass": 0.14,
-			"c": 0.08,
-			"n": 1.2,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.08,
+					"n": 1.2,
+					"frac_convective": 0.4
+				},
+				{
+					"wet_emitter_type": "ufh",
+					"equivalent_specific_thermal_mass": 80,
+					"system_performance_factor": 5,
+					"emitter_floor_area": 40,
+					"frac_convective": 0.43
+				}
+			],
 			"temp_diff_emit_dsgn": 10.0,
-			"frac_convective": 0.4,
+			"variable_flow": true,
+			"design_flow_rate": 12,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
 			"HeatSource": {
 				"name": "hp",
 				"temp_flow_limit_upper": 65.0
@@ -348,7 +395,8 @@
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
-		"terrain_class": "Country",
+		"terrain_class": "OpenField",
+        "ventilation_zone_base_height": 2.5,
 		"altitude": 30,
 		"Vents": {
 			"vent1": {

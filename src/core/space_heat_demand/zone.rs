@@ -2202,7 +2202,7 @@ mod tests {
             external_conditions,
             true,
             VentilationShieldClass::Normal,
-            TerrainClass::Country,
+            TerrainClass::OpenField,
             20.0,
             windows.into_values().collect(),
             vents.into_values().collect(),

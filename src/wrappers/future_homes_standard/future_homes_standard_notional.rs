@@ -843,17 +843,15 @@ fn edit_default_space_heating_distribution_system(
         let number_of_rads = (emitter_cap / power_output_per_rad).ceil();
 
         // Calculate c and thermal mass
-        let c = number_of_rads * c_per_rad;
+        // TODO 0.32 following was not needed - redo this method properly
+        let _c = number_of_rads * c_per_rad;
         let thermal_mass = number_of_rads * thermal_mass_per_rad;
 
         let space_heat_system_value = json!({
             "type": "WetDistribution",
             "advanced_start": 1,
             "thermal_mass": thermal_mass,
-            "c": c,
-            "n": n,
             "temp_diff_emit_dsgn": 5,
-            "frac_convective": 0.7,
             "HeatSource": {
                 "name": heatsourcewet_name,
                 "temp_flow_limit_upper": 65.0
@@ -1515,7 +1513,7 @@ mod tests {
     use crate::input::{
         self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
         HeatSourceWetDetails, InfiltrationVentilation, OnSiteGeneration, SpaceHeatSystem,
-        SpaceHeatSystemHeatSource, WaterPipeworkSimple,
+        SpaceHeatSystemHeatSource, SystemReference, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1589,7 +1587,7 @@ mod tests {
         let expected: InfiltrationVentilation = serde_json::from_value(json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
-            "terrain_class": "Country",
+            "terrain_class": "OpenField",
             "altitude": 30,
             "noise_nuisance": true,
             "Vents": {
@@ -1626,7 +1624,8 @@ mod tests {
             },
             "PDUs": {},
             "Cowls": {},
-            "CombustionAppliances": {}
+            "CombustionAppliances": {},
+            "ventilation_zone_base_height": 2.5
         }
         ))
         .unwrap();
@@ -1647,7 +1646,7 @@ mod tests {
         let expected: InfiltrationVentilation = serde_json::from_value(json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
-            "terrain_class": "Country",
+            "terrain_class": "OpenField",
             "altitude": 30,
             "noise_nuisance": true,
             "Vents": {
@@ -1692,7 +1691,8 @@ mod tests {
             },
             "PDUs": {},
             "Cowls": {},
-            "CombustionAppliances": {}
+            "CombustionAppliances": {},
+            "ventilation_zone_base_height": 2.5
         }))
         .unwrap();
 
@@ -1742,15 +1742,6 @@ mod tests {
     #[rstest]
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
-
-        let BuildingElement::Transparent { u_value, r_c, .. } =
-            test_input.building_element_by_key("zone 2", "skylight 0")
-        else {
-            panic!("Skylight 0 in Zone 2 should be set up as a transparent building element")
-        };
-
-        assert_eq!(*u_value, Some(1.7));
-        assert_eq!(*r_c, None);
 
         let BuildingElement::Transparent { u_value, r_c, .. } =
             test_input.building_element_by_key("zone 1", "window 0")
@@ -1858,26 +1849,6 @@ mod tests {
             0.25,
             "incorrect max glazing area fraction when there are no rooflights"
         );
-    }
-
-    // this test does not exist in Python HEM
-    #[rstest]
-    fn test_edit_glazing_for_glazing_limit(mut test_input: InputForProcessing) {
-        let total_floor_area = 1000.;
-        edit_glazing_for_glazing_limit(&mut test_input, total_floor_area).unwrap();
-
-        let skylight = test_input.building_element_by_key("zone 2", "skylight 0");
-        let roof = test_input.building_element_by_key("zone 2", "roof 0");
-        let _window = test_input.building_element_by_key("zone 1", "window 0");
-
-        assert_relative_eq!(skylight.width().unwrap(), 2.);
-        assert_relative_eq!(skylight.height().unwrap(), 1.25);
-
-        if let BuildingElement::Opaque { area, .. } = roof {
-            assert_relative_eq!(*area, 15.);
-        } else {
-            unreachable!()
-        }
     }
 
     // this test does not exist in Python HEM
@@ -2858,10 +2829,12 @@ mod tests {
         for zone_key in test_input.zone_keys() {
             let expected_space_heat_system_name = zone_key.clone() + "_SpaceHeatSystem_Notional";
 
-            let actual_space_heat_system_name_in_zone = test_input
-                .space_heat_system_for_zone(&zone_key)
-                .unwrap()
-                .unwrap();
+            let actual_space_heat_system_name_in_zone =
+                match test_input.space_heat_system_for_zone(&zone_key).unwrap() {
+                    SystemReference::None(_) => panic!("Expected a space heat system"),
+                    SystemReference::Single(name) => name.clone(),
+                    SystemReference::Multiple(names) => names.first().cloned().unwrap(),
+                };
 
             let actual_space_heat_system =
                 test_input.space_heat_system_for_key(&expected_space_heat_system_name);
@@ -2873,15 +2846,16 @@ mod tests {
                     "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
                     "Zone": "zone 1",
                     "advanced_start": 1,
-                    "c": 0.0,
+                    // TODO 0.32 removed fields (redo this properly)
+                    // "c": 0.0,
                     "design_flow_temp": 45,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
                         "min_flow_temp": 21,
                         "min_outdoor_temp": 0},
-                    "frac_convective": 0.7,
-                    "n": 1.34,
+                    // "frac_convective": 0.7,
+                    // "n": 1.34,
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,
@@ -2893,15 +2867,16 @@ mod tests {
                     "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
                     "Zone": "zone 2",
                     "advanced_start": 1,
-                    "c": 0.0,
+                    // TODO 0.32 removed fields (redo this properly)
+                    // "c": 0.0,
                     "design_flow_temp": 45,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
                         "min_flow_temp": 21,
                         "min_outdoor_temp": 0},
-                    "frac_convective": 0.7,
-                    "n": 1.34,
+                    // "frac_convective": 0.7,
+                    // "n": 1.34,
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,

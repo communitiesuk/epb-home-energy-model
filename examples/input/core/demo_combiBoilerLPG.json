@@ -1,4 +1,5 @@
 {
+  "temp_internal_air_static_calcs": 20.0,
   "SimulationTime": {
     "start": 0,
     "end": 8,
@@ -251,11 +252,20 @@
   "SpaceHeatSystem": {
     "main": {
       "type": "WetDistribution",
+      "wet_emitter_type": "radiators",
       "thermal_mass": 0.14,
-      "c": 0.08,
-      "n": 1.2,
+      "emitters": [
+        {
+          "wet_emitter_type": "radiator",
+          "c": 0.08,
+          "n": 1.2,
+          "frac_convective": 0.4
+        }
+      ],
       "temp_diff_emit_dsgn": 10.0,
-      "frac_convective": 0.4,
+      "variable_flow": true,
+      "min_flow_rate": 3,
+      "max_flow_rate": 18,
       "HeatSource": {
         "name": "boiler"
       },
@@ -277,7 +287,8 @@
   "InfiltrationVentilation": {
     "cross_vent_factor": true,
     "shield_class": "Normal",
-    "terrain_class": "Country",
+    "terrain_class": "OpenField",
+    "ventilation_zone_base_height": 2.5,
     "altitude": 30,
     "Vents": {
       "vent1": {
@@ -330,6 +341,7 @@
       "BuildingElement": {
         "wall 0": {
           "type": "BuildingElementOpaque",
+          "area": 25.0,
           "h_ci": 0.3,
           "h_ri": 0.4,
           "h_ce": 0.3,
@@ -342,8 +354,7 @@
           "orientation360": 90,
           "base_height": 0,
           "height": 2.5,
-          "width": 10,
-          "area": 20.0
+          "width": 10
         },
         "wall 1": {
           "type": "BuildingElementOpaque",

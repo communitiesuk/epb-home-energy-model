@@ -435,10 +435,7 @@
       "type": "WetDistribution",
       "advanced_start": 1,
       "thermal_mass": 0.14,
-      "c": 0.08,
-      "n": 1.2,
       "temp_diff_emit_dsgn": 10.0,
-      "frac_convective": 0.4,
       "HeatSource": {
         "name": "hp",
         "temp_flow_limit_upper": 65.0
@@ -457,10 +454,7 @@
       "type": "WetDistribution",
       "advanced_start": 1,
       "thermal_mass": 0.14,
-      "c": 0.08,
-      "n": 1.2,
       "temp_diff_emit_dsgn": 10.0,
-      "frac_convective": 0.4,
       "HeatSource": {
         "name": "hp",
         "temp_flow_limit_upper": 65.0
@@ -492,63 +486,15 @@
       "EnergySupply": "mains elec"
     }
   },
+  "Ventilation": {
+    "type": "WHEV",
+    "req_ach": 0.5,
+    "SFP": 1.5,
+    "EnergySupply": "mains elec"
+  },
   "General": {
     "storeys_in_building": 1,
     "build_type": "house"
-  },
-  "InfiltrationVentilation": {
-    "cross_vent_factor": true,
-    "shield_class": "Normal",
-    "terrain_class": "Country",
-    "altitude": 30,
-    "noise_nuisance": true,
-    "Vents": {
-      "vent1": {
-        "mid_height_air_flow_path": 1.5,
-        "area_cm2": 100,
-        "pressure_difference_ref": 20,
-        "orientation360": 180,
-        "pitch": 60
-      },
-      "vent2": {
-        "mid_height_air_flow_path": 1.5,
-        "area_cm2": 100,
-        "pressure_difference_ref": 20,
-        "orientation360": 0,
-        "pitch": 60
-      }
-    },
-    "Leaks": {
-      "ventilation_zone_height": 6,
-      "test_pressure": 50,
-      "test_result": 1.2,
-      "env_area": 220
-    },
-    "MechanicalVentilation": {
-      "mechvent1": {
-        "sup_air_flw_ctrl": "ODA",
-        "sup_air_temp_ctrl": "CONST",
-        "design_zone_cooling_covered_by_mech_vent": 3.4,
-        "design_zone_heating_covered_by_mech_vent": 1,
-        "vent_type": "Centralised continuous MEV",
-        "measured_fan_power": 12.26,
-        "measured_air_flow_rate": 37,
-        "EnergySupply": "mains elec",
-        "design_outdoor_air_flow_rate": 0.5
-      }
-    },
-    "PDUs": {
-    },
-    "Cowls": {
-    },
-    "CombustionAppliances": {
-      "Fireplace": {
-        "supply_situation": "room_air",
-        "exhaust_situation": "into_separate_duct",
-        "fuel_type": "wood",
-        "appliance_type": "open_fireplace"
-      }
-    }
   },
   "Zone": {
     "zone 1": {
@@ -802,49 +748,6 @@
           "r_c": 0.74,
           "k_m": 19400,
           "mass_distribution_class": "I"
-        },
-        "roof 0": {
-          "type": "BuildingElementOpaque",
-          "a_sol": 0.63,
-          "r_c": 0.73,
-          "k_m": 19300,
-          "is_external_door": false,
-          "mass_distribution_class": "I",
-          "pitch": 40,
-          "orientation360": 180,
-          "base_height": 0,
-          "height": 2.5,
-          "width": 6,
-          "area": 15.0
-        },
-        "skylight 0": {
-          "type": "BuildingElementTransparent",
-          "r_c": 0.4,
-          "pitch": 40,
-          "orientation360": 180,
-          "g_value": 0.75,
-          "frame_area_fraction": 0.25,
-          "base_height": 1,
-          "height": 1.25,
-          "width": 2,
-          "u_value": 1,
-          "shading": [
-            {
-              "type": "overhang",
-              "depth": 0.5,
-              "distance": 0.5
-            },
-            {
-              "type": "sidefinleft",
-              "depth": 0.25,
-              "distance": 0.1
-            },
-            {
-              "type": "sidefinright",
-              "depth": 0.25,
-              "distance": 0.1
-            }
-          ]
         }
       },
       "ThermalBridging": {
@@ -864,6 +767,61 @@
           "type": "ThermalBridgePoint",
           "heat_transfer_coeff": 2.0
         }
+      }
+    }
+  },
+  "InfiltrationVentilation": {
+    "cross_vent_factor": true,
+    "shield_class": "Normal",
+    "terrain_class": "OpenField",
+    "ventilation_zone_base_height": 2.5,
+    "altitude": 30,
+    "noise_nuisance": true,
+    "Vents": {
+      "vent1": {
+        "mid_height_air_flow_path": 1.5,
+        "area_cm2": 100,
+        "pressure_difference_ref": 20,
+        "orientation360": 180,
+        "pitch": 60
+      },
+      "vent2": {
+        "mid_height_air_flow_path": 1.5,
+        "area_cm2": 100,
+        "pressure_difference_ref": 20,
+        "orientation360": 0,
+        "pitch": 60
+      }
+    },
+    "Leaks": {
+      "ventilation_zone_height": 6,
+      "test_pressure": 50,
+      "test_result": 1.2,
+      "env_area": 220
+    },
+    "MechanicalVentilation": {
+      "mechvent1": {
+        "sup_air_flw_ctrl": "ODA",
+        "sup_air_temp_ctrl": "CONST",
+        "design_zone_cooling_covered_by_mech_vent": 3.4,
+        "design_zone_heating_covered_by_mech_vent": 1,
+        "vent_type": "Centralised continuous MEV",
+        "measured_fan_power": 12.26,
+        "measured_air_flow_rate": 37,
+        "EnergySupply": "mains elec",
+        "design_outdoor_air_flow_rate": 80
+      }
+    },
+    "PDUs": {
+    },
+    "Cowls": {
+    },
+    "CombustionAppliances": {
+      "Fireplace": {
+        "supply_situation": "room_air",
+        "exhaust_situation": "into_separate_duct",
+        "fuel_type": "wood",
+        "appliance_type": "open_fireplace"
       }
     }
   }

@@ -1,4 +1,5 @@
 {
+    "temp_internal_air_static_calcs": 20.0,
 	"SimulationTime": {
 		"start": 0,
 		"end": 24,
@@ -90,12 +91,20 @@
 		}
 	},
 	"Control": {
-		"hw timer": {
-			"type": "OnOffTimeControl",
+		"min_temp":{
+			"type": "SetpointTimeControl",
 			"start_day": 0,
 			"time_series_step": 1,
-			"schedule": {
-                "main": [{"value": true, "repeat": 24}]
+			"schedule":{
+				"main": [{"value": 52.0, "repeat": 24}]
+			}
+		},
+		"setpoint_temp_max":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 55.0, "repeat": 24}]
 			}
 		},
 		"space heat timer": {
@@ -107,7 +116,7 @@
 			}
 		},
 		"hb_charge_control": {
-			"type": "ToUChargeControl",
+			"type": "ChargeControl",
 			"start_day": 0,
 			"time_series_step": 1,
 			"charge_level": 0.2,
@@ -129,8 +138,7 @@
             "type": "StorageTank",
             "volume": 80.0,
             "daily_losses": 1.68,
-            "min_temp": 52.0,
-            "setpoint_temp": 55.0,
+            "init_temp": 55.0,
             "ColdWaterSource": "mains water",
 			"HeatSource": {
 				"heatBattery0": {
@@ -138,7 +146,8 @@
 					"name": "heatBattery1",
 					"temp_flow_limit_upper": 65,
 					"EnergySupply": "mains elec",
-					"Control": "hw timer",
+					"Controlmin": "min_temp",
+					"Controlmax": "setpoint_temp_max",
 					"temp_return": 60,
                     "heater_position": 0.1,
                     "thermostat_position": 0.33
@@ -222,7 +231,7 @@
 	"HeatSourceWet": {
 		"heatBattery1": {
 			"type": "HeatBattery",
-			"EnergySupply": "mains elec",
+			"EnergySupply":	"mains elec",
 			"heat_battery_location": "internal",
             "electricity_circ_pump": 0.0600,
             "electricity_standby" : 0.0244,
@@ -231,17 +240,95 @@
 			"max_rated_heat_output": 15.0,
 			"max_rated_losses": 0.22,
 			"number_of_units": 1,
-			"ControlCharge": "hb_charge_control"
+			"ControlCharge": "hb_charge_control",
+			"labs_tests_rated_output": [
+				[0.0, 0],
+				[0.08, 0.00],
+				[0.16, 0.03],
+				[0.17, 0.05],
+				[0.19, 0.10],
+				[0.21, 0.15],
+				[0.23, 0.21],
+				[0.25, 0.23],
+				[0.28, 0.26],
+				[0.31, 0.29],
+				[0.34, 0.32],
+				[0.38, 0.36],
+				[0.42, 0.41],
+				[0.47, 0.45],
+				[0.52, 0.51],
+				[0.58, 0.57],
+				[0.64, 0.64],
+				[0.72, 0.71],
+				[0.8, 0.8],
+				[0.89, 0.89],
+				[1.0, 1.0]
+			],
+			"labs_tests_rated_output_enhanced": [
+				[0.0, 0.0],
+				[0.101, 0.0],
+				[0.12, 0.18],
+				[0.144, 0.235],
+				[0.175, 0.313],
+				[0.215, 0.391],
+				[0.266, 0.486],
+				[0.328, 0.607],
+				[0.406, 0.728],
+				[0.494, 0.795],
+				[0.587, 0.825],
+				[0.683, 0.875],
+				[0.781, 0.906],
+				[0.891, 0.953],
+				[0.981, 0.992],
+				[1.0, 1.0]
+			],
+			"labs_tests_losses": [
+				[0.0, 0],
+				[0.16, 0.13],
+				[0.17, 0.15],
+				[0.19, 0.17],
+				[0.21, 0.18],
+				[0.23, 0.21],
+				[0.25, 0.23],
+				[0.28, 0.26],
+				[0.31, 0.29],
+				[0.34, 0.32],
+				[0.38, 0.36],
+				[0.42, 0.41],
+				[0.47, 0.45],
+				[0.52, 0.51],
+				[0.58, 0.57],
+				[0.64, 0.64],
+				[0.72, 0.71],
+				[0.8, 0.8],
+				[0.89, 0.89],
+				[1.0, 1.0]
+			]
 		}
 	},
 	"SpaceHeatSystem": {
 		"zone 1 radiators": {
 			"type": "WetDistribution",
+			"wet_emitter_type": "radiator",
 			"thermal_mass": 0.14,
-			"c": 0.08,
-			"n": 1.2,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.08,
+					"n": 1.2,
+					"frac_convective": 0.4
+				},
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.1,
+					"n": 1.3,
+					"frac_convective": 0.4
+				}
+			],
 			"temp_diff_emit_dsgn": 10.0,
-			"frac_convective": 0.4,
+			"variable_flow": true,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
 			"HeatSource": {
 				"name": "heatBattery1",
 				"temp_flow_limit_upper": 65.0
@@ -254,11 +341,20 @@
 		},
 		"zone 2 radiators": {
 			"type": "WetDistribution",
+			"wet_emitter_type": "radiator",
 			"thermal_mass": 0.14,
-			"c": 0.08,
-			"n": 1.2,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.1,
+					"n": 1.3,
+					"frac_convective": 0.4
+				}
+			],
 			"temp_diff_emit_dsgn": 10.0,
-			"frac_convective": 0.4,
+			"variable_flow": true,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
 			"HeatSource": {
 				"name": "heatBattery1",
 				"temp_flow_limit_upper": 65.0
@@ -279,7 +375,8 @@
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
-		"terrain_class": "Country",
+		"terrain_class": "OpenWater",
+        "ventilation_zone_base_height": 5,
 		"altitude": 30,
 		"Vents": {
 			"vent1": {

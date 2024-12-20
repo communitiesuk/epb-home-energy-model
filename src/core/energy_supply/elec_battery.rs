@@ -81,6 +81,7 @@ impl ElectricBattery {
             maximum_charge_rate_one_way_trip,
             maximum_discharge_rate_one_way_trip,
             battery_location,
+            ..
         } = input;
         Self::new(
             *capacity,

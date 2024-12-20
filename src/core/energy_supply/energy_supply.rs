@@ -12,6 +12,7 @@ use anyhow::bail;
 use atomic_float::AtomicF64;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
+use std::borrow::Borrow;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -619,38 +620,46 @@ pub fn from_input(
     external_conditions: Arc<ExternalConditions>,
 ) -> EnergySupplies {
     EnergySupplies {
-        mains_electricity: input.get(&EnergySupplyKey::MainsElectricity).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        mains_gas: input.get(&EnergySupplyKey::MainsGas).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        bulk_lpg: input.get(&EnergySupplyKey::BulkLpg).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions.clone(),
-            )
-        }),
-        heat_network: input.get(&EnergySupplyKey::HeatNetwork).map(|s| {
-            supply_from_details(
-                s,
-                simulation_timesteps,
-                simulation_timestep,
-                external_conditions,
-            )
-        }),
+        mains_electricity: input
+            .get::<str>(EnergySupplyKey::MainsElectricity.borrow())
+            .map(|s| {
+                supply_from_details(
+                    s,
+                    simulation_timesteps,
+                    simulation_timestep,
+                    external_conditions.clone(),
+                )
+            }),
+        mains_gas: input
+            .get::<str>(EnergySupplyKey::MainsGas.borrow())
+            .map(|s| {
+                supply_from_details(
+                    s,
+                    simulation_timesteps,
+                    simulation_timestep,
+                    external_conditions.clone(),
+                )
+            }),
+        bulk_lpg: input
+            .get::<str>(EnergySupplyKey::BulkLpg.borrow())
+            .map(|s| {
+                supply_from_details(
+                    s,
+                    simulation_timesteps,
+                    simulation_timestep,
+                    external_conditions.clone(),
+                )
+            }),
+        heat_network: input
+            .get::<str>(EnergySupplyKey::HeatNetwork.borrow())
+            .map(|s| {
+                supply_from_details(
+                    s,
+                    simulation_timesteps,
+                    simulation_timestep,
+                    external_conditions,
+                )
+            }),
         unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
             FuelType::UnmetDemand,
             simulation_timesteps,
