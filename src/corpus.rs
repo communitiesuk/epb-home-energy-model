@@ -60,16 +60,17 @@ use crate::external_conditions::ExternalConditions;
 use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
-    ColdWaterSourceInput, ColdWaterSourceType, Control as ControlInput, ControlDetails, DuctShape,
-    DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput, EnergySupplyKey,
-    EnergySupplyType, ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
+    ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
+    EnergySupplyKey, EnergySupplyType, ExternalConditionsInput, FloorType, FuelType,
+    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
+    HeatSourceWetType, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
     WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
@@ -83,6 +84,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
+use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -242,10 +244,27 @@ impl Corpus {
                         output_options.print_heat_balance,
                         simulation_time_iterator.clone().as_ref(),
                     )?;
-                    heat_system_name_for_zone
-                        .insert((*i).clone(), heat_system_name.unwrap_or_default().clone());
-                    cool_system_name_for_zone
-                        .insert((*i).clone(), cool_system_name.unwrap_or_default().clone());
+                    // TODO 0.32 correct logic here for possible multiple heat system names
+                    heat_system_name_for_zone.insert(
+                        (*i).clone(),
+                        match heat_system_name {
+                            SystemReference::None(_) => String::default(),
+                            SystemReference::Single(name) => name.clone(),
+                            SystemReference::Multiple(names) => {
+                                names.first().cloned().unwrap_or_default()
+                            }
+                        },
+                    );
+                    cool_system_name_for_zone.insert(
+                        (*i).clone(),
+                        match cool_system_name {
+                            SystemReference::None(_) => String::default(),
+                            SystemReference::Single(name) => name.clone(),
+                            SystemReference::Multiple(names) => {
+                                names.first().cloned().unwrap_or_default()
+                            }
+                        },
+                    );
 
                     zone_for_corpus
                 }))
@@ -2518,7 +2537,7 @@ fn single_control_from_details(
             )
             .unwrap(),
         ),
-        ControlDetails::ToUCharge {
+        ControlDetails::Charge {
             start_day,
             time_series_step,
             charge_level,
@@ -2543,6 +2562,9 @@ fn single_control_from_details(
                     ChargeLevel::Single(charge) => {
                         charge_level_vec = vec![*charge; vec_size];
                     }
+                    ChargeLevel::Schedule(_) => {
+                        unimplemented!("TODO 0.32 add support for schedules in charge level")
+                    }
                 }
             }
 
@@ -2552,6 +2574,12 @@ fn single_control_from_details(
                 time_series_step: *time_series_step,
                 charge_level: charge_level_vec,
             })
+        }
+        ControlDetails::CombinationTime { .. } => {
+            unimplemented!("CombinationTime control to be implemented during 0.32 migration")
+        }
+        ControlDetails::SmartAppliance { .. } => {
+            unimplemented!("SmartAppliance control to be implemented during 0.32 migration")
         }
     })
 }
@@ -2911,7 +2939,7 @@ fn zone_from_input(
     window_adjust_control: Option<Arc<Control>>,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<(Zone, Option<String>, Option<String>)> {
+) -> anyhow::Result<(Zone, SystemReference, SystemReference)> {
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
 
@@ -4069,7 +4097,8 @@ fn heat_source_from_input(
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
                         simulation_time.step_in_hours(),
-                        controls.get(control),
+                        // TODO fix control logic as part of 0.32 migration
+                        controls.get(&control.expect("This may not be present during migration to 0.32")),
                     ),
                 ))),
                 energy_supply_conn_name.into(),
@@ -4155,9 +4184,17 @@ fn hot_water_source_from_input(
             cold_water_source: cold_water_source_type,
             primary_pipework,
             heat_source,
+            ..
         } => {
-            let mut cold_water_source: WaterSourceWithTemperature =
-                cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
+            let mut cold_water_source: WaterSourceWithTemperature = cold_water_source_for_type(
+                match cold_water_source_type {
+                    ColdWaterSourceReference::Type(source_type) => source_type,
+                    ColdWaterSourceReference::Reference(_) => {
+                        unimplemented!("TODO 0.32 allow for free references to cold water sources")
+                    }
+                },
+                cold_water_sources,
+            )?;
             // TODO (from Python) Need to handle error if ColdWaterSource name is invalid.
             // TODO (from Python) assuming here there is only one WWHRS
             if !wwhrs.is_empty() {
@@ -4435,7 +4472,10 @@ fn space_heat_systems_from_input(
                         ))
                     },
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => return Err(NotImplementedError::new("Electric storage heater module not yet implemented.").into()), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
-                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control, thermal_mass, c, n, frac_convective, ecodesign_controller, design_flow_temp, .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, .. } => {
+                        // TODO 0.32 following are placeholder variables that we expect to come from emitters during migration to 0.32
+                        let (c, n, frac_convective) = (0., 0., 0.);
+
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
@@ -4489,7 +4529,8 @@ fn space_heat_systems_from_input(
                             }
                         };
                         let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
-                        let space_heater = Emitters::new(*thermal_mass, *c, *n, *temp_diff_emit_dsgn, *frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling);
+                        // TODO Fix thermal mass logic as part of 0.32 migration
+                        let space_heater = Emitters::new(thermal_mass.expect("Thermal mass may not be present while migrating to 0.32"), c, n, *temp_diff_emit_dsgn, frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling);
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {
@@ -4602,6 +4643,7 @@ fn on_site_generation_from_input(
                     shading,
                     inverter_peak_power,
                     inverter_is_inside,
+                    ..
                 } = generation_details;
                 let energy_supply = energy_supplies
                     .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
@@ -4618,7 +4660,8 @@ fn on_site_generation_from_input(
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
                     shading.clone(),
-                    *inverter_peak_power,
+                    inverter_peak_power
+                        .expect("Became optional during migration to 0.32 - correct for this"),
                     *inverter_is_inside,
                 )
             }))

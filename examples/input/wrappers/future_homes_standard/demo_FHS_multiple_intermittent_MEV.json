@@ -51,36 +51,21 @@
 			}
 		}
 	},
-	"ApplianceGains": {
-		"lighting": {
-			"type": "lighting",
-			"start_day": 0,
-			"time_series_step": 1,
-			"gains_fraction": 0.5,
-			"EnergySupply": "mains elec",
-			"schedule": {
-				"main": [32.0, 46.0, 33.0, 21.0, 12.0, 17.0, 25.0, 46.0]
-			}
+	"Appliances":{
+		"Dishwasher": "Not Installed",
+		"Clothes_washing": "Default",
+		"Clothes_drying":  "Not Installed",
+		"Fridge": "Default",
+		"Freezer": "Not Installed",
+		"Oven":{
+			"Energysupply" : "mains elec",
+			"kWh_per_cycle": 0.8
 		},
-		"cooking1": {
-			"type": "cooking",
-			"start_day": 0,
-			"time_series_step": 1,
-			"gains_fraction": 1,
-			"EnergySupply": "mains elec",
-			"schedule": {
-				"main": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0]
-			}
-		},
-		"cooking2": {
-			"type": "cooking",
-			"start_day": 0,
-			"time_series_step": 1,
-			"gains_fraction": 1,
-			"EnergySupply": "mains gas",
-			"schedule": {
-				"main": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0]
-			}
+		"Kettle": "Default",
+		"Microwave": "Default",
+		"Hobs":{
+			"Energysupply" : "mains gas",
+			"kWh_per_cycle": 0.8
 		}
 	},
 	"ColdWaterSource": {
@@ -101,7 +86,8 @@
 				"minimum_charge_rate_one_way_trip": 0.001,
 				"maximum_charge_rate_one_way_trip": 1.5,
 				"maximum_discharge_rate_one_way_trip": 1.25,
-				"battery_location": "outside"
+				"battery_location": "outside",
+				"grid_charging_possible": false
 			}
 		},
 		"mains gas": {
@@ -121,8 +107,10 @@
 			"width":1,
 			"EnergySupply": "mains elec",
 			"shading": [],
-			"inverter_peak_power":3.5,
-			"inverter_is_inside": false
+			"inverter_peak_power_dc": 3.5,
+			"inverter_peak_power_ac": 2.4,
+			"inverter_is_inside": false,
+			"inverter_type": "optimised_inverter"
 		}
 	},
 	"Control": {
@@ -272,7 +260,8 @@
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
-		"terrain_class": "Country",
+		"terrain_class": "OpenField",
+		"ventilation_zone_base_height": 2.5,
 		"altitude": 30,
 		"noise_nuisance" : true,
 		"Vents": {
@@ -346,7 +335,19 @@
 			"area": 8.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"wall 0": {
@@ -434,7 +435,7 @@
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation360": -90,
+					"orientation360": 270,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,
@@ -504,7 +505,19 @@
 			"area": 400.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"wall 0": {
@@ -550,7 +563,7 @@
 					"type": "BuildingElementTransparent",
 					"r_c": 0.4,
 					"pitch": 90,
-					"orientation360": -90,
+					"orientation360": 270,
 					"g_value": 0.75,
 					"frame_area_fraction": 0.25,
 					"base_height": 1,

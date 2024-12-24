@@ -750,6 +750,9 @@ mod tests {
             max_rated_losses: 0.22,
             number_of_units: 1,
             control_charge: "hb_charge_control".into(),
+            labs_tests_rated_output: Default::default(),
+            labs_tests_rated_output_enhanced: Default::default(),
+            labs_tests_losses: Default::default(),
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(EnergySupply::new(

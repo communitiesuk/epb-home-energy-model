@@ -52,7 +52,7 @@
 		"leap_day_included": false,
 		"direct_beam_conversion_needed": false,
 		"shading_segments": [
-		    {"number": 1, "start360": 0, "end360": 45},
+			{"number": 1, "start360": 0, "end360": 45},
 			{"number": 2, "start360": 45, "end360": 90},
 			{"number": 3, "start360": 90, "end360": 135},
 			{"number": 4, "start360": 135, "end360": 180, 
@@ -125,7 +125,8 @@
 				"minimum_charge_rate_one_way_trip": 0.001,
 				"maximum_charge_rate_one_way_trip": 1.5,
 				"maximum_discharge_rate_one_way_trip": 1.25,
-				"battery_location": "inside"
+				"battery_location": "inside",
+				"grid_charging_possible": false
 			},
 			"is_export_capable": true
 		},
@@ -146,8 +147,10 @@
 			"width":1,
 			"EnergySupply": "mains elec",
 			"shading": [],
-			"inverter_peak_power":3.5,
-			"inverter_is_inside": false
+			"inverter_peak_power_dc": 3.5,
+			"inverter_peak_power_ac": 2.4,
+			"inverter_is_inside": false,
+			"inverter_type": "optimised_inverter"			
 		}
 	},
 	"Control": {
@@ -191,7 +194,7 @@
 		},
 		"Bath": {
 			"medium": {
-				"size": 100,
+				"size": 180,
 				"ColdWaterSource": "header tank",
 				"flowrate": 8.0
 			}
@@ -287,64 +290,67 @@
 		}
 	},
 	"General": {
-	    "storeys_in_building": 1,
-	    "build_type": "house"
+		"storeys_in_building": 1,
+		"build_type": "house"
 	},
 	
 	 "InfiltrationVentilation": {
-        "cross_vent_factor": true,
-        "shield_class": "Normal",
-        "terrain_class": "Country",
-        "altitude": 30,
-        "noise_nuisance" : true,
-        "Vents": {
-            "vent1": {
-                "mid_height_air_flow_path": 1.5,
-                "area_cm2": 100,
-                "pressure_difference_ref": 20,
-                "orientation360": 180,
-                "pitch": 60
-            },
-            "vent2": {
-                "mid_height_air_flow_path": 1.5,
-                "area_cm2": 100,
-                "pressure_difference_ref": 20,
-                "orientation360": 0,
-                "pitch": 60
-            }
-        },
-        "Leaks" : {
+		"cross_vent_factor": true,
+		"shield_class": "Normal",
+		"terrain_class": "OpenField",
+		"ventilation_zone_base_height": 2.5,
+		"altitude": 30,
+		"noise_nuisance" : true,
+		"Vents": {
+			"vent1": {
+				"mid_height_air_flow_path": 1.5,
+				"area_cm2": 100,
+				"pressure_difference_ref": 20,
+				"orientation360": 180,
+				"pitch": 60
+			},
+			"vent2": {
+				"mid_height_air_flow_path": 1.5,
+				"area_cm2": 100,
+				"pressure_difference_ref": 20,
+				"orientation360": 0,
+				"pitch": 60
+			}
+		},
+		"Leaks" : {
 			"ventilation_zone_height" : 6,
+
 			"test_pressure": 50,
 			"test_result": 1.2,
+
 			"env_area":220
-        },
-        "MechanicalVentilation": {
-            "mechvent1":{
-                "sup_air_flw_ctrl": "ODA",
-                "sup_air_temp_ctrl": "CONST",
-                "design_zone_cooling_covered_by_mech_vent": 3.4,
-                "design_zone_heating_covered_by_mech_vent": 1,
-                "vent_type": "Centralised continuous MEV",
-                "measured_fan_power": 12.26,
-                "measured_air_flow_rate":37,
-                "EnergySupply": "mains elec",
-                "design_outdoor_air_flow_rate": 80
-            }
-        },
-        "PDUs": {
-        },
-        "Cowls": {
-        },
-        "CombustionAppliances":{
-            "Fireplace":{
-                "supply_situation":"room_air",
-                "exhaust_situation": "into_separate_duct",
-                "fuel_type": "wood",
-                "appliance_type": "open_fireplace"
-            }
-        }
-    },
+		},
+		"MechanicalVentilation": {
+			"mechvent1":{
+				"sup_air_flw_ctrl": "ODA",
+				"sup_air_temp_ctrl": "CONST",
+				"design_zone_cooling_covered_by_mech_vent": 3.4,
+				"design_zone_heating_covered_by_mech_vent": 1,
+				"vent_type": "Centralised continuous MEV",
+				"measured_fan_power": 12.26,
+				"measured_air_flow_rate":37,
+				"EnergySupply": "mains elec",
+				"design_outdoor_air_flow_rate": 80
+			}
+		},
+		"PDUs": {
+		},
+		"Cowls": {
+		},
+		"CombustionAppliances":{
+			"Fireplace":{
+				"supply_situation":"room_air",
+				"exhaust_situation": "into_separate_duct",
+				"fuel_type": "wood",
+				"appliance_type": "open_fireplace"
+			}
+		}
+	},
 	
 
 
@@ -356,7 +362,19 @@
 			"area": 8.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"wall 0": {
@@ -489,7 +507,19 @@
 			"area": 400.0,
 			"volume": 250.0,
 			"Lighting": {
-				"efficacy": 56.0
+				"efficacy": 56.0,
+				"bulbs":{
+					"incandescent":{
+						"count": 5,
+						"power": 8,
+						"efficacy": 18
+						},
+					 "led":{
+						"count": 10,
+						"power": 3,
+						"efficacy": 150
+						}
+					}
 			},
 			"BuildingElement": {
 				"wall 0": {

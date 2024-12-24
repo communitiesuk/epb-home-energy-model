@@ -8,6 +8,7 @@ use anyhow::bail;
 use atomic_float::AtomicF64;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
+use std::borrow::Borrow;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

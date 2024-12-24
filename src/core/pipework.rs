@@ -148,6 +148,9 @@ impl Pipework {
         let internal_htc = match contents {
             WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
             WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
+            WaterPipeContentsType::Glycol25 => {
+                unimplemented!("to implement as part of 0.32 migration")
+            }
         };
 
         // Set the heat transfer coefficient at the outer surface, in W / m^2 K

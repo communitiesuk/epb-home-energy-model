@@ -6,8 +6,8 @@ use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SpaceHeatControlType, TransparentBuildingElement, VentType,
-    WaterHeatingEvent, WaterHeatingEventType,
+    MechanicalVentilationForProcessing, SpaceHeatControlType, SystemReference,
+    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -228,14 +228,7 @@ pub(super) fn calc_final_rates(
         .chain(
             [(
                 "_unmet_demand".to_string(),
-                &EnergySupplyDetails {
-                    fuel: FuelType::UnmetDemand,
-                    diverter: None,
-                    electric_battery: None,
-                    factor: None,
-                    priority: None,
-                    is_export_capable: None,
-                },
+                &EnergySupplyDetails::with_fuel(FuelType::UnmetDemand),
             )]
             .into_iter(),
         )
@@ -741,7 +734,8 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                     }
                 );
                 let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                if let Some(space_heat_system) = space_heat_system {
+                // TODO 0.32 correct following logic for possibility of multiple space heat systems for a zone
+                if let SystemReference::Single(space_heat_system) = space_heat_system {
                     input.set_control_string_for_space_heat_system(space_heat_system.as_str(), living_room_space_heat_system_name)?;
                     let control_schedule = living_room_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
                     if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
@@ -773,7 +767,8 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                     }
                 );
                 let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                if let Some(space_heat_system) = space_heat_system {
+                // TODO 0.32 correct following logic for possibility of multiple space heat systems for a zone
+                if let SystemReference::Single(space_heat_system) = space_heat_system {
                     input.set_control_string_for_space_heat_system(space_heat_system.as_str(), rest_of_dwelling_space_heat_system_name)?;
                     let control_schedule = rest_of_dwelling_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
                     if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
@@ -2035,6 +2030,8 @@ pub(super) fn create_hot_water_use_pattern(
             WaterHeatingEvent {
                 start: event_start,
                 duration: Some(duration),
+                // This field is updated in 0.32, below is just a placeholder
+                volume: None,
                 temperature: if event.event_type.is_shower_type() {
                     event_temperature_showers
                 } else if event.event_type.is_bath_type() {
@@ -2268,7 +2265,10 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
         if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
             match space_heat_control {
                 SpaceHeatControlType::LivingRoom => {
-                    if let Some(space_cool_system) = input.space_cool_system_for_zone(zone_key)? {
+                    // TODO 0.32 correct following logic to allow for possible multiple cool systems on zone
+                    if let SystemReference::Single(space_cool_system) =
+                        input.space_cool_system_for_zone(zone_key)?
+                    {
                         let mut living_room_control = json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
@@ -2302,7 +2302,10 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                     }
                 }
                 SpaceHeatControlType::RestOfDwelling => {
-                    if let Some(space_cool_system) = input.space_cool_system_for_zone(zone_key)? {
+                    // TODO 0.32 correct following logic to allow for possible multiple cool systems on zone
+                    if let SystemReference::Single(space_cool_system) =
+                        input.space_cool_system_for_zone(zone_key)?
+                    {
                         let mut rest_of_dwelling_control = json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
