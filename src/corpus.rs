@@ -7,7 +7,7 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupplies, EnergySupply, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -62,10 +62,9 @@ use crate::input::{
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
-    EnergySupplyKey, EnergySupplyType, ExternalConditionsInput, FloorType, FuelType,
-    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails,
-    InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    ExternalConditionsInput, FloorType, FuelType, HeatPumpSourceType,
+    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
+    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
@@ -84,7 +83,6 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
-use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -221,7 +219,6 @@ impl Corpus {
             &input.infiltration_ventilation,
             &controls,
             &mut energy_supplies,
-            simulation_time_iterator.as_ref(),
             total_volume,
             external_conditions.clone(),
             output_options.detailed_output_heating_cooling,
@@ -1908,10 +1905,9 @@ impl Corpus {
                 .unwrap()
                 .push(storage_losses);
 
-            self.energy_supplies
-                .values()
-                .map(|supply| Ok(supply.read().calc_energy_import_export_betafactor(t_it)?))
-                .collect::<anyhow::Result<()>>()?;
+            self.energy_supplies.values().try_for_each(|supply| {
+                anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)
+            })?;
 
             for diverter in &self.diverters {
                 diverter.write().timestep_end();
@@ -1929,9 +1925,13 @@ impl Corpus {
         let mut energy_from_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut energy_diverted: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut betafactor: IndexMap<KeyString, Vec<f64>> = Default::default();
-        for (name, supply) in self.energy_supplies.iter() {
+        for (name, supply) in self.energy_supplies.iter().map(|(name, supply)| {
+            (
+                KeyString::from(name).expect("Energy supply name was too long."),
+                Arc::clone(supply),
+            )
+        }) {
             let supply = supply.read();
-            let name: KeyString = KeyString::from(name)?;
             results_totals.insert(name, supply.results_total());
             results_end_user.insert(name, supply.results_by_end_user().to_owned());
             energy_import.insert(name, supply.get_energy_import().to_owned());
@@ -2354,7 +2354,7 @@ type DiverterTypes = IndexMap<String, EnergyDiverter>;
 // }
 
 fn diverter_from_energy_supply(supply: &EnergySupplyDetails) -> Option<EnergyDiverter> {
-    supply.diverter.as_ref().map(|diverter| diverter.clone())
+    supply.diverter.clone()
 }
 
 pub type InternalGainsCollection = IndexMap<String, Gains>;
@@ -2976,7 +2976,6 @@ fn infiltration_ventilation_from_input(
     input: &InfiltrationVentilationInput,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    simulation_time: &SimulationTimeIterator,
     total_volume: f64,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
@@ -4276,15 +4275,12 @@ fn hot_water_source_from_input(
                 *WATER,
             )));
             for (heat_source_name, hs) in heat_source {
-                let energy_supply_type = hs.energy_supply_type();
-                if let Some(diverter) = diverter_types.get_for_supply_type(energy_supply_type) {
+                let energy_supply_name = hs.energy_supply_name();
+                if let Some(diverter) = diverter_types.get(energy_supply_name) {
                     if diverter.storage_tank.matches(&source_name)
                         && diverter.heat_source.matches(heat_source_name)
                     {
-                        let energy_supply = energy_supplies.ensured_get_for_type(
-                            hs.energy_supply_type(),
-                            simulation_time.total_steps(),
-                        )?;
+                        let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
 
                         let positioned_heat_source =
                             &heat_sources.get(&heat_source_name.to_owned());
@@ -4356,8 +4352,7 @@ fn hot_water_source_from_input(
             setpoint_temp,
             ..
         } => {
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Point of use hot water source references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn_name = source_name;
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let energy_supply_conn =
@@ -4457,7 +4452,7 @@ fn space_heat_systems_from_input(
                         energy_supply,
                         ..
                     } => {
-                        let energy_supply = energy_supplies.ensured_get_for_type(*energy_supply, simulation_time.total_steps())?;
+                        let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
                         let energy_supply_conn_name = system_name;
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
@@ -4597,8 +4592,7 @@ fn space_cool_systems_from_input(
                 energy_supply,
                 ..
             } = space_cool_system_details;
-            let energy_supply = energy_supplies
-                .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
+            let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space cool system references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn_name = system_name;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
@@ -4645,8 +4639,7 @@ fn on_site_generation_from_input(
                     inverter_is_inside,
                     ..
                 } = generation_details;
-                let energy_supply = energy_supplies
-                    .ensured_get_for_type(*energy_supply, simulation_time_iterator.total_steps())?;
+                let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("On site generation (photovoltaic) references an undeclared energy supply '{energy_supply}'."))?.clone();
                 let energy_supply_conn = EnergySupply::connection(energy_supply, name).unwrap();
                 PhotovoltaicSystem::new(
                     *peak_power,

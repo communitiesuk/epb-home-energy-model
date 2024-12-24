@@ -1,4 +1,4 @@
-use crate::core::energy_supply::energy_supply::{EnergySupplies, EnergySupply};
+use crate::core::energy_supply::energy_supply::EnergySupply;
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::pipework::{PipeworkLocation, PipeworkSimple, Pipeworkesque};
 use crate::core::schedule::{TypedScheduleEvent, WaterScheduleEventType};
@@ -10,9 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, EnergySupplyType, OtherWaterUseDetails,
-    OtherWaterUses as OtherWaterUseInput, Shower as ShowerInput, Showers as ShowersInput,
-    WaterDistribution as WaterDistributionInput, WaterPipeContentsType, WaterPipeworkSimple,
+    BathDetails, Baths as BathInput, OtherWaterUseDetails, OtherWaterUses as OtherWaterUseInput,
+    Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput,
+    WaterPipeContentsType, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::anyhow;

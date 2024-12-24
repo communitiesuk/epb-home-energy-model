@@ -2,135 +2,16 @@ use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::heating_systems::storage_tank::PVDiverter;
 use crate::errors::NotImplementedError;
-use crate::input::{EnergySupplyType, FuelType, SecondarySupplyType};
+use crate::input::{FuelType, SecondarySupplyType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
-use std::borrow::Borrow;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub(crate) const UNMET_DEMAND_SUPPLY_NAME: &str = "_unmet_demand";
-
-#[derive(Debug)]
-pub struct EnergySupplies {
-    pub mains_electricity: Option<Arc<RwLock<EnergySupply>>>,
-    pub mains_gas: Option<Arc<RwLock<EnergySupply>>>,
-    pub bulk_lpg: Option<Arc<RwLock<EnergySupply>>>,
-    pub bottled_lpg: Option<Arc<RwLock<EnergySupply>>>,
-    pub condition_11f_lpg: Option<Arc<RwLock<EnergySupply>>>,
-    pub custom: Option<Arc<RwLock<EnergySupply>>>,
-    pub heat_network: Option<Arc<RwLock<EnergySupply>>>,
-    pub unmet_demand: Arc<RwLock<EnergySupply>>,
-}
-
-impl EnergySupplies {
-    pub fn calc_energy_import_export_betafactor(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> Result<(), NotImplementedError> {
-        if let Some(ref supply) = self.mains_electricity {
-            supply
-                .read()
-                .calc_energy_import_export_betafactor(simtime)?;
-        }
-        if let Some(ref supply) = self.mains_gas {
-            supply
-                .read()
-                .calc_energy_import_export_betafactor(simtime)?;
-        }
-        if let Some(ref supply) = self.bulk_lpg {
-            supply
-                .read()
-                .calc_energy_import_export_betafactor(simtime)?;
-        }
-        self.unmet_demand
-            .read()
-            .calc_energy_import_export_betafactor(simtime)?;
-
-        Ok(())
-    }
-
-    pub fn ensured_get_for_type(
-        &mut self,
-        energy_supply_type: EnergySupplyType,
-        timesteps: usize,
-    ) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
-        let energy_supply = match energy_supply_type {
-            EnergySupplyType::Electricity => &mut self.mains_electricity,
-            EnergySupplyType::MainsGas => &mut self.mains_gas,
-            EnergySupplyType::UnmetDemand => return Ok(self.unmet_demand.clone()),
-            EnergySupplyType::Custom => &mut self.custom,
-            EnergySupplyType::LpgBulk => &mut self.bulk_lpg,
-            EnergySupplyType::LpgBottled => &mut self.bottled_lpg,
-            EnergySupplyType::LpgCondition11F => &mut self.condition_11f_lpg,
-            EnergySupplyType::HeatNetwork => &mut self.heat_network,
-            #[cfg(feature = "fhs")]
-            EnergySupplyType::NotionalHeatNetwork => &mut None, // nothing seems to request this, so match with nothing
-        };
-        match energy_supply {
-            Some(supply) => Ok(supply.clone()),
-            None => Ok(Arc::new(RwLock::new(EnergySupply::new(
-                energy_supply_type.try_into()?,
-                timesteps,
-                None,
-                None,
-                None,
-            )))),
-        }
-    }
-
-    pub fn supplies_by_name(&self) -> IndexMap<&str, Arc<RwLock<EnergySupply>>> {
-        let mut supplies: IndexMap<&str, Arc<RwLock<EnergySupply>>> = Default::default();
-        supplies.insert("_unmet_demand", self.unmet_demand.clone());
-        if let Some(elec) = &self.mains_electricity {
-            supplies.insert("mains elec", elec.clone());
-        }
-        if let Some(gas) = &self.mains_gas {
-            supplies.insert("mains gas", gas.clone());
-        }
-        if let Some(lpg) = &self.bulk_lpg {
-            supplies.insert("LPG_bulk", lpg.clone());
-        }
-        if let Some(lpg) = &self.bottled_lpg {
-            supplies.insert("LPG_bottled", lpg.clone());
-        }
-        if let Some(condition_11f) = &self.condition_11f_lpg {
-            supplies.insert("LPG_condition_11F", condition_11f.clone());
-        }
-        if let Some(custom) = &self.custom {
-            supplies.insert("custom", custom.clone());
-        }
-        if let Some(heat_network) = &self.heat_network {
-            supplies.insert("heat network", heat_network.clone());
-        }
-
-        supplies
-    }
-}
-
-impl Default for EnergySupplies {
-    fn default() -> Self {
-        Self {
-            mains_electricity: None,
-            mains_gas: None,
-            bulk_lpg: None,
-            bottled_lpg: None,
-            condition_11f_lpg: None,
-            custom: None,
-            heat_network: None,
-            unmet_demand: Arc::new(RwLock::new(EnergySupply::new(
-                FuelType::UnmetDemand,
-                0,
-                None,
-                None,
-                None,
-            ))),
-        }
-    }
-}
 
 /// An object to represent the connection of a system that consumes energy to the energy supply
 ///

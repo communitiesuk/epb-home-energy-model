@@ -4248,7 +4248,7 @@ mod tests {
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        BoilerHotWaterTest, ColdWaterSourceType, EnergySupplyType, FuelType, HeatSourceControlType,
+        BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceControlType,
         HeatSourceLocation, HeatSourceWetType,
     };
     use crate::simulation_time::SimulationTime;
@@ -5567,8 +5567,8 @@ mod tests {
         energy_supply_conn_name_auxiliary: &str,
     ) -> Boiler {
         let boiler_details = HeatSourceWetDetails::Boiler {
-            energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: EnergySupplyType::Electricity,
+            energy_supply: "mains gas".to_string(),
+            energy_supply_auxiliary: "mains elec".to_string(),
             rated_power: 24.,
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,

@@ -106,7 +106,7 @@ impl EmittersAndPowerInput<'_> {
             emitters,
             power_input,
             temp_diff_max,
-            previous_difference_from_temp_diff_max
+            previous_difference_from_temp_diff_max,
         }
     }
 
@@ -475,13 +475,15 @@ impl Emitters {
                 let y_count = stepper.y_out().len();
                 let current_y = stepper.y_out().last().expect("y_out was empty")[0];
                 let previous_y = stepper.y_out().get(y_count - 2).unwrap()[0];
-                
+
                 let current_temp_diff = current_y - temp_diff_max;
                 let previous_temp_diff = previous_y - temp_diff_max;
-                
-                previous_temp_diff == 0. || current_temp_diff == 0. || signs_are_different(previous_temp_diff, current_temp_diff)
+
+                previous_temp_diff == 0.
+                    || current_temp_diff == 0.
+                    || signs_are_different(previous_temp_diff, current_temp_diff)
             }
-            None => false
+            None => false,
         };
 
         let temp_emitter;
@@ -874,7 +876,6 @@ mod tests {
     use crate::core::heating_systems::boiler::BoilerServiceSpace;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::external_conditions::ShadingSegment;
-    use crate::input::EnergySupplyType;
     use crate::input::FuelType;
     use crate::input::HeatSourceLocation;
     use crate::input::HeatSourceWetDetails;
@@ -982,8 +983,8 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> SpaceHeatingService {
         let boiler_details = HeatSourceWetDetails::Boiler {
-            energy_supply: EnergySupplyType::MainsGas,
-            energy_supply_auxiliary: EnergySupplyType::Electricity,
+            energy_supply: "mains gas".to_string(),
+            energy_supply_auxiliary: "mains elec".to_string(),
             rated_power: 2.5, // changed to match Python mocks
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,

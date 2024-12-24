@@ -681,7 +681,6 @@ mod tests {
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
     use crate::core::heating_systems::heat_battery::ServiceType;
-    use crate::input::EnergySupplyType;
     use crate::input::FuelType;
     use crate::input::HeatSourceLocation;
     use crate::input::HeatSourceWetDetails;
@@ -740,7 +739,7 @@ mod tests {
         control: Control,
     ) -> Arc<Mutex<HeatBattery>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
-            energy_supply: EnergySupplyType::Electricity,
+            energy_supply: "mains elec".to_string(),
             heat_battery_location: HeatSourceLocation::Internal,
             electricity_circ_pump: 0.06,
             electricity_standby: 0.0244,

@@ -627,7 +627,7 @@ pub(crate) enum ControlDetails {
     #[serde(rename = "smartappliance")]
     SmartAppliance {
         #[serde(rename = "battery24hr")]
-        battery_24hr: SmartApplianceBattery,
+        battery_24hr: Box<SmartApplianceBattery>,
         non_appliance_demand_24hr: IndexMap<EnergySupplyType, Vec<f64>>,
         power_timeseries: IndexMap<EnergySupplyType, Vec<f64>>,
         time_series_step: f64,
@@ -859,7 +859,7 @@ pub enum HotWaterSourceDetails {
     PointOfUse {
         efficiency: f64,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1098,7 +1098,7 @@ pub enum HeatSource {
         #[serde(rename = "ColdWaterSource", skip_serializing_if = "Option::is_none")]
         cold_water_source: Option<ColdWaterSourceType>,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
         control_min: Option<String>,
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
@@ -1173,12 +1173,12 @@ impl HeatSource {
         }
     }
 
-    pub fn energy_supply_type(&self) -> EnergySupplyType {
+    pub fn energy_supply_name(&self) -> &str {
         match self {
-            HeatSource::ImmersionHeater { energy_supply, .. } => *energy_supply,
-            HeatSource::SolarThermalSystem { energy_supply, .. } => *energy_supply,
-            HeatSource::Wet { energy_supply, .. } => *energy_supply,
-            HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => *energy_supply,
+            HeatSource::ImmersionHeater { energy_supply, .. } => energy_supply,
+            HeatSource::SolarThermalSystem { energy_supply, .. } => energy_supply,
+            HeatSource::Wet { energy_supply, .. } => energy_supply,
+            HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => energy_supply,
         }
     }
 
@@ -1512,7 +1512,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         temp_setback: Option<f64>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
         heat_source: Option<SpaceHeatSystemHeatSource>,
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
@@ -1535,7 +1535,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         fan_pwr: f64,
         n_units: u32,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
         heat_source: Option<SpaceHeatSystemHeatSource>,
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
@@ -1563,7 +1563,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(default)]
         emitters: Vec<WetEmitter>,
         #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
-        energy_supply: Option<EnergySupplyType>,
+        energy_supply: Option<String>,
         temp_diff_emit_dsgn: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         variable_flow: Option<bool>,
@@ -2525,7 +2525,7 @@ pub struct SpaceCoolSystemDetails {
     pub efficiency: f64,
     pub frac_convective: f64,
     #[serde(rename = "EnergySupply")]
-    pub energy_supply: EnergySupplyType,
+    pub energy_supply: String,
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub control: Option<String>,
 }
@@ -2544,8 +2544,8 @@ impl SpaceCoolSystemDetails {
         self.frac_convective = frac_convective;
     }
 
-    pub(crate) fn set_energy_supply(&mut self, energy_supply_type: EnergySupplyType) {
-        self.energy_supply = energy_supply_type;
+    pub(crate) fn set_energy_supply(&mut self, energy_supply_type: &str) {
+        self.energy_supply = energy_supply_type.to_string();
     }
 
     pub fn temp_setback(&self) -> Option<f64> {
@@ -2855,7 +2855,7 @@ pub enum OnSiteGenerationDetails {
         height: f64,
         width: f64,
         #[serde(rename = "EnergySupply")]
-        energy_supply: EnergySupplyType,
+        energy_supply: String,
         shading: Vec<WindowShadingObject>,
         #[serde(skip_serializing_if = "Option::is_none")]
         inverter_peak_power: Option<f64>,
@@ -3779,7 +3779,7 @@ impl InputForProcessing {
 
     pub(crate) fn set_energy_supply_for_all_space_cool_systems(
         &mut self,
-        energy_supply_type: EnergySupplyType,
+        energy_supply_name: &str,
     ) -> anyhow::Result<()> {
         let systems = self
             .input
@@ -3788,7 +3788,7 @@ impl InputForProcessing {
             .ok_or_else(|| anyhow!("Space cool system expected"))?;
 
         for system in systems.values_mut() {
-            system.set_energy_supply(energy_supply_type);
+            system.set_energy_supply(energy_supply_name);
         }
         Ok(())
     }
@@ -3999,7 +3999,7 @@ impl InputForProcessing {
         Ok(self
             .input
             .energy_supply
-            .get::<str>(&field)
+            .get::<str>(field)
             .ok_or(anyhow!(
                 "Fuel type not provided for energy supply field '{field}'"
             ))?
@@ -4487,7 +4487,7 @@ impl InputForProcessing {
         let element = zone
             .building_elements
             .get(key)
-            .expect(format!("could not find building element for name {key}").as_str());
+            .unwrap_or_else(|| panic!("could not find building element for name {key}"));
 
         element
     }

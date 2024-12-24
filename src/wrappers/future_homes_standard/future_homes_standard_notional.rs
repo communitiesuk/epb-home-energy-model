@@ -1,5 +1,4 @@
 use crate::compare_floats::min_of_2;
-use crate::core::energy_supply::energy_supply::EnergySupplies;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
 use crate::core::units::{
@@ -13,17 +12,18 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
     BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey,
-    EnergySupplyType, GroundBuildingElement, HeatPumpSourceType, HeatSourceWetDetails,
-    HotWaterSource, InputForProcessing, MechanicalVentilation, SpaceHeatSystemHeatSource,
-    ThermalBridgingDetails, UValueEditableBuildingElement, WaterHeatingEventType,
-    WaterPipeContentsType, WaterPipework, WaterPipeworkLocation,
+    GroundBuildingElement, HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource,
+    InputForProcessing, MechanicalVentilation, SpaceHeatSystemHeatSource, ThermalBridgingDetails,
+    UValueEditableBuildingElement, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
+    WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
 use crate::wrappers::future_homes_standard::future_homes_standard::{
     calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    create_window_opening_schedule, HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS,
-    REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START, SIMTIME_STEP,
+    create_window_opening_schedule, ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE,
+    LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START,
+    SIMTIME_STEP,
 };
 use crate::{
     compare_floats::max_of_2,
@@ -1068,7 +1068,7 @@ fn calc_daily_hw_demand(
         input.water_distribution().cloned(),
         &cold_water_sources,
         &wwhrs,
-        &EnergySupplies::default(),
+        &Default::default(),
         event_schedules,
     )?;
 
@@ -1340,7 +1340,7 @@ fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> 
     if part_o_active_cooling_required {
         input.set_efficiency_for_all_space_cool_systems(5.1)?;
         input.set_frac_convective_for_all_space_cool_systems(0.95)?;
-        input.set_energy_supply_for_all_space_cool_systems(EnergySupplyType::Electricity)?;
+        input.set_energy_supply_for_all_space_cool_systems(ENERGY_SUPPLY_NAME_ELECTRICITY)?;
     }
 
     Ok(())
@@ -1511,9 +1511,9 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, EnergySupplyKey, EnergySupplyType, HeatSourceWet,
-        HeatSourceWetDetails, InfiltrationVentilation, OnSiteGeneration, SpaceHeatSystem,
-        SpaceHeatSystemHeatSource, SystemReference, WaterPipeworkSimple,
+        self, EnergySupplyDetails, EnergySupplyKey, HeatSourceWet, HeatSourceWetDetails,
+        InfiltrationVentilation, OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource,
+        SystemReference, WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -2598,7 +2598,7 @@ mod tests {
         for system in space_cool_system.values() {
             assert_eq!(system.efficiency, 5.1);
             assert_eq!(system.frac_convective, 0.95);
-            assert_eq!(system.energy_supply, EnergySupplyType::Electricity);
+            assert_eq!(system.energy_supply, ENERGY_SUPPLY_NAME_ELECTRICITY);
         }
     }
 
