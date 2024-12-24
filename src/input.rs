@@ -4,15 +4,14 @@ use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
-use indexmap::{Equivalent, IndexMap};
+use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
-use serde_json::{json, Value};
+use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_valid::Validate;
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
@@ -206,94 +205,6 @@ pub struct ApplianceGainsDetailsEvent {
     pub duration: f64,
     #[serde(rename = "demand_W")]
     pub demand_w: f64,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize_enum_str, Eq, Hash, PartialEq, Serialize_enum_str)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum EnergySupplyKey {
-    #[serde(rename = "mains elec")]
-    MainsElectricity,
-    #[serde(rename = "mains gas")]
-    MainsGas,
-    #[serde(rename = "bulk LPG")]
-    BulkLpg,
-    #[serde(rename = "heat network")]
-    HeatNetwork,
-}
-
-impl Equivalent<str> for EnergySupplyKey {
-    fn equivalent(&self, key: &str) -> bool {
-        if let Ok(key) = serde_json::from_value::<EnergySupplyKey>(json!(key)) {
-            key == *self
-        } else {
-            false
-        }
-    }
-}
-
-impl Borrow<str> for EnergySupplyKey {
-    fn borrow(&self) -> &str {
-        match serde_json::to_value(self)
-            .expect("Expected an EnergySupplyKey to be turned into a string")
-        {
-            Value::String(string) => match string.as_str() {
-                "mains elec" => "mains elec",
-                "mains gas" => "mains gas",
-                "bulk LPG" => "bulk LPG",
-                "heat network" => "heat network",
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl From<&EnergySupplyKey> for String {
-    fn from(value: &EnergySupplyKey) -> Self {
-        serde_json::to_value(value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string()
-    }
-}
-
-#[cfg(test)]
-mod energy_supply_key_tests {
-    use crate::input::{EnergySupplyDetails, EnergySupplyKey, FuelType};
-    use indexmap::IndexMap;
-    use rstest::*;
-
-    #[rstest]
-    fn deserialize_energy_supply_key() {
-        assert_eq!(
-            "bulk LPG".parse::<EnergySupplyKey>().unwrap(),
-            EnergySupplyKey::BulkLpg
-        );
-        assert_eq!(
-            "mains elec".parse::<EnergySupplyKey>().unwrap(),
-            EnergySupplyKey::MainsElectricity
-        );
-    }
-
-    #[rstest]
-    fn use_energy_supply_key_to_get_supply_details() {
-        let supplies = IndexMap::from([
-            (
-                EnergySupplyKey::MainsElectricity,
-                EnergySupplyDetails::with_fuel(FuelType::Electricity),
-            ),
-            (
-                EnergySupplyKey::MainsGas,
-                EnergySupplyDetails::with_fuel(FuelType::Electricity),
-            ),
-        ]);
-        assert!(supplies.get(&EnergySupplyKey::MainsElectricity).is_some());
-        assert!(supplies
-            .get(&("mains gas".parse::<EnergySupplyKey>().unwrap()))
-            .is_some());
-    }
 }
 
 pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
@@ -4344,7 +4255,7 @@ impl InputForProcessing {
 
     pub(crate) fn add_energy_supply_for_key(
         &mut self,
-        energy_supply_key: EnergySupplyKey,
+        energy_supply_key: &str,
         energy_supply_details: EnergySupplyDetails,
     ) {
         self.input
@@ -4355,24 +4266,19 @@ impl InputForProcessing {
     #[cfg(test)]
     pub(crate) fn energy_supply_by_key(
         &self,
-        energy_supply_key: EnergySupplyKey,
+        energy_supply_key: &str,
     ) -> Option<&EnergySupplyDetails> {
-        self.input
-            .energy_supply
-            .get::<str>(energy_supply_key.borrow())
+        self.input.energy_supply.get(energy_supply_key)
     }
 
     #[cfg(test)]
     pub(crate) fn add_diverter_to_energy_supply(
         &mut self,
-        energy_supply_key: EnergySupplyKey,
+        energy_supply_key: &str,
         diverter: Value,
     ) {
-        let energy_supply: &mut EnergySupplyDetails = self
-            .input
-            .energy_supply
-            .get_mut::<str>(energy_supply_key.borrow())
-            .unwrap();
+        let energy_supply: &mut EnergySupplyDetails =
+            self.input.energy_supply.get_mut(energy_supply_key).unwrap();
         let diverter: EnergyDiverter = serde_json::from_value(diverter).unwrap();
         energy_supply.diverter = Some(diverter);
     }
@@ -4380,14 +4286,11 @@ impl InputForProcessing {
     #[cfg(test)]
     pub(crate) fn add_electric_battery_to_energy_supply(
         &mut self,
-        energy_supply_key: EnergySupplyKey,
+        energy_supply_key: &str,
         electric_battery: Value,
     ) {
-        let energy_supply: &mut EnergySupplyDetails = self
-            .input
-            .energy_supply
-            .get_mut::<str>(energy_supply_key.borrow())
-            .unwrap();
+        let energy_supply: &mut EnergySupplyDetails =
+            self.input.energy_supply.get_mut(energy_supply_key).unwrap();
         let battery: ElectricBattery = serde_json::from_value(electric_battery).unwrap();
         energy_supply.electric_battery = Some(battery);
     }

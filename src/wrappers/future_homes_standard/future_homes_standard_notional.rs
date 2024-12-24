@@ -11,9 +11,9 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{ColdWaterSources, Corpus};
 use crate::input::{
-    BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, EnergySupplyKey,
-    GroundBuildingElement, HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource,
-    InputForProcessing, MechanicalVentilation, SpaceHeatSystemHeatSource, ThermalBridgingDetails,
+    BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, GroundBuildingElement,
+    HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing,
+    MechanicalVentilation, SpaceHeatSystemHeatSource, ThermalBridgingDetails,
     UValueEditableBuildingElement, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
     WaterPipeworkLocation,
 };
@@ -636,7 +636,7 @@ fn edit_add_heatnetwork_heating(
 
     input.set_heat_source_wet(notional_heat_network);
     input.set_hot_water_source(notional_hot_water_source);
-    input.add_energy_supply_for_key(EnergySupplyKey::HeatNetwork, heat_network_fuel_data);
+    input.add_energy_supply_for_key(heat_network_name, heat_network_fuel_data);
 
     Ok(())
 }
@@ -1511,9 +1511,9 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, EnergySupplyKey, HeatSourceWet, HeatSourceWetDetails,
-        InfiltrationVentilation, OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource,
-        SystemReference, WaterPipeworkSimple,
+        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, InfiltrationVentilation,
+        OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource, SystemReference,
+        WaterPipeworkSimple,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -1915,7 +1915,7 @@ mod tests {
         }))
         .unwrap();
 
-        let heat_network_name = EnergySupplyKey::HeatNetwork;
+        let heat_network_name = "_notional_heat_network";
         let expected_heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
             "fuel": "custom",
             "factor":{
@@ -2561,7 +2561,7 @@ mod tests {
             "StorageTank": "hw cylinder",
             "HeatSource": "immersion"
         });
-        let energy_supply_key = EnergySupplyKey::MainsElectricity;
+        let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
         test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
 
         remove_pv_diverter_if_present(&mut test_input);
@@ -2581,7 +2581,7 @@ mod tests {
             "maximum_discharge_rate_one_way_trip": 44,
             "battery_location": "inside"
         });
-        let energy_supply_key = EnergySupplyKey::MainsElectricity;
+        let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
         test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
 
         remove_electric_battery_if_present(&mut test_input);
