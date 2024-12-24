@@ -2584,7 +2584,11 @@ impl HeatPump {
                 self.thermal_capacity_op_cond(temp_output, temp_source)?
             };
 
-            match (self.backup_ctrl, self.backup_heater_delay_time_elapsed()) {
+            match (
+                self.backup_ctrl,
+                self.backup_ctrl != HeatPumpBackupControlType::None
+                    && self.backup_heater_delay_time_elapsed(),
+            ) {
                 (HeatPumpBackupControlType::None, _) | (_, false) => power_max_hp * time_available,
                 (HeatPumpBackupControlType::TopUp, _) => {
                     let energy_max_backup = self.backup_energy_output_max(
@@ -3098,7 +3102,10 @@ impl HeatPump {
         // Calculate energy delivered by backup heater
         let mut energy_delivered_backup = match (
             self.backup_ctrl,
-            !self.backup_heater_delay_time_elapsed() && !use_backup_heater_only || !service_on,
+            self.backup_ctrl != HeatPumpBackupControlType::None
+                && !self.backup_heater_delay_time_elapsed()
+                && !use_backup_heater_only
+                || !service_on,
         ) {
             (HeatPumpBackupControlType::None, _) | (_, true) => 0.0,
             (HeatPumpBackupControlType::TopUp | HeatPumpBackupControlType::Substitute, _) => {
