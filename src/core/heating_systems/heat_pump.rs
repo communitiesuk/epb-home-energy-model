@@ -5515,12 +5515,14 @@ mod tests {
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
+                ..Default::default()
             },
         ];
         Arc::new(ExternalConditions::new(

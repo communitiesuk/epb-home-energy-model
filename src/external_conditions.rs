@@ -22,6 +22,7 @@ pub enum DaylightSavingsConfig {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
+#[serde(deny_unknown_fields)]
 pub struct ShadingSegment {
     pub number: usize,
     #[serde(rename = "start360")]
@@ -30,12 +31,17 @@ pub struct ShadingSegment {
         serialize_with = "serialize_orientation"
     )]
     pub start: f64,
+    // some upstream example files contain this field, which should therefore be allowed but ignored
+    #[serde(rename = "start")]
+    pub(crate) _start: Option<f64>,
     #[serde(rename = "end360")]
     #[serde(
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
     pub end: f64,
+    #[serde(rename = "end")]
+    pub(crate) _end: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "shading")]
     pub shading_objects: Option<Vec<ShadingObject>>,
@@ -45,6 +51,7 @@ pub struct ShadingSegment {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
+#[serde(deny_unknown_fields)]
 pub struct ShadingObject {
     #[serde(rename = "type")]
     pub object_type: ShadingObjectType,
@@ -55,11 +62,29 @@ pub struct ShadingObject {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct WindowShadingObject {
-    #[serde(rename = "type")]
-    pub object_type: WindowShadingObjectType,
-    pub depth: f64,
-    pub distance: f64,
+#[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
+pub enum WindowShadingObject {
+    Obstacle {
+        height: f64,
+        distance: f64,
+        transparency: f64,
+    },
+    Overhang {
+        depth: f64,
+        distance: f64,
+    },
+    SideFinRight {
+        depth: f64,
+        distance: f64,
+    },
+    SideFinLeft {
+        depth: f64,
+        distance: f64,
+    },
+    Reveal {
+        depth: f64,
+        distance: f64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -69,18 +94,6 @@ pub struct WindowShadingObject {
 pub enum ShadingObjectType {
     Obstacle,
     Overhang,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(rename_all = "lowercase")]
-pub enum WindowShadingObjectType {
-    Obstacle,
-    Overhang,
-    SideFinRight,
-    SideFinLeft,
-    Reveal,
 }
 
 #[derive(Clone, Debug)]
@@ -889,17 +902,14 @@ impl ExternalConditions {
             let altitude = self.solar_altitudes[current_hour as usize];
             let azimuth = self.solar_azimuth_angles[current_hour as usize];
             for shading_object in window_shading {
-                let WindowShadingObject {
-                    depth, distance, ..
-                } = shading_object;
-                match shading_object.object_type {
-                    WindowShadingObjectType::Overhang => {
+                match shading_object {
+                    WindowShadingObject::Overhang { depth, distance } => {
                         let new_shade_height = (depth * altitude.to_radians().tan()
                             / (azimuth - orientation).to_radians().cos())
                             - distance;
                         hshade_ovh = max_of_2(hshade_ovh, new_shade_height);
                     }
-                    WindowShadingObjectType::SideFinRight => {
+                    WindowShadingObject::SideFinRight { depth, distance } => {
                         // check if the sun is in the opposite direction
                         let check = azimuth - orientation;
                         let new_finrshade = if check > 0. {
@@ -909,7 +919,7 @@ impl ExternalConditions {
                         };
                         wfinr = max_of_2(wfinr, new_finrshade);
                     }
-                    WindowShadingObjectType::SideFinLeft => {
+                    WindowShadingObject::SideFinLeft { depth, distance } => {
                         // check if the sun is in the opposite direction
                         let check = azimuth - orientation;
                         let new_finlshade = if check < 0. {
@@ -1025,21 +1035,20 @@ impl ExternalConditions {
 
         if let Some(shading_objects) = window_shading {
             for shading_object in shading_objects.iter() {
-                //todo (maybe make some window shading types?)
-                match shading_object.object_type {
-                    WindowShadingObjectType::Overhang => {
-                        ovh_D_L_ls.push((shading_object.depth, shading_object.distance));
+                match shading_object {
+                    WindowShadingObject::Overhang { depth, distance } => {
+                        ovh_D_L_ls.push((*depth, *distance));
                     }
-                    WindowShadingObjectType::SideFinLeft => {
-                        finR_D_L_ls.push((shading_object.depth, shading_object.distance));
+                    WindowShadingObject::SideFinLeft { depth, distance } => {
+                        finR_D_L_ls.push((*depth, *distance));
                     }
-                    WindowShadingObjectType::SideFinRight => {
-                        finL_D_L_ls.push((shading_object.depth, shading_object.distance));
+                    WindowShadingObject::SideFinRight { depth, distance } => {
+                        finL_D_L_ls.push((*depth, *distance));
                     }
-                    WindowShadingObjectType::Obstacle => {
+                    WindowShadingObject::Obstacle { .. } => {
                         // do nothing
                     }
-                    WindowShadingObjectType::Reveal => {
+                    WindowShadingObject::Reveal { .. } => {
                         // do nothing
                     }
                 }
@@ -1225,21 +1234,18 @@ impl ExternalConditions {
 
         let mut window_shading_expanded: Vec<WindowShadingObject> = vec![];
         for shading in window_shading {
-            if let WindowShadingObjectType::Reveal = shading.object_type {
-                window_shading_expanded.push(WindowShadingObject {
-                    object_type: WindowShadingObjectType::Overhang,
-                    depth: shading.depth,
-                    distance: shading.distance,
+            if let WindowShadingObject::Reveal { depth, distance } = shading {
+                window_shading_expanded.push(WindowShadingObject::Overhang {
+                    depth: *depth,
+                    distance: *distance,
                 });
-                window_shading_expanded.push(WindowShadingObject {
-                    object_type: WindowShadingObjectType::SideFinLeft,
-                    depth: shading.depth,
-                    distance: shading.distance,
+                window_shading_expanded.push(WindowShadingObject::SideFinLeft {
+                    depth: *depth,
+                    distance: *distance,
                 });
-                window_shading_expanded.push(WindowShadingObject {
-                    object_type: WindowShadingObjectType::SideFinRight,
-                    depth: shading.depth,
-                    distance: shading.distance,
+                window_shading_expanded.push(WindowShadingObject::SideFinRight {
+                    depth: *depth,
+                    distance: *distance,
                 });
             } else {
                 window_shading_expanded.push(*shading);
@@ -2047,48 +2053,56 @@ mod tests {
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
+                ..Default::default()
             },
         ]
     }
@@ -2261,26 +2275,22 @@ mod tests {
         let orientation = 180.;
 
         // Create shading objects with reveal
-        let shading_with_reveal = vec![WindowShadingObject {
-            object_type: WindowShadingObjectType::Reveal,
+        let shading_with_reveal = vec![WindowShadingObject::Reveal {
             depth: reveal_depth,
             distance: reveal_distance,
         }];
 
         // Create shading objects with overhang and fins
         let shading_with_overhang_fin = vec![
-            WindowShadingObject {
-                object_type: WindowShadingObjectType::Overhang,
+            WindowShadingObject::Overhang {
                 depth: reveal_depth,
                 distance: reveal_distance,
             },
-            WindowShadingObject {
-                object_type: WindowShadingObjectType::SideFinRight,
+            WindowShadingObject::SideFinRight {
                 depth: reveal_depth,
                 distance: reveal_distance,
             },
-            WindowShadingObject {
-                object_type: WindowShadingObjectType::SideFinLeft,
+            WindowShadingObject::SideFinLeft {
                 depth: reveal_depth,
                 distance: reveal_distance,
             },

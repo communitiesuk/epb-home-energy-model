@@ -218,7 +218,6 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
-        WindowShadingObjectType,
     };
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -267,6 +266,7 @@ mod tests {
                         height: 2.2,
                         distance: 6.,
                     }]),
+                    ..Default::default()
                 },
                 ShadingSegment {
                     number: 3,
@@ -290,6 +290,7 @@ mod tests {
                             distance: 7.,
                         },
                     ]),
+                    ..Default::default()
                 },
                 ShadingSegment {
                     number: 5,
@@ -300,6 +301,7 @@ mod tests {
                         height: 3.,
                         distance: 8.,
                     }]),
+                    ..Default::default()
                 },
                 ShadingSegment {
                     number: 6,
@@ -382,18 +384,15 @@ mod tests {
             energy_supply_conn,
             simulation_time.step,
             vec![
-                WindowShadingObject {
-                    object_type: WindowShadingObjectType::Overhang,
+                WindowShadingObject::Overhang {
                     depth: 0.5,
                     distance: 0.5,
                 },
-                WindowShadingObject {
-                    object_type: WindowShadingObjectType::SideFinLeft,
+                WindowShadingObject::SideFinLeft {
                     depth: 0.25,
                     distance: 0.1,
                 },
-                WindowShadingObject {
-                    object_type: WindowShadingObjectType::SideFinRight,
+                WindowShadingObject::SideFinRight {
                     depth: 0.25,
                     distance: 0.1,
                 },
