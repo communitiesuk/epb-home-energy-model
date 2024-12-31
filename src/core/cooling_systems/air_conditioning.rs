@@ -26,7 +26,7 @@ impl AirConditioning {
     /// * `energy_supply_connection` = an EnergySupplyConnection value
     /// * `simulation_timestep` - reference to timestep for contextual SimulationTime
     /// * `control` - reference to a control object
-    pub fn new(
+    pub(crate) fn new(
         cooling_capacity_in_kw: f64,
         efficiency: f64,
         frac_convective: f64,
@@ -115,7 +115,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Some(Arc::new(Control::OnOffTimeControl(control))),
+                Some(Arc::new(Control::OnOffTime(control))),
             ),
             energy_supply,
         )

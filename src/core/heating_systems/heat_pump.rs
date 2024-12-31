@@ -1310,7 +1310,7 @@ pub struct HeatPumpServiceWater {
 }
 
 impl HeatPumpServiceWater {
-    pub fn new(
+    pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
         temp_hot_water_in_c: f64,
@@ -1434,7 +1434,7 @@ impl HeatPumpServiceSpace {
     /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
     /// * `volume_heated` - volume of zones heated (required for exhaust air HPs only), in m3
     /// * `boiler_service_space` - reference to the BoilerServiceWaterSpace object that is backing up or supplementing the heat pump service
-    pub fn new(
+    pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
         temp_limit_upper_in_c: f64,
@@ -1640,7 +1640,7 @@ pub struct HeatPumpServiceSpaceWarmAir {
 }
 
 impl HeatPumpServiceSpaceWarmAir {
-    pub fn new(
+    pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
         temp_diff_emit_dsgn: f64,
@@ -2288,7 +2288,7 @@ impl HeatPump {
         }
     }
 
-    pub fn create_service_hot_water(
+    pub(crate) fn create_service_hot_water(
         heat_pump: Arc<Mutex<Self>>,
         service_name: String,
         temp_hot_water_in_c: f64,
@@ -2317,7 +2317,7 @@ impl HeatPump {
         )
     }
 
-    pub fn create_service_space_heating(
+    pub(crate) fn create_service_space_heating(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
         temp_limit_upper_in_c: f64,
@@ -2351,7 +2351,7 @@ impl HeatPump {
         )
     }
 
-    pub fn create_service_space_heating_warm_air(
+    pub(crate) fn create_service_space_heating_warm_air(
         heat_pump: Arc<Mutex<Self>>,
         service_name: String,
         control: Arc<Control>,
@@ -4072,7 +4072,7 @@ pub struct HeatPumpHotWaterOnly {
 }
 
 impl HeatPumpHotWaterOnly {
-    pub fn new(
+    pub(crate) fn new(
         power_max_in_kw: f64,
         energy_supply_connection: EnergySupplyConnection,
         test_data: &HeatPumpHotWaterTestData,
@@ -6256,11 +6256,7 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_dsgn = 50.0;
-        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
-            vec![],
-            0,
-            0.,
-        )));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
         let volume_heated = 250.0;
 
         let heat_pump = create_default_heat_pump(
@@ -6356,11 +6352,7 @@ mod tests {
         let heat_pump = Arc::from(Mutex::from(heat_pump));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
-            vec![],
-            0,
-            0.,
-        )));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![], 0, 0.)));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -6538,7 +6530,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTimeControl(
+        let control = Arc::from(Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.), Some(22.)],
                 0,
@@ -7088,7 +7080,7 @@ mod tests {
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace".to_owned(),
-            Arc::new(Control::SetpointTimeControl(control)),
+            Arc::new(Control::SetpointTime(control)),
         )));
 
         let heat_pump_input = create_heat_pump_input_from_json(None);
@@ -7550,7 +7542,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTimeControl(
+        let ctrl = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(22.0)],
                 0,
@@ -7853,7 +7845,7 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTimeControl(
+        let ctrl = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(22.0)],
                 0,
@@ -8042,11 +8034,7 @@ mod tests {
         let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
-            vec![true],
-            0,
-            1.,
-        )));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![true], 0, 1.)));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -8089,11 +8077,7 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_dsgn = 50.0;
-        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
-            vec![true],
-            0,
-            1.,
-        )));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![true], 0, 1.)));
         let volume_heated = 250.0;
 
         let heat_pump_service_space = HeatPump::create_service_space_heating(

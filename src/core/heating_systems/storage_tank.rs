@@ -105,7 +105,7 @@ impl StorageTank {
     ///                                the setpoint temperature and not allowed to fall
     ///                               to the minimum before recharging
     /// * `contents` - MaterialProperties object
-    pub fn new(
+    pub(crate) fn new(
         volume: f64,
         losses: f64,
         min_temp: f64,
@@ -1146,7 +1146,7 @@ pub struct ImmersionHeater {
 }
 
 impl ImmersionHeater {
-    pub fn new(
+    pub(crate) fn new(
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
@@ -1521,7 +1521,7 @@ mod tests {
 
     #[fixture]
     pub fn control_for_storage_tank() -> Arc<Control> {
-        Arc::new(Control::OnOffTimeControl(OnOffTimeControl::new(
+        Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![true, false, false, false, true, true, true, true],
             0,
             1.,
@@ -1945,7 +1945,7 @@ mod tests {
             )
             .unwrap(),
             simulation_time_for_immersion_heater.step,
-            Some(Arc::new(Control::OnOffTimeControl(OnOffTimeControl::new(
+            Some(Arc::new(Control::OnOffTime(OnOffTimeControl::new(
                 vec![true, true, false, true],
                 0,
                 1.,

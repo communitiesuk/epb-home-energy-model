@@ -1,7 +1,6 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     Control, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
-    ToUChargeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -2433,11 +2432,11 @@ pub struct Controls {
 }
 
 impl Controls {
-    pub fn new(core: Vec<HeatSourceControl>, extra: HashMap<String, Arc<Control>>) -> Self {
+    pub(crate) fn new(core: Vec<HeatSourceControl>, extra: HashMap<String, Arc<Control>>) -> Self {
         Self { core, extra }
     }
 
-    pub fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
+    pub(crate) fn get(&self, control_type: &HeatSourceControlType) -> Option<Arc<Control>> {
         self.core
             .iter()
             .find(|heat_source_control| heat_source_control.has_type(*control_type))
@@ -2445,7 +2444,7 @@ impl Controls {
     }
 
     // access a control using a string, possibly because it is one of the "extra" controls
-    pub fn get_with_string(&self, control_name: &str) -> Option<Arc<Control>> {
+    pub(crate) fn get_with_string(&self, control_name: &str) -> Option<Arc<Control>> {
         match control_name {
             // hard-code ways of resolving to core control types (for now)
             "hw timer" => self.get(&HeatSourceControlType::HotWaterTimer),
@@ -2498,7 +2497,7 @@ fn single_control_from_details(
             time_series_step,
             schedule,
             ..
-        } => Control::OnOffTimeControl(OnOffTimeControl::new(
+        } => Control::OnOffTime(OnOffTimeControl::new(
             reject_nulls(expand_boolean_schedule(schedule))?,
             *start_day,
             *time_series_step,
@@ -2509,7 +2508,7 @@ fn single_control_from_details(
             time_on_daily,
             schedule,
             ..
-        } => Control::OnOffMinimisingTimeControl(OnOffMinimisingTimeControl::new(
+        } => Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
             reject_nulls(expand_numeric_schedule(schedule))?,
             *start_day,
             *time_series_step,
@@ -2524,7 +2523,7 @@ fn single_control_from_details(
             default_to_max,
             schedule,
             ..
-        } => Control::SetpointTimeControl(
+        } => Control::SetpointTime(
             SetpointTimeControl::new(
                 expand_numeric_schedule(schedule),
                 *start_day,
@@ -2537,13 +2536,7 @@ fn single_control_from_details(
             )
             .unwrap(),
         ),
-        ControlDetails::Charge {
-            start_day,
-            time_series_step,
-            charge_level,
-            schedule,
-            ..
-        } => {
+        ControlDetails::Charge { charge_level, .. } => {
             // Simulation manual charge control
             // Set charge level to 1.0 (max) for each day of simulation (plus 1)
             let vec_size = ((simulation_time_iterator.total_steps() as f64
@@ -2551,16 +2544,16 @@ fn single_control_from_details(
                 / 24.0)
                 + 1.0)
                 .ceil() as usize;
-            let mut charge_level_vec: Vec<f64> = vec![1.0; vec_size];
+            let mut _charge_level_vec: Vec<f64> = vec![1.0; vec_size];
             // if charge_level is present in input, overwrite initial vector
             // user can specify a vector with all days (plus 1), or as a single float value to be used for each day
             if let Some(charge) = charge_level {
                 match charge {
                     ChargeLevel::List(charge_vec) => {
-                        charge_level_vec = charge_vec.to_vec();
+                        _charge_level_vec = charge_vec.to_vec();
                     }
                     ChargeLevel::Single(charge) => {
-                        charge_level_vec = vec![*charge; vec_size];
+                        _charge_level_vec = vec![*charge; vec_size];
                     }
                     ChargeLevel::Schedule(_) => {
                         unimplemented!("TODO 0.32 add support for schedules in charge level")
@@ -2568,12 +2561,13 @@ fn single_control_from_details(
                 }
             }
 
-            Control::ToUChargeControl(ToUChargeControl {
-                schedule: reject_nulls(expand_boolean_schedule(schedule))?,
-                start_day: *start_day,
-                time_series_step: *time_series_step,
-                charge_level: charge_level_vec,
-            })
+            unimplemented!("TODO 0.32 implement creation of charge control")
+            // Control::ChargeControl(ChargeControl {
+            //     schedule: reject_nulls(expand_boolean_schedule(schedule))?,
+            //     start_day: *start_day,
+            //     time_series_step: *time_series_step,
+            //     charge_level: charge_level_vec,
+            // })
         }
         ControlDetails::CombinationTime { .. } => {
             unimplemented!("CombinationTime control to be implemented during 0.32 migration")

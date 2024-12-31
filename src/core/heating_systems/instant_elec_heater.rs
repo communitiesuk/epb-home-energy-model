@@ -23,7 +23,7 @@ impl InstantElecHeater {
     /// * `energy_supply_connection` - EnergySupplyConnection value
     /// * `simulation_timestep` - step in hours for context simulation time
     /// * `control` - reference to a control object which must implement is_on() and setpnt() funcs
-    pub fn new(
+    pub(crate) fn new(
         rated_power_in_kw: f64,
         frac_convective: f64,
         energy_supply_connection: EnergySupplyConnection,
@@ -97,7 +97,7 @@ mod tests {
 
     #[fixture]
     pub fn instant_elec_heater(simulation_time: SimulationTime) -> InstantElecHeater {
-        let control = Control::SetpointTimeControl(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(21.0), None, Some(21.0)],
                 0,

@@ -1029,7 +1029,7 @@ mod tests {
             .create_service_connection(service_name.into())
             .unwrap();
 
-        let control = Arc::from(Control::OnOffTimeControl(OnOffTimeControl::new(
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
             vec![true, true, true, true, true, true, true, true],
             0,
             0.25, // to match simulation time

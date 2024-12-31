@@ -30,7 +30,7 @@ impl HeatNetworkServiceWaterDirect {
     /// * `service_name` - name of the service demanding energy from the heat network
     /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
     /// * `cold_feed` - reference to ColdWaterSource object
-    pub fn new(
+    pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
         temperature_hot_water: f64,
@@ -93,7 +93,7 @@ impl HeatNetworkServiceWaterStorage {
     /// * `service_name` - name of the service demanding energy from the heat network
     /// * `temperature_hot_water` - temperature of the hot water to be provided, in deg C
     /// * `control` - optional reference to a control object
-    pub fn new(
+    pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
         temperature_hot_water: f64,
@@ -156,7 +156,7 @@ pub struct HeatNetworkServiceSpace {
 }
 
 impl HeatNetworkServiceSpace {
-    pub fn new(
+    pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
         control: Arc<Control>,
@@ -303,7 +303,7 @@ impl HeatNetwork {
         )
     }
 
-    pub fn create_service_hot_water_storage(
+    pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: String,
         temperature_hot_water: f64,
@@ -319,7 +319,7 @@ impl HeatNetwork {
         )
     }
 
-    pub fn create_service_space_heating(
+    pub(crate) fn create_service_space_heating(
         heat_network: Arc<Mutex<Self>>,
         service_name: String,
         control: Arc<Control>,
@@ -448,7 +448,7 @@ mod tests {
             dummy_heat_network.clone(),
             SERVICE_NAME.to_owned(),
             52.0,
-            Some(Arc::new(Control::SetpointTimeControl(control))),
+            Some(Arc::new(Control::SetpointTime(control))),
         );
         assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
 
@@ -699,7 +699,7 @@ mod tests {
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
-        let control = Control::SetpointTimeControl(
+        let control = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(21.0), None],
                 0,
@@ -913,7 +913,7 @@ mod tests {
         HeatNetwork::create_service_space_heating(
             heat_network.clone(),
             service_name.to_owned(),
-            Arc::new(Control::SetpointTimeControl(
+            Arc::new(Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(21.0), Some(21.0), None],
                     0,

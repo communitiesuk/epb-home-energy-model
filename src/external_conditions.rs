@@ -329,10 +329,22 @@ impl ExternalConditions {
         }
     }
 
-    pub fn air_temp(&self, simulation_time: &SimulationTimeIteration) -> f64 {
+    pub(crate) fn air_temp(&self, simtime: &SimulationTimeIteration) -> f64 {
         self.air_temp_for_timestep_idx(
-            simulation_time.time_series_idx(self.start_day, self.time_series_step),
+            simtime.time_series_idx(self.start_day, self.time_series_step),
         )
+    }
+
+    pub(crate) fn air_temp_with_offset(
+        &self,
+        simtime: &SimulationTimeIteration,
+        offset: usize,
+    ) -> f64 {
+        let mut idx = simtime.time_series_idx(self.start_day, self.time_series_step) + offset;
+        if idx >= self.air_temps.len() {
+            idx -= self.air_temps.len();
+        }
+        self.air_temps[idx]
     }
 
     fn air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {

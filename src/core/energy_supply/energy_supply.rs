@@ -134,6 +134,36 @@ impl EnergySupply {
         self.fuel_type
     }
 
+    pub(crate) fn has_battery(&self) -> bool {
+        // TODO complete implementation while migrating to 0.32
+        false
+    }
+
+    pub(crate) fn get_battery_max_capacity(&self) -> Option<f64> {
+        // TODO complete implementation while migrating to 0.32
+        Some(0.)
+    }
+
+    pub(crate) fn get_battery_charge_efficiency(&self) -> Option<f64> {
+        // TODO complete implementation while migrating to 0.32
+        Some(0.)
+    }
+
+    pub(crate) fn get_battery_discharge_efficiency(&self) -> Option<f64> {
+        // TODO complete implementation while migrating to 0.32
+        Some(0.)
+    }
+
+    pub(crate) fn get_battery_max_discharge(&self, charge: f64) -> Option<f64> {
+        // TODO complete/ correct implementation while migrating to 0.32
+        Some(charge)
+    }
+
+    pub(crate) fn get_battery_available_charge(&self) -> Option<f64> {
+        // TODO complete/ correct implementation while migrating to 0.32
+        Some(0.)
+    }
+
     pub fn connection(
         energy_supply: Arc<RwLock<EnergySupply>>,
         end_user_name: &str,
@@ -284,6 +314,13 @@ impl EnergySupply {
         }
 
         all_results_by_end_user
+    }
+
+    /// Return the demand from each end user on this energy source for this timestep.
+    /// Returns dictionary of floats, where dictionary keys are names of end users.
+    pub(crate) fn results_by_end_user_single_step(&self, _t_idx: usize) -> IndexMap<String, f64> {
+        // TODO: complete for migration to 0.32
+        Default::default()
     }
 
     pub fn get_energy_import(&self) -> Vec<f64> {

@@ -2366,7 +2366,7 @@ mod tests {
     }
 
     pub fn ctrl_that_is_on(simulation_time_iterator: SimulationTimeIterator) -> Control {
-        Control::OnOffTimeControl(OnOffTimeControl::new(
+        Control::OnOffTime(OnOffTimeControl::new(
             vec![true],
             simulation_time_iterator.current_day(),
             1.,
@@ -2374,7 +2374,7 @@ mod tests {
     }
 
     pub fn ctrl_that_is_off(simulation_time_iterator: SimulationTimeIterator) -> Control {
-        Control::OnOffTimeControl(OnOffTimeControl::new(
+        Control::OnOffTime(OnOffTimeControl::new(
             vec![false],
             simulation_time_iterator.current_day(),
             1.,

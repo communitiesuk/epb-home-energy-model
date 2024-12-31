@@ -83,7 +83,7 @@ impl Zone {
     /// * `temp_setpnt_init` - setpoint temperature to use during initialisation, in Celsius
     /// * `control` - reference to a control (generally setpoint time control)
     /// * `simulation_time`
-    pub fn new(
+    pub(crate) fn new(
         area: f64,
         volume: f64,
         building_elements: IndexMap<String, BuildingElement>,
@@ -576,7 +576,7 @@ impl Zone {
 /// * `no_of_temps` - number of unknown temperatures (each node in each
 ///                             building element + 1 for internal air) to be
 ///                             solved for
-pub fn init_node_temps(
+pub(crate) fn init_node_temps(
     temp_ext_air_init: f64,
     temp_setpnt_init: f64,
     no_of_temps: usize,
@@ -700,7 +700,7 @@ const FRAC_CONVECTIVE: f64 = 0.4;
 ///                         over-ventilation requirement
 /// * `vent_cool_extra` - (optional) window cooling
 /// * `a simulation_time`
-pub fn space_heat_cool_demand(
+pub(crate) fn space_heat_cool_demand(
     delta_t_h: f64,
     temp_ext_air: f64,
     gains_internal: f64,

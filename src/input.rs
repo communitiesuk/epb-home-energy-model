@@ -539,10 +539,10 @@ pub(crate) enum ControlDetails {
     SmartAppliance {
         #[serde(rename = "battery24hr")]
         battery_24hr: Box<SmartApplianceBattery>,
-        non_appliance_demand_24hr: IndexMap<EnergySupplyType, Vec<f64>>,
-        power_timeseries: IndexMap<EnergySupplyType, Vec<f64>>,
+        non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+        power_timeseries: IndexMap<String, Vec<f64>>,
         time_series_step: f64,
-        weight_timeseries: IndexMap<EnergySupplyType, Vec<f64>>,
+        weight_timeseries: IndexMap<String, Vec<f64>>,
     },
 }
 
@@ -561,26 +561,26 @@ pub(crate) enum ChargeLevel {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct ExternalSensor {
-    correlation: Vec<ExternalSensorCorrelation>,
+pub(crate) struct ExternalSensor {
+    pub(crate) correlation: Vec<ExternalSensorCorrelation>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct ExternalSensorCorrelation {
-    temperature: f64,
-    max_charge: f64,
+pub(crate) struct ExternalSensorCorrelation {
+    pub(crate) temperature: f64,
+    pub(crate) max_charge: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct ControlCombination {
-    operation: ControlCombinationOperation,
-    controls: Vec<String>,
+pub(crate) struct ControlCombination {
+    pub(crate) operation: ControlCombinationOperation,
+    pub(crate) controls: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -601,11 +601,11 @@ pub enum ControlCombinationOperation {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct SmartApplianceBattery {
-    battery_state_of_charge: IndexMap<EnergySupplyType, Vec<f64>>,
-    energy_into_battery_from_generation: IndexMap<EnergySupplyType, Vec<f64>>,
-    energy_into_battery_from_grid: IndexMap<EnergySupplyType, Vec<f64>>,
-    energy_out_of_battery: IndexMap<EnergySupplyType, Vec<f64>>,
+pub(crate) struct SmartApplianceBattery {
+    pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    energy_out_of_battery: IndexMap<String, Vec<f64>>,
 }
 
 impl ControlDetails {
@@ -661,7 +661,8 @@ pub enum ControlLogicType {
     Manual,
     Automatic,
     #[serde(rename = "celect")]
-    CElect,
+    Celect,
+    // high heat retention storage heater
     #[serde(rename = "hhrsh")]
     Hhrsh,
 }

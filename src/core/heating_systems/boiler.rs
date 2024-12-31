@@ -241,7 +241,7 @@ pub struct BoilerServiceWaterRegular {
 }
 
 impl BoilerServiceWaterRegular {
-    pub fn new(
+    pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
         temperature_hot_water_in_c: f64,
@@ -312,7 +312,11 @@ pub struct BoilerServiceSpace {
 }
 
 impl BoilerServiceSpace {
-    pub fn new(boiler: Arc<RwLock<Boiler>>, service_name: String, control: Arc<Control>) -> Self {
+    pub(crate) fn new(
+        boiler: Arc<RwLock<Boiler>>,
+        service_name: String,
+        control: Arc<Control>,
+    ) -> Self {
         Self {
             boiler,
             service_name,
@@ -628,7 +632,7 @@ impl Boiler {
         )
     }
 
-    pub fn create_service_hot_water_regular(
+    pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: String,
         temperature_hot_water_in_c: f64,
@@ -646,7 +650,7 @@ impl Boiler {
         )
     }
 
-    pub fn create_service_space_heating(
+    pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
         service_name: String,
         control: Arc<Control>,
@@ -1504,7 +1508,7 @@ mod tests {
 
     #[fixture]
     pub fn control_for_service_space() -> Control {
-        Control::SetpointTimeControl(
+        Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(21.0), None],
                 0,
