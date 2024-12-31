@@ -6,7 +6,7 @@ rust-version = "1.80.0"
 description = "An engine written in Rust implementing the Home Energy Model (HEM), an energy performance of buildings model"
 
 [dependencies]
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 arbitrary = { version = "1.4.1", features = ["derive"], optional = true }
 argmin = "0.10.0"
 arrayvec = { version = "0.7.6", features = ["serde"] }
@@ -28,7 +28,7 @@ itertools = "0.13.0"
 log = "0.4.22"
 nalgebra = "0.33.2"
 ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-solvers", branch = "events"  }
-ordered-float = "4.5.0"
+ordered-float = "4.6.0"
 parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
@@ -40,19 +40,19 @@ rayon = "1.10.0"
 schemars = { version = "0.8.21", optional = true }
 serde = { version = "1.0.215", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.133"
+serde_json = "1.0.134"
 serde_repr = "0.1.19"
 serde_valid = "0.25.0"
 statrs = "0.18.0"
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.3"
-thiserror = "2.0.7"
+thiserror = "2.0.9"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 
 [dev-dependencies]
 approx = "0.5.1"
-jsonschema = "0.26.2"
+jsonschema = "0.28.0"
 pretty_assertions = "1.4.1"
 rstest = "0.23.0"
 walkdir = "2.5.0"
