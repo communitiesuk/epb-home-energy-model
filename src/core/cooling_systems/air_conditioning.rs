@@ -59,6 +59,10 @@ impl AirConditioning {
         self.frac_convective
     }
 
+    pub(crate) fn energy_output_min(&self) -> f64 {
+        0.0
+    }
+
     pub fn demand_energy(&self, cooling_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
@@ -84,7 +88,7 @@ impl AirConditioning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::OnOffTimeControl;
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupply;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -99,7 +103,17 @@ mod tests {
 
     #[fixture]
     pub fn aircon(simulation_time: SimulationTime) -> (AirConditioning, Arc<RwLock<EnergySupply>>) {
-        let control = OnOffTimeControl::new(vec![true, true, false, true], 0, 1.0);
+        let control = SetpointTimeControl::new(
+            vec![Some(21.0), Some(21.0), None, Some(21.0)],
+            0,
+            1.0,
+            None,
+            None,
+            None,
+            None,
+            1.0,
+        )
+        .unwrap();
         let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
             FuelType::Electricity,
             simulation_time.total_steps(),
@@ -115,14 +129,14 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Some(Arc::new(Control::OnOffTime(control))),
+                Some(Arc::new(Control::SetpointTime(control))),
             ),
             energy_supply,
         )
     }
 
     #[rstest]
-    pub fn test_demand_energy(
+    fn test_demand_energy(
         aircon: (AirConditioning, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
@@ -143,5 +157,45 @@ mod tests {
                 "incorrect delivered energy demand returned"
             );
         }
+    }
+
+    #[rstest]
+    fn test_energy_output_min(aircon: (AirConditioning, Arc<RwLock<EnergySupply>>)) {
+        let (aircon, _) = aircon;
+        assert_eq!(aircon.energy_output_min(), 0.0,);
+    }
+
+    #[rstest]
+    fn test_temp_setpnt(
+        aircon: (AirConditioning, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (aircon, _) = aircon;
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                aircon.temp_setpnt(&t_it),
+                [Some(21.0), Some(21.0), None, Some(21.0)][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_in_required_period(
+        aircon: (AirConditioning, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let (aircon, _) = aircon;
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                aircon.in_required_period(&t_it).unwrap(),
+                [true, true, false, true][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_frac_convective(aircon: (AirConditioning, Arc<RwLock<EnergySupply>>)) {
+        let (aircon, _) = aircon;
+        assert_eq!(aircon.frac_convective(), 0.4);
     }
 }
