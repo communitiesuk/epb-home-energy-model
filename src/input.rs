@@ -410,8 +410,8 @@ pub struct ElectricBattery {
     pub maximum_charge_rate_one_way_trip: f64,
     pub maximum_discharge_rate_one_way_trip: f64,
     pub battery_location: BatteryLocation,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grid_charging_possible: Option<bool>,
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_charging_possible: bool,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]

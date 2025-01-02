@@ -2579,7 +2579,8 @@ mod tests {
             "minimum_charge_rate_one_way_trip": 42,
             "maximum_charge_rate_one_way_trip": 43,
             "maximum_discharge_rate_one_way_trip": 44,
-            "battery_location": "inside"
+            "battery_location": "inside",
+            "grid_charging_possible": false
         });
         let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
         test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);

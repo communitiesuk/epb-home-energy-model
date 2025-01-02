@@ -18,13 +18,17 @@ pub struct ElectricBattery {
     maximum_charge_rate: f64,
     maximum_discharge_rate: f64,
     battery_location: BatteryLocation,
+    grid_charging_possible: bool,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
     /// the current energy stored in the battery at the
     /// end of hour (kWh)
     current_energy_stored: AtomicF64,
+    total_time_charging_current_timestep: f64,
     state_of_health: f64,
     max_capacity: f64,
+    one_way_battery_efficiency: f64,
+    reverse_one_way_battery_efficiency: f64,
 }
 
 /// Arguments:
@@ -36,6 +40,7 @@ pub struct ElectricBattery {
 /// * `maximum_charge_rate` - the maximum charge rate one way trip the battery allows (kW)
 /// * `maximum_discharge_rate` - the maximum discharge rate one way trip the battery allows (kW)
 /// * `battery_location` - Location of battery (outside or inside)
+/// * `grid_charging_possible` - Is charging from the grid possible?
 /// * `simulation_timestep` - timestep of the simulation time
 /// * `external_conditions` - reference to ExternalConditions object
 impl ElectricBattery {
@@ -47,10 +52,13 @@ impl ElectricBattery {
         maximum_charge_rate: f64,
         maximum_discharge_rate: f64,
         battery_location: BatteryLocation,
+        grid_charging_possible: bool,
         simulation_timestep: f64,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         let state_of_health = max_of_2(Self::state_of_health_equ(battery_age), 0.);
+        let one_way_battery_efficiency = charge_discharge_efficiency.powf(0.5);
+        let reverse_one_way_battery_efficiency = 1. / one_way_battery_efficiency;
 
         Self {
             capacity,
@@ -59,12 +67,16 @@ impl ElectricBattery {
             maximum_charge_rate,
             maximum_discharge_rate,
             battery_location,
+            grid_charging_possible,
             simulation_timestep,
             external_conditions,
             current_energy_stored: Default::default(),
+            total_time_charging_current_timestep: Default::default(),
             state_of_health,
             // Calculate max capacity based on battery original capacity * state of health
             max_capacity: capacity * state_of_health,
+            one_way_battery_efficiency,
+            reverse_one_way_battery_efficiency,
         }
     }
 
@@ -81,6 +93,7 @@ impl ElectricBattery {
             maximum_charge_rate_one_way_trip,
             maximum_discharge_rate_one_way_trip,
             battery_location,
+            grid_charging_possible,
             ..
         } = input;
         Self::new(
@@ -91,6 +104,7 @@ impl ElectricBattery {
             *maximum_charge_rate_one_way_trip,
             *maximum_discharge_rate_one_way_trip,
             *battery_location,
+            *grid_charging_possible,
             simulation_timestep,
             external_conditions,
         )
@@ -135,6 +149,30 @@ impl ElectricBattery {
     /// TODO (from Python) Seek less conservative source
     fn state_of_health_equ(x: f64) -> f64 {
         -0.04 * x + 1.
+    }
+
+    fn get_charge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+        let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
+
+        self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
+    }
+
+    fn get_discharge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+        let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
+
+        self.reverse_one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
+    }
+
+    fn is_grid_charging_possible(&self) -> bool {
+        self.grid_charging_possible
+    }
+
+    fn get_state_of_charge(&self) -> f64 {
+        self.current_energy_stored.load(Ordering::SeqCst) / self.max_capacity
+    }
+
+    fn get_max_capacity(&self) -> f64 {
+        self.max_capacity
     }
 
     pub fn charge_discharge_battery(
@@ -355,6 +393,7 @@ mod tests {
             1.5,
             1.5,
             BatteryLocation::Outside,
+            false,
             simulation_time.step,
             Arc::new(external_conditions),
         )
