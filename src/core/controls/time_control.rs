@@ -3,8 +3,9 @@
 use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ControlCombination, ControlCombinationOperation, ControlLogicType, ExternalSensor,
-    ExternalSensorCorrelation, HeatSourceControlType, SmartApplianceBattery,
+    ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
+    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SmartApplianceBattery,
+    MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
@@ -876,7 +877,7 @@ impl ControlBehaviour for SmartApplianceControl {}
 
 #[derive(Debug)]
 pub(crate) struct CombinationTimeControl {
-    combinations: IndexMap<String, ControlCombination>,
+    combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
     start_day: u32,
     time_series_step: f64,
@@ -884,7 +885,7 @@ pub(crate) struct CombinationTimeControl {
 
 impl CombinationTimeControl {
     pub(crate) fn new(
-        combinations: IndexMap<String, ControlCombination>,
+        combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
         start_day: u32,
         time_series_step: f64,
@@ -903,10 +904,15 @@ impl CombinationTimeControl {
     // during a simulation
     // (Add more conditions if possible)
     fn validate_combinations(
-        combinations: &IndexMap<String, ControlCombination>,
+        combinations: &ControlCombinations,
         _controls: &IndexMap<String, Arc<Control>>,
     ) -> anyhow::Result<()> {
-        for (name, combination) in combinations.iter() {
+        for (name, combination) in [("main", &combinations.main)].into_iter().chain(
+            combinations
+                .references
+                .iter()
+                .map(|(name, control)| (name.as_str(), control)),
+        ) {
             if combination.controls.len() < 2 {
                 bail!("Control combination {name} references fewer than two controls");
             }
@@ -1300,7 +1306,7 @@ impl CombinationTimeControl {
     }
 
     pub(crate) fn is_on(&self, simtime: &SimulationTimeIteration) -> bool {
-        self.evaluate_combination_is_on("main", *simtime)
+        self.evaluate_combination_is_on(MAIN_REFERENCE, *simtime)
     }
 
     #[cfg(test)]
@@ -1309,13 +1315,13 @@ impl CombinationTimeControl {
         simtime: &SimulationTimeIteration,
         temp_air: Option<f64>,
     ) -> anyhow::Result<f64> {
-        self.evaluate_combination_target_charge("main", *simtime, temp_air)
+        self.evaluate_combination_target_charge(MAIN_REFERENCE, *simtime, temp_air)
     }
 }
 
 impl ControlBehaviour for CombinationTimeControl {
     fn in_required_period(&self, simtime: &SimulationTimeIteration) -> Option<bool> {
-        self.evaluate_combination_in_req_period("main", *simtime)
+        self.evaluate_combination_in_req_period(MAIN_REFERENCE, *simtime)
             .ok()
     }
 
@@ -2177,14 +2183,13 @@ mod tests {
     fn combination_control_on_off(
         controls_for_combination: IndexMap<String, Arc<Control>>,
     ) -> CombinationTimeControl {
-        let combination_on_off: IndexMap<String, ControlCombination> =
-            serde_json::from_value(json!({
-                "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1", "comb2"]},
-                "comb1": {"operation": "OR", "controls": ["ctrl3", "comb3"]},
-                "comb2": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]},
-                "comb3": {"operation": "XOR", "controls": ["ctrl6", "ctrl7", "ctrl8"]}
-            }))
-            .unwrap();
+        let combination_on_off: ControlCombinations = serde_json::from_value(json!({
+            "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1", "comb2"]},
+            "comb1": {"operation": "OR", "controls": ["ctrl3", "comb3"]},
+            "comb2": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]},
+            "comb3": {"operation": "XOR", "controls": ["ctrl6", "ctrl7", "ctrl8"]}
+        }))
+        .unwrap();
 
         CombinationTimeControl::new(combination_on_off, controls_for_combination, 0, 1.).unwrap()
     }
@@ -2193,12 +2198,11 @@ mod tests {
     fn combination_control_setpoint(
         controls_for_combination: IndexMap<String, Arc<Control>>,
     ) -> CombinationTimeControl {
-        let combination_setpoint: IndexMap<String, ControlCombination> =
-            serde_json::from_value(json!({
-                "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
-                "comb1": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]}
-            }))
-            .unwrap();
+        let combination_setpoint: ControlCombinations = serde_json::from_value(json!({
+            "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
+            "comb1": {"operation": "MAX", "controls": ["ctrl4", "ctrl5"]}
+        }))
+        .unwrap();
 
         CombinationTimeControl::new(combination_setpoint, controls_for_combination, 0, 1.).unwrap()
     }
@@ -2207,7 +2211,7 @@ mod tests {
     fn combination_control_req(
         controls_for_combination: IndexMap<String, Arc<Control>>,
     ) -> CombinationTimeControl {
-        let combination_req: IndexMap<String, ControlCombination> = serde_json::from_value(json!({
+        let combination_req: ControlCombinations = serde_json::from_value(json!({
             "main": {"operation": "AND", "controls": ["ctrl9", "comb1"]},
             "comb1": {"operation": "AND", "controls": ["ctrl4", "ctrl1"]}
         }))
@@ -2220,12 +2224,11 @@ mod tests {
     fn combination_control_on_off_cost(
         controls_for_combination: IndexMap<String, Arc<Control>>,
     ) -> CombinationTimeControl {
-        let combination_on_off_cost: IndexMap<String, ControlCombination> =
-            serde_json::from_value(json!({
-                "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
-                "comb1": {"operation": "OR", "controls": ["ctrl3", "ctrl10"]}
-            }))
-            .unwrap();
+        let combination_on_off_cost: ControlCombinations = serde_json::from_value(json!({
+            "main": {"operation": "AND", "controls": ["ctrl1", "ctrl2", "comb1"]},
+            "comb1": {"operation": "OR", "controls": ["ctrl3", "ctrl10"]}
+        }))
+        .unwrap();
 
         CombinationTimeControl::new(combination_on_off_cost, controls_for_combination, 0, 1.)
             .unwrap()
@@ -2409,31 +2412,6 @@ mod tests {
                     0,
                     1.,
                 ))
-                .into(),
-            ),
-            (
-                "ctrl18".to_string(),
-                Control::CombinationTime(
-                    CombinationTimeControl::new(Default::default(), Default::default(), 0, 1.)
-                        .unwrap(),
-                )
-                .into(),
-            ),
-            (
-                "ctrl19".to_string(),
-                Control::SmartAppliance(
-                    SmartApplianceControl::new(
-                        &Default::default(),
-                        &Default::default(),
-                        1.,
-                        &SimulationTime::new(0., 4., 1.).iter(),
-                        IndexMap::from([("main".to_string(), vec![1., 0.8])]),
-                        &Default::default(),
-                        &Default::default(),
-                        vec![],
-                    )
-                    .unwrap(),
-                )
                 .into(),
             ),
         ])

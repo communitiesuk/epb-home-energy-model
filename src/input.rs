@@ -15,6 +15,7 @@ use serde_valid::Validate;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
+use std::ops::Index;
 use std::sync::Arc;
 
 pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
@@ -533,7 +534,7 @@ pub(crate) enum ControlDetails {
     CombinationTime {
         start_day: u32,
         time_series_step: f64,
-        combination: IndexMap<String, ControlCombination>,
+        combination: ControlCombinations,
     },
     #[serde(rename = "smartappliance")]
     SmartAppliance {
@@ -572,6 +573,37 @@ pub(crate) struct ExternalSensor {
 pub(crate) struct ExternalSensorCorrelation {
     pub(crate) temperature: f64,
     pub(crate) max_charge: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) struct ControlCombinations {
+    pub(crate) main: ControlCombination,
+    #[serde(flatten)]
+    pub(crate) references: IndexMap<String, ControlCombination>,
+}
+
+pub(crate) const MAIN_REFERENCE: &str = "main";
+
+impl ControlCombinations {
+    pub(crate) fn contains_key(&self, key: &str) -> bool {
+        if key == MAIN_REFERENCE {
+            return true;
+        }
+        self.references.contains_key(key)
+    }
+}
+
+impl Index<&str> for ControlCombinations {
+    type Output = ControlCombination;
+
+    fn index(&self, index: &str) -> &Self::Output {
+        if index == MAIN_REFERENCE {
+            return &self.main;
+        }
+        &self.references[index]
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
