@@ -409,18 +409,18 @@ impl EnergySupply {
 
         match &self.priority {
             None => {
-                if let Some(ref battery) = &self.electric_battery {
+                if let Some(ref mut battery) = &self.electric_battery {
                     // See if the battery can deal with excess supply/demand for this timestep
                     // supply_surplus is -ve by convention and demand_not_met is +ve
                     let energy_out_of_battery =
-                        battery.charge_discharge_battery(supply_surplus, simtime);
+                        battery.charge_discharge_battery(supply_surplus, false, simtime);
                     supply_surplus -= energy_out_of_battery;
                     self.energy_into_battery
                         .get(timestep_idx)
                         .unwrap()
                         .store(-energy_out_of_battery, Ordering::SeqCst);
                     let energy_out_of_battery =
-                        battery.charge_discharge_battery(demand_not_met, simtime);
+                        battery.charge_discharge_battery(demand_not_met, false, simtime);
                     demand_not_met -= energy_out_of_battery;
                     self.energy_out_of_battery
                         .get(timestep_idx)
@@ -441,14 +441,20 @@ impl EnergySupply {
                     if matches!(item, SecondarySupplyType::ElectricBattery)
                         && self.electric_battery.is_some()
                     {
-                        let electric_battery = self.electric_battery.as_ref().unwrap();
-                        let energy_out_of_battery =
-                            electric_battery.charge_discharge_battery(supply_surplus, simtime);
+                        let mut electric_battery = self.electric_battery.as_ref().unwrap();
+                        let energy_out_of_battery = electric_battery.charge_discharge_battery(
+                            supply_surplus,
+                            false,
+                            simtime,
+                        );
                         supply_surplus -= energy_out_of_battery;
                         self.energy_into_battery[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
-                        let energy_out_of_battery =
-                            electric_battery.charge_discharge_battery(demand_not_met, simtime);
+                        let energy_out_of_battery = electric_battery.charge_discharge_battery(
+                            demand_not_met,
+                            false,
+                            simtime,
+                        );
                         demand_not_met -= energy_out_of_battery;
                         self.energy_out_of_battery[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
