@@ -1940,6 +1940,96 @@ mod tests {
     }
 
     #[fixture]
+    fn charge_control_for_combination(
+        simulation_time_for_charge_control: SimulationTime,
+        schedule_for_charge_control: Vec<bool>,
+    ) -> ChargeControl {
+        // in the upstream Python tests, a simulation time in injected into the external conditions object
+        // used in tests for the combination control that is different than the one iterated on in the test,
+        // which means that it is never iterated and reported external conditions are always as per the first
+        // timestep. therefore the following is a changed external conditions object that repeats the first value
+        // for e.g. air temps, in order to replicate the unrealistic behaviour in the Python.
+        let external_conditions = ExternalConditions::new(
+            &simulation_time_for_charge_control.iter(),
+            vec![
+                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+                19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+            ],
+            vec![
+                3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9,
+                3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9, 3.9,
+            ],
+            vec![
+                300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
+                300., 300., 300., 300., 300., 300., 300., 300., 300., 300.,
+            ],
+            vec![
+                0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                0., 0., 0.,
+            ],
+            vec![
+                0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                0., 0., 0.,
+            ],
+            vec![
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+            ],
+            51.383,
+            -0.783,
+            0,
+            0,
+            Some(0),
+            1.,
+            Some(1),
+            Some(DaylightSavingsConfig::NotApplicable),
+            false,
+            false,
+            // following starts/ends are corrected from Python tests which erroneously use previous
+            // "start" field instead of "start360" (which has different origin for angle)
+            serde_json::from_value(json!([
+                {"number": 1, "start360": 0, "end360": 45},
+                {"number": 2, "start360": 45, "end360": 90},
+                {"number": 3, "start360": 90, "end360": 135},
+                {"number": 4, "start360": 135, "end360": 180,
+                    "shading": [
+                        {"type": "obstacle", "height": 10.5, "distance": 12}
+                    ]
+                },
+                {"number": 5, "start360": 180, "end360": 225},
+                {"number": 6, "start360": 225, "end360": 270},
+                {"number": 7, "start360": 270, "end360": 315},
+                {"number": 8, "start360": 315, "end360": 360}
+            ]))
+            .unwrap(),
+        );
+        let external_sensor: ExternalSensor = serde_json::from_value(json!({
+            "correlation": [
+                {"temperature": 0.0, "max_charge": 1.0},
+                {"temperature": 10.0, "max_charge": 0.9},
+                {"temperature": 18.0, "max_charge": 0.0}
+            ]
+        }))
+        .unwrap();
+
+        ChargeControl::new(
+            ControlLogicType::Automatic,
+            schedule_for_charge_control,
+            simulation_time_for_charge_control.step,
+            0,
+            1.,
+            vec![1.0, 0.8],
+            Some(15.5),
+            None,
+            None,
+            None,
+            external_conditions.into(),
+            Some(external_sensor),
+        )
+        .unwrap()
+    }
+
+    #[fixture]
     fn controls_for_combination() -> IndexMap<String, Arc<Control>> {
         let cost_schedule = vec![
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0,
@@ -2136,7 +2226,9 @@ mod tests {
     }
 
     #[fixture]
-    fn controls_for_target_charge(charge_control: ChargeControl) -> IndexMap<String, Arc<Control>> {
+    fn controls_for_target_charge(
+        charge_control_for_combination: ChargeControl,
+    ) -> IndexMap<String, Arc<Control>> {
         IndexMap::from([
             (
                 "ctrl11".to_string(),
@@ -2147,7 +2239,10 @@ mod tests {
                 ))
                 .into(),
             ),
-            ("ctrl12".to_string(), Control::Charge(charge_control).into()),
+            (
+                "ctrl12".to_string(),
+                Control::Charge(charge_control_for_combination).into(),
+            ),
             (
                 "ctrl13".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
@@ -2250,7 +2345,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "WIP during migration to 0.32"]
     fn test_target_charge_for_combination(
         combination_control_target_charge: CombinationTimeControl,
         combination_control_target_charge1: CombinationTimeControl,
