@@ -888,23 +888,28 @@ impl CombinationTimeControl {
         controls: IndexMap<String, Arc<Control>>,
         start_day: u32,
         time_series_step: f64,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Self::validate_combinations(&combinations, &controls)?;
+
+        Ok(Self {
             combinations,
             controls,
             start_day,
             time_series_step,
-        }
+        })
     }
 
     // Unlike the upstream Python, we want to validate combinations on the way in so they can't fail
-    // during a simulation (FINISH ME)
+    // during a simulation
+    // (Add more conditions if possible)
     fn validate_combinations(
         combinations: &IndexMap<String, ControlCombination>,
         _controls: &IndexMap<String, Arc<Control>>,
     ) -> anyhow::Result<()> {
         for (name, combination) in combinations.iter() {
-            //
+            if combination.controls.len() < 2 {
+                bail!("Control combination {name} references fewer than two controls");
+            }
         }
         Ok(())
     }
@@ -2181,7 +2186,7 @@ mod tests {
             }))
             .unwrap();
 
-        CombinationTimeControl::new(combination_on_off, controls_for_combination, 0, 1.)
+        CombinationTimeControl::new(combination_on_off, controls_for_combination, 0, 1.).unwrap()
     }
 
     #[fixture]
@@ -2195,7 +2200,7 @@ mod tests {
             }))
             .unwrap();
 
-        CombinationTimeControl::new(combination_setpoint, controls_for_combination, 0, 1.)
+        CombinationTimeControl::new(combination_setpoint, controls_for_combination, 0, 1.).unwrap()
     }
 
     #[fixture]
@@ -2208,7 +2213,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_req, controls_for_combination, 0, 1.)
+        CombinationTimeControl::new(combination_req, controls_for_combination, 0, 1.).unwrap()
     }
 
     #[fixture]
@@ -2223,6 +2228,7 @@ mod tests {
             .unwrap();
 
         CombinationTimeControl::new(combination_on_off_cost, controls_for_combination, 0, 1.)
+            .unwrap()
     }
 
     #[fixture]
@@ -2268,6 +2274,7 @@ mod tests {
             0,
             1.,
         )
+        .unwrap()
     }
 
     #[fixture]
@@ -2283,6 +2290,7 @@ mod tests {
             0,
             1.,
         )
+        .unwrap()
     }
 
     #[fixture]
@@ -2365,5 +2373,91 @@ mod tests {
                 None
             )
             .is_err());
+    }
+
+    #[fixture]
+    fn controls_for_invalid_combinations(
+        charge_control_for_combination: ChargeControl,
+    ) -> IndexMap<String, Arc<Control>> {
+        IndexMap::from([
+            (
+                "ctrl14".to_string(),
+                Control::OnOffTime(OnOffTimeControl::new(
+                    vec![true, false, false, true, true, true, true, true],
+                    0,
+                    1.,
+                ))
+                .into(),
+            ),
+            (
+                "ctrl15".to_string(),
+                Control::Charge(charge_control_for_combination).into(),
+            ),
+            (
+                "ctrl16".to_string(),
+                Control::OnOffTime(OnOffTimeControl::new(
+                    vec![true, true, false, false, true, false, true, true],
+                    0,
+                    1.,
+                ))
+                .into(),
+            ),
+            (
+                "ctrl17".to_string(),
+                Control::OnOffTime(OnOffTimeControl::new(
+                    vec![true, true, false, false, true, false, true, true],
+                    0,
+                    1.,
+                ))
+                .into(),
+            ),
+            (
+                "ctrl18".to_string(),
+                Control::CombinationTime(
+                    CombinationTimeControl::new(Default::default(), Default::default(), 0, 1.)
+                        .unwrap(),
+                )
+                .into(),
+            ),
+            (
+                "ctrl19".to_string(),
+                Control::SmartAppliance(
+                    SmartApplianceControl::new(
+                        &Default::default(),
+                        &Default::default(),
+                        1.,
+                        &SimulationTime::new(0., 4., 1.).iter(),
+                        IndexMap::from([("main".to_string(), vec![1., 0.8])]),
+                        &Default::default(),
+                        &Default::default(),
+                        vec![],
+                    )
+                    .unwrap(),
+                )
+                .into(),
+            ),
+        ])
+    }
+
+    // this test is introduced in the Rust to test up-front validation of combinations
+    #[rstest]
+    fn test_invalid_combinations_caught_on_instantiation(
+        controls_for_invalid_combinations: IndexMap<String, Arc<Control>>,
+    ) {
+        let invalid_combinations = [
+            json!({
+                "main": {"operation": "AND", "controls": ["ctrl15"]},
+            }), // only one control referenced, regardless of operation
+        ];
+
+        for invalid_combination in invalid_combinations {
+            assert!(CombinationTimeControl::new(
+                serde_json::from_value(invalid_combination).unwrap(),
+                controls_for_invalid_combinations.clone(),
+                0,
+                1.,
+            )
+            .is_err());
+        }
     }
 }
