@@ -606,12 +606,13 @@ impl Index<&str> for ControlCombinations {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ControlCombination {
     pub(crate) operation: ControlCombinationOperation,
+    #[validate(min_length = 2)]
     pub(crate) controls: Vec<String>,
 }
 
