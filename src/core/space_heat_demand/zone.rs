@@ -18,6 +18,7 @@ use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use parking_lot::RwLock;
 use serde_enum_str::Serialize_enum_str;
+use smartstring::alias::String;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::Arc;
@@ -1443,7 +1444,7 @@ impl From<HeatBalanceAirNodeFieldName> for String {
             .unwrap()
             .as_str()
             .unwrap()
-            .to_string()
+            .into()
     }
 }
 
@@ -1503,7 +1504,7 @@ impl From<HeatBalanceInternalBoundaryFieldName> for String {
             .unwrap()
             .as_str()
             .unwrap()
-            .to_string()
+            .into()
     }
 }
 
@@ -1561,7 +1562,7 @@ impl From<HeatBalanceExternalBoundaryFieldName> for String {
             .unwrap()
             .as_str()
             .unwrap()
-            .to_string()
+            .into()
     }
 }
 
@@ -1951,12 +1952,12 @@ mod tests {
 
         // Put building element objects in a list that can be iterated over
         let be_objs = IndexMap::from([
-            ("be_opaque_i".to_string(), be_opaque_i.into()),
-            ("be_opaque_d".to_string(), be_opaque_d.into()),
-            ("be_ztc".to_string(), be_ztc.into()),
-            ("be_ground".to_string(), be_ground.into()),
-            ("be_transparent".to_string(), be_transparent.into()),
-            ("be_ztu".to_string(), be_ztu.into()),
+            ("be_opaque_i".into(), be_opaque_i.into()),
+            ("be_opaque_d".into(), be_opaque_d.into()),
+            ("be_ztc".into(), be_ztc.into()),
+            ("be_ground".into(), be_ground.into()),
+            ("be_transparent".into(), be_transparent.into()),
+            ("be_ztu".into(), be_ztu.into()),
         ]);
 
         // Create objects for thermal bridges
@@ -1974,9 +1975,9 @@ mod tests {
 
         // Put thermal bridge objects in a list that can be iterated over
         let thermal_bridging = ThermalBridging::Bridges(IndexMap::from([
-            ("tb_linear_1".to_string(), tb_linear_1),
-            ("tb_linear_2".to_string(), tb_linear_2),
-            ("tb_point".to_string(), tb_point),
+            ("tb_linear_1".into(), tb_linear_1),
+            ("tb_linear_2".into(), tb_linear_2),
+            ("tb_point".into(), tb_point),
         ]));
 
         let temp_ext_air_init = 2.2;

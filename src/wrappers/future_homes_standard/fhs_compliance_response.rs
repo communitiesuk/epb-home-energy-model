@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use crate::corpus::KeyString;
 use crate::wrappers::future_homes_standard::future_homes_standard::{calc_final_rates, FinalRates};
 use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
 use crate::{build_summary_data, CalculationKey, CalculationResultsWithContext, SummaryData};
@@ -8,6 +7,7 @@ use anyhow::anyhow;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
+use smartstring::alias::String;
 use std::collections::HashMap;
 
 #[derive(Serialize)]
@@ -116,15 +116,15 @@ pub(super) struct DeliveredEnergyUse {
 
 impl
     From<(
-        &IndexMap<KeyString, IndexMap<KeyString, f64>>,
-        &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+        &IndexMap<String, IndexMap<String, f64>>,
+        &IndexMap<String, IndexMap<String, f64>>,
         f64,
     )> for DeliveredEnergyUse
 {
     fn from(
         (dwelling_energy_use, target_energy_use, total_floor_area): (
-            &IndexMap<KeyString, IndexMap<KeyString, f64>>,
-            &IndexMap<KeyString, IndexMap<KeyString, f64>>,
+            &IndexMap<String, IndexMap<String, f64>>,
+            &IndexMap<String, IndexMap<String, f64>>,
             f64,
         ),
     ) -> Self {
@@ -145,7 +145,7 @@ impl
             .flat_map(|(_, energy_use)| energy_use.keys())
             .unique()
             .map(|key| {
-                (key.to_string(), {
+                (key.clone(), {
                     let dwelling_use = dwelling_energy_use
                         .values()
                         .map(|fuel_energy_use| fuel_energy_use.get(key).unwrap_or(&0.))
@@ -287,7 +287,7 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
             energy_use_by_fuel: dwelling_energy_use
                 .keys()
                 .map(|fuel| {
-                    (fuel.to_string(), {
+                    (fuel.clone(), {
                         let dwelling_fuel_total = dwelling_energy_use[fuel].values().sum::<f64>();
                         let target_fuel_total = target_energy_use[fuel].values().sum::<f64>();
                         PerformanceValue {
@@ -461,14 +461,14 @@ mod tests {
                     ("cooking", 4.769, 4.769),
                     ("appliances", 22.78, 22.78),
                 ]
-                .map(|(k, actual, notional)| (k.to_owned(), PerformanceValue { actual, notional })),
+                .map(|(k, actual, notional)| (k.into(), PerformanceValue { actual, notional })),
             ),
         });
 
     static ENERGY_USE_BY_FUEL: LazyLock<IndexMap<String, PerformanceValue>> = LazyLock::new(|| {
         IndexMap::from(
             [("mains_electricity", 73.750, 54.866)]
-                .map(|(k, actual, notional)| (k.to_owned(), PerformanceValue { actual, notional })),
+                .map(|(k, actual, notional)| (k.into(), PerformanceValue { actual, notional })),
         )
     });
 }

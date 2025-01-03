@@ -9,6 +9,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::bail;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -307,7 +308,7 @@ impl HeatNetwork {
 
         // Set up EnergySupplyConnection for this service
         heat_network.lock().energy_supply_connections.insert(
-            service_name.to_string(),
+            service_name.into(),
             EnergySupply::connection(energy_supply, service_name).unwrap(),
         );
 
@@ -316,15 +317,15 @@ impl HeatNetwork {
 
     pub fn create_service_hot_water_direct(
         heat_network: Arc<Mutex<Self>>,
-        service_name: String,
+        service_name: &str,
         temperature_hot_water: f64,
         cold_feed: WaterSourceWithTemperature,
     ) -> HeatNetworkServiceWaterDirect {
-        Self::create_service_connection(heat_network.clone(), service_name.as_str()).unwrap();
+        Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
         HeatNetworkServiceWaterDirect::new(
             heat_network,
-            service_name,
+            service_name.into(),
             temperature_hot_water,
             cold_feed,
         )
@@ -332,23 +333,28 @@ impl HeatNetwork {
 
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
-        service_name: String,
+        service_name: &str,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> HeatNetworkServiceWaterStorage {
-        Self::create_service_connection(heat_network.clone(), service_name.as_str()).unwrap();
+        Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
-        HeatNetworkServiceWaterStorage::new(heat_network, service_name, control_min, control_max)
+        HeatNetworkServiceWaterStorage::new(
+            heat_network,
+            service_name.into(),
+            control_min,
+            control_max,
+        )
     }
 
     pub(crate) fn create_service_space_heating(
         heat_network: Arc<Mutex<Self>>,
-        service_name: String,
+        service_name: &str,
         control: Arc<Control>,
     ) -> HeatNetworkServiceSpace {
-        Self::create_service_connection(heat_network.clone(), service_name.as_str()).unwrap();
+        Self::create_service_connection(heat_network.clone(), service_name).unwrap();
 
-        HeatNetworkServiceSpace::new(heat_network, service_name, control)
+        HeatNetworkServiceSpace::new(heat_network, service_name.into(), control)
     }
 
     /// Calculate the maximum energy output of the heat network, accounting
@@ -462,8 +468,8 @@ mod tests {
                 )
                 .build(),
             )),
-            "aux".to_string(),
-            "distro_losses".to_string(),
+            "aux".into(),
+            "distro_losses".into(),
             1.0,
         )))
     }
@@ -488,7 +494,7 @@ mod tests {
         // there is no base call in Rust so use one of the concrete implementations
         let heat_network_service = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network.clone(),
-            SERVICE_NAME.to_owned(),
+            SERVICE_NAME.into(),
             Arc::new(Control::SetpointTime(control.clone())),
             Arc::new(Control::SetpointTime(control.clone())),
         );
@@ -496,7 +502,7 @@ mod tests {
 
         let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network,
-            SERVICE_NAME.to_owned(),
+            SERVICE_NAME.into(),
             Arc::new(Control::SetpointTime(control.clone())),
             Arc::new(Control::SetpointTime(control.clone())),
         );
@@ -520,8 +526,8 @@ mod tests {
             1.0,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
-            energy_supply_conn_name_auxiliary.to_owned(),
-            energy_supply_conn_name_building_level_distribution_losses.to_owned(),
+            energy_supply_conn_name_auxiliary.into(),
+            energy_supply_conn_name_building_level_distribution_losses.into(),
             two_len_simulation_time.step,
         )))
     }
@@ -543,7 +549,7 @@ mod tests {
 
         HeatNetworkServiceWaterDirect::new(
             heat_network,
-            "heat_network_test".to_owned(),
+            "heat_network_test".into(),
             return_temp,
             WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_feed)),
         )
@@ -632,8 +638,8 @@ mod tests {
             1.0,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
-            energy_supply_conn_name_auxiliary.to_owned(),
-            energy_supply_conn_name_building_level_distribution_losses.to_owned(),
+            energy_supply_conn_name_auxiliary.into(),
+            energy_supply_conn_name_building_level_distribution_losses.into(),
             two_len_simulation_time.step,
         )))
     }
@@ -673,7 +679,7 @@ mod tests {
 
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
-            "heat_network_test".to_owned(),
+            "heat_network_test".into(),
             Arc::new(Control::SetpointTime(control_min)),
             Arc::new(Control::SetpointTime(control_max)),
         )
@@ -745,8 +751,8 @@ mod tests {
             1.0,
             0.8,
             Arc::new(RwLock::new(energy_supply)),
-            energy_supply_conn_name_auxiliary.to_owned(),
-            energy_supply_conn_name_building_level_distribution_losses.to_owned(),
+            energy_supply_conn_name_auxiliary.into(),
+            energy_supply_conn_name_building_level_distribution_losses.into(),
             three_len_simulation_time.step,
         )))
     }
@@ -776,7 +782,7 @@ mod tests {
 
         HeatNetworkServiceSpace::new(
             heat_network.clone(),
-            "heat_network_test".to_owned(),
+            "heat_network_test".into(),
             Arc::new(control),
         )
     }
@@ -855,8 +861,8 @@ mod tests {
             0.24,
             0.8,
             energy_supply_for_heat_network.clone(),
-            energy_supply_conn_name_auxiliary.to_string(),
-            energy_supply_conn_name_building_level_distribution_losses.to_string(),
+            energy_supply_conn_name_auxiliary.into(),
+            energy_supply_conn_name_building_level_distribution_losses.into(),
             two_len_simulation_time.step,
         )));
 
@@ -954,7 +960,7 @@ mod tests {
 
         HeatNetwork::create_service_hot_water_direct(
             heat_network.clone(),
-            service_name.to_owned(),
+            service_name,
             temp_hot_water,
             cold_feed,
         );
@@ -975,7 +981,7 @@ mod tests {
 
         HeatNetwork::create_service_space_heating(
             heat_network.clone(),
-            service_name.to_owned(),
+            service_name,
             Arc::new(Control::SetpointTime(
                 SetpointTimeControl::new(
                     vec![Some(21.0), Some(21.0), None],

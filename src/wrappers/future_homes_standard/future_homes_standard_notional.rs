@@ -35,6 +35,7 @@ use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use serde_json::json;
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use tracing::instrument;
@@ -217,7 +218,7 @@ fn edit_infiltration_ventilation(
                     "design_outdoor_air_flow_rate": 80
                 }
             ))?;
-            mech_vents.insert(i.to_string(), mech_vent);
+            mech_vents.insert(i.to_string().into(), mech_vent);
         }
         infiltration_ventilation.mechanical_ventilation = mech_vents;
     }
@@ -1016,7 +1017,7 @@ fn calc_daily_hw_demand(
     {
         let notional_wwhrs = waste_water_heat_recovery.get(NOTIONAL_WWHRS).ok_or_else(|| anyhow!("A {} entry for WWHRS was expected to have been set in the FHS Notional wrapper.", NOTIONAL_WWHRS))?;
         [(
-            NOTIONAL_WWHRS.to_owned(),
+            String::from(NOTIONAL_WWHRS),
             Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
                 WWHRSInstantaneousSystemB::new(
                     cold_water_sources

@@ -11,7 +11,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_valid::Validate;
+use serde_valid::validation::error::{Format, Message};
+use serde_valid::{MinimumError, Validate};
+use smartstring::alias::String;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
@@ -322,6 +324,16 @@ impl Display for FuelType {
     }
 }
 
+impl From<FuelType> for String {
+    fn from(value: FuelType) -> Self {
+        serde_json::to_value(value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    }
+}
+
 impl TryFrom<EnergySupplyType> for FuelType {
     type Error = anyhow::Error;
 
@@ -370,6 +382,16 @@ impl Display for EnergySupplyType {
             "{}",
             serde_json::to_value(self).unwrap().as_str().unwrap()
         )
+    }
+}
+
+impl From<EnergySupplyType> for String {
+    fn from(value: EnergySupplyType) -> Self {
+        serde_json::to_value(value)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
     }
 }
 
@@ -634,8 +656,31 @@ impl Index<&str> for ControlCombinations {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ControlCombination {
     pub(crate) operation: ControlCombinationOperation,
-    #[validate(min_length = 2)]
+    // unable currently to use serde_valid built-in validations to validate length of string from
+    // smartstring crate, so using custom validation instead
+    #[validate(custom = validate_length_minimum_two)]
     pub(crate) controls: Vec<String>,
+}
+
+fn validate_length_minimum_two(
+    sources: &Vec<String>,
+) -> Result<(), serde_valid::validation::Error> {
+    validate_length_minimum::<2>(sources)
+}
+
+fn validate_length_minimum<const T: usize>(
+    sources: &Vec<String>,
+) -> Result<(), serde_valid::validation::Error> {
+    sources
+        .iter()
+        .all(|string| string.len() >= T)
+        .then_some(())
+        .ok_or_else(|| {
+            serde_valid::validation::Error::Minimum(Message::new(
+                MinimumError::new(2),
+                Format::Default,
+            ))
+        })
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -742,7 +787,7 @@ pub struct HotWaterSource {
 
 impl HotWaterSource {
     fn source_keys(&self) -> Vec<String> {
-        vec!["hw cylinder".to_string()]
+        vec!["hw cylinder".into()]
     }
 
     fn hot_water_source_for_processing(
@@ -756,7 +801,7 @@ impl HotWaterSource {
     }
 
     pub(crate) fn as_index_map(&self) -> IndexMap<String, HotWaterSourceDetails> {
-        IndexMap::from([("hw cylinder".to_string(), self.hot_water_cylinder.clone())])
+        IndexMap::from([("hw cylinder".into(), self.hot_water_cylinder.clone())])
     }
 }
 
@@ -1105,11 +1150,7 @@ pub enum HeatSourceWetType {
 impl HeatSourceWetType {
     /// Convert the type to a canonical string based on the input format to be used in e.g. energy supply names
     pub fn to_canonical_string(&self) -> String {
-        serde_json::to_value(self)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned()
+        serde_json::to_value(self).unwrap().as_str().unwrap().into()
     }
 }
 
@@ -1587,7 +1628,7 @@ impl WaterHeatingEvents {
         self.0
             .entry(event_type)
             .or_default()
-            .entry(name.to_string())
+            .entry(name.into())
             .or_default()
             .push(event);
     }
@@ -2274,7 +2315,7 @@ impl TransparentBuildingElement for BuildingElement {
                 ref mut window_openable_control,
                 ..
             } => {
-                *window_openable_control = Some(control.to_owned());
+                *window_openable_control = Some(control.into());
             }
             _ => unreachable!(),
         }
@@ -2512,15 +2553,15 @@ impl WindowTreatment {
     }
 
     pub(crate) fn set_open_control(&mut self, control: &str) {
-        self.open_control = Some(control.to_string())
+        self.open_control = Some(control.into())
     }
 
     pub(crate) fn set_closing_irradiance_control(&mut self, control: &str) {
-        self.closing_irradiance_control = Some(control.to_string())
+        self.closing_irradiance_control = Some(control.into())
     }
 
     pub(crate) fn set_opening_irradiance_control(&mut self, control: &str) {
-        self.opening_irradiance_control = Some(control.to_string())
+        self.opening_irradiance_control = Some(control.into())
     }
 
     pub(crate) fn set_opening_delay_hrs(&mut self, delay: f64) {
@@ -2735,7 +2776,7 @@ impl SpaceCoolSystemDetails {
     }
 
     pub(crate) fn set_energy_supply(&mut self, energy_supply_type: &str) {
-        self.energy_supply = energy_supply_type.to_string();
+        self.energy_supply = energy_supply_type.into();
     }
 
     pub fn advanced_start(&self) -> Option<f64> {
@@ -3275,7 +3316,7 @@ impl MechanicalVentilationForProcessing for MechanicalVentilation {
     }
 
     fn set_control(&mut self, control: &str) {
-        self.control = Some(control.to_owned());
+        self.control = Some(control.into());
     }
 }
 
@@ -3461,13 +3502,18 @@ impl Display for ApplianceKey {
 
 impl From<ApplianceKey> for String {
     fn from(appliance_key: ApplianceKey) -> Self {
-        appliance_key.to_string()
+        String::from(
+            serde_json::to_value(appliance_key)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+        )
     }
 }
 
 impl From<&ApplianceKey> for String {
     fn from(appliance_key: &ApplianceKey) -> Self {
-        appliance_key.to_string()
+        (*appliance_key).into()
     }
 }
 
@@ -3877,7 +3923,7 @@ impl InputForProcessing {
             .zone
             .get_mut(zone)
             .ok_or(anyhow!("Used zone key for a zone that does not exist"))?;
-        zone.space_heat_system = SystemReference::Single(system_name.to_string());
+        zone.space_heat_system = SystemReference::Single(system_name.into());
         Ok(self)
     }
 
@@ -3901,7 +3947,7 @@ impl InputForProcessing {
             .zone
             .get_mut(zone)
             .ok_or(anyhow!("Used zone key for a zone that does not exist"))?;
-        zone.space_cool_system = SystemReference::Single(system_name.to_string());
+        zone.space_cool_system = SystemReference::Single(system_name.into());
         Ok(self)
     }
 
@@ -4290,7 +4336,7 @@ impl InputForProcessing {
         self.input
             .appliance_gains
             .get(field)
-            .map(|details| details.energy_supply.to_string())
+            .map(|details| details.energy_supply.clone())
     }
 
     pub fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
@@ -4327,7 +4373,7 @@ impl InputForProcessing {
                 "Fuel type not provided for energy supply field '{field}'"
             ))?
             .fuel
-            .to_string())
+            .into())
     }
 
     pub fn shower_flowrates(&self) -> IndexMap<String, f64> {
@@ -4384,7 +4430,7 @@ impl InputForProcessing {
 
         match mixer_shower {
             Some(Shower::MixerShower { ref mut waste_water_heat_recovery, .. }) => {
-                *waste_water_heat_recovery = Some(wwhrs.to_owned());
+                *waste_water_heat_recovery = Some(wwhrs.into());
             }
             _ => bail!("In the FHS Notional wrapper, the shower under the key mixer was not found to be a mixer shower when it was expected to be."),
         }
@@ -4450,11 +4496,11 @@ impl InputForProcessing {
 
         match self.input.hot_water_demand.other_water_use {
             Some(ref mut other_water_use) => {
-                other_water_use.0.insert("other".to_string(), other_details);
+                other_water_use.0.insert("other".into(), other_details);
             }
             None => {
                 self.input.hot_water_demand.other_water_use = Some(OtherWaterUses(IndexMap::from(
-                    [("other".to_string(), other_details)],
+                    [("other".into(), other_details)],
                 )));
             }
         }
@@ -4600,7 +4646,7 @@ impl InputForProcessing {
         let system_details: SpaceHeatSystemDetails =
             serde_json::from_value(space_heat_system_value)?;
         let systems = self.input.space_heat_system.get_or_insert(empty_details);
-        systems.insert(key.to_string(), system_details);
+        systems.insert(key.into(), system_details);
         Ok(self)
     }
 
@@ -4618,7 +4664,7 @@ impl InputForProcessing {
         let system_details: SpaceCoolSystemDetails =
             serde_json::from_value(space_cool_system_value)?;
         let systems = self.input.space_cool_system.get_or_insert(empty_details);
-        systems.insert(key.to_string(), system_details);
+        systems.insert(key.into(), system_details);
         Ok(self)
     }
 
@@ -4655,7 +4701,7 @@ impl InputForProcessing {
     ) {
         self.input
             .energy_supply
-            .insert(energy_supply_key.to_string(), energy_supply_details);
+            .insert(energy_supply_key.into(), energy_supply_details);
     }
 
     #[cfg(test)]
@@ -4973,7 +5019,7 @@ impl InputForProcessing {
         self.input
             .infiltration_ventilation
             .mechanical_ventilation
-            .insert(vent_name.to_owned(), serde_json::from_value(mech_vent)?);
+            .insert(vent_name.into(), serde_json::from_value(mech_vent)?);
 
         Ok(())
     }
@@ -4994,21 +5040,21 @@ impl InputForProcessing {
     }
 
     pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(&mut self, control: &str) {
-        self.input.infiltration_ventilation.window_adjust_control = Some(control.to_owned());
+        self.input.infiltration_ventilation.window_adjust_control = Some(control.into());
     }
 
     pub(crate) fn set_vent_adjust_min_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
     ) {
-        self.input.infiltration_ventilation.vent_adjust_min_control = Some(control.to_owned());
+        self.input.infiltration_ventilation.vent_adjust_min_control = Some(control.into());
     }
 
     pub(crate) fn set_vent_adjust_max_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
     ) {
-        self.input.infiltration_ventilation.vent_adjust_max_control = Some(control.to_owned());
+        self.input.infiltration_ventilation.vent_adjust_max_control = Some(control.into());
     }
 
     pub(crate) fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
@@ -5154,7 +5200,7 @@ mod tests {
         let validator = jsonschema::validator_for(&schema).unwrap();
 
         let mut erroring_files: usize = Default::default();
-        let mut error_outputs: Vec<String> = Default::default();
+        let mut error_outputs: Vec<std::string::String> = Default::default();
 
         for entry in files {
             let json_to_validate =

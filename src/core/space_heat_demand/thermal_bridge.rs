@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use serde_json::Value;
+use smartstring::alias::String;
 
 #[derive(Debug, PartialEq)]
 pub enum ThermalBridging {
@@ -39,7 +40,7 @@ pub fn thermal_bridging_from_input(input: Value) -> ThermalBridging {
             let mut bridges = IndexMap::new();
             for (name, bridge_object) in map.clone().iter() {
                 bridges.insert(
-                    (*name).clone(),
+                    name.into(),
                     match bridge_object.get("type") {
                         Some(Value::String(s)) if s == &String::from("ThermalBridgeLinear") => {
                             ThermalBridge::Linear {
@@ -105,21 +106,21 @@ mod tests {
             )),
             ThermalBridging::Bridges(IndexMap::from([
                 (
-                    "TB1".to_string(),
+                    "TB1".into(),
                     ThermalBridge::Linear {
                         linear_thermal_transmittance: 1.0,
                         length: 3.0
                     }
                 ),
                 (
-                    "TB2".to_string(),
+                    "TB2".into(),
                     ThermalBridge::Linear {
                         linear_thermal_transmittance: 0.1,
                         length: 2.0
                     }
                 ),
                 (
-                    "TB3".to_string(),
+                    "TB3".into(),
                     ThermalBridge::Point {
                         heat_transfer_coefficient: 2.0
                     }

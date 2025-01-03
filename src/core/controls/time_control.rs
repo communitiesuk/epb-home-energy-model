@@ -14,6 +14,7 @@ use bounded_vec_deque::BoundedVecDeque;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use smartstring::alias::String;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::iter::repeat;
@@ -2085,7 +2086,7 @@ mod tests {
 
         IndexMap::from([
             (
-                "ctrl1".to_string(),
+                "ctrl1".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, true, false, true, true, true, true, true]
                         .into_iter()
@@ -2097,7 +2098,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl2".to_string(),
+                "ctrl2".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [false, true, true, false, false, false, true, false]
                         .into_iter()
@@ -2109,7 +2110,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl3".to_string(),
+                "ctrl3".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, false, true, false, false, false, true, false]
                         .into_iter()
@@ -2121,7 +2122,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl4".to_string(),
+                "ctrl4".into(),
                 Control::SetpointTime(
                     SetpointTimeControl::new(
                         [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
@@ -2141,7 +2142,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl5".to_string(),
+                "ctrl5".into(),
                 Control::SetpointTime(
                     SetpointTimeControl::new(
                         [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
@@ -2161,7 +2162,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl6".to_string(),
+                "ctrl6".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, true, false, true, true, true, true, true]
                         .into_iter()
@@ -2173,7 +2174,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl7".to_string(),
+                "ctrl7".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [false, true, false, false, false, false, true, false]
                         .into_iter()
@@ -2185,7 +2186,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl8".to_string(),
+                "ctrl8".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, false, false, true, true, true, true, true]
                         .into_iter()
@@ -2197,7 +2198,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl9".to_string(),
+                "ctrl9".into(),
                 Control::SetpointTime(
                     SetpointTimeControl::new(
                         vec![
@@ -2222,7 +2223,7 @@ mod tests {
                 )
                 .into(),
             ),
-            ("ctrl10".to_string(), cost_minimising_control.into()),
+            ("ctrl10".into(), cost_minimising_control.into()),
         ])
     }
 
@@ -2287,7 +2288,7 @@ mod tests {
     ) -> IndexMap<String, Arc<Control>> {
         IndexMap::from([
             (
-                "ctrl11".to_string(),
+                "ctrl11".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, false, false, true, true, true, true, true]
                         .into_iter()
@@ -2299,11 +2300,11 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl12".to_string(),
+                "ctrl12".into(),
                 Control::Charge(charge_control_for_combination).into(),
             ),
             (
-                "ctrl13".to_string(),
+                "ctrl13".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, true, false, false, true, false, true, true]
                         .into_iter()
@@ -2437,7 +2438,7 @@ mod tests {
     ) -> IndexMap<String, Arc<Control>> {
         IndexMap::from([
             (
-                "ctrl14".to_string(),
+                "ctrl14".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, false, false, true, true, true, true, true]
                         .into_iter()
@@ -2449,11 +2450,11 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl15".to_string(),
+                "ctrl15".into(),
                 Control::Charge(charge_control_for_combination).into(),
             ),
             (
-                "ctrl16".to_string(),
+                "ctrl16".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, true, false, false, true, false, true, true]
                         .into_iter()
@@ -2465,7 +2466,7 @@ mod tests {
                 .into(),
             ),
             (
-                "ctrl17".to_string(),
+                "ctrl17".into(),
                 Control::OnOffTime(OnOffTimeControl::new(
                     [true, true, false, false, true, false, true, true]
                         .into_iter()

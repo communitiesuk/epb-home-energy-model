@@ -20,6 +20,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::iter;
 use std::ops::Deref;
@@ -755,7 +756,7 @@ impl StorageTank {
             } else {
                 self.determine_heat_source_switch_on(
                     temp_s3_n,
-                    heat_source_name,
+                    heat_source_name.into(),
                     heat_source,
                     heater_layer,
                     thermostat_layer,
@@ -3262,7 +3263,7 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
-        let heat_sources = IndexMap::from([("imheater".to_string(), heat_source)]);
+        let heat_sources = IndexMap::from([("imheater".into(), heat_source)]);
         let storage_tank = StorageTank::new(
             150.0,
             1.68,
@@ -3331,7 +3332,7 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
-        let heat_sources = IndexMap::from([("imheater2".to_string(), heat_source)]);
+        let heat_sources = IndexMap::from([(String::from("imheater2"), heat_source)]);
         let storage_tank = StorageTank::new(
             210.0,
             1.61,
@@ -3477,7 +3478,7 @@ mod tests {
         ));
         let simulation_timestep = simulation_time_for_storage_tank.step;
 
-        let heat_sources = IndexMap::from([("imheater".to_string(), heat_source)]);
+        let heat_sources = IndexMap::from([(String::from("imheater"), heat_source)]);
 
         StorageTank::new(
             150.0,
@@ -3528,7 +3529,7 @@ mod tests {
         let pvdiverter = PVDiverter::new(
             &HotWaterStorageTank::StorageTank(Arc::new(RwLock::new(storage_tank_for_pv_diverter))),
             Arc::new(Mutex::new(immersion_heater)),
-            "imheater".to_string(),
+            "imheater".into(),
             diverter_control.into(),
         );
         let sim_time = SimulationTime::new(0., 4., 1.);
@@ -3773,7 +3774,7 @@ mod tests {
             cold_feed,
             simulation_time_for_solar_thermal.step,
             IndexMap::from([(
-                "solthermal".to_string(),
+                String::from("solthermal"),
                 PositionedHeatSource {
                     heat_source: Arc::new(Mutex::new(HeatSource::Storage(
                         HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
@@ -5177,7 +5178,7 @@ mod tests {
             Mutex::new(immersion_heater),
         )));
         let heat_sources = IndexMap::from([(
-            heat_source_name.to_string(),
+            String::from(heat_source_name),
             PositionedHeatSource {
                 heat_source: Arc::new(Mutex::new(heat_source)),
                 heater_position: 0.6,

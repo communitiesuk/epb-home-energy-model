@@ -10,6 +10,7 @@ use atomic_float::AtomicF64;
 use derivative::Derivative;
 use indexmap::{indexmap, IndexMap};
 use parking_lot::RwLock;
+use smartstring::alias::String;
 use std::io::Read;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -826,8 +827,8 @@ mod tests {
     pub fn energy_supply<'a>(simulation_time: SimulationTime) -> EnergySupply {
         let mut energy_supply =
             EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build();
-        energy_supply.register_end_user_name("shower".to_string());
-        energy_supply.register_end_user_name("bath".to_string());
+        energy_supply.register_end_user_name("shower".into());
+        energy_supply.register_end_user_name("bath".into());
 
         energy_supply
     }
@@ -843,11 +844,11 @@ mod tests {
         let shared_supply = Arc::new(RwLock::new(energy_supply));
         let energy_connection_1 = EnergySupplyConnection {
             energy_supply: shared_supply.clone(),
-            end_user_name: "shower".to_string(),
+            end_user_name: "shower".into(),
         };
         let energy_connection_2 = EnergySupplyConnection {
             energy_supply: shared_supply.clone(),
-            end_user_name: "bath".to_string(),
+            end_user_name: "bath".into(),
         };
         (energy_connection_1, energy_connection_2, shared_supply)
     }
@@ -856,7 +857,7 @@ mod tests {
     pub fn energy_supply_connection_1<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
             energy_supply: Arc::new(RwLock::new(energy_supply)),
-            end_user_name: "shower".to_string(),
+            end_user_name: "shower".into(),
         }
     }
 
@@ -864,7 +865,7 @@ mod tests {
     pub fn energy_supply_connection_2<'a>(energy_supply: EnergySupply) -> EnergySupplyConnection {
         EnergySupplyConnection {
             energy_supply: Arc::new(RwLock::new(energy_supply)),
-            end_user_name: "bath".to_string(),
+            end_user_name: "bath".into(),
         }
     }
 

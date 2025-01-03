@@ -7,6 +7,8 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::anyhow;
 use atomic_float::AtomicF64;
 use parking_lot::RwLock;
+use smartstring::alias::String;
+use std::convert::TryInto;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

@@ -2089,7 +2089,7 @@ mod tests {
         control: Control,
     ) -> Arc<RwLock<HeatBattery>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
-            energy_supply: "mains elec".to_string(),
+            energy_supply: "mains elec".into(),
             heat_battery_location: Some(HeatSourceLocation::Internal),
             electricity_circ_pump: 0.06,
             electricity_standby: 0.0244,

@@ -12,7 +12,6 @@ use crate::core::units::{
     JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, SECONDS_PER_MINUTE,
     WATTS_PER_KILOWATT,
 };
-use crate::corpus::KeyString;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData,
@@ -957,7 +956,7 @@ impl Emitters {
         let delta_t_values = temperature_data.iter().map(|row| row[0]).collect_vec();
         let _min_delta_t = delta_t_values.iter().min_by(|a, b| a.total_cmp(b));
 
-        let fan_power_values = fan_power_data[1..].iter().map(|&f| <f64>::from(f));
+        let fan_power_values = fan_power_data[1..].iter().map(|f| <f64>::from(f));
 
         // Parsing product data to get outputs and fan speeds
         let interpolated_outputs: Vec<_> = (1..temperature_data[1].len())
@@ -1314,7 +1313,7 @@ impl Emitters {
 
         let mut emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult> = None;
 
-        let mut temp_emitter_output = StringOrNumber::String(KeyString::from("n/a").unwrap());
+        let mut temp_emitter_output = "n/a".into();
 
         let (
             time_heating_start,
@@ -1822,7 +1821,7 @@ impl Emitters {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct EmittersDetailedResult {
     timestep_index: usize,
     energy_demand: f64,
@@ -1990,8 +1989,8 @@ mod tests {
         simulation_time: SimulationTime,
     ) -> SpaceHeatingService {
         let boiler_details = HeatSourceWetDetails::Boiler {
-            energy_supply: "mains gas".to_string(),
-            energy_supply_auxiliary: "mains elec".to_string(),
+            energy_supply: "mains gas".into(),
+            energy_supply_auxiliary: "mains elec".into(),
             rated_power: 2.5, // changed to match Python mocks
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,

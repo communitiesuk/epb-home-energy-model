@@ -11,6 +11,7 @@ use rand_distr::{Distribution, Poisson};
 use rand_mt::Mt64;
 use rand_pcg::Pcg64;
 use serde::Deserialize;
+use smartstring::alias::String;
 use std::fmt::{Debug, Formatter};
 use std::io::{BufReader, Cursor};
 use std::iter::Iterator;
@@ -179,7 +180,7 @@ pub fn reset_events_and_provide_drawoff_generator(
         let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
             event_type: WaterHeatingEventType::Other,
-            name: "other".to_string(),
+            name: "other".into(),
             duration_fn: Rc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
                 other_flow_rate,
                 _
@@ -203,14 +204,14 @@ pub fn reset_events_and_provide_drawoff_generator(
             let bath_size = bath_size_displaced(n_occupants, STANDARD_BATH_SIZE)?;
             baths.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
-                name: "other".to_string(),
+                name: "other".into(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => bath_size, 8.0, _),
                 ))),
             });
             showers.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
-                name: "other".to_string(),
+                name: "other".into(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => bath_size, 8.0, _),
                 ))),

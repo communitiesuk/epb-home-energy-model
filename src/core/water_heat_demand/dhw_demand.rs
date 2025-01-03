@@ -19,6 +19,7 @@ use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -510,35 +511,34 @@ mod tests {
                 utilisation_factor,
             ),
         )));
-        let wwhrs = IndexMap::from([("Example_Inst_WWHRS".to_owned(), wwhrsb.clone())]);
+        let wwhrs = IndexMap::from([(String::from("Example_Inst_WWHRS"), wwhrsb.clone())]);
 
         let electricity_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));
-        let energy_supplies =
-            IndexMap::from([("mains elec".to_owned(), electricity_supply.clone())]);
+        let energy_supplies = IndexMap::from([("mains elec".into(), electricity_supply.clone())]);
 
         let showers_input = Showers(IndexMap::from([
             (
-                "mixer".to_owned(),
+                "mixer".into(),
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    waste_water_heat_recovery: Some("Example_Inst_WWHRS".to_owned()),
+                    waste_water_heat_recovery: Some("Example_Inst_WWHRS".into()),
                 },
             ),
             (
-                "IES".to_owned(),
+                "IES".into(),
                 ShowerInput::InstantElectricShower {
                     rated_power: 9.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    energy_supply: "mains elec".to_string(),
+                    energy_supply: "mains elec".into(),
                 },
             ),
         ]));
 
         let baths_input = Baths(IndexMap::from([(
-            "medium".to_owned(),
+            "medium".into(),
             BathDetails {
                 size: 100.,
                 cold_water_source: ColdWaterSourceType::MainsWater,
@@ -547,7 +547,7 @@ mod tests {
         )]));
 
         let other_input = OtherWaterUses(IndexMap::from([(
-            "other".to_owned(),
+            "other".into(),
             OtherWaterUseDetails {
                 flowrate: 8.0,
                 cold_water_source: ColdWaterSourceType::MainsWater,

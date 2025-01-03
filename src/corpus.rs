@@ -79,7 +79,6 @@ use crate::input::{
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::ProjectFlags;
 use anyhow::{anyhow, bail};
-use arrayvec::ArrayString;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
@@ -88,6 +87,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
+use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -147,7 +147,7 @@ fn control_from_input(
             simulation_time_iterator,
             control_input,
         )? {
-            extra.insert(name.to_string(), Arc::new(ctrl));
+            extra.insert(name.to_string().into(), Arc::new(ctrl));
         }
     }
 
@@ -335,7 +335,7 @@ fn single_control_from_details(
                                 .cloned(),
                             );
                         } else {
-                            controls.insert(ctrl.into());
+                            controls.insert(ctrl.clone());
                         }
                     }
                 }
@@ -358,7 +358,7 @@ fn single_control_from_details(
                         };
                         control.map(|control| {
                             Ok((
-                                control_name.into(),
+                                control_name.clone(),
                                 Arc::new(control),
                             ))
                         })
@@ -460,7 +460,7 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
     .into();
     for (name, data) in input.energy_supply.iter() {
         energy_supplies.insert(
-            name.into(),
+            name.clone(),
             Arc::new(RwLock::new(
                 EnergySupplyBuilder::new(data.fuel, simtime.total_steps()).build(),
             )),
@@ -907,7 +907,7 @@ impl Corpus {
 
         let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
-            "hw cylinder".to_string(),
+            "hw cylinder".into(),
             &input.hot_water_source.hot_water_cylinder,
             &cold_water_sources,
             &pre_heated_water_sources,
@@ -922,9 +922,9 @@ impl Corpus {
             external_conditions.clone(),
             output_options.detailed_output_heating_cooling,
         )?;
-        hot_water_sources.insert("hw cylinder".to_string(), hot_water_source);
+        hot_water_sources.insert("hw cylinder".into(), hot_water_source);
         energy_supply_conn_names_for_hot_water_source
-            .insert("hw cylinder".to_string(), hw_cylinder_conn_names);
+            .insert("hw cylinder".into(), hw_cylinder_conn_names);
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 
@@ -1312,17 +1312,15 @@ impl Corpus {
         for h_name in h_name_list {
             match h_name.as_str() {
                 h_name @ "" => {
-                    frac_convective_heat.insert((*h_name).to_owned(), 1.0);
-                    temp_setpnt_heat.insert((*h_name).to_owned(), temp_setpnt_heat_none());
+                    frac_convective_heat.insert((*h_name).into(), 1.0);
+                    temp_setpnt_heat.insert(h_name.into(), temp_setpnt_heat_none());
                 }
                 h_name => {
                     let space_heat_system = self.space_heat_systems.get(h_name).unwrap().lock();
-                    frac_convective_heat.insert(
-                        (*h_name).to_owned(),
-                        space_heat_system.frac_convective(simtime),
-                    );
+                    frac_convective_heat
+                        .insert(h_name.into(), space_heat_system.frac_convective(simtime));
                     temp_setpnt_heat.insert(
-                        (*h_name).to_owned(),
+                        (*h_name).into(),
                         space_heat_system
                             .temp_setpnt(simtime)
                             .unwrap_or_else(temp_setpnt_heat_none),
@@ -1334,15 +1332,14 @@ impl Corpus {
         for c_name in c_name_list {
             match c_name.as_str() {
                 c_name @ "" => {
-                    frac_convective_cool.insert((*c_name).to_owned(), 1.0);
-                    temp_setpnt_cool.insert((*c_name).to_owned(), temp_setpnt_cool_none());
+                    frac_convective_cool.insert((*c_name).into(), 1.0);
+                    temp_setpnt_cool.insert(c_name.into(), temp_setpnt_cool_none());
                 }
                 c_name => {
                     let space_cool_system = self.space_cool_systems.get(c_name).unwrap();
-                    frac_convective_cool
-                        .insert((*c_name).to_owned(), space_cool_system.frac_convective());
+                    frac_convective_cool.insert(c_name.into(), space_cool_system.frac_convective());
                     temp_setpnt_cool.insert(
-                        (*c_name).to_owned(),
+                        c_name.into(),
                         space_cool_system
                             .temp_setpnt(&simtime)
                             .unwrap_or_else(temp_setpnt_cool_none),
@@ -1471,7 +1468,7 @@ impl Corpus {
 
         let mut hc_output_min = h_output_min.clone();
         hc_output_min.extend(c_output_min);
-        hc_output_min.extend(IndexMap::from([("".to_owned(), 0.0)])); // empty string used here as equivalent of None in Python
+        hc_output_min.extend(IndexMap::from([("".into(), 0.0)])); // empty string used here as equivalent of None in Python
 
         let mut frac_convective_system = frac_convective_heat_zone_system[z_name].clone();
         frac_convective_system.extend(frac_convective_cool_zone_system[z_name].clone());
@@ -1625,7 +1622,7 @@ impl Corpus {
             let z_name = z_name.as_str();
             // Calculate internal and solar gains
             gains_internal_zone.insert(
-                z_name.to_string(),
+                z_name.into(),
                 self.space_heat_internal_gains_for_zone(
                     zone,
                     gains_internal_dhw,
@@ -1634,7 +1631,7 @@ impl Corpus {
                     simtime,
                 )?,
             );
-            gains_solar_zone.insert(z_name.to_string(), zone.gains_solar(simtime));
+            gains_solar_zone.insert(z_name.into(), zone.gains_solar(simtime));
 
             // Get heating and cooling characteristics for the current zone
             let (
@@ -1684,8 +1681,8 @@ impl Corpus {
                 simtime,
             )?;
 
-            space_heat_demand_zone.insert(z_name.to_owned(), space_heat_demand_zone_current);
-            space_cool_demand_zone.insert(z_name.to_owned(), space_cool_demand_zone_current);
+            space_heat_demand_zone.insert(z_name.into(), space_heat_demand_zone_current);
+            space_cool_demand_zone.insert(z_name.into(), space_cool_demand_zone_current);
             ach_cooling_zone.insert(z_name, ach_cooling_zone_current);
             ach_to_trigger_heating_zone.insert(z_name, ach_to_trigger_heating_zone_current);
         }
@@ -1725,8 +1722,8 @@ impl Corpus {
                     AirChangesPerHourArgument::Cooling { ach_cooling },
                     simtime,
                 )?;
-                space_heat_demand_zone.insert(z_name.to_owned(), space_heat_demand_zone_current);
-                space_cool_demand_zone.insert(z_name.to_owned(), space_cool_demand_zone_current);
+                space_heat_demand_zone.insert(z_name.into(), space_heat_demand_zone_current);
+                space_cool_demand_zone.insert(z_name.into(), space_cool_demand_zone_current);
             }
 
             ach_cooling
@@ -1895,11 +1892,11 @@ impl Corpus {
                             .demand_energy(space_heat_demand_zone_system[h_name], simtime)?,
                     );
                     hc_output_convective.insert(
-                        h_name.to_string(),
+                        (*h_name).into(),
                         space_heat_provided_zone_system[h_name] * frac_convective_heat,
                     );
                     hc_output_radiative.insert(
-                        h_name.to_string(),
+                        (*h_name).into(),
                         space_heat_provided_zone_system[h_name] * (1.0 - frac_convective_heat),
                     );
                     // If heating has been provided, then next iteration of loop
@@ -1913,11 +1910,11 @@ impl Corpus {
                             .demand_energy(space_cool_demand_zone_system[c_name], simtime),
                     );
                     hc_output_convective.insert(
-                        c_name.to_string(),
+                        (*c_name).into(),
                         space_cool_provided_zone_system[c_name] * frac_convective_cool,
                     );
                     hc_output_radiative.insert(
-                        c_name.to_string(),
+                        (*c_name).into(),
                         space_cool_provided_zone_system[c_name] * (1.0 - frac_convective_cool),
                     );
                     // If cooling has been provided, then next iteration of loop
@@ -1947,11 +1944,11 @@ impl Corpus {
                     },
                 );
                 hc_output_convective.insert(
-                    h_name.to_owned(),
+                    (*h_name).into(),
                     space_heat_provided_zone_system[h_name] * frac_convective_heat,
                 );
                 hc_output_radiative.insert(
-                    h_name.to_owned(),
+                    (*h_name).into(),
                     space_heat_provided_zone_system[h_name] * (1.0 - frac_convective_heat),
                 );
             }
@@ -1966,11 +1963,11 @@ impl Corpus {
                     },
                 );
                 hc_output_convective.insert(
-                    c_name.to_owned(),
+                    (*c_name).into(),
                     space_cool_provided_zone_system[c_name] * frac_convective_cool,
                 );
                 hc_output_radiative.insert(
-                    c_name.to_owned(),
+                    (*c_name).into(),
                     space_cool_provided_zone_system[c_name] * (1.0 - frac_convective_cool),
                 );
             }
@@ -2014,7 +2011,7 @@ impl Corpus {
 
             // Calculate final temperatures achieved
             heat_balance_map.insert(
-                z_name.to_owned(),
+                z_name.into(),
                 zone.update_temperatures(
                     delta_t,
                     temp_ext_air,
@@ -2027,8 +2024,8 @@ impl Corpus {
                     simtime,
                 )?,
             );
-            internal_air_temp.insert(z_name.to_owned(), zone.temp_internal_air());
-            operative_temp.insert(z_name.to_owned(), zone.temp_operative());
+            internal_air_temp.insert(z_name.into(), zone.temp_internal_air());
+            operative_temp.insert(z_name.into(), zone.temp_operative());
 
             for h_name in h_name_list_sorted_zone[z_name].iter() {
                 *space_heat_provided_system
@@ -2235,26 +2232,26 @@ impl Corpus {
         let vec_capacity = || Vec::with_capacity(simulation_time.total_steps());
 
         let mut timestep_array = vec_capacity();
-        let mut gains_internal_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut gains_solar_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut operative_temp_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut internal_air_temp_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut space_heat_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut space_cool_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
+        let mut gains_internal_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut gains_solar_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut operative_temp_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut internal_air_temp_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut space_heat_demand_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut space_cool_demand_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut space_heat_provided_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut space_cool_provided_dict: IndexMap<String, Vec<f64>> = Default::default();
-        let mut zone_list: Vec<KeyString> = Default::default();
-        let mut hot_water_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut hot_water_energy_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut hot_water_energy_demand_dict_incl_pipework: IndexMap<KeyString, Vec<f64>> =
+        let mut zone_list: Vec<String> = Default::default();
+        let mut hot_water_demand_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut hot_water_energy_demand_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut hot_water_energy_demand_dict_incl_pipework: IndexMap<String, Vec<f64>> =
             Default::default();
         let mut hot_water_energy_output_dict: IndexMap<&str, Vec<f64>> = Default::default();
-        let mut hot_water_duration_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut hot_water_no_events_dict: IndexMap<KeyString, Vec<usize>> = Default::default();
-        let mut hot_water_pipework_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut ductwork_gains_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut hot_water_primary_pipework_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut hot_water_storage_losses_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
+        let mut hot_water_duration_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut hot_water_no_events_dict: IndexMap<String, Vec<usize>> = Default::default();
+        let mut hot_water_pipework_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut ductwork_gains_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut hot_water_primary_pipework_dict: IndexMap<String, Vec<f64>> = Default::default();
+        let mut hot_water_storage_losses_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut heat_balance_all_dict: HeatBalanceAllResults = IndexMap::from([
             (HeatBalanceFieldName::AirNode, Default::default()),
             (HeatBalanceFieldName::InternalBoundary, Default::default()),
@@ -2273,16 +2270,15 @@ impl Corpus {
             Default::default();
 
         for z_name in self.zones.keys() {
-            let z_name = z_name.as_str().try_into().unwrap();
-            gains_internal_dict.insert(z_name, vec_capacity());
-            gains_solar_dict.insert(z_name, vec_capacity());
-            operative_temp_dict.insert(z_name, vec_capacity());
-            internal_air_temp_dict.insert(z_name, vec_capacity());
-            space_heat_demand_dict.insert(z_name, vec_capacity());
-            space_cool_demand_dict.insert(z_name, vec_capacity());
-            zone_list.push(z_name);
+            gains_internal_dict.insert(z_name.clone(), vec_capacity());
+            gains_solar_dict.insert(z_name.clone(), vec_capacity());
+            operative_temp_dict.insert(z_name.clone(), vec_capacity());
+            internal_air_temp_dict.insert(z_name.clone(), vec_capacity());
+            space_heat_demand_dict.insert(z_name.clone(), vec_capacity());
+            space_cool_demand_dict.insert(z_name.clone(), vec_capacity());
+            zone_list.push(z_name.clone());
             for heat_balance_value in heat_balance_all_dict.values_mut() {
-                heat_balance_value.insert(z_name.to_string(), Default::default());
+                heat_balance_value.insert(z_name.clone(), Default::default());
             }
         }
 
@@ -2646,43 +2642,43 @@ impl Corpus {
         }
 
         // Return results from all energy supplies
-        let mut results_totals: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut results_end_user: IndexMap<KeyString, IndexMap<String, Vec<f64>>> =
-            Default::default();
-        let mut energy_import: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut energy_export: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut energy_generated_consumed: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut energy_to_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut energy_from_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut storage_from_grid: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut battery_state_of_charge: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut energy_diverted: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut betafactor: IndexMap<KeyString, Vec<f64>> = Default::default();
-        for (name, supply) in self.energy_supplies.iter().map(|(name, supply)| {
-            (
-                KeyString::from(name).expect("Energy supply name was too long."),
-                Arc::clone(supply),
-            )
-        }) {
+        let mut results_totals: IndexMap<String, Vec<f64>> = Default::default();
+        let mut results_end_user: IndexMap<String, IndexMap<String, Vec<f64>>> = Default::default();
+        let mut energy_import: IndexMap<String, Vec<f64>> = Default::default();
+        let mut energy_export: IndexMap<String, Vec<f64>> = Default::default();
+        let mut energy_generated_consumed: IndexMap<String, Vec<f64>> = Default::default();
+        let mut energy_to_storage: IndexMap<String, Vec<f64>> = Default::default();
+        let mut energy_from_storage: IndexMap<String, Vec<f64>> = Default::default();
+        let mut storage_from_grid: IndexMap<String, Vec<f64>> = Default::default();
+        let mut battery_state_of_charge: IndexMap<String, Vec<f64>> = Default::default();
+        let mut energy_diverted: IndexMap<String, Vec<f64>> = Default::default();
+        let mut betafactor: IndexMap<String, Vec<f64>> = Default::default();
+        for (name, supply) in self
+            .energy_supplies
+            .iter()
+            .map(|(name, supply)| (name.to_owned(), Arc::clone(supply)))
+        {
             let supply = supply.read();
-            results_totals.insert(name, supply.results_total());
-            results_end_user.insert(name, supply.results_by_end_user().to_owned());
-            energy_import.insert(name, supply.get_energy_import().to_owned());
-            energy_export.insert(name, supply.get_energy_export().to_owned());
-            energy_generated_consumed
-                .insert(name, supply.get_energy_generated_consumed().to_owned());
+            results_totals.insert(name.clone(), supply.results_total());
+            results_end_user.insert(name.clone(), supply.results_by_end_user().to_owned());
+            energy_import.insert(name.clone(), supply.get_energy_import().to_owned());
+            energy_export.insert(name.clone(), supply.get_energy_export().to_owned());
+            energy_generated_consumed.insert(
+                name.clone(),
+                supply.get_energy_generated_consumed().to_owned(),
+            );
             let (energy_to, energy_from, storage_from, state_of_charge) =
                 supply.get_energy_to_from_battery();
-            energy_to_storage.insert(name, energy_to.to_owned());
-            energy_from_storage.insert(name, energy_from.to_owned());
-            storage_from_grid.insert(name, storage_from.to_owned());
-            battery_state_of_charge.insert(name, state_of_charge.to_owned());
-            energy_diverted.insert(name, supply.get_energy_diverted().to_owned());
+            energy_to_storage.insert(name.clone(), energy_to.to_owned());
+            energy_from_storage.insert(name.clone(), energy_from.to_owned());
+            storage_from_grid.insert(name.clone(), storage_from.to_owned());
+            battery_state_of_charge.insert(name.clone(), state_of_charge.to_owned());
+            energy_diverted.insert(name.clone(), supply.get_energy_diverted().to_owned());
             betafactor.insert(name, supply.get_beta_factor().to_owned());
         }
 
         let hot_water_energy_out: IndexMap<String, Vec<f64>> = IndexMap::from([(
-            "hw cylinder".to_owned(),
+            "hw cylinder".into(),
             hot_water_energy_output_dict
                 .get("energy_output")
                 .unwrap()
@@ -2857,7 +2853,7 @@ impl Corpus {
     fn heat_cool_cop(
         &self,
         energy_provided: &IndexMap<String, Vec<f64>>,
-        results_end_user: &IndexMap<KeyString, IndexMap<String, Vec<f64>>>,
+        results_end_user: &IndexMap<String, IndexMap<String, Vec<f64>>>,
         energy_supply_conn_name_for_space_hc_system: IndexMap<String, Vec<String>>,
     ) -> IndexMap<String, NumberOrDivisionByZero> {
         let mut hc_output_overall: IndexMap<String, f64> = Default::default();
@@ -2942,8 +2938,8 @@ struct SetpointsAndConvectiveFractions {
 
 #[derive(Clone, Debug)]
 pub enum HotWaterResultMap {
-    Float(IndexMap<KeyString, Vec<f64>>),
-    Int(IndexMap<KeyString, Vec<usize>>),
+    Float(IndexMap<String, Vec<f64>>),
+    Int(IndexMap<String, Vec<usize>>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2965,7 +2961,7 @@ impl Display for NumberOrDivisionByZero {
     }
 }
 
-pub type ResultsEndUser = IndexMap<KeyString, IndexMap<String, Vec<f64>>>;
+pub type ResultsEndUser = IndexMap<String, IndexMap<String, Vec<f64>>>;
 
 enum SpaceHeatCoolSystems<'a> {
     Heat(&'a IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>),
@@ -3051,7 +3047,7 @@ fn energy_supplies_from_input(
 
     // set up supply representing unmet demand
     supplies.insert(
-        UNMET_DEMAND_SUPPLY_NAME.to_string(),
+        UNMET_DEMAND_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::UnmetDemand,
@@ -3061,7 +3057,7 @@ fn energy_supplies_from_input(
         )),
     );
     supplies.insert(
-        ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.to_string(),
+        ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.into(),
         Arc::new(RwLock::new(
             EnergySupplyBuilder::new(
                 FuelType::EnergyFromEnvironment,
@@ -3180,7 +3176,7 @@ fn internal_gains_from_input(
     let mut gains_collection = InternalGainsCollection::from([]);
     if let Some(internal_gains) = input.total_internal_gains.as_ref() {
         gains_collection.insert(
-            "total_internal_gains".to_string(),
+            "total_internal_gains".into(),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
@@ -3189,7 +3185,7 @@ fn internal_gains_from_input(
     }
     if let Some(internal_gains) = input.metabolic_gains.as_ref() {
         gains_collection.insert(
-            "metabolic_gains".to_string(),
+            "metabolic_gains".into(),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
@@ -3198,7 +3194,7 @@ fn internal_gains_from_input(
     }
     if let Some(internal_gains) = input.evaporative_losses.as_ref() {
         gains_collection.insert(
-            "evaporativelosses".to_string(),
+            "evaporative_losses".into(),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
@@ -3207,7 +3203,7 @@ fn internal_gains_from_input(
     }
     if let Some(internal_gains) = input.cold_water_losses.as_ref() {
         gains_collection.insert(
-            "coldwaterlosses".to_string(),
+            String::from("coldwaterlosses"),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
@@ -3216,7 +3212,7 @@ fn internal_gains_from_input(
     }
     if let Some(internal_gains) = input.other.as_ref() {
         gains_collection.insert(
-            "other".to_string(),
+            "other".into(),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
@@ -3380,30 +3376,28 @@ fn shareable_fn(num: &Arc<RwLock<f64>>) -> TempInternalAirFn {
     Arc::from(move || *clone.read())
 }
 
-pub type KeyString = ArrayString<64>;
-
 /// A struct definition to encapsulate results from a corpus run.
 pub struct RunResults {
     pub(crate) timestep_array: Vec<f64>,
-    pub(crate) results_totals: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) results_totals: IndexMap<String, Vec<f64>>,
     pub(crate) results_end_user: ResultsEndUser,
-    pub(crate) energy_import: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) energy_export: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) energy_generated_consumed: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) energy_to_storage: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) energy_from_storage: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) storage_from_grid: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) battery_state_of_charge: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) energy_diverted: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) betafactor: IndexMap<KeyString, Vec<f64>>,
-    pub(crate) zone_dict: IndexMap<ZoneResultKey, IndexMap<KeyString, Vec<f64>>>,
-    pub(crate) zone_list: Vec<KeyString>,
+    pub(crate) energy_import: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_export: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_to_storage: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_from_storage: IndexMap<String, Vec<f64>>,
+    pub(crate) storage_from_grid: IndexMap<String, Vec<f64>>,
+    pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_diverted: IndexMap<String, Vec<f64>>,
+    pub(crate) betafactor: IndexMap<String, Vec<f64>>,
+    pub(crate) zone_dict: IndexMap<ZoneResultKey, IndexMap<String, Vec<f64>>>,
+    pub(crate) zone_list: Vec<String>,
     pub(crate) hc_system_dict: IndexMap<HeatingCoolingSystemResultKey, IndexMap<String, Vec<f64>>>,
     pub(crate) hot_water_dict: IndexMap<HotWaterResultKey, HotWaterResultMap>,
     pub(crate) heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     pub(crate) dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
-    pub(crate) ductwork_gains: IndexMap<KeyString, Vec<f64>>,
+    pub(crate) ductwork_gains: IndexMap<String, Vec<f64>>,
     pub(crate) heat_balance_dict: HeatBalanceAllResults,
     pub(crate) heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep>,
     pub(crate) heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual>,
@@ -3630,7 +3624,7 @@ fn zone_from_input(
     let cool_system_name = input.space_cool_system.clone();
 
     let heat_system_names = match heat_system_name {
-        SystemReference::None(_) => vec!["".to_owned()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
+        SystemReference::None(_) => vec!["".into()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
         SystemReference::Single(name) => vec![name.clone()],
         SystemReference::Multiple(names) => names.clone(),
     };
@@ -3650,10 +3644,10 @@ fn zone_from_input(
         }
     }
 
-    heat_system_name_for_zone.insert(zone_name.to_owned(), heat_system_names);
+    heat_system_name_for_zone.insert(zone_name.into(), heat_system_names);
 
     let cool_system_names = match cool_system_name {
-        SystemReference::None(_) => vec!["".to_owned()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
+        SystemReference::None(_) => vec!["".into()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
         SystemReference::Single(name) => vec![name.clone()],
         SystemReference::Multiple(names) => names.clone(),
     };
@@ -3673,7 +3667,7 @@ fn zone_from_input(
         }
     }
 
-    cool_system_name_for_zone.insert(zone_name.to_owned(), cool_system_names);
+    cool_system_name_for_zone.insert(zone_name.into(), cool_system_names);
 
     // Default setpoint basis to 'operative' if not provided in input
     let temp_setpnt_basis = input
@@ -4356,9 +4350,14 @@ fn heat_source_wet_from_input(
                 })?
                 .clone();
             let energy_supply_conn_name_auxiliary =
-                format!("HeatNetwork_auxiliary: {energy_supply_name}");
-            let energy_supply_conn_name_building_level_distribution_losses =
-                format!("HeatNetwork_building_level_distribution_losses: {energy_supply_name}");
+                String::from(["HeatNetwork_auxiliary: ", energy_supply_name].concat());
+            let energy_supply_conn_name_building_level_distribution_losses = String::from(
+                [
+                    "HeatNetwork_building_level_distribution_losses: ",
+                    energy_supply_name,
+                ]
+                .concat(),
+            );
 
             Ok(WetHeatSource::Hiu(Arc::new(Mutex::new(HeatNetwork::new(
                 *power_max,
@@ -4521,7 +4520,7 @@ fn heat_source_from_input(
             temp_flow_limit_upper,
             ..
         } => {
-            let energy_supply_conn_name = format!("{name}_water_heating");
+            let energy_supply_conn_name: String = format!("{name}_water_heating").into();
             let heat_source_wet = wet_heat_sources
                 .get(name)
                 .ok_or_else(|| {
@@ -4542,9 +4541,8 @@ fn heat_source_from_input(
                     WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
-                            energy_supply_conn_name.as_str(),
-                            temp_flow_limit_upper
-                                .expect("temp_flow_limit_upper field was expected to be set"),
+                            &energy_supply_conn_name,
+                            55.,
                             Arc::new(cold_water_source.clone()),
                             control_min,
                             control_max,
@@ -4562,7 +4560,7 @@ fn heat_source_from_input(
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
-                                energy_supply_conn_name.clone(),
+                                &energy_supply_conn_name,
                                 control_min,
                                 control_max,
                             ),
@@ -4998,9 +4996,12 @@ fn hot_water_source_from_input(
         } => {
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
-            let energy_supply_conn_name = format!(
-                "{}_water_heating",
-                heat_source_wet_type.to_canonical_string()
+            let energy_supply_conn_name = String::from(
+                [
+                    &heat_source_wet_type.to_canonical_string(),
+                    "_water_heating",
+                ]
+                .concat(),
             );
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let heat_source_wet = match heat_source_wet_type {
@@ -5062,9 +5063,12 @@ fn hot_water_source_from_input(
             setpoint_temp,
             ..
         } => {
-            let energy_supply_conn_name = format!(
-                "{}_water_heating",
-                heat_source_wet_type.to_canonical_string()
+            let energy_supply_conn_name = String::from(
+                [
+                    &heat_source_wet_type.to_canonical_string(),
+                    "_water_heating",
+                ]
+                .concat(),
             );
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
@@ -5083,7 +5087,7 @@ fn hot_water_source_from_input(
             };
             HotWaterSource::HeatNetwork(HeatNetwork::create_service_hot_water_direct(
                 heat_source_wet.clone(),
-                energy_supply_conn_name,
+                &energy_supply_conn_name,
                 (*setpoint_temp).ok_or_else(|| {
                     anyhow!(
                         "A setpoint_temp value was expected on a point of use hot water source."
@@ -5097,7 +5101,8 @@ fn hot_water_source_from_input(
             heat_source_wet: heat_source_wet_name,
             control,
         } => {
-            let energy_supply_conn_name = format!("{}_water_heating", heat_source_wet_name);
+            let energy_supply_conn_name: String =
+                format!("{}_water_heating", heat_source_wet_name).into();
             energy_supply_conn_names.push(energy_supply_conn_name.clone());
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source, cold_water_sources)?;
@@ -5196,7 +5201,7 @@ fn space_heat_systems_from_input(
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
-                        let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
+                        let energy_supply_conn_name = String::from([heat_source_name, "_space_heating: ", system_name].concat());
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
 
                         let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
@@ -5233,11 +5238,11 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatPump(heat_source_service)
                                 }
                                 WetHeatSource::Boiler(boiler) => {
-                                    let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), energy_supply_conn_name.as_str(), control);
+                                    let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), &energy_supply_conn_name, control);
                                     SpaceHeatingService::Boiler(heat_source_service)
                                 }
                                 WetHeatSource::Hiu(heat_network) => {
-                                    let heat_source_service = HeatNetwork::create_service_space_heating(heat_network.clone(), energy_supply_conn_name, control);
+                                    let heat_source_service = HeatNetwork::create_service_space_heating(heat_network.clone(), &energy_supply_conn_name, control);
                                     SpaceHeatingService::HeatNetwork(heat_source_service)
                                 }
                                 WetHeatSource::HeatBattery(heat_battery) => {
@@ -5251,7 +5256,7 @@ fn space_heat_systems_from_input(
                         } else {
                             let energy_supply_name = energy_supply.clone().unwrap();
                             let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
-                            let energy_supply_fc_conn_name = format!("FC_fan {system_name}");
+                            let energy_supply_fc_conn_name: String = format!("FC_fan {system_name}").into();
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_fc_conn_name.clone());
                             Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_str()).unwrap()))
                         };
@@ -5284,7 +5289,7 @@ fn space_heat_systems_from_input(
                         ..
                     } => {
                         let heat_source_name = &heat_source.name;
-                        let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
+                        let energy_supply_conn_name = String::from([heat_source_name, "_space_heating: ", system_name].concat());
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
                         let control = control
@@ -5297,7 +5302,7 @@ fn space_heat_systems_from_input(
                                     heat_system_names_requiring_overvent.push((*system_name).clone());
                                 }
                                 let volume_heated = total_volume_heated_by_system(zones, heat_system_name_for_zone, system_name);
-                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), energy_supply_conn_name, control, *frac_convective, volume_heated).unwrap())
+                                SpaceHeatSystem::WarmAir(HeatPump::create_service_space_heating_warm_air(heat_pump.clone(), &energy_supply_conn_name, control, *frac_convective, volume_heated).unwrap())
                             }
                             _ => panic!("The heat source referenced by details about warm air space heating with the name '{heat_source_name}' was expected to be a heat pump."),
                         }

@@ -11,11 +11,10 @@ use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
-use arrayvec::ArrayString;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use std::borrow::Cow;
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::Ordering;
@@ -586,19 +585,13 @@ impl Boiler {
     }
 
     /// Create an EnergySupplyConnection for the service name given
-    pub fn create_service_connection(
-        &mut self,
-        service_name: Cow<'static, str>,
-    ) -> anyhow::Result<()> {
-        if self
-            .energy_supply_connections
-            .contains_key(service_name.as_ref())
-        {
+    pub fn create_service_connection(&mut self, service_name: &str) -> anyhow::Result<()> {
+        if self.energy_supply_connections.contains_key(service_name) {
             bail!("Error: Service name already used: {service_name}");
         }
 
         self.energy_supply_connections.insert(
-            service_name.to_string(),
+            service_name.into(),
             EnergySupply::connection(self.energy_supply.clone(), service_name.as_ref()).unwrap(),
         );
 
@@ -614,7 +607,7 @@ impl Boiler {
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         boiler
             .write()
-            .create_service_connection(Cow::from(service_name.to_string()))
+            .create_service_connection(service_name)
             .unwrap();
         BoilerServiceWaterCombi::new(
             boiler.clone(),
@@ -632,10 +625,7 @@ impl Boiler {
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
-        boiler
-            .write()
-            .create_service_connection(Cow::from(service_name.to_string()))
-            .unwrap();
+        boiler.write().create_service_connection(service_name)?;
         BoilerServiceWaterRegular::new(
             boiler.clone(),
             service_name.into(),
@@ -651,7 +641,7 @@ impl Boiler {
     ) -> BoilerServiceSpace {
         boiler
             .write()
-            .create_service_connection(Cow::from(service_name.to_string()))
+            .create_service_connection(service_name)
             .unwrap();
         BoilerServiceSpace::new(boiler.clone(), service_name.into(), control)
     }
@@ -881,10 +871,8 @@ impl Boiler {
                 .fetch_add(time_running_current_service, Ordering::SeqCst);
 
             // Save results that are needed later (in the timestep_end function)
-            let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
-            result_service_name.push_str(service_name);
             self.service_results.write().push(ServiceResult {
-                service_name: result_service_name,
+                service_name: service_name.into(),
                 service_type,
                 temp_return_feed,
                 energy_output_required,
@@ -1087,9 +1075,9 @@ impl Boiler {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct ServiceResult {
-    service_name: ArrayString<64>,
+    service_name: String,
     service_type: ServiceType,
     temp_return_feed: Option<f64>,
     energy_output_required: f64,
@@ -1118,8 +1106,8 @@ mod tests {
     #[fixture]
     pub fn boiler_data() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
-            energy_supply: "mains gas".to_string(),
-            energy_supply_auxiliary: "mains elec".to_string(),
+            energy_supply: "mains gas".into(),
+            energy_supply_auxiliary: "mains elec".into(),
             rated_power: 24.0,
             efficiency_full_load: 0.88,
             efficiency_part_load: 0.986,
@@ -1263,8 +1251,8 @@ mod tests {
     pub fn boiler_data_for_combi() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
-            energy_supply: "mains gas".to_string(),
-            energy_supply_auxiliary: "mains elec".to_string(),
+            energy_supply: "mains gas".into(),
+            energy_supply_auxiliary: "mains elec".into(),
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,
@@ -1340,7 +1328,7 @@ mod tests {
         BoilerServiceWaterCombi::new(
             Arc::new(RwLock::new(boiler_for_combi)),
             combi_boiler_data,
-            "boiler_test".to_string(),
+            "boiler_test".into(),
             60.,
             WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
             simulation_time.step,
@@ -1421,8 +1409,8 @@ mod tests {
     fn boiler_data_for_regular() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             rated_power: 24.0,
-            energy_supply: "mains gas".to_string(),
-            energy_supply_auxiliary: "mains elec".to_string(),
+            energy_supply: "mains gas".into(),
+            energy_supply_auxiliary: "mains elec".into(),
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,
             boiler_location: HeatSourceLocation::Internal,
@@ -1506,7 +1494,7 @@ mod tests {
     ) -> BoilerServiceWaterRegular {
         BoilerServiceWaterRegular::new(
             Arc::new(RwLock::new(boiler_for_regular)),
-            "boiler_test".to_string(),
+            "boiler_test".into(),
             control_min,
             control_max,
         )
@@ -1553,8 +1541,8 @@ mod tests {
     fn boiler_data_for_service_space() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
-            energy_supply: "mains gas".to_string(),
-            energy_supply_auxiliary: "mains elec".to_string(),
+            energy_supply: "mains gas".into(),
+            energy_supply_auxiliary: "mains elec".into(),
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,
@@ -1633,7 +1621,7 @@ mod tests {
     ) -> BoilerServiceSpace {
         BoilerServiceSpace::new(
             Arc::new(RwLock::new(boiler_for_service_space)),
-            "boiler_test".to_string(),
+            "boiler_test".into(),
             Arc::new(control_for_service_space),
         )
     }
@@ -2022,7 +2010,7 @@ mod tests {
             .service_results
             .read()
             .iter()
-            .map(|result| result.service_name)
+            .map(|result| result.service_name.clone())
             .collect_vec();
         assert!(required_services
             .iter()

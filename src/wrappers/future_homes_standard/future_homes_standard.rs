@@ -3,7 +3,7 @@ use crate::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
     SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
-use crate::corpus::{Corpus, KeyString, OutputOptions, ResultsEndUser};
+use crate::corpus::{Corpus, OutputOptions, ResultsEndUser};
 use crate::external_conditions::{
     create_external_conditions, ExternalConditions, WindowShadingObject,
 };
@@ -23,12 +23,12 @@ use crate::wrappers::future_homes_standard::fhs_hw_events::{
 };
 use crate::HOURS_TO_END_DEC;
 use anyhow::{anyhow, bail};
-use arrayvec::ArrayString;
 use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde_json::json;
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
 use std::iter::repeat;
@@ -254,8 +254,8 @@ fn apply_energy_factor_series(energy_data: &[f64], factors: &Vec<f64>) -> anyhow
 pub fn apply_fhs_postprocessing(
     input: &Input,
     output: &impl Output,
-    energy_import: &IndexMap<ArrayString<64>, Vec<f64>>,
-    energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
+    energy_import: &IndexMap<String, Vec<f64>>,
+    energy_export: &IndexMap<String, Vec<f64>>,
     results_end_user: &ResultsEndUser,
     timestep_array: &[f64],
     notional: bool,
@@ -292,8 +292,8 @@ pub fn apply_fhs_postprocessing(
 
 pub(super) fn calc_final_rates(
     input: &Input,
-    energy_import: &IndexMap<ArrayString<64>, Vec<f64>>,
-    energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
+    energy_import: &IndexMap<String, Vec<f64>>,
+    energy_export: &IndexMap<String, Vec<f64>>,
     results_end_user: &ResultsEndUser,
     number_of_timesteps: usize,
 ) -> anyhow::Result<FinalRates> {
@@ -314,10 +314,10 @@ pub(super) fn calc_final_rates(
     for (energy_supply_key, energy_supply_details) in input
         .energy_supply
         .iter()
-        .map(|(key, value)| (String::from(key), value))
+        .map(|(key, value)| (key.clone(), value))
         .chain(
             [(
-                "_unmet_demand".to_string(),
+                "_unmet_demand".into(),
                 &EnergySupplyDetails::with_fuel(FuelType::UnmetDemand),
             )]
             .into_iter(),
@@ -363,7 +363,7 @@ pub(super) fn calc_final_rates(
                 }
                 _ => {
                     let factor = EMIS_PE_FACTORS
-                        .get(&fuel_code.to_string())
+                        .get(&String::from(fuel_code))
                         .unwrap_or_else(|| {
                             panic!("Expected factor values in the table for the fuel code {fuel_code} were not present.");
                         });
@@ -375,32 +375,30 @@ pub(super) fn calc_final_rates(
                 }
             };
 
-        let energy_supply_key = &KeyString::from(&energy_supply_key).unwrap();
-
         // Calculate energy imported and associated emissions/PE
         if fuel_code == FuelType::Electricity {
             supply_emis_result.import = apply_energy_factor_series(
-                &energy_import[energy_supply_key],
+                &energy_import[&energy_supply_key],
                 &emis_factor_import_export,
             )?;
             supply_emis_oos_result.import = apply_energy_factor_series(
-                &energy_import[energy_supply_key],
+                &energy_import[&energy_supply_key],
                 &emis_oos_factor_import_export,
             )?;
             supply_pe_result.import = apply_energy_factor_series(
-                &energy_import[energy_supply_key],
+                &energy_import[&energy_supply_key],
                 &pe_factor_import_export,
             )?;
         } else {
-            supply_emis_result.import = energy_import[energy_supply_key]
+            supply_emis_result.import = energy_import[&energy_supply_key]
                 .iter()
                 .map(|x| x * emis_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_emis_oos_result.import = energy_import[energy_supply_key]
+            supply_emis_oos_result.import = energy_import[&energy_supply_key]
                 .iter()
                 .map(|x| x * emis_oos_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_pe_result.import = energy_import[energy_supply_key]
+            supply_pe_result.import = energy_import[&energy_supply_key]
                 .iter()
                 .map(|x| x * pe_factor_import_export[0])
                 .collect::<Vec<_>>();
@@ -412,32 +410,32 @@ pub(super) fn calc_final_rates(
             supply_emis_result.export,
             supply_emis_oos_result.export,
             supply_pe_result.export,
-        ) = if energy_export[energy_supply_key].iter().sum::<f64>() < 0. {
+        ) = if energy_export[&energy_supply_key].iter().sum::<f64>() < 0. {
             match fuel_code {
                 FuelType::Electricity => (
                     apply_energy_factor_series(
-                        &energy_export[energy_supply_key],
+                        &energy_export[&energy_supply_key],
                         &emis_factor_import_export,
                     )?,
                     apply_energy_factor_series(
-                        &energy_export[energy_supply_key],
+                        &energy_export[&energy_supply_key],
                         &emis_oos_factor_import_export,
                     )?,
                     apply_energy_factor_series(
-                        &energy_export[energy_supply_key],
+                        &energy_export[&energy_supply_key],
                         &pe_factor_import_export,
                     )?,
                 ),
                 _ => (
-                    energy_export[energy_supply_key]
+                    energy_export[&energy_supply_key]
                         .iter()
                         .map(|x| x * emis_factor_import_export[0])
                         .collect::<Vec<_>>(),
-                    energy_export[energy_supply_key]
+                    energy_export[&energy_supply_key]
                         .iter()
                         .map(|x| x * emis_oos_factor_import_export[0])
                         .collect::<Vec<_>>(),
-                    energy_export[energy_supply_key]
+                    energy_export[&energy_supply_key]
                         .iter()
                         .map(|x| x * pe_factor_import_export[0])
                         .collect::<Vec<_>>(),
@@ -453,7 +451,7 @@ pub(super) fn calc_final_rates(
 
         // Calculate energy generated and associated emissions/PE
         let mut energy_generated = vec![0.; number_of_timesteps];
-        for end_user_energy in results_end_user[energy_supply_key].values() {
+        for end_user_energy in results_end_user[&energy_supply_key].values() {
             if end_user_energy.iter().sum::<f64>() < 0. {
                 for (t_idx, energy_generated_value) in energy_generated.iter_mut().enumerate() {
                     *energy_generated_value -= end_user_energy[t_idx];
@@ -468,7 +466,7 @@ pub(super) fn calc_final_rates(
         ) = if energy_generated.iter().sum::<f64>() > 0. {
             // TODO (from Python) Allow custom (user-defined) factors for generated energy?
             let fuel_code_generated = format!("{}_generated", fuel_code);
-            let generated_factor = EMIS_PE_FACTORS.get(&fuel_code_generated).unwrap_or_else(|| panic!("Fuel code '{fuel_code}' does not have a generated row in the EMIS factors file."));
+            let generated_factor = EMIS_PE_FACTORS.get(&String::from(fuel_code_generated)).unwrap_or_else(|| panic!("Fuel code '{fuel_code}' does not have a generated row in the EMIS factors file."));
             let FactorData {
                 emissions_factor: emis_factor_generated,
                 emissions_factor_including_out_of_scope_emissions: emis_oos_factor_generated,
@@ -500,7 +498,7 @@ pub(super) fn calc_final_rates(
 
         // Calculate unregulated energy demand and associated emissions/PE
         let mut energy_unregulated = vec![0.; number_of_timesteps];
-        for (end_user_name, end_user_energy) in results_end_user[energy_supply_key].iter() {
+        for (end_user_name, end_user_energy) in results_end_user[&energy_supply_key].iter() {
             if [APPL_OBJ_NAME, ELEC_COOK_OBJ_NAME, GAS_COOK_OBJ_NAME]
                 .contains(&end_user_name.as_str())
             {
@@ -602,12 +600,13 @@ impl FhsCalculationResult {
     }
 
     fn printable_values_for_index(&self, index: usize) -> [String; 5] {
+        // what's going on here can almost certainly be optimised
         [
-            self.import[index].to_string(),
-            self.export[index].to_string(),
-            self.generated[index].to_string(),
-            self.unregulated[index].to_string(),
-            self.total[index].to_string(),
+            self.import[index].to_string().into(),
+            self.export[index].to_string().into(),
+            self.generated[index].to_string().into(),
+            self.unregulated[index].to_string().into(),
+            self.total[index].to_string().into(),
         ]
     }
 }
@@ -627,7 +626,7 @@ fn write_postproc_file(
     for (energy_supply, energy_supply_results) in &results {
         for result_name in energy_supply_results.labels() {
             // Create header row
-            row_headers.push(format!("{energy_supply} {result_name}"));
+            row_headers.push(String::from([energy_supply, " ", result_name].concat()));
         }
     }
 
@@ -1989,19 +1988,13 @@ fn create_appliance_gains(
     let sched_zeros: Vec<f64> = vec![0.; sched_len];
 
     let mut main_power_sched: IndexMap<String, Vec<f64>> = IndexMap::from([
-        (ENERGY_SUPPLY_NAME_GAS.to_string(), sched_zeros.clone()),
-        (
-            ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
-            sched_zeros.clone(),
-        ),
+        (ENERGY_SUPPLY_NAME_GAS.into(), sched_zeros.clone()),
+        (ENERGY_SUPPLY_NAME_ELECTRICITY.into(), sched_zeros.clone()),
     ]);
 
     let mut main_weight_sched: IndexMap<String, Vec<f64>> = IndexMap::from([
-        (ENERGY_SUPPLY_NAME_GAS.to_string(), sched_zeros.clone()),
-        (
-            ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
-            sched_zeros.clone(),
-        ),
+        (ENERGY_SUPPLY_NAME_GAS.into(), sched_zeros.clone()),
+        (ENERGY_SUPPLY_NAME_ELECTRICITY.into(), sched_zeros.clone()),
     ]);
 
     for appliance_key in power_scheds.keys() {
@@ -2244,7 +2237,7 @@ fn cooking_demand(
     };
 
     let microwave_fuel = match input.appliances_contain_key(&ApplianceKey::Microwave) {
-        true => Some(EnergySupplyType::Electricity.to_string()),
+        true => Some(EnergySupplyType::Electricity.into()),
         false => None,
     };
     let microwave = ApplianceCookingDemand {
@@ -2256,7 +2249,7 @@ fn cooking_demand(
     };
 
     let kettle_fuel = match input.appliances_contain_key(&ApplianceKey::Kettle) {
-        true => Some(EnergySupplyType::Electricity.to_string()),
+        true => Some(EnergySupplyType::Electricity.into()),
         false => None,
     };
     let kettle = ApplianceCookingDemand {
@@ -2527,8 +2520,8 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let mut input_24h = input.clone();
     let range = (HOURS_PER_DAY as f64 / SIMTIME_STEP).ceil() as usize;
     let zeros_24h_by_supply = IndexMap::from([
-        (ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(), vec![0.; range]),
-        (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
+        (ENERGY_SUPPLY_NAME_ELECTRICITY.into(), vec![0.; range]),
+        (ENERGY_SUPPLY_NAME_GAS.into(), vec![0.; range]),
     ]);
 
     input_24h.set_non_appliance_demand_24hr_on_smart_appliance_control(
@@ -2600,10 +2593,10 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
 
     let non_appliance_demand_24hr = IndexMap::from([
         (
-            ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
+            String::from(ENERGY_SUPPLY_NAME_ELECTRICITY),
             non_appliance_electricity_demand,
         ),
-        (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
+        (ENERGY_SUPPLY_NAME_GAS.into(), vec![0.; range]),
     ]);
     input.set_non_appliance_demand_24hr_on_smart_appliance_control(
         SMART_APPLIANCE_CONTROL_NAME,
@@ -2613,22 +2606,22 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let energy_into_battery_from_generation = results
         .energy_to_storage
         .iter()
-        .map(|(key, value)| (key.to_string(), value.clone()))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<IndexMap<String, Vec<f64>>>();
     let energy_out_of_battery = results
         .energy_from_storage
         .iter()
-        .map(|(key, value)| (key.to_string(), value.clone()))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<IndexMap<String, Vec<f64>>>();
     let energy_into_battery_from_grid = results
         .storage_from_grid
         .iter()
-        .map(|(key, value)| (key.to_string(), value.clone()))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<IndexMap<String, Vec<f64>>>();
     let battery_state_of_charge = results
         .battery_state_of_charge
         .iter()
-        .map(|(key, value)| (key.to_string(), value.clone()))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<IndexMap<String, Vec<f64>>>();
 
     input.set_battery24hr_on_smart_appliance_control(
@@ -3157,7 +3150,12 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     let control_names: HashMap<String, String> = intermittent_mev
         .keys()
-        .map(|name| (name.clone(), format!("_intermittent_MEV_control: {}", name)))
+        .map(|name| {
+            (
+                name.clone(),
+                String::from(["_intermittent_MEV_control: ", name].concat()),
+            )
+        })
         .collect();
 
     for vent in intermittent_mev.keys() {
@@ -3169,7 +3167,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for vent in intermittent_mev.keys() {
         let control_name = &control_names[vent];
         input.add_control(
-            control_name,
+            control_name.clone(),
             json!({
                 "type": "SetpointTimeControl",
                 "start_day": 0,
