@@ -716,17 +716,13 @@ impl SmartApplianceControl {
             .collect();
         let battery_states_of_charge = energy_supplies
             .iter()
-            .filter_map(|(name, supply)| {
-                supply.read().has_battery().then(|| {
-                    (
+            .filter(|&(name, supply)| supply.read().has_battery()).map(|(name, supply)| (
                         name.to_owned(),
                         battery_24hr.battery_state_of_charge[name]
                             .iter()
                             .map(|x| AtomicF64::new(*x))
                             .collect_vec(),
-                    )
-                })
-            })
+                    ))
             .collect();
         for energy_supply in energy_supplies.keys() {
             if power_timeseries[energy_supply].len() != weight_timeseries[energy_supply].len() {
