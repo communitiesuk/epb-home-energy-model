@@ -409,7 +409,7 @@ impl EnergySupply {
 
         match &self.priority {
             None => {
-                if let Some(ref mut battery) = &self.electric_battery {
+                if let Some(ref battery) = &self.electric_battery {
                     // See if the battery can deal with excess supply/demand for this timestep
                     // supply_surplus is -ve by convention and demand_not_met is +ve
                     let energy_out_of_battery =
@@ -441,7 +441,7 @@ impl EnergySupply {
                     if matches!(item, SecondarySupplyType::ElectricBattery)
                         && self.electric_battery.is_some()
                     {
-                        let mut electric_battery = self.electric_battery.as_ref().unwrap();
+                        let electric_battery = self.electric_battery.as_ref().unwrap();
                         let energy_out_of_battery = electric_battery.charge_discharge_battery(
                             supply_surplus,
                             false,

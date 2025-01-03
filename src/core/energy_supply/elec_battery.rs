@@ -24,7 +24,7 @@ pub struct ElectricBattery {
     /// the current energy stored in the battery at the
     /// end of hour (kWh)
     current_energy_stored: AtomicF64,
-    total_time_charging_current_timestep: f64,
+    total_time_charging_current_timestep: AtomicF64,
     state_of_health: f64,
     max_capacity: f64,
     one_way_battery_efficiency: f64,
@@ -151,27 +151,27 @@ impl ElectricBattery {
         -0.04 * x + 1.
     }
 
-    fn get_charge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn get_charge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
 
         self.one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
     }
 
-    fn get_discharge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
+    pub(crate) fn get_discharge_efficiency(&self, simtime: SimulationTimeIteration) -> f64 {
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
 
         self.reverse_one_way_battery_efficiency * self.state_of_health * air_temp_capacity_factor
     }
 
-    fn is_grid_charging_possible(&self) -> bool {
+    pub(crate) fn is_grid_charging_possible(&self) -> bool {
         self.grid_charging_possible
     }
 
-    fn get_state_of_charge(&self) -> f64 {
+    pub(crate) fn get_state_of_charge(&self) -> f64 {
         self.current_energy_stored.load(Ordering::SeqCst) / self.max_capacity
     }
 
-    fn get_max_capacity(&self) -> f64 {
+    pub(crate) fn get_max_capacity(&self) -> f64 {
         self.max_capacity
     }
 
@@ -185,24 +185,28 @@ impl ElectricBattery {
     /// would charge/discharge the battery without minimum/maximum
     /// constraints of the battery (kWh)
     /// energy_accepted_by_battery -- the total energy the battery is able to supply or charge (kWh)
-    pub fn charge_discharge_battery(
-        &mut self,
+    pub(crate) fn charge_discharge_battery(
+        &self,
         elec_demand: f64,
         charging_from_grid: bool,
         simtime: SimulationTimeIteration,
     ) -> f64 {
         let timestep = self.simulation_timestep;
 
-        if timestep <= self.total_time_charging_current_timestep && elec_demand < 0. {
+        if timestep
+            <= self
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst)
+            && elec_demand < 0.
+        {
             // No more scope for charging
             return 0.;
         }
 
-        let max_charge: f64;
         let mut max_charge_rate: Option<f64> = None;
 
         // Calculate State of Charge (SoC)
-        let state_of_charge = Self::get_state_of_charge(&self);
+        let state_of_charge = Self::get_state_of_charge(self);
 
         // Calculate the impact on the battery capacity of air temperature
         let air_temp_capacity_factor = self.limit_capacity_due_to_temp(simtime);
@@ -211,19 +215,20 @@ impl ElectricBattery {
         let state_of_charge = min_of_2(state_of_charge, 1.);
         let state_of_charge = max_of_2(state_of_charge, 0.);
 
-        // Convert elec_demand (in kWh) to a power (in kW) by dividing energy by timestep (in hours)
-        let mut elec_demand_power = elec_demand / timestep;
-
         let energy_available_to_charge_battery = if elec_demand < 0. {
             // Charging battery
             // Convert elec_demand (in kWh) to a power (in kW) by dividing energy by time available for charging (in hours)
-            elec_demand_power =
-                elec_demand / (timestep - self.total_time_charging_current_timestep);
+            let elec_demand_power = elec_demand
+                / (timestep
+                    - self
+                        .total_time_charging_current_timestep
+                        .load(Ordering::SeqCst));
             // If supply is less than minimum charge rate, do not add charge to the battery
             if !charging_from_grid && -elec_demand_power < self.minimum_charge_rate {
                 0.
             } else {
-                (max_charge, max_charge_rate) = self.calculate_max_charge(state_of_charge);
+                let (max_charge, max_charge_rate_temp) = self.calculate_max_charge(state_of_charge);
+                max_charge_rate = max_charge_rate_temp;
                 min_of_2(
                     -elec_demand
                         * self.one_way_battery_efficiency
@@ -265,23 +270,25 @@ impl ElectricBattery {
         if elec_demand < 0. {
             // Charging battery
             // Calculate charging time of battery
-            let time_charging_current_load =
-                if max_charge_rate.is_some() && max_charge_rate.unwrap() >= 0. {
-                    min_of_2(
-                        energy_accepted_by_battery
-                            / max_charge_rate.unwrap()
-                            / self.one_way_battery_efficiency
-                            / self.state_of_health
-                            / air_temp_capacity_factor,
-                        timestep - self.total_time_charging_current_timestep,
-                    )
-                    // TODO (from Python) some of these adjustment factors are probably adjusting the energy_accepted_by_battery while others are adjusting max_charge_rate,
-                    // and I think it would clearer to calculate adjusted versions of those two variables separately.
-                } else {
-                    0.
-                };
+            let time_charging_current_load = match max_charge_rate {
+                Some(max_charge_rate) if max_charge_rate >= 0. => min_of_2(
+                    energy_accepted_by_battery
+                        / max_charge_rate
+                        / self.one_way_battery_efficiency
+                        / self.state_of_health
+                        / air_temp_capacity_factor,
+                    timestep
+                        - self
+                            .total_time_charging_current_timestep
+                            .load(Ordering::SeqCst),
+                ),
+                // TODO (from Python) some of these adjustment factors are probably adjusting the energy_accepted_by_battery while others are adjusting max_charge_rate,
+                //  and I think it would clearer to calculate adjusted versions of those two variables separately.
+                _ => 0.,
+            };
 
-            self.total_time_charging_current_timestep += time_charging_current_load;
+            self.total_time_charging_current_timestep
+                .fetch_add(time_charging_current_load, Ordering::SeqCst);
 
             -energy_accepted_by_battery / self.one_way_battery_efficiency
         } else {
@@ -313,11 +320,22 @@ impl ElectricBattery {
 
     /// Calculate the maximum amount of discharge possible based on the current state of charge of the battery
     /// Arguments:
-    /// * `state_of_charge` - the current state of charge (0 - 100) of the battery
-    fn calculate_max_discharge(&self, state_of_charge: f64) -> f64 {
+    /// * `state_of_charge` - the current state of charge (0 - 1) of the battery
+    pub(crate) fn calculate_max_discharge(&self, state_of_charge: f64) -> f64 {
         let discharge_factor_for_soc = Self::discharge_rate_soc_equ(state_of_charge);
 
         (self.maximum_discharge_rate * discharge_factor_for_soc * self.simulation_timestep) * -1.
+    }
+
+    /// Calculations to be done at the end of each timestep
+    pub(crate) fn timestep_end(&self) {
+        // variables below need to be reset at the end of each timestep
+        self.total_time_charging_current_timestep
+            .store(Default::default(), Ordering::SeqCst);
+    }
+
+    pub(crate) fn get_charge_discharge_efficiency(&self) -> f64 {
+        self.charge_discharge_efficiency
     }
 }
 
@@ -464,19 +482,19 @@ mod tests {
         // supply to battery exceeds limit
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(-1_000., false, simulation_time),
-            -1.121472,
+            -1.6770509831248424,
             max_relative = 1e-7
         );
         // demand on battery exceeds limit
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(1_000., false, simulation_time),
-            0.8971776,
+            1.121472,
             max_relative = 1e-7
         );
         // normal charge
         assert_relative_eq!(
             electric_battery.charge_discharge_battery(-0.2, false, simulation_time),
-            -0.1495296,
+            0.,
             max_relative = 1e-7
         );
         // normal discharge
