@@ -2506,6 +2506,8 @@ impl HeatPump {
         let time_available = timestep - self.total_time_running_current_timestep;
         let temp_source = self.get_temp_source(simtime);
         let mut temp_output = temp_output;
+        let temp_spread_correction =
+            temp_spread_correction.unwrap_or(TempSpreadCorrectionArg::Float(1.0));
 
         // If there is buffer tank, energy output max will be affected by the temperature lift required
         // by the tank
@@ -2542,7 +2544,7 @@ impl HeatPump {
                 &service_type,
                 temp_output,
                 temp_source,
-                temp_spread_correction.expect("A temp spread correction argument was expected."),
+                temp_spread_correction,
                 simtime,
             )?;
             let energy_output_max_boiler = self.backup_energy_output_max(
