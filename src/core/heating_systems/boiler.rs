@@ -257,7 +257,7 @@ impl BoilerServiceWaterRegular {
 
     pub fn demand_energy(
         &mut self,
-        energy_demand: f64,
+        mut energy_demand: f64,
         temp_return: f64,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
@@ -266,7 +266,7 @@ impl BoilerServiceWaterRegular {
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
 
         if !self.is_on(simtime) {
-            return Ok((0., None));
+            energy_demand = 0.;
         }
 
         self.boiler.write().demand_energy(
