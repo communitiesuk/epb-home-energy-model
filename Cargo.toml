@@ -41,7 +41,7 @@ serde = { version = "1.0.215", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
 serde_json = "1.0.134"
 serde_repr = "0.1.19"
-serde_valid = "0.25.0"
+serde_valid = "1.0.4"
 statrs = "0.18.0"
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.3"
