@@ -23,7 +23,7 @@ indexmap = { version = "2.7.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.9", optional = true }
 interp = "2.0.1"
 is_close = "0.1.3"
-itertools = "0.13.0"
+itertools = "0.14.0"
 log = "0.4.22"
 nalgebra = "0.33.2"
 ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-solvers", branch = "events"  }

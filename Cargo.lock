@@ -754,7 +754,7 @@ dependencies = [
  "indicatif",
  "interp",
  "is_close",
- "itertools",
+ "itertools 0.14.0",
  "jsonschema",
  "log",
  "nalgebra 0.33.2",
@@ -1071,7 +1071,7 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbf8add5dd9442596f3c5f504fd4fbbdf6266ff2337a51f6430dfeff6fd3a4de"
 dependencies = [
- "itertools",
+ "itertools 0.13.0",
  "num-traits",
 ]
 
@@ -1101,6 +1101,15 @@ name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -2152,7 +2161,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5766a432e0c90becd28272fed5f24cd42aea2dbddf2d86059aeaee20b16ace57"
 dependencies = [
  "indexmap",
- "itertools",
+ "itertools 0.13.0",
  "num-traits",
  "once_cell",
  "paste",
@@ -2171,7 +2180,7 @@ version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68d5b451c72740399084db5f2b8e5f54fde555f9b5f3c1a6146f5b9d58516d18"
 dependencies = [
- "itertools",
+ "itertools 0.13.0",
  "paste",
  "proc-macro-error2",
  "proc-macro2 1.0.92",
