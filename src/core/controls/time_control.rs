@@ -716,13 +716,16 @@ impl SmartApplianceControl {
             .collect();
         let battery_states_of_charge = energy_supplies
             .iter()
-            .filter(|&(name, supply)| supply.read().has_battery()).map(|(name, supply)| (
-                        name.to_owned(),
-                        battery_24hr.battery_state_of_charge[name]
-                            .iter()
-                            .map(|x| AtomicF64::new(*x))
-                            .collect_vec(),
-                    ))
+            .filter(|&(_name, supply)| supply.read().has_battery())
+            .map(|(name, _supply)| {
+                (
+                    name.to_owned(),
+                    battery_24hr.battery_state_of_charge[name]
+                        .iter()
+                        .map(|x| AtomicF64::new(*x))
+                        .collect_vec(),
+                )
+            })
             .collect();
         for energy_supply in energy_supplies.keys() {
             if power_timeseries[energy_supply].len() != weight_timeseries[energy_supply].len() {
@@ -775,9 +778,15 @@ impl SmartApplianceControl {
         }
     }
 
-    pub(crate) fn add_appliance_demand(&self, t_idx: usize, demand: f64, energy_supply: &str) {
+    pub(crate) fn add_appliance_demand(
+        &self,
+        simtime: SimulationTimeIteration,
+        demand: f64,
+        energy_supply: &str,
+    ) {
         // convert demand from appliance usage event to average power over the demand series timestep
         // and add it to the series
+        let t_idx = simtime.index;
         self.ts_power[energy_supply][self.ts_step(t_idx)].fetch_add(
             demand * WATTS_PER_KILOWATT as f64 / self.ts_step,
             Ordering::SeqCst,
@@ -805,7 +814,7 @@ impl SmartApplianceControl {
             // the maths here follows charge_discharge_battery() in ElectricBattery
             let discharge_efficiency = self.energy_supplies[energy_supply]
                 .read()
-                .get_battery_discharge_efficiency()
+                .get_battery_discharge_efficiency(simtime)
                 .expect("Battery expected to be present and reporting max capacity");
             let charge_utilised = min_of_2(
                 self.battery_states_of_charge[energy_supply][idx_24hr]
@@ -825,7 +834,8 @@ impl SmartApplianceControl {
         }
     }
 
-    pub(crate) fn update_demand_buffer(&self, t_idx: usize) {
+    pub(crate) fn update_demand_buffer(&self, simtime: SimulationTimeIteration) {
+        let t_idx = simtime.index;
         let idx_24hr = t_idx % self.buffer_length;
         for (name, supply) in self.energy_supplies.iter() {
             // total up results for this energy supply but exclude demand from appliances
@@ -854,7 +864,7 @@ impl SmartApplianceControl {
                     .get_battery_available_charge()
                     .expect("Battery expected to be present and reporting available charge");
                 let charge_efficiency = supply
-                    .get_battery_charge_efficiency()
+                    .get_battery_charge_efficiency(simtime)
                     .expect("Battery expected to be present and reporting charge efficiency");
                 self.battery_states_of_charge[name][idx_24hr]
                     .store(charge * charge_efficiency, Ordering::SeqCst);

@@ -175,7 +175,7 @@ impl InstantElectricShower {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
@@ -204,13 +204,9 @@ mod tests {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
         let instant_shower =
             InstantElectricShower::new(50.0, cold_water_source, energy_supply_conn);

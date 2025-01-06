@@ -258,7 +258,7 @@ impl ElectricBattery {
         // Energy stored cannot be > battery capacity or < 0
         self.current_energy_stored.store(
             min_of_2(
-                self.capacity,
+                self.max_capacity,
                 max_of_2(0., current_energy_stored_unconstrained),
             ),
             Ordering::SeqCst,

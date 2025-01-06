@@ -29,7 +29,7 @@ pub enum ServiceType {
 }
 
 #[derive(Debug)]
-pub struct BoilerServiceWaterCombi {
+pub(crate) struct BoilerServiceWaterCombi {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     temperature_hot_water_in_c: f64,
@@ -384,7 +384,7 @@ impl BoilerServiceSpace {
 }
 
 #[derive(Debug)]
-pub struct Boiler {
+pub(crate) struct Boiler {
     energy_supply: Arc<RwLock<EnergySupply>>,
     simulation_timestep: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -414,7 +414,7 @@ impl Boiler {
     /// Arguments:
     /// * `boiler_data` - boiler characteristics
     /// * `external_conditions` - reference to an ExternalConditions value
-    pub fn new(
+    pub(crate) fn new(
         boiler_data: HeatSourceWetDetails,
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_conn_aux: EnergySupplyConnection,
@@ -611,7 +611,7 @@ impl Boiler {
         Ok(())
     }
 
-    pub fn create_service_hot_water_combi(
+    pub(crate) fn create_service_hot_water_combi(
         boiler: Arc<RwLock<Self>>,
         boiler_data: HotWaterSourceDetails,
         service_name: String,
@@ -954,6 +954,7 @@ struct ServiceResult {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
@@ -1081,20 +1082,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> (Boiler, Arc<RwLock<EnergySupply>>) {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
-        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_aux = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn_aux =
             EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
@@ -1214,20 +1207,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
-        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_aux = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn_aux =
             EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
@@ -1380,20 +1365,12 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
-        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_aux = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn_aux =
             EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 
@@ -1474,20 +1451,20 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time_for_service_space: SimulationTime,
     ) -> Boiler {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time_for_service_space.total_steps(),
-            None,
-            None,
-            None,
-        )));
-        let energy_supply_aux = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time_for_service_space.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::MainsGas,
+                simulation_time_for_service_space.total_steps(),
+            )
+            .build(),
+        ));
+        let energy_supply_aux = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_service_space.total_steps(),
+            )
+            .build(),
+        ));
         let energy_supply_conn_aux =
             EnergySupply::connection(energy_supply_aux, "Boiler_auxiliary").unwrap();
 

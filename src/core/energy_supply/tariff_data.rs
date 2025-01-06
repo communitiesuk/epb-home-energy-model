@@ -5,7 +5,7 @@ use std::io::Read;
 /// This module contains data on the energy tariffs.
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Tariff {
+pub(crate) enum Tariff {
     Standard,
     SevenHourOffPeak,
     TenHourOffPeak,

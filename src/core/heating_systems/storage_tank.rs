@@ -1214,6 +1214,15 @@ impl ImmersionHeater {
     }
 }
 
+/// Trait to represent a thing that can divert a surplus, like a PV diverter.
+pub(crate) trait SurplusDiverting: Send + Sync {
+    fn divert_surplus(
+        &self,
+        supply_surplus: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64;
+}
+
 #[derive(Debug)]
 pub struct PVDiverter {
     storage_tank: Arc<Mutex<StorageTank>>,
@@ -1246,11 +1255,17 @@ impl PVDiverter {
             .fetch_add(energy_supplied, Ordering::SeqCst);
     }
 
+    pub fn timestep_end(&mut self) {
+        self.capacity_already_in_use = Default::default();
+    }
+}
+
+impl SurplusDiverting for PVDiverter {
     /// Divert as much surplus as possible to the heater
     ///
     /// Arguments:
     /// * `supply_surplus` - surplus energy, in kWh, available to be diverted (negative by convention)
-    pub fn divert_surplus(
+    fn divert_surplus(
         &self,
         supply_surplus: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -1277,10 +1292,6 @@ impl PVDiverter {
         );
 
         energy_diverted
-    }
-
-    pub fn timestep_end(&mut self) {
-        self.capacity_already_in_use = Default::default();
     }
 }
 
@@ -1500,7 +1511,7 @@ impl SolarThermalSystem {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::schedule::WaterScheduleEventType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -1645,13 +1656,13 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
     ) -> ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>) {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time_for_storage_tank.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_storage_tank.total_steps(),
+            )
+            .build(),
+        ));
         let energy_supply_conns = (
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap(),
             EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap(),
@@ -1934,13 +1945,13 @@ mod tests {
         ImmersionHeater::new(
             50.,
             EnergySupply::connection(
-                Arc::new(RwLock::new(EnergySupply::new(
-                    FuelType::MainsGas,
-                    simulation_time_for_immersion_heater.total_steps(),
-                    None,
-                    None,
-                    None,
-                ))),
+                Arc::new(RwLock::new(
+                    EnergySupplyBuilder::new(
+                        FuelType::MainsGas,
+                        simulation_time_for_immersion_heater.total_steps(),
+                    )
+                    .build(),
+                )),
                 "shower",
             )
             .unwrap(),
@@ -2102,13 +2113,9 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
         ));
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
         let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(

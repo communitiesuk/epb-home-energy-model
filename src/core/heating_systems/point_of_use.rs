@@ -6,7 +6,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use indexmap::IndexMap;
 
 #[derive(Debug)]
-pub struct PointOfUse {
+pub(crate) struct PointOfUse {
     efficiency: f64,
     energy_supply_connection: EnergySupplyConnection,
     cold_feed: WaterSourceWithTemperature,
@@ -14,7 +14,7 @@ pub struct PointOfUse {
 }
 
 impl PointOfUse {
-    pub fn new(
+    pub(crate) fn new(
         efficiency: f64,
         energy_supply_connection: EnergySupplyConnection,
         cold_feed: WaterSourceWithTemperature,
@@ -79,6 +79,7 @@ impl PointOfUse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::{
         core::{
             energy_supply::energy_supply::EnergySupply,
@@ -104,13 +105,7 @@ mod tests {
 
     #[fixture]
     pub fn energy_supply(simtime: SimulationTime) -> EnergySupply {
-        EnergySupply::new(
-            FuelType::Electricity,
-            simtime.total_steps(),
-            None,
-            None,
-            None,
-        )
+        EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps()).build()
     }
 
     #[fixture]

@@ -6,7 +6,7 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupply, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -1937,7 +1937,8 @@ impl Corpus {
             energy_export.insert(name, supply.get_energy_export().to_owned());
             energy_generated_consumed
                 .insert(name, supply.get_energy_generated_consumed().to_owned());
-            let (energy_to, energy_from) = supply.get_energy_to_from_battery();
+            // TODO update following during migration to 0.32
+            let (energy_to, energy_from, _, _) = supply.get_energy_to_from_battery();
             energy_to_storage.insert(name, energy_to.to_owned());
             energy_from_storage.insert(name, energy_from.to_owned());
             energy_diverted.insert(name, supply.get_energy_diverted().to_owned());
@@ -2286,13 +2287,9 @@ fn energy_supplies_from_input(
     // set up supply representing unmet demand
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.to_string(),
-        Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::UnmetDemand,
-            0,
-            None,
-            None,
-            None,
-        ))),
+        Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::UnmetDemand, 0).build(),
+        )),
     );
 
     supplies
@@ -2303,19 +2300,25 @@ fn energy_supply_from_input(
     simulation_time_iterator: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
 ) -> Arc<RwLock<EnergySupply>> {
-    Arc::new(RwLock::new(EnergySupply::new(
-        input.fuel,
-        simulation_time_iterator.total_steps(),
-        input.electric_battery.as_ref().map(|battery_input| {
-            ElectricBattery::from_input(
-                battery_input,
+    Arc::new(RwLock::new({
+        let mut builder =
+            EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
+        if let Some(battery) = input.electric_battery.as_ref() {
+            builder = builder.with_electric_battery(ElectricBattery::from_input(
+                battery,
                 simulation_time_iterator.step_in_hours(),
                 external_conditions,
-            )
-        }),
-        input.priority.as_ref().cloned(),
-        input.is_export_capable,
-    )))
+            ))
+        }
+        if let Some(priority) = input.priority.as_ref() {
+            builder = builder.with_priority(priority.clone());
+        }
+        if let Some(is_export_capable) = input.is_export_capable {
+            builder = builder.with_export_capable(is_export_capable);
+        }
+
+        builder.build()
+    }))
 }
 
 type DiverterTypes = IndexMap<String, EnergyDiverter>;

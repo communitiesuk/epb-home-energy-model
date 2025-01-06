@@ -1952,7 +1952,7 @@ pub struct InternalReferencePressureCalculationError {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
 
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::input::FuelType;
@@ -2667,13 +2667,11 @@ mod tests {
 
     #[fixture]
     pub fn energy_supply(simulation_time_iterator: SimulationTimeIterator) -> EnergySupply {
-        EnergySupply::new(
+        EnergySupplyBuilder::new(
             FuelType::Electricity,
             simulation_time_iterator.total_steps(),
-            None,
-            None,
-            None,
         )
+        .build()
     }
     #[fixture]
     fn mechanical_ventilation(

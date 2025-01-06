@@ -870,7 +870,7 @@ mod tests {
 
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
     use crate::core::heating_systems::boiler::Boiler;
     use crate::core::heating_systems::boiler::BoilerServiceSpace;
@@ -1003,13 +1003,10 @@ mod tests {
             electricity_full_load: 0.0388,
             electricity_standby: 0.0244,
         };
-        let energy_supply = Arc::from(RwLock::from(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time_iterator.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
+        ));
 
         let energy_supply_conn_aux =
             EnergySupplyConnection::new(energy_supply.clone(), "end_user_name".into());

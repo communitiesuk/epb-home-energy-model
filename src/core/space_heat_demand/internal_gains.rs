@@ -363,7 +363,7 @@ struct LoadShiftingMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use parking_lot::RwLock;
@@ -405,13 +405,13 @@ mod tests {
     pub fn test_total_internal_gain_for_appliance(
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time_iterator.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_iterator.total_steps(),
+            )
+            .build(),
+        ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "lighting").unwrap();
         let total_energy_supply = vec![32.0, 46.0, 30.0, 20.0];

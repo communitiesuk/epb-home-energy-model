@@ -673,7 +673,9 @@ impl HeatBattery {
 mod tests {
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::{ChargeControl, Control};
-    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+    use crate::core::energy_supply::energy_supply::{
+        EnergySupply, EnergySupplyBuilder, EnergySupplyConnection,
+    };
     use crate::core::heating_systems::heat_battery::HeatBattery;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
@@ -817,13 +819,10 @@ mod tests {
             labs_tests_losses: Default::default(),
         };
 
-        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::MainsGas,
-            simulation_time_iterator.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time_iterator.total_steps())
+                .build(),
+        ));
 
         let energy_supply_connection: EnergySupplyConnection =
             EnergySupply::connection(energy_supply.clone(), "WaterHeating").unwrap();

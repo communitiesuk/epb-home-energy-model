@@ -4255,6 +4255,7 @@ mod tests {
 
     use super::*;
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
         BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceControlType,
@@ -5562,13 +5563,11 @@ mod tests {
 
     #[fixture]
     fn energy_supply(simulation_time_for_heat_pump: SimulationTime) -> EnergySupply {
-        EnergySupply::new(
+        EnergySupplyBuilder::new(
             FuelType::MainsGas,
             simulation_time_for_heat_pump.iter().total_steps(),
-            None,
-            None,
-            None,
         )
+        .build()
     }
 
     fn create_boiler(
@@ -6073,13 +6072,13 @@ mod tests {
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
-        let heat_network = RwLock::from(EnergySupply::new(
-            FuelType::Custom,
-            simulation_time_for_heat_pump.iter().total_steps(),
-            None,
-            None,
-            None,
-        ));
+        let heat_network = RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Custom,
+                simulation_time_for_heat_pump.iter().total_steps(),
+            )
+            .build(),
+        );
 
         let input = create_heat_pump_nw_input_from_json();
         create_heat_pump(

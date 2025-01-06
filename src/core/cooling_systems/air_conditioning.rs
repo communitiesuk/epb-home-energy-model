@@ -89,7 +89,7 @@ impl AirConditioning {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
@@ -114,13 +114,9 @@ mod tests {
             1.0,
         )
         .unwrap();
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "aircon").unwrap();
         (
             AirConditioning::new(

@@ -459,6 +459,7 @@ fn input_to_water_distribution_pipework(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::{
@@ -496,13 +497,9 @@ mod tests {
         )));
         let wwhrs = IndexMap::from([("Example_Inst_WWHRS".to_owned(), wwhrsb.clone())]);
 
-        let electricity_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let electricity_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supplies =
             IndexMap::from([("mains elec".to_owned(), electricity_supply.clone())]);
 

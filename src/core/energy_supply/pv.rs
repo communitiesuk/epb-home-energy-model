@@ -31,7 +31,7 @@ const F_PERF_LOOKUP_STRONGLY_OR_FORCED_VENTILATED: f64 = 0.87;
 const F_PERF_LOOKUP_REAR_SURFACE_FREE: f64 = 0.87;
 
 #[derive(Debug)]
-pub struct PhotovoltaicSystem {
+pub(crate) struct PhotovoltaicSystem {
     peak_power: f64,
     f_perf: f64,
     pitch: f64,
@@ -215,7 +215,7 @@ impl PhotovoltaicSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::energy_supply::energy_supply::EnergySupply;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
@@ -330,13 +330,9 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "pv generation without shading")
                 .unwrap();
@@ -363,13 +359,9 @@ mod tests {
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
-        let energy_supply = Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Electricity,
-            simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "pv generation with shading").unwrap();
         let pv = PhotovoltaicSystem::new(

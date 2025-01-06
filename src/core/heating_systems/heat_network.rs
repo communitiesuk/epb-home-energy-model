@@ -221,7 +221,7 @@ impl HeatNetworkServiceSpace {
 }
 
 #[derive(Clone, Debug)]
-pub struct HeatNetwork {
+pub(crate) struct HeatNetwork {
     power_max_in_kw: f64,
     daily_loss: f64,                         // in kWh/day
     building_level_distribution_losses: f64, // in watts
@@ -234,7 +234,7 @@ pub struct HeatNetwork {
 }
 
 impl HeatNetwork {
-    pub fn new(
+    pub(crate) fn new(
         power_max_in_kw: f64,
         daily_loss: f64,
         building_level_distribution_losses: f64,
@@ -393,6 +393,7 @@ impl HeatNetwork {
 mod tests {
     use super::*;
     use crate::core::controls::time_control::SetpointTimeControl;
+    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
@@ -413,13 +414,13 @@ mod tests {
             0.0,
             0.0,
             0.0,
-            Arc::new(RwLock::new(EnergySupply::new(
-                FuelType::Electricity,
-                two_len_simulation_time.total_steps(),
-                None,
-                None,
-                None,
-            ))),
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(
+                    FuelType::Electricity,
+                    two_len_simulation_time.total_steps(),
+                )
+                .build(),
+            )),
             "aux".to_string(),
             "distro_losses".to_string(),
             1.0,
@@ -467,13 +468,9 @@ mod tests {
     fn heat_network_for_water_direct(
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = EnergySupply::new(
-            FuelType::Custom,
-            two_len_simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        );
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
+                .build();
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -582,13 +579,9 @@ mod tests {
     fn heat_network_for_water_storage(
         two_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = EnergySupply::new(
-            FuelType::Custom,
-            two_len_simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        );
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
+                .build();
         let energy_supply_conn_name_auxiliary = "heat_network_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -668,13 +661,9 @@ mod tests {
     fn heat_network_for_service_space(
         three_len_simulation_time: SimulationTime,
     ) -> Arc<Mutex<HeatNetwork>> {
-        let energy_supply = EnergySupply::new(
-            FuelType::MainsGas,
-            three_len_simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        );
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::MainsGas, three_len_simulation_time.total_steps())
+                .build();
         let energy_supply_conn_name_auxiliary = "Boiler_auxiliary";
         let energy_supply_conn_name_building_level_distribution_losses =
             "HeatNetwork_building_level_distribution_losses";
@@ -770,13 +759,10 @@ mod tests {
     fn energy_supply_for_heat_network(
         two_len_simulation_time: SimulationTime,
     ) -> Arc<RwLock<EnergySupply>> {
-        Arc::new(RwLock::new(EnergySupply::new(
-            FuelType::Custom,
-            two_len_simulation_time.total_steps(),
-            None,
-            None,
-            None,
-        )))
+        Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Custom, two_len_simulation_time.total_steps())
+                .build(),
+        ))
     }
 
     #[fixture]
