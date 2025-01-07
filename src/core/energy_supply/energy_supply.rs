@@ -93,7 +93,7 @@ impl EnergySupplies {
             supplies.insert("mains gas", gas.clone());
         }
         if let Some(lpg) = &self.bulk_lpg {
-            supplies.insert("LPG_bulk", lpg.clone());
+            supplies.insert("bulk LPG", lpg.clone());
         }
         if let Some(lpg) = &self.bottled_lpg {
             supplies.insert("LPG_bottled", lpg.clone());
