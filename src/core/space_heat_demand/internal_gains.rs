@@ -76,7 +76,7 @@ pub struct ApplianceGains {
 }
 
 impl ApplianceGains {
-    pub fn new(
+    pub(crate) fn new(
         total_energy_supply: Vec<f64>,
         gains_fraction: f64,
         start_day: u32,
@@ -143,7 +143,7 @@ impl EventApplianceGains {
     //                                                      weight_timeseries
     //                                                      demand_timeseries
     //     TFA                      -- total floor area of dwelling
-    pub fn new(
+    pub(crate) fn new(
         energy_supply_conn: EnergySupplyConnection,
         simulation_time: &SimulationTimeIterator,
         appliance_data: &ApplianceGainsDetails,

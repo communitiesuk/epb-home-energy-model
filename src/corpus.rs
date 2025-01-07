@@ -103,31 +103,31 @@ const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
 
 #[derive(Debug)]
 pub struct Corpus {
-    pub simulation_time: Arc<SimulationTimeIterator>,
-    pub external_conditions: Arc<ExternalConditions>,
-    pub cold_water_sources: ColdWaterSources,
-    pub energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    pub internal_gains: InternalGainsCollection,
-    pub controls: Controls,
-    pub wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
-    pub domestic_hot_water_demand: DomesticHotWaterDemand,
-    pub ventilation: Arc<InfiltrationVentilation>,
+    pub(crate) simulation_time: Arc<SimulationTimeIterator>,
+    pub(crate) external_conditions: Arc<ExternalConditions>,
+    pub(crate) cold_water_sources: ColdWaterSources,
+    pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
+    pub(crate) internal_gains: InternalGainsCollection,
+    pub(crate) controls: Controls,
+    pub(crate) wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
+    pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
+    pub(crate) ventilation: Arc<InfiltrationVentilation>,
     mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
-    pub space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
-    pub zones: Arc<IndexMap<String, Zone>>,
-    pub energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
-    pub heat_system_name_for_zone: IndexMap<String, String>,
-    pub cool_system_name_for_zone: IndexMap<String, String>,
-    pub total_floor_area: f64,
-    pub total_volume: f64,
-    pub wet_heat_sources: IndexMap<String, WetHeatSource>,
-    pub hot_water_sources: IndexMap<String, HotWaterSource>,
-    pub heat_system_names_requiring_overvent: Vec<String>,
-    pub heat_sources_wet_with_buffer_tank: Vec<String>,
-    pub space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
-    pub space_cool_systems: IndexMap<String, AirConditioning>,
-    pub on_site_generation: IndexMap<String, PhotovoltaicSystem>,
-    pub diverters: Vec<Arc<RwLock<PVDiverter>>>,
+    pub(crate) space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
+    pub(crate) zones: Arc<IndexMap<String, Zone>>,
+    pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
+    pub(crate) heat_system_name_for_zone: IndexMap<String, String>,
+    pub(crate) cool_system_name_for_zone: IndexMap<String, String>,
+    pub(crate) total_floor_area: f64,
+    pub(crate) total_volume: f64,
+    pub(crate) wet_heat_sources: IndexMap<String, WetHeatSource>,
+    pub(crate) hot_water_sources: IndexMap<String, HotWaterSource>,
+    pub(crate) heat_system_names_requiring_overvent: Vec<String>,
+    pub(crate) heat_sources_wet_with_buffer_tank: Vec<String>,
+    pub(crate) space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
+    pub(crate) space_cool_systems: IndexMap<String, AirConditioning>,
+    pub(crate) on_site_generation: IndexMap<String, PhotovoltaicSystem>,
+    pub(crate) diverters: Vec<Arc<RwLock<PVDiverter>>>,
     required_vent_data: Option<RequiredVentData>,
     energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>>,
     energy_supply_conn_names_for_heat_systems: IndexMap<String, String>,
@@ -3600,13 +3600,13 @@ fn appliance_gains_from_single_input(
 }
 
 #[derive(Debug)]
-pub enum HeatSource {
+pub(crate) enum HeatSource {
     Storage(HeatSourceWithStorageTank),
     Wet(Box<HeatSourceWet>),
 }
 
 impl HeatSource {
-    pub fn demand_energy(
+    pub(crate) fn demand_energy(
         &mut self,
         energy_demand: f64,
         temp_return: f64,
@@ -3638,14 +3638,14 @@ impl HeatSource {
 }
 
 #[derive(Clone, Debug)]
-pub struct PositionedHeatSource {
+pub(crate) struct PositionedHeatSource {
     pub heat_source: Arc<Mutex<HeatSource>>,
     pub heater_position: f64,
     pub thermostat_position: f64,
 }
 
 #[derive(Clone, Debug)]
-pub enum WetHeatSource {
+pub(crate) enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<RwLock<Boiler>>),
     Hiu(Arc<Mutex<HeatNetwork>>),
@@ -4104,7 +4104,7 @@ fn heat_source_from_input(
 }
 
 #[derive(Debug)]
-pub enum HotWaterSource {
+pub(crate) enum HotWaterSource {
     StorageTank(Arc<Mutex<StorageTank>>),
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),

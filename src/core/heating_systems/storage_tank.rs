@@ -257,7 +257,7 @@ impl StorageTank {
     /// Energy input for the storage from the generation system
     /// (expressed per energy carrier X)
     /// Heat Source = energy carrier
-    pub fn potential_energy_input(
+    pub(crate) fn potential_energy_input(
         // Heat source. Addition of temp_s3_n as an argument
         &mut self,
         temp_s3_n: &[f64],
@@ -1325,7 +1325,7 @@ pub struct SolarThermalSystem {
 }
 
 impl SolarThermalSystem {
-    pub fn new(
+    pub(crate) fn new(
         sol_loc: SolarCellLocation,
         area_module: f64,
         modules: usize,

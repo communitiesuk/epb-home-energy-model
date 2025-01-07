@@ -124,7 +124,7 @@ pub struct InstantElectricShower {
 }
 
 impl InstantElectricShower {
-    pub fn new(
+    pub(crate) fn new(
         power_in_kilowatts: f64,
         cold_water_source: ColdWaterSource,
         energy_supply_connection: EnergySupplyConnection,

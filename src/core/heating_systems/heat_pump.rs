@@ -1824,7 +1824,7 @@ const HEAT_PUMP_F_AUX: f64 = 0.0;
 #[derivative(Debug)]
 pub struct HeatPump {
     // energy supply
-    pub energy_supply: Arc<RwLock<EnergySupply>>,
+    pub(crate) energy_supply: Arc<RwLock<EnergySupply>>,
     energy_supply_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     energy_supply_connection_aux: Arc<EnergySupplyConnection>,
     simulation_timestep: f64,
@@ -2267,7 +2267,7 @@ impl HeatPump {
         Ok(())
     }
 
-    pub fn create_service_hot_water_combi(
+    pub(crate) fn create_service_hot_water_combi(
         &self,
         boiler_data: HotWaterSourceDetails,
         service_name: &str,

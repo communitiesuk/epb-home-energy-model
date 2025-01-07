@@ -17,7 +17,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{bail, Error};
 
 #[derive(Debug)]
-pub enum HeatSourceWet {
+pub(crate) enum HeatSourceWet {
     WaterCombi(BoilerServiceWaterCombi),
     WaterRegular(BoilerServiceWaterRegular),
     Space(BoilerServiceSpace),
