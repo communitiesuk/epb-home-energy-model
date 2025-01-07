@@ -806,7 +806,7 @@ impl StorageTank {
     /// temp_out_w_min values
     /// Arguments:
     /// * `usage_events` -- All draw off events for the timestep
-    pub fn demand_hot_water(
+    pub(crate) fn demand_hot_water(
         &mut self,
         usage_events: &mut Option<Vec<TypedScheduleEvent>>,
         simulation_time: SimulationTimeIteration,

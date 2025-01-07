@@ -241,6 +241,7 @@ impl DomesticHotWaterDemand {
 
                             // Assume flow rate for bath event is the same as other hot water events
                             let peak_flowrate = bath.get_flowrate();
+                            // litres bath  / litres per minute flowrate = minutes
                             let bath_temp = event.temperature;
                             let label_temp = bath_temp.into();
                             let (hw_demand_i, hw_demand_target_i) =

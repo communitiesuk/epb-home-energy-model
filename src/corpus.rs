@@ -2816,7 +2816,7 @@ fn get_cold_water_source_ref_for_type(
     cold_water_sources.get(&source_type).cloned()
 }
 
-pub type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
+pub(crate) type EventSchedule = Vec<Option<Vec<TypedScheduleEvent>>>;
 
 fn event_schedules_from_input(
     events: &WaterHeatingEvents,

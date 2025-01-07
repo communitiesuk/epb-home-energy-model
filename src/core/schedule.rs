@@ -18,14 +18,14 @@ pub(crate) fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ScheduleEvent {
-    pub start: f64,
-    pub duration: Option<f64>,
-    pub temperature: Option<f64>,
+pub(crate) struct ScheduleEvent {
+    pub(crate) start: f64,
+    pub(crate) duration: Option<f64>,
+    pub(crate) temperature: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum WaterScheduleEventType {
+pub(crate) enum WaterScheduleEventType {
     Shower,
     Bath,
     Other,
@@ -42,14 +42,14 @@ impl From<WaterHeatingEventType> for WaterScheduleEventType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct TypedScheduleEvent {
-    pub start: f64,
-    pub duration: Option<f64>,
-    pub temperature: f64,
-    pub name: String,
-    pub event_type: WaterScheduleEventType,
-    pub warm_volume: Option<f64>,
-    pub pipework_volume: Option<f64>,
+pub(crate) struct TypedScheduleEvent {
+    pub(crate) start: f64,
+    pub(crate) duration: Option<f64>,
+    pub(crate) temperature: f64,
+    pub(crate) name: String,
+    pub(crate) event_type: WaterScheduleEventType,
+    pub(crate) warm_volume: Option<f64>,
+    pub(crate) pipework_volume: Option<f64>,
 }
 
 impl TypedScheduleEvent {
@@ -106,7 +106,7 @@ impl TryFrom<&Value> for ScheduleEvent {
 /// * `name`
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
-pub fn expand_events_from_json_values(
+pub(crate) fn expand_events_from_json_values(
     events: Vec<Value>,
     simulation_timestep: f64,
     total_timesteps: usize,
