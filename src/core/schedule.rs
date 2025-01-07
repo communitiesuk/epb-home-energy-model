@@ -1,5 +1,6 @@
 use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
+#[cfg(test)]
 use serde_json::Value;
 
 pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
@@ -76,10 +77,13 @@ impl TypedScheduleEvent {
     }
 }
 
+#[cfg(test)]
 impl TryFrom<&Value> for ScheduleEvent {
     type Error = anyhow::Error;
 
     fn try_from(value: &Value) -> anyhow::Result<Self> {
+        use anyhow::bail;
+
         match value {
             Value::Object(event_map) => Ok(ScheduleEvent {
                 start: event_map
@@ -106,6 +110,7 @@ impl TryFrom<&Value> for ScheduleEvent {
 /// * `name`
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
+#[cfg(test)]
 pub(crate) fn expand_events_from_json_values(
     events: Vec<Value>,
     simulation_timestep: f64,
