@@ -64,10 +64,19 @@ impl MaterialProperties {
     }
 }
 
-pub static WATER: LazyLock<MaterialProperties> =
-    LazyLock::new(|| MaterialProperties::new(1.0, 4184.0));
-pub static AIR: LazyLock<MaterialProperties> =
-    LazyLock::new(|| MaterialProperties::new(0.001204, 1006.0));
+pub(crate) static WATER: LazyLock<MaterialProperties> =
+    LazyLock::new(|| MaterialProperties::new(1.0, 4184.));
+
+// Density of a fluid mixture between 25% glycol (volume) and 75% water (volume) at 20C and
+// specific heat capacity in J / (kg * K). The following report suggests (on pages 14-15)
+// that this mix would be likely to give antifreeze protection to -10 Celsius for either
+// ethylene glycol or propylene glycol:
+// https://assets.publishing.service.gov.uk/media/5a8204a3e5274a2e8ab57110/DECC_RHPP_160404_Note_on_bias_errors_v9.pdf
+pub(crate) static GLYCOL25: LazyLock<MaterialProperties> =
+    LazyLock::new(|| MaterialProperties::new(1.0, 3757.));
+
+pub(crate) static AIR: LazyLock<MaterialProperties> =
+    LazyLock::new(|| MaterialProperties::new(0.001204, 1006.));
 
 #[cfg(test)]
 mod tests {
