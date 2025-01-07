@@ -3561,7 +3561,8 @@ fn apply_appliance_gains_from_input(
                 simulation_time,
                 gains_details,
                 total_floor_area,
-            ))
+                None, // TODO complete argument during migration to 0.32
+            )?)
         } else {
             Gains::Appliance(appliance_gains_from_single_input(
                 gains_details,

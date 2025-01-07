@@ -636,8 +636,11 @@ pub enum ControlCombinationOperation {
 #[serde(deny_unknown_fields)]
 pub(crate) struct SmartApplianceBattery {
     pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    #[serde(default)]
     energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    #[serde(default)]
     energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    #[serde(default)]
     energy_out_of_battery: IndexMap<String, Vec<f64>>,
 }
 

@@ -766,7 +766,7 @@ impl SmartApplianceControl {
 
     /// returns the sum of the anticipated appliance demand,
     /// the demand buffer, and the (negative) battery charge
-    fn get_demand(&self, t_idx: usize, energy_supply: &str) -> f64 {
+    pub(crate) fn get_demand(&self, t_idx: usize, energy_supply: &str) -> f64 {
         let idx_24hr = t_idx % self.buffer_length;
         let demand = self.get_ts_demand(energy_supply, t_idx)
             + self.non_appliance_demand_24hr[energy_supply][idx_24hr].load(Ordering::SeqCst);
