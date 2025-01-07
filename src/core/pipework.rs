@@ -1,4 +1,4 @@
-use crate::core::material_properties::{MaterialProperties, WATER};
+use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
 use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::input::{WaterPipeContentsType, WaterPipework, WaterPipeworkLocation};
 use anyhow::bail;
@@ -7,6 +7,11 @@ use std::f64::consts::PI;
 // Set default values for the heat transfer coefficients inside the pipe, in W / m^2 K
 const INTERNAL_HTC_AIR: f64 = 15.5; // CIBSE Guide C, Table 3.25, air flow rate approx 3 m/s
 const INTERNAL_HTC_WATER: f64 = 1500.0; // CIBSE Guide C, Table 3.32 #Note, consider changing to 1478.4
+const INTERNAL_HTC_GLYCOL25: f64 = INTERNAL_HTC_WATER;
+// TODO (from Python) In the absence of a specific figure, use same value for water/glycol mix as for water.
+//      Given the figure is relatively high (meaning little resistance to heat flow
+//      between the fluid and the inside surface of the pipe) this is unlikely to
+//      make a significant difference.
 
 // Set default values for the heat transfer coefficient at the outer surface, in W / m^2 K
 const EXTERNAL_REFLECTIVE_HTC: f64 = 5.7; // low emissivity reflective surface, CIBSE Guide C, Table 3.25
@@ -61,6 +66,7 @@ impl PipeworkSimple {
             * LITRES_PER_CUBIC_METRE as f64;
         let contents_properties = match contents {
             WaterPipeContentsType::Water => *WATER,
+            WaterPipeContentsType::Glycol25 => *GLYCOL25,
             _ => bail!("No properties available for specified pipe content"),
         };
         Ok(Self {
@@ -126,7 +132,7 @@ impl Pipework {
     /// * `k_insulation` - thermal conductivity of the insulation, in W / m K
     /// * `thickness_insulation` - thickness of the pipe insulation, in m
     /// * `reflective` - whether the surface is reflective or not (boolean input)
-    /// * `contents` - whether the pipe is carrying air or water
+    /// * `contents` - whether the pipe is carrying air, water or glycol(25%)/water(75%)
     pub fn new(
         location: PipeworkLocation,
         internal_diameter_in_m: f64,
@@ -148,9 +154,7 @@ impl Pipework {
         let internal_htc = match contents {
             WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
             WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
-            WaterPipeContentsType::Glycol25 => {
-                unimplemented!("to implement as part of 0.32 migration")
-            }
+            WaterPipeContentsType::Glycol25 => INTERNAL_HTC_GLYCOL25,
         };
 
         // Set the heat transfer coefficient at the outer surface, in W / m^2 K
