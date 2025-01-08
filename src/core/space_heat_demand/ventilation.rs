@@ -1366,6 +1366,7 @@ pub struct InfiltrationVentilation {
     p_a_alt: f64,
     total_volume: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
+    ventilation_zone_base_height: Option<f64>,
 }
 
 /// Arguments:
@@ -1384,6 +1385,7 @@ pub struct InfiltrationVentilation {
 /// * `detailed_output_heating_cooling` - whether to output detailed heating/cooling data
 /// * `altitude` - altitude of dwelling above sea level (m)
 /// * `total_volume` - total zone volume
+/// * `ventilation_zone_base_height` -- base height of the ventilation zone (m)
 impl InfiltrationVentilation {
     pub(crate) fn new(
         external_conditions: Option<Arc<ExternalConditions>>,
@@ -1401,6 +1403,7 @@ impl InfiltrationVentilation {
         detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
+        ventilation_zone_base_height: Option<f64>,
     ) -> Self {
         Self {
             external_conditions: external_conditions.clone(),
@@ -1419,6 +1422,7 @@ impl InfiltrationVentilation {
             p_a_alt: adjust_air_density_for_altitude(altitude),
             total_volume,
             detailed_results: Default::default(),
+            ventilation_zone_base_height,
         }
     }
 
@@ -1961,7 +1965,8 @@ fn fsolve(_func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, _args: (f64, f
 }
 
 #[derive(Debug, Error)]
-#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_int_air: {temp_int_air}, r_w_arg: {r_w_arg:?}")]
+#[error("Could not resolve an internal reference pressure for infiltration ventilation. Initial p_z_ref_guess: {initial_p_z_ref_guess}, temp_int_air: {temp_int_air}, r_w_arg: {r_w_arg:?}"
+)]
 pub struct InternalReferencePressureCalculationError {
     initial_p_z_ref_guess: f64,
     temp_int_air: f64,
@@ -2806,6 +2811,7 @@ mod tests {
             false,
             0.,
             250.,
+            None, // TODO: check if this needs updating as part of migration to 0.32
         )
     }
 
