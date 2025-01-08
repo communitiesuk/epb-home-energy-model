@@ -661,6 +661,7 @@ impl Vent {
         orientation: f64,
         pitch: f64,
         altitude: f64,
+        ventilation_zone_base_height: Option<f64>, // TODO: added as part of the 0.32 migration, still WIP
     ) -> Self {
         Self {
             h_path,
@@ -2514,7 +2515,7 @@ mod tests {
 
     #[fixture]
     fn vent(external_conditions: Arc<ExternalConditions>) -> Vent {
-        Vent::new(external_conditions, 1., 100., 20., 0., 90., 0.)
+        Vent::new(external_conditions, 1., 100., 20., 0., 90., 0., None) // TODO: part of the 0.32 update
     }
 
     #[rstest]
@@ -2754,6 +2755,7 @@ mod tests {
             0.,
             90.,
             30.,
+            None, // TODO: part of the 0.32 migration
         )];
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,

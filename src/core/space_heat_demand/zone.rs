@@ -2185,6 +2185,7 @@ mod tests {
             180.0,
             60.0,
             30.0,
+            Some(2.5),
         );
         let vents = HashMap::from([("vent 1".to_string(), vent)]);
 

@@ -3057,7 +3057,8 @@ fn infiltration_ventilation_from_input(
                     init_orientation(vent.orientation),
                     vent.pitch,
                     *altitude,
-                ),
+                    None,
+                ), // TODO: line 3060 as part of the migration to 0.32
             )
         })
         .collect();
