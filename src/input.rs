@@ -3336,7 +3336,8 @@ impl Appliance {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceLoadShifting {
-    priority: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<usize>,
     pub max_shift_hrs: f64,
     pub demand_limit_weighted: f64,
     #[serde(rename = "weight")]
