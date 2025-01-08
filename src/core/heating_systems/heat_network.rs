@@ -337,6 +337,14 @@ impl HeatNetwork {
         self.power_max_in_kw * time_available
     }
 
+    /// Calculate time available for the current service
+    fn time_available(&self, time_start: f64, timestep: f64) -> f64 {
+        // Assumes that time spent on other services is evenly spread throughout
+        // the timestep so the adjustment for start time below is a proportional
+        // reduction of the overall time available, not simply a subtraction
+        (timestep - self.total_time_running_current_timestep) * (1. - time_start / timestep)
+    }
+
     /// Calculate energy required by heat network to satisfy demand for the service indicated.
     pub fn demand_energy(
         &mut self,
