@@ -167,11 +167,7 @@ impl EventApplianceGains {
                         .cloned()
                         .unwrap_or(vec![]),
                     demand_limit: load_shifting.demand_limit_weighted,
-                    otherdemand_timeseries: load_shifting
-                        .demand_timeseries
-                        .as_ref()
-                        .cloned()
-                        .unwrap_or(vec![]),
+                    otherdemand_timeseries: vec![],
                 });
         let time_series_step = appliance_data.time_series_step;
         let max_shift = match &appliance_data.load_shifting {

@@ -3344,8 +3344,6 @@ pub struct ApplianceLoadShifting {
     // In Python these are set from the FHS wrapper
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weight_timeseries: Option<Vec<f64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub demand_timeseries: Option<Vec<f64>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -4521,24 +4519,25 @@ impl InputForProcessing {
 
     pub(crate) fn set_load_shifting_demand_timeseries_for_appliance(
         &mut self,
-        appliance_name: &str,
-        timeseries: Vec<f64>,
+        _appliance_name: &str,
+        _timeseries: Vec<f64>,
     ) {
-        if let Some(ApplianceEntry::Object(Appliance {
-            load_shifting: Some(ref mut load_shifting),
-            ..
-        })) = ApplianceKey::try_from(appliance_name)
-            .ok()
-            .and_then(|appliance_key| {
-                self.input
-                    .appliances
-                    .as_mut()
-                    .map(|gains| gains.get_mut(&appliance_key))
-            })
-            .flatten()
-        {
-            load_shifting.demand_timeseries = Some(timeseries);
-        }
+        // TODO remove completely during migration to 0.32
+        // if let Some(ApplianceEntry::Object(Appliance {
+        //     load_shifting: Some(ref mut load_shifting),
+        //     ..
+        // })) = ApplianceKey::try_from(appliance_name)
+        //     .ok()
+        //     .and_then(|appliance_key| {
+        //         self.input
+        //             .appliances
+        //             .as_mut()
+        //             .map(|gains| gains.get_mut(&appliance_key))
+        //     })
+        //     .flatten()
+        // {
+        //     load_shifting.demand_timeseries = Some(timeseries);
+        // }
     }
 
     pub(crate) fn mechanical_ventilations_for_processing(
