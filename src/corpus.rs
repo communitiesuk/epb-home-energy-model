@@ -3209,7 +3209,7 @@ fn infiltration_ventilation_from_input(
         .collect();
 
     let ventilation = InfiltrationVentilation::new(
-        external_conditions.clone(),
+        Some(external_conditions.clone()),
         *f_cross,
         *shield_class,
         *terrain_class,
@@ -3220,6 +3220,7 @@ fn infiltration_ventilation_from_input(
         combustion_appliances.into_values().collect(),
         atds.into_values().collect(),
         mechanical_ventilations.values().cloned().collect(),
+        None, // TODO: check if this needs updating as part of 0.32 updates
         detailed_output_heating_cooling,
         *altitude,
         zones.values().map(|zone| zone.area).sum::<f64>(),

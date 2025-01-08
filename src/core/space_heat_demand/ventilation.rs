@@ -8,6 +8,7 @@ use argmin::{
 
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::material_properties::AIR;
 use crate::core::units::{
@@ -23,6 +24,7 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
+use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use thiserror::Error;
@@ -810,7 +812,7 @@ struct Leaks {
     qv_delta_p_leak_ref: f64,
     facade_direction: FacadeDirection,
     _altitude: f64,
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>, // TODO: remove as part of migration to 0.32
     p_a_alt: f64,
     // In Python there are extra properties:
     // n_leak - this is now N_LEAK as it is constant
@@ -829,7 +831,7 @@ impl Leaks {
     ///      A_leak - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
     ///      altitude -- altitude of dwelling above sea level (m)
     fn new(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>, // TODO: remove as part of migration to 0.32
         h_path: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
@@ -916,7 +918,7 @@ impl Leaks {
         shield_class: VentilationShieldClass,
         simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path(f_cross, shield_class, self.h_path, self.facade_direction); // #TABLE from annex B
@@ -1348,7 +1350,7 @@ impl MechanicalVentilation {
 /// A class to represent Infiltration and Ventilation object
 #[derive(Debug)]
 pub struct InfiltrationVentilation {
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>,
     f_cross: bool,
     shield_class: VentilationShieldClass,
     _terrain_class: TerrainClass,
@@ -1384,7 +1386,7 @@ pub struct InfiltrationVentilation {
 /// * `total_volume` - total zone volume
 impl InfiltrationVentilation {
     pub(crate) fn new(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>,
         f_cross: bool,
         shield_class: VentilationShieldClass,
         terrain_class: TerrainClass,
@@ -1395,6 +1397,7 @@ impl InfiltrationVentilation {
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
         mech_vents: Vec<Arc<MechanicalVentilation>>,
+        space_heating_ductworks: Option<IndexMap<String, Vec<Ductwork>>>,
         detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
@@ -1431,7 +1434,7 @@ impl InfiltrationVentilation {
         // it is simpler to adjust the heat transfer coefficient h_ve to account
         // for the heat recovery effect using an "equivalent" flow rate of
         // external air, which is done elsewhere
-        self.external_conditions.air_temp(&simtime)
+        self.external_conditions.clone().unwrap().air_temp(&simtime)
     }
 
     /// Calculate total volume air flow rate entering ventilation zone
@@ -1461,7 +1464,7 @@ impl InfiltrationVentilation {
     fn make_leak_objects(
         leaks: CompletedVentilationLeaks,
         average_roof_pitch: f64,
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>,
     ) -> Vec<Leaks> {
         let h_path1_2 = 0.25 * leaks.ventilation_zone_height;
         let h_path3_4 = 0.75 * leaks.ventilation_zone_height;
@@ -1531,7 +1534,7 @@ impl InfiltrationVentilation {
         h_z: f64,
         simtime: &SimulationTimeIteration,
     ) -> f64 {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
         let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
 
@@ -1638,7 +1641,7 @@ impl InfiltrationVentilation {
         }
         Ok(convert_mass_flow_rate_to_volume_flow_rate(
             qm_in,
-            celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures."),
+            celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures."),
             self.p_a_alt,
         ))
     }
@@ -1672,9 +1675,13 @@ impl InfiltrationVentilation {
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
-        let wind_speed = self.external_conditions.wind_speed(&simtime);
+        let wind_speed = self
+            .external_conditions
+            .clone()
+            .unwrap()
+            .wind_speed(&simtime);
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         let t_z = celsius_to_kelvin(temp_int_air)?;
         let mut qm_in_through_window_opening = 0.;
         let mut qm_out_through_window_opening = 0.;
@@ -1786,7 +1793,9 @@ impl InfiltrationVentilation {
             if let Some(reporting_flag) = reporting_flag {
                 let incoming_air_flow = convert_mass_flow_rate_to_volume_flow_rate(
                     qm_in,
-                    celsius_to_kelvin(self.external_conditions.air_temp(&simtime))?,
+                    celsius_to_kelvin(
+                        self.external_conditions.clone().unwrap().air_temp(&simtime),
+                    )?,
                     self.p_a_alt,
                 );
                 let air_changes_per_hour = incoming_air_flow / self.total_volume;
@@ -2595,7 +2604,7 @@ mod tests {
     #[fixture]
     fn leaks(external_conditions: Arc<ExternalConditions>) -> Leaks {
         Leaks::new(
-            external_conditions,
+            Some(external_conditions),
             1.,
             50.,
             1.2,
@@ -2782,7 +2791,7 @@ mod tests {
         let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
 
         InfiltrationVentilation::new(
-            external_conditions,
+            Some(external_conditions),
             true,
             VentilationShieldClass::Open,
             TerrainClass::OpenField,
@@ -2793,6 +2802,7 @@ mod tests {
             combustion_appliances_list,
             air_terminal_devices,
             mechanical_ventilations,
+            None, // TODO: check if this needs updating as part of migration to 0.32
             false,
             0.,
             250.,

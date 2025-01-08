@@ -2201,7 +2201,7 @@ mod tests {
         };
 
         InfiltrationVentilation::new(
-            external_conditions,
+            None,
             true,
             VentilationShieldClass::Normal,
             TerrainClass::OpenField,
@@ -2212,6 +2212,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
+            None,
             false,
             30.0,
             250.0,
