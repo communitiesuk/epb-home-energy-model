@@ -2950,7 +2950,11 @@ fn zone_from_input(
                 .map(|(element_name, el)| {
                     Ok((
                         element_name.to_owned(),
-                        building_element_from_input(el, external_conditions.clone())?,
+                        building_element_from_input(
+                            el,
+                            external_conditions.clone(),
+                            simulation_time_iterator,
+                        )?,
                     ))
                 })
                 .collect::<anyhow::Result<IndexMap<String, BuildingElement>>>()?,
@@ -3274,6 +3278,7 @@ impl CompletedVentilationLeaks {
 fn building_element_from_input(
     input: &BuildingElementInput,
     external_conditions: Arc<ExternalConditions>,
+    simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<BuildingElement> {
     Ok(match input {
         BuildingElementInput::Opaque {
@@ -3338,6 +3343,7 @@ fn building_element_from_input(
             shading.clone(),
             treatment.clone(),
             external_conditions,
+            simulation_time_iterator,
         )),
         BuildingElementInput::Ground {
             area,

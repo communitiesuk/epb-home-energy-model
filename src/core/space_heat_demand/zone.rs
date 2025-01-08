@@ -1851,7 +1851,7 @@ mod tests {
         FloorType, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
         WindowPart,
     };
-    use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
+    use crate::simulation_time::{SimulationTime, SimulationTimeIterator, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -2099,6 +2099,7 @@ mod tests {
             vec![],
             None,
             external_conditions.clone(),
+            &simulation_time.iter(),
         ));
         let be_ztu = BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
             30.,

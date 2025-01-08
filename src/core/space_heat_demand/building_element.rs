@@ -4,7 +4,7 @@ use crate::input::{
     BuildingElement as BuildingElementInput, EdgeInsulation, FloorType, MassDistributionClass,
     WindShieldLocation, WindowTreatment,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
@@ -1399,6 +1399,7 @@ impl BuildingElementTransparent {
         shading: Vec<WindowShadingObject>,
         treatment: Option<Vec<WindowTreatment>>,
         external_conditions: Arc<ExternalConditions>,
+        simulation_time: &SimulationTimeIterator,
     ) -> Self {
         // Solar absorption coefficient is zero because element is transparent
         let a_sol = 0.0;
@@ -2635,6 +2636,7 @@ mod tests {
     #[fixture]
     pub fn transparent_building_element(
         external_conditions: Arc<ExternalConditions>,
+        simulation_time: SimulationTimeIterator,
     ) -> BuildingElementTransparent {
         BuildingElementTransparent::new(
             90.,
@@ -2648,6 +2650,7 @@ mod tests {
             vec![],
             None, // TODO: check if this needs updating as part of migration to 0.32
             external_conditions,
+            &simulation_time,
         )
     }
 
