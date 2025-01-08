@@ -397,7 +397,7 @@ pub(crate) struct Window {
     n_w: f64,
     orientation: f64,
     pitch: f64,
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
     p_a_alt: f64,
@@ -406,7 +406,7 @@ pub(crate) struct Window {
 
 impl Window {
     pub(crate) fn new(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>,
         h_w_fa: f64,
         h_w_path: f64,
         a_w_max: f64,
@@ -415,6 +415,7 @@ impl Window {
         pitch: f64,
         altitude: f64,
         on_off_ctrl_obj: Option<Arc<Control>>,
+        ventilation_zone_base_height: Option<f64>, // TODO: to update as part of 0.32 - still WIP
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
         Self {
@@ -506,8 +507,12 @@ impl Window {
         r_w_arg: Option<f64>,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let wind_direction = self.external_conditions.wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let wind_direction = self
+            .external_conditions
+            .clone()
+            .unwrap()
+            .wind_direction(simulation_time);
+        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
@@ -2357,7 +2362,7 @@ mod tests {
         altitude: f64,
     ) -> Window {
         Window::new(
-            external_conditions.clone(),
+            Some(external_conditions.clone()),
             1.6,
             1.5,
             3.,
@@ -2368,6 +2373,7 @@ mod tests {
             90.,
             altitude,
             Some(Arc::new(ctrl)),
+            None,
         )
     }
 

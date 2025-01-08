@@ -3006,7 +3006,7 @@ fn infiltration_ventilation_from_input(
 
                         let window_result_fn = || {
                             Ok(Window::new(
-                                external_conditions.clone(),
+                                Some(external_conditions.clone()),
                                 free_area_height.ok_or_else(|| anyhow!("A free_area_height value was expected for a transparent building element."))?,
                                 mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
                                 max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
@@ -3016,7 +3016,8 @@ fn infiltration_ventilation_from_input(
                                 init_orientation(*orientation),
                                 *pitch,
                                 input.altitude,
-                                on_off_ctrl
+                                on_off_ctrl,
+                                None
                             ))
                         };
 

@@ -2165,7 +2165,7 @@ mod tests {
             mid_height_air_flow_path: 1.5,
         }];
         let window = Window::new(
-            external_conditions.clone(),
+            None,
             1.6,
             1.,
             3.,
@@ -2174,6 +2174,7 @@ mod tests {
             0.,
             30.,
             None,
+            Some(2.5),
         );
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
