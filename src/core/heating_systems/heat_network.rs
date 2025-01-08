@@ -69,9 +69,13 @@ impl HeatNetworkServiceWaterDirect {
         );
         let energy_demand = volume_demanded * energy_content_kwh_per_litre;
 
-        self.heat_network
-            .lock()
-            .demand_energy(&self.service_name, energy_demand, simtime.index)
+        self.heat_network.lock().demand_energy(
+            &self.service_name,
+            energy_demand,
+            None,
+            None,
+            simtime.index,
+        )
     }
 }
 
@@ -120,6 +124,8 @@ impl HeatNetworkServiceWaterStorage {
         self.heat_network.lock().demand_energy(
             &self.service_name,
             energy_demand,
+            None,
+            None,
             simulation_time_iteration.index,
         )
     }
@@ -135,7 +141,7 @@ impl HeatNetworkServiceWaterStorage {
 
         self.heat_network
             .lock()
-            .energy_output_max(Some(self.temperature_hot_water))
+            .energy_output_max(Some(self.temperature_hot_water), None)
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
@@ -173,8 +179,13 @@ impl HeatNetworkServiceSpace {
         energy_demand: f64,
         _temp_flow: f64,
         _temp_return: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+
         if !self.is_on(simulation_time_iteration) {
             return 0.;
         }
@@ -182,6 +193,8 @@ impl HeatNetworkServiceSpace {
         self.heat_network.lock().demand_energy(
             &self.service_name,
             energy_demand,
+            Some(time_start),
+            Some(update_heat_source_state),
             simulation_time_iteration.index,
         )
     }
@@ -190,15 +203,18 @@ impl HeatNetworkServiceSpace {
         &self,
         temp_output: f64,
         _temp_return_feed: f64,
+        time_start: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+
         if !self.is_on(simulation_time_iteration) {
             return 0.;
         }
 
         self.heat_network
             .lock()
-            .energy_output_max(Some(temp_output))
+            .energy_output_max(Some(temp_output), Some(time_start))
     }
 
     pub fn temperature_setpnt(
@@ -331,8 +347,10 @@ impl HeatNetwork {
 
     /// Calculate the maximum energy output of the heat network, accounting
     /// for time spent on higher-priority services.
-    fn energy_output_max(&self, _temp_output: Option<f64>) -> f64 {
-        let time_available = self.simulation_timestep - self.total_time_running_current_timestep;
+    fn energy_output_max(&self, _temp_output: Option<f64>, time_start: Option<f64>) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+
+        let time_available = self.time_available(time_start, self.simulation_timestep);
 
         self.power_max_in_kw * time_available
     }
@@ -350,22 +368,31 @@ impl HeatNetwork {
         &mut self,
         service_name: &str,
         energy_output_required: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
         timestep_idx: usize,
     ) -> f64 {
-        let energy_output_max = self.energy_output_max(None);
+        let time_start = time_start.unwrap_or(0.);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+        let energy_output_max = self.energy_output_max(None, None);
         if energy_output_max == 0. {
             return energy_output_max;
         }
         let energy_output_provided =
             max_of_2(0., min_of_2(energy_output_required, energy_output_max));
 
-        self.energy_supply_connections[service_name]
-            .demand_energy(energy_output_provided, timestep_idx)
-            .unwrap();
+        if update_heat_source_state {
+            self.energy_supply_connections[service_name]
+                .demand_energy(energy_output_provided, timestep_idx)
+                .unwrap();
+        }
 
-        let time_available = self.simulation_timestep - self.total_time_running_current_timestep;
-        self.total_time_running_current_timestep +=
-            (energy_output_provided / energy_output_max) * time_available;
+        let time_available = self.time_available(time_start, self.simulation_timestep);
+
+        if update_heat_source_state {
+            self.total_time_running_current_timestep +=
+                (energy_output_provided / energy_output_max) * time_available;
+        }
 
         energy_output_provided
     }
@@ -733,6 +760,8 @@ mod tests {
                     energy_demanded[t_idx],
                     temp_flow[t_idx],
                     temp_return[t_idx],
+                    None,
+                    None,
                     &t_it
                 ),
                 [5.0, 2.0, 0.0][t_idx]
@@ -754,6 +783,7 @@ mod tests {
                 heat_network_service_space.energy_output_max(
                     temp_output[t_idx],
                     temp_return_feed[t_idx],
+                    None,
                     &t_it
                 ),
                 [5.0, 5.0, 0.0][t_idx]
@@ -812,6 +842,8 @@ mod tests {
                 heat_network.lock().demand_energy(
                     "heat_network_test",
                     energy_output_required[t_idx],
+                    None,
+                    None,
                     t_idx
                 ),
                 [2.0, 6.0][t_idx]
