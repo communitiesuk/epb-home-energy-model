@@ -2178,7 +2178,7 @@ mod tests {
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
         let vent = Vent::new(
-            external_conditions.clone(),
+            None, // TODO: delete once removed from ventilation
             1.5,
             100.0,
             20.0,

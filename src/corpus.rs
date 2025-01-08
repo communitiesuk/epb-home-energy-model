@@ -3049,7 +3049,7 @@ fn infiltration_ventilation_from_input(
             (
                 vent_name.clone(),
                 Vent::new(
-                    external_conditions.clone(),
+                    Some(external_conditions.clone()),
                     vent.mid_height_air_flow_path,
                     vent.area_cm2,
                     vent.pressure_difference_ref,

@@ -626,7 +626,7 @@ impl WindowPart {
 
 #[derive(Debug)]
 pub(crate) struct Vent {
-    external_conditions: Arc<ExternalConditions>,
+    external_conditions: Option<Arc<ExternalConditions>>,
     h_path: f64,
     a_vent: f64,
     delta_p_vent_ref: f64,
@@ -654,7 +654,7 @@ impl Vent {
     /// Method:
     ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
     pub(crate) fn new(
-        external_conditions: Arc<ExternalConditions>,
+        external_conditions: Option<Arc<ExternalConditions>>, // TODO: to remove as part of the 0.32 migration, still WIP
         h_path: f64,
         a_vent: f64,
         delta_p_vent_ref: f64,
@@ -739,8 +739,13 @@ impl Vent {
         shield_class: VentilationShieldClass,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let wind_direction = self.external_conditions.wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        // TODO: remove the two references to external conditions as part of migration to 0.32
+        let wind_direction = self
+            .external_conditions
+            .clone()
+            .unwrap()
+            .wind_direction(simulation_time);
+        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
 
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path_from_pitch_and_orientation(
@@ -2515,7 +2520,7 @@ mod tests {
 
     #[fixture]
     fn vent(external_conditions: Arc<ExternalConditions>) -> Vent {
-        Vent::new(external_conditions, 1., 100., 20., 0., 90., 0., None) // TODO: part of the 0.32 update
+        Vent::new(Some(external_conditions), 1., 100., 20., 0., 90., 0., None) // TODO: part of the 0.32 update
     }
 
     #[rstest]
@@ -2748,7 +2753,7 @@ mod tests {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
         let windows = vec![create_window(&external_conditions, ctrl, 30.)];
         let vents = vec![Vent::new(
-            external_conditions.clone(),
+            Some(external_conditions.clone()), // TODO: to be removed as part of the 0.32 update
             1.5,
             100.,
             20.,
