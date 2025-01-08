@@ -3324,6 +3324,7 @@ fn building_element_from_input(
             height,
             width,
             shading,
+            treatment,
             ..
         } => BuildingElement::Transparent(BuildingElementTransparent::new(
             *pitch,
@@ -3335,6 +3336,7 @@ fn building_element_from_input(
             *height,
             *width,
             shading.clone(),
+            treatment.clone(),
             external_conditions,
         )),
         BuildingElementInput::Ground {

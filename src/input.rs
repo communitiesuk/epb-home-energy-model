@@ -1992,7 +1992,7 @@ pub enum BuildingElement {
         // end possible FHS only attributes
         shading: Vec<WindowShadingObject>,
         #[serde(default)]
-        treatment: Vec<WindowTreatment>,
+        treatment: Option<Vec<WindowTreatment>>,
     },
     #[serde(rename = "BuildingElementGround")]
     Ground {

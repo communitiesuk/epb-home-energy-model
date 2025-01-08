@@ -2,7 +2,7 @@ use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::{
     BuildingElement as BuildingElementInput, EdgeInsulation, FloorType, MassDistributionClass,
-    WindShieldLocation,
+    WindShieldLocation, WindowTreatment,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -1397,6 +1397,7 @@ impl BuildingElementTransparent {
         height: f64,
         width: f64,
         shading: Vec<WindowShadingObject>,
+        treatment: Option<Vec<WindowTreatment>>,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         // Solar absorption coefficient is zero because element is transparent
@@ -2645,6 +2646,7 @@ mod tests {
             1.25,
             4.,
             vec![],
+            None, // TODO: check if this needs updating as part of migration to 0.32
             external_conditions,
         )
     }

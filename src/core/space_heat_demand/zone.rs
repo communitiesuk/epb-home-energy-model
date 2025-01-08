@@ -2097,6 +2097,7 @@ mod tests {
             1.25,
             4.,
             vec![],
+            None,
             external_conditions.clone(),
         ));
         let be_ztu = BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
