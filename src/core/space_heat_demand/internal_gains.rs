@@ -311,7 +311,7 @@ impl EventApplianceGains {
                 0
             }
         ];
-        for start_shift in 0..pos_list.len() {
+        for (start_shift, pos_list_entry) in pos_list.iter_mut().enumerate() {
             for (i, power) in power_list_over_timesteps.iter().enumerate() {
                 let t_idx = min_of_2(
                     start_idx + i + start_shift,
@@ -331,7 +331,7 @@ impl EventApplianceGains {
                     // the appliance is already turned on for the entire timestep
                     // cannot put an event here
                     // put arbitrarily high demand at this position so it is not picked
-                    pos_list[start_shift] += 10_000. * weight_timeseries[series_idx];
+                    *pos_list_entry += 10_000. * weight_timeseries[series_idx];
                     break;
                 }
 
@@ -343,8 +343,7 @@ impl EventApplianceGains {
                     })?
                     .get_demand(t_idx, &self.energy_supply_name);
                 let new_demand = power / WATTS_PER_KILOWATT as f64 * self.simulation_timestep;
-                pos_list[start_shift] +=
-                    (new_demand + other_demand) * weight_timeseries[series_idx];
+                *pos_list_entry += (new_demand + other_demand) * weight_timeseries[series_idx];
             }
             let demand_limit = self
                 .load_shifting_metadata
@@ -353,7 +352,7 @@ impl EventApplianceGains {
                     anyhow!("Internal gains event processing expects load shifting to be set.")
                 })?
                 .demand_limit;
-            if demand_limit > 0. && pos_list[start_shift] < demand_limit {
+            if demand_limit > 0. && *pos_list_entry < demand_limit {
                 // demand is below the limit, good enough, no need to look further into the future
                 return Ok(start_shift);
             }
@@ -361,7 +360,7 @@ impl EventApplianceGains {
 
         let min_in_pos_list = *pos_list
             .iter()
-            .min_by(|&a, &b| a.total_cmp(&b))
+            .min_by(|&a, &b| a.total_cmp(b))
             .ok_or_else(|| anyhow!("Insufficient max shift size for appliance gains."))?;
         Ok(pos_list
             .iter()
