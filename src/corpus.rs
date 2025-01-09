@@ -44,7 +44,7 @@ use crate::core::space_heat_demand::ventilation::{
     VentilationDetailedResult, Window,
 };
 use crate::core::space_heat_demand::zone::{
-    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone,
+    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone, ZoneTemperatureControlBasis,
 };
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -2940,6 +2940,12 @@ fn zone_from_input(
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
 
+    // Default setpoint basis to 'operative' if not provided in input
+    let temp_setpnt_basis = match input.temp_setpnt_basis {
+        Some(crate::input::ZoneTemperatureControlBasis::Air) => ZoneTemperatureControlBasis::Air,
+        _ => ZoneTemperatureControlBasis::Operative,
+    };
+
     Ok((
         Zone::new(
             input.area,
@@ -2962,6 +2968,7 @@ fn zone_from_input(
             infiltration_ventilation,
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
             input.temp_setpnt_init.unwrap(),
+            temp_setpnt_basis,
             window_adjust_control,
             print_heat_balance,
             simulation_time_iterator,

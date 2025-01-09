@@ -1841,7 +1841,7 @@ pub struct ZoneInput {
     #[serde(rename = "temp_setpnt_cool", skip_serializing_if = "Option::is_none")]
     _temp_setpnt_cool: Option<f64>,
     #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
-    _temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
+    pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_setpnt_init: Option<f64>,
     #[serde(rename = "BuildingElement")]

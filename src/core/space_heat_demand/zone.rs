@@ -28,6 +28,14 @@ const F_SOL_C: f64 = 0.1;
 // (default value from BS EN ISO 52016-1:2017, Table B.17)
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
 
+#[derive(Clone, Debug)]
+pub enum ZoneTemperatureControlBasis {
+    // for dry-build temperature
+    Air,
+    // for operative temperature
+    Operative,
+}
+
 #[derive(Debug)]
 pub struct Zone {
     useful_area: f64,
@@ -91,6 +99,7 @@ impl Zone {
         ventilation: Arc<InfiltrationVentilation>,
         temp_ext_air_init: f64,
         temp_setpnt_init: f64,
+        temp_setpnt_basis: ZoneTemperatureControlBasis,
         control: Option<Arc<Control>>,
         print_heat_balance: bool,
         simulation_time: &SimulationTimeIterator,
@@ -2141,8 +2150,9 @@ mod tests {
             ("tb_point".to_string(), tb_point),
         ]));
 
-        let temp_ext_air_init = 17.;
+        let temp_ext_air_init = 2.2;
         let temp_setpnt_init = 21.;
+        let temp_setpnt_basis = ZoneTemperatureControlBasis::Air;
 
         Zone::new(
             80.,
@@ -2152,6 +2162,7 @@ mod tests {
             Arc::new(infiltration_ventilation),
             temp_ext_air_init,
             temp_setpnt_init,
+            temp_setpnt_basis,
             None,
             false,
             &simulation_time.iter(),
