@@ -180,17 +180,22 @@ impl Zone {
         })
     }
 
-    pub fn area(&self) -> f64 {
+    /// Return temp_setpnt_init
+    pub(crate) fn setpnt_init(&self) -> f64 {
+        self.temp_setpnt_init
+    }
+
+    pub(crate) fn area(&self) -> f64 {
         self.useful_area
     }
 
-    pub fn volume(&self) -> f64 {
+    pub(crate) fn volume(&self) -> f64 {
         self.volume
     }
 
     /// sum solar gains for all elements in the zone
     /// only transparent elements will have solar gains > 0
-    pub fn gains_solar(&self, simulation_time: SimulationTimeIteration) -> f64 {
+    pub(crate) fn gains_solar(&self, simulation_time: SimulationTimeIteration) -> f64 {
         self.building_elements
             .iter()
             .map(|el| el.element.solar_gains(simulation_time).unwrap())
@@ -198,7 +203,7 @@ impl Zone {
     }
 
     /// Return internal air temperature, in deg C
-    pub fn temp_internal_air(&self) -> f64 {
+    pub(crate) fn temp_internal_air(&self) -> f64 {
         self.temp_prev.lock()[self.zone_idx]
     }
 
