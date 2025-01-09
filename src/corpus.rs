@@ -4022,6 +4022,8 @@ fn heat_source_from_input(
         HeatSourceInput::Wet {
             name,
             control,
+            control_min,
+            control_max,
             temp_flow_limit_upper,
             ..
         } => {
@@ -4033,6 +4035,14 @@ fn heat_source_from_input(
                 })
                 .clone();
             let source_control = (*control).and_then(|ctrl| controls.get(&ctrl));
+            // TODO control_min and control_max added below when porting heat_network module to 0.32,
+            //  they still need to be correctly hooked up as part of 0.32 migration
+            let control_min = control_min
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl));
+            let control_max = control_max
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl));
 
             let mut heat_source_wet_clone = heat_source_wet.clone();
 
@@ -4062,8 +4072,8 @@ fn heat_source_from_input(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
                                 energy_supply_conn_name.clone(),
-                                temp_setpoint,
-                                source_control,
+                                control_min,
+                                control_max,
                             ),
                         )))
                     }

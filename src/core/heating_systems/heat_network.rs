@@ -87,28 +87,48 @@ impl HeatNetworkServiceWaterDirect {
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
-    temperature_hot_water: f64,
     control: Option<Arc<Control>>,
+    control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
 }
 
 impl HeatNetworkServiceWaterStorage {
     /// Arguments:
     /// * `heat_network` - reference to the HeatNetwork object providing the service
     /// * `service_name` - name of the service demanding energy from the heat network
-    /// * `temperature_hot_water` - temperature of the hot water to be provided, in deg C
-    /// * `control` - optional reference to a control object
+    /// * `control_min` - optional reference to a control object which must select current the minimum timestep temperature
+    /// * `control_max` - optional reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
-        temperature_hot_water: f64,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
+        let control = control_min.clone();
+
         Self {
             heat_network,
             service_name,
-            temperature_hot_water,
             control,
+            control_min,
+            control_max,
         }
+    }
+
+    pub(crate) fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        let control_min_setpnt = self
+            .control_min
+            .as_ref()
+            .and_then(|control| control.setpnt(simulation_time_iteration));
+        let control_max_setpnt = self
+            .control_max
+            .as_ref()
+            .and_then(|control| control.setpnt(simulation_time_iteration));
+
+        (control_min_setpnt, control_max_setpnt)
     }
 
     pub fn demand_energy(
@@ -139,9 +159,14 @@ impl HeatNetworkServiceWaterStorage {
             return 0.;
         }
 
+        let control_max_setpnt = self
+            .control_max
+            .as_ref()
+            .and_then(|control| control.setpnt(simulation_time_iteration));
+
         self.heat_network
             .lock()
-            .energy_output_max(Some(self.temperature_hot_water), None)
+            .energy_output_max(control_max_setpnt, None)
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
@@ -322,17 +347,12 @@ impl HeatNetwork {
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: String,
-        temperature_hot_water: f64,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> HeatNetworkServiceWaterStorage {
         Self::create_service_connection(heat_network.clone(), service_name.as_str()).unwrap();
 
-        HeatNetworkServiceWaterStorage::new(
-            heat_network,
-            service_name,
-            temperature_hot_water,
-            control,
-        )
+        HeatNetworkServiceWaterStorage::new(heat_network, service_name, control_min, control_max)
     }
 
     pub(crate) fn create_service_space_heating(
@@ -483,7 +503,7 @@ mod tests {
         let heat_network_service = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network.clone(),
             SERVICE_NAME.to_owned(),
-            52.0,
+            Some(Arc::new(Control::SetpointTime(control.clone()))),
             Some(Arc::new(Control::SetpointTime(control))),
         );
         assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
@@ -491,7 +511,7 @@ mod tests {
         let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network,
             SERVICE_NAME.to_owned(),
-            52.0,
+            None,
             None,
         );
         assert!(
@@ -635,16 +655,41 @@ mod tests {
     #[fixture]
     fn heat_network_service_water_storage(
         heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
+        two_len_simulation_time: SimulationTime,
     ) -> HeatNetworkServiceWaterStorage {
         let heat_network = heat_network_for_water_storage;
 
         let _ = HeatNetwork::create_service_connection(heat_network.clone(), "heat_network_test");
 
+        let control_min = SetpointTimeControl::new(
+            vec![Some(52.), Some(52.), None],
+            0,
+            1.0,
+            None,
+            None,
+            None,
+            None,
+            two_len_simulation_time.step,
+        )
+        .unwrap();
+
+        let control_max = SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), None],
+            0,
+            1.0,
+            None,
+            None,
+            None,
+            None,
+            two_len_simulation_time.step,
+        )
+        .unwrap();
+
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
             "heat_network_test".to_owned(),
-            60.,
-            None,
+            Some(Arc::new(Control::SetpointTime(control_min))),
+            Some(Arc::new(Control::SetpointTime(control_max))),
         )
     }
 
