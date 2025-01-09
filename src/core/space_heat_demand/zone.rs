@@ -32,6 +32,12 @@ const F_SOL_C: f64 = 0.1;
 // (default value from BS EN ISO 52016-1:2017, Table B.17)
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
 
+/// Calculate ventilation heat transfer co-efficient from air changes per hour
+fn calc_vent_heat_transfer_coeff(volume: f64, air_changes_per_hour: f64) -> f64 {
+    let q_ve = air_changes_per_hour * volume / SECONDS_PER_HOUR as f64;
+    AIR.density_kg_per_m3() * AIR.specific_heat_capacity() * q_ve
+}
+
 #[derive(Debug)]
 pub struct Zone {
     useful_area: f64,
@@ -581,6 +587,11 @@ impl Zone {
             self.zone_idx,
         )
     }
+
+    /// Calculate ventilation heat transfer coefficient from air changes per hour
+    fn calc_vent_heat_transfer_coeff(&self, air_changes_per_hour: f64) -> f64 {
+        calc_vent_heat_transfer_coeff(self.volume, air_changes_per_hour)
+    }
 }
 
 /// Initialise temperatures of heat balance nodes
@@ -917,12 +928,6 @@ pub(crate) fn space_heat_cool_demand(
         ach_cooling,
         ach_to_trigger_heating,
     ))
-}
-
-/// Calculate ventilation heat transfer coefficient from air changes per hour
-fn calc_vent_heat_transfer_coeff(air_changes_per_hour: f64, volume: f64) -> f64 {
-    let q_ve = air_changes_per_hour * volume / SECONDS_PER_HOUR as f64;
-    AIR.density_kg_per_m3() * AIR.specific_heat_capacity() * q_ve
 }
 
 /// Calculate temperatures according to procedure in BS EN ISO 52016-1:2017, section 6.5.6
