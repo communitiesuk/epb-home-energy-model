@@ -1866,7 +1866,7 @@ mod tests {
         FloorType, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
         WindowPart,
     };
-    use crate::simulation_time::{SimulationTime, SimulationTimeIterator, HOURS_IN_DAY};
+    use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
     use approx::assert_relative_eq;
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -2177,36 +2177,14 @@ mod tests {
     }
 
     #[fixture]
-    fn infiltration_ventilation(
-        external_conditions: Arc<ExternalConditions>,
-    ) -> InfiltrationVentilation {
+    fn infiltration_ventilation() -> InfiltrationVentilation {
         let window_part_list = vec![WindowPart {
             mid_height_air_flow_path: 1.5,
         }];
-        let window = Window::new(
-            None,
-            1.6,
-            1.,
-            3.,
-            window_part_list,
-            0.,
-            0.,
-            30.,
-            None,
-            Some(2.5),
-        );
+        let window = Window::new(1.6, 1., 3., window_part_list, 0., 0., 30., None, 2.5);
         let windows = HashMap::from([("window 0".to_string(), window)]);
 
-        let vent = Vent::new(
-            None, // TODO: delete once removed from ventilation
-            1.5,
-            100.0,
-            20.0,
-            180.0,
-            60.0,
-            30.0,
-            Some(2.5),
-        );
+        let vent = Vent::new(1.5, 100.0, 20.0, 180.0, 60.0, 30.0, 2.5);
         let vents = HashMap::from([("vent 1".to_string(), vent)]);
 
         let leaks = CompletedVentilationLeaks {
@@ -2220,10 +2198,9 @@ mod tests {
         };
 
         InfiltrationVentilation::new(
-            None,
             true,
             VentilationShieldClass::Normal,
-            TerrainClass::OpenField,
+            &TerrainClass::OpenField,
             20.0,
             windows.into_values().collect(),
             vents.into_values().collect(),
@@ -2231,11 +2208,11 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            None,
+            Default::default(),
             false,
             30.0,
             250.0,
-            Some(2.5),
+            2.5,
         )
     }
 

@@ -1,11 +1,6 @@
 // This module provides objects to represent Infiltration and Ventilation.
 // The calculations are based on Method 1 of BS EN 16798-7.
 
-use argmin::{
-    core::{CostFunction, Executor},
-    solver::brent::BrentRoot,
-};
-
 use crate::compare_floats::max_of_2;
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
@@ -16,7 +11,6 @@ use crate::core::units::{
 };
 use crate::corpus::{CompletedVentilationLeaks, ReportingFlag};
 use crate::errors::NotImplementedError;
-use crate::external_conditions::ExternalConditions;
 use crate::input::{
     CombustionAirSupplySituation, CombustionApplianceType, CombustionFuelType,
     FlueGasExhaustSituation, SupplyAirFlowRateControlType, SupplyAirTemperatureControlType,
@@ -24,6 +18,10 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::Error;
+use argmin::{
+    core::{CostFunction, Executor},
+    solver::brent::BrentRoot,
+};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -176,18 +174,28 @@ fn convert_mass_flow_rate_to_volume_flow_rate(qm: f64, temperature: f64, p_a_alt
     qm / air_density_at_temp(temperature, p_a_alt)
 }
 
-/// Interpreted from Table B.13 in BS EN 16798-7.
-/// Terrain Class input to roughness coefficient at building site at 10m
-/// Arguments:
-/// TER_CLASS -- Terrain class, one of 'Open terrain', 'Country' or 'Urban'
-fn ter_class_to_roughness_coeff(terrain: TerrainClass) -> f64 {
-    match terrain {
-        // TODO 0.32 - add mapping for new terrain classes
-        // TerrainClass::OpenTerrain => 1.0,
-        TerrainClass::OpenField => 0.9,
-        TerrainClass::Urban => 0.8,
-        _ => unimplemented!("Add mappings for new terrain classes"),
-    }
+/// Retrieves the roughness parameters and calculates the roughness coefficient (CR)
+///     based on the terrain type and height of airflow path.
+///
+///     Args:
+///     * `terrain_class` - The terrain type ('OpenWater', 'OpenField', 'Suburban', 'Urban').
+///     * `relative_airflow_path_height` - Height of airflow path relative to the ground (m).
+///
+///    Returns:
+///        float: Calculated roughness coefficient CR.
+fn ter_class_to_roughness_coeff(terrain: &TerrainClass, relative_airflow_path_height: f64) -> f64 {
+    let (kr, z0, zmin) = match terrain {
+        TerrainClass::OpenWater => (0.17, 0.01, 2.),
+        TerrainClass::OpenField => (0.19, 0.05, 4.),
+        TerrainClass::Suburban => (0.22, 0.3, 8.),
+        TerrainClass::Urban => (0.24, 1.0, 16.),
+    };
+
+    // ensure z is at least zmin
+    let z = relative_airflow_path_height.max(zmin);
+
+    // calculate the roughness coefficient
+    kr * (z / z0).ln()
 }
 
 /// Meteorological wind speed at 10 m corrected to reference wind speed at zone level of the dwelling
@@ -213,14 +221,18 @@ fn wind_speed_at_zone_level(
     ((c_rgh_site * c_top_site) / (c_rgh_met * c_top_met)) * u_10
 }
 
-/// Determine orientation of other windows relative to largest
+/// Determine difference between two bearings, taking shortest route around circle
 fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
+    if (orientation1 < 0. || orientation1 > 360.) || (orientation2 < 0. || orientation2 > 360.) {
+        panic!("Orientation values must be between 0 and 360 degrees"); // panicking here, but we should be able to previously enforce this constraint
+    }
     let op_rel_orientation = (orientation1 - orientation2).abs();
 
-    if op_rel_orientation > 360. {
-        return op_rel_orientation - 360.;
+    if op_rel_orientation > 180. {
+        360. - op_rel_orientation
+    } else {
+        op_rel_orientation
     }
-    op_rel_orientation
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -231,6 +243,7 @@ enum FacadeDirection {
     Roof30,
     Windward,
     Leeward,
+    Neither,
 }
 
 /// Gets direction of the facade from pitch and orientation
@@ -254,8 +267,10 @@ fn get_facade_direction(
             FacadeDirection::Roof30
         } else {
             let orientation_diff = orientation_difference(orientation, wind_direction);
-            if orientation_diff < 90. {
+            if orientation_diff <= 60. {
                 FacadeDirection::Windward
+            } else if orientation_diff < 120. {
+                FacadeDirection::Neither
             } else {
                 FacadeDirection::Leeward
             }
@@ -264,8 +279,10 @@ fn get_facade_direction(
         FacadeDirection::Roof
     } else {
         let orientation_diff = orientation_difference(orientation, wind_direction);
-        if orientation_diff < 90. {
+        if orientation_diff <= 60. {
             FacadeDirection::Windward
+        } else if orientation_diff < 120. {
+            FacadeDirection::Neither
         } else {
             FacadeDirection::Leeward
         }
@@ -276,19 +293,25 @@ fn get_facade_direction(
 fn get_c_p_path_from_pitch_and_orientation(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    h_path: f64,
+    relative_airflow_path_height: f64,
     wind_direction: f64,
     orientation: f64,
     pitch: f64,
 ) -> f64 {
     let facade_direction = get_facade_direction(f_cross, orientation, pitch, wind_direction);
-    get_c_p_path(f_cross, shield_class, h_path, facade_direction)
+    get_c_p_path(
+        f_cross,
+        shield_class,
+        relative_airflow_path_height,
+        facade_direction,
+    )
 }
 
 /// Interpreted from Table B.7 for determining dimensionless wind pressure coefficients
 /// Arguments:
-/// f_cross -- boolean, dependant on if cross ventilation is possible or not
-/// shield_class -- indicates exposure to wind
+/// * `f_cross` - boolean, dependant on if cross ventilation is possible or not
+/// * `shield_class` - indicates exposure to wind
+/// * `relative_airflow_path_height` - height of air flow path relative to ground (m)
 /// h_path - height of flow path (m)
 /// wind_direction -- direction the wind is blowing (degrees)
 /// orientation -- orientation of the facade (degrees)
@@ -297,15 +320,16 @@ fn get_c_p_path_from_pitch_and_orientation(
 fn get_c_p_path(
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    h_path: f64,
+    relative_airflow_path_height: f64,
     facade_direction: FacadeDirection,
 ) -> f64 {
     if f_cross {
-        if h_path < 15. {
+        if relative_airflow_path_height < 15. {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::Windward => 0.50,
                     FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.70,
                     FacadeDirection::Roof10_30 => -0.60,
                     FacadeDirection::Roof30 => -0.20,
@@ -314,6 +338,7 @@ fn get_c_p_path(
                 VentilationShieldClass::Normal => match facade_direction {
                     FacadeDirection::Windward => 0.25,
                     FacadeDirection::Leeward => -0.50,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.60,
                     FacadeDirection::Roof10_30 => -0.50,
                     FacadeDirection::Roof30 => -0.20,
@@ -322,17 +347,19 @@ fn get_c_p_path(
                 VentilationShieldClass::Shielded => match facade_direction {
                     FacadeDirection::Windward => 0.05,
                     FacadeDirection::Leeward => -0.30,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.50,
                     FacadeDirection::Roof10_30 => -0.40,
                     FacadeDirection::Roof30 => -0.20,
                     _ => panic!("Invalid combination of shield_class and facade_direction"),
                 },
             }
-        } else if (15. ..50.).contains(&h_path) {
+        } else if (15. ..50.).contains(&relative_airflow_path_height) {
             match shield_class {
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::Windward => 0.65,
                     FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.70,
                     FacadeDirection::Roof10_30 => -0.60,
                     FacadeDirection::Roof30 => -0.20,
@@ -341,6 +368,7 @@ fn get_c_p_path(
                 VentilationShieldClass::Normal => match facade_direction {
                     FacadeDirection::Windward => 0.45,
                     FacadeDirection::Leeward => -0.50,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.60,
                     FacadeDirection::Roof10_30 => -0.50,
                     FacadeDirection::Roof30 => -0.20,
@@ -349,6 +377,7 @@ fn get_c_p_path(
                 VentilationShieldClass::Shielded => match facade_direction {
                     FacadeDirection::Windward => 0.25,
                     FacadeDirection::Leeward => -0.30,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.50,
                     FacadeDirection::Roof10_30 => -0.40,
                     FacadeDirection::Roof30 => -0.20,
@@ -361,6 +390,7 @@ fn get_c_p_path(
                 VentilationShieldClass::Open => match facade_direction {
                     FacadeDirection::Windward => 0.80,
                     FacadeDirection::Leeward => -0.70,
+                    FacadeDirection::Neither => 0.0,
                     FacadeDirection::Roof10 => -0.70,
                     FacadeDirection::Roof10_30 => -0.60,
                     FacadeDirection::Roof30 => -0.20,
@@ -373,6 +403,7 @@ fn get_c_p_path(
         match facade_direction {
             FacadeDirection::Windward => 0.05,
             FacadeDirection::Leeward => -0.05,
+            FacadeDirection::Neither => 0.0,
             FacadeDirection::Roof => 0.,
             _ => panic!("Invalid combination of shield_class and facade_direction"),
         }
@@ -393,22 +424,20 @@ fn sign(value: f64) -> i8 {
 
 #[derive(Debug)]
 pub(crate) struct Window {
-    h_w_path: f64,
     a_w_max: f64,
     c_d_w: f64,
     n_w: f64,
     orientation: f64,
     pitch: f64,
-    external_conditions: Option<Arc<ExternalConditions>>,
     on_off_ctrl_obj: Option<Arc<Control>>,
     _altitude: f64,
     p_a_alt: f64,
+    z: f64,
     window_parts: Vec<WindowPart>,
 }
 
 impl Window {
     pub(crate) fn new(
-        external_conditions: Option<Arc<ExternalConditions>>,
         h_w_fa: f64,
         h_w_path: f64,
         a_w_max: f64,
@@ -417,20 +446,19 @@ impl Window {
         pitch: f64,
         altitude: f64,
         on_off_ctrl_obj: Option<Arc<Control>>,
-        ventilation_zone_base_height: Option<f64>, // TODO: to update as part of 0.32 - still WIP
+        ventilation_zone_base_height: f64,
     ) -> Self {
         let n_w_div = max_of_2(window_part_list.len() - 1, 0usize) as f64;
         Self {
-            h_w_path,
             a_w_max,
             c_d_w: 0.67,
             n_w: 0.5,
             orientation,
             pitch,
-            external_conditions,
             on_off_ctrl_obj,
             _altitude: altitude,
             p_a_alt: adjust_air_density_for_altitude(altitude),
+            z: h_w_path + ventilation_zone_base_height,
             window_parts: window_part_list
                 .iter()
                 .enumerate()
@@ -440,6 +468,7 @@ impl Window {
                         h_w_fa,
                         n_w_div,
                         window_part_number + 1,
+                        ventilation_zone_base_height,
                     )
                 })
                 .collect(),
@@ -493,15 +522,20 @@ impl Window {
 
     /// Calculate the airflow through window opening based on how open the window is and internal pressure
     /// Arguments:
-    /// u_site -- wind velocity at zone level (m/s)
-    /// T_z -- thermal zone air temperature (K)
-    /// p_z_ref -- internal reference pressure (Pa)
-    /// f_cross -- boolean, dependent on if cross ventilation is possible or not
-    /// shield_class -- indicates exposure to wind
-    /// R_w_arg -- ratio of window opening (0-1)
+    /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
+    /// * `u_site` - wind velocity at zone level (m/s)
+    /// * `t_e` - external air temperature (K)
+    /// * `t_z` - thermal zone air temperature (K)
+    /// * `p_z_ref` - internal reference pressure (Pa)
+    /// * `f_cross` - boolean, dependent on if cross ventilation is possible or not
+    /// * `shield_class` - indicates exposure to wind
+    /// * `r_w_arg` - ratio of window opening (0-1)
+    /// * `simulation_time`
     fn calculate_flow_from_internal_p(
         &self,
+        wind_direction: f64,
         u_site: f64,
+        t_e: f64,
         t_z: f64,
         p_z_ref: f64,
         f_cross: bool,
@@ -509,12 +543,6 @@ impl Window {
         r_w_arg: Option<f64>,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let wind_direction = self
-            .external_conditions
-            .clone()
-            .unwrap()
-            .wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         // Assume windows are shut if the control object is empty
         let r_w_arg = match &self.on_off_ctrl_obj {
             None => 0.,
@@ -530,7 +558,7 @@ impl Window {
         let c_p_path = get_c_p_path_from_pitch_and_orientation(
             f_cross,
             shield_class,
-            self.h_w_path,
+            self.z,
             wind_direction,
             self.orientation,
             self.pitch,
@@ -569,10 +597,17 @@ struct WindowPart {
     n_w_div: f64,
     h_w_div_path: f64,
     n_w: f64,
+    _z: f64,
 }
 
 impl WindowPart {
-    fn new(h_w_path: f64, h_w_fa: f64, n_w_div: f64, window_part_number: usize) -> Self {
+    fn new(
+        h_w_path: f64,
+        h_w_fa: f64,
+        n_w_div: f64,
+        window_part_number: usize,
+        ventilation_zone_base_height: f64,
+    ) -> Self {
         Self {
             n_w_div,
             h_w_div_path: Self::calculate_height_for_delta_p_w_div_path(
@@ -582,6 +617,7 @@ impl WindowPart {
                 window_part_number,
             ),
             n_w: 0.5,
+            _z: h_w_path + ventilation_zone_base_height,
         }
     }
 
@@ -633,7 +669,6 @@ impl WindowPart {
 
 #[derive(Debug)]
 pub(crate) struct Vent {
-    external_conditions: Option<Arc<ExternalConditions>>,
     h_path: f64,
     a_vent: f64,
     delta_p_vent_ref: f64,
@@ -643,6 +678,7 @@ pub(crate) struct Vent {
     n_vent: f64,
     c_d_vent: f64,
     p_a_alt: f64,
+    z: f64,
     // NOTE - in Python we have C_vent_path as an instance variable but here we calculate it when needed instead
 }
 
@@ -650,7 +686,6 @@ impl Vent {
     /// Construct a Vent object
     ///
     /// Arguments:
-    ///    external_conditions -- reference to ExternalConditions object
     ///    h_path -- mid-height of air flow path relative to ventilation zone (m)
     ///    A_vent - Equivalent area of a vent (m2)
     ///    delta_p_vent_ref -- reference pressure difference for vent (Pa)
@@ -661,14 +696,13 @@ impl Vent {
     /// Method:
     ///    - Based on Section 6.4.3.6 Airflow through vents from BS EN 16798-7
     pub(crate) fn new(
-        external_conditions: Option<Arc<ExternalConditions>>, // TODO: to remove as part of the 0.32 migration, still WIP
         h_path: f64,
         a_vent: f64,
         delta_p_vent_ref: f64,
         orientation: f64,
         pitch: f64,
         altitude: f64,
-        ventilation_zone_base_height: Option<f64>, // TODO: added as part of the 0.32 migration, still WIP
+        ventilation_zone_base_height: f64, // TODO: added as part of the 0.32 migration, still WIP
     ) -> Self {
         Self {
             h_path,
@@ -677,34 +711,42 @@ impl Vent {
             orientation,
             pitch,
             _altitude: altitude,
-            external_conditions,
             n_vent: 0.5, // Flow exponent for vents based on Section B.3.2.2 from BS EN 16798-7
             c_d_vent: 0.6, // Discharge coefficient of vents based on B.3.2.1 from BS EN 16798-7
             p_a_alt: adjust_air_density_for_altitude(altitude),
+            z: h_path + ventilation_zone_base_height,
         }
+    }
+
+    /// The vent opening free area A_vent for a vent
+    /// Arguments:
+    /// * `r_v_arg` - ratio of vent opening (0-1)
+    fn calculate_vent_opening_free_area(&self, r_v_arg: f64) -> f64 {
+        r_v_arg * self.a_vent
     }
 
     /// The airflow coefficient of the vent calculated from equivalent area A_vent_i
     /// according to EN 13141-1 and EN 13141-2.
     /// Based on Equation 59 from BS EN 16798-7.
-    fn calculate_flow_coeff_for_vent(&self) -> f64 {
+    fn calculate_flow_coeff_for_vent(&self, r_v_arg: f64) -> f64 {
         // NOTE: The standard does not define what the below 3600 and 10000 are.
 
+        let a_vent = self.calculate_vent_opening_free_area(r_v_arg);
         (3600. / 10000.)
             * self.c_d_vent
-            * self.a_vent
+            * a_vent
             * (2. / p_a_ref()).powf(0.5)
             * (1. / self.delta_p_vent_ref).powf(self.n_vent - 0.5)
     }
 
     /// Calculate the airflow through vents from internal pressure
     /// Arguments:
-    /// u_site -- wind velocity at zone level (m/s)
-    /// T_e -- external air temperature (K)
-    /// T_z -- thermal zone air temperature (K)
-    /// C_vent_path -- wind pressure coefficient at height of the vent
-    /// C_p_path -- wind pressure coefficient at the height of the window part
-    /// p_z_ref -- internal reference pressure (Pa)
+    /// * `u_site` - wind velocity at zone level (m/s)
+    /// * `t_e` - external air temperature (K)
+    /// * `t_z` -- thermal zone air temperature (K)
+    /// * `c_vent_path` - wind pressure coefficient at height of the vent
+    /// * `c_p_path` - wind pressure coefficient at the height of the window part
+    /// * `p_z_ref` - internal reference pressure (Pa)
     fn calculate_ventilation_through_vents_using_internal_p(
         &self,
         u_site: f64,
@@ -731,42 +773,38 @@ impl Vent {
 
     /// Calculate the airflow through vents from internal pressure
     ///
-    ///     Arguments:
-    ///     u_site -- wind velocity at zone level (m/s)
-    ///     T_z -- thermal zone air temperature (K)
-    ///     p_z_ref -- internal reference pressure (Pa)
-    ///     f_cross -- boolean, dependant on if cross ventilation is possible or not
-    ///     shield_class -- indicates exposure to wind
+    /// Arguments:
+    /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
+    /// * `u_site` - wind velocity at zone level (m/s)
+    /// * `t_e` - external air temperature (K)
+    /// * `t_z` - thermal zone air temperature (K)
+    /// * `p_z_ref` - internal reference pressure (Pa)
+    /// * `f_cross` - boolean, dependent on if cross ventilation is possible or not
+    /// * `shield_class` - indicates exposure to wind
+    /// * `r_v_arg`
     fn calculate_flow_from_internal_p(
         &self,
+        wind_direction: f64,
         u_site: f64,
+        t_e: f64,
         t_z: f64,
         p_z_ref: f64,
         f_cross: bool,
         shield_class: VentilationShieldClass,
-        simulation_time: SimulationTimeIteration,
+        r_v_arg: f64,
     ) -> (f64, f64) {
-        // TODO: remove the two references to external conditions as part of migration to 0.32
-        let wind_direction = self
-            .external_conditions
-            .clone()
-            .unwrap()
-            .wind_direction(simulation_time);
-        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
-
         // Wind pressure coefficient for the air flow path
         let c_p_path = get_c_p_path_from_pitch_and_orientation(
             f_cross,
             shield_class,
-            self.h_path,
+            self.z,
             wind_direction,
             self.orientation,
             self.pitch,
         );
 
+        let c_vent_path = self.calculate_flow_coeff_for_vent(r_v_arg);
         // Calculate airflow through each vent
-
-        let c_vent_path = self.calculate_flow_coeff_for_vent();
         let air_flow = self.calculate_ventilation_through_vents_using_internal_p(
             u_site,
             t_e,
@@ -812,8 +850,8 @@ struct Leaks {
     qv_delta_p_leak_ref: f64,
     facade_direction: FacadeDirection,
     _altitude: f64,
-    external_conditions: Option<Arc<ExternalConditions>>, // TODO: remove as part of migration to 0.32
     p_a_alt: f64,
+    z: f64,
     // In Python there are extra properties:
     // n_leak - this is now N_LEAK as it is constant
     // c_leak_path - this is now calculated when needed with calculate_flow_coeff_for_leak
@@ -821,17 +859,19 @@ struct Leaks {
 
 impl Leaks {
     /// Arguments:
-    ///      external_conditions -- reference to ExternalConditions object
-    ///      h_path -- mid-height of the air flow path relative to ventilation zone floor level
-    ///      delta_p_leak_ref -- Reference pressure difference (From pressure test e.g. blower door = 50Pa)
-    ///      qv_delta_p_leak_ref -- flow rate through
-    ///      facade_direction -- The direction of the facade the leak is on.
-    ///      A_roof -- Surface area of the roof of the ventilation zone (m2)
-    ///      A_facades -- Surface area of facades (m2)
-    ///      A_leak - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
-    ///      altitude -- altitude of dwelling above sea level (m)
+    /// * `h_path` - mid-height of the air flow path relative to ventilation zone floor level
+    /// * `delta_p_leak_ref` - Reference pressure difference (From pressure test e.g. blower door = 50Pa)
+    /// * `qv_delta_p_leak_ref` - flow rate through
+    /// * `facade_direction` - The direction of the facade the leak is on.
+    /// * `a_roof` - Surface area of the roof of the ventilation zone (m2)
+    /// * `a_facades` - Surface area of facades (m2)
+    /// * `a_leak` - Reference area of the envelope airtightness index qv_delta_p_leak_ref (depends on national context)
+    /// * `altitude` - altitude of dwelling above sea level (m)
+    /// * `ventilation_zone_base_height` - Base height of the ventilation zone relative to ground (m)
+    ///
+    /// Based on Section 6.4.3.6 Airflow through leaks from BS EN 16798-7.
+    //
     fn new(
-        external_conditions: Option<Arc<ExternalConditions>>, // TODO: remove as part of migration to 0.32
         h_path: f64,
         delta_p_leak_ref: f64,
         qv_delta_p_leak_ref: f64,
@@ -840,6 +880,7 @@ impl Leaks {
         a_facades: f64,
         a_leak: f64,
         altitude: f64,
+        ventilation_zone_base_height: f64,
     ) -> Self {
         Self {
             h_path,
@@ -850,8 +891,8 @@ impl Leaks {
             qv_delta_p_leak_ref,
             facade_direction,
             _altitude: altitude,
-            external_conditions,
             p_a_alt: adjust_air_density_for_altitude(altitude),
+            z: h_path + ventilation_zone_base_height,
         }
     }
 
@@ -912,16 +953,14 @@ impl Leaks {
     fn calculate_flow_from_internal_p(
         &self,
         u_site: f64,
+        t_e: f64,
         t_z: f64,
         p_z_ref: f64,
         f_cross: bool,
         shield_class: VentilationShieldClass,
-        simtime: SimulationTimeIteration,
     ) -> (f64, f64) {
-        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
-
         // Wind pressure coefficient for the air flow path
-        let c_p_path = get_c_p_path(f_cross, shield_class, self.h_path, self.facade_direction); // #TABLE from annex B
+        let c_p_path = get_c_p_path(f_cross, shield_class, self.z, self.facade_direction); // #TABLE from annex B
 
         // Calculate airflow through each leak
         let mut qv_in_through_leak = 0.;
@@ -1093,7 +1132,6 @@ pub(crate) struct MechanicalVentilation {
     _theta_z_t: f64,
     sup_air_flw_ctrl: SupplyAirFlowRateControlType,
     _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
-    external_conditions: Arc<ExternalConditions>,
     _q_h_des: f64,
     _q_c_des: f64,
     _theta_ctrl_sys: Option<f64>,
@@ -1112,7 +1150,6 @@ pub(crate) struct MechanicalVentilation {
 impl MechanicalVentilation {
     /// Construct a Mechanical Ventilation object
     /// Arguments:
-    /// external_conditions -- reference to ExternalConditions object
     /// sup_air_flw_ctrl -- supply air flow rate control
     /// sup_air_temp_ctrl --supply air temperature control
     /// q_h_des -- design zone heating need to be covered by the mechanical ventilation system
@@ -1129,7 +1166,6 @@ impl MechanicalVentilation {
     /// mvhr_eff -- MVHR efficiency
     /// theta_ctrl_sys -- Temperature variation based on control system (K)
     pub(crate) fn new(
-        external_conditions: Arc<ExternalConditions>,
         _sup_air_flw_ctrl: SupplyAirFlowRateControlType,
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
         q_h_des: f64,
@@ -1152,8 +1188,6 @@ impl MechanicalVentilation {
             _theta_z_t: 0., // TODO (from Python) get Thermal zone temperature - used for LOAD
             sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO (from Python) currently hard coded until load comp implemented
             _sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO (from Python) currently hard coded until load comp implemented
-            // Arguments
-            external_conditions,
             _q_h_des: q_h_des,
             _q_c_des: q_c_des,
             _theta_ctrl_sys: theta_ctrl_sys,
@@ -1242,10 +1276,9 @@ impl MechanicalVentilation {
     fn calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
         &self,
         t_z: f64,
+        t_e: f64,
         simulation_time: &SimulationTimeIteration,
     ) -> Result<(f64, f64, f64), NotImplementedError> {
-        let t_e = celsius_to_kelvin(self.external_conditions.air_temp(simulation_time)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
-
         // Required air flow at air terminal devices
         let (qv_sup_req, qv_eta_req) = self.calc_req_oda_flow_rates_at_atds();
 
@@ -1350,10 +1383,8 @@ impl MechanicalVentilation {
 /// A class to represent Infiltration and Ventilation object
 #[derive(Debug)]
 pub struct InfiltrationVentilation {
-    external_conditions: Option<Arc<ExternalConditions>>,
     f_cross: bool,
     shield_class: VentilationShieldClass,
-    _terrain_class: TerrainClass,
     c_rgh_site: f64,
     ventilation_zone_height: f64,
     windows: Vec<Window>,
@@ -1362,15 +1393,15 @@ pub struct InfiltrationVentilation {
     combustion_appliances: Vec<CombustionAppliances>,
     air_terminal_devices: Vec<AirTerminalDevices>,
     mech_vents: Vec<Arc<MechanicalVentilation>>,
+    space_heating_ductworks: Arc<IndexMap<String, Vec<Ductwork>>>,
     detailed_output_heating_cooling: bool,
     p_a_alt: f64,
     total_volume: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
-    ventilation_zone_base_height: Option<f64>,
+    ventilation_zone_base_height: f64,
 }
 
 /// Arguments:
-/// * `external_conditions` - reference to ExternalConditions object
 /// * `f_cross` - cross-ventilation factor
 /// * `shield_class` - indicates the exposure to wind of an air flow path on a facade
 ///                    (can can be open, normal or shielded)
@@ -1382,16 +1413,16 @@ pub struct InfiltrationVentilation {
 /// * `combustion_appliances`
 /// * `air_terminal_devices` - list of air terminal devices
 /// * `mech_vents` - list of mech vents
+/// * `space_heating_ductworks`
 /// * `detailed_output_heating_cooling` - whether to output detailed heating/cooling data
 /// * `altitude` - altitude of dwelling above sea level (m)
 /// * `total_volume` - total zone volume
 /// * `ventilation_zone_base_height` -- base height of the ventilation zone (m)
 impl InfiltrationVentilation {
     pub(crate) fn new(
-        external_conditions: Option<Arc<ExternalConditions>>,
         f_cross: bool,
         shield_class: VentilationShieldClass,
-        terrain_class: TerrainClass,
+        terrain_class: &TerrainClass,
         average_roof_pitch: f64,
         windows: Vec<Window>,
         vents: Vec<Vent>,
@@ -1399,25 +1430,33 @@ impl InfiltrationVentilation {
         combustion_appliances: Vec<CombustionAppliances>,
         air_terminal_devices: Vec<AirTerminalDevices>,
         mech_vents: Vec<Arc<MechanicalVentilation>>,
-        space_heating_ductworks: Option<IndexMap<String, Vec<Ductwork>>>,
+        space_heating_ductworks: Arc<IndexMap<String, Vec<Ductwork>>>,
         detailed_output_heating_cooling: bool,
         altitude: f64,
         total_volume: f64,
-        ventilation_zone_base_height: Option<f64>,
+        ventilation_zone_base_height: f64,
     ) -> Self {
+        let ventilation_zone_height = leaks.ventilation_zone_height;
         Self {
-            external_conditions: external_conditions.clone(),
             f_cross,
             shield_class,
-            _terrain_class: terrain_class,
-            c_rgh_site: ter_class_to_roughness_coeff(terrain_class),
-            ventilation_zone_height: leaks.ventilation_zone_height,
+            c_rgh_site: ter_class_to_roughness_coeff(
+                terrain_class,
+                ventilation_zone_base_height + ventilation_zone_height / 2.,
+            ),
+            ventilation_zone_height,
             windows,
             vents,
-            leaks: Self::make_leak_objects(leaks, average_roof_pitch, external_conditions),
+            leaks: Self::make_leak_objects(
+                leaks,
+                average_roof_pitch,
+                ventilation_zone_base_height,
+                f_cross,
+            ),
             combustion_appliances,
             air_terminal_devices,
             mech_vents,
+            space_heating_ductworks,
             detailed_output_heating_cooling,
             p_a_alt: adjust_air_density_for_altitude(altitude),
             total_volume,
@@ -1426,19 +1465,12 @@ impl InfiltrationVentilation {
         }
     }
 
-    /// Calculate supply temperature of the air flow element
-    pub fn temp_supply(&self, simtime: SimulationTimeIteration) -> f64 {
-        // NOTE: Technically, the MVHR system supplies air at a higher temperature
-        // than the outside air, i.e.:
-        //     temp_supply = self.__efficiency * temp_int_air \
-        //                 + (1 - self.__efficiency) * self.__external_conditions.air_temp()
-        // However, calculating this requires the internal air temperature, which
-        // has not been calculated yet. Calculating this properly would require
-        // the equation above to be added to the heat balance solver. Therefore,
-        // it is simpler to adjust the heat transfer coefficient h_ve to account
-        // for the heat recovery effect using an "equivalent" flow rate of
-        // external air, which is done elsewhere
-        self.external_conditions.clone().unwrap().air_temp(&simtime)
+    pub(crate) fn mech_vents(&self) -> &Vec<Arc<MechanicalVentilation>> {
+        &self.mech_vents
+    }
+
+    pub(crate) fn space_heating_ductworks(&self) -> &Arc<IndexMap<String, Vec<Ductwork>>> {
+        &self.space_heating_ductworks
     }
 
     /// Calculate total volume air flow rate entering ventilation zone
@@ -1468,18 +1500,23 @@ impl InfiltrationVentilation {
     fn make_leak_objects(
         leaks: CompletedVentilationLeaks,
         average_roof_pitch: f64,
-        external_conditions: Option<Arc<ExternalConditions>>,
+        ventilation_zone_base_height: f64,
+        f_cross: bool,
     ) -> Vec<Leaks> {
         let h_path1_2 = 0.25 * leaks.ventilation_zone_height;
         let h_path3_4 = 0.75 * leaks.ventilation_zone_height;
         let h_path5 = leaks.ventilation_zone_height;
         let h_path_list = [h_path1_2, h_path1_2, h_path3_4, h_path3_4, h_path5];
 
-        let roof_pitch = match average_roof_pitch {
-            ..10.0 => FacadeDirection::Roof10,
-            10.0..=30.0 => FacadeDirection::Roof10_30,
-            30.0..60.0 => FacadeDirection::Roof30,
-            _ => panic!("Average roof pitch was not expected to be greater than 60 degrees."),
+        let roof_pitch = if f_cross {
+            match average_roof_pitch {
+                ..10.0 => FacadeDirection::Roof10,
+                10.0..=30.0 => FacadeDirection::Roof10_30,
+                30.0..60.0 => FacadeDirection::Roof30,
+                _ => panic!("Average roof pitch was not expected to be greater than 60 degrees."),
+            }
+        } else {
+            FacadeDirection::Roof
         };
 
         let facade_direction = [
@@ -1493,7 +1530,6 @@ impl InfiltrationVentilation {
         (0..5)
             .map(|i| {
                 Leaks::new(
-                    external_conditions.clone(),
                     h_path_list[i],
                     leaks.test_pressure,
                     leaks.test_result,
@@ -1502,22 +1538,16 @@ impl InfiltrationVentilation {
                     leaks.area_facades,
                     leaks.env_area,
                     leaks.altitude,
+                    ventilation_zone_base_height,
                 )
             })
             .collect()
     }
 
     /// Implicit solver for qv_pdu
-    fn calculate_qv_pdu(
-        &self,
-        qv_pdu: f64,
-        p_z_ref: f64,
-        t_z: f64,
-        h_z: f64,
-        simtime: &SimulationTimeIteration,
-    ) -> f64 {
+    fn calculate_qv_pdu(&self, qv_pdu: f64, p_z_ref: f64, t_z: f64, t_e: f64, h_z: f64) -> f64 {
         let func = |qv_pdu, p_z_ref, t_z, h_z| {
-            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, h_z, simtime)
+            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z)
         };
 
         fsolve(func, qv_pdu, (p_z_ref, t_z, h_z)) // returns qv_pdu
@@ -1535,10 +1565,9 @@ impl InfiltrationVentilation {
         qv_pdu: f64,
         p_z_ref: f64,
         t_z: f64,
+        t_e: f64,
         h_z: f64,
-        simtime: &SimulationTimeIteration,
     ) -> f64 {
-        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
         let external_air_density = air_density_at_temp(t_e, self.p_a_alt);
         let zone_air_density = air_density_at_temp(t_z, self.p_a_alt);
 
@@ -1568,7 +1597,11 @@ impl InfiltrationVentilation {
     pub(crate) fn calculate_internal_reference_pressure(
         &self,
         initial_p_z_ref_guess: f64,
+        wind_speed: f64,
+        wind_direction: f64,
         temp_int_air: f64,
+        temp_ext_air: f64,
+        r_v_arg: f64,
         r_w_arg: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> Result<f64, InternalReferencePressureCalculationError> {
@@ -1581,7 +1614,11 @@ impl InfiltrationVentilation {
 
             let result = root_scalar_for_implicit_mass_balance(
                 self,
+                wind_speed,
+                wind_direction,
                 temp_int_air,
+                temp_ext_air,
+                r_v_arg,
                 r_w_arg,
                 simtime,
                 bracket,
@@ -1604,7 +1641,11 @@ impl InfiltrationVentilation {
     pub(crate) fn implicit_mass_balance_for_internal_reference_pressure(
         &self,
         p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: f64,
         temp_int_air: f64,
+        temp_ext_air: f64,
+        r_v_arg: f64,
         r_w_arg_min_max: f64,
         flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
@@ -1612,7 +1653,11 @@ impl InfiltrationVentilation {
         let (qm_in, qm_out, _) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 p_z_ref,
+                wind_speed,
+                wind_direction,
                 temp_int_air,
+                temp_ext_air,
+                r_v_arg,
                 r_w_arg_min_max,
                 flag,
                 simtime,
@@ -1624,7 +1669,11 @@ impl InfiltrationVentilation {
     pub(crate) fn incoming_air_flow(
         &self,
         p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: f64,
         temp_int_air: f64,
+        temp_ext_air: f64,
+        r_v_arg: f64,
         r_w_arg_min_max: f64,
         reporting_flag: Option<ReportingFlag>,
         report_effective_flow_rate: Option<bool>,
@@ -1634,7 +1683,11 @@ impl InfiltrationVentilation {
         let (mut qm_in, _, qm_effective_flow_rate) = self
             .implicit_mass_balance_for_internal_reference_pressure_components(
                 p_z_ref,
+                wind_speed,
+                wind_direction,
                 temp_int_air,
+                temp_ext_air,
+                r_v_arg,
                 r_w_arg_min_max,
                 reporting_flag,
                 simtime,
@@ -1645,7 +1698,7 @@ impl InfiltrationVentilation {
         }
         Ok(convert_mass_flow_rate_to_volume_flow_rate(
             qm_in,
-            celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures."),
+            celsius_to_kelvin(temp_ext_air)?,
             self.p_a_alt,
         ))
     }
@@ -1654,9 +1707,12 @@ impl InfiltrationVentilation {
     /// Equation 67 from BS EN 16798-7.
     ///
     /// Arguments:
-    /// p_z_ref -- internal reference pressure (Pa)
-    /// temp_int_air -- temperature of the intake air (K)
-    /// reporting_flag -- flag used to give more detailed ventilation outputs (None = no additional reporting)
+    /// * `p_z_ref` - internal reference pressure (Pa)
+    /// * `wind_speed` - wind speed, in m/s
+    /// * `wind_direction` - direction wind is blowing from, in clockwise degrees from North
+    /// * `temp_int_air` - temperature of air in the zone (C)
+    /// * `temp_ext_air` - temperature of external air (C)
+    /// * `reporting_flag` - flag used to give more detailed ventilation outputs (None = no additional reporting)
     ///
     /// Key Variables:
     /// qm_SUP_to_vent_zone - Supply air mass flow rate going to ventilation zone
@@ -1674,18 +1730,17 @@ impl InfiltrationVentilation {
     fn implicit_mass_balance_for_internal_reference_pressure_components(
         &self,
         p_z_ref: f64,
+        wind_speed: f64,
+        wind_direction: f64,
         temp_int_air: f64,
+        temp_ext_air: f64,
+        r_v_arg: f64,
         r_w_arg_min_max: f64,
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64)> {
-        let wind_speed = self
-            .external_conditions
-            .clone()
-            .unwrap()
-            .wind_speed(&simtime);
         let u_site = wind_speed_at_zone_level(self.c_rgh_site, wind_speed, None, None, None);
-        let t_e = celsius_to_kelvin(self.external_conditions.clone().unwrap().air_temp(&simtime)).expect("External temperatures are not expected to ever contain illegal (i.e. below absolute zero) temperatures.");
+        let t_e = celsius_to_kelvin(temp_ext_air)?;
         let t_z = celsius_to_kelvin(temp_int_air)?;
         let mut qm_in_through_window_opening = 0.;
         let mut qm_out_through_window_opening = 0.;
@@ -1703,7 +1758,9 @@ impl InfiltrationVentilation {
 
         for window in &self.windows {
             let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
+                wind_direction,
                 u_site,
+                t_e,
                 t_z,
                 p_z_ref,
                 self.f_cross,
@@ -1717,12 +1774,14 @@ impl InfiltrationVentilation {
 
         for vent in &self.vents {
             let (qm_in, qm_out) = vent.calculate_flow_from_internal_p(
+                wind_direction,
                 u_site,
+                t_e,
                 t_z,
                 p_z_ref,
                 self.f_cross,
                 self.shield_class,
-                simtime,
+                r_v_arg,
             );
             qm_in_through_vents += qm_in;
             qm_out_through_vents += qm_out;
@@ -1731,11 +1790,11 @@ impl InfiltrationVentilation {
         for leak in &self.leaks {
             let (qm_in, qm_out) = leak.calculate_flow_from_internal_p(
                 u_site,
+                t_e,
                 t_z,
                 p_z_ref,
                 self.f_cross,
                 self.shield_class,
-                simtime,
             );
             qm_in_through_leaks += qm_in;
             qm_out_through_leaks += qm_out;
@@ -1744,7 +1803,7 @@ impl InfiltrationVentilation {
         for _atd in &self.air_terminal_devices {
             let qv_pdu_initial = 0.; // TODO (from Python) get from prev timestep
             let h_z = self.ventilation_zone_height;
-            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, h_z, &simtime);
+            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, t_e, h_z);
 
             let (qv_pdu_in, qv_pdu_out) = if qv_pdu >= 0. {
                 (qv_pdu, 0.)
@@ -1771,8 +1830,8 @@ impl InfiltrationVentilation {
         }
 
         for mech_vent in &self.mech_vents {
-            let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) =
-                mech_vent.calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, &simtime)?;
+            let (qm_sup, qm_eta, qm_in_effective_heat_recovery_saving) = mech_vent
+                .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(t_z, t_e, &simtime)?;
             qm_sup_to_vent_zone += qm_sup;
             qm_eta_from_vent_zone += qm_eta;
             qm_in_effective_heat_recovery_saving_total += qm_in_effective_heat_recovery_saving;
@@ -1795,13 +1854,8 @@ impl InfiltrationVentilation {
         // Output detailed ventilation file
         if self.detailed_output_heating_cooling {
             if let Some(reporting_flag) = reporting_flag {
-                let incoming_air_flow = convert_mass_flow_rate_to_volume_flow_rate(
-                    qm_in,
-                    celsius_to_kelvin(
-                        self.external_conditions.clone().unwrap().air_temp(&simtime),
-                    )?,
-                    self.p_a_alt,
-                );
+                let incoming_air_flow =
+                    convert_mass_flow_rate_to_volume_flow_rate(qm_in, t_e, self.p_a_alt);
                 let air_changes_per_hour = incoming_air_flow / self.total_volume;
 
                 self.detailed_results
@@ -1809,6 +1863,7 @@ impl InfiltrationVentilation {
                     .push(VentilationDetailedResult {
                         timestep_index: simtime.index,
                         reporting_flag,
+                        r_v_arg,
                         incoming_air_flow,
                         total_volume: self.total_volume,
                         air_changes_per_hour,
@@ -1842,10 +1897,14 @@ impl InfiltrationVentilation {
 }
 
 struct ImplicitMassBalanceProblem<'a> {
-    pub temp_int_air: f64,
-    pub r_w_arg: f64,
-    pub simtime: SimulationTimeIteration,
-    pub infiltration_ventilation: &'a InfiltrationVentilation,
+    wind_speed: f64,
+    wind_direction: f64,
+    temp_int_air: f64,
+    temp_ext_air: f64,
+    r_v_arg: f64,
+    r_w_arg: f64,
+    simtime: SimulationTimeIteration,
+    infiltration_ventilation: &'a InfiltrationVentilation,
 }
 
 impl CostFunction for ImplicitMassBalanceProblem<'_> {
@@ -1857,7 +1916,11 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
             .infiltration_ventilation
             .implicit_mass_balance_for_internal_reference_pressure(
                 *p_z_ref,
+                self.wind_speed,
+                self.wind_direction,
                 self.temp_int_air,
+                self.temp_ext_air,
+                self.r_v_arg,
                 self.r_w_arg,
                 None,
                 self.simtime,
@@ -1868,13 +1931,21 @@ impl CostFunction for ImplicitMassBalanceProblem<'_> {
 
 fn root_scalar_for_implicit_mass_balance(
     infiltration_ventilation: &InfiltrationVentilation,
+    wind_speed: f64,
+    wind_direction: f64,
     temp_int_air: f64,
+    temp_ext_air: f64,
+    r_v_arg: f64,
     r_w_arg: f64,
     simtime: SimulationTimeIteration,
     bracket: (f64, f64),
 ) -> Result<f64, &'static str> {
     let problem = ImplicitMassBalanceProblem {
+        wind_speed,
+        wind_direction,
         temp_int_air,
+        temp_ext_air,
+        r_v_arg,
         r_w_arg,
         simtime,
         infiltration_ventilation,
@@ -1906,6 +1977,7 @@ fn root_scalar_for_implicit_mass_balance(
 pub(crate) struct VentilationDetailedResult {
     timestep_index: usize,
     reporting_flag: ReportingFlag,
+    r_v_arg: f64,
     incoming_air_flow: f64,
     total_volume: f64,
     air_changes_per_hour: f64,
@@ -1979,7 +2051,7 @@ mod tests {
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
 
-    use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
+    use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions, ShadingSegment};
     use crate::input::FuelType;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
@@ -2124,17 +2196,48 @@ mod tests {
 
     #[test]
     fn test_ter_class_to_roughness_coeff() {
-        // TODO 0.32 update test as it references an old variant of TerrainClass
-        // assert_eq!(ter_class_to_roughness_coeff(TerrainClass::OpenTerrain), 1.0);
-        // assert_eq!(ter_class_to_roughness_coeff(TerrainClass::Country), 0.9);
-        assert_eq!(ter_class_to_roughness_coeff(TerrainClass::Urban), 0.8);
+        let z = 2.5;
+        assert_eq!(
+            ter_class_to_roughness_coeff(&TerrainClass::OpenWater, z),
+            0.9386483560365819
+        );
+        assert_eq!(
+            ter_class_to_roughness_coeff(&TerrainClass::OpenField, z),
+            0.8325850605880374
+        );
+        assert_eq!(
+            ter_class_to_roughness_coeff(&TerrainClass::Suburban, z),
+            0.7223511561212699
+        );
+        assert_eq!(
+            ter_class_to_roughness_coeff(&TerrainClass::Urban, z),
+            0.6654212933375474
+        );
     }
 
     #[test]
     fn test_orientation_difference() {
+        // test simple cases
         assert_eq!(orientation_difference(0., 90.), 90.);
-        assert_eq!(orientation_difference(0., 450.), 90.); // 450 - 360 = 90
-        assert_eq!(orientation_difference(180., 540.), 360.);
+        assert_eq!(orientation_difference(100., 90.), 10.);
+        // test handling of out of range input
+        // (see test_orientation_difference_with_out_of_range_input below)
+        // test cases where shortest angle crosses North
+        assert_eq!(orientation_difference(0., 310.), 50.);
+        assert_eq!(orientation_difference(300., 10.), 70.);
+    }
+
+    #[rstest]
+    #[case(0., 450.)]
+    #[case(540., 180.)]
+    #[case(90., -290.)]
+    #[case(-90., 90.)]
+    #[should_panic]
+    fn test_orientation_difference_with_out_of_range_input(
+        #[case] orientation_1: f64,
+        #[case] orientation_2: f64,
+    ) {
+        orientation_difference(orientation_1, orientation_2);
     }
 
     #[test]
@@ -2282,6 +2385,21 @@ mod tests {
     }
 
     #[fixture]
+    fn wind_speeds() -> Vec<f64> {
+        vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4]
+    }
+
+    #[fixture]
+    fn wind_directions() -> Vec<f64> {
+        vec![200., 220., 230., 240., 250., 260., 260., 270.]
+    }
+
+    #[fixture]
+    fn air_temps() -> Vec<f64> {
+        vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0]
+    }
+
+    #[fixture]
     fn external_conditions(
         simulation_time_iterator: SimulationTimeIterator,
     ) -> Arc<ExternalConditions> {
@@ -2370,13 +2488,8 @@ mod tests {
         ))
     }
 
-    pub fn create_window(
-        external_conditions: &Arc<ExternalConditions>,
-        ctrl: Control,
-        altitude: f64,
-    ) -> Window {
+    fn create_window(ctrl: Control, altitude: f64) -> Window {
         Window::new(
-            Some(external_conditions.clone()),
             1.6,
             1.5,
             3.,
@@ -2387,7 +2500,7 @@ mod tests {
             90.,
             altitude,
             Some(Arc::new(ctrl)),
-            None,
+            0.,
         )
     }
 
@@ -2409,11 +2522,10 @@ mod tests {
 
     #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_off(
-        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(&external_conditions, ctrl, 0.);
+        let window = create_window(ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2425,11 +2537,10 @@ mod tests {
 
     #[rstest]
     fn test_calculate_window_opening_free_area_ctrl_on(
-        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(&external_conditions, ctrl, 0.);
+        let window = create_window(ctrl, 0.);
         assert_eq!(
             window.calculate_window_opening_free_area(
                 0.5,
@@ -2441,11 +2552,10 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_off(
-        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_off(simulation_time_iterator.clone());
-        let window = create_window(&external_conditions, ctrl, 0.);
+        let window = create_window(ctrl, 0.);
         assert_relative_eq!(
             window
                 .calculate_flow_coeff_for_window(0.5, simulation_time_iterator.current_iteration()),
@@ -2455,11 +2565,10 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_coeff_for_window_ctrl_on(
-        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(&external_conditions, ctrl, 0.);
+        let window = create_window(ctrl, 0.);
         let expected_a_w = 1.5;
         let expected_flow_coeff =
             3600. * window.c_d_w * expected_a_w * (2. / p_a_ref()).powf(window.n_w);
@@ -2472,7 +2581,8 @@ mod tests {
 
     #[rstest]
     fn test_calculate_flow_from_internal_p(
-        external_conditions: Arc<ExternalConditions>,
+        air_temps: Vec<f64>,
+        wind_directions: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let u_site = 5.0;
@@ -2484,10 +2594,12 @@ mod tests {
         let shield_class = VentilationShieldClass::Open;
         let r_w_arg = 0.5;
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let window = create_window(&external_conditions, ctrl, 0.);
+        let window = create_window(ctrl, 0.);
 
         let (qm_in, qm_out) = window.calculate_flow_from_internal_p(
+            wind_directions[0],
             u_site,
+            celsius_to_kelvin(air_temps[0]).unwrap(),
             t_z,
             p_z_ref,
             f_cross,
@@ -2507,7 +2619,7 @@ mod tests {
 
     #[fixture]
     fn window_part() -> WindowPart {
-        WindowPart::new(1., 1.6, 0., 1)
+        WindowPart::new(1., 1.6, 0., 1, 0.)
     }
 
     #[rstest]
@@ -2539,15 +2651,16 @@ mod tests {
     }
 
     #[fixture]
-    fn vent(external_conditions: Arc<ExternalConditions>) -> Vent {
-        Vent::new(Some(external_conditions), 1., 100., 20., 0., 90., 0., None) // TODO: part of the 0.32 update
+    fn vent() -> Vent {
+        Vent::new(1., 100., 20., 0., 90., 0., 0.)
     }
 
     #[rstest]
     fn test_calculate_flow_coeff_for_vent(vent: Vent) {
+        let r_v_arg = 1.;
         let expected_output = 27.8391201602292;
         assert_relative_eq!(
-            vent.calculate_flow_coeff_for_vent(),
+            vent.calculate_flow_coeff_for_vent(r_v_arg),
             expected_output,
             max_relative = EIGHT_DECIMAL_PLACES
         );
@@ -2581,21 +2694,25 @@ mod tests {
     // in Python this is test_calculate_flow_from_internal_p
     fn test_calculate_flow_from_internal_p_for_vents(
         vent: Vent,
-        simulation_time_iterator: SimulationTimeIterator,
+        wind_directions: Vec<f64>,
+        air_temps: Vec<f64>,
     ) {
         let u_site = 3.7;
         let t_z = 293.15;
         let p_z_ref = 1.;
         let f_cross = true;
         let shield_class = VentilationShieldClass::Open;
+        let r_v_arg = 1.;
 
         let (qm_in_through_vent, qm_out_through_vent) = vent.calculate_flow_from_internal_p(
+            wind_directions[0],
             u_site,
+            celsius_to_kelvin(air_temps[0]).unwrap(),
             t_z,
             p_z_ref,
             f_cross,
             shield_class,
-            simulation_time_iterator.current_iteration(),
+            r_v_arg,
         );
 
         assert_relative_eq!(qm_in_through_vent, 0.);
@@ -2607,9 +2724,8 @@ mod tests {
     }
 
     #[fixture]
-    fn leaks(external_conditions: Arc<ExternalConditions>) -> Leaks {
+    fn leaks() -> Leaks {
         Leaks::new(
-            Some(external_conditions),
             1.,
             50.,
             1.2,
@@ -2617,6 +2733,7 @@ mod tests {
             100.,
             120.,
             220.,
+            0.,
             0.,
         )
     }
@@ -2647,10 +2764,7 @@ mod tests {
 
     #[rstest]
     // in Python this test is named test_calculate_flow_from_internal_p
-    fn test_calculate_flow_from_internal_p_for_leaks(
-        leaks: Leaks,
-        simulation_time_iterator: SimulationTimeIterator,
-    ) {
+    fn test_calculate_flow_from_internal_p_for_leaks(leaks: Leaks, air_temps: Vec<f64>) {
         let u_site = 3.7;
         let t_z = 293.15;
         let p_z_ref = 1.;
@@ -2659,11 +2773,11 @@ mod tests {
 
         let (qm_in_through_leaks, qm_out_through_leaks) = leaks.calculate_flow_from_internal_p(
             u_site,
+            celsius_to_kelvin(air_temps[0]).unwrap(),
             t_z,
             p_z_ref,
             f_cross,
             shield_class,
-            simulation_time_iterator.current_iteration(),
         );
 
         assert_relative_eq!(qm_in_through_leaks, 0.);
@@ -2700,16 +2814,12 @@ mod tests {
         .build()
     }
     #[fixture]
-    fn mechanical_ventilation(
-        external_conditions: Arc<ExternalConditions>,
-        energy_supply: EnergySupply,
-    ) -> MechanicalVentilation {
+    fn mechanical_ventilation(energy_supply: EnergySupply) -> MechanicalVentilation {
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
 
         MechanicalVentilation::new(
-            external_conditions,
             SupplyAirFlowRateControlType::ODA,
             SupplyAirTemperatureControlType::Constant,
             1.,
@@ -2747,13 +2857,15 @@ mod tests {
     #[rstest]
     fn test_calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
         mechanical_ventilation: MechanicalVentilation,
-        simulation_time_iterator: SimulationTimeIterator,
+        air_temps: Vec<f64>,
+        mut simulation_time_iterator: SimulationTimeIterator,
     ) {
         let (qm_sup_dis_req, qm_eta_dis_req, qm_in_effective_heat_recovery_saving) =
             mechanical_ventilation
                 .calc_mech_vent_air_flw_rates_req_to_supply_vent_zone(
                     293.15,
-                    &simulation_time_iterator.current_iteration(),
+                    celsius_to_kelvin(air_temps[0]).unwrap(),
+                    &simulation_time_iterator.next().unwrap(),
                 )
                 .unwrap();
         assert_relative_eq!(qm_sup_dis_req, 0.7106861797547136);
@@ -2765,23 +2877,13 @@ mod tests {
 
     #[fixture]
     fn infiltration_ventilation(
-        external_conditions: Arc<ExternalConditions>,
         simulation_time_iterator: SimulationTimeIterator,
         combustion_appliances: CombustionAppliances,
         mechanical_ventilation: MechanicalVentilation,
     ) -> InfiltrationVentilation {
         let ctrl = ctrl_that_is_on(simulation_time_iterator.clone());
-        let windows = vec![create_window(&external_conditions, ctrl, 30.)];
-        let vents = vec![Vent::new(
-            Some(external_conditions.clone()), // TODO: to be removed as part of the 0.32 update
-            1.5,
-            100.,
-            20.,
-            0.,
-            90.,
-            30.,
-            None, // TODO: part of the 0.32 migration
-        )];
+        let windows = vec![create_window(ctrl, 30.)];
+        let vents = vec![Vent::new(1.5, 100., 20., 0., 90., 30., 2.5)];
         let leaks = CompletedVentilationLeaks {
             ventilation_zone_height: 6.,
             test_pressure: 50.,
@@ -2796,10 +2898,9 @@ mod tests {
         let mechanical_ventilations = vec![Arc::new(mechanical_ventilation)];
 
         InfiltrationVentilation::new(
-            Some(external_conditions),
             true,
             VentilationShieldClass::Open,
-            TerrainClass::OpenField,
+            &TerrainClass::OpenField,
             20.0,
             windows,
             vents,
@@ -2807,22 +2908,12 @@ mod tests {
             combustion_appliances_list,
             air_terminal_devices,
             mechanical_ventilations,
-            None, // TODO: check if this needs updating as part of migration to 0.32
+            Default::default(),
             false,
             0.,
             250.,
-            None, // TODO: check if this needs updating as part of migration to 0.32
+            2.5,
         )
-    }
-
-    #[rstest]
-    fn test_temp_supply(
-        infiltration_ventilation: InfiltrationVentilation,
-        simulation_time_iterator: SimulationTimeIterator,
-    ) {
-        let air_temp =
-            infiltration_ventilation.temp_supply(simulation_time_iterator.current_iteration());
-        assert_relative_eq!(air_temp, 0.0);
     }
 
     #[test]
@@ -2857,24 +2948,28 @@ mod tests {
     // NOTE - Python has a commented out test here for test_implicit_formula_for_qv_pdu
 
     #[rstest]
-    #[case(20.,  0.5, -6.31222596)]
-    #[case(20.,  7.0, -6.31223437)]
-    #[case(30.,  1.0, -6.89665928)]
-    #[case(0.,   0.5, -5.01495290)]
-    #[case(100., 0.5, -10.1105879)]
+    #[case(20.,  0.5, -6.235527862635629)]
     fn test_calculate_internal_reference_pressure(
         #[case] temp_int_air: f64,
         #[case] r_w_arg: f64,
         #[case] expected: f64,
         infiltration_ventilation: InfiltrationVentilation,
+        wind_speeds: Vec<f64>,
+        wind_directions: Vec<f64>,
+        air_temps: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let intial_p_z_ref_guess = 0.;
+        let initial_p_z_ref_guess = 0.;
+        let r_v_arg = 1.;
         assert_relative_eq!(
             infiltration_ventilation
                 .calculate_internal_reference_pressure(
-                    intial_p_z_ref_guess,
+                    initial_p_z_ref_guess,
+                    wind_speeds[0],
+                    wind_directions[0],
                     temp_int_air,
+                    air_temps[0],
+                    r_v_arg,
                     Some(r_w_arg),
                     simulation_time_iterator.current_iteration()
                 )
@@ -2889,46 +2984,62 @@ mod tests {
     #[rstest]
     fn test_implicit_mass_balance_for_internal_reference_pressure(
         infiltration_ventilation: InfiltrationVentilation,
+        wind_speeds: Vec<f64>,
+        wind_directions: Vec<f64>,
+        air_temps: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let p_z_ref = 1.;
         let temp_int_air = 20.;
+        let r_v_arg = 1.;
         let r_w_arg_min_max = 1.;
         assert_relative_eq!(
             infiltration_ventilation
                 .implicit_mass_balance_for_internal_reference_pressure(
                     p_z_ref,
+                    wind_speeds[0],
+                    wind_directions[0],
                     temp_int_air,
+                    air_temps[0],
+                    r_v_arg,
                     r_w_arg_min_max,
                     None,
                     simulation_time_iterator.current_iteration()
                 )
                 .unwrap(),
-            -30430.689049309116
+            -30270.984047975235
         )
     }
 
     #[rstest]
     fn test_incoming_air_flow(
         infiltration_ventilation: InfiltrationVentilation,
+        wind_speeds: Vec<f64>,
+        wind_directions: Vec<f64>,
+        air_temps: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let p_z_ref = 1.;
         let temp_int_air = 20.;
+        let r_v_arg = 1.;
         let r_w_arg_min_max = 1.;
 
         assert_relative_eq!(
             infiltration_ventilation
                 .incoming_air_flow(
                     p_z_ref,
+                    wind_speeds[0],
+                    wind_directions[0],
                     temp_int_air,
+                    air_temps[0],
+                    r_v_arg,
                     r_w_arg_min_max,
                     None,
-                    Some(false),
+                    None,
                     simulation_time_iterator.current_iteration()
                 )
                 .unwrap(),
-            4.973297477194108
+            4.846594835429536
         )
     }
 }

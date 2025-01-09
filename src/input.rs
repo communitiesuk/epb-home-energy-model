@@ -2894,7 +2894,7 @@ pub struct InfiltrationVentilation {
     )]
     vent_adjust_max_control: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    vent_opening_ratio_init: Option<f64>,
+    pub(crate) vent_opening_ratio_init: Option<f64>,
     #[serde(
         rename = "Control_WindowAdjust",
         skip_serializing_if = "Option::is_none"

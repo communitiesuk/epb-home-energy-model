@@ -76,6 +76,7 @@ use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::ProjectFlags;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
+use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 #[cfg(feature = "indicatif")]
 use indicatif::ProgressIterator;
@@ -112,6 +113,7 @@ pub struct Corpus {
     pub(crate) controls: Controls,
     pub(crate) wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
     pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
+    r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
     pub(crate) space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
@@ -220,7 +222,6 @@ impl Corpus {
             &controls,
             &mut energy_supplies,
             total_volume,
-            external_conditions.clone(),
             output_options.detailed_output_heating_cooling,
         )?;
 
@@ -422,6 +423,12 @@ impl Corpus {
             controls,
             wwhrs,
             domestic_hot_water_demand,
+            r_v_arg: AtomicF64::new(
+                input
+                    .infiltration_ventilation
+                    .vent_opening_ratio_init
+                    .unwrap_or(1.), // default to 1 if unspecified
+            ),
             ventilation: infiltration_ventilation,
             mechanical_ventilations,
             space_heating_ductwork,
@@ -826,7 +833,11 @@ impl Corpus {
     /// Later timesteps use the previous timesteps p_z_ref of max and min ACH ,respective to calc.
     fn calc_air_changes_per_hour(
         &self,
+        wind_speed: f64,
+        wind_direction: f64,
         temp_int_air: f64,
+        temp_ext_air: f64,
+        r_v_arg: f64,
         r_w_arg: f64,
         initial_p_z_ref_guess: f64,
         reporting_flag: ReportingFlag,
@@ -836,14 +847,22 @@ impl Corpus {
         let current_internal_pressure_window = if self.initial_loop.load(Ordering::SeqCst) {
             self.ventilation.calculate_internal_reference_pressure(
                 initial_p_z_ref_guess,
+                wind_speed,
+                wind_direction,
                 temp_int_air,
+                temp_ext_air,
+                r_v_arg,
                 Some(r_w_arg),
                 simtime,
             )?
         } else {
             self.ventilation.calculate_internal_reference_pressure(
                 internal_pressure_window[&reporting_flag],
+                wind_speed,
+                wind_direction,
                 temp_int_air,
+                temp_ext_air,
+                r_v_arg,
                 Some(r_w_arg),
                 simtime,
             )?
@@ -853,7 +872,11 @@ impl Corpus {
 
         let incoming_air_flow = self.ventilation.incoming_air_flow(
             current_internal_pressure_window,
+            wind_speed,
+            wind_direction,
             temp_int_air,
+            temp_ext_air,
+            r_v_arg,
             r_w_arg,
             Some(reporting_flag),
             Some(true),
@@ -875,6 +898,8 @@ impl Corpus {
         internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<SpaceHeatingCalculation> {
+        let wind_speed = self.external_conditions.wind_speed(&simtime);
+        let wind_direction = self.external_conditions.wind_direction(simtime);
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
         let temp_int_air = self.temp_internal_air();
         // Calculate timestep in seconds
@@ -885,9 +910,15 @@ impl Corpus {
 
         let internal_gains_buffer_tank = self.calc_internal_gains_buffer_tank();
 
+        // TODO implement method call here to update self.r_v_arg
+
         // Windows shut
         let ach_windows_shut = self.calc_air_changes_per_hour(
+            wind_speed,
+            wind_direction,
             temp_int_air,
+            temp_ext_air,
+            self.r_v_arg.load(Ordering::SeqCst),
             0.,
             0.,
             ReportingFlag::Min,
@@ -897,7 +928,11 @@ impl Corpus {
 
         // Windows fully open
         let ach_windows_open = self.calc_air_changes_per_hour(
+            wind_speed,
+            wind_direction,
             temp_int_air,
+            temp_ext_air,
+            self.r_v_arg.load(Ordering::SeqCst),
             1.,
             0.,
             ReportingFlag::Max,
@@ -943,7 +978,8 @@ impl Corpus {
         let mut space_cool_provided_system: HashMap<String, f64> = Default::default();
         let mut heat_balance_map: HashMap<String, Option<HeatBalance>> = Default::default();
 
-        let avg_air_supply_temp = self.ventilation.temp_supply(simtime);
+        // Average supply temperature
+        let avg_air_supply_temp = self.external_conditions.air_temp(&simtime);
 
         for (z_name, zone) in self.zones.iter() {
             let z_name = z_name.as_str();
@@ -2985,7 +3021,6 @@ fn infiltration_ventilation_from_input(
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     total_volume: f64,
-    external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
@@ -3017,7 +3052,6 @@ fn infiltration_ventilation_from_input(
 
                         let window_result_fn = || {
                             Ok(Window::new(
-                                Some(external_conditions.clone()),
                                 free_area_height.ok_or_else(|| anyhow!("A free_area_height value was expected for a transparent building element."))?,
                                 mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
                                 max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
@@ -3028,7 +3062,7 @@ fn infiltration_ventilation_from_input(
                                 *pitch,
                                 input.altitude,
                                 on_off_ctrl,
-                                None
+                                Default::default(), // TODO correct as part of migration to 0.32
                             ))
                         };
 
@@ -3061,7 +3095,6 @@ fn infiltration_ventilation_from_input(
             (
                 vent_name.clone(),
                 Vent::new(
-                    Some(external_conditions.clone()),
                     vent.mid_height_air_flow_path,
                     vent.area_cm2,
                     vent.pressure_difference_ref,
@@ -3069,7 +3102,7 @@ fn infiltration_ventilation_from_input(
                     init_orientation(vent.orientation),
                     vent.pitch,
                     *altitude,
-                    None,
+                    Default::default(), // TODO correct param as part of migration to 0.32
                 ), // TODO: line 3060 as part of the migration to 0.32
             )
         })
@@ -3165,7 +3198,7 @@ fn infiltration_ventilation_from_input(
 
         mechanical_ventilations.insert(
                 mech_vents_name.clone(),
-                Arc::new(MechanicalVentilation::new(external_conditions.clone(), mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
+                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
                     VentType::Mvhr => mech_vents_data.mvhr_efficiency,
                     VentType::IntermittentMev
                     | VentType::CentralisedContinuousMev
@@ -3220,10 +3253,9 @@ fn infiltration_ventilation_from_input(
         .collect();
 
     let ventilation = InfiltrationVentilation::new(
-        Some(external_conditions.clone()),
         *f_cross,
         *shield_class,
-        *terrain_class,
+        terrain_class,
         average_pitch,
         windows.into_values().collect(),
         vents.into_values().collect(),
@@ -3231,11 +3263,11 @@ fn infiltration_ventilation_from_input(
         combustion_appliances.into_values().collect(),
         atds.into_values().collect(),
         mechanical_ventilations.values().cloned().collect(),
-        None, // TODO: check if this needs updating as part of 0.32 updates
+        Default::default(), // TODO: update as part of 0.32 updates
         detailed_output_heating_cooling,
         *altitude,
         zones.values().map(|zone| zone.area).sum::<f64>(),
-        None, // TODO: check if this needs updating as part of 0.32 updates
+        Default::default(), // TODO: update as part of 0.32 updates
     );
 
     Ok((
