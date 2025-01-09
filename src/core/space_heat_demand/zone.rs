@@ -9,6 +9,7 @@ use crate::core::space_heat_demand::thermal_bridge::{
 };
 use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
+use crate::input::ZoneTemperatureControlBasis;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
 use field_types::FieldName;
@@ -30,14 +31,6 @@ const F_SOL_C: f64 = 0.1;
 // Areal thermal capacity of air and furniture
 // (default value from BS EN ISO 52016-1:2017, Table B.17)
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
-
-#[derive(Clone, Debug)]
-pub enum ZoneTemperatureControlBasis {
-    // for dry-build temperature
-    Air,
-    // for operative temperature
-    Operative,
-}
 
 #[derive(Debug)]
 pub struct Zone {

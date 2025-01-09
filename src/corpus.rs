@@ -44,7 +44,7 @@ use crate::core::space_heat_demand::ventilation::{
     VentilationDetailedResult, Window,
 };
 use crate::core::space_heat_demand::zone::{
-    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone, ZoneTemperatureControlBasis,
+    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone,
 };
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -70,6 +70,7 @@ use crate::input::{
     SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType,
     VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
     WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
+    ZoneTemperatureControlBasis,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::ProjectFlags;
@@ -2941,10 +2942,9 @@ fn zone_from_input(
     let cool_system_name = input.space_cool_system.clone();
 
     // Default setpoint basis to 'operative' if not provided in input
-    let temp_setpnt_basis = match input.temp_setpnt_basis {
-        Some(crate::input::ZoneTemperatureControlBasis::Air) => ZoneTemperatureControlBasis::Air,
-        _ => ZoneTemperatureControlBasis::Operative,
-    };
+    let temp_setpnt_basis = input
+        .temp_setpnt_basis
+        .unwrap_or(ZoneTemperatureControlBasis::Operative);
 
     Ok((
         Zone::new(
