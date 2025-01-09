@@ -2916,8 +2916,7 @@ pub struct InfiltrationVentilation {
     pub(crate) cowls: IndexMap<String, ()>, // don't know what this looks like yet
     #[serde(rename = "CombustionAppliances")]
     pub(crate) combustion_appliances: IndexMap<String, CombustionAppliance>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ventilation_zone_base_height: Option<f64>,
+    pub(crate) ventilation_zone_base_height: f64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
