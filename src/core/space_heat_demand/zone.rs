@@ -1,3 +1,6 @@
+// This module provides objects to represent the thermal zones in the building,
+// and to calculate the temperatures in the zone and associated building elements.
+
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::material_properties::AIR;
 use crate::core::space_heat_demand::building_element::{BuildingElement, BuildingElementBehaviour};
@@ -42,12 +45,12 @@ pub struct Zone {
     volume: f64,
     building_elements: Vec<NamedBuildingElement>,
     _ventilation: Arc<InfiltrationVentilation>,
+    control: Option<Arc<Control>>,
     tb_heat_trans_coeff: f64,
     /// total area of all building elements associated with this zone, in m2
     area_el_total: f64,
     /// internal thermal capacity of the zone, in J / K
     c_int: f64,
-    control: Option<Arc<Control>>,
     /// dictionary where key is building element (name) and
     ///                      values are 2-element tuples storing matrix row and
     ///                      column numbers (both same) where the first element
@@ -67,11 +70,14 @@ pub struct Zone {
     ///                      building element + 1 for internal air) to be
     ///                      solved for
     no_of_temps: usize,
+    print_heat_balance: bool,
+    // TODO: Python has a use_fast_solver variable, do we need this?
+    temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
     temp_prev: Arc<Mutex<Vec<f64>>>,
-    print_heat_balance: bool,
+    temp_setpnt_init: f64,
 }
 
 impl Zone {
@@ -160,15 +166,17 @@ impl Zone {
             volume,
             building_elements: named_building_elements,
             _ventilation: ventilation,
+            control,
             tb_heat_trans_coeff,
             area_el_total,
             c_int,
-            control,
             element_positions,
             zone_idx,
             no_of_temps,
-            temp_prev,
             print_heat_balance,
+            temp_setpnt_basis,
+            temp_prev,
+            temp_setpnt_init,
         })
     }
 
