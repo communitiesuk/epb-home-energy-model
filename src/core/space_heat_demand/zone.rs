@@ -269,6 +269,45 @@ impl Zone {
             .sum::<f64>()
     }
 
+    /// Calculate temperatures according to procedure in BS EN ISO 52016-1:2017, section 6.5.6
+    ///
+    ///     ## Arguments:
+    ///     * `delta_t`         -- calculation timestep, in seconds
+    ///     * `temp_prev`       -- temperature vector X (see below) from previous timestep
+    ///     * `temp_ext_air`    -- temperature of external air, in deg C
+    ///     * `gains_internal`  -- total internal heat gains, in W
+    ///     * `gains_solar`     -- directly transmitted solar gains, in W
+    ///     * `gains_heat_cool` -- gains from heating (positive) or cooling (negative), in W
+    ///     * `f_hc_c`          -- convective fraction for heating/cooling
+    ///     * `ach`             -- air changes per hour
+    ///     * `print_heat_balance` -- flag to record whether to return the heat balance outputs
+    ///     * `avg_supply_temp` -- average supply temperature
+    ///
+    ///     Temperatures are calculated by solving (for X) a matrix equation A.X = B, where:
+    ///     A is a matrix of known coefficients
+    ///     X is a vector of unknown temperatures
+    ///     B is a vector of known quantities
+    ///
+    ///     Each row in vector X is a temperature variable - one for each node in each
+    ///     building element plus the internal air temperature in the zone.
+    ///
+    ///     Each row of matrix A contains the coefficients from the heat balance equations
+    ///     for each of the nodes in each building element, plus one row for the heat
+    ///     balance equation of the zone.
+    ///
+    ///     Each column of matrix A contains the coefficients for a particular temperature
+    ///     variable (in same order that they appear in vector X). Where the particular
+    ///     temperature does not appear in the equation this coefficient will be zero.
+    ///
+    ///     Note that for this implementation, the columns and rows will be in corresponding
+    ///     order, so the heat balance equation for node i will be in row i and the
+    ///     coefficients in each row for the temperature at node i will be in column i.
+    ///
+    ///     Each row of vector B contains the other quantities (i.e. those that are not
+    ///     coefficients of the temperature variables) from the heat balance equations
+    ///     for each of the nodes in each building element, plus one row for the heat
+    ///     balance equation of the zone, in the same order that the rows appear in matrix
+    ///     A.
     fn calc_temperatures(
         &self,
         delta_t: f64,
@@ -702,7 +741,7 @@ impl Zone {
                     );
 
                     // Calculate node and internal air temperatures with heating/cooling gains of zero
-                    let (temp_vector_no_heat_cool_vent_extra, _) = calc_temperatures(
+                    let (temp_vector_no_heat_cool_vent_extra, _) = self.calc_temperatures(
                         delta_t,
                         self.temp_prev.read().as_ref(),
                         temp_ext_air,
@@ -712,15 +751,7 @@ impl Zone {
                         frac_conv_gains_heat_cool,
                         ach_cooling,
                         avg_supply_temp,
-                        self.no_of_temps,
-                        &self.building_elements,
-                        &self.element_positions,
-                        &simtime,
-                        self.zone_idx,
-                        self.area_el_total,
-                        self.volume,
-                        self.c_int,
-                        self.tb_heat_trans_coeff,
+                        simtime,
                         self.print_heat_balance,
                     );
 
@@ -900,7 +931,7 @@ impl Zone {
         };
 
         // Calculate node and internal air temperatures with heating/cooling gains of zero
-        let (temp_vector_no_heat_cool, _) = calc_temperatures(
+        let (temp_vector_no_heat_cool, _) = self.calc_temperatures(
             delta_t,
             &self.temp_prev.read(),
             temp_ext_air,
@@ -913,15 +944,7 @@ impl Zone {
                 AirChangesPerHourArgument::TargetAndWindowsOpen { ach_target, .. } => ach_target,
             },
             avg_air_supply_temp,
-            self.no_of_temps,
-            &self.building_elements,
-            &self.element_positions,
-            &simulation_time_iteration,
-            self.zone_idx,
-            self.area_el_total,
-            self.volume,
-            self.c_int,
-            self.tb_heat_trans_coeff,
+            simulation_time_iteration,
             self.print_heat_balance,
         );
 
@@ -976,7 +999,7 @@ impl Zone {
         let frac_convective_heat_cool_upper = (gains_heat_cool * frac_conv_gains_heat_cool
             + heat_cool_load_upper * frac_convective)
             / gains_heat_cool_upper;
-        let (temp_vector_upper_heat_cool, _) = calc_temperatures(
+        let (temp_vector_upper_heat_cool, _) = self.calc_temperatures(
             delta_t,
             &self.temp_prev.read(),
             temp_ext_air,
@@ -986,15 +1009,7 @@ impl Zone {
             frac_convective_heat_cool_upper,
             ach_cooling,
             avg_air_supply_temp,
-            self.no_of_temps,
-            &self.building_elements,
-            &self.element_positions,
-            &simulation_time_iteration,
-            self.zone_idx,
-            self.area_el_total,
-            self.volume,
-            self.c_int,
-            self.tb_heat_trans_coeff,
+            simulation_time_iteration,
             self.print_heat_balance,
         );
 
@@ -1054,7 +1069,7 @@ impl Zone {
         avg_supply_temp: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<HeatBalance> {
-        let (temp_prev, heat_balance_map) = calc_temperatures(
+        let (temp_prev, heat_balance_map) = self.calc_temperatures(
             delta_t,
             &self.temp_prev.read(),
             temp_ext_air,
@@ -1064,15 +1079,7 @@ impl Zone {
             frac_convective,
             ach,
             avg_supply_temp,
-            self.no_of_temps,
-            &self.building_elements,
-            &self.element_positions,
-            &simulation_time_iteration,
-            self.zone_idx,
-            self.area_el_total,
-            self.volume,
-            self.c_int,
-            self.tb_heat_trans_coeff,
+            simulation_time_iteration,
             self.print_heat_balance,
         );
 
@@ -1104,375 +1111,6 @@ const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;
 // # Assume default convective fraction for heating/cooling suggested in
 // # BS EN ISO 52016-1:2017 Table B.11
 const FRAC_CONVECTIVE: f64 = 0.4;
-
-/// Calculate temperatures according to procedure in BS EN ISO 52016-1:2017, section 6.5.6
-//
-/// ## Arguments
-/// * `delta_t` - calculation timestep, in seconds
-/// * `temp_prev` - temperature vector X (see below) from previous timestep
-/// * `temp_ext_air` - temperature of external air, in deg C
-/// * `gains_internal` - total internal heat gains, in W
-/// * `gains_solar` - directly transmitted solar gains, in W
-/// * `gains_heat_cool` - gains from heating (positive) or cooling (negative), in W
-/// * `f_hc_c` - convective fraction for heating/cooling
-/// * `ach` - air changes per hour
-/// * `avg_supply_temp` - average supply temperature
-/// * `no_of_temps` - number of unknown temperatures (each node in each
-///                             building element + 1 for internal air) to be
-///                             solved for
-/// * `building_elements` - the building elements of the zone in question
-/// * `element_positions` - dictionary where key is building element (name) and
-///                      values are 2-element tuples storing matrix row and
-///                      column numbers (both same) where the first element
-///                      of the tuple gives the position of the heat
-///                      balance eqn (row) and node temperature (column)
-///                      for the external surface and the second element
-///                      gives the position for the internal surface.
-///                      Positions in between will be for the heat balance
-///                      and temperature of the inside nodes of the
-///                      building element
-///
-/// Temperatures are calculated by solving (for X) a matrix equation A.X = B, where:
-/// A is a matrix of known coefficients
-/// X is a vector of unknown temperatures
-/// B is a vector of known quantities
-///
-/// Each row in vector X is a temperature variable - one for each node in each
-/// building element plus the internal air temperature in the zone.
-///
-/// Each row of matrix A contains the coefficients from the heat balance equations
-/// for each of the nodes in each building element, plus one row for the heat
-/// balance equation of the zone.
-///
-/// Each column of matrix A contains the coefficients for a particular temperature
-/// variable (in same order that they appear in vector X). Where the particular
-/// temperature does not appear in the equation this coefficient will be zero.
-///
-/// Note that for this implementation, the columns and rows will be in corresponding
-/// order, so the heat balance equation for node i will be in row i and the
-/// coefficients in each row for the temperature at node i will be in column i.
-///
-/// Each row of vector B contains the other quantities (i.e. those that are not
-/// coefficients of the temperature variables) from the heat balance equations
-/// for each of the nodes in each building element, plus one row for the heat
-/// balance equation of the zone, in the same order that the rows appear in matrix
-/// A.
-fn calc_temperatures(
-    // TODO: In Python this is an instance method - for closer equivalence can & should we refactor this to be a method on Zone?
-    delta_t: f64,
-    temp_prev: &[f64],
-    temp_ext_air: f64,
-    gains_internal: f64,
-    gains_solar: f64,
-    gains_heat_cool: f64,
-    f_hc_c: f64,
-    ach: f64,
-    avg_supply_temp: f64,
-    no_of_temps: usize,
-    building_elements: &[NamedBuildingElement],
-    element_positions: &[(usize, usize)],
-    simulation_time: &SimulationTimeIteration,
-    passed_zone_idx: usize,
-    area_el_total: f64,
-    volume: f64,
-    c_int: f64,
-    tb_heat_trans_coeff: f64,
-    print_heat_balance: bool,
-) -> (Vec<f64>, Option<HeatBalance>) {
-    let h_ve = calc_vent_heat_transfer_coeff(volume, ach); // TODO: In Python they call the instance method here but we don't have access to self
-
-    // Init matrix with zeroes
-    // Number of rows in matrix = number of columns
-    // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
-    let mut matrix_a: DMatrix<f64> = DMatrix::zeros(no_of_temps, no_of_temps);
-
-    // Init vector_b with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut vector_b: DVector<f64> = DVector::zeros(no_of_temps);
-
-    // One term in eqn 39 is sum from k = 1 to n of (A_elk / A_tot). Given
-    // that A_tot is defined as the sum of A_elk from k = 1 to n, this term
-    // will always evaluate to 1.
-    // TODO (from Python) Check this is correct. It seems a bit pointless if it is but we
-    //      should probably retain it as an explicit term anyway to match
-    //      the standard.
-    let sum_area_frac = 1.0;
-
-    // Node heat balances - loop through building elements and their nodes:
-    // - Construct row of matrix_a for each node energy balance eqn
-    // - Calculate RHS of node energy balance eqn and add to vector_b
-    for (eli_idx, NamedBuildingElement { element: eli, .. }) in building_elements.iter().enumerate()
-    {
-        // External surface node (eqn 41)
-        // Get position (row == column) in matrix previously calculated for the first (external) node
-        let mut idx = element_positions[eli_idx].0;
-        // Position of first (external) node within element is zero
-        let mut i = 0usize;
-
-        // load in k_pli, h_ce and h_re for this element
-        let (k_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
-            eli.k_pli(),
-            eli.h_ce(),
-            eli.h_re(),
-            eli.h_ri(),
-            eli.a_sol(),
-            eli.therm_rad_to_sky(),
-        );
-
-        // Coeff for temperature of this node
-        matrix_a[(idx, idx)] = (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i);
-
-        // Coeff for temperature of next node
-        matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
-        // RHS of heat balance eqn for this node
-        let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(*simulation_time);
-        let (f_sh_dir, f_sh_dif) = eli
-            .shading_factors_direct_diffuse(*simulation_time)
-            .unwrap();
-        vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
-            + (h_ce + h_re) * eli.temp_ext(*simulation_time)
-            + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
-            - therm_rad_to_sky;
-
-        // Inside node(s), if any (eqn 40)
-        for _ in 1..(eli.number_of_inside_nodes() + 1) {
-            i += 1;
-            idx += 1;
-            // Coeff for temperature of prev node
-            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
-            // Coeff for temperature of this node
-            matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
-                + eli.h_pli_by_index_unchecked(i)
-                + eli.h_pli_by_index_unchecked(i - 1);
-            // Coeff for temperature of next node
-            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
-            // RHS of heat balance eqn for this node
-            vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx];
-        }
-
-        // Internal surface node (eqn 39)
-        idx += 1;
-        debug_assert_eq!(idx, element_positions[eli_idx].1);
-        i += 1;
-        debug_assert_eq!(i, eli.number_of_nodes() - 1);
-        // Get internal convective surface heat transfer coefficient, which
-        // depends on direction of heat flow, which depends on temperature of
-        // zone and internal surface
-        let h_ci = eli.h_ci(temp_prev[passed_zone_idx], temp_prev[idx]);
-        // Coeff for temperature of prev node
-        matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
-        // Coeff for temperature of this node
-        matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
-            + h_ci
-            + h_ri * sum_area_frac
-            + eli.h_pli_by_index_unchecked(i - 1);
-        // Add final sum term for LHS of eqn 39 in loop below.
-        // These are coeffs for temperatures of internal surface nodes of
-        // all building elements in the zone
-        for (elk_idx, NamedBuildingElement { element: elk, .. }) in
-            building_elements.iter().enumerate()
-        {
-            let col = element_positions[elk_idx].1;
-            // The line below must be an adjustment to the existing value
-            // to handle the case where col = idx (i.e. where we have
-            // already partially set the value of the matrix element above
-            // (before this loop) and do not want to overwrite it)
-            matrix_a[(idx, col)] -= (elk.area() / area_el_total) * h_ri;
-        }
-        // Coeff for temperature of thermal zone
-        matrix_a[(idx, passed_zone_idx)] = -h_ci;
-        // RHS of heat balance eqn for this node
-        vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
-            + ((1.0 - F_INT_C) * gains_internal
-                + (1.0 - F_SOL_C) * gains_solar
-                + (1.0 - f_hc_c) * gains_heat_cool)
-                / area_el_total;
-    }
-    // Zone heat balance:
-    // - Construct row of matrix A for zone heat balance eqn
-    // - Calculate RHS of zone heat balance eqn and add to vector_b
-    //
-    // Coeff for temperature of thermal zone
-    // TODO (from Python) Throughput factor only applies to MVHR and WHEV, therefore only
-    //      these systems accept throughput_factor as an argument to the h_ve
-    //      function, hence the branch on the type in the loop below. This
-    //      means that the MVHR and WHEV classes no longer have the same
-    //      interface as other ventilation element classes, which could make
-    //      future development more difficult. Ideally, we would find a
-    //      cleaner way to implement this difference.
-    matrix_a[(passed_zone_idx, passed_zone_idx)] = (c_int / delta_t)
-        + building_elements
-            .iter()
-            .enumerate()
-            .map(|(eli_idx, nel)| {
-                let NamedBuildingElement { element: eli, .. } = nel;
-                eli.area()
-                    * eli.h_ci(
-                        temp_prev[passed_zone_idx],
-                        temp_prev[element_positions[eli_idx].1],
-                    )
-            })
-            .sum::<f64>()
-        + h_ve
-        + tb_heat_trans_coeff;
-
-    // Add final sum term for LHS of eqn 38 in loop below.
-    // These are coeffs for temperatures of internal surface nodes of
-    // all building elements in the zone
-    for (eli_idx, NamedBuildingElement { element: eli, .. }) in building_elements.iter().enumerate()
-    {
-        let col = element_positions[eli_idx].1; // Column for internal surface node temperature
-        matrix_a[(passed_zone_idx, col)] = -eli.area()
-            * eli.h_ci(
-                temp_prev[passed_zone_idx],
-                temp_prev[element_positions[eli_idx].1],
-            );
-    }
-    // RHS of heat balance eqn for zone
-    vector_b[passed_zone_idx] = (c_int / delta_t) * temp_prev[passed_zone_idx]
-        + h_ve * avg_supply_temp
-        + tb_heat_trans_coeff * temp_ext_air
-        + F_INT_C * gains_internal
-        + F_SOL_C * gains_solar
-        + f_hc_c * gains_heat_cool;
-
-    let vector_x = fast_solver(
-        matrix_a,
-        vector_b,
-        no_of_temps,
-        building_elements,
-        element_positions,
-        passed_zone_idx,
-    );
-
-    let heat_balance = print_heat_balance.then(|| {
-        // Collect outputs, in W, for heat balance at air node
-        let temp_internal = vector_x[passed_zone_idx];
-        let hb_gains_solar = F_SOL_C * gains_solar;
-        let hb_gains_internal = F_INT_C * gains_internal;
-        let hb_gains_heat_cool = f_hc_c * gains_heat_cool;
-        let hb_energy_to_change_temp =
-            -(c_int / delta_t) * (temp_internal - temp_prev[passed_zone_idx]);
-        let hb_loss_thermal_bridges = tb_heat_trans_coeff * (temp_internal - temp_ext_air);
-        let hb_loss_infiltration_ventilation = h_ve * (temp_internal - avg_supply_temp);
-        let hb_loss_fabric =
-            (hb_gains_solar + hb_gains_internal + hb_gains_heat_cool + hb_energy_to_change_temp)
-                - (hb_loss_thermal_bridges + hb_loss_infiltration_ventilation);
-        let air_node = HeatBalanceAirNode {
-            solar_gains: hb_gains_solar,
-            internal_gains: hb_gains_internal,
-            heating_or_cooling_system_gains: hb_gains_heat_cool,
-            energy_to_change_internal_temperature: hb_energy_to_change_temp,
-            thermal_bridges: -hb_loss_thermal_bridges,
-            infiltration_ventilation: -hb_loss_infiltration_ventilation,
-            fabric_heat_loss: -hb_loss_fabric,
-        };
-
-        // Collect outputs, in W, for heat balance at internal fabric boundary
-        let fabric_int_sol = (1.0 - F_SOL_C) * gains_solar;
-        let fabric_int_int_gains = (1.0 - F_INT_C) * gains_internal;
-        let fabric_int_heat_cool = (1.0 - f_hc_c) * gains_heat_cool;
-
-        let fabric_int_air_convective = building_elements
-            .iter()
-            .enumerate()
-            .map(|(eli_idx, eli)| {
-                let idx = element_positions[eli_idx].1;
-                let temp_int_surface = vector_x[idx];
-                let air_node_temp = vector_x[passed_zone_idx];
-
-                eli.element.area()
-                    * ((eli.element.h_ci(
-                        temp_prev[passed_zone_idx],
-                        temp_prev[element_positions[eli_idx].1],
-                    )) * (air_node_temp * temp_int_surface))
-            })
-            .sum::<f64>();
-
-        let internal_boundary = HeatBalanceInternalBoundary {
-            fabric_int_air_convective,
-            fabric_int_sol,
-            fabric_int_int_gains,
-            fabric_int_heat_cool,
-        };
-
-        // Collect outputs, in W, for heat balance at external boundary
-        let mut hb_fabric_ext_air_convective = 0.0;
-        let mut hb_fabric_ext_air_radiative = 0.0;
-        let mut hb_fabric_ext_sol = 0.0;
-        let mut hb_fabric_ext_sky = 0.0;
-        let mut hb_fabric_ext_opaque = 0.0;
-        let mut hb_fabric_ext_transparent = 0.0;
-        let mut hb_fabric_ext_ground = 0.0;
-        let mut hb_fabric_ext_ztc = 0.0;
-        let mut hb_fabric_ext_ztu = 0.0;
-
-        for (eli_idx, NamedBuildingElement { element: eli, .. }) in
-            building_elements.iter().enumerate()
-        {
-            // Get position in vector for the first (external) node of the building element
-            let idx = element_positions[eli_idx].1;
-            let temp_ext_surface = vector_x[idx];
-            let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(*simulation_time);
-            let (f_sh_dir, f_sh_dif) = eli
-                .shading_factors_direct_diffuse(*simulation_time)
-                .expect("Expected shading factors direct diffuse to be calculable.");
-            hb_fabric_ext_air_convective +=
-                eli.area() * (eli.h_ce() * (eli.temp_ext(*simulation_time) - temp_ext_surface));
-            hb_fabric_ext_air_radiative +=
-                eli.area() * eli.h_re() * (eli.temp_ext(*simulation_time) - temp_ext_surface);
-            hb_fabric_ext_sol +=
-                eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
-            hb_fabric_ext_sky += eli.area() * (-eli.therm_rad_to_sky());
-            // fabric heat loss per building element type
-            let hb_fabric_ext = eli.area()
-                * ((eli.h_ce()) * (eli.temp_ext(*simulation_time) - temp_ext_surface))
-                + eli.area() * (eli.h_re()) * (eli.temp_ext(*simulation_time) - temp_ext_surface)
-                + eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
-                + eli.area() * (-eli.therm_rad_to_sky());
-            match eli {
-                BuildingElement::Opaque(_) => {
-                    hb_fabric_ext_opaque += hb_fabric_ext;
-                }
-                BuildingElement::Transparent(_) => {
-                    hb_fabric_ext_transparent += hb_fabric_ext;
-                }
-                BuildingElement::Ground(_) => {
-                    hb_fabric_ext_ground += hb_fabric_ext;
-                }
-                BuildingElement::AdjacentZTC(_) => {
-                    hb_fabric_ext_ztc += hb_fabric_ext;
-                }
-                BuildingElement::AdjacentZTUSimple(_) => {
-                    hb_fabric_ext_ztu += hb_fabric_ext;
-                }
-            };
-        }
-        let external_boundary = HeatBalanceExternalBoundary {
-            solar_gains: gains_solar,
-            internal_gains: gains_internal,
-            heating_or_cooling_system_gains: gains_heat_cool,
-            thermal_bridges: hb_loss_thermal_bridges,
-            infiltration_ventilation: hb_loss_infiltration_ventilation,
-            fabric_ext_air_convective: hb_fabric_ext_air_convective,
-            fabric_ext_air_radiative: hb_fabric_ext_air_radiative,
-            fabric_ext_sol: hb_fabric_ext_sol,
-            fabric_ext_sky: hb_fabric_ext_sky,
-            opaque_fabric_ext: hb_fabric_ext_opaque,
-            transparent_fabric_ext: hb_fabric_ext_transparent,
-            ground_fabric_ext: hb_fabric_ext_ground,
-            ztc_fabric_ext: hb_fabric_ext_ztc,
-            ztu_fabric_ext: hb_fabric_ext_ztu,
-        };
-
-        HeatBalance {
-            air_node,
-            internal_boundary,
-            external_boundary,
-        }
-    });
-
-    (vector_x, heat_balance) // pass empty heat balance map for now
-}
 
 /// Optimised heat balance solver
 //
