@@ -637,17 +637,7 @@ impl Zone {
         temp_int_air_free: f64,
         ach_args: AirChangesPerHourArgument,
         avg_supply_temp: f64,
-        temp_prev: &[f64],
-        no_of_temps: usize,
-        building_elements: &[NamedBuildingElement],
-        element_positions: &[(usize, usize)],
         simtime: SimulationTimeIteration,
-        passed_zone_idx: usize,
-        area_el_total: f64,
-        volume: f64,
-        c_int: f64,
-        tb_heat_trans_coeff: f64,
-        print_heat_balance: bool,
     ) -> (f64, f64, Option<f64>) {
         let mut temp_operative_free = temp_operative_free;
 
@@ -659,9 +649,9 @@ impl Zone {
                 ach_windows_open,
             } if ach_windows_open != ach_target => {
                 // Calculate node and internal air temperatures with maximum additional ventilation
-                let (temp_vector_vent_max, _) = calc_temperatures(
+                let (temp_vector_vent_max, _) = self.calc_temperatures(
                     delta_t,
-                    temp_prev,
+                    self.temp_prev.read().as_ref(),
                     temp_ext_air,
                     gains_internal,
                     gains_solar,
@@ -669,26 +659,18 @@ impl Zone {
                     frac_conv_gains_heat_cool,
                     ach_windows_open,
                     avg_supply_temp,
-                    no_of_temps,
-                    building_elements,
-                    element_positions,
-                    &simtime,
-                    passed_zone_idx,
-                    area_el_total,
-                    volume,
-                    c_int,
-                    tb_heat_trans_coeff,
-                    print_heat_balance,
+                    simtime,
+                    self.print_heat_balance,
                 );
 
                 let temp_operative_vent_max = temp_operative(
                     &temp_vector_vent_max,
-                    building_elements,
-                    element_positions,
-                    area_el_total,
-                    passed_zone_idx,
+                    &self.building_elements,
+                    &self.element_positions,
+                    self.area_el_total,
+                    self.zone_idx,
                 );
-                let temp_int_air_vent_max = temp_vector_vent_max[passed_zone_idx];
+                let temp_int_air_vent_max = temp_vector_vent_max[self.zone_idx];
 
                 let ach_to_trigger_heating = Self::ach_req_to_reach_temperature(
                     temp_setpnt_heat,
@@ -722,7 +704,7 @@ impl Zone {
                     // Calculate node and internal air temperatures with heating/cooling gains of zero
                     let (temp_vector_no_heat_cool_vent_extra, _) = calc_temperatures(
                         delta_t,
-                        temp_prev,
+                        self.temp_prev.read().as_ref(),
                         temp_ext_air,
                         gains_internal,
                         gains_solar,
@@ -730,26 +712,26 @@ impl Zone {
                         frac_conv_gains_heat_cool,
                         ach_cooling,
                         avg_supply_temp,
-                        no_of_temps,
-                        building_elements,
-                        element_positions,
+                        self.no_of_temps,
+                        &self.building_elements,
+                        &self.element_positions,
                         &simtime,
-                        passed_zone_idx,
-                        area_el_total,
-                        volume,
-                        c_int,
-                        tb_heat_trans_coeff,
-                        print_heat_balance,
+                        self.zone_idx,
+                        self.area_el_total,
+                        self.volume,
+                        self.c_int,
+                        self.tb_heat_trans_coeff,
+                        self.print_heat_balance,
                     );
 
                     // Calculate internal operative temperature at free-floating conditions
                     // i.e. with no heating/cooling
                     let temp_operative_free_vent_extra = temp_operative(
                         &temp_vector_no_heat_cool_vent_extra,
-                        building_elements,
-                        element_positions,
-                        area_el_total,
-                        passed_zone_idx,
+                        &self.building_elements,
+                        &self.element_positions,
+                        self.area_el_total,
+                        self.zone_idx,
                     );
 
                     // If temperature achieved by additional ventilation is above setpoint
@@ -969,17 +951,7 @@ impl Zone {
                 temp_int_air_free,
                 ach_args,
                 avg_air_supply_temp,
-                &self.temp_prev.read(),
-                self.no_of_temps,
-                &self.building_elements,
-                &self.element_positions,
                 simulation_time_iteration,
-                self.zone_idx,
-                self.area_el_total,
-                self.volume,
-                self.c_int,
-                self.tb_heat_trans_coeff,
-                self.print_heat_balance,
             );
 
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
