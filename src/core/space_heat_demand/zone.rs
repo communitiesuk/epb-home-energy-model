@@ -1034,58 +1034,6 @@ impl Zone {
         Ok(heat_cool_load_unrestricted / WATTS_PER_KILOWATT as f64 * delta_t_h)
     }
 
-    pub fn total_fabric_heat_loss(&self) -> f64 {
-        self.building_elements
-            .iter()
-            .map(|nel| {
-                let NamedBuildingElement { element, .. } = nel;
-                element.fabric_heat_loss()
-            })
-            .sum::<f64>()
-    }
-
-    /// Return the total heat loss area, in m2
-    pub fn total_heat_loss_area(&self) -> f64 {
-        self.building_elements
-            .iter()
-            .filter_map(|el| {
-                if matches!(
-                    el.element,
-                    BuildingElement::Opaque { .. }
-                        | BuildingElement::Transparent { .. }
-                        | BuildingElement::Ground { .. }
-                        | BuildingElement::AdjacentZTUSimple { .. }
-                ) {
-                    Some(el.element.area())
-                } else {
-                    None
-                }
-            })
-            .sum::<f64>()
-    }
-
-    pub fn total_heat_capacity(&self) -> f64 {
-        self.building_elements
-            .iter()
-            .map(|nel| {
-                let NamedBuildingElement { element, .. } = nel;
-                element.heat_capacity()
-            })
-            .sum::<f64>()
-    }
-
-    pub fn total_thermal_bridges(&self) -> f64 {
-        self.tb_heat_trans_coeff
-    }
-
-    /// Return the ventilation heat loss from all ventilation elements, in W / K
-    pub fn total_vent_heat_loss(&self) -> f64 {
-        // TODO (from Python) This doesn't work yet
-        //      if self.__vent_obj is not None:
-        //          total_vent_heat_loss = self.__vent_obj.h_ve_average(self.__volume)
-        0.0
-    }
-
     /// Calculate heating and cooling demand in the zone for the current timestep
     ///
     /// According to the procedure in BS EN ISO 52016-1:2017, section 6.5.5.2, steps 1 to 4.
@@ -1296,6 +1244,57 @@ impl Zone {
         let _ = mem::replace(&mut *self.temp_prev.write(), temp_prev);
 
         heat_balance_map
+    }
+    pub fn total_fabric_heat_loss(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .map(|nel| {
+                let NamedBuildingElement { element, .. } = nel;
+                element.fabric_heat_loss()
+            })
+            .sum::<f64>()
+    }
+
+    /// Return the total heat loss area, in m2
+    pub fn total_heat_loss_area(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .filter_map(|el| {
+                if matches!(
+                    el.element,
+                    BuildingElement::Opaque { .. }
+                        | BuildingElement::Transparent { .. }
+                        | BuildingElement::Ground { .. }
+                        | BuildingElement::AdjacentZTUSimple { .. }
+                ) {
+                    Some(el.element.area())
+                } else {
+                    None
+                }
+            })
+            .sum::<f64>()
+    }
+
+    pub fn total_heat_capacity(&self) -> f64 {
+        self.building_elements
+            .iter()
+            .map(|nel| {
+                let NamedBuildingElement { element, .. } = nel;
+                element.heat_capacity()
+            })
+            .sum::<f64>()
+    }
+
+    pub fn total_thermal_bridges(&self) -> f64 {
+        self.tb_heat_trans_coeff
+    }
+
+    /// Return the ventilation heat loss from all ventilation elements, in W / K
+    pub fn total_vent_heat_loss(&self) -> f64 {
+        // TODO (from Python) This doesn't work yet
+        //      if self.__vent_obj is not None:
+        //          total_vent_heat_loss = self.__vent_obj.h_ve_average(self.__volume)
+        0.0
     }
 }
 
