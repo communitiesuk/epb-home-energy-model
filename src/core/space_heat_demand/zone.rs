@@ -269,6 +269,11 @@ impl Zone {
             .sum::<f64>()
     }
 
+    /// Calculate ventilation heat transfer coefficient from air changes per hour
+    fn calc_vent_heat_transfer_coeff(&self, air_changes_per_hour: f64) -> f64 {
+        calc_vent_heat_transfer_coeff(self.volume, air_changes_per_hour)
+    }
+
     /// Calculate temperatures according to procedure in BS EN ISO 52016-1:2017, section 6.5.6
     ///
     ///     ## Arguments:
@@ -480,14 +485,7 @@ impl Zone {
             + F_SOL_C * gains_solar
             + f_hc_c * gains_heat_cool;
 
-        let vector_x = fast_solver(
-            matrix_a,
-            vector_b,
-            self.no_of_temps,
-            &self.building_elements,
-            &self.element_positions,
-            self.zone_idx,
-        );
+        let vector_x = self.fast_solver(matrix_a, vector_b);
 
         let heat_balance = print_heat_balance.then(|| {
             // Collect outputs, in W, for heat balance at air node
@@ -621,6 +619,215 @@ impl Zone {
 
         (vector_x, heat_balance) // pass empty heat balance map for now
     }
+
+    /// Optimised heat balance solver
+    //
+    /// ## Arguments
+    /// * `coeffs` - full matrix of coefficients for the heat balance eqns
+    /// * `rhs` - full vector of values that are not temperatures or coefficients
+    ///        (i.e. terms on right hand side of heat balance eqns)
+    /// * `no_of_temps` - number of unknown temperatures (each node in each
+    ///                             building element + 1 for internal air) to be
+    ///                             solved for
+    /// * `building_elements` - the building elements of the zone in question
+    /// * `element_positions` - dictionary where key is building element (name) and
+    ///                      values are 2-element tuples storing matrix row and
+    ///                      column numbers (both same) where the first element
+    ///                      of the tuple gives the position of the heat
+    ///                      balance eqn (row) and node temperature (column)
+    ///                      for the external surface and the second element
+    ///                      gives the position for the internal surface.
+    ///                      Positions in between will be for the heat balance
+    ///                      and temperature of the inside nodes of the
+    ///                      building element
+    /// * `passed_zone_idx` - the index (to be) set on the zone
+    ///
+    /// The heat balance equations from BS EN ISO 52016-1:2017 are expressed as a matrix equation and
+    /// solved simultaneously. While this provides a generic calculation procedure that works for an
+    /// arbitrary number of nodes (N), it also has a runtime proportional to N^3 which means that more
+    /// complex buildings can take a long time to simulate. However, many of the nodes are known not to
+    /// interact (e.g. the node in the middle of one wall has no heat transfer with the node in another
+    /// wall) and therefore we do not require the full flexibility of the matrix approach to solve for
+    /// every node temperature. The only part of the heat balance calculation where this flexibility is
+    /// needed is in the interaction between internal air and internal surfaces, so the calculation of the
+    /// other node temperatures can be removed from the matrix equation using algebraic substitution.
+    ///
+    /// Consider generic heat balance eqns for a 4-node element:
+    ///
+    /// A1a + B1b                               = Z1    # Heat balance at node a (external surface node)
+    /// A2a + B2b + C2c                         = Z2    # Heat balance at node b (inside node)
+    ///       B3b + C3c + D3d                   = Z3    # Heat balance at node c (inside node)
+    ///             C4c + D4d + J4j + K4k + Y4y = Z4    # Heat balance at node d (internal surface node)
+    /// where:
+    /// - a, b, c and d are the node temperatures in the building element to be solved for
+    /// - j and k are the node temperatures for the internal surfaces of other elements
+    /// - y is the internal air temperature
+    /// - A1 is the coefficient for temperature a in equation 1, A2 is the coefficient for temperature a in
+    ///   equation 2, etc.
+    /// - Z1, Z2, etc. are the terms in equation 1, 2, etc. that are not the temperatures to be solved for
+    ///   or their coefficients (i.e. Z1, Z2 etc. are the terms on the RHS of the equations)
+    ///
+    /// The heat balance equation for node a (external surface node) can be rearranged to solve for a:
+    ///
+    /// A1a + B1b = Z1
+    /// A1a = Z1 - B1b
+    /// a = (Z1 - B1b) / A1
+    ///
+    /// Using the rearranged heat balance equation for node a, we can substitute a in the heat balance
+    /// equation for node b (next inside node) to eliminate a as a variable:
+    ///
+    /// A2a + B2b + C2c = Z2
+    /// A2 * (Z1 - B1b) / A1 + B2b + C2c = Z2
+    ///
+    /// Rearranging to consolidate the occurances of b gives a new heat balance equation for b:
+    ///
+    /// A2 * Z1 / A1 + A2 * (- B1b) / A1 + B2b + C2c = Z2
+    /// b * (B2 - A2 * B1 / A1) + A2 * Z1 / A1 + C2c = Z2
+    /// (B2 - A2 * B1 / A1) * b + C2c = Z2 - A2 * Z1 / A1
+    ///
+    /// This new heat balance equation can then be expressed in terms of modified versions of B2 and Z2:
+    ///
+    /// B2'b + C2c = Z2'
+    /// where:
+    /// B2' = B2 - B1 * A2 / A1
+    /// Z2' = Z2 - Z1 * A2 / A1
+    ///
+    /// The process can then be repeated, rearranging this new heat balance equation to solve for b and
+    /// then substituting into the heat balance equation for c:
+    ///
+    /// b = (Z2' - C2c) / B2'
+    ///
+    /// C3'c + D3d = Z3'
+    /// where:
+    /// C3' = C3 - C2 * B3 / B2'
+    /// Z3' = Z3 - Z2' * B3 / B2'
+    ///
+    /// And repeated again to generate a new equation for node d:
+    ///
+    /// c = (Z3' - D3d) / C3'
+    ///
+    /// D4'd + J4j + K4k + Y4y = Z4'
+    /// where:
+    /// D4' = D4 - D3 * C4 / C3'
+    /// Z4' = Z4 - Z3' * C4 / C3'
+    ///
+    /// At this point, we have reached the internal surface and we need the flexibility of the matrix
+    /// approach, but we have reduced the number of nodes to be solved for by 3. The process can be
+    /// repeated for each building element, and once the matrix solver has solved for the internal surface
+    /// temperatures, we can then go back through the other nodes, using the rearranged heat balance
+    /// equations that solve for (in this case) c, b and a.
+    ///
+    /// In order to deal with different building elements having different numbers of nodes, we can express
+    /// the above relationships generically:
+    ///
+    /// temperature[i] = (Z_adjusted[i] - coeff[i][i+1] * temperature[i+1]) / coeff_adjusted[i][i]
+    ///
+    /// coeff_adjusted[i][i] = coeff[i][i] - coeff[i-1][i] * coeff[i][i-1] / coeff_adjusted[i-1][i-1]
+    /// Z_adjusted[i] = Z[i] - Z_adjusted[i-1] * coeff[i][i-1] / coeff_adjusted[i-1][i-1]
+    ///
+    /// where i is the number of the node and its heat balance equation (counting from the external surface
+    /// to the internal surface), e.g. coeff[i-1][i] would be the coeffient for the temperature of the
+    /// current node in the heat balance equation for the previous node.
+    ///
+    /// The optimised calculation procedure is therefore:
+    /// - Loop over nodes, from external surface to internal surface, and calculate adjusted coeffs and RHS
+    ///   for each heat balance eqn
+    /// - Construct matrix eqn for inside and air nodes only
+    /// - Solve heat balance eqns for inside and air nodes using normal matrix solver
+    /// - Loop over nodes, from internal inside node (i.e. inside node nearest to the internal surface) to
+    ///   external surface, and calculate temperatures in sequence
+    fn fast_solver(&self, coeffs: DMatrix<f64>, rhs: DVector<f64>) -> Vec<f64> {
+        // Init matrix with zeroes
+        // Number of rows in matrix = number of columns
+        // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
+        let mut coeffs_adj: DMatrix<f64> = DMatrix::zeros(self.no_of_temps, self.no_of_temps);
+
+        // Init rhs_adj with zeroes (length = number of nodes + 1 for overall zone heat balance)
+        let mut rhs_adj: DVector<f64> = DVector::zeros(self.no_of_temps);
+
+        // Init matrix with zeroes
+        // Number of rows in matrix = number of columns
+        // = total number of internal surface nodes + 1 for internal air node
+        let num_rows_cols_optimised = self.building_elements.len() + 1;
+        let zone_idx = num_rows_cols_optimised - 1;
+        let mut matrix_a: DMatrix<f64> =
+            DMatrix::zeros(num_rows_cols_optimised, num_rows_cols_optimised);
+
+        // Init vector_b with zeroes (length = number of internal surfaces + 1 for air node)
+        let mut vector_b: DVector<f64> = DVector::zeros(num_rows_cols_optimised);
+
+        for (el_idx, _eli) in self.building_elements.iter().enumerate() {
+            let (idx_ext_surface, idx_int_surface) = self.element_positions[el_idx];
+
+            // No adjusted coeffs and RHS for external surface heat balance eqn
+            coeffs_adj[(idx_ext_surface, idx_ext_surface)] =
+                coeffs[(idx_ext_surface, idx_ext_surface)];
+            rhs_adj[idx_ext_surface] = rhs[idx_ext_surface];
+
+            // Loop over nodes, from inside node adjacent to external surface, to internal surface
+            for idx in (idx_ext_surface + 1)..(idx_int_surface + 1) {
+                // Calculate adjusted coeffs and RHS for each heat balance eqn
+                coeffs_adj[(idx, idx)] = coeffs[(idx, idx)]
+                    - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)]
+                        / coeffs_adj[(idx - 1, idx - 1)];
+                rhs_adj[idx] = rhs[idx]
+                    - rhs_adj[idx - 1] * coeffs[(idx, idx - 1)] / coeffs_adj[(idx - 1, idx - 1)];
+            }
+
+            // Construct matrix eqn for internal surface nodes only (and air node, after this loop)
+            matrix_a[(el_idx, el_idx)] = coeffs_adj[(idx_int_surface, idx_int_surface)];
+            vector_b[el_idx] = rhs_adj[idx_int_surface];
+
+            for (el_idx_other, _) in self.building_elements.iter().enumerate() {
+                if el_idx == el_idx_other {
+                    continue;
+                }
+
+                let idx_other_int_surface = self.element_positions[el_idx_other].1;
+                matrix_a[(el_idx, el_idx_other)] = coeffs[(idx_int_surface, idx_other_int_surface)];
+            }
+
+            // Add coeff for air temperature to this element's internal surface heat balance eqn
+            matrix_a[(el_idx, zone_idx)] = coeffs[(idx_int_surface, self.zone_idx)];
+            // Add coeff for this element's internal surface temp to the air node heat balance eqn
+            matrix_a[(zone_idx, el_idx)] = coeffs[(self.zone_idx, idx_int_surface)];
+        }
+
+        // Add rest of air node heat balance eqn to matrix
+        // Coeffs for temperatures other than the air temp are added in the loop above
+        matrix_a[(zone_idx, zone_idx)] = coeffs[(self.zone_idx, self.zone_idx)];
+        vector_b[zone_idx] = rhs[self.zone_idx];
+
+        // Solve heat balance eqns for inside and air nodes using normal matrix solver
+        // Solve matrix eqn A.X = B to calculate vector_x (temperatures)
+        // use LU solver with partial pivoting
+        // NB. .full_piv_lu() would give full pivoting which is slower but theoretically more
+        // numerically stable - may be able to speed this up with static matrices
+        let vector_x = matrix_a.lu().solve(&vector_b).unwrap();
+
+        // Init temperature with zeroes (length = number of nodes + 1 for overall zone heat balance)
+        let mut temperatures = vec![0.0; self.no_of_temps];
+        temperatures[self.zone_idx] = vector_x[zone_idx];
+
+        // Populate node temperature results for each building element
+        for (el_idx, _) in self.building_elements.iter().enumerate() {
+            let (idx_ext_surface, idx_int_surface) = self.element_positions[el_idx];
+
+            // Populate internal surface temperature result
+            temperatures[idx_int_surface] = vector_x[el_idx];
+
+            // Loop over nodes, from internal inside node (i.e. inside node nearest to the
+            // internal surface) to external surface, and calculate temperatures in sequence
+            for idx in (idx_ext_surface..idx_int_surface).rev() {
+                temperatures[idx] = (rhs_adj[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
+                    / coeffs_adj[(idx, idx)];
+            }
+        }
+
+        temperatures
+    }
+
+    // TODO: move temp_operative here
 
     /// Return internal air temperature, in deg C
     pub(crate) fn temp_internal_air(&self) -> f64 {
@@ -1097,11 +1304,6 @@ impl Zone {
             self.zone_idx,
         )
     }
-
-    /// Calculate ventilation heat transfer coefficient from air changes per hour
-    fn calc_vent_heat_transfer_coeff(&self, air_changes_per_hour: f64) -> f64 {
-        calc_vent_heat_transfer_coeff(self.volume, air_changes_per_hour)
-    }
 }
 
 const DELTA_T_H: u32 = 8760;
@@ -1111,218 +1313,6 @@ const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;
 // # Assume default convective fraction for heating/cooling suggested in
 // # BS EN ISO 52016-1:2017 Table B.11
 const FRAC_CONVECTIVE: f64 = 0.4;
-
-/// Optimised heat balance solver
-//
-/// ## Arguments
-/// * `coeffs` - full matrix of coefficients for the heat balance eqns
-/// * `rhs` - full vector of values that are not temperatures or coefficients
-///        (i.e. terms on right hand side of heat balance eqns)
-/// * `no_of_temps` - number of unknown temperatures (each node in each
-///                             building element + 1 for internal air) to be
-///                             solved for
-/// * `building_elements` - the building elements of the zone in question
-/// * `element_positions` - dictionary where key is building element (name) and
-///                      values are 2-element tuples storing matrix row and
-///                      column numbers (both same) where the first element
-///                      of the tuple gives the position of the heat
-///                      balance eqn (row) and node temperature (column)
-///                      for the external surface and the second element
-///                      gives the position for the internal surface.
-///                      Positions in between will be for the heat balance
-///                      and temperature of the inside nodes of the
-///                      building element
-/// * `passed_zone_idx` - the index (to be) set on the zone
-///
-/// The heat balance equations from BS EN ISO 52016-1:2017 are expressed as a matrix equation and
-/// solved simultaneously. While this provides a generic calculation procedure that works for an
-/// arbitrary number of nodes (N), it also has a runtime proportional to N^3 which means that more
-/// complex buildings can take a long time to simulate. However, many of the nodes are known not to
-/// interact (e.g. the node in the middle of one wall has no heat transfer with the node in another
-/// wall) and therefore we do not require the full flexibility of the matrix approach to solve for
-/// every node temperature. The only part of the heat balance calculation where this flexibility is
-/// needed is in the interaction between internal air and internal surfaces, so the calculation of the
-/// other node temperatures can be removed from the matrix equation using algebraic substitution.
-///
-/// Consider generic heat balance eqns for a 4-node element:
-///
-/// A1a + B1b                               = Z1    # Heat balance at node a (external surface node)
-/// A2a + B2b + C2c                         = Z2    # Heat balance at node b (inside node)
-///       B3b + C3c + D3d                   = Z3    # Heat balance at node c (inside node)
-///             C4c + D4d + J4j + K4k + Y4y = Z4    # Heat balance at node d (internal surface node)
-/// where:
-/// - a, b, c and d are the node temperatures in the building element to be solved for
-/// - j and k are the node temperatures for the internal surfaces of other elements
-/// - y is the internal air temperature
-/// - A1 is the coefficient for temperature a in equation 1, A2 is the coefficient for temperature a in
-///   equation 2, etc.
-/// - Z1, Z2, etc. are the terms in equation 1, 2, etc. that are not the temperatures to be solved for
-///   or their coefficients (i.e. Z1, Z2 etc. are the terms on the RHS of the equations)
-///
-/// The heat balance equation for node a (external surface node) can be rearranged to solve for a:
-///
-/// A1a + B1b = Z1
-/// A1a = Z1 - B1b
-/// a = (Z1 - B1b) / A1
-///
-/// Using the rearranged heat balance equation for node a, we can substitute a in the heat balance
-/// equation for node b (next inside node) to eliminate a as a variable:
-///
-/// A2a + B2b + C2c = Z2
-/// A2 * (Z1 - B1b) / A1 + B2b + C2c = Z2
-///
-/// Rearranging to consolidate the occurances of b gives a new heat balance equation for b:
-///
-/// A2 * Z1 / A1 + A2 * (- B1b) / A1 + B2b + C2c = Z2
-/// b * (B2 - A2 * B1 / A1) + A2 * Z1 / A1 + C2c = Z2
-/// (B2 - A2 * B1 / A1) * b + C2c = Z2 - A2 * Z1 / A1
-///
-/// This new heat balance equation can then be expressed in terms of modified versions of B2 and Z2:
-///
-/// B2'b + C2c = Z2'
-/// where:
-/// B2' = B2 - B1 * A2 / A1
-/// Z2' = Z2 - Z1 * A2 / A1
-///
-/// The process can then be repeated, rearranging this new heat balance equation to solve for b and
-/// then substituting into the heat balance equation for c:
-///
-/// b = (Z2' - C2c) / B2'
-///
-/// C3'c + D3d = Z3'
-/// where:
-/// C3' = C3 - C2 * B3 / B2'
-/// Z3' = Z3 - Z2' * B3 / B2'
-///
-/// And repeated again to generate a new equation for node d:
-///
-/// c = (Z3' - D3d) / C3'
-///
-/// D4'd + J4j + K4k + Y4y = Z4'
-/// where:
-/// D4' = D4 - D3 * C4 / C3'
-/// Z4' = Z4 - Z3' * C4 / C3'
-///
-/// At this point, we have reached the internal surface and we need the flexibility of the matrix
-/// approach, but we have reduced the number of nodes to be solved for by 3. The process can be
-/// repeated for each building element, and once the matrix solver has solved for the internal surface
-/// temperatures, we can then go back through the other nodes, using the rearranged heat balance
-/// equations that solve for (in this case) c, b and a.
-///
-/// In order to deal with different building elements having different numbers of nodes, we can express
-/// the above relationships generically:
-///
-/// temperature[i] = (Z_adjusted[i] - coeff[i][i+1] * temperature[i+1]) / coeff_adjusted[i][i]
-///
-/// coeff_adjusted[i][i] = coeff[i][i] - coeff[i-1][i] * coeff[i][i-1] / coeff_adjusted[i-1][i-1]
-/// Z_adjusted[i] = Z[i] - Z_adjusted[i-1] * coeff[i][i-1] / coeff_adjusted[i-1][i-1]
-///
-/// where i is the number of the node and its heat balance equation (counting from the external surface
-/// to the internal surface), e.g. coeff[i-1][i] would be the coeffient for the temperature of the
-/// current node in the heat balance equation for the previous node.
-///
-/// The optimised calculation procedure is therefore:
-/// - Loop over nodes, from external surface to internal surface, and calculate adjusted coeffs and RHS
-///   for each heat balance eqn
-/// - Construct matrix eqn for inside and air nodes only
-/// - Solve heat balance eqns for inside and air nodes using normal matrix solver
-/// - Loop over nodes, from internal inside node (i.e. inside node nearest to the internal surface) to
-///   external surface, and calculate temperatures in sequence
-fn fast_solver(
-    coeffs: DMatrix<f64>,
-    rhs: DVector<f64>,
-    no_of_temps: usize,
-    building_elements: &[NamedBuildingElement],
-    element_positions: &[(usize, usize)],
-    passed_zone_idx: usize,
-) -> Vec<f64> {
-    // Init matrix with zeroes
-    // Number of rows in matrix = number of columns
-    // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
-    let mut coeffs_adj: DMatrix<f64> = DMatrix::zeros(no_of_temps, no_of_temps);
-
-    // Init rhs_adj with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut rhs_adj: DVector<f64> = DVector::zeros(no_of_temps);
-
-    // Init matrix with zeroes
-    // Number of rows in matrix = number of columns
-    // = total number of internal surface nodes + 1 for internal air node
-    let num_rows_cols_optimised = building_elements.len() + 1;
-    let zone_idx = num_rows_cols_optimised - 1;
-    let mut matrix_a: DMatrix<f64> =
-        DMatrix::zeros(num_rows_cols_optimised, num_rows_cols_optimised);
-
-    // Init vector_b with zeroes (length = number of internal surfaces + 1 for air node)
-    let mut vector_b: DVector<f64> = DVector::zeros(num_rows_cols_optimised);
-
-    for (el_idx, _eli) in building_elements.iter().enumerate() {
-        let (idx_ext_surface, idx_int_surface) = element_positions[el_idx];
-
-        // No adjusted coeffs and RHS for external surface heat balance eqn
-        coeffs_adj[(idx_ext_surface, idx_ext_surface)] = coeffs[(idx_ext_surface, idx_ext_surface)];
-        rhs_adj[idx_ext_surface] = rhs[idx_ext_surface];
-
-        // Loop over nodes, from inside node adjacent to external surface, to internal surface
-        for idx in (idx_ext_surface + 1)..(idx_int_surface + 1) {
-            // Calculate adjusted coeffs and RHS for each heat balance eqn
-            coeffs_adj[(idx, idx)] = coeffs[(idx, idx)]
-                - coeffs[(idx - 1, idx)] * coeffs[(idx, idx - 1)] / coeffs_adj[(idx - 1, idx - 1)];
-            rhs_adj[idx] = rhs[idx]
-                - rhs_adj[idx - 1] * coeffs[(idx, idx - 1)] / coeffs_adj[(idx - 1, idx - 1)];
-        }
-
-        // Construct matrix eqn for internal surface nodes only (and air node, after this loop)
-        matrix_a[(el_idx, el_idx)] = coeffs_adj[(idx_int_surface, idx_int_surface)];
-        vector_b[el_idx] = rhs_adj[idx_int_surface];
-
-        for (el_idx_other, _) in building_elements.iter().enumerate() {
-            if el_idx == el_idx_other {
-                continue;
-            }
-
-            let idx_other_int_surface = element_positions[el_idx_other].1;
-            matrix_a[(el_idx, el_idx_other)] = coeffs[(idx_int_surface, idx_other_int_surface)];
-        }
-
-        // Add coeff for air temperature to this element's internal surface heat balance eqn
-        matrix_a[(el_idx, zone_idx)] = coeffs[(idx_int_surface, passed_zone_idx)];
-        // Add coeff for this element's internal surface temp to the air node heat balance eqn
-        matrix_a[(zone_idx, el_idx)] = coeffs[(passed_zone_idx, idx_int_surface)];
-    }
-
-    // Add rest of air node heat balance eqn to matrix
-    // Coeffs for temperatures other than the air temp are added in the loop above
-    matrix_a[(zone_idx, zone_idx)] = coeffs[(passed_zone_idx, passed_zone_idx)];
-    vector_b[zone_idx] = rhs[passed_zone_idx];
-
-    // Solve heat balance eqns for inside and air nodes using normal matrix solver
-    // Solve matrix eqn A.X = B to calculate vector_x (temperatures)
-    // use LU solver with partial pivoting
-    // NB. .full_piv_lu() would give full pivoting which is slower but theoretically more
-    // numerically stable - may be able to speed this up with static matrices
-    let vector_x = matrix_a.lu().solve(&vector_b).unwrap();
-
-    // Init temperature with zeroes (length = number of nodes + 1 for overall zone heat balance)
-    let mut temperatures = vec![0.0; no_of_temps];
-    temperatures[passed_zone_idx] = vector_x[zone_idx];
-
-    // Populate node temperature results for each building element
-    for (el_idx, _) in building_elements.iter().enumerate() {
-        let (idx_ext_surface, idx_int_surface) = element_positions[el_idx];
-
-        // Populate internal surface temperature result
-        temperatures[idx_int_surface] = vector_x[el_idx];
-
-        // Loop over nodes, from internal inside node (i.e. inside node nearest to the
-        // internal surface) to external surface, and calculate temperatures in sequence
-        for idx in (idx_ext_surface..idx_int_surface).rev() {
-            temperatures[idx] = (rhs_adj[idx] - coeffs[(idx, idx + 1)] * temperatures[idx + 1])
-                / coeffs_adj[(idx, idx)];
-        }
-    }
-
-    temperatures
-}
 
 /// Calculate the operative temperature, in deg C
 ///
