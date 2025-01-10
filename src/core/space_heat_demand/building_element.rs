@@ -146,6 +146,10 @@ pub trait BuildingElementBehaviour {
 
     fn h_pli(&self) -> &[f64];
 
+    fn h_pli_by_index_unchecked(&self, idx: usize) -> f64 {
+        self.h_pli()[idx]
+    }
+
     /// Return number of nodes including external and internal layers
     fn number_of_nodes(&self) -> usize {
         self.k_pli().len()
@@ -1514,6 +1518,21 @@ impl BuildingElementBehaviour for BuildingElementTransparent {
 
     fn h_pli(&self) -> &[f64] {
         &self.h_pli
+    }
+
+    fn h_pli_by_index_unchecked(&self, idx: usize) -> f64 {
+        // Account for resistance of window treatment in heat transfer coefficient
+        // TODO (from Python) Check that idx refers to inside surface?
+        let r_c = 1.0 / self.h_pli[idx];
+        // TODO: port the below as part of migration to 0.32
+        //        if self._treatment is not None:
+        //             for t in self._treatment:
+        //                 self._adjust_treatment()
+        //                 if t['is_open'] == False:
+        //                     # delta_r for window treatment (curtains, blinds, etc.) as per
+        //                     # BS EN 13125:2001
+        //                     r_c += t['delta_r']
+        1.0 / r_c
     }
 
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {

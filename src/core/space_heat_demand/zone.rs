@@ -1032,10 +1032,9 @@ fn calc_temperatures(
         // Position of first (external) node within element is zero
         let mut i = 0usize;
 
-        // load in k_pli, h_pli, h_ce and h_re for this element
-        let (k_pli, h_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
+        // load in k_pli, h_ce and h_re for this element
+        let (k_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
             eli.k_pli(),
-            eli.h_pli(),
             eli.h_ce(),
             eli.h_re(),
             eli.h_ri(),
@@ -1044,9 +1043,10 @@ fn calc_temperatures(
         );
 
         // Coeff for temperature of this node
-        matrix_a[(idx, idx)] = (k_pli[i] / delta_t) + h_ce + h_re + h_pli[i];
+        matrix_a[(idx, idx)] = (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i);
+
         // Coeff for temperature of next node
-        matrix_a[(idx, idx + 1)] = -h_pli[i];
+        matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
         // RHS of heat balance eqn for this node
         let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(*simulation_time);
         let (f_sh_dir, f_sh_dif) = eli
@@ -1062,28 +1062,33 @@ fn calc_temperatures(
             i += 1;
             idx += 1;
             // Coeff for temperature of prev node
-            matrix_a[(idx, idx - 1)] = -h_pli[i - 1];
+            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
             // Coeff for temperature of this node
-            matrix_a[(idx, idx)] = (k_pli[i] / delta_t) + h_pli[i] + h_pli[i - 1];
+            matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
+                + eli.h_pli_by_index_unchecked(i)
+                + eli.h_pli_by_index_unchecked(i - 1);
             // Coeff for temperature of next node
-            matrix_a[(idx, idx + 1)] = -h_pli[i];
+            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
             // RHS of heat balance eqn for this node
             vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx];
         }
 
         // Internal surface node (eqn 39)
         idx += 1;
-        assert_eq!(idx, element_positions[eli_idx].1);
+        debug_assert_eq!(idx, element_positions[eli_idx].1);
         i += 1;
-        assert_eq!(i, eli.number_of_nodes() - 1);
+        debug_assert_eq!(i, eli.number_of_nodes() - 1);
         // Get internal convective surface heat transfer coefficient, which
         // depends on direction of heat flow, which depends on temperature of
         // zone and internal surface
         let h_ci = eli.h_ci(temp_prev[passed_zone_idx], temp_prev[idx]);
         // Coeff for temperature of prev node
-        matrix_a[(idx, idx - 1)] = -h_pli[i - 1];
+        matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
         // Coeff for temperature of this node
-        matrix_a[(idx, idx)] = (k_pli[i] / delta_t) + h_ci + h_ri * sum_area_frac + h_pli[i - 1];
+        matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
+            + h_ci
+            + h_ri * sum_area_frac
+            + eli.h_pli_by_index_unchecked(i - 1);
         // Add final sum term for LHS of eqn 39 in loop below.
         // These are coeffs for temperatures of internal surface nodes of
         // all building elements in the zone
