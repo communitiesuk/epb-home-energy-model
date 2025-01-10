@@ -4114,8 +4114,8 @@ fn heat_source_from_input(
                             HeatBattery::create_service_hot_water_regular(
                                 battery,
                                 &energy_supply_conn_name,
-                                temp_setpoint,
-                                source_control,
+                                control_min,
+                                control_max,
                             ),
                         )))
                     }

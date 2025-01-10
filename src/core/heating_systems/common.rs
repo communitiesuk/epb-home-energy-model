@@ -236,6 +236,7 @@ impl SpaceHeatingService {
                 heat_battery_service_space.energy_output_max(
                     temp_output,
                     temp_return_feed,
+                    None,
                     simulation_time_iteration,
                 ),
                 None,
@@ -289,6 +290,8 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
+                    None,
+                    None,
                     simulation_time_iteration,
                 ),
                 None,

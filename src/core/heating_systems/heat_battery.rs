@@ -24,22 +24,47 @@ pub struct HeatBatteryServiceWaterRegular {
     heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
     control: Option<Arc<Control>>,
-    temp_hot_water: f64,
+    control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
 }
 
 impl HeatBatteryServiceWaterRegular {
+    /// Arguments:
+    /// * `heat_battery` - reference to the Heat Battery object providing the service
+    /// * `service_name` - name of the service demanding energy
+    /// * `control_min` - optional reference to a control object which must select current the minimum timestep temperature
+    /// * `control_max` - optional reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,
-        temp_hot_water: f64,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
+        let control = control_min.clone();
+
         Self {
             heat_battery,
             service_name,
             control,
-            temp_hot_water,
+            control_min,
+            control_max,
         }
+    }
+
+    pub(crate) fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        let control_min_setpnt = self
+            .control_min
+            .as_ref()
+            .and_then(|control| control.setpnt(simulation_time_iteration));
+        let control_max_setpnt = self
+            .control_max
+            .as_ref()
+            .and_then(|control| control.setpnt(simulation_time_iteration));
+
+        (control_min_setpnt, control_max_setpnt)
     }
 
     /// Demand energy (in kWh) from the heat_battery
@@ -57,6 +82,8 @@ impl HeatBatteryServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             temp_return,
+            None,
+            None,
             simulation_time_iteration.index,
         )
     }
@@ -71,9 +98,14 @@ impl HeatBatteryServiceWaterRegular {
             return 0.0;
         }
 
+        let control_max_setpnt = self
+            .control_max
+            .as_ref()
+            .and_then(|control| control.setpnt(&simulation_time_iteration));
+
         self.heat_battery
             .lock()
-            .energy_output_max(self.temp_hot_water)
+            .energy_output_max(control_max_setpnt, None)
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
@@ -126,8 +158,13 @@ impl HeatBatteryServiceSpace {
         energy_demand: f64,
         _temp_flow: f64,
         temp_return: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
+        let _time_start = time_start.unwrap_or(0.);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+
         if !self.is_on(simulation_time_iteration) {
             return 0.0;
         }
@@ -137,6 +174,8 @@ impl HeatBatteryServiceSpace {
             ServiceType::Space,
             energy_demand,
             temp_return,
+            None,
+            Some(update_heat_source_state),
             simulation_time_iteration.index,
         )
     }
@@ -149,13 +188,18 @@ impl HeatBatteryServiceSpace {
         &self,
         temp_output: f64,
         _temp_return_feed: f64,
+        time_start: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+
         if !self.is_on(simtime) {
             return 0.0;
         }
 
-        self.heat_battery.lock().energy_output_max(temp_output)
+        self.heat_battery
+            .lock()
+            .energy_output_max(Some(temp_output), Some(time_start))
     }
 }
 
@@ -359,15 +403,15 @@ impl HeatBattery {
     pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<Mutex<Self>>,
         service_name: &str,
-        temp_hot_water: f64,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> HeatBatteryServiceWaterRegular {
         Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
         HeatBatteryServiceWaterRegular::new(
             heat_battery,
             service_name.to_string(),
-            temp_hot_water,
-            control,
+            control_min,
+            control_max,
         )
     }
 
@@ -461,15 +505,28 @@ impl HeatBattery {
         self.flag_first_call = false;
     }
 
+    /// Calculate time available for the current service
+    fn time_available(&self, time_start: f64, timestep: f64) -> f64 {
+        // Assumes that time spent on other services is evenly spread throughout
+        // the timestep so the adjustment for start time below is a proportional
+        // reduction of the overall time available, not simply a subtraction
+        (timestep - self.total_time_running_current_timestep) * (1. - time_start / timestep)
+    }
+
     pub fn demand_energy(
         &mut self,
         service_name: &str,
         _service_type: ServiceType,
         energy_output_required: f64,
         _temp_return_feed: f64,
+        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
         timestep_idx: usize,
     ) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let timestep = self.simulation_time.step_in_hours();
+        let time_available = self.time_available(time_start, timestep);
         let mut charge_level = self.charge_level;
 
         // Picking target charge level from control
@@ -488,10 +545,7 @@ impl HeatBattery {
         let q_out_ts = self.q_out_ts.unwrap();
 
         // Create power variables and assign the values just calculated at average of timestep
-        let e_out = min_of_2(
-            energy_demand,
-            q_out_ts * (timestep - self.total_time_running_current_timestep),
-        );
+        let e_out = min_of_2(energy_demand, q_out_ts * time_available);
         let time_running_current_service = if q_out_ts > 0. { e_out / q_out_ts } else { 0. };
 
         let q_loss_ts = self.q_loss_ts.unwrap();
@@ -518,23 +572,25 @@ impl HeatBattery {
 
         let energy_output_provided = e_out;
 
-        self.charge_level = charge_level;
+        if update_heat_source_state {
+            self.charge_level = charge_level;
 
-        self.energy_supply_connection
-            .demand_energy(e_in * self.n_units as f64, timestep_idx)
-            .unwrap();
-        self.energy_supply_connections[service_name]
-            .energy_out(e_out * self.n_units as f64, timestep_idx)
-            .unwrap();
+            self.energy_supply_connection
+                .demand_energy(e_in * self.n_units as f64, timestep_idx)
+                .unwrap();
+            self.energy_supply_connections[service_name]
+                .energy_out(e_out * self.n_units as f64, timestep_idx)
+                .unwrap();
 
-        self.total_time_running_current_timestep += time_running_current_service;
+            self.total_time_running_current_timestep += time_running_current_service;
 
-        // Save results that are needed later (in the timestep_end function)
-        self.service_results.push(HeatBatteryResult {
-            service_name: service_name.to_string(),
-            time_running: time_running_current_service,
-            current_hb_power: q_out_ts,
-        });
+            // Save results that are needed later (in the timestep_end function)
+            self.service_results.push(HeatBatteryResult {
+                service_name: service_name.to_string(),
+                time_running: time_running_current_service,
+                current_hb_power: q_out_ts,
+            });
+        }
 
         energy_output_provided
     }
@@ -634,8 +690,12 @@ impl HeatBattery {
         self.service_results = Default::default();
     }
 
-    pub fn energy_output_max(&mut self, _temp_output: f64) -> f64 {
+    /// Calculate the maximum energy output of the heat battery, accounting
+    /// for time spent on higher-priority services.
+    pub fn energy_output_max(&mut self, _temp_output: Option<f64>, time_start: Option<f64>) -> f64 {
+        let time_start = time_start.unwrap_or(0.);
         let timestep = self.simulation_time.step_in_hours();
+        let time_available = self.time_available(time_start, timestep);
         let current_hour = self.simulation_time.current_hour();
         let time_range = current_hour * HEAT_BATTERY_TIME_UNIT;
 
@@ -652,11 +712,11 @@ impl HeatBattery {
             }
         }
 
-        // Estimating output rate at average of capacity in timestep
+        // Estimating output rate at average of capacity in time_available
         let max_output = self.lab_test_rated_output(charge_level_qin);
-        let delta_charge_level = max_output * timestep / self.heat_storage_capacity;
+        let delta_charge_level = max_output * time_available / self.heat_storage_capacity;
 
-        self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.) * timestep
+        self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.) * time_available
     }
 
     fn target_charge(&self) -> f64 {
@@ -894,14 +954,33 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
-        let service_control = None;
+        let control_min = create_setpoint_time_control(vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ]);
+        let control_max = create_setpoint_time_control(vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ]);
 
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                TEMP_HOT_WATER,
-                service_control,
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         assert!(heat_battery_service.is_on(simulation_time_iteration));
@@ -916,15 +995,34 @@ mod tests {
         let energy_demand = 10.;
         let temp_return = 40.;
 
-        let service_control_on = None; // service is always on when there is no control
+        let control_min = create_setpoint_time_control(vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ]);
+        let control_max = create_setpoint_time_control(vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ]);
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                TEMP_HOT_WATER,
-                service_control_on,
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         let result = heat_battery_service.demand_energy(
@@ -953,8 +1051,8 @@ mod tests {
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                TEMP_HOT_WATER,
                 Some(service_control_off.into()),
+                None,
             );
 
         let result = heat_battery_service.demand_energy(
@@ -1002,14 +1100,34 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_off: Control,
     ) {
-        let service_control_off: Control = create_setpoint_time_control(vec![None]);
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
+        let control_min = create_setpoint_time_control(vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ]);
+        let control_max = create_setpoint_time_control(vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ]);
+
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
-                TEMP_HOT_WATER,
-                Some(service_control_off.into()),
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         let temp_return = 40.;
@@ -1072,6 +1190,8 @@ mod tests {
             energy_demand,
             temp_return,
             temp_flow,
+            None,
+            None,
             simulation_time_iteration,
         );
         assert_eq!(result, 0.);
@@ -1172,6 +1292,8 @@ mod tests {
                 ServiceType::WaterRegular,
                 5.,
                 40.,
+                None,
+                None,
                 t_idx,
             );
 
