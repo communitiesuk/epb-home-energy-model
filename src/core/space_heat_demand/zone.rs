@@ -1017,21 +1017,36 @@ impl Zone {
     }
 
     fn interp_heat_cool_demand(
+        &self,
         delta_t_h: f64,
         temp_setpnt: f64,
         heat_cool_load_upper: f64,
         temp_operative_free: f64,
         temp_operative_upper: f64,
+        temp_int_air_free: f64,
+        temp_int_air_upper: f64,
     ) -> anyhow::Result<f64> {
-        if temp_operative_upper - temp_operative_free == 0.0 {
-            bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
-        }
+        let heat_cool_load_unrestricted = match self.temp_setpnt_basis {
+            ZoneTemperatureControlBasis::Operative => {
+                if temp_operative_upper - temp_operative_free == 0.0 {
+                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
+                }
+                heat_cool_load_upper * (temp_setpnt - temp_operative_free)
+                    / (temp_operative_upper - temp_operative_free)
+            }
+            ZoneTemperatureControlBasis::Air => {
+                if temp_int_air_upper - temp_int_air_free == 0.0 {
+                    bail!("Divide-by-zero in calculation of heating/cooling demand. This may be caused by the specification of very low overall areal heat capacity of BuildingElements and/or very high thermal mass of WetDistribution.");
+                }
+                heat_cool_load_upper * (temp_setpnt - temp_int_air_free)
+                    / (temp_int_air_upper - temp_int_air_free)
+            }
+        };
 
-        let heat_cool_load_unrestricted = heat_cool_load_upper
-            * (temp_setpnt - temp_operative_free)
-            / (temp_operative_upper - temp_operative_free);
-        // convert from W to kWh
-        Ok(heat_cool_load_unrestricted / WATTS_PER_KILOWATT as f64 * delta_t_h)
+        // Convert from W to kWh
+        let heat_cool_demand = heat_cool_load_unrestricted / WATTS_PER_KILOWATT as f64 * delta_t_h;
+
+        Ok(heat_cool_demand)
     }
 
     /// Calculate heating and cooling demand in the zone for the current timestep
@@ -1181,12 +1196,14 @@ impl Zone {
         let temp_operative_upper = self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool);
 
         // Calculate heating (positive) or cooling (negative) required to reach setpoint
-        let heat_cool_demand = Zone::interp_heat_cool_demand(
+        let heat_cool_demand = self.interp_heat_cool_demand(
             delta_t_h,
             temp_setpnt,
             heat_cool_load_upper,
             temp_operative_free,
             temp_operative_upper,
+            temp_int_air_free,
+            temp_vector_upper_heat_cool[self.zone_idx],
         )?;
 
         let mut space_heat_demand = 0.0;
