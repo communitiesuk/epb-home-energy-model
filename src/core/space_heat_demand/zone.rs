@@ -827,7 +827,32 @@ impl Zone {
         temperatures
     }
 
-    // TODO: move temp_operative here
+    // Calculate the operative temperature, in deg C
+    ///
+    /// According to the procedure in BS EN ISO 52016-1:2017, section 6.5.5.3.
+    ///
+    /// ## Arguments
+    /// * `temp_vector` - vector (list) of temperatures calculated from the heat balance equations
+    fn temp_operative_by_temp_vector(&self, temp_vector: &[f64]) -> f64 {
+        let temp_int_air = temp_vector[self.zone_idx];
+
+        // Mean radiant temperature is weighted average of internal surface temperatures
+        let temp_mean_radiant = self
+            .building_elements
+            .iter()
+            .enumerate()
+            .map(|(eli_idx, nel)| {
+                let NamedBuildingElement { element: eli, .. } = nel;
+                eli.area() * temp_vector[self.element_positions[eli_idx].1]
+            })
+            .sum::<f64>()
+            / self.area_el_total;
+        (temp_int_air + temp_mean_radiant) / 2.0
+    }
+
+    pub(crate) fn temp_operative(&self) -> f64 {
+        self.temp_operative_by_temp_vector(&self.temp_prev.read())
+    }
 
     /// Return internal air temperature, in deg C
     pub(crate) fn temp_internal_air(&self) -> f64 {
@@ -909,13 +934,8 @@ impl Zone {
                     self.print_heat_balance,
                 );
 
-                let temp_operative_vent_max = temp_operative(
-                    &temp_vector_vent_max,
-                    &self.building_elements,
-                    &self.element_positions,
-                    self.area_el_total,
-                    self.zone_idx,
-                );
+                let temp_operative_vent_max =
+                    self.temp_operative_by_temp_vector(&temp_vector_vent_max);
                 let temp_int_air_vent_max = temp_vector_vent_max[self.zone_idx];
 
                 let ach_to_trigger_heating = Self::ach_req_to_reach_temperature(
@@ -964,13 +984,8 @@ impl Zone {
 
                     // Calculate internal operative temperature at free-floating conditions
                     // i.e. with no heating/cooling
-                    let temp_operative_free_vent_extra = temp_operative(
-                        &temp_vector_no_heat_cool_vent_extra,
-                        &self.building_elements,
-                        &self.element_positions,
-                        self.area_el_total,
-                        self.zone_idx,
-                    );
+                    let temp_operative_free_vent_extra =
+                        self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool_vent_extra);
 
                     // If temperature achieved by additional ventilation is above setpoint
                     // for active cooling, assume cooling system will be used instead of
@@ -1157,13 +1172,7 @@ impl Zone {
 
         // Calculate internal operative temperature at free-floating conditions
         // i.e. with no heating/cooling
-        let temp_operative_free = temp_operative(
-            &temp_vector_no_heat_cool,
-            &self.building_elements,
-            &self.element_positions,
-            self.area_el_total,
-            self.zone_idx,
-        );
+        let temp_operative_free = self.temp_operative_by_temp_vector(&temp_vector_no_heat_cool);
         let temp_int_air_free = temp_vector_no_heat_cool[self.zone_idx];
 
         let (temp_operative_free, ach_cooling, ach_to_trigger_heating) = self
@@ -1221,13 +1230,7 @@ impl Zone {
         );
 
         // Calculate internal operative temperature with maximum heating/cooling
-        let temp_operative_upper = temp_operative(
-            &temp_vector_upper_heat_cool,
-            &self.building_elements,
-            &self.element_positions,
-            self.area_el_total,
-            self.zone_idx,
-        );
+        let temp_operative_upper = self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool);
 
         // Calculate heating (positive) or cooling (negative) required to reach setpoint
         let heat_cool_demand = Zone::interp_heat_cool_demand(
@@ -1294,16 +1297,6 @@ impl Zone {
 
         heat_balance_map
     }
-
-    pub fn temp_operative(&self) -> f64 {
-        temp_operative(
-            &self.temp_prev.read(),
-            &self.building_elements,
-            &self.element_positions,
-            self.area_el_total,
-            self.zone_idx,
-        )
-    }
 }
 
 const DELTA_T_H: u32 = 8760;
@@ -1313,34 +1306,6 @@ const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;
 // # Assume default convective fraction for heating/cooling suggested in
 // # BS EN ISO 52016-1:2017 Table B.11
 const FRAC_CONVECTIVE: f64 = 0.4;
-
-/// Calculate the operative temperature, in deg C
-///
-/// According to the procedure in BS EN ISO 52016-1:2017, section 6.5.5.3.
-///
-/// ## Arguments
-/// * `temp_vector` - vector (list) of temperatures calculated from the heat balance equations
-fn temp_operative(
-    temp_vector: &[f64],
-    building_elements: &[NamedBuildingElement],
-    element_positions: &[(usize, usize)],
-    area_el_total: f64,
-    passed_zone_id: usize,
-) -> f64 {
-    let temp_int_air = temp_vector[passed_zone_id];
-
-    // Mean radiant temperature is weighted average of internal surface temperatures
-    let temp_mean_radiant = building_elements
-        .iter()
-        .enumerate()
-        .map(|(eli_idx, nel)| {
-            let NamedBuildingElement { element: eli, .. } = nel;
-            eli.area() * temp_vector[element_positions[eli_idx].1]
-        })
-        .sum::<f64>()
-        / area_el_total;
-    (temp_int_air + temp_mean_radiant) / 2.0
-}
 
 /// Close-enough port of numpy's isclose function for use here
 ///
