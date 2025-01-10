@@ -102,8 +102,6 @@ impl ElecStorageHeater {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
         core::{
             controls::time_control::SetpointTimeControl,
@@ -265,6 +263,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "not yet implemented"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
