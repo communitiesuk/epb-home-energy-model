@@ -623,6 +623,7 @@ impl Zone {
     }
 
     fn calc_cooling_potential_from_ventilation(
+        &self,
         delta_t: f64,
         temp_ext_air: f64,
         gains_internal: f64,
@@ -855,18 +856,18 @@ impl Zone {
     /// According to the procedure in BS EN ISO 52016-1:2017, section 6.5.5.2, steps 1 to 4.
     ///
     /// Arguments:
-    /// * `delta_t_h` - calculation timestep, in hours
-    /// * `temp_ext_air` - temperature of the external air for the current timestep, in deg C
-    /// * `gains_internal` - internal gains for the current timestep, in W
-    /// * `gains_solar` - directly transmitted solar gains, in W
-    /// * `frac_convective_heat` - convective fraction for heating
-    /// * `frac_convective_cool` - convective fraction for cooling
-    /// * `temp_setpnt_heat` - temperature setpoint for heating, in deg C
-    /// * `temp_setpnt_cool` - temperature setpoint for cooling, in deg C
-    /// * `ach_windows_open` - air changes per hour when all windows open
-    /// * `ach_target` - air changes per hour required for ventilation requirement/target
-    /// * `ach_cooling` - air changes per hour required to meet cooling requirement/target
-    pub fn space_heat_cool_demand(
+    /// delta_t_h -- calculation timestep, in hours
+    /// temp_ext_air -- temperature of the external air for the current timestep, in deg C
+    /// gains_internal -- internal gains for the current timestep, in W
+    /// gains_solar -- directly transmitted solar gains, in W
+    /// frac_convective_heat -- convective fraction for heating
+    /// frac_convective_cool -- convective fraction for cooling
+    /// temp_setpnt_heat -- temperature setpoint for heating, in deg C
+    /// temp_setpnt_cool -- temperature setpoint for cooling, in deg C
+    /// ach_windows_open -- air changes per hour when all windows open
+    /// ach_target -- air changes per hour required for ventilation requirement/target
+    /// ach_cooling -- air changes per hour required to meet cooling requirement/target
+    pub(crate) fn space_heat_cool_demand(
         &self,
         delta_t_h: f64,
         temp_ext_air: f64,
@@ -882,33 +883,181 @@ impl Zone {
         ach_args: AirChangesPerHourArgument,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, Option<f64>)> {
-        space_heat_cool_demand(
-            delta_t_h,
+        let gains_heat_cool_convective = gains_heat_cool_convective.unwrap_or(0.0);
+        let gains_heat_cool_radiative = gains_heat_cool_radiative.unwrap_or(0.0);
+
+        if temp_setpnt_cool < temp_setpnt_heat {
+            bail!("Cooling setpoint is below heating setpoint.");
+        }
+
+        let temp_setpnt_cool_vent = if let Some(control) = self.control.clone() {
+            let temp_setpnt_cool_vent_response = control
+                .setpnt(&simulation_time_iteration)
+                .unwrap_or_else(|| kelvin_to_celsius(1.4e32).expect("Not below absolute zero"));
+            if temp_setpnt_cool_vent_response < temp_setpnt_heat {
+                bail!("Setpoint for additional ventilation is below heating setpoint.");
+            }
+            temp_setpnt_cool_vent_response
+        } else {
+            kelvin_to_celsius(1.4e32).expect("Not below absolute zero")
+        };
+
+        if temp_setpnt_cool_vent < temp_setpnt_heat {
+            bail!("Cooling ventilation setpoint is below heating setpoint.");
+        }
+
+        // Calculate timestep in seconds
+        let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
+
+        // For calculation of demand, set heating/cooling gains to zero
+        let gains_heat_cool = gains_heat_cool_convective + gains_heat_cool_radiative;
+        let frac_conv_gains_heat_cool = if gains_heat_cool == 0.0 {
+            0.0
+        } else {
+            gains_heat_cool_convective / gains_heat_cool
+        };
+
+        // Calculate node and internal air temperatures with heating/cooling gains of zero
+        let (temp_vector_no_heat_cool, _) = calc_temperatures(
+            delta_t,
+            &self.temp_prev.read(),
             temp_ext_air,
             gains_internal,
             gains_solar,
-            frac_convective_heat,
-            frac_convective_cool,
-            temp_setpnt_heat,
-            temp_setpnt_cool,
+            gains_heat_cool,
+            frac_conv_gains_heat_cool,
+            match ach_args {
+                AirChangesPerHourArgument::Cooling { ach_cooling } => ach_cooling,
+                AirChangesPerHourArgument::TargetAndWindowsOpen { ach_target, .. } => ach_target,
+            },
             avg_air_supply_temp,
-            gains_heat_cool_convective,
-            gains_heat_cool_radiative,
-            ach_args,
+            self.no_of_temps,
             &self.building_elements,
             &self.element_positions,
             &simulation_time_iteration,
-            &self.temp_prev.read(),
-            self.no_of_temps,
+            self.zone_idx,
             self.area_el_total,
-            self.area(),
             self.volume,
             self.c_int,
             self.tb_heat_trans_coeff,
-            self.zone_idx,
-            self.control.clone(),
             self.print_heat_balance,
-        )
+        );
+
+        // Calculate internal operative temperature at free-floating conditions
+        // i.e. with no heating/cooling
+        let temp_operative_free = temp_operative(
+            &temp_vector_no_heat_cool,
+            &self.building_elements,
+            &self.element_positions,
+            self.area_el_total,
+            self.zone_idx,
+        );
+        let temp_int_air_free = temp_vector_no_heat_cool[self.zone_idx];
+
+        let (temp_operative_free, ach_cooling, ach_to_trigger_heating) = self
+            .calc_cooling_potential_from_ventilation(
+                delta_t,
+                temp_ext_air,
+                gains_internal,
+                gains_solar,
+                gains_heat_cool,
+                frac_conv_gains_heat_cool,
+                temp_setpnt_heat,
+                temp_setpnt_cool,
+                temp_setpnt_cool_vent,
+                temp_operative_free,
+                temp_int_air_free,
+                ach_args,
+                avg_air_supply_temp,
+                &self.temp_prev.read(),
+                self.no_of_temps,
+                &self.building_elements,
+                &self.element_positions,
+                simulation_time_iteration,
+                self.zone_idx,
+                self.area_el_total,
+                self.volume,
+                self.c_int,
+                self.tb_heat_trans_coeff,
+                self.print_heat_balance,
+            );
+
+        // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
+        // Determine maximum heating/cooling
+        let (temp_setpnt, heat_cool_load_upper, frac_convective) =
+            if temp_operative_free > temp_setpnt_cool {
+                // Cooling
+                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+                //      Could max. power be available at this point for all heating/cooling systems?
+                (temp_setpnt_cool, -10. * self.area(), frac_convective_cool)
+            } else if temp_operative_free < temp_setpnt_heat {
+                // Heating
+                // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
+                //      Could max. power be available at this point for all heating/cooling systems?
+                (temp_setpnt_heat, 10. * self.area(), frac_convective_heat)
+            } else {
+                return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
+            };
+
+        // Calculate node and internal air temperatures with maximum heating/cooling
+        let gains_heat_cool_upper = gains_heat_cool + heat_cool_load_upper;
+        let frac_convective_heat_cool_upper = (gains_heat_cool * frac_conv_gains_heat_cool
+            + heat_cool_load_upper * frac_convective)
+            / gains_heat_cool_upper;
+        let (temp_vector_upper_heat_cool, _) = calc_temperatures(
+            delta_t,
+            &self.temp_prev.read(),
+            temp_ext_air,
+            gains_internal,
+            gains_solar,
+            gains_heat_cool_upper,
+            frac_convective_heat_cool_upper,
+            ach_cooling,
+            avg_air_supply_temp,
+            self.no_of_temps,
+            &self.building_elements,
+            &self.element_positions,
+            &simulation_time_iteration,
+            self.zone_idx,
+            self.area_el_total,
+            self.volume,
+            self.c_int,
+            self.tb_heat_trans_coeff,
+            self.print_heat_balance,
+        );
+
+        // Calculate internal operative temperature with maximum heating/cooling
+        let temp_operative_upper = temp_operative(
+            &temp_vector_upper_heat_cool,
+            &self.building_elements,
+            &self.element_positions,
+            self.area_el_total,
+            self.zone_idx,
+        );
+
+        // Calculate heating (positive) or cooling (negative) required to reach setpoint
+        let heat_cool_demand = Zone::interp_heat_cool_demand(
+            delta_t_h,
+            temp_setpnt,
+            heat_cool_load_upper,
+            temp_operative_free,
+            temp_operative_upper,
+        )?;
+
+        let mut space_heat_demand = 0.0;
+        let mut space_cool_demand = 0.0;
+        if heat_cool_demand < 0.0 {
+            space_cool_demand = heat_cool_demand;
+        } else if heat_cool_demand > 0.0 {
+            space_heat_demand = heat_cool_demand;
+        }
+
+        Ok((
+            space_heat_demand,
+            space_cool_demand,
+            ach_cooling,
+            ach_to_trigger_heating,
+        ))
     }
 
     /// Update node and internal air temperatures for calculation of next timestep
@@ -983,227 +1132,6 @@ const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;
 // # Assume default convective fraction for heating/cooling suggested in
 // # BS EN ISO 52016-1:2017 Table B.11
 const FRAC_CONVECTIVE: f64 = 0.4;
-
-/// Calculate heating and cooling demand in the zone for the current timestep
-///
-/// According to the procedure in BS EN ISO 52016-1:2017, section 6.5.5.2, steps 1 to 4.
-///
-/// # Arguments
-/// * `delta_t_h` - calculation timestep, in hours
-/// * `temp_ext_air` - temperature of the external air for the current timestep, in deg C
-/// * `gains_internal` - internal gains for the current timestep, in W
-/// * `gains_solar` - directly transmitted solar gains, in W
-/// * `frac_convective_heat` - convective fraction for heating
-/// * `frac_convective_cool` - convective fraction for cooling
-/// * `temp_setpnt_heat` - temperature setpoint for heating, in deg C
-/// * `temp_setpnt_cool` - temperature setpoint for cooling, in deg C
-/// * `throughput_factor` - proportional increase in ventilation rate due to
-///                         over-ventilation requirement
-/// * `vent_cool_extra` - (optional) window cooling
-/// * `a simulation_time`
-pub(crate) fn space_heat_cool_demand(
-    delta_t_h: f64,
-    temp_ext_air: f64,
-    gains_internal: f64,
-    gains_solar: f64,
-    frac_convective_heat: f64,
-    frac_convective_cool: f64,
-    temp_setpnt_heat: f64,
-    temp_setpnt_cool: f64,
-    avg_air_supply_temp: f64,
-    gains_heat_cool_convective: Option<f64>,
-    gains_heat_cool_radiative: Option<f64>,
-    ach_args: AirChangesPerHourArgument,
-    building_elements: &[NamedBuildingElement],
-    element_positions: &[(usize, usize)],
-    simulation_time: &SimulationTimeIteration,
-    temp_prev: &[f64],
-    no_of_temps: usize,
-    area_el_total: f64,
-    area: f64,
-    volume: f64,
-    c_int: f64,
-    tb_heat_trans_coeff: f64,
-    passed_zone_idx: usize,
-    control: Option<Arc<Control>>,
-    print_heat_balance: bool,
-) -> anyhow::Result<(f64, f64, f64, Option<f64>)> {
-    let gains_heat_cool_convective = gains_heat_cool_convective.unwrap_or(0.0);
-    let gains_heat_cool_radiative = gains_heat_cool_radiative.unwrap_or(0.0);
-
-    if temp_setpnt_cool < temp_setpnt_heat {
-        bail!("Cooling setpoint is below heating setpoint.");
-    }
-
-    let temp_setpnt_cool_vent = if let Some(control) = control {
-        let temp_setpnt_cool_vent_response = control
-            .setpnt(simulation_time)
-            .unwrap_or_else(|| kelvin_to_celsius(1.4e32).expect("Not below absolute zero"));
-        if temp_setpnt_cool_vent_response < temp_setpnt_heat {
-            bail!("Setpoint for additional ventilation is below heating setpoint.");
-        }
-        temp_setpnt_cool_vent_response
-    } else {
-        kelvin_to_celsius(1.4e32).expect("Not below absolute zero")
-    };
-
-    if temp_setpnt_cool_vent < temp_setpnt_heat {
-        bail!("Cooling ventilation setpoint is below heating setpoint.");
-    }
-
-    // Calculate timestep in seconds
-    let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
-
-    // For calculation of demand, set heating/cooling gains to zero
-    let gains_heat_cool = gains_heat_cool_convective + gains_heat_cool_radiative;
-    let frac_conv_gains_heat_cool = if gains_heat_cool == 0.0 {
-        0.0
-    } else {
-        gains_heat_cool_convective / gains_heat_cool
-    };
-
-    // Calculate node and internal air temperatures with heating/cooling gains of zero
-    let (temp_vector_no_heat_cool, _) = calc_temperatures(
-        delta_t,
-        temp_prev,
-        temp_ext_air,
-        gains_internal,
-        gains_solar,
-        gains_heat_cool,
-        frac_conv_gains_heat_cool,
-        match ach_args {
-            AirChangesPerHourArgument::Cooling { ach_cooling } => ach_cooling,
-            AirChangesPerHourArgument::TargetAndWindowsOpen { ach_target, .. } => ach_target,
-        },
-        avg_air_supply_temp,
-        no_of_temps,
-        building_elements,
-        element_positions,
-        simulation_time,
-        passed_zone_idx,
-        area_el_total,
-        volume,
-        c_int,
-        tb_heat_trans_coeff,
-        print_heat_balance,
-    );
-
-    // Calculate internal operative temperature at free-floating conditions
-    // i.e. with no heating/cooling
-    let temp_operative_free = temp_operative(
-        &temp_vector_no_heat_cool,
-        building_elements,
-        element_positions,
-        area_el_total,
-        passed_zone_idx,
-    );
-    let temp_int_air_free = temp_vector_no_heat_cool[passed_zone_idx];
-
-    let (temp_operative_free, ach_cooling, ach_to_trigger_heating) =
-        Zone::calc_cooling_potential_from_ventilation(
-            delta_t,
-            temp_ext_air,
-            gains_internal,
-            gains_solar,
-            gains_heat_cool,
-            frac_conv_gains_heat_cool,
-            temp_setpnt_heat,
-            temp_setpnt_cool,
-            temp_setpnt_cool_vent,
-            temp_operative_free,
-            temp_int_air_free,
-            ach_args,
-            avg_air_supply_temp,
-            temp_prev,
-            no_of_temps,
-            building_elements,
-            element_positions,
-            *simulation_time,
-            passed_zone_idx,
-            area_el_total,
-            volume,
-            c_int,
-            tb_heat_trans_coeff,
-            print_heat_balance,
-        );
-
-    // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
-    // Determine maximum heating/cooling
-    let (temp_setpnt, heat_cool_load_upper, frac_convective) =
-        if temp_operative_free > temp_setpnt_cool {
-            // Cooling
-            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-            //      Could max. power be available at this point for all heating/cooling systems?
-            (temp_setpnt_cool, -10. * area, frac_convective_cool)
-        } else if temp_operative_free < temp_setpnt_heat {
-            // Heating
-            // TODO (from Python) Implement eqn 26 "if max power available" case rather than just "otherwise" case?
-            //      Could max. power be available at this point for all heating/cooling systems?
-            (temp_setpnt_heat, 10. * area, frac_convective_heat)
-        } else {
-            return Ok((0.0, 0.0, ach_cooling, ach_to_trigger_heating));
-        };
-
-    // Calculate node and internal air temperatures with maximum heating/cooling
-    let gains_heat_cool_upper = gains_heat_cool + heat_cool_load_upper;
-    let frac_convective_heat_cool_upper = (gains_heat_cool * frac_conv_gains_heat_cool
-        + heat_cool_load_upper * frac_convective)
-        / gains_heat_cool_upper;
-    let (temp_vector_upper_heat_cool, _) = calc_temperatures(
-        delta_t,
-        temp_prev,
-        temp_ext_air,
-        gains_internal,
-        gains_solar,
-        gains_heat_cool_upper,
-        frac_convective_heat_cool_upper,
-        ach_cooling,
-        avg_air_supply_temp,
-        no_of_temps,
-        building_elements,
-        element_positions,
-        simulation_time,
-        passed_zone_idx,
-        area_el_total,
-        volume,
-        c_int,
-        tb_heat_trans_coeff,
-        print_heat_balance,
-    );
-
-    // Calculate internal operative temperature with maximum heating/cooling
-    let temp_operative_upper = temp_operative(
-        &temp_vector_upper_heat_cool,
-        building_elements,
-        element_positions,
-        area_el_total,
-        passed_zone_idx,
-    );
-
-    // Calculate heating (positive) or cooling (negative) required to reach setpoint
-    let heat_cool_demand = Zone::interp_heat_cool_demand(
-        delta_t_h,
-        temp_setpnt,
-        heat_cool_load_upper,
-        temp_operative_free,
-        temp_operative_upper,
-    )?;
-
-    let mut space_heat_demand = 0.0;
-    let mut space_cool_demand = 0.0;
-    if heat_cool_demand < 0.0 {
-        space_cool_demand = heat_cool_demand;
-    } else if heat_cool_demand > 0.0 {
-        space_heat_demand = heat_cool_demand;
-    }
-
-    Ok((
-        space_heat_demand,
-        space_cool_demand,
-        ach_cooling,
-        ach_to_trigger_heating,
-    ))
-}
 
 /// Calculate temperatures according to procedure in BS EN ISO 52016-1:2017, section 6.5.6
 //
