@@ -1,12 +1,12 @@
 use crate::{
     core::{
-        controls::time_control::{ChargeControl, Control, SetpointTimeControl},
+        controls::time_control::{ChargeControl, SetpointTimeControl},
         energy_supply::energy_supply::EnergySupplyConnection,
         space_heat_demand::zone::Zone,
     },
     external_conditions::ExternalConditions,
     input::ElectricStorageHeaterAirFlowType,
-    simulation_time::SimulationTime,
+    simulation_time::{SimulationTime, SimulationTimeIteration},
 };
 
 #[derive(Debug)]
@@ -29,6 +29,11 @@ pub struct ElecStorageHeater {
     esh_max_output: Vec<(f64, f64)>,
     demand_met: f64,
     demand_unmet: f64,
+    // TODO review - do we need these public properties?
+    pub energy_for_fan: f64,
+    pub energy_instant: f64,
+    pub energy_charged: f64,
+    pub energy_delivered: f64
 }
 
 impl ElecStorageHeater {
@@ -96,7 +101,27 @@ impl ElecStorageHeater {
             // soc_min_array
             // power_min_array
             // TODO ...
+            energy_for_fan: 0.,
+            energy_instant: 0.,
+            energy_charged: 0.,
+            energy_delivered: 0.
         }
+    }
+
+    pub fn energy_output_min(&self, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
+        todo!()
+    }
+
+    pub fn energy_output_max(&self, simulation_time_iteration: &SimulationTimeIteration) -> (f64, f64, f64, f64) {
+        todo!()
+    }
+    
+    pub fn demand_energy(&self, energy_demand: f64, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
+        todo!()
+    }
+
+    pub fn target_electric_charge(&self, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
+        todo!()
     }
 }
 
@@ -111,6 +136,7 @@ mod tests {
         input::{ControlLogicType, ExternalSensor},
         simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
     };
+    use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
     use serde_json::json;
     use super::*;
@@ -266,7 +292,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
-        external_conditions: ExternalConditions,
+        elec_storage_heater: ElecStorageHeater
     ) {
         // Test minimum energy output calculation across all timesteps.
 
@@ -297,9 +323,172 @@ mod tests {
             0.008146626650951819,
         ]; // Actual minimum energy output for each timestep
 
-        for t_idx in simulation_time_iterator.enumerate() {
-            // TODO
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let min_energy_output = elec_storage_heater.energy_output_min(&t_it);
+
+            // TODO is this line needed?
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+
+            assert_relative_eq!(min_energy_output, expected_min_energy_output[t_idx]);
         }
         assert!(false);
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    fn test_energy_output_max(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    ) {
+        // Test maximum energy output calculation across all timesteps.
+        let expected_max_energy_output = [
+            1.5, 1.772121660521405, 2.2199562136927717, 2.5517202117781994,
+            2.7913851590672585, 2.7899999999999996, 2.8200000000000003, 2.4000000000000004,
+            2.463423313846487, 1.8249489529640162, 1.3519554011630448, 1.0015529506734968,
+            0.7419686857505708, 0.5496640579327374, 0.40720123344887615, 0.30166213975932143,
+            0.6996897293886958, 1.3814284569589004, 1.5, 1.5,
+            1.3009346098448467, 0.9637557636923015, 0.713967931076402, 0.5289205810615784
+        ]; // Expected max energy output for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let max_energy_output = elec_storage_heater.energy_output_max(&t_it);
+
+            // TODO is this line needed
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let (energy, _, _, _) = max_energy_output;
+
+            assert_relative_eq!(energy, expected_max_energy_output[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    fn test_electric_charge(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater) {
+            // Test electric charge calculation across all timesteps.
+            let expected_target_elec_charge = [
+            0.5, 1.0, 0.99, 0.98,
+            0.95, 0.93, 0.9400000000000001, 0.8,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.5, 0.5, 0.5, 0.5,
+            0.0, 0.0, 0.0, 0.0 
+        ]; // Expected target charge for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let target_elec_charge = elec_storage_heater.target_electric_charge(&t_it);
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_demand_energy(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    ) {
+        let expected_energy = [
+            4.0, 4.272121660521405, 4.719956213692772, 5.0,
+            5.0, 5.0, 5.0, 4.9,
+            4.963423313846487, 4.324948952964016, 3.851955401163045, 3.5015529506734966,
+            3.241968685750571, 3.0496640579327376, 2.907201233448876, 2.8016621397593213,
+            3.199689729388696, 3.8814284569589006, 4.0, 4.0,
+            3.8009346098448464, 3.4637557636923013, 3.213967931076402, 3.0289205810615782
+        ]; // Expected energy for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let energy_out = elec_storage_heater.demand_energy(5.0, &t_it);
+            assert_relative_eq!(energy_out, expected_energy[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_energy_for_fan(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    ) {
+        let expected_energy_for_fan = [
+            0.003666666666666666, 0.002707621094790285, 0.0019580976410457644, 0.0018707482993197276,
+            0.0019298245614035089, 0.0019713261648745518, 0.001950354609929078, 0.0022916666666666662,
+            0.0021220628632204496, 0.002233750362976654, 0.0023578475867206904, 0.0024965444862427343,
+            0.0026525785014320812, 0.0028294170564121318, 0.003031518268419362, 0.0032647119841350417,
+            0.003666666666666666, 0.003666666666666666, 0.003666666666666666, 0.003666666666666666,
+            0.0021220628632204505, 0.0022337503629766544, 0.0023578475867206913, 0.002496544486242736
+        ]; // Expected energy for fan for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let energy_for_fan = elec_storage_heater.energy_for_fan;
+            assert_relative_eq!(energy_for_fan, expected_energy_for_fan[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_energy_instant(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    ) {
+        let expected_energy_instant = [
+            2.5, 2.5, 2.5, 2.4482797882218006,
+            2.208614840932741, 2.2100000000000004, 2.18, 2.5,
+            2.5, 2.5, 2.5, 2.5,
+            2.5, 2.5, 2.5, 2.5,
+            2.5, 2.5, 2.5, 2.5,
+            2.5, 2.5, 2.5, 2.5
+        ]; // Expected backup energy instant for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let energy_instant = elec_storage_heater.energy_instant;
+            assert_relative_eq!(energy_instant, expected_energy_instant[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_energy_charged(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    ) {
+        let expected_energy_charged = [
+            1.5, 3.500000000000001, 3.5, 3.5,
+            3.3397997646920756, 2.7899999999999996, 2.82, 2.4000000000000004,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            3.500000000000001, 2.738269398472182, 1.5, 1.5,
+            0.0, 0.0, 0.0, 0.0
+        ]; // Expected energy charged for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let energy_charged = elec_storage_heater.energy_charged;
+            assert_relative_eq!(energy_charged, expected_energy_charged[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_energy_stored_delivered(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater
+    )
+    {
+        let expected_energy_delivered = [
+            1.5, 1.772121660521405, 2.219956213692772, 2.5517202117781994,
+            2.791385159067259, 2.7899999999999996, 2.82, 2.4000000000000004,
+            2.4634233138464876, 1.8249489529640166, 1.3519554011630448, 1.0015529506734968,
+            0.7419686857505706, 0.5496640579327375, 0.4072012334488761, 0.30166213975932155,
+            0.6996897293886956, 1.3814284569589008, 1.5, 1.5,
+            1.300934609844847, 0.9637557636923016, 0.713967931076402, 0.5289205810615786
+        ]; // Expected energy stored delivered for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let energy_delivered = elec_storage_heater.energy_delivered;
+            assert_relative_eq!(energy_delivered, expected_energy_delivered[t_idx]);
+        }
     }
 }
