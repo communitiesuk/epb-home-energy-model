@@ -838,7 +838,7 @@ impl Corpus {
         temp_int_air: f64,
         temp_ext_air: f64,
         r_v_arg: f64,
-        r_w_arg: f64,
+        r_w_arg: Option<f64>,
         initial_p_z_ref_guess: f64,
         reporting_flag: ReportingFlag,
         internal_pressure_window: &mut HashMap<ReportingFlag, f64>,
@@ -852,7 +852,7 @@ impl Corpus {
                 temp_int_air,
                 temp_ext_air,
                 r_v_arg,
-                Some(r_w_arg),
+                r_w_arg,
                 simtime,
             )?
         } else {
@@ -863,7 +863,7 @@ impl Corpus {
                 temp_int_air,
                 temp_ext_air,
                 r_v_arg,
-                Some(r_w_arg),
+                r_w_arg,
                 simtime,
             )?
         };
@@ -919,7 +919,7 @@ impl Corpus {
             temp_int_air,
             temp_ext_air,
             self.r_v_arg.load(Ordering::SeqCst),
-            0.,
+            Some(0.),
             0.,
             ReportingFlag::Min,
             internal_pressure_window,
@@ -933,7 +933,7 @@ impl Corpus {
             temp_int_air,
             temp_ext_air,
             self.r_v_arg.load(Ordering::SeqCst),
-            1.,
+            Some(1.),
             0.,
             ReportingFlag::Max,
             internal_pressure_window,
@@ -3290,7 +3290,7 @@ pub(crate) struct CompletedVentilationLeaks {
 }
 
 impl CompletedVentilationLeaks {
-    fn complete_input(
+    pub(crate) fn complete_input(
         input: &InfiltrationVentilationInput,
         area_facades: f64,
         area_roof: f64,
