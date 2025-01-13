@@ -1235,7 +1235,6 @@ mod tests {
 
     // in Python this test is called test_energy_output_max_service_on
     #[rstest]
-    #[ignore = "TODO get expected value from python or remove this test"]
     fn test_energy_output_max_service_on_for_space(
         battery_control_on: Control,
         simulation_time_iteration: SimulationTimeIteration,
@@ -1261,7 +1260,7 @@ mod tests {
             simulation_time_iteration,
         );
 
-        assert_relative_eq!(result, 0.);
+        assert_relative_eq!(result, 4.037907837701614);
     }
 
     // in Python this test is called test_energy_output_max_service_off
