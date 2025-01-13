@@ -22,7 +22,7 @@ field_types = "1.1.0"
 formatx = "0.2.3"
 indexmap = { version = "2.7.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.9", optional = true }
-interp = "2.0.1"
+interp = "2.0.2"
 is_close = "0.1.3"
 itertools = "0.14.0"
 log = "0.4.22"
