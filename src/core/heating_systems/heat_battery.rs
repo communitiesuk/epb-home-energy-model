@@ -203,73 +203,6 @@ impl HeatBatteryServiceSpace {
     }
 }
 
-// TODO - check upstream whether it's an error that these numbers are not used
-const _LABS_TESTS_RATED_OUTPUT: [[f64; 2]; 21] = [
-    [0.0, 0.0],
-    [0.08, 0.00],
-    [0.16, 0.03],
-    [0.17, 0.05],
-    [0.19, 0.10],
-    [0.21, 0.15],
-    [0.23, 0.21],
-    [0.25, 0.23],
-    [0.28, 0.26],
-    [0.31, 0.29],
-    [0.34, 0.32],
-    [0.38, 0.36],
-    [0.42, 0.41],
-    [0.47, 0.45],
-    [0.52, 0.51],
-    [0.58, 0.57],
-    [0.64, 0.64],
-    [0.72, 0.71],
-    [0.8, 0.8],
-    [0.89, 0.89],
-    [1.0, 1.0],
-];
-
-const LABS_TESTS_RATED_OUTPUT_ENHANCED: [[f64; 2]; 16] = [
-    [0.0, 0.0],
-    [0.101, 0.0],
-    [0.12, 0.18],
-    [0.144, 0.235],
-    [0.175, 0.313],
-    [0.215, 0.391],
-    [0.266, 0.486],
-    [0.328, 0.607],
-    [0.406, 0.728],
-    [0.494, 0.795],
-    [0.587, 0.825],
-    [0.683, 0.875],
-    [0.781, 0.906],
-    [0.891, 0.953],
-    [0.981, 0.992],
-    [1.0, 1.0],
-];
-
-const LABS_TESTS_LOSSES: [[f64; 2]; 20] = [
-    [0.0, 0.0],
-    [0.16, 0.13],
-    [0.17, 0.15],
-    [0.19, 0.17],
-    [0.21, 0.18],
-    [0.23, 0.21],
-    [0.25, 0.23],
-    [0.28, 0.26],
-    [0.31, 0.29],
-    [0.34, 0.32],
-    [0.38, 0.36],
-    [0.42, 0.41],
-    [0.47, 0.45],
-    [0.52, 0.51],
-    [0.58, 0.57],
-    [0.64, 0.64],
-    [0.72, 0.71],
-    [0.8, 0.8],
-    [0.89, 0.89],
-    [1.0, 1.0],
-];
-
 const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
 
 // nothing seems to read this - check upstream whether service_results field is necessary
@@ -303,6 +236,10 @@ pub struct HeatBattery {
     q_in_ts: Option<f64>,
     q_out_ts: Option<f64>,
     q_loss_ts: Option<f64>,
+    // TODO - check upstream whether it's an error that these numbers are not used
+    labs_tests_rated_output: Vec<(f64, f64)>,
+    labs_tests_rated_output_enhanced: Vec<(f64, f64)>,
+    labs_tests_losses: Vec<(f64, f64)>,
 }
 
 impl HeatBattery {
@@ -321,6 +258,9 @@ impl HeatBattery {
             power_circ_pump,
             power_standby,
             n_units,
+            labs_tests_rated_output,
+            labs_tests_rated_output_enhanced,
+            labs_tests_losses,
             ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
             rated_charge_power: pwr_in,
@@ -330,6 +270,9 @@ impl HeatBattery {
             electricity_circ_pump: power_circ_pump,
             electricity_standby: power_standby,
             number_of_units: n_units,
+            labs_tests_rated_output,
+            labs_tests_rated_output_enhanced,
+            labs_tests_losses,
             ..
         } = heat_battery_details
         {
@@ -341,6 +284,9 @@ impl HeatBattery {
                 *power_circ_pump,
                 *power_standby,
                 *n_units,
+                labs_tests_rated_output.clone(),
+                labs_tests_rated_output_enhanced.clone(),
+                labs_tests_losses.clone(),
             )
         } else {
             unreachable!()
@@ -366,6 +312,9 @@ impl HeatBattery {
             q_in_ts: Default::default(),
             q_out_ts: Default::default(),
             q_loss_ts: Default::default(),
+            labs_tests_rated_output,
+            labs_tests_rated_output_enhanced,
+            labs_tests_losses,
         }
     }
 
@@ -453,26 +402,30 @@ impl HeatBattery {
 
     fn lab_test_rated_output(&self, charge_level: f64) -> f64 {
         // labs_test for heat battery
-        let x = LABS_TESTS_RATED_OUTPUT_ENHANCED
+        let x = self
+            .labs_tests_rated_output_enhanced
             .iter()
-            .map(|row| row[0])
+            .map(|row| row.0)
             .collect::<Vec<_>>();
-        let y = LABS_TESTS_RATED_OUTPUT_ENHANCED
+        let y = self
+            .labs_tests_rated_output_enhanced
             .iter()
-            .map(|row| row[1])
+            .map(|row| row.1)
             .collect::<Vec<_>>();
 
         np_interp(charge_level, &x, &y) * self.max_rated_heat_output
     }
 
     fn lab_test_losses(&self, charge_level: f64) -> f64 {
-        let x = LABS_TESTS_LOSSES
+        let x = self
+            .labs_tests_losses
             .iter()
-            .map(|row| row[0])
+            .map(|row| row.0)
             .collect::<Vec<_>>();
-        let y = LABS_TESTS_LOSSES
+        let y = self
+            .labs_tests_losses
             .iter()
-            .map(|row| row[1])
+            .map(|row| row.1)
             .collect::<Vec<_>>();
         np_interp(charge_level, &x, &y) * self.max_rated_losses
     }
@@ -863,6 +816,68 @@ mod tests {
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         control: Control,
     ) -> Arc<Mutex<HeatBattery>> {
+        let labs_tests_rated_output = vec![
+            (0.0, 0.0),
+            (0.08, 0.00),
+            (0.17, 0.05),
+            (0.19, 0.10),
+            (0.21, 0.15),
+            (0.23, 0.21),
+            (0.25, 0.23),
+            (0.28, 0.26),
+            (0.31, 0.29),
+            (0.34, 0.32),
+            (0.38, 0.36),
+            (0.42, 0.41),
+            (0.47, 0.45),
+            (0.52, 0.51),
+            (0.58, 0.57),
+            (0.64, 0.64),
+            (0.72, 0.71),
+            (0.8, 0.8),
+            (0.89, 0.89),
+            (1.0, 1.0),
+        ];
+        let labs_tests_rated_output_enhanced = vec![
+            (0.0, 0.0),
+            (0.101, 0.0),
+            (0.12, 0.18),
+            (0.144, 0.235),
+            (0.175, 0.313),
+            (0.215, 0.391),
+            (0.266, 0.486),
+            (0.328, 0.607),
+            (0.406, 0.728),
+            (0.494, 0.795),
+            (0.587, 0.825),
+            (0.683, 0.875),
+            (0.781, 0.906),
+            (0.891, 0.953),
+            (0.981, 0.992),
+            (1.0, 1.0),
+        ];
+        let labs_tests_losses = vec![
+            (0.0, 0.),
+            (0.16, 0.13),
+            (0.17, 0.15),
+            (0.19, 0.17),
+            (0.21, 0.18),
+            (0.23, 0.21),
+            (0.25, 0.23),
+            (0.28, 0.26),
+            (0.31, 0.29),
+            (0.34, 0.32),
+            (0.38, 0.36),
+            (0.42, 0.41),
+            (0.47, 0.45),
+            (0.52, 0.51),
+            (0.58, 0.57),
+            (0.64, 0.64),
+            (0.72, 0.71),
+            (0.8, 0.8),
+            (0.89, 0.89),
+            (1.0, 1.0),
+        ];
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
             energy_supply: "mains elec".to_string(),
             heat_battery_location: HeatSourceLocation::Internal,
@@ -874,9 +889,9 @@ mod tests {
             max_rated_losses: 0.22,
             number_of_units: 1,
             control_charge: "hb_charge_control".into(),
-            labs_tests_rated_output: Default::default(),
-            labs_tests_rated_output_enhanced: Default::default(),
-            labs_tests_losses: Default::default(),
+            labs_tests_rated_output,
+            labs_tests_rated_output_enhanced,
+            labs_tests_losses,
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(
@@ -1066,31 +1081,52 @@ mod tests {
 
     // In Python this is test_energy_output_max_service_on
     #[rstest]
-    #[ignore = "ignore while migrating to 0.32"]
     fn test_energy_output_max_when_service_control_on_for_water_regular(
-        _simulation_time_iteration: SimulationTimeIteration,
-        _simulation_time_iterator: Arc<SimulationTimeIterator>,
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
     ) {
-        // let temp_return = 40.;
-        // let battery_control_on = Control::ChargeControl(ChargeControl {
-        //     schedule: vec![true],
-        //     start_day: 0,
-        //     time_series_step: 1.,
-        //     charge_level: vec![1.5, 1.6], // these values change the result
-        // });
-        // let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        // let service_control_on = None;
-        // let heat_battery_service: HeatBatteryServiceWaterRegular =
-        //     HeatBatteryServiceWaterRegular::new(
-        //         heat_battery,
-        //         SERVICE_NAME.into(),
-        //         TEMP_HOT_WATER,
-        //         service_control_on,
-        //     );
-        //
-        // let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
-        //
-        // assert_relative_eq!(result, 5.637774816176471);
+        let temp_return = 40.;
+        let battery_control_on: Control = Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Manual,
+                vec![true, true, true],
+                1.,
+                0,
+                1.,
+                vec![1.5, 1.6], // these values change the result
+                None,
+                None,
+                None,
+                None,
+                external_conditions.into(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        );
+        let control_min = create_setpoint_time_control(vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ]);
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let heat_battery_service: HeatBatteryServiceWaterRegular =
+            HeatBatteryServiceWaterRegular::new(
+                heat_battery,
+                SERVICE_NAME.into(),
+                None,
+                Some(Arc::new(control_min)),
+            );
+
+        let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
+
+        assert_relative_eq!(result, 5.637774816176471);
     }
 
     #[rstest]
@@ -1197,10 +1233,64 @@ mod tests {
         assert_eq!(result, 0.);
     }
 
-    // NOTE - in Rust we don't have energy_output_max on the HeatBatteryServiceSpace
-    // so the following tests are not implemented here:
-    // test_energy_output_max_service_on_for_space
-    // test_energy_output_max_service_off_for_space
+    // in Python this test is called test_energy_output_max_service_on
+    #[rstest]
+    #[ignore = "TODO get expected value from python or remove this test"]
+    fn test_energy_output_max_service_on_for_space(
+        battery_control_on: Control,
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let temp_output = 70.;
+        let temp_return = 40.;
+        let time_start = 0.1;
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let service_control_on: Control =
+            create_setpoint_time_control(vec![Some(21.0), Some(21.0)]);
+
+        let heat_battery_service: HeatBatteryServiceSpace = HeatBatteryServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            service_control_on.into(),
+        );
+
+        let result = heat_battery_service.energy_output_max(
+            temp_output,
+            temp_return,
+            Some(time_start),
+            simulation_time_iteration,
+        );
+
+        assert_relative_eq!(result, 0.);
+    }
+
+    // in Python this test is called test_energy_output_max_service_off
+    #[rstest]
+    fn test_energy_output_max_service_off_for_space(
+        battery_control_on: Control,
+        simulation_time_iteration: SimulationTimeIteration,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        let temp_output = 70.;
+        let temp_return = 40.;
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let service_control_off: Control = create_setpoint_time_control(vec![None]);
+
+        let heat_battery_service: HeatBatteryServiceSpace = HeatBatteryServiceSpace::new(
+            heat_battery,
+            SERVICE_NAME.into(),
+            service_control_off.into(),
+        );
+
+        let result = heat_battery_service.energy_output_max(
+            temp_output,
+            temp_return,
+            None,
+            simulation_time_iteration,
+        );
+
+        assert_relative_eq!(result, 0.);
+    }
 
     #[rstest]
     fn test_create_service_connection(
@@ -1347,72 +1437,104 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "ignore while migrating to 0.32"]
-    fn test_timestep_end(_simulation_time_iterator: Arc<SimulationTimeIterator>) {
-        // // not using the fixture here
-        // // because we need to set different charge_levels
-        // let battery_control_on: Control = Control::ChargeControl(ChargeControl {
-        //     schedule: vec![true, true, true],
-        //     start_day: 0,
-        //     time_series_step: 1.,
-        //     charge_level: vec![1.0, 1.5],
-        // });
-        //
-        // let heat_battery =
-        //     create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
-        // let service_name = "new_timestep_end_service";
-        // HeatBattery::create_service_connection(heat_battery.clone(), service_name).unwrap();
-        //
-        // let t_idx = 0;
-        // heat_battery
-        //     .lock()
-        //     .demand_energy(service_name, ServiceType::WaterRegular, 5.0, 40., t_idx);
-        //
-        // assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
-        // assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
-        // assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.03929547794117647);
-        // assert_relative_eq!(
-        //     heat_battery.lock().total_time_running_current_timestep,
-        //     0.8868747268254661
-        // );
-        //
-        // let service_names_in_results = get_service_names_from_results(heat_battery.clone());
-        //
-        // assert!(service_names_in_results.contains(&service_name.into()));
-        //
-        // heat_battery.lock().timestep_end(t_idx);
-        //
-        // assert!(!heat_battery.lock().flag_first_call);
-        // assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
-        // assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
-        // assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
-        // assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 0.0);
-        // assert_eq!(heat_battery.lock().service_results.len(), 0);
+    fn test_timestep_end(
+        external_sensor: ExternalSensor,
+        external_conditions: ExternalConditions,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+    ) {
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Control = Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Manual,
+                vec![true, true, true],
+                1.,
+                0,
+                1.,
+                vec![1.0, 1.5],
+                None,
+                None,
+                None,
+                None,
+                external_conditions.into(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        );
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let service_name = "new_timestep_end_service";
+        HeatBattery::create_service_connection(heat_battery.clone(), service_name).unwrap();
+
+        let t_idx = 0;
+        heat_battery.lock().demand_energy(
+            service_name,
+            ServiceType::WaterRegular,
+            5.0,
+            40.,
+            None,
+            None,
+            t_idx,
+        );
+
+        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
+        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.03929547794117647);
+        assert_relative_eq!(
+            heat_battery.lock().total_time_running_current_timestep,
+            0.8868747268254661
+        );
+
+        let service_names_in_results = get_service_names_from_results(heat_battery.clone());
+
+        assert!(service_names_in_results.contains(&service_name.into()));
+
+        heat_battery.lock().timestep_end(t_idx);
+
+        assert!(!heat_battery.lock().flag_first_call);
+        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
+        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
+        assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 0.0);
+        assert_eq!(heat_battery.lock().service_results.len(), 0);
     }
 
     #[rstest]
-    #[ignore = "ignore while migrating to 0.32"]
     fn test_energy_output_max(
-        _simulation_time_iterator: Arc<SimulationTimeIterator>,
-        _simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+        external_sensor: ExternalSensor,
+        simulation_time_iterator: Arc<SimulationTimeIterator>,
+        simulation_time: SimulationTime,
     ) {
-        // // not using the fixture here
-        // // because we need to set different charge_levels
-        // let battery_control_on: Control = Control::ChargeControl(ChargeControl {
-        //     schedule: vec![true, true, true],
-        //     start_day: 0,
-        //     time_series_step: 1.,
-        //     charge_level: vec![1.5, 1.6],
-        // });
-        // let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        //
-        // for (t_idx, _) in simulation_time.iter().enumerate() {
-        //     assert_relative_eq!(
-        //         heat_battery.lock().energy_output_max(0.0),
-        //         [5.637774816176471, 11.13482970854502][t_idx]
-        //     );
-        //
-        //     heat_battery.lock().timestep_end(t_idx);
-        // }
+        // not using the fixture here
+        // because we need to set different charge_levels
+        let battery_control_on: Control = Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Manual,
+                vec![true, true, true],
+                1.,
+                0,
+                1.,
+                vec![1.5, 1.6], // these values change the result
+                None,
+                None,
+                None,
+                None,
+                external_conditions.into(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        );
+
+        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                heat_battery.lock().energy_output_max(Some(0.), None),
+                [5.637774816176471, 11.13482970854502][t_idx]
+            );
+
+            heat_battery.lock().timestep_end(t_idx);
+        }
     }
 }
