@@ -228,7 +228,7 @@ fn wind_speed_at_zone_level(
 
 /// Determine difference between two bearings, taking shortest route around circle
 fn orientation_difference(orientation1: f64, orientation2: f64) -> f64 {
-    if (orientation1 < 0. || orientation1 > 360.) || (orientation2 < 0. || orientation2 > 360.) {
+    if !(0. ..=360.).contains(&orientation1) || !(0. ..=360.).contains(&orientation2) {
         panic!("Orientation values must be between 0 and 360 degrees"); // panicking here, but we should be able to previously enforce this constraint
     }
     let op_rel_orientation = (orientation1 - orientation2).abs();
@@ -317,11 +317,11 @@ fn get_c_p_path_from_pitch_and_orientation(
 /// * `f_cross` - boolean, dependant on if cross ventilation is possible or not
 /// * `shield_class` - indicates exposure to wind
 /// * `relative_airflow_path_height` - height of air flow path relative to ground (m)
-/// h_path - height of flow path (m)
-/// wind_direction -- direction the wind is blowing (degrees)
-/// orientation -- orientation of the facade (degrees)
-/// pitch -- pitch of the facade (degrees)
-/// facade_direction -- direction of the facade (from get_facade_direction or manual entry)
+/// * `h_path` - height of flow path (m)
+/// * `wind_direction` - direction the wind is blowing (degrees)
+/// * `orientation` - orientation of the facade (degrees)
+/// * `pitch` - pitch of the facade (degrees)
+/// * `facade_direction` - direction of the facade (from get_facade_direction or manual entry)
 fn get_c_p_path(
     f_cross: bool,
     shield_class: VentilationShieldClass,
@@ -2171,10 +2171,10 @@ impl InfiltrationVentilation {
 
         let optimization = Executor::new(cost, solver).run()?;
 
-        Ok(optimization
+        optimization
             .state()
             .best_param
-            .ok_or_else(|| anyhow!("No best param available in solver result"))?)
+            .ok_or_else(|| anyhow!("No best param available in solver result"))
     }
 
     /// Equivalent of create_infiltration_ventilation in upstream
@@ -2189,8 +2189,7 @@ impl InfiltrationVentilation {
 
         let windows = zones
             .values()
-            .map(|zone| zone.building_elements.values())
-            .flatten()
+            .flat_map(|zone| zone.building_elements.values())
             .map(|building_element| {
                 anyhow::Ok(if let BuildingElement::Transparent {
                     window_openable_control,
@@ -2227,8 +2226,7 @@ impl InfiltrationVentilation {
 
         let (pitches, areas): (Vec<f64>, Vec<f64>) = zones
             .values()
-            .map(|zone| zone.building_elements.values())
-            .flatten()
+            .flat_map(|zone| zone.building_elements.values())
             .flat_map(|building_element| match building_element {
                 BuildingElement::Opaque { pitch, area, .. }
                     if pitch_class(*pitch) == HeatFlowDirection::Upwards =>
@@ -2413,7 +2411,7 @@ struct FindRVArgProblem<'a> {
     simtime: SimulationTimeIteration,
 }
 
-impl<'a> CostFunction for FindRVArgProblem<'a> {
+impl CostFunction for FindRVArgProblem<'_> {
     type Param = f64;
     type Output = f64;
 

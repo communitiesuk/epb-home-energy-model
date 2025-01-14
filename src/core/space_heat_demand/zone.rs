@@ -239,7 +239,7 @@ impl Zone {
 
             if !isclose(
                 &temps_updated,
-                &self.temp_prev.read().as_ref(),
+                self.temp_prev.read().as_ref(),
                 Some(1e-08),
                 None,
             ) {
