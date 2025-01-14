@@ -4696,6 +4696,7 @@ fn on_site_generation_from_input(
                     shading,
                     inverter_peak_power,
                     inverter_is_inside,
+                    inverter_type,
                     ..
                 } = generation_details;
                 let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("On site generation (photovoltaic) references an undeclared energy supply '{energy_supply}'."))?.clone();
@@ -4713,8 +4714,11 @@ fn on_site_generation_from_input(
                     simulation_time_iterator.step_in_hours(),
                     shading.clone(),
                     inverter_peak_power
-                        .expect("Became optional during migration to 0.32 - correct for this"),
+                        .expect("Became optional during migration to 0.32 - correct for this (DC power)"),
+                    inverter_peak_power
+                        .expect("Became optional during migration to 0.32 - correct for this (AC power"),
                     *inverter_is_inside,
+                    inverter_type.expect("Inverter type may be expected to be set (migration to 0.32)"),
                 )
             }))
         })
