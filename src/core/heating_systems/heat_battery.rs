@@ -73,7 +73,7 @@ impl HeatBatteryServiceWaterRegular {
         energy_demand: f64,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
@@ -92,10 +92,10 @@ impl HeatBatteryServiceWaterRegular {
         &self,
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
         if !service_on {
-            return 0.0;
+            return Ok(0.0);
         }
 
         let control_max_setpnt = self
@@ -161,12 +161,12 @@ impl HeatBatteryServiceSpace {
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let _time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
         if !self.is_on(simulation_time_iteration) {
-            return 0.0;
+            return Ok(0.0);
         }
 
         self.heat_battery.lock().demand_energy(
@@ -190,11 +190,11 @@ impl HeatBatteryServiceSpace {
         _temp_return_feed: f64,
         time_start: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
 
         if !self.is_on(simtime) {
-            return 0.0;
+            return Ok(0.0);
         }
 
         self.heat_battery
@@ -430,13 +430,13 @@ impl HeatBattery {
         np_interp(charge_level, &x, &y) * self.max_rated_losses
     }
 
-    fn first_call(&mut self) {
+    fn first_call(&mut self) -> anyhow::Result<()> {
         let timestep = self.simulation_time.step_in_hours();
         let current_hour = self.simulation_time.current_hour();
         let time_range = current_hour * HEAT_BATTERY_TIME_UNIT;
         let charge_level = self.charge_level;
         let mut charge_level_qin = charge_level;
-        let target_charge = self.target_charge();
+        let target_charge = self.target_charge()?;
 
         self.q_in_ts = Some(self.electric_charge(time_range as f64));
 
@@ -456,6 +456,8 @@ impl HeatBattery {
             Some(self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.));
         self.q_loss_ts = Some(self.lab_test_losses(charge_level_qin - delta_charge_level / 2.));
         self.flag_first_call = false;
+
+        Ok(())
     }
 
     /// Calculate time available for the current service
@@ -475,7 +477,7 @@ impl HeatBattery {
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         timestep_idx: usize,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let timestep = self.simulation_time.step_in_hours();
@@ -483,7 +485,7 @@ impl HeatBattery {
         let mut charge_level = self.charge_level;
 
         // Picking target charge level from control
-        let target_charge = self.target_charge();
+        let target_charge = self.target_charge()?;
         // __demand_energy is called for each service in each timestep
         // Some calculations are only required once per timestep
         // For example the amount of charge added to the system
@@ -545,7 +547,7 @@ impl HeatBattery {
             });
         }
 
-        energy_output_provided
+        Ok(energy_output_provided)
     }
 
     /// Calculation of heat battery auxilary energy consumption
@@ -567,7 +569,7 @@ impl HeatBattery {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self, timestep_idx: usize) {
+    pub fn timestep_end(&mut self, timestep_idx: usize) -> anyhow::Result<()> {
         let timestep = self.simulation_time.step_in_hours();
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
@@ -589,7 +591,7 @@ impl HeatBattery {
         let mut e_in = q_in_ts * time_remaining_current_timestep;
 
         let mut charge_level = self.charge_level;
-        let target_charge = self.target_charge();
+        let target_charge = self.target_charge()?;
         let mut delta_charge_level = (e_in - e_loss) / self.heat_storage_capacity;
 
         // Calculate new charge level after accounting for energy in and out and cap at target_charge
@@ -619,7 +621,7 @@ impl HeatBattery {
         // Picking target charge level from control
         let time_range = (current_hour + 1) * HEAT_BATTERY_TIME_UNIT;
 
-        let target_charge = self.target_charge();
+        let target_charge = self.target_charge()?;
         let mut charge_level_qin = self.charge_level;
         self.q_in_ts = Some(self.electric_charge(time_range as f64));
         let q_in_ts = self.q_in_ts.unwrap();
@@ -641,11 +643,17 @@ impl HeatBattery {
 
         self.total_time_running_current_timestep = Default::default();
         self.service_results = Default::default();
+
+        Ok(())
     }
 
     /// Calculate the maximum energy output of the heat battery, accounting
     /// for time spent on higher-priority services.
-    pub fn energy_output_max(&mut self, _temp_output: Option<f64>, time_start: Option<f64>) -> f64 {
+    pub fn energy_output_max(
+        &mut self,
+        _temp_output: Option<f64>,
+        time_start: Option<f64>,
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
         let timestep = self.simulation_time.step_in_hours();
         let time_available = self.time_available(time_start, timestep);
@@ -653,7 +661,7 @@ impl HeatBattery {
         let time_range = current_hour * HEAT_BATTERY_TIME_UNIT;
 
         // Picking target charge level from control
-        let target_charge = self.target_charge();
+        let target_charge = self.target_charge()?;
         let mut charge_level_qin = self.charge_level;
         self.q_in_ts = Some(self.electric_charge(time_range as f64));
         // Calculate max charge level possible in next timestep
@@ -669,14 +677,14 @@ impl HeatBattery {
         let max_output = self.lab_test_rated_output(charge_level_qin);
         let delta_charge_level = max_output * time_available / self.heat_storage_capacity;
 
-        self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.) * time_available
+        Ok(self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.) * time_available)
     }
 
-    fn target_charge(&self) -> f64 {
+    fn target_charge(&self) -> anyhow::Result<f64> {
         match self.charge_control.as_ref() {
-            Control::Charge(ctrl) => ctrl
-                .target_charge(self.simulation_time.current_iteration(), None)
-                .expect("TODO correct during migration to 0.32"),
+            Control::Charge(ctrl) => {
+                ctrl.target_charge(self.simulation_time.current_iteration(), None)
+            }
             _ => unreachable!(),
         }
     }
@@ -1040,11 +1048,9 @@ mod tests {
                 Some(Arc::new(control_max)),
             );
 
-        let result = heat_battery_service.demand_energy(
-            energy_demand,
-            temp_return,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .demand_energy(energy_demand, temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_relative_eq!(result, 4.358566028225806);
     }
@@ -1070,11 +1076,9 @@ mod tests {
                 None,
             );
 
-        let result = heat_battery_service.demand_energy(
-            energy_demand,
-            temp_return,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .demand_energy(energy_demand, temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_eq!(result, 0.);
     }
@@ -1124,7 +1128,9 @@ mod tests {
                 Some(Arc::new(control_min)),
             );
 
-        let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
+        let result = heat_battery_service
+            .energy_output_max(temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_relative_eq!(result, 5.637774816176471);
     }
@@ -1167,7 +1173,9 @@ mod tests {
             );
 
         let temp_return = 40.;
-        let result = heat_battery_service.energy_output_max(temp_return, simulation_time_iteration);
+        let result = heat_battery_service
+            .energy_output_max(temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_eq!(result, 0.);
     }
@@ -1222,14 +1230,16 @@ mod tests {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_off);
         let heat_battery_space =
             HeatBatteryServiceSpace::new(heat_battery, SERVICE_NAME.into(), ctrl.into());
-        let result = heat_battery_space.demand_energy(
-            energy_demand,
-            temp_return,
-            temp_flow,
-            None,
-            None,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_space
+            .demand_energy(
+                energy_demand,
+                temp_return,
+                temp_flow,
+                None,
+                None,
+                simulation_time_iteration,
+            )
+            .unwrap();
         assert_eq!(result, 0.);
     }
 
@@ -1253,12 +1263,14 @@ mod tests {
             service_control_on.into(),
         );
 
-        let result = heat_battery_service.energy_output_max(
-            temp_output,
-            temp_return,
-            Some(time_start),
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(
+                temp_output,
+                temp_return,
+                Some(time_start),
+                simulation_time_iteration,
+            )
+            .unwrap();
 
         assert_relative_eq!(result, 4.037907837701614);
     }
@@ -1281,12 +1293,9 @@ mod tests {
             service_control_off.into(),
         );
 
-        let result = heat_battery_service.energy_output_max(
-            temp_output,
-            temp_return,
-            None,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
+            .unwrap();
 
         assert_relative_eq!(result, 0.);
     }
@@ -1376,15 +1385,19 @@ mod tests {
         HeatBattery::create_service_connection(heat_battery.clone(), service_name).unwrap();
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            let demand_energy_actual = heat_battery.clone().lock().demand_energy(
-                service_name,
-                ServiceType::WaterRegular,
-                5.,
-                40.,
-                None,
-                None,
-                t_idx,
-            );
+            let demand_energy_actual = heat_battery
+                .clone()
+                .lock()
+                .demand_energy(
+                    service_name,
+                    ServiceType::WaterRegular,
+                    5.,
+                    40.,
+                    None,
+                    None,
+                    t_idx,
+                )
+                .unwrap();
 
             assert_relative_eq!(demand_energy_actual, 4.358566028225806);
 
@@ -1529,7 +1542,10 @@ mod tests {
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                heat_battery.lock().energy_output_max(Some(0.), None),
+                heat_battery
+                    .lock()
+                    .energy_output_max(Some(0.), None)
+                    .unwrap(),
                 [5.637774816176471, 11.13482970854502][t_idx]
             );
 

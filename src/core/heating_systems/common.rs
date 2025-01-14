@@ -46,7 +46,7 @@ impl HeatSourceWet {
                 Ok(storage.energy_output_max(temperature, &simtime))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                Ok(battery.energy_output_max(temperature, simtime))
+                battery.energy_output_max(temperature, simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
                 .energy_output_max(temperature, simtime)
@@ -84,7 +84,7 @@ impl HeatSourceWet {
                 Ok(water_storage.demand_energy(energy_demand, temperature, &simtime))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                Ok(battery.demand_energy(energy_demand, temperature, simtime))
+                battery.demand_energy(energy_demand, temperature, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temperature, simtime)
@@ -238,7 +238,7 @@ impl SpaceHeatingService {
                     temp_return_feed,
                     None,
                     simulation_time_iteration,
-                ),
+                )?,
                 None,
             )),
         }
@@ -293,7 +293,7 @@ impl SpaceHeatingService {
                     None,
                     None,
                     simulation_time_iteration,
-                ),
+                )?,
                 None,
             )),
         }
