@@ -1810,7 +1810,7 @@ impl Corpus {
             // Perform calculations that can only be done after all heating
             // services have been calculated
             for system in self.timestep_end_calcs.read().iter() {
-                system.timestep_end(t_it);
+                system.timestep_end(t_it)?;
             }
 
             for (z_name, gains_internal) in gains_internal_zone {

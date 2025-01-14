@@ -491,7 +491,7 @@ impl HeatBattery {
         // For example the amount of charge added to the system
         // Perform these calculations here
         if self.flag_first_call {
-            self.first_call();
+            self.first_call()?;
         }
 
         // Distributing energy demand through all units
@@ -574,7 +574,7 @@ impl HeatBattery {
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
         if self.flag_first_call {
-            self.first_call();
+            self.first_call()?;
         }
 
         // Calculating auxiliary energy to provide services during timestep
