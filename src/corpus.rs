@@ -4055,7 +4055,6 @@ fn heat_source_from_input(
         }
         HeatSourceInput::Wet {
             name,
-            control,
             control_min,
             control_max,
             temp_flow_limit_upper,
@@ -4068,7 +4067,6 @@ fn heat_source_from_input(
                     panic!("Expected a wet heat source registered with the name '{name}'.")
                 })
                 .clone();
-            let source_control = (*control).and_then(|ctrl| controls.get(&ctrl));
             // TODO control_min and control_max added below when porting heat_network module to 0.32,
             //  they still need to be correctly hooked up as part of 0.32 migration
             let control_min = control_min
@@ -4090,7 +4088,7 @@ fn heat_source_from_input(
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
                             cold_water_source.as_cold_water_source()?,
-                            source_control,
+                            control_min, // TODO correct as part of migration to 0.32
                         )),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
@@ -4098,7 +4096,7 @@ fn heat_source_from_input(
                             boiler.clone(),
                             energy_supply_conn_name.clone(),
                             temp_setpoint,
-                            source_control,
+                            control_min, // TODO correct as part of migration to 0.32
                         )),
                     )),
                     WetHeatSource::Hiu(heat_network) => {

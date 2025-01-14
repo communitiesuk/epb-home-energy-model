@@ -802,6 +802,9 @@ enum ControlType {
 /// the minimum to the maximum for two hours allows time for the tank
 /// to heat up to the required temperature before being held there
 fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    let _hw_min_temp = "_HW_min_temp";
+    let _hw_max_temp = "_HW_max_temp";
+
     input.add_control(
         HW_TIMER_MAIN_NAME,
         json!({
@@ -834,7 +837,8 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         let source = input.hot_water_source_details_for_key(hwsource.as_str());
         if source.is_storage_tank() {
             source.set_control_hold_at_setpoint(HW_TIMER_HOLD_AT_SETPNT_NAME);
-            source.set_control_name_for_heat_sources(HW_TIMER_MAIN_NAME)?;
+            // TODO correct logic here during migration to 0.32
+            // source.set_control_name_for_heat_sources(HW_TIMER_MAIN_NAME)?;
         } else if source.is_combi_boiler() || source.is_point_of_use() || source.is_hiu() {
             // do nothing
         } else {

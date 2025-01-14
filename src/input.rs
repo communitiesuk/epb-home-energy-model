@@ -835,6 +835,14 @@ pub trait HotWaterSourceDetailsForProcessing {
         &mut self,
         control_name: impl Into<String>,
     ) -> anyhow::Result<()>;
+    fn set_control_min_name_for_heat_sources(
+        &mut self,
+        control_name: impl Into<String>,
+    ) -> anyhow::Result<()>;
+    fn set_control_max_name_for_heat_sources(
+        &mut self,
+        control_name: impl Into<String>,
+    ) -> anyhow::Result<()>;
     fn set_min_temp_and_setpoint_temp_if_storage_tank(&mut self, min_temp: f64, setpoint_temp: f64);
     fn set_setpoint_temp(&mut self, setpoint_temp: f64);
 }
@@ -868,18 +876,36 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
 
     fn set_control_name_for_heat_sources(
         &mut self,
-        control_name: impl Into<String>,
+        _control_name: impl Into<String>,
     ) -> anyhow::Result<()> {
-        if let Self::StorageTank {
-            ref mut heat_source,
-            ..
-        } = self
-        {
-            let control_type_for_heat_sources = control_name.into().try_into()?;
-            for heat_source in heat_source.values_mut() {
-                heat_source.set_control(control_type_for_heat_sources);
-            }
-        }
+        // if let Self::StorageTank {
+        //     ref mut heat_source,
+        //     ..
+        // } = self
+        // {
+        //     let control_type_for_heat_sources = control_name.into().try_into()?;
+        //     for heat_source in heat_source.values_mut() {
+        //         heat_source.set_control(control_type_for_heat_sources);
+        //     }
+        // }
+
+        Ok(())
+    }
+
+    fn set_control_min_name_for_heat_sources(
+        &mut self,
+        _control_name: impl Into<String>,
+    ) -> anyhow::Result<()> {
+        // TODO complete implementation for migration to 0.32
+
+        Ok(())
+    }
+
+    fn set_control_max_name_for_heat_sources(
+        &mut self,
+        _control_name: impl Into<String>,
+    ) -> anyhow::Result<()> {
+        // TODO complete implementation for migration to 0.32
 
         Ok(())
     }
@@ -1032,11 +1058,8 @@ pub enum HeatSource {
         solar_loop_piping_hlc: f64,
         heater_position: f64,
         thermostat_position: f64,
-        #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
-        control_max: Option<String>,
-        // TODO 0.32 determine whether 'Control' field has been replaced by new 'Controlmax'
-        #[serde(skip_serializing_if = "Option::is_none")]
-        control: Option<HeatSourceControlType>,
+        #[serde(rename = "Controlmax")]
+        control_max: String,
     },
     #[serde(rename = "HeatSourceWet")]
     Wet {
@@ -1130,29 +1153,12 @@ impl HeatSource {
         }
     }
 
-    pub fn set_control(&mut self, control_type: HeatSourceControlType) {
-        match self {
-            HeatSource::ImmersionHeater {
-                ref mut control, ..
-            } => {
-                *control = Some(control_type);
-            }
-            HeatSource::SolarThermalSystem {
-                ref mut control, ..
-            } => {
-                *control = Some(control_type);
-            }
-            HeatSource::Wet {
-                ref mut control, ..
-            } => {
-                *control = Some(control_type);
-            }
-            HeatSource::HeatPumpHotWaterOnly {
-                ref mut control, ..
-            } => {
-                *control = Some(control_type);
-            }
-        }
+    pub(crate) fn set_control_min(&mut self, control_min: &str) {
+        // TODO complete implementation for migration to 0.32
+    }
+
+    pub(crate) fn set_control_max(&mut self, control_max: &str) {
+        // TODO complete implementation for migration to 0.32
     }
 }
 
