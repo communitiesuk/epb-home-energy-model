@@ -1549,7 +1549,7 @@ mod tests {
                 [5.637774816176471, 11.13482970854502][t_idx]
             );
 
-            heat_battery.lock().timestep_end(t_idx);
+            heat_battery.lock().timestep_end(t_idx).unwrap();
         }
     }
 }
