@@ -279,7 +279,7 @@ pub struct BufferTank {
     rho: f64,
     q_heat_loss_buffer_rbl: f64,
     track_buffer_loss: f64,
-    temp_ave_buffer: Option<f64>,
+    temp_ave_buffer: f64,
     detailed_results: Option<Vec<Vec<BufferTankServiceResult>>>,
 }
 
@@ -313,7 +313,8 @@ impl BufferTank {
             rho,
             q_heat_loss_buffer_rbl: 0.0,
             track_buffer_loss: 0.0,
-            temp_ave_buffer: Default::default(),
+            // Initialisation of buffer tank temperature needed in case no power required by emitters in first step
+            temp_ave_buffer: 18.,
             detailed_results: output_detailed_results.then(Default::default),
         }
     }
@@ -361,7 +362,7 @@ impl BufferTank {
 
         if emitters_data_for_buffer_tank.power_req_from_buffer_tank > 0.0 {
             let temp_emitter_req = emitters_data_for_buffer_tank.temp_emitter_req;
-            self.temp_ave_buffer = Some(temp_emitter_req);
+            self.temp_ave_buffer = temp_emitter_req;
 
             // call to calculate thermal losses
             let heat_loss_buffer_kwh = self.thermal_losses(temp_emitter_req, temp_rm_prev);
@@ -412,23 +413,14 @@ impl BufferTank {
             }
         } else {
             // call to calculate cool down losses
-            let heat_loss_buffer_kwh = self.thermal_losses(
-                self.temp_ave_buffer.ok_or(anyhow!(
-                    "temp_ave_buffer has not been initialised yet within the buffer tank"
-                ))?,
-                temp_rm_prev,
-            );
+            let heat_loss_buffer_kwh = self.thermal_losses(self.temp_ave_buffer, temp_rm_prev);
             let heat_capacity_buffer =
                 self.volume * (self.rho * self.cp * KILOJOULES_PER_KILOWATT_HOUR as f64);
-            let new_temp_ave_buffer = if let Some(temp_ave_buffer) = self.temp_ave_buffer {
-                let temp_loss = heat_loss_buffer_kwh
-                    / (heat_capacity_buffer / KILOJOULES_PER_KILOWATT_HOUR as f64);
-                temp_ave_buffer - temp_loss
-            } else {
-                convert_flow_to_return_temp(emitters_data_for_buffer_tank.design_flow_temp)
-            };
+            let temp_loss =
+                heat_loss_buffer_kwh / (heat_capacity_buffer / KILOJOULES_PER_KILOWATT_HOUR as f64);
+            let new_temp_ave_buffer = self.temp_ave_buffer - temp_loss;
 
-            self.temp_ave_buffer = Some(new_temp_ave_buffer);
+            self.temp_ave_buffer = new_temp_ave_buffer;
 
             self.service_results.push(BufferTankServiceResult {
                 _service_name: format!("{service_name}_buffer_tank"),
@@ -1407,6 +1399,7 @@ impl HeatPumpServiceWater {
 
 const TIME_CONSTANT_SPACE_WATER: f64 = 1370.;
 const TIME_CONSTANT_SPACE_AIR: f64 = 120.;
+const TIME_CONSTANT_SPACE_GLYCOL25: f64 = 1370.;
 
 #[derive(Clone, Debug)]
 pub struct HeatPumpServiceSpace {
@@ -1523,10 +1516,7 @@ impl HeatPumpServiceSpace {
         let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-
-            HeatPumpSinkType::Glycol25 => {
-                unimplemented!("to be implemented as part of 0.32 migration")
-            }
+            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
         };
         let source_type = heat_pump.source_type;
         heat_pump.demand_energy(
@@ -1566,9 +1556,7 @@ impl HeatPumpServiceSpace {
         let time_constant_for_service = match heat_pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => {
-                unimplemented!("to be implemented as part of 0.32 migration")
-            }
+            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
         };
         let source_type = heat_pump.source_type;
 
