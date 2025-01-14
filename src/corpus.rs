@@ -4088,16 +4088,19 @@ fn heat_source_from_input(
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
                             cold_water_source.as_cold_water_source()?,
-                            control_min, // TODO correct as part of migration to 0.32
-                        )),
+                            control_min,
+                            control_max.ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a HeatPumpServiceWater object."))?,
+                            simulation_time
+                        )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.clone(),
-                            temp_setpoint,
-                            control_min, // TODO correct as part of migration to 0.32
-                        )),
+                            control_min,
+                            control_max.ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a BoilerServiceWaterRegular object."))?,
+                            simulation_time
+                        )?),
                     )),
                     WetHeatSource::Hiu(heat_network) => {
                         HeatSource::Wet(Box::new(HeatSourceWet::HeatNetworkWaterStorage(

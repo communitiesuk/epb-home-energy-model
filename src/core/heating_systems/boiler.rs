@@ -8,9 +8,9 @@ use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeRefer
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::np_interp;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -145,6 +145,8 @@ impl BoilerServiceWaterCombi {
                 return_temperature,
                 None,
                 None,
+                None,
+                None,
                 simtime,
             )
             .map(|res| res.0)
@@ -223,7 +225,7 @@ impl BoilerServiceWaterCombi {
     pub fn energy_output_max(&self) -> f64 {
         self.boiler
             .read()
-            .energy_output_max(self.temperature_hot_water_in_c, None)
+            .energy_output_max(self.temperature_hot_water_in_c, None, None)
     }
 
     pub fn is_on(&self) -> bool {
@@ -236,23 +238,38 @@ impl BoilerServiceWaterCombi {
 pub struct BoilerServiceWaterRegular {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
+    control_min: Option<Arc<Control>>,
+    control_max: Arc<Control>,
     temperature_hot_water_in_c: f64,
-    control: Option<Arc<Control>>,
 }
 
 impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        temperature_hot_water_in_c: f64,
-        control: Option<Arc<Control>>,
-    ) -> Self {
-        Self {
+        control_min: Option<Arc<Control>>,
+        control_max: Arc<Control>,
+        simulation_time: &SimulationTimeIterator,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             boiler,
             service_name,
-            temperature_hot_water_in_c,
-            control,
-        }
+            control_min,
+            control_max: control_max.clone(),
+            temperature_hot_water_in_c: control_max
+                .setpnt(&simulation_time.current_iteration())
+                .ok_or_else(|| anyhow!("Could not get setpoint for control_max"))?,
+        })
+    }
+
+    pub(crate) fn temp_setpnt(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        (
+            self.control_min.as_ref().and_then(|c| c.setpnt(&simtime)),
+            self.control_max.setpnt(&simtime),
+        )
     }
 
     pub fn demand_energy(
@@ -261,6 +278,7 @@ impl BoilerServiceWaterRegular {
         temp_return: f64,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
@@ -274,8 +292,10 @@ impl BoilerServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             temp_return,
+            None,
             Some(hybrid_service_bool),
             time_elapsed_hp,
+            Some(update_heat_source_state.unwrap_or(true)),
             simtime,
         )
     }
@@ -292,11 +312,11 @@ impl BoilerServiceWaterRegular {
 
         self.boiler
             .read()
-            .energy_output_max(self.temperature_hot_water_in_c, time_elapsed_hp)
+            .energy_output_max(self.temperature_hot_water_in_c, None, time_elapsed_hp)
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        match &self.control {
+        match &self.control_min {
             Some(c) => c.is_on(simtime),
             None => true,
         }
@@ -337,11 +357,15 @@ impl BoilerServiceSpace {
         energy_demand: f64,
         _temp_flow: f64,
         temp_return: f64,
+        time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<f64>)> {
+        let time_start = time_start.unwrap_or(0.);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
         if !self.is_on(simtime) {
             return Ok(if !hybrid_service_bool {
@@ -356,8 +380,10 @@ impl BoilerServiceSpace {
             ServiceType::Space,
             energy_demand,
             temp_return,
+            Some(time_start),
             Some(hybrid_service_bool),
             time_elapsed_hp,
+            Some(update_heat_source_state),
             simtime,
         )
     }
@@ -366,6 +392,7 @@ impl BoilerServiceSpace {
         &self,
         temp_output: f64,
         _temp_return_feed: f64,
+        time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> f64 {
@@ -374,7 +401,7 @@ impl BoilerServiceSpace {
         } else {
             self.boiler
                 .read()
-                .energy_output_max(temp_output, time_elapsed_hp)
+                .energy_output_max(temp_output, time_start, time_elapsed_hp)
         }
     }
 
@@ -635,9 +662,10 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: String,
-        temperature_hot_water_in_c: f64,
-        control: Option<Arc<Control>>,
-    ) -> BoilerServiceWaterRegular {
+        control_min: Option<Arc<Control>>,
+        control_max: Arc<Control>,
+        simulation_time: &SimulationTimeIterator,
+    ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler
             .write()
             .create_service_connection(service_name.clone().into())
@@ -645,8 +673,9 @@ impl Boiler {
         BoilerServiceWaterRegular::new(
             boiler.clone(),
             service_name,
-            temperature_hot_water_in_c,
-            control,
+            control_min,
+            control_max,
+            simulation_time,
         )
     }
 
@@ -706,10 +735,12 @@ impl Boiler {
         service_type_is_water_combi: bool,
         temp_return_feed: f64,
         energy_output_required: f64,
+        time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let time_available = self.time_available(time_elapsed_hp);
+        let time_start = time_start.unwrap_or(0.0);
+        let time_available = self.time_available(time_start, time_elapsed_hp);
         let energy_output_provided =
             self.calc_energy_output_provided(energy_output_required, time_available);
 
@@ -798,18 +829,25 @@ impl Boiler {
         min_of_2(energy_output_required, energy_output_max_power)
     }
 
-    fn time_available(&self, time_elapsed_hp: Option<f64>) -> f64 {
+    /// Calculate time available for the current service
+    fn time_available(&self, time_start: f64, time_elapsed_hp: Option<f64>) -> f64 {
+        // Assumes that time spent on other services is evenly spread throughout
+        // the timestep so the adjustment for start time below is a proportional
+        // reduction of the overall time available, not simply a subtraction
+        //         timestep = self.__simulation_time.timestep()
+        //         total_time_running_current_timestep \
+        //             = time_elapsed_hp if time_elapsed_hp is not None else self.__total_time_running_current_timestep
+        //         time_available \
+        //             = (timestep - total_time_running_current_timestep) * (1.0 - time_start / timestep)
+        //         return time_available
         let timestep = self.simulation_timestep;
-
-        match time_elapsed_hp {
-            Some(time_elapsed) => timestep - time_elapsed,
-            None => {
-                timestep
-                    - self
-                        .total_time_running_current_timestep
-                        .load(Ordering::SeqCst)
-            }
-        }
+        let total_time_running_current_timestep = if let Some(time_elapsed_hp) = time_elapsed_hp {
+            time_elapsed_hp
+        } else {
+            self.total_time_running_current_timestep
+                .load(Ordering::SeqCst)
+        };
+        (timestep - total_time_running_current_timestep) * (1.0 - time_start / timestep)
     }
 
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
@@ -819,16 +857,20 @@ impl Boiler {
         service_type: ServiceType,
         energy_output_required: f64,
         temperature_return_feed: f64,
+        time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<f64>)> {
+        let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        let time_available = self.time_available(time_elapsed_hp);
+        let time_available = self.time_available(time_start, time_elapsed_hp);
 
         // If there is no demand on the boiler or no remaining time then no energy should be provided
         if energy_output_required <= 0.0 || time_available <= 0.0 {
@@ -842,6 +884,7 @@ impl Boiler {
             service_type == ServiceType::WaterCombi,
             temperature_return_feed,
             energy_output_required,
+            Some(time_start),
             time_elapsed_hp,
             simtime,
         )?;
@@ -853,10 +896,12 @@ impl Boiler {
 
         let fuel_demand = energy_output_provided / blr_eff_final;
 
-        self.energy_supply_connections
-            .get(service_name)
-            .unwrap()
-            .demand_energy(fuel_demand, simtime.index)?;
+        if update_heat_source_state {
+            self.energy_supply_connections
+                .get(service_name)
+                .unwrap()
+                .demand_energy(fuel_demand, simtime.index)?;
+        }
 
         // Calculate running time of boiler
         let time_running_current_service = if current_boiler_power <= 0.0 {
@@ -867,17 +912,20 @@ impl Boiler {
                 time_available,
             )
         };
-        self.total_time_running_current_timestep
-            .fetch_add(time_running_current_service, Ordering::SeqCst);
 
-        // Save results that are needed later (in the timestep_end function)
-        let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
-        result_service_name.push_str(service_name);
-        self.service_results.write().push(ServiceResult {
-            _service_name: result_service_name,
-            time_running: time_running_current_service,
-            current_boiler_power,
-        });
+        if update_heat_source_state {
+            self.total_time_running_current_timestep
+                .fetch_add(time_running_current_service, Ordering::SeqCst);
+
+            // Save results that are needed later (in the timestep_end function)
+            let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
+            result_service_name.push_str(service_name);
+            self.service_results.write().push(ServiceResult {
+                _service_name: result_service_name,
+                time_running: time_running_current_service,
+                current_boiler_power,
+            });
+        }
 
         Ok(if hybrid_service_bool {
             (energy_output_provided, Some(time_running_current_service))
@@ -936,8 +984,14 @@ impl Boiler {
         self.service_results = Default::default();
     }
 
-    pub fn energy_output_max(&self, _temp_output: f64, time_elapsed_hp: Option<f64>) -> f64 {
-        let time_available = self.time_available(time_elapsed_hp);
+    pub fn energy_output_max(
+        &self,
+        _temp_output: f64,
+        time_start: Option<f64>,
+        time_elapsed_hp: Option<f64>,
+    ) -> f64 {
+        let time_start = time_start.unwrap_or(0.0);
+        let time_available = self.time_available(time_start, time_elapsed_hp);
 
         self.boiler_power * time_available
     }
@@ -1108,7 +1162,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "ignored during migration to 0.32"]
-    pub fn should_provide_correct_energy_output(
+    pub fn test_energy_output_provided(
         boiler: (Boiler, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
         boiler_energy_output_required: [f64; 2],
@@ -1123,6 +1177,8 @@ mod tests {
                         ServiceType::WaterCombi,
                         boiler_energy_output_required[t_idx],
                         temp_return_feed[t_idx],
+                        None,
+                        None,
                         None,
                         None,
                         t_it,
@@ -1390,13 +1446,54 @@ mod tests {
     }
 
     #[fixture]
-    pub fn regular_boiler<'a>(boiler_for_regular: Boiler) -> BoilerServiceWaterRegular {
+    fn control_min(simulation_time: SimulationTime) -> Arc<Control> {
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(52.), Some(52.)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                None,
+                1.,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[fixture]
+    fn control_max(simulation_time: SimulationTime) -> Arc<Control> {
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(60.), Some(60.)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                None,
+                1.,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[fixture]
+    fn regular_boiler<'a>(
+        boiler_for_regular: Boiler,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
+        simulation_time: SimulationTime,
+    ) -> BoilerServiceWaterRegular {
         BoilerServiceWaterRegular::new(
             Arc::new(RwLock::new(boiler_for_regular)),
             "boiler_test".to_string(),
-            60.,
-            None,
+            Some(control_min),
+            control_max,
+            &simulation_time.iter(),
         )
+        .unwrap()
     }
 
     #[rstest]
@@ -1411,6 +1508,7 @@ mod tests {
                     .demand_energy(
                         [0.7241412, 0.1748878][idx],
                         temp_return_feed[idx],
+                        None,
                         None,
                         None,
                         t_it
@@ -1527,6 +1625,8 @@ mod tests {
                         energy_demanded[idx],
                         temp_flow[idx],
                         temp_return_feed[idx],
+                        None,
+                        None,
                         None,
                         None,
                         t_it,

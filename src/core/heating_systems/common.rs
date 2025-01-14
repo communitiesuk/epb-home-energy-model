@@ -40,7 +40,7 @@ impl HeatSourceWet {
                 Ok(regular.energy_output_max(temperature, None, simtime))
             }
             HeatSourceWet::Space(space) => {
-                Ok(space.energy_output_max(temperature, Default::default(), None, simtime))
+                Ok(space.energy_output_max(temperature, Default::default(), None, None, simtime))
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => {
                 Ok(storage.energy_output_max(temperature, &simtime))
@@ -68,13 +68,15 @@ impl HeatSourceWet {
                 bail!("BoilerServiceWaterCombi does not implement demand_energy")
             }
             HeatSourceWet::WaterRegular(regular) => regular
-                .demand_energy(energy_demand, temperature, None, None, simtime)
+                .demand_energy(energy_demand, temperature, None, None, None, simtime)
                 .map(|x| x.0),
             HeatSourceWet::Space(space) => space
                 .demand_energy(
                     energy_demand,
                     Default::default(),
                     temperature,
+                    None,
+                    None,
                     None,
                     None,
                     simtime,
@@ -219,6 +221,7 @@ impl SpaceHeatingService {
                     temp_output,
                     temp_return_feed,
                     None,
+                    None,
                     simulation_time_iteration,
                 ),
                 None,
@@ -270,6 +273,8 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
+                    None,
+                    None,
                     None,
                     None,
                     simulation_time_iteration,

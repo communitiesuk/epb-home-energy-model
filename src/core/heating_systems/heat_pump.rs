@@ -23,7 +23,7 @@ use crate::input::{
     HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
     HeatSourceWetDetails, HotWaterSourceDetails,
 };
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
@@ -2282,27 +2282,37 @@ impl HeatPump {
         temp_hot_water_in_c: f64,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
-        control: Option<Arc<Control>>,
-    ) -> HeatPumpServiceWater {
+        control_min: Option<Arc<Control>>,
+        control_max: Arc<Control>,
+        simulation_time: &SimulationTimeIterator,
+    ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
-        let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
-            Arc::new(Mutex::new(Boiler::create_service_hot_water_regular(
-                boiler.clone(),
-                service_name.clone(),
-                temp_hot_water_in_c,
-                control.clone(),
-            )))
-        });
+        let boiler_service = heat_pump
+            .lock()
+            .boiler
+            .as_ref()
+            .map(|boiler| {
+                anyhow::Ok(Arc::new(Mutex::new(
+                    Boiler::create_service_hot_water_regular(
+                        boiler.clone(),
+                        service_name.clone(),
+                        control_min.clone(),
+                        control_max.clone(),
+                        simulation_time,
+                    )?,
+                )))
+            })
+            .transpose()?;
 
-        HeatPumpServiceWater::new(
+        Ok(HeatPumpServiceWater::new(
             heat_pump,
             service_name,
             temp_hot_water_in_c,
             temp_limit_upper_in_c,
             cold_feed,
-            control,
+            control_min,
             boiler_service,
-        )
+        ))
     }
 
     pub(crate) fn create_service_space_heating(
@@ -2483,6 +2493,7 @@ impl HeatPump {
                 service_space.lock().energy_output_max(
                     kelvin_to_celsius(temp_output)?,
                     kelvin_to_celsius(temp_return_feed)?,
+                    None, // TODO correct for migration to 0.32
                     time_elapsed_hp,
                     simtime,
                 )
@@ -2567,6 +2578,7 @@ impl HeatPump {
                     false,
                     kelvin_to_celsius(temp_return_feed)?,
                     energy_output_max_boiler,
+                    None, // TODO correct for migration to 0.32
                     Some(timestep),
                     simtime,
                 )?;
@@ -3049,6 +3061,7 @@ impl HeatPump {
                         false,
                         kelvin_to_celsius(temp_return_feed)?,
                         energy_output_required,
+                        None, // TODO correct for migration to 0.32
                         Some(timestep),
                         simtime,
                     )?,
@@ -3279,6 +3292,7 @@ impl HeatPump {
                         kelvin_to_celsius(temp_return_feed)?,
                         Some(hybrid_service_bool),
                         time_elapsed_hp,
+                        None, // TODO correct for migration to 0.32
                         simtime,
                     )?
                 }
@@ -3286,8 +3300,10 @@ impl HeatPump {
                     service_results.energy_output_required_boiler,
                     kelvin_to_celsius(temp_output)?,
                     kelvin_to_celsius(temp_return_feed)?,
+                    None, // TODO correct for migration to 0.32
                     Some(hybrid_service_bool),
                     time_elapsed_hp,
+                    None, // TODO correct for migration to 0.32
                     simtime,
                 )?,
             };
@@ -6208,6 +6224,20 @@ mod tests {
 
         let cold_feed = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step);
 
+        let control = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(52.), Some(52.)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                None,
+                1.,
+            )
+            .unwrap(),
+        ));
+
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
             service_name.to_string(),
@@ -6215,7 +6245,10 @@ mod tests {
             60.,
             cold_feed.clone().into(),
             None,
-        );
+            control.clone(),
+            &simulation_time_for_heat_pump.iter(),
+        )
+        .unwrap();
 
         assert!(matches!(hot_water_service, HeatPumpServiceWater { .. }));
 
@@ -6239,7 +6272,10 @@ mod tests {
             60.,
             cold_feed.into(),
             None,
-        );
+            control,
+            &simulation_time_for_heat_pump.iter(),
+        )
+        .unwrap();
 
         assert!(hot_water_service.hybrid_boiler_service.is_some());
     }
