@@ -1404,6 +1404,21 @@ pub struct InfiltrationVentilation {
     total_volume: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
     ventilation_zone_base_height: f64,
+    #[cfg(test)] // optional behaviour override for tests, akin to mocking
+    calc_air_changes_fn: Option<
+        fn(
+            &InfiltrationVentilation,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            Option<f64>,
+            f64,
+            Option<ReportingFlag>,
+            SimulationTimeIteration,
+        ) -> anyhow::Result<f64>,
+    >,
 }
 
 /// Arguments:
@@ -1467,7 +1482,28 @@ impl InfiltrationVentilation {
             total_volume,
             detailed_results: Default::default(),
             ventilation_zone_base_height,
+            #[cfg(test)]
+            calc_air_changes_fn: None,
         }
+    }
+
+    #[cfg(test)] // set override of ach function under test scenario
+    fn set_calc_air_changes_fn(
+        &mut self,
+        calc_air_changes_fn: fn(
+            &InfiltrationVentilation,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            Option<f64>,
+            f64,
+            Option<ReportingFlag>,
+            SimulationTimeIteration,
+        ) -> anyhow::Result<f64>,
+    ) {
+        self.calc_air_changes_fn.replace(calc_air_changes_fn);
     }
 
     pub(crate) fn mech_vents(&self) -> &Vec<Arc<MechanicalVentilation>> {
@@ -1911,6 +1947,25 @@ impl InfiltrationVentilation {
         reporting_flag: Option<ReportingFlag>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        #[cfg(test)]
+        {
+            // if there is an override implementation for calculating air changes per hour, use that
+            if let Some(calc_ach_fn) = self.calc_air_changes_fn {
+                return calc_ach_fn(
+                    self,
+                    wind_speed,
+                    wind_direction,
+                    temp_int_air,
+                    temp_ext_air,
+                    r_v_arg,
+                    r_w_arg,
+                    initial_p_z_ref_guess,
+                    reporting_flag,
+                    simtime,
+                );
+            }
+        }
+
         let internal_reference_pressure = self.calculate_internal_reference_pressure(
             initial_p_z_ref_guess,
             wind_speed,
@@ -2002,6 +2057,7 @@ impl InfiltrationVentilation {
     /// * `r_w_arg` - Parameter related to the wind or building ventilation.
     /// * `initial_p_z_ref_guess` - Initial guess for reference pressure.
     /// * `reporting_flag` - Flag indicating whether to report detailed output.
+    /// * `simtime`
     ///
     /// Returns:
     ///     The optimal vent position (R_v_arg) that brings the ACH within the specified bounds.
@@ -3591,5 +3647,59 @@ mod tests {
             expected_output,
             max_relative = EIGHT_DECIMAL_PLACES
         );
+    }
+
+    #[fixture]
+    fn infiltration_ventilation_with_patched_ach_fn(
+        mut infiltration_ventilation: InfiltrationVentilation,
+    ) -> InfiltrationVentilation {
+        infiltration_ventilation.set_calc_air_changes_fn(|_, _, _, _, _, _, _, _, _, _| Ok(2.0));
+        infiltration_ventilation
+    }
+
+    #[rstest]
+    fn test_ach_within_bounds(
+        infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let result = infiltration_ventilation_with_patched_ach_fn
+            .find_r_v_arg_within_bounds(
+                Some(1.5),
+                Some(2.5),
+                0.5,
+                5.0,
+                90.0,
+                20.0,
+                10.0,
+                Some(1.0),
+                0.5,
+                None,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(result, 0.5);
+    }
+
+    #[rstest]
+    fn test_no_ach_target(
+        infiltration_ventilation_with_patched_ach_fn: InfiltrationVentilation,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let result = infiltration_ventilation_with_patched_ach_fn
+            .find_r_v_arg_within_bounds(
+                None,
+                None,
+                0.5,
+                5.0,
+                90.0,
+                20.0,
+                10.0,
+                Some(1.0),
+                0.5,
+                None,
+                simulation_time_iterator.current_iteration(),
+            )
+            .unwrap();
+        assert_eq!(result, 0.5);
     }
 }
