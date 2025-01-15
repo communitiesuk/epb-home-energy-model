@@ -2266,7 +2266,7 @@ impl HeatPump {
             Boiler::create_service_hot_water_combi(
                 boiler.clone(),
                 boiler_data,
-                service_name.to_owned(),
+                service_name,
                 temp_hot_water,
                 cold_feed,
             )
@@ -2278,7 +2278,7 @@ impl HeatPump {
 
     pub(crate) fn create_service_hot_water(
         heat_pump: Arc<Mutex<Self>>,
-        service_name: String,
+        service_name: &str,
         temp_hot_water_in_c: f64,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
@@ -2286,7 +2286,7 @@ impl HeatPump {
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<HeatPumpServiceWater> {
-        Self::create_service_connection(heat_pump.clone(), service_name.as_str()).unwrap();
+        Self::create_service_connection(heat_pump.clone(), service_name).unwrap();
         let boiler_service = heat_pump
             .lock()
             .boiler
@@ -2295,7 +2295,7 @@ impl HeatPump {
                 anyhow::Ok(Arc::new(Mutex::new(
                     Boiler::create_service_hot_water_regular(
                         boiler.clone(),
-                        service_name.clone(),
+                        service_name,
                         control_min.clone(),
                         control_max.clone(),
                         simulation_time,
@@ -2306,7 +2306,7 @@ impl HeatPump {
 
         Ok(HeatPumpServiceWater::new(
             heat_pump,
-            service_name,
+            service_name.into(),
             temp_hot_water_in_c,
             temp_limit_upper_in_c,
             cold_feed,
@@ -2326,7 +2326,7 @@ impl HeatPump {
         let boiler_service = heat_pump.lock().boiler.as_ref().map(|boiler| {
             Arc::new(Mutex::new(Boiler::create_service_space_heating(
                 boiler.clone(),
-                service_name.to_owned(),
+                service_name,
                 control.clone(),
             )))
         });
@@ -6240,7 +6240,7 @@ mod tests {
 
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
-            service_name.to_string(),
+            service_name,
             50.,
             60.,
             cold_feed.clone().into(),
@@ -6267,7 +6267,7 @@ mod tests {
 
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump_with_boiler.into(),
-            service_name.to_string(),
+            service_name,
             50.,
             60.,
             cold_feed.into(),
@@ -6576,11 +6576,8 @@ mod tests {
             .unwrap(),
         ));
 
-        let boiler_service_space = Boiler::create_service_space_heating(
-            boiler.clone(),
-            "service_boilerspace".to_string(),
-            control,
-        );
+        let boiler_service_space =
+            Boiler::create_service_space_heating(boiler.clone(), "service_boilerspace", control);
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
         let input = create_heat_pump_input_from_json(None);
@@ -7111,7 +7108,7 @@ mod tests {
         .unwrap();
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
-            "service_boilerspace".to_owned(),
+            "service_boilerspace",
             Arc::new(Control::SetpointTime(control)),
         )));
 
@@ -7590,7 +7587,7 @@ mod tests {
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
-            "service_boilerspace_service_off".to_owned(),
+            "service_boilerspace_service_off",
             ctrl.into(),
         )));
 

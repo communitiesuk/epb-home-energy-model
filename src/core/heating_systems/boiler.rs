@@ -10,7 +10,7 @@ use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::np_interp;
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use arrayvec::ArrayString;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -225,7 +225,7 @@ impl BoilerServiceWaterCombi {
     pub fn energy_output_max(&self) -> f64 {
         self.boiler
             .read()
-            .energy_output_max(self.temperature_hot_water_in_c, None, None)
+            .energy_output_max(Some(self.temperature_hot_water_in_c), None, None)
     }
 
     pub fn is_on(&self) -> bool {
@@ -240,7 +240,7 @@ pub struct BoilerServiceWaterRegular {
     service_name: String,
     control_min: Option<Arc<Control>>,
     control_max: Arc<Control>,
-    temperature_hot_water_in_c: f64,
+    temperature_hot_water_in_c: Option<f64>,
 }
 
 impl BoilerServiceWaterRegular {
@@ -256,9 +256,7 @@ impl BoilerServiceWaterRegular {
             service_name,
             control_min,
             control_max: control_max.clone(),
-            temperature_hot_water_in_c: control_max
-                .setpnt(&simulation_time.current_iteration())
-                .ok_or_else(|| anyhow!("Could not get setpoint for control_max"))?,
+            temperature_hot_water_in_c: control_max.setpnt(&simulation_time.current_iteration()),
         })
     }
 
@@ -401,7 +399,7 @@ impl BoilerServiceSpace {
         } else {
             self.boiler
                 .read()
-                .energy_output_max(temp_output, time_start, time_elapsed_hp)
+                .energy_output_max(Some(temp_output), time_start, time_elapsed_hp)
         }
     }
 
@@ -626,18 +624,18 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_combi(
         boiler: Arc<RwLock<Self>>,
         boiler_data: HotWaterSourceDetails,
-        service_name: String,
+        service_name: &str,
         temperature_hot_water_in_c: f64,
         cold_feed: WaterSourceWithTemperature,
     ) -> Result<BoilerServiceWaterCombi, IncorrectBoilerDataType> {
         boiler
             .write()
-            .create_service_connection(service_name.clone().into())
+            .create_service_connection(Cow::from(service_name.to_string()))
             .unwrap();
         BoilerServiceWaterCombi::new(
             boiler.clone(),
             boiler_data,
-            service_name,
+            service_name.into(),
             temperature_hot_water_in_c,
             cold_feed,
             boiler.read().simulation_timestep,
@@ -646,18 +644,18 @@ impl Boiler {
 
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
-        service_name: String,
+        service_name: &str,
         control_min: Option<Arc<Control>>,
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler
             .write()
-            .create_service_connection(service_name.clone().into())
+            .create_service_connection(Cow::from(service_name.to_string()))
             .unwrap();
         BoilerServiceWaterRegular::new(
             boiler.clone(),
-            service_name,
+            service_name.into(),
             control_min,
             control_max,
             simulation_time,
@@ -666,14 +664,14 @@ impl Boiler {
 
     pub(crate) fn create_service_space_heating(
         boiler: Arc<RwLock<Self>>,
-        service_name: String,
+        service_name: &str,
         control: Arc<Control>,
     ) -> BoilerServiceSpace {
         boiler
             .write()
-            .create_service_connection(service_name.clone().into())
+            .create_service_connection(Cow::from(service_name.to_string()))
             .unwrap();
-        BoilerServiceSpace::new(boiler.clone(), service_name, control)
+        BoilerServiceSpace::new(boiler.clone(), service_name.into(), control)
     }
 
     fn cycling_adjustment(
@@ -971,7 +969,7 @@ impl Boiler {
 
     pub fn energy_output_max(
         &self,
-        _temp_output: f64,
+        _temp_output: Option<f64>,
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
     ) -> f64 {
@@ -1001,6 +999,8 @@ mod tests {
     use approx::{assert_relative_eq, assert_ulps_eq};
     use pretty_assertions::assert_eq;
     use rstest::*;
+    use serde_json::json;
+    use std::any::type_name;
 
     #[fixture]
     pub fn boiler_data() -> HeatSourceWetDetails {
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[rstest]
     fn test_temp_setpnt(
-        mut regular_boiler: BoilerServiceWaterRegular,
+        regular_boiler: BoilerServiceWaterRegular,
         simulation_time: SimulationTime,
     ) {
         for t_it in simulation_time.iter() {
@@ -1629,5 +1629,179 @@ mod tests {
                 [10.0, 2.0, 0.0][idx]
             );
         }
+    }
+
+    #[rstest]
+    fn test_create_service_connection(
+        #[from(boiler)] (mut boiler, _energy_supply): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        let service_name = "new_service";
+        // Ensure the service name does not already exist in energy supply connections
+        assert!(!boiler.energy_supply_connections.contains_key(service_name));
+        // Call the method under test
+        boiler
+            .create_service_connection(service_name.into())
+            .unwrap();
+        // Check that the service name was added to enercy supply connections
+        assert!(boiler.energy_supply_connections.contains_key(service_name));
+        // Check there is an error when connection is attempted with existing service name
+        assert!(boiler
+            .create_service_connection(service_name.into())
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water_combi(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        let service_name = "service_hot_water_combi";
+        let cold_feed = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
+        let temp_hot_water = 50.;
+        let boiler_data: HotWaterSourceDetails = serde_json::from_value(json!({
+            "type": "CombiBoiler",
+            "ColdWaterSource": "mains water",
+            "HeatSourceWet": "hp",
+            "Control": "hw timer",
+            "separate_DHW_tests": "M&L",
+            "rejected_energy_1": 0.0004,
+            "fuel_energy_2": 13.078,
+            "rejected_energy_2": 0.0004,
+            "storage_loss_factor_2": 0.91574,
+            "rejected_factor_3": 0,
+            "daily_HW_usage": 120,
+            "setpoint_temp": 60.0
+        }))
+        .unwrap();
+
+        let boiler = Arc::new(RwLock::new(boiler));
+
+        let boiler_service_result = Boiler::create_service_hot_water_combi(
+            boiler,
+            boiler_data,
+            service_name,
+            temp_hot_water,
+            WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_feed)),
+        );
+        assert!(boiler_service_result.is_ok());
+    }
+
+    #[rstest]
+    fn test_create_service_hot_water_regular(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        let service_name = "service_hot_water_regular";
+        let control_min = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
+                .unwrap(),
+        ));
+        let control_max = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
+                .unwrap(),
+        ));
+
+        let boiler = Arc::new(RwLock::new(boiler));
+
+        let boiler_hotwater_regular_result = Boiler::create_service_hot_water_regular(
+            boiler,
+            service_name,
+            Some(control_min),
+            control_max,
+            &simulation_time.iter(),
+        );
+        assert!(boiler_hotwater_regular_result.is_ok());
+    }
+
+    #[rstest]
+    fn test_create_service_space_heating(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        let boiler = Arc::new(RwLock::new(boiler));
+
+        let boiler_service_space_heating = Boiler::create_service_space_heating(
+            boiler,
+            "BoilerServiceSpace",
+            Arc::new(Control::SetpointTime(
+                SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
+                    .unwrap(),
+            )),
+        );
+        assert_eq!(
+            type_of(boiler_service_space_heating),
+            &*type_name::<BoilerServiceSpace>()
+        );
+    }
+
+    // auxiliary method to check type - this is a little against the spirit of rust, but given for parity with the Python
+    fn type_of<T>(_: T) -> &'static str {
+        type_name::<T>()
+    }
+
+    #[rstest]
+    fn test_cycling_adjustment(#[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>)) {
+        assert_relative_eq!(
+            boiler.cycling_adjustment(40.0, 0.05, 0.5, 20.),
+            0.030120066786994828,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_location_adjustment(
+        #[from(boiler)] (boiler, energy_supply): (Boiler, Arc<RwLock<EnergySupply>>),
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        // Internal boiler settings
+        assert_relative_eq!(
+            boiler.location_adjustment(30., 5., 20.),
+            76.72260667117162,
+            max_relative = 1e-7
+        );
+
+        let boiler_external_data: HeatSourceWetDetails = serde_json::from_value(json!({
+            "type": "Boiler",
+            "rated_power": 24.0,
+            "EnergySupply": "mains_gas",
+            "EnergySupply_aux": "Boiler_auxiliary", // added into test data here (compared to Python) as required for input
+            "efficiency_full_load": 0.88,
+            "efficiency_part_load": 0.986,
+            "boiler_location": "external",
+            "modulation_load" : 0.2,
+            "electricity_circ_pump": 0.0600,
+            "electricity_part_load" : 0.0131,
+            "electricity_full_load" : 0.0388,
+            "electricity_standby" : 0.0244
+        }))
+        .unwrap();
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply.clone(), "Boiler_auxiliary").unwrap();
+
+        let boiler_external = Boiler::new(
+            boiler_external_data,
+            energy_supply,
+            energy_supply_conn_aux,
+            Arc::new(external_conditions),
+            simulation_time.step,
+        )
+        .unwrap();
+
+        assert_relative_eq!(
+            boiler_external.location_adjustment(30., 5., 2.5),
+            31.530735570835994,
+            max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_calc_current_boiler_power(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        assert_eq!(boiler.calc_current_boiler_power(10., 0.), 0.0);
+        assert_relative_eq!(
+            boiler.calc_current_boiler_power(10., 3.),
+            4.800000000000001,
+            max_relative = 1e-7
+        );
     }
 }

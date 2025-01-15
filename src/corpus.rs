@@ -3735,7 +3735,7 @@ impl WetHeatSource {
             WetHeatSource::Boiler(ref mut boiler) => Boiler::create_service_hot_water_combi(
                 boiler.clone(),
                 boiler_data,
-                service_name.to_string(),
+                service_name,
                 temp_hot_water,
                 cold_feed,
             )
@@ -4083,7 +4083,7 @@ fn heat_source_from_input(
                     WetHeatSource::HeatPump(heat_pump) => HeatSource::Wet(Box::new(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
-                            energy_supply_conn_name.clone(),
+                            energy_supply_conn_name.as_str(),
                             55.,
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
@@ -4096,7 +4096,7 @@ fn heat_source_from_input(
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
-                            energy_supply_conn_name.clone(),
+                            energy_supply_conn_name.as_str(),
                             control_min,
                             control_max.ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a BoilerServiceWaterRegular object."))?,
                             simulation_time
@@ -4573,7 +4573,7 @@ fn space_heat_systems_from_input(
                                 SpaceHeatingService::HeatPump(heat_source_service)
                             }
                             WetHeatSource::Boiler(boiler) => {
-                                let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), energy_supply_conn_name, control);
+                                let heat_source_service = Boiler::create_service_space_heating(boiler.clone(), energy_supply_conn_name.as_str(), control);
                                 SpaceHeatingService::Boiler(heat_source_service)
                             }
                             WetHeatSource::Hiu(heat_network) => {
