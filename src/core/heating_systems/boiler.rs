@@ -6,7 +6,7 @@ use crate::core::material_properties::WATER;
 use crate::core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeReference};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{BoilerHotWaterTest, HotWaterSourceDetails};
+use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::np_interp;
@@ -422,12 +422,11 @@ pub(crate) struct Boiler {
     boiler_location: HeatSourceLocation,
     min_modulation_load: f64,
     boiler_power: f64,
-    // fuel_code: (), // derived from energy supply
+    fuel_code: FuelType,
     power_circ_pump: f64,
     power_part_load: f64,
     power_full_load: f64,
     power_standby: f64,
-    // some kind of memoisation? review this
     total_time_running_current_timestep: AtomicF64,
     corrected_full_load_gross: f64,
     room_temperature: f64,
@@ -465,12 +464,14 @@ impl Boiler {
             } => {
                 let total_time_running_current_timestep = 0.;
 
-                let net_to_gross = Self::net_to_gross(&energy_supply_type)?;
+                let fuel_code = energy_supply.read().fuel_type();
+
+                let net_to_gross = Self::net_to_gross(&fuel_code)?;
                 let full_load_net = full_load_gross / net_to_gross;
                 let part_load_net = part_load_gross / net_to_gross;
                 let corrected_full_load_net = Self::high_value_correction_full_load(full_load_net);
                 let corrected_part_load_net =
-                    Self::high_value_correction_part_load(&energy_supply_type, part_load_net)?;
+                    Self::high_value_correction_part_load(&fuel_code, part_load_net)?;
                 let corrected_full_load_gross = corrected_full_load_net * net_to_gross;
                 let corrected_part_load_gross = corrected_part_load_net * net_to_gross;
 
@@ -492,12 +493,12 @@ impl Boiler {
                 let temp_full_load_test = 60.;
                 let offset_for_theoretical_eff = 0.;
                 let theoretical_eff_part_load = Self::efficiency_over_return_temperatures(
-                    &energy_supply_type,
+                    &fuel_code,
                     temp_part_load_test,
                     offset_for_theoretical_eff,
                 )?;
                 let theoretical_eff_full_load = Self::efficiency_over_return_temperatures(
-                    &energy_supply_type,
+                    &fuel_code,
                     temp_full_load_test,
                     offset_for_theoretical_eff,
                 )?;
@@ -515,6 +516,7 @@ impl Boiler {
                     boiler_location,
                     min_modulation_load,
                     boiler_power,
+                    fuel_code,
                     power_circ_pump,
                     power_part_load,
                     power_full_load,
@@ -535,36 +537,31 @@ impl Boiler {
     /// Return boiler efficiency at different return temperatures
     /// In Python this is effvsreturntemp
     fn efficiency_over_return_temperatures(
-        _energy_supply_type: &str,
-        _return_temp: f64,
-        _offset: f64,
+        fuel_code: &FuelType,
+        return_temp: f64,
+        offset: f64,
     ) -> anyhow::Result<f64> {
-        // TODO 0.32 to be migrated to reference fuel types
+        let mains_gas_dewpoint = 52.2;
+        let lpg_dewpoint = 48.3;
+        let theoretical_eff = match fuel_code {
+            FuelType::MainsGas => {
+                if return_temp < mains_gas_dewpoint {
+                    -0.00007 * return_temp.powi(2) + 0.0017 * return_temp + 0.979
+                } else {
+                    -0.0006 * return_temp + 0.9129
+                }
+            }
+            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => {
+                if return_temp < lpg_dewpoint {
+                    -0.00006 * return_temp.powi(2) + 0.0013 * return_temp + 0.9859
+                } else {
+                    -0.0006 * return_temp + 0.933
+                }
+            }
+            _ => bail!("Unexpected fuel code {fuel_code:?} encountered"),
+        };
 
-        // let mains_gas_dewpoint = 52.2;
-        // let lpg_dewpoint = 48.3;
-        // let theoretical_eff = match energy_supply_type {
-        //     EnergySupplyType::MainsGas => {
-        //         if return_temp < mains_gas_dewpoint {
-        //             -0.00007 * return_temp.powi(2) + 0.0017 * return_temp + 0.979
-        //         } else {
-        //             -0.0006 * return_temp + 0.9129
-        //         }
-        //     }
-        //     EnergySupplyType::LpgBulk
-        //     | EnergySupplyType::LpgBottled
-        //     | EnergySupplyType::LpgCondition11F => {
-        //         if return_temp < lpg_dewpoint {
-        //             -0.00006 * return_temp.powi(2) + 0.0013 * return_temp + 0.9859
-        //         } else {
-        //             -0.0006 * return_temp + 0.933
-        //         }
-        //     }
-        //     _ => bail!("Unexpected energy supply type {energy_supply_type:?} encountered"),
-        // };
-
-        // Ok(theoretical_eff - offset)
-        Ok(0.01)
+        Ok(theoretical_eff - offset)
     }
 
     pub fn boiler_efficiency_over_return_temperatures(
@@ -572,50 +569,38 @@ impl Boiler {
         return_temp: f64,
         offset: f64,
     ) -> anyhow::Result<f64> {
-        Self::efficiency_over_return_temperatures(&self.energy_supply_type, return_temp, offset)
+        Self::efficiency_over_return_temperatures(&self.fuel_code, return_temp, offset)
     }
 
-    pub fn high_value_correction_part_load(
-        _energy_supply_type: &str,
-        _net_efficiency_part_load: f64,
+    fn high_value_correction_part_load(
+        fuel_code: &FuelType,
+        net_efficiency_part_load: f64,
     ) -> anyhow::Result<f64> {
-        // TODO 0.32 to be migrated to referencing fuel type
+        let maximum_part_load_eff = match fuel_code {
+            FuelType::MainsGas => 1.08,
+            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => 1.06,
+            _ => bail!("could not calculate maximum_part_load_eff for fuel_code {fuel_code:?}"),
+        };
 
-        // let maximum_part_load_eff = match energy_supply_type {
-        //     EnergySupplyType::MainsGas => 1.08,
-        //     EnergySupplyType::LpgBulk
-        //     | EnergySupplyType::LpgBottled
-        //     | EnergySupplyType::LpgCondition11F => 1.06,
-        //     _ => bail!("could not calculate maximum_part_load_eff for energy supply type {energy_supply_type:?}"),
-        // };
-        //
-        // Ok(min_of_2(
-        //     net_efficiency_part_load - 0.213 * (net_efficiency_part_load - 0.966),
-        //     maximum_part_load_eff,
-        // ))
-        Ok(1.08)
+        Ok(min_of_2(
+            net_efficiency_part_load - 0.213 * (net_efficiency_part_load - 0.966),
+            maximum_part_load_eff,
+        ))
     }
 
-    pub fn high_value_correction_full_load(net_efficiency_full_load: f64) -> f64 {
+    fn high_value_correction_full_load(net_efficiency_full_load: f64) -> f64 {
         min_of_2(
             net_efficiency_full_load - 0.673 * (net_efficiency_full_load - 0.955),
             0.98,
         )
     }
 
-    fn net_to_gross(_energy_supply_type: &str) -> anyhow::Result<f64> {
-        // TODO 0.32 this function to be migrated to reference fuel types
-
-        // match energy_supply_type {
-        //     EnergySupplyType::MainsGas => Ok(0.901),
-        //     EnergySupplyType::LpgBulk
-        //     | EnergySupplyType::LpgBottled
-        //     | EnergySupplyType::LpgCondition11F => Ok(0.921),
-        //     _ => bail!(
-        //         "could not convert net to gross for energy supply type '{energy_supply_type:?}'"
-        //     ),
-        // }
-        Ok(0.901)
+    fn net_to_gross(fuel_code: &FuelType) -> anyhow::Result<f64> {
+        match fuel_code {
+            FuelType::MainsGas => Ok(0.901),
+            FuelType::LpgBulk | FuelType::LpgBottled | FuelType::LpgCondition11F => Ok(0.921),
+            _ => bail!("could not convert net to gross for fuel code '{fuel_code:?}'"),
+        }
     }
 
     /// Create an EnergySupplyConnection for the service name given
@@ -1050,7 +1035,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
         ExternalConditions::new(
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
@@ -1131,7 +1116,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn boiler(
+    fn boiler(
         boiler_data: HeatSourceWetDetails,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -1161,8 +1146,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "ignored during migration to 0.32"]
-    pub fn test_energy_output_provided(
+    fn test_energy_output_provided(
         boiler: (Boiler, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
         boiler_energy_output_required: [f64; 2],
@@ -1196,8 +1180,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "ignored during migration to 0.32"]
-    pub fn should_provide_correct_efficiency_over_return_temp(
+    fn should_provide_correct_efficiency_over_return_temp(
         boiler: (Boiler, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
@@ -1224,7 +1207,7 @@ mod tests {
             "incorrect high value correction for full load"
         );
         assert_eq!(
-            Boiler::high_value_correction_part_load(&boiler.energy_supply_type, 1.081).unwrap(),
+            Boiler::high_value_correction_part_load(&boiler.fuel_code, 1.081).unwrap(),
             1.056505,
             "incorrect high value correction for part load"
         );
@@ -1234,7 +1217,7 @@ mod tests {
     pub fn should_calc_correct_net_to_gross(boiler: (Boiler, Arc<RwLock<EnergySupply>>)) {
         let (boiler, _) = boiler;
         assert_eq!(
-            Boiler::net_to_gross(&boiler.energy_supply_type).unwrap(),
+            Boiler::net_to_gross(&boiler.fuel_code).unwrap(),
             0.901,
             "incorrect net to gross"
         );
@@ -1330,7 +1313,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn volume_demanded() -> [IndexMap<DemandVolTargetKey, VolumeReference>; 2] {
+    fn volume_demanded() -> [IndexMap<DemandVolTargetKey, VolumeReference>; 2] {
         [
             IndexMap::from([
                 (
@@ -1382,7 +1365,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn combi_boiler_should_provide_demand_hot_water(
+    fn combi_boiler_should_provide_demand_hot_water(
         combi_boiler: BoilerServiceWaterCombi,
         simulation_time: SimulationTime,
         volume_demanded: [IndexMap<DemandVolTargetKey, VolumeReference>; 2],
@@ -1399,7 +1382,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn boiler_data_for_regular() -> HeatSourceWetDetails {
+    fn boiler_data_for_regular() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             rated_power: 24.0,
             energy_supply: "mains gas".to_string(),
@@ -1416,7 +1399,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn boiler_for_regular(
+    fn boiler_for_regular(
         boiler_data_for_regular: HeatSourceWetDetails,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -1446,7 +1429,7 @@ mod tests {
     }
 
     #[fixture]
-    fn control_min(simulation_time: SimulationTime) -> Arc<Control> {
+    fn control_min() -> Arc<Control> {
         Arc::new(Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(52.), Some(52.)],
@@ -1463,7 +1446,7 @@ mod tests {
     }
 
     #[fixture]
-    fn control_max(simulation_time: SimulationTime) -> Arc<Control> {
+    fn control_max() -> Arc<Control> {
         Arc::new(Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(60.), Some(60.)],
@@ -1497,7 +1480,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn regular_boiler_should_provide_demand_hot_water(
+    fn regular_boiler_should_provide_demand_hot_water(
         mut regular_boiler: BoilerServiceWaterRegular,
         simulation_time: SimulationTime,
     ) {
@@ -1521,8 +1504,18 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn test_temp_setpnt(
+        mut regular_boiler: BoilerServiceWaterRegular,
+        simulation_time: SimulationTime,
+    ) {
+        for t_it in simulation_time.iter() {
+            assert_eq!(regular_boiler.temp_setpnt(t_it), (Some(52.), Some(60.)));
+        }
+    }
+
     #[fixture]
-    pub fn boiler_data_for_service_space() -> HeatSourceWetDetails {
+    fn boiler_data_for_service_space() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
             energy_supply: "mains gas".to_string(),
@@ -1539,12 +1532,12 @@ mod tests {
     }
 
     #[fixture]
-    pub fn simulation_time_for_service_space() -> SimulationTime {
+    fn simulation_time_for_service_space() -> SimulationTime {
         SimulationTime::new(0., 3., 1.)
     }
 
     #[fixture]
-    pub fn boiler_for_service_space(
+    fn boiler_for_service_space(
         boiler_data_for_service_space: HeatSourceWetDetails,
         external_conditions: ExternalConditions,
         simulation_time_for_service_space: SimulationTime,
@@ -1582,7 +1575,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn control_for_service_space() -> Control {
+    fn control_for_service_space() -> Control {
         Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![Some(21.0), Some(21.0), None],
@@ -1599,7 +1592,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn service_space_boiler(
+    fn service_space_boiler(
         boiler_for_service_space: Boiler,
         control_for_service_space: Control,
     ) -> BoilerServiceSpace {
@@ -1611,7 +1604,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn service_space_boiler_should_provide_demand_hot_water(
+    fn service_space_boiler_should_provide_demand_hot_water(
         mut service_space_boiler: BoilerServiceSpace,
         simulation_time_for_service_space: SimulationTime,
     ) {

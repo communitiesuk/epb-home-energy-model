@@ -274,6 +274,10 @@ pub enum FuelType {
     Custom,
     #[serde(rename = "LPG_bulk")]
     LpgBulk,
+    #[serde(rename = "LPG_bottled")]
+    LpgBottled,
+    #[serde(rename = "LPG_condition_11F")]
+    LpgCondition11F,
     UnmetDemand,
 }
 
