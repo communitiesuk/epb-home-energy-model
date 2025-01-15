@@ -1362,14 +1362,14 @@ mod tests {
     ) {
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            heat_battery.lock().first_call();
+            heat_battery.lock().first_call().unwrap();
 
             assert!(!heat_battery.lock().flag_first_call);
             assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
             assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 4.358566028225806);
             assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.031277812499999995);
 
-            heat_battery.lock().timestep_end(t_idx);
+            heat_battery.lock().timestep_end(t_idx).unwrap();
         }
     }
 
@@ -1412,7 +1412,7 @@ mod tests {
 
             assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 1.);
 
-            heat_battery.lock().timestep_end(t_idx);
+            heat_battery.lock().timestep_end(t_idx).unwrap();
         }
     }
 
@@ -1479,15 +1479,18 @@ mod tests {
         HeatBattery::create_service_connection(heat_battery.clone(), service_name).unwrap();
 
         let t_idx = 0;
-        heat_battery.lock().demand_energy(
-            service_name,
-            ServiceType::WaterRegular,
-            5.0,
-            40.,
-            None,
-            None,
-            t_idx,
-        );
+        heat_battery
+            .lock()
+            .demand_energy(
+                service_name,
+                ServiceType::WaterRegular,
+                5.0,
+                40.,
+                None,
+                None,
+                t_idx,
+            )
+            .unwrap();
 
         assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
         assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
@@ -1501,7 +1504,7 @@ mod tests {
 
         assert!(service_names_in_results.contains(&service_name.into()));
 
-        heat_battery.lock().timestep_end(t_idx);
+        heat_battery.lock().timestep_end(t_idx).unwrap();
 
         assert!(!heat_battery.lock().flag_first_call);
         assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
