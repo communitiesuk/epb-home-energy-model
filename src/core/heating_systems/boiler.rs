@@ -904,7 +904,7 @@ impl Boiler {
             let mut result_service_name = ArrayString::<64>::new(); // ArrayStrings are a pain, therefore this small song and dance
             result_service_name.push_str(service_name);
             self.service_results.write().push(ServiceResult {
-                _service_name: result_service_name,
+                service_name: result_service_name,
                 time_running: time_running_current_service,
                 current_boiler_power,
             });
@@ -982,7 +982,7 @@ impl Boiler {
 
 #[derive(Copy, Clone, Debug)]
 struct ServiceResult {
-    _service_name: ArrayString<64>,
+    service_name: ArrayString<64>,
     time_running: f64,
     current_boiler_power: f64,
 }
@@ -997,6 +997,7 @@ mod tests {
     use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use rstest::*;
     use serde_json::json;
@@ -1803,5 +1804,374 @@ mod tests {
             4.800000000000001,
             max_relative = 1e-7
         );
+    }
+
+    #[rstest]
+    fn test_calc_boiler_eff(
+        #[from(boiler)] (boiler, energy_supply): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+        external_conditions: ExternalConditions,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                boiler
+                    .calc_boiler_eff(false, 37., 3., None, Some(0.), t_it)
+                    .unwrap(),
+                [0.8619648380446757, 0.8619648380446757][t_idx],
+                max_relative = 1e-7
+            );
+        }
+
+        let boiler_external_data: HeatSourceWetDetails = serde_json::from_value(json!({
+            "type": "Boiler",
+            "rated_power": 24.0,
+            "EnergySupply": "mains_gas",
+            "EnergySupply_aux": "Boiler_auxiliary", // added into test data here (compared to Python) as required for input
+            "efficiency_full_load": 0.88,
+            "efficiency_part_load": 0.986,
+            "boiler_location": "external",
+            "modulation_load" : 0.2,
+            "electricity_circ_pump": 0.0600,
+            "electricity_part_load" : 0.0131,
+            "electricity_full_load" : 0.0388,
+            "electricity_standby" : 0.0244
+        }))
+        .unwrap();
+        let energy_supply_conn_aux =
+            EnergySupply::connection(energy_supply.clone(), "Boiler_auxiliary").unwrap();
+
+        let boiler_external = Boiler::new(
+            boiler_external_data,
+            energy_supply,
+            energy_supply_conn_aux,
+            Arc::new(external_conditions),
+            simulation_time.step,
+        )
+        .unwrap();
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                boiler_external
+                    .calc_boiler_eff(false, 37., 3., None, Some(0.), t_it)
+                    .unwrap(),
+                [0.8545088068138385, 0.8555283757048464][t_idx],
+                max_relative = 1e-7
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calc_energy_output_provided(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        assert_eq!(boiler.calc_energy_output_provided(5.0, 1.), 5.0);
+        assert_eq!(boiler.calc_energy_output_provided(25.0, 1.), 24.0);
+    }
+
+    #[rstest]
+    fn test_time_available(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_eq!(boiler.time_available(0.0, None), [1.0, 1.0][t_idx]);
+        }
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_eq!(boiler.time_available(0.2, Some(0.5)), [0.4, 0.4][t_idx])
+        }
+    }
+
+    #[rstest]
+    fn test_demand_energy(
+        #[from(boiler)] (mut boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        boiler
+            .create_service_connection("boiler_demand_energy".into())
+            .unwrap();
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                boiler
+                    .demand_energy(
+                        "boiler_demand_energy",
+                        ServiceType::WaterCombi,
+                        10.,
+                        37.,
+                        None,
+                        Some(false),
+                        None,
+                        None,
+                        t_it
+                    )
+                    .unwrap()
+                    .0,
+                [10.0, 0.0][t_idx]
+            );
+        }
+
+        boiler
+            .create_service_connection("boiler_demand_energy_with_hybrid".into())
+            .unwrap();
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                boiler
+                    .demand_energy(
+                        "boiler_demand_energy_with_hybrid",
+                        ServiceType::Space,
+                        100.,
+                        37.,
+                        None,
+                        Some(true),
+                        Some(0.),
+                        None,
+                        t_it
+                    )
+                    .unwrap(),
+                [(24.0, Some(1.0)), (24.0, Some(1.0))][t_idx]
+            );
+        }
+
+        // Test with time_elapsed_hp
+        boiler
+            .create_service_connection("boiler_demand_energy_hybrid_time_elapsed".into())
+            .unwrap();
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                boiler
+                    .demand_energy(
+                        "boiler_demand_energy_hybrid_time_elapsed",
+                        ServiceType::Space,
+                        100.,
+                        37.,
+                        None,
+                        Some(true),
+                        Some(0.5),
+                        None,
+                        t_it
+                    )
+                    .unwrap(),
+                [(12.0, Some(0.5)), (12.0, Some(0.5))][t_idx]
+            );
+        }
+
+        let required_services = [
+            "boiler_demand_energy",
+            "boiler_demand_energy_with_hybrid",
+            "boiler_demand_energy_hybrid_time_elapsed",
+        ];
+        let service_names_in_list = boiler
+            .service_results
+            .read()
+            .iter()
+            .map(|result| result.service_name)
+            .collect_vec();
+        assert!(required_services
+            .iter()
+            .all(|&service| service_names_in_list.iter().any(|x| x.as_str() == service)));
+
+        // Python contains some further assertions using mocked boiler methods, which is difficult to do in Rust
+        // without littering the implementation with test-specific overrides - deciding that this isn't worth
+        // the trade-off here, at least for now
+    }
+
+    #[rstest]
+    fn test_calc_auxiliary_energy(
+        simulation_time: SimulationTime,
+        boiler_data: HeatSourceWetDetails,
+        #[from(boiler)] (_, energy_supply): (Boiler, Arc<RwLock<EnergySupply>>),
+        external_conditions: ExternalConditions,
+    ) {
+        let external_conditions = Arc::new(external_conditions);
+
+        let energy_supply_aux = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn_auxiliary =
+            EnergySupply::connection(energy_supply_aux.clone(), "boiler_auxiliary").unwrap();
+
+        let mut boiler = Boiler::new(
+            boiler_data,
+            energy_supply.clone(),
+            energy_supply_conn_auxiliary,
+            external_conditions.clone(),
+            simulation_time.step,
+        )
+        .unwrap();
+
+        // Check the function runs without panicking
+        boiler.calc_auxiliary_energy(1., 0);
+
+        // in Python there is some use of mocking here, which does not seem worth porting due to
+        // the disproportionate difficulty in doing this vs the benefit of the assertion provided
+    }
+
+    #[rstest]
+    fn test_timestep_end(
+        #[from(boiler)] (mut boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        boiler
+            .create_service_connection("boiler_demand_energy".into())
+            .unwrap();
+
+        boiler
+            .demand_energy(
+                "boiler_demand_energy",
+                ServiceType::WaterCombi,
+                10.,
+                60.,
+                None,
+                Some(false),
+                None,
+                None,
+                simulation_time.iter().next().unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            boiler
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst),
+            1.0
+        );
+        assert_eq!(
+            boiler.service_results.read()[0].service_name.as_str(),
+            "boiler_demand_energy"
+        );
+
+        // Call the method under test
+        boiler.timestep_end(simulation_time.iter().next().unwrap());
+
+        // Assertions to check if the internal state was updated correctly
+        assert_eq!(
+            boiler
+                .total_time_running_current_timestep
+                .load(Ordering::SeqCst),
+            0.0
+        );
+        assert!(boiler.service_results.read().is_empty());
+    }
+
+    #[rstest]
+    fn test_energy_output_max(#[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>)) {
+        assert_eq!(boiler.energy_output_max(Some(30.), None, Some(0.)), 24.0);
+        assert_eq!(boiler.energy_output_max(Some(30.), None, Some(0.5)), 12.0);
+    }
+
+    #[rstest]
+    fn test_effvsreturntemp(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+        boiler_data: HeatSourceWetDetails,
+        external_conditions: ExternalConditions,
+    ) {
+        let external_conditions = Arc::new(external_conditions);
+
+        let efficiency = boiler
+            .boiler_efficiency_over_return_temperatures(50., 0.5)
+            .unwrap();
+        let expected_efficiency = (-0.00007 * 50.0f64.powi(2) + 0.0017 * 50. + 0.979) - 0.5;
+        assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
+
+        let efficiency = boiler
+            .boiler_efficiency_over_return_temperatures(60., 0.5)
+            .unwrap();
+        let expected_efficiency = (-0.0006 * 60.0 + 0.9129) - 0.5;
+        assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::LpgBulk, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_connection_aux =
+            EnergySupply::connection(energy_supply.clone(), "boiler_lpg_bulk").unwrap();
+        let boiler_lpg = Boiler::new(
+            boiler_data.clone(),
+            energy_supply.clone(),
+            energy_supply_connection_aux.clone(),
+            external_conditions.clone(),
+            simulation_time.step,
+        )
+        .unwrap();
+
+        let efficiency = boiler_lpg
+            .boiler_efficiency_over_return_temperatures(45., 0.5)
+            .unwrap();
+        let expected_efficiency = (-0.00006 * 45.0f64.powi(2) + 0.0013 * 45. + 0.9859) - 0.5;
+        assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
+
+        let efficiency = boiler_lpg
+            .boiler_efficiency_over_return_temperatures(50., 0.5)
+            .unwrap();
+        let expected_efficiency = (-0.0006 * 50.0 + 0.933) - 0.5;
+        assert_relative_eq!(efficiency, expected_efficiency, max_relative = 1e-7);
+
+        // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::MainsGas, simulation_time.total_steps()).build(),
+        ));
+        let boiler = Boiler::new(
+            boiler_data,
+            energy_supply.clone(),
+            energy_supply_connection_aux,
+            external_conditions.clone(),
+            simulation_time.step,
+        )
+        .unwrap();
+        assert_relative_eq!(
+            boiler
+                .boiler_efficiency_over_return_temperatures(50., 0.)
+                .unwrap(),
+            0.889,
+            max_relative = 1e-3
+        );
+    }
+
+    #[rstest]
+    fn test_high_value_correction_part_load(
+        #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
+    ) {
+        assert_eq!(
+            Boiler::high_value_correction_part_load(&boiler.fuel_code, 5.).unwrap(),
+            1.08
+        );
+        assert_relative_eq!(
+            Boiler::high_value_correction_part_load(&boiler.fuel_code, 1.).unwrap(),
+            0.99275,
+            max_relative = 1e-5
+        );
+
+        assert_eq!(
+            Boiler::high_value_correction_part_load(&FuelType::LpgBulk, 5.).unwrap(),
+            1.06
+        );
+        assert_relative_eq!(
+            Boiler::high_value_correction_part_load(&FuelType::LpgBulk, 1.).unwrap(),
+            0.992758,
+            max_relative = 1e-5
+        );
+
+        // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
+    }
+
+    #[rstest]
+    fn test_high_value_correction_full_load() {
+        assert_relative_eq!(
+            Boiler::high_value_correction_full_load(1.0),
+            0.969715,
+            max_relative = 1e-5
+        );
+    }
+
+    #[rstest]
+    fn test_net_to_gross(#[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>)) {
+        assert_eq!(Boiler::net_to_gross(&boiler.fuel_code).unwrap(), 0.901);
+
+        assert_eq!(Boiler::net_to_gross(&FuelType::LpgBulk).unwrap(), 0.921);
+
+        // Python here has a check for handling bad fuel codes, which are inexpressible in Rust due to use of enum (good thing!)
     }
 }
