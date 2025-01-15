@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     core::{
         controls::time_control::{ChargeControl, SetpointTimeControl},
@@ -24,16 +26,22 @@ pub struct ElecStorageHeater {
     charge_control: ChargeControl,
     fan_pwr: f64,
     external_conditions: ExternalConditions,
+    temp_air: f64,
     state_of_charge: f64,
     esh_min_output: Vec<(f64, f64)>,
     esh_max_output: Vec<(f64, f64)>,
     demand_met: f64,
     demand_unmet: f64,
-    // TODO review - do we need these public properties?
+    zone_setpoint_init: f64,
+    soc_max_array: Vec<f64>,
+    power_max_array: Vec<f64>,
+    soc_min_array: Vec<f64>,
+    power_min_array: Vec<f64>,
+    // TODO review - do we need to keep these as public properties?
     pub energy_for_fan: f64,
     pub energy_instant: f64,
     pub energy_charged: f64,
-    pub energy_delivered: f64
+    pub energy_delivered: f64,
 }
 
 impl ElecStorageHeater {
@@ -76,6 +84,35 @@ impl ElecStorageHeater {
         //                         outputting heat, e.g. damper open / fan running (with units kW)
         // extcond              -- reference to ExternalConditions object
 
+        let zone_setpoint_init = zone.setpnt_init();
+        let temp_air = zone.temp_internal_air();
+
+        // Convert ESH_max_output to NumPy arrays without sorting
+        let soc_max_array = esh_max_output.iter().map(|f| f.0).collect_vec();
+        let power_max_array = esh_max_output.iter().map(|f| f.1).collect_vec();
+
+        // Convert ESH_min_output to NumPy arrays without sorting
+        let soc_min_array = esh_min_output.iter().map(|f| f.0).collect_vec();
+        let power_min_array = esh_min_output.iter().map(|f| f.1).collect_vec();
+
+        // Validate that both SOC arrays start at 0.0 and end at 1.0
+        // TODO Result or more specific panic
+        if !is_close!(*soc_max_array.first().unwrap(), 0.) {
+            panic!("The first SOC value in esh_max_output must be 0.0 (fully discharged).");
+        }
+
+        if !is_close!(*soc_max_array.last().unwrap(), 1.) {
+            panic!("The last SOC value in esh_max_output must be 1.0 (fully charged).");
+        }
+
+        if !is_close!(*soc_min_array.first().unwrap(), 0.) {
+            panic!("The first SOC value in esh_min_output must be 0.0 (fully discharged).");
+        }
+
+        if !is_close!(*soc_min_array.last().unwrap(), 1.) {
+            panic!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
+        }
+        
         Self {
             pwr_in,
             pwr_instant: rated_power_instant,
@@ -90,16 +127,17 @@ impl ElecStorageHeater {
             charge_control,
             fan_pwr,
             external_conditions: ext_cond,
+            temp_air,
             state_of_charge: 0.,
             esh_min_output,
             esh_max_output,
             demand_met: 0.,
             demand_unmet: 0.,
-            // zone_setpnt_init: // TODO
-            // soc_max_array
-            // ower_max_array
-            // soc_min_array
-            // power_min_array
+            zone_setpoint_init,
+            soc_max_array,
+            power_max_array,
+            soc_min_array,
+            power_min_array,
             // TODO ...
             energy_for_fan: 0.,
             energy_instant: 0.,
