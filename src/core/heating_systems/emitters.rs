@@ -36,7 +36,7 @@ pub struct Emitters {
     pub thermal_mass: f64,
     pub c: f64,
     pub n: f64,
-    _temp_diff_emit_dsgn: f64,
+    temp_diff_emit_dsgn: f64,
     frac_convective: f64,
     heat_source: Arc<RwLock<SpaceHeatingService>>,
     temp_internal_air_fn: TempInternalAirFn,
@@ -52,6 +52,8 @@ pub struct Emitters {
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
     output_detailed_results: bool,
     emitters_detailed_results: Option<Arc<RwLock<Vec<EmittersDetailedResult>>>>,
+    min_flow_rate: Option<f64>,
+    max_flow_rate: Option<f64>,
 }
 
 // Implement Debug for Emitters using standard strategy, overwriting debug value for temp_internal_air_fn.
@@ -61,7 +63,7 @@ impl Debug for Emitters {
             .field("thermal_mass", &self.thermal_mass)
             .field("c", &self.c)
             .field("n", &self.n)
-            .field("_temp_diff_emit_dsgn", &self._temp_diff_emit_dsgn)
+            .field("_temp_diff_emit_dsgn", &self.temp_diff_emit_dsgn)
             .field("frac_convective", &self.frac_convective)
             .field("heat_source", &self.heat_source)
             .field(
@@ -214,6 +216,8 @@ impl Emitters {
         design_flow_temp: f64,
         output_detailed_results: bool,
         with_buffer_tank: bool,
+        min_flow_rate: Option<f64>,
+        max_flow_rate: Option<f64>,
     ) -> Self {
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
         let (min_outdoor_temp, max_outdoor_temp, min_flow_temp, max_flow_temp) = if matches!(
@@ -236,7 +240,7 @@ impl Emitters {
             thermal_mass,
             c,
             n,
-            _temp_diff_emit_dsgn: temp_diff_emit_dsgn,
+            temp_diff_emit_dsgn,
             frac_convective,
             heat_source,
             temp_internal_air_fn,
@@ -252,6 +256,8 @@ impl Emitters {
             target_flow_temp: None,
             output_detailed_results,
             emitters_detailed_results: output_detailed_results.then(Default::default),
+            min_flow_rate,
+            max_flow_rate,
         }
     }
 
@@ -601,6 +607,11 @@ impl Emitters {
                             .target_flow_temp
                             .expect("Expect a target_flow_temp to have been set at this point"),
                         temp_rm_prev,
+                        // TODO check/implement correct logic for below variables as part of 0.32 migration
+                        variable_flow: false,
+                        temp_diff_emit_dsgn: self.temp_diff_emit_dsgn,
+                        min_flow_rate: self.min_flow_rate,
+                        max_flow_rate: self.max_flow_rate,
                     }),
                     false => None,
                 };
@@ -1073,6 +1084,8 @@ mod tests {
             design_flow_temp,
             false,
             with_buffer_tank,
+            None,
+            None,
         )
     }
 
@@ -1158,6 +1171,8 @@ mod tests {
             55.,
             false,
             false,
+            None,
+            None,
         );
 
         let (flow_temp, return_temp) =
@@ -1187,6 +1202,8 @@ mod tests {
             55.,
             false,
             false,
+            None,
+            None,
         );
 
         let (flow_temp, return_temp) =
@@ -1231,6 +1248,8 @@ mod tests {
             55.0,
             false,
             false,
+            None,
+            None,
         );
 
         let temp_emitter = 15.;

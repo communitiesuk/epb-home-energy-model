@@ -4587,7 +4587,7 @@ fn space_heat_systems_from_input(
                         };
                         let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
                         // TODO Fix thermal mass logic as part of 0.32 migration
-                        let space_heater = Emitters::new(thermal_mass.expect("Thermal mass may not be present while migrating to 0.32"), c, n, *temp_diff_emit_dsgn, frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling);
+                        let space_heater = Emitters::new(thermal_mass.expect("Thermal mass may not be present while migrating to 0.32"), c, n, *temp_diff_emit_dsgn, frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling, None, None);
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {
