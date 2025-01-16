@@ -1,5 +1,8 @@
 #![allow(non_snake_case)]
 
+use crate::compare_floats::{max_of_2, min_of_2};
+use crate::core::space_heat_demand::building_element::sky_view_factor;
+use crate::core::units::HOURS_PER_DAY;
 use crate::input::{deserialize_orientation, serialize_orientation, ExternalConditionsInput};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
@@ -106,7 +109,7 @@ pub struct ExternalConditions {
     solar_reflectivity_of_ground: Vec<f64>,
     pub latitude: f64,
     pub longitude: f64,
-    pub timezone: u32,
+    pub timezone: i32,
     pub start_day: u32,
     pub end_day: Option<u32>,
     time_series_step: f64,
@@ -162,7 +165,7 @@ impl ExternalConditions {
         solar_reflectivity_of_ground: Vec<f64>,
         latitude: f64,
         longitude: f64,
-        timezone: u32,
+        timezone: i32,
         start_day: u32,
         end_day: Option<u32>,
         time_series_step: f64,
@@ -1878,7 +1881,7 @@ fn init_equation_of_time(current_day: u32) -> f64 {
     }
 }
 
-fn init_time_shift(timezone: u32, longitude: f64) -> f64 {
+fn init_time_shift(timezone: i32, longitude: f64) -> f64 {
     // """ Calculate the time shift, in hours, resulting from the fact that the
     // longitude and the path of the sun are not equal
     //
@@ -2031,10 +2034,6 @@ fn init_extra_terrestrial_radiation(earth_orbit_deviation: f64) -> f64 {
     // #we use the correct version of the formula here
     1367.0 * (1.0 + 0.033 * earth_orbit_deviation.to_radians().cos())
 }
-
-use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::space_heat_demand::building_element::sky_view_factor;
-use crate::core::units::HOURS_PER_DAY;
 
 enum BrightnessCoefficientName {
     F11,
@@ -2240,72 +2239,72 @@ mod tests {
     ];
 
     #[fixture]
-    pub fn simulation_time_iterator() -> SimulationTimeIterator {
-        SimulationTime::new(0.0, 8.0, 1.0).iter()
+    fn simulation_time_iterator() -> SimulationTimeIterator {
+        SimulationTime::new(7.0, 15.0, 1.0).iter()
     }
 
     #[fixture]
-    pub fn air_temp_day_jan() -> [f64; 24] {
+    fn air_temp_day_jan() -> [f64; 24] {
         BASE_AIR_TEMPS
     }
 
     #[fixture]
-    pub fn air_temp_day_feb() -> [f64; 24] {
+    fn air_temp_day_feb() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 1.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_mar() -> [f64; 24] {
+    fn air_temp_day_mar() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 2.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_apr() -> [f64; 24] {
+    fn air_temp_day_apr() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 3.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_may() -> [f64; 24] {
+    fn air_temp_day_may() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 4.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_jun() -> [f64; 24] {
+    fn air_temp_day_jun() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 5.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_jul() -> [f64; 24] {
+    fn air_temp_day_jul() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 6.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_aug() -> [f64; 24] {
+    fn air_temp_day_aug() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 6.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_sep() -> [f64; 24] {
+    fn air_temp_day_sep() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 5.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_oct() -> [f64; 24] {
+    fn air_temp_day_oct() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 4.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_nov() -> [f64; 24] {
+    fn air_temp_day_nov() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 3.0)
     }
 
     #[fixture]
-    pub fn air_temp_day_dec() -> [f64; 24] {
+    fn air_temp_day_dec() -> [f64; 24] {
         BASE_AIR_TEMPS.map(|temp| temp + 2.0)
     }
 
     #[fixture]
-    pub fn air_temps() -> Vec<f64> {
+    fn air_temps() -> Vec<f64> {
         let mut temps: Vec<f64> = vec![];
         let months = [
             (air_temp_day_jan as fn() -> [f64; 24], DAYS_IN_MONTH[0]),
@@ -2343,67 +2342,67 @@ mod tests {
     ];
 
     #[fixture]
-    pub fn wind_speed_day_jan() -> [f64; 24] {
+    fn wind_speed_day_jan() -> [f64; 24] {
         BASE_WIND_SPEEDS
     }
 
     #[fixture]
-    pub fn wind_speed_day_feb() -> [f64; 24] {
+    fn wind_speed_day_feb() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.1)
     }
 
     #[fixture]
-    pub fn wind_speed_day_mar() -> [f64; 24] {
+    fn wind_speed_day_mar() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.2)
     }
 
     #[fixture]
-    pub fn wind_speed_day_apr() -> [f64; 24] {
+    fn wind_speed_day_apr() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.6)
     }
 
     #[fixture]
-    pub fn wind_speed_day_may() -> [f64; 24] {
+    fn wind_speed_day_may() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.8)
     }
 
     #[fixture]
-    pub fn wind_speed_day_jun() -> [f64; 24] {
+    fn wind_speed_day_jun() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 1.1)
     }
 
     #[fixture]
-    pub fn wind_speed_day_jul() -> [f64; 24] {
+    fn wind_speed_day_jul() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 1.2)
     }
 
     #[fixture]
-    pub fn wind_speed_day_aug() -> [f64; 24] {
+    fn wind_speed_day_aug() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 1.2)
     }
 
     #[fixture]
-    pub fn wind_speed_day_sep() -> [f64; 24] {
+    fn wind_speed_day_sep() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 1.1)
     }
 
     #[fixture]
-    pub fn wind_speed_day_oct() -> [f64; 24] {
+    fn wind_speed_day_oct() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.7)
     }
 
     #[fixture]
-    pub fn wind_speed_day_nov() -> [f64; 24] {
+    fn wind_speed_day_nov() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.5)
     }
 
     #[fixture]
-    pub fn wind_speed_day_dec() -> [f64; 24] {
+    fn wind_speed_day_dec() -> [f64; 24] {
         BASE_WIND_SPEEDS.map(|speed| speed - 0.3)
     }
 
     #[fixture]
-    pub fn wind_speeds() -> Vec<f64> {
+    fn wind_speeds() -> Vec<f64> {
         let mut speeds: Vec<f64> = vec![];
         let months = [
             (wind_speed_day_jan as fn() -> [f64; 24], DAYS_IN_MONTH[0]),
@@ -2441,7 +2440,7 @@ mod tests {
     ];
 
     #[fixture]
-    pub fn wind_directions() -> Vec<f64> {
+    fn wind_directions() -> Vec<f64> {
         let wind_direction_day_jan = BASE_WIND_DIRECTIONS;
         let wind_direction_day_feb = BASE_WIND_DIRECTIONS.map(|d| d - 1.);
         let wind_direction_day_mar = BASE_WIND_DIRECTIONS.map(|d| d - 2.);
@@ -2485,134 +2484,137 @@ mod tests {
     }
 
     #[fixture]
-    pub fn diffuse_horizontal_radiation() -> [f64; 8] {
-        [333.0, 610.0, 572.0, 420.0, 0.0, 10.0, 90.0, 275.0]
+    fn diffuse_horizontal_radiation() -> [f64; 24] {
+        [
+            0., 0., 0., 0., 0., 0., 0., 0., 136., 308., 365., 300., 128., 90., 30., 0., 0., 0., 0.,
+            0., 0., 0., 0., 0.,
+        ]
     }
 
     #[fixture]
-    pub fn direct_beam_radiation() -> [f64; 8] {
-        [420.0, 750.0, 425.0, 500.0, 0.0, 40.0, 0.0, 388.0]
+    fn direct_beam_radiation() -> [f64; 24] {
+        [
+            0., 0., 0., 0., 0., 0., 0., 0., 54., 113., 148., 149., 98., 50., 10., 0., 0., 0., 0.,
+            0., 0., 0., 0., 0.,
+        ]
     }
 
     #[fixture]
-    pub fn solar_reflectivity_of_ground() -> [f64; 8760] {
+    fn solar_reflectivity_of_ground() -> [f64; 8760] {
         [0.2; 8760]
     }
 
     #[fixture]
-    pub fn latitude() -> f64 {
+    fn latitude() -> f64 {
         51.42
     }
 
     #[fixture]
-    pub fn longitude() -> f64 {
+    fn longitude() -> f64 {
         -0.75
     }
 
     #[fixture]
-    pub fn timezone() -> u32 {
+    fn timezone() -> i32 {
         0
     }
 
     #[fixture]
-    pub fn start_day() -> u32 {
+    fn start_day() -> u32 {
         0
     }
 
     #[fixture]
-    pub fn end_day() -> Option<u32> {
+    fn end_day() -> Option<u32> {
         Some(0)
     }
 
     #[fixture]
-    pub fn time_series_step() -> f64 {
+    fn time_series_step() -> f64 {
         1.0
     }
 
     #[fixture]
-    pub fn january_first() -> Option<u32> {
+    fn january_first() -> Option<u32> {
         Some(1)
     }
 
     #[fixture]
-    pub fn daylight_savings() -> Option<DaylightSavingsConfig> {
+    fn daylight_savings() -> Option<DaylightSavingsConfig> {
         Some(NotApplicable)
     }
 
     #[fixture]
-    pub fn leap_day_included() -> bool {
+    fn leap_day_included() -> bool {
         false
     }
 
     #[fixture]
-    pub fn direct_beam_conversion_needed() -> bool {
+    fn direct_beam_conversion_needed() -> bool {
         false
     }
 
     #[fixture]
-    pub fn shading_segments() -> Vec<ShadingSegment> {
+    fn shading_segments() -> Vec<ShadingSegment> {
         vec![
             ShadingSegment {
                 number: 1,
                 start: 180.,
                 end: 135.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 2,
                 start: 135.,
                 end: 90.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 3,
                 start: 90.,
                 end: 45.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 4,
                 start: 45.,
                 end: 0.,
-                shading_objects: None,
+                shading_objects: Some(vec![ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 10.5,
+                    distance: 12.,
+                }]),
                 ..Default::default()
             },
             ShadingSegment {
                 number: 5,
                 start: 0.,
                 end: -45.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 6,
                 start: -45.,
                 end: -90.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 7,
                 start: -90.,
                 end: -135.,
-                shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
                 number: 8,
                 start: -135.,
                 end: -180.,
-                shading_objects: None,
                 ..Default::default()
             },
         ]
     }
 
     #[fixture]
-    pub fn external_conditions() -> ExternalConditions {
+    fn external_conditions() -> ExternalConditions {
         ExternalConditions::new(
             &simulation_time_iterator(),
             air_temps(),
@@ -2636,16 +2638,14 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_air_temps(
+    fn test_air_temp(
         external_conditions: ExternalConditions,
-        air_temps: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
-        let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.air_temp(&simtime_step),
-                air_temps[i],
+                [3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0][i],
                 "failed on iteration index {} with step {:?}",
                 i,
                 simtime_step
@@ -2654,7 +2654,7 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_air_temp_annual(external_conditions: ExternalConditions) {
+    fn test_air_temp_annual(external_conditions: ExternalConditions) {
         let precision = 1e-6;
         assert_relative_eq!(
             external_conditions.air_temp_annual().unwrap(),
@@ -2664,7 +2664,7 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_air_temp_monthly(
+    fn test_air_temp_monthly(
         external_conditions: ExternalConditions,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
@@ -2682,22 +2682,21 @@ mod tests {
     }
 
     #[rstest]
-    fn should_have_correct_wind_speeds(
+    fn test_wind_speed(
         external_conditions: ExternalConditions,
-        wind_speeds: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let external_conditions = external_conditions.clone();
         for (i, simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.wind_speed(&simtime_step),
-                wind_speeds[i]
+                [5.4, 5.7, 5.4, 5.6, 5.3, 5.1, 4.8, 4.7][i]
             );
         }
     }
 
     #[rstest]
-    fn should_have_correct_wind_speed_annual(external_conditions: ExternalConditions) {
+    fn test_wind_speed_annual(external_conditions: ExternalConditions) {
         assert_relative_eq!(
             external_conditions.wind_speed_annual().unwrap(),
             4.23,
@@ -2706,45 +2705,42 @@ mod tests {
     }
 
     #[rstest]
-    fn test_wind_directions(
+    fn test_wind_direction(
         external_conditions: ExternalConditions,
-        wind_directions: Vec<f64>,
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         for t_it in simulation_time_iterator {
             assert_eq!(
                 external_conditions.wind_direction(t_it),
-                wind_directions[t_it.index]
+                [80., 60., 40., 20., 10., 50., 100., 140.][t_it.index]
             );
         }
     }
 
     #[rstest]
-    fn should_have_correct_diffuse_horizontal_radiation(
+    fn test_diffuse_horizontal_radiation(
         external_conditions: ExternalConditions,
-        diffuse_horizontal_radiation: [f64; 8],
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let external_conditions = external_conditions.clone();
         for (i, _simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.diffuse_horizontal_radiation(i),
-                diffuse_horizontal_radiation[i]
+                [0., 136., 308., 365., 300., 128., 90., 30.][i]
             );
         }
     }
 
     #[rstest]
-    fn should_have_correct_direct_beam_radiation(
+    fn test_direct_beam_radiation(
         external_conditions: ExternalConditions,
-        direct_beam_radiation: [f64; 8],
         simulation_time_iterator: SimulationTimeIterator,
     ) {
         let external_conditions = external_conditions.clone();
         for (i, _simtime_step) in simulation_time_iterator.enumerate() {
             assert_eq!(
                 external_conditions.direct_beam_radiation(i),
-                direct_beam_radiation[i]
+                [0., 54., 113., 148., 149., 98., 50., 10.][i]
             );
         }
     }
@@ -2838,5 +2834,90 @@ mod tests {
                 max_relative = 1e-5
             );
         }
+    }
+
+    #[rstest]
+    fn test_init_direct_beam_radiation(
+        external_conditions: ExternalConditions,
+        direct_beam_conversion_needed: bool,
+    ) {
+        // Check with direct_beam_conversion_needed = false
+        assert_eq!(
+            init_direct_beam_radiation(direct_beam_conversion_needed, 100., 5.0),
+            100.0
+        );
+
+        // Check with direct_beam_conversion_needed = true
+        assert_relative_eq!(
+            init_direct_beam_radiation(true, 100., 5.0),
+            1147.3713245669855,
+            max_relative = 1e-8
+        );
+
+        // Check with solar altitude = 0
+        assert_eq!(init_direct_beam_radiation(true, 10., 0.0), 10.);
+    }
+
+    #[rstest]
+    fn test_init_earth_orbit_deviation() {
+        // check for non-leap year
+        assert_eq!(init_earth_orbit_deviation(364), 360.0);
+
+        // check for leap year
+        assert_relative_eq!(
+            init_earth_orbit_deviation(365),
+            360.986301369863,
+            max_relative = 1e-10
+        );
+    }
+
+    #[rstest]
+    fn test_init_solar_declination() {
+        assert_relative_eq!(
+            init_solar_declination(100.),
+            8.239299094353976,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_init_equation_of_time() {
+        assert_eq!(init_equation_of_time(1), 3.48);
+        assert_relative_eq!(
+            init_equation_of_time(22),
+            12.001736328751521,
+            max_relative = 1e-8
+        );
+        assert_relative_eq!(
+            init_equation_of_time(137),
+            -3.5547083185334247,
+            max_relative = 1e-8
+        );
+        assert_relative_eq!(
+            init_equation_of_time(242),
+            0.12076422612546622,
+            max_relative = 1e-8
+        );
+        assert_eq!(init_equation_of_time(365), 3.15);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_init_equation_of_time_panics_with_out_of_bounds_param() {
+        init_equation_of_time(366);
+    }
+
+    #[rstest]
+    fn test_init_time_shift(mut external_conditions: ExternalConditions) {
+        assert_eq!(
+            init_time_shift(external_conditions.timezone, external_conditions.longitude),
+            0.05
+        );
+
+        assert_relative_eq!(
+            init_time_shift(-5, -73.),
+            -0.13333333333333375,
+            max_relative = 1e-8
+        );
     }
 }

@@ -118,7 +118,7 @@ pub struct ExternalConditionsInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<u32>,
+    pub timezone: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_day: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
