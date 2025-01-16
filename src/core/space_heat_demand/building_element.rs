@@ -1615,7 +1615,7 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 }
 
 /// Calculate longwave sky view factor from pitch in degrees
-fn sky_view_factor(pitch: &f64) -> f64 {
+pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
     // TODO (from Python) account for shading
     // TODO (from Python) check longwave is correct
     let pitch_rads = pitch * PI / 180.0;
