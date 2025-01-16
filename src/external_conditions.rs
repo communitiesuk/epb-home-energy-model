@@ -1352,7 +1352,7 @@ impl ExternalConditions {
         // Assumes for remote objects that the reduction in sky view factor is
         // matched by an equivalent increase in ground reflected irradiance.
         let fdiff_ro = if f_sky != 1. {
-            let f_sh_ref_rem = (1. / f_sky_new) / (1. / f_sky);
+            let f_sh_ref_rem = (1. - f_sky_new) / (1. - f_sky);
             (f_sh_dif_rem * (diffuse_irr_sky + diffuse_irr_hor) + f_sh_ref_rem * diffuse_irr_ref)
                 / diffuse_irr_total
         } else {

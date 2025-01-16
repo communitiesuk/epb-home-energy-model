@@ -471,7 +471,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn pv_with_shading(
+    fn pv_with_shading(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_is_inside(
+    fn test_is_inside(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         pv_with_shading: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
     ) {
@@ -525,8 +525,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "logic depends on external conditions logic that is still to be migrated to 0.32 - unignore when this is finished"]
-    pub fn test_produce_energy(
+    fn test_produce_energy(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
@@ -578,8 +577,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "logic depends on external conditions logic that is still to be migrated to 0.32 - unignore when this is finished"]
-    pub fn test_energy_produced_and_energy_lost(
+    fn test_energy_produced_and_energy_lost(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
         simulation_time: SimulationTime,
     ) {
