@@ -8,7 +8,6 @@ use crate::core::controls::time_control::{per_control, Control, ControlBehaviour
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::boiler::{BoilerServiceSpace, BoilerServiceWaterRegular};
-use crate::core::heating_systems::emitters::convert_flow_to_return_temp;
 use crate::core::material_properties::{MaterialProperties, WATER};
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
@@ -39,6 +38,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::Arc;
+use tracing_subscriber::fmt::time;
 
 const N_EXER: f64 = 3.0;
 
@@ -1340,7 +1340,8 @@ pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
     control: Option<Arc<Control>>,
-    temp_hot_water_in_k: f64,
+    control_min: Option<Arc<Control>>,
+    control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<ColdWaterSource>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1350,19 +1351,19 @@ impl HeatPumpServiceWater {
     pub(crate) fn new(
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
-        temp_hot_water_in_c: f64,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Arc<Control>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
+        let control = control_min.clone();
         Self {
             heat_pump,
             service_name,
             control,
-            temp_hot_water_in_k: celsius_to_kelvin(temp_hot_water_in_c).expect(
-                "Hot water temp for heat pump is never expected to be below absolute zero.",
-            ),
+            control_min,
+            control_max,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
                 "Upper temp limit for heat pump is never expected to be below absolute zero.",
             ),
@@ -1378,6 +1379,18 @@ impl HeatPumpServiceWater {
         }
     }
 
+    pub(crate) fn temp_setpnt(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        (
+            self.control_min
+                .as_ref()
+                .and_then(|c| c.setpnt(&simulation_time_iteration)),
+            self.control_max.setpnt(&simulation_time_iteration),
+        )
+    }
+
     const SERVICE_TYPE: ServiceType = ServiceType::Water;
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -1391,14 +1404,20 @@ impl HeatPumpServiceWater {
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
         }
+        let temp_hot_water = celsius_to_kelvin(
+            self.control_max
+                .setpnt(&simulation_time_iteration)
+                .expect("A setpoint was expected to be derivable for a control"),
+        )?;
 
         self.heat_pump.lock().energy_output_max(
-            self.temp_hot_water_in_k,
+            temp_hot_water,
             temp_return_k,
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Regular(service.clone())),
             Some(Self::SERVICE_TYPE),
+            None,
             None,
             None,
             None,
@@ -1416,16 +1435,19 @@ impl HeatPumpServiceWater {
         let temp_cold_water =
             celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration))?;
         let temp_return_k = celsius_to_kelvin(temp_return)?;
-
+        let temp_hot_water = celsius_to_kelvin(
+            self.control_max
+                .setpnt(&simulation_time_iteration)
+                .expect("A setpoint was expected to be derivable for a control"),
+        )?;
         let service_on = self.is_on(simulation_time_iteration);
-
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
             &Self::SERVICE_TYPE,
             energy_demand,
-            self.temp_hot_water_in_k,
+            temp_hot_water,
             temp_return_k,
             self.temp_limit_upper_in_k,
             TIME_CONSTANT_WATER,
@@ -1514,9 +1536,11 @@ impl HeatPumpServiceSpace {
         &self,
         temp_output: f64,
         temp_return_feed: f64,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
+        let time_start = time_start.unwrap_or(0.);
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
         }
@@ -1534,6 +1558,7 @@ impl HeatPumpServiceSpace {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
+            Some(time_start),
             emitters_data_for_buffer_tank,
             Some(self.service_name.as_str()),
             simulation_time_iteration,
@@ -2352,10 +2377,10 @@ impl HeatPump {
         Ok(HeatPumpServiceWater::new(
             heat_pump,
             service_name.into(),
-            temp_hot_water_in_c,
             temp_limit_upper_in_c,
             cold_feed,
             control_min,
+            control_max,
             boiler_service,
         ))
     }
@@ -2558,6 +2583,7 @@ impl HeatPump {
         hybrid_boiler_service: Option<HybridBoilerService>,
         service_type: Option<ServiceType>,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersData>,
         service_name: Option<&str>,
         simtime: SimulationTimeIteration,
@@ -2568,6 +2594,7 @@ impl HeatPump {
         let mut temp_output = temp_output;
         let temp_spread_correction =
             temp_spread_correction.unwrap_or(TempSpreadCorrectionArg::Float(1.0));
+        let time_start = time_start.unwrap_or(0.);
 
         // If there is buffer tank, energy output max will be affected by the temperature lift required
         // by the tank

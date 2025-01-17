@@ -213,6 +213,7 @@ impl SpaceHeatingService {
                 .energy_output_max(
                     temp_output,
                     temp_return_feed,
+                    None,
                     emitters_data_for_buffer_tank,
                     simulation_time_iteration,
                 ),
