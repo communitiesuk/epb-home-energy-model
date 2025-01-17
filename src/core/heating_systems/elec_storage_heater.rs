@@ -44,6 +44,12 @@ pub struct ElecStorageHeater {
     pub energy_delivered: f64,
 }
 
+// replicates numpys's linspace function
+fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
+    let step = (end - start) / f64::from(num - 1);
+    (0..num).map(|n| start + (f64::from(n) * step)).collect()
+}
+
 impl ElecStorageHeater {
     pub fn new(
         pwr_in: f64,
@@ -112,6 +118,30 @@ impl ElecStorageHeater {
         if !is_close!(*soc_min_array.last().unwrap(), 1.) {
             panic!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
         }
+
+        // Validate that for any SOC, power_max >= power_min
+        // Sample a fine grid of SOCs and ensure power_max >= power_min
+        let fine_soc: Vec<f64> = linspace(0., 1., 100);
+
+        // power_max_fine = interp1d(
+        //     self.__soc_max_array,
+        //     self.__power_max_array,
+        //     kind='linear',
+        //     fill_value="extrapolate",
+        //     bounds_error=False,
+        //     assume_sorted=True
+        // )(fine_soc)
+        // power_min_fine = interp1d(
+        //     self.__soc_min_array,
+        //     self.__power_min_array,
+        //     kind='linear',
+        //     fill_value=(0, 0),  # Ensures SOC outside bounds returns 0 power
+        //     bounds_error=False,  # No errors for SOC values outside the bounds
+        //     assume_sorted=True   # Assume the SOC array is sorted
+        // )(fine_soc)
+
+        // if not np.all(power_max_fine >= power_min_fine):
+        //     raise ValueError("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
         
         Self {
             pwr_in,
@@ -145,7 +175,7 @@ impl ElecStorageHeater {
             energy_delivered: 0.
         }
     }
-
+    
     pub fn energy_output_min(&self, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
         todo!()
     }
