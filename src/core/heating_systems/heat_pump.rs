@@ -38,7 +38,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
 use std::sync::Arc;
-use tracing_subscriber::fmt::time;
 
 const N_EXER: f64 = 3.0;
 
@@ -181,18 +180,18 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             }
 
             let capacity = np_interp(
-            throughput_exhaust_air, air_flow_rates_ordered,
+                throughput_exhaust_air, air_flow_rates_ordered,
                 &capacity_list,
             );
             let cop = np_interp(throughput_exhaust_air, air_flow_rates_ordered, &cop_list);
             let degradation_coeff = np_interp(throughput_exhaust_air,
-                air_flow_rates_ordered,
-                &degradation_coeff_list
+                                              air_flow_rates_ordered,
+                                              &degradation_coeff_list,
             );
             let ext_air_ratio =
                 (source_type == HeatPumpSourceType::ExhaustAirMixed).then(|| np_interp(
                     throughput_exhaust_air, air_flow_rates_ordered,
-                    &ext_air_ratio_list
+                    &ext_air_ratio_list,
                 ));
 
             Ok(HeatPumpTestDatum {
@@ -432,7 +431,7 @@ impl BufferTank {
             let flow_temp_increase_due_to_buffer = max_of_2(
                 0.,
                 theoretical_hp_flow_temp.expect("Heat pump calc_buffer_tank function expects theoretical_hp_flow_temp to be set")
-                    - buffer_flow_temp
+                    - buffer_flow_temp,
             );
 
             // TODO (from Python) Consider circumstances where the flow rate on the hp-buffer loop exceed the flow rate in the
@@ -2477,7 +2476,7 @@ impl HeatPump {
                 let temp_ext = self.external_conditions.air_temp(&simulation_time_iteration);
                 max_of_2(
                     0.,
-                    min_of_2(8., temp_ext * 0.25806 + 2.8387)
+                    min_of_2(8., temp_ext * 0.25806 + 2.8387),
                 )
             }
             HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(&simulation_time_iteration),
@@ -3282,6 +3281,7 @@ impl HeatPump {
             cop_op_cond,
             thermal_capacity_op_cond,
             time_running: time_running_current_service,
+            time_constant_for_service: Default::default(),
             deg_coeff_op_cond,
             compressor_power_min_load,
             load_ratio_continuous_min,
@@ -3301,6 +3301,32 @@ impl HeatPump {
             energy_heating_warm_air_fan,
             energy_output_delivered_boiler: Default::default(),
         })
+    }
+
+    fn load_ratio_and_mode(
+        &self,
+        time_running_current_service: f64,
+        temp_output: f64,
+    ) -> (f64, f64, bool) {
+        todo!()
+    }
+
+    fn energy_input_compressor(
+        &self,
+        service_on: bool,
+        use_backup_heater_only: bool,
+        hp_operating_in_onoff_mode: bool,
+        energy_delivered_hp: f64,
+        thermal_capacity_op_cond: f64,
+        cop_op_cond: f64,
+        deg_coeff_op_cond: f64,
+        time_running_current_service: f64,
+        load_ratio: f64,
+        load_ratio_continuous_min: f64,
+        time_constant_for_service: f64,
+        service_type: ServiceType,
+    ) -> (f64, f64, f64) {
+        todo!()
     }
 
     /// Calculate energy required by heat pump to satisfy demand for the service indicated.
@@ -3444,8 +3470,8 @@ impl HeatPump {
         // zone is assigned to current zone
         let throughput_factor_zone = (throughput_factor - 1.0)
             * self
-                .volume_heated_all_services
-                .expect("Volume heated all services was expected to be set. This is only set for heat pumps with exhaust air.")
+            .volume_heated_all_services
+            .expect("Volume heated all services was expected to be set. This is only set for heat pumps with exhaust air.")
             / volume_heated_by_service
             + 1.0;
         Ok((service_results.time_running, throughput_factor_zone))
@@ -3461,6 +3487,82 @@ impl HeatPump {
 
     pub fn throughput_factor(&self) -> f64 {
         self.calc_throughput_factor(self.total_time_running_current_timestep)
+    }
+
+    fn calc_energy_input(&self, t_idx: usize) -> anyhow::Result<()> {
+        for service_data in self.service_results.lock().iter_mut() {
+            if let ServiceResult::Full(service_data) = service_data {
+                let temp_output = service_data.temp_output;
+                let energy_input_backup = service_data.energy_input_backup;
+                let energy_heating_circ_pump = service_data.energy_heating_circ_pump;
+                let energy_source_circ_pump = service_data.energy_source_circ_pump;
+                let energy_heating_warm_air_fan = service_data.energy_heating_warm_air_fan;
+
+                // Aggregate space heating services
+                // TODO (from Python) This is only necessary because the model cannot handle an
+                //  emitter circuit that serves more than one zone. If/when this
+                //  capability is added, there will no longer be separate space
+                //  heating services for each zone and this aggregation can be
+                //  removed as it will not be necessary. At that point, the other
+                //  contents of this function could also be moved back to their
+                //  original locations
+
+                let time_running_for_load_ratio = match service_data.service_type {
+                    ServiceType::Space => self
+                        .service_results
+                        .lock()
+                        .iter()
+                        .filter_map(|x| {
+                            if let ServiceResult::Full(x) = x {
+                                (x.service_type == ServiceType::Space).then(|| x.time_running)
+                            } else {
+                                None
+                            }
+                        })
+                        .sum::<f64>(),
+                    _ => service_data.time_running,
+                };
+                // TODO (from Python) Check that certain parameters are the same across all space heating services
+                let (load_ratio, load_ratio_continuous_min, hp_operating_in_onoff_mode) =
+                    self.load_ratio_and_mode(time_running_for_load_ratio, temp_output);
+
+                let (energy_input_hp, energy_input_hp_divisor, compressor_power_min_load) = self
+                    .energy_input_compressor(
+                        service_data.service_on,
+                        service_data.use_backup_heater_only,
+                        hp_operating_in_onoff_mode,
+                        service_data.energy_delivered_hp,
+                        service_data.thermal_capacity_op_cond,
+                        service_data.cop_op_cond,
+                        service_data.deg_coeff_op_cond,
+                        service_data.time_running,
+                        load_ratio,
+                        load_ratio_continuous_min,
+                        service_data.time_constant_for_service,
+                        service_data.service_type,
+                    );
+
+                let energy_input_total = energy_input_hp
+                    + energy_input_backup
+                    + energy_heating_circ_pump
+                    + energy_source_circ_pump
+                    + energy_heating_warm_air_fan;
+
+                service_data.compressor_power_min_load = compressor_power_min_load;
+                service_data.load_ratio_continuous_min = load_ratio_continuous_min;
+                service_data.load_ratio = load_ratio;
+                service_data.hp_operating_in_onoff_mode = hp_operating_in_onoff_mode;
+                service_data.energy_input_hp_divisor = Some(energy_input_hp_divisor);
+                service_data.energy_input_hp = energy_input_hp;
+                service_data.energy_input_total = energy_input_total;
+
+                // Feed/return results to other modules
+                self.energy_supply_connections[&service_data.service_name.to_string()]
+                    .demand_energy(energy_input_total, t_idx)?;
+            }
+        }
+
+        Ok(())
     }
 
     fn calc_ancillary_energy(
@@ -3972,6 +4074,7 @@ pub struct HeatPumpEnergyCalculation {
     cop_op_cond: f64,
     thermal_capacity_op_cond: f64,
     time_running: f64,
+    time_constant_for_service: f64,
     deg_coeff_op_cond: f64,
     compressor_power_min_load: f64,
     load_ratio_continuous_min: f64,
@@ -7242,6 +7345,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 6.773123981338176,
                 time_running: 0.1476423586450323,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.8020240099530431,
                 load_ratio_continuous_min: 0.35,
@@ -7271,6 +7375,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 6.9608039370972525,
                 time_running: 0.1436615668300253,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.7880011024997639,
                 load_ratio_continuous_min: 0.35,
@@ -7336,6 +7441,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 6.773123981338176,
                 time_running: 0.1476423586450323,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.8020240099530431,
                 load_ratio_continuous_min: 0.35,
@@ -7365,6 +7471,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 6.9608039370972525,
                 time_running: 0.1436615668300253,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.7880011024997639,
                 load_ratio_continuous_min: 0.35,
@@ -7503,6 +7610,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 8.857000000000003,
                 time_running: 0.11290504685559441,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 2.9965183720355757,
                 load_ratio_continuous_min: 1.0,
@@ -7532,6 +7640,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 8.807000000000002,
                 time_running: 0.1135460429204042,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 2.848573146119122,
                 load_ratio_continuous_min: 1.0,
@@ -7590,6 +7699,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 6.773123981338176,
                 time_running: 0.0,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.8020240099530431,
                 load_ratio_continuous_min: 0.35,
@@ -7619,6 +7729,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 6.9608039370972525,
                 time_running: 0.0,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.7880011024997639,
                 load_ratio_continuous_min: 0.35,
@@ -7721,6 +7832,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 6.773123981338176,
                 time_running: 0.0,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.8020240099530431,
                 load_ratio_continuous_min: 0.35,
@@ -7750,6 +7862,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 6.9608039370972525,
                 time_running: 0.0,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.7880011024997639,
                 load_ratio_continuous_min: 0.35,
@@ -7888,6 +8001,7 @@ mod tests {
                 cop_op_cond: 2.955763623095467,
                 thermal_capacity_op_cond: 6.773123981338176,
                 time_running: 0.1476423586450323,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.8020240099530431,
                 load_ratio_continuous_min: 0.35,
@@ -7917,6 +8031,7 @@ mod tests {
                 cop_op_cond: 3.091723311370327,
                 thermal_capacity_op_cond: 6.9608039370972525,
                 time_running: 0.1436615668300253,
+                time_constant_for_service: Default::default(),
                 deg_coeff_op_cond: 0.9,
                 compressor_power_min_load: 0.7880011024997639,
                 load_ratio_continuous_min: 0.35,
@@ -8058,6 +8173,7 @@ mod tests {
                     cop_op_cond: 2.955763623095467,
                     thermal_capacity_op_cond: 6.773123981338176,
                     time_running: 0.1476423586450323,
+                    time_constant_for_service: Default::default(),
                     deg_coeff_op_cond: 0.9,
                     compressor_power_min_load: 0.8020240099530431,
                     load_ratio_continuous_min: 0.35,
@@ -8087,6 +8203,7 @@ mod tests {
                     cop_op_cond: 3.091723311370327,
                     thermal_capacity_op_cond: 6.9608039370972525,
                     time_running: 0.1436615668300253,
+                    time_constant_for_service: Default::default(),
                     deg_coeff_op_cond: 0.9,
                     compressor_power_min_load: 0.7880011024997639,
                     load_ratio_continuous_min: 0.35,
@@ -8453,6 +8570,7 @@ mod tests {
             cop_op_cond: 2.955763623095467,
             thermal_capacity_op_cond: 6.773123981338176,
             time_running: 0.7382117932251615,
+            time_constant_for_service: Default::default(),
             deg_coeff_op_cond: 0.9,
             compressor_power_min_load: 0.8020240099530431,
             load_ratio_continuous_min: 0.35,
