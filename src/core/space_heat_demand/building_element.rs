@@ -1,5 +1,7 @@
 use crate::core::units::{average_monthly_to_annual, JOULES_PER_KILOJOULE};
-use crate::external_conditions::{ExternalConditions, WindowShadingObject};
+use crate::external_conditions::{
+    CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
+};
 use crate::input::{
     BuildingElement as BuildingElementInput, EdgeInsulation, FloorType, MassDistributionClass,
     WindShieldLocation, WindowTreatment,
@@ -388,7 +390,7 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
     }
 
     fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
-        let (i_sol_dir, i_sol_dif, _, _) = self
+        let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions
             .calculated_direct_diffuse_total_irradiance(
                 self.external_pitch,
@@ -1479,7 +1481,7 @@ impl BuildingElementBehaviour for BuildingElementTransparent {
     }
 
     fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
-        let (i_sol_dir, i_sol_dif, _, _) = self
+        let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions
             .calculated_direct_diffuse_total_irradiance(
                 self.pitch,

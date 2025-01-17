@@ -3,7 +3,9 @@ use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::space_heat_demand::building_element::projected_height;
 use crate::core::units::WATTS_PER_KILOWATT;
-use crate::external_conditions::{ExternalConditions, WindowShadingObject};
+use crate::external_conditions::{
+    CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
+};
 use crate::input::{InverterType, OnSiteGenerationVentilationStrategy};
 use crate::simulation_time::SimulationTimeIteration;
 use std::f64::consts::{E, PI};
@@ -91,8 +93,8 @@ impl PhotovoltaicSystem {
         // Calculate inverter efficiency based on direct shading factor and inverter type
         let x = f_sh_dir;
 
-        match inverter_type {
-            &InverterType::StringInverter => {
+        match *inverter_type {
+            InverterType::StringInverter => {
                 let thresh = 0.7;
                 let a = 2.7666;
                 let b = -4.3397;
@@ -106,7 +108,7 @@ impl PhotovoltaicSystem {
                     1.0f64.min(d * x.powi(2) + e * x + f)
                 }
             }
-            &InverterType::OptimisedInverter => {
+            InverterType::OptimisedInverter => {
                 let thresh = 0.42;
                 let a = 2.7666;
                 let b = -4.3397;
@@ -213,7 +215,7 @@ impl PhotovoltaicSystem {
     /// according to BS EN 15316-4-3:2017
     pub fn produce_energy(&self, simulation_time_iteration: SimulationTimeIteration) -> (f64, f64) {
         // solar irradiance in W/m2
-        let (i_sol_dir, i_sol_dif, _, _) = self
+        let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .external_conditions
             .calculated_direct_diffuse_total_irradiance(
                 self.pitch,

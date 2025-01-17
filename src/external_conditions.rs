@@ -6,6 +6,8 @@ use crate::core::units::HOURS_PER_DAY;
 use crate::input::{deserialize_orientation, serialize_orientation, ExternalConditionsInput};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
+#[cfg(test)]
+use approx::{AbsDiffEq, RelativeEq};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -611,7 +613,7 @@ impl ExternalConditions {
         tilt: f64,
         orientation: f64,
         simulation_time: &SimulationTimeIteration,
-    ) -> (f64, f64, f64, f64) {
+    ) -> DiffuseIrradiance {
         // """  calculates the diffuse part of the irradiance on the surface (without ground reflection)
         //
         // Arguments:
@@ -633,7 +635,7 @@ impl ExternalConditions {
             self.circumsolar_irradiance(tilt, orientation, simulation_time);
         let diffuse_irr_horiz = gsol_d * f2 * tilt.to_radians().sin();
 
-        (
+        DiffuseIrradiance(
             diffuse_irr_sky + diffuse_irr_circumsolar + diffuse_irr_horiz,
             diffuse_irr_sky,
             diffuse_irr_circumsolar,
@@ -722,7 +724,7 @@ impl ExternalConditions {
         //                   surface normal, -180 to 180, in degrees;
         // """
 
-        let (diffuse_irr_total, _, diffuse_irr_circumsolar, _) =
+        let DiffuseIrradiance(diffuse_irr_total, _, diffuse_irr_circumsolar, _) =
             self.diffuse_irradiance(tilt, orientation, simulation_time);
 
         diffuse_irr_total - diffuse_irr_circumsolar
@@ -762,8 +764,12 @@ impl ExternalConditions {
         // it only retains one set of results at a time so it may be of limited use, and i've skipped reimplementing it
         // in a first pass of conversion into Rust
 
-        let (diffuse_irr_total, diffuse_irr_sky, diffuse_irr_circumsolar, diffuse_irr_horiz) =
-            self.diffuse_irradiance(tilt, orientation, simulation_time);
+        let DiffuseIrradiance(
+            diffuse_irr_total,
+            diffuse_irr_sky,
+            diffuse_irr_circumsolar,
+            diffuse_irr_horiz,
+        ) = self.diffuse_irradiance(tilt, orientation, simulation_time);
 
         let ground_reflection_irradiance = self.ground_reflection_irradiance(tilt, simulation_time);
 
@@ -773,13 +779,13 @@ impl ExternalConditions {
             diffuse_irr_total - diffuse_irr_circumsolar + ground_reflection_irradiance;
         let total_irradiance = calculated_direct + calculated_diffuse;
 
-        (
+        CalculatedDirectDiffuseTotalIrradiance(
             calculated_direct,
             calculated_diffuse,
             total_irradiance,
             diffuse_breakdown.then_some(DiffuseBreakdown {
                 sky: diffuse_irr_sky,
-                _circumsolar: diffuse_irr_circumsolar,
+                circumsolar: diffuse_irr_circumsolar,
                 horiz: diffuse_irr_horiz,
                 ground_refl: ground_reflection_irradiance,
             }),
@@ -1130,10 +1136,7 @@ impl ExternalConditions {
 
         /// Returns angle ranges included in element shaded arc with 0/360 crossover
         /// split if required plus total angle of arc
-        fn arc_angle(
-            arc_srt: f64,
-            arc_fsh: f64,
-        ) -> (((f64, f64), (f64, f64)), ((f64, f64), (f64, f64)), f64) {
+        fn arc_angle(arc_srt: f64, arc_fsh: f64) -> ArcAngle {
             let (arc1, arc2, deg_arc, rarc1, rarc2) = if arc_srt < arc_fsh {
                 // Define front arc as single arc and split rear arc either side of 0/360 boundary
                 (
@@ -1162,7 +1165,7 @@ impl ExternalConditions {
 
         /// Returns angle ranges included in shading segment with 0/360 crossover
         /// split if required plus total angle of segment
-        fn seg_angle(seg_srt: f64, seg_fsh: f64) -> (((f64, f64), (f64, f64)), f64) {
+        fn seg_angle(seg_srt: f64, seg_fsh: f64) -> SegAngle {
             let (seg1, seg2, deg_seg) = if seg_srt < seg_fsh {
                 ((seg_srt, seg_fsh), (0., 0.), seg_fsh - seg_srt)
             } else {
@@ -1180,7 +1183,7 @@ impl ExternalConditions {
 
         let (arc_srt, arc_fsh) = if tilt > 0. {
             let orient360 = self.orientation360(orientation);
-            if orient360 >= 90. && orient360 <= 270. {
+            if (90. ..=270.).contains(&orient360) {
                 (orient360 - 90., orient360 + 90.)
             } else if orient360 < 90. {
                 (orient360 + 270., orient360 + 90.)
@@ -1388,7 +1391,7 @@ impl ExternalConditions {
         //      F_w_sky when alpha = 0
         let beta = tilt.to_radians();
 
-        let fdiff_list = if let Some(shading) = window_shading {
+        let fdiff_list = if window_shading.is_some() {
             // create lists of diffuse shading factors to keep the largest one
             // in case there are multiple shading objects
             let mut fdiff_list: Vec<f64> = vec![];
@@ -1655,7 +1658,7 @@ impl ExternalConditions {
         // # first check if there is any radiation. This is needed to prevent a potential
         // # divide by zero error in the final step, but also, if there is no radiation
         // # then shading is irrelevant and we can skip the whole calculation
-        let (direct, diffuse, _, diffuse_breakdown) = self
+        let CalculatedDirectDiffuseTotalIrradiance(direct, diffuse, _, diffuse_breakdown) = self
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
         if direct + diffuse == 0.0 {
             return Ok((0.0, 0.0));
@@ -1737,12 +1740,8 @@ impl ExternalConditions {
         window_shading: &Vec<WindowShadingObject>,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let (i_sol_dir, i_sol_dif, _, _) = self.calculated_direct_diffuse_total_irradiance(
-            tilt,
-            orientation,
-            false,
-            &simulation_time,
-        );
+        let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
+            .calculated_direct_diffuse_total_irradiance(tilt, orientation, false, &simulation_time);
         let (f_sh_dir, f_sh_dif) = self.shading_reduction_factor_direct_diffuse(
             base_height,
             projected_height,
@@ -1762,13 +1761,146 @@ impl ExternalConditions {
     }
 }
 
-pub type CalculatedDirectDiffuseTotalIrradiance = (f64, f64, f64, Option<DiffuseBreakdown>);
+type ArcAngle = (((f64, f64), (f64, f64)), ((f64, f64), (f64, f64)), f64);
+type SegAngle = (((f64, f64), (f64, f64)), f64);
 
-pub struct DiffuseBreakdown {
+#[derive(PartialEq, Debug)]
+pub(crate) struct CalculatedDirectDiffuseTotalIrradiance(
+    pub(crate) f64,
+    pub(crate) f64,
+    pub(crate) f64,
+    pub(crate) Option<DiffuseBreakdown>,
+);
+
+// implement traits for comparing floats within CalculatedDirectDiffuseTotalIrradiance in tests
+#[cfg(test)]
+impl AbsDiffEq<Self> for CalculatedDirectDiffuseTotalIrradiance {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        self.0.abs_diff_eq(&other.0, epsilon)
+            && self.1.abs_diff_eq(&other.1, epsilon)
+            && self.2.abs_diff_eq(&other.2, epsilon)
+            && match (&self.3, &other.3) {
+                (Some(a), Some(b)) => a.abs_diff_eq(b, epsilon),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+#[cfg(test)]
+impl RelativeEq for CalculatedDirectDiffuseTotalIrradiance {
+    fn default_max_relative() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn relative_eq(
+        &self,
+        other: &Self,
+        epsilon: Self::Epsilon,
+        max_relative: Self::Epsilon,
+    ) -> bool {
+        self.0.relative_eq(&other.0, epsilon, max_relative)
+            && self.1.relative_eq(&other.1, epsilon, max_relative)
+            && self.2.relative_eq(&other.2, epsilon, max_relative)
+            && match (&self.3, &other.3) {
+                (Some(a), Some(b)) => a.relative_eq(b, epsilon, max_relative),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+struct DiffuseIrradiance(f64, f64, f64, f64);
+
+// implement traits for comparing floats within diffuse radiances in tests
+#[cfg(test)]
+impl AbsDiffEq<Self> for DiffuseIrradiance {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        self.0.abs_diff_eq(&other.0, epsilon)
+            && self.1.abs_diff_eq(&other.1, epsilon)
+            && self.2.abs_diff_eq(&other.2, epsilon)
+            && self.3.abs_diff_eq(&other.3, epsilon)
+    }
+}
+
+#[cfg(test)]
+impl RelativeEq for DiffuseIrradiance {
+    fn default_max_relative() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn relative_eq(
+        &self,
+        other: &Self,
+        epsilon: Self::Epsilon,
+        max_relative: Self::Epsilon,
+    ) -> bool {
+        self.0.relative_eq(&other.0, epsilon, max_relative)
+            && self.1.relative_eq(&other.1, epsilon, max_relative)
+            && self.2.relative_eq(&other.2, epsilon, max_relative)
+            && self.3.relative_eq(&other.3, epsilon, max_relative)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) struct DiffuseBreakdown {
     sky: f64,
-    _circumsolar: f64,
+    circumsolar: f64,
     horiz: f64,
     ground_refl: f64,
+}
+
+// implement traits for comparing floats within diffuse breakdowns in tests
+#[cfg(test)]
+impl AbsDiffEq<Self> for DiffuseBreakdown {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        self.sky.abs_diff_eq(&other.sky, epsilon)
+            && self.circumsolar.abs_diff_eq(&other.circumsolar, epsilon)
+            && self.horiz.abs_diff_eq(&other.horiz, epsilon)
+            && self.ground_refl.abs_diff_eq(&other.ground_refl, epsilon)
+    }
+}
+
+#[cfg(test)]
+impl RelativeEq for DiffuseBreakdown {
+    fn default_max_relative() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn relative_eq(
+        &self,
+        other: &Self,
+        epsilon: Self::Epsilon,
+        max_relative: Self::Epsilon,
+    ) -> bool {
+        self.sky.relative_eq(&other.sky, epsilon, max_relative)
+            && self
+                .circumsolar
+                .relative_eq(&other.circumsolar, epsilon, max_relative)
+            && self.horiz.relative_eq(&other.horiz, epsilon, max_relative)
+            && self
+                .ground_refl
+                .relative_eq(&other.ground_refl, epsilon, max_relative)
+    }
 }
 
 pub(crate) fn create_external_conditions(
@@ -2239,8 +2371,8 @@ mod tests {
     ];
 
     #[fixture]
-    fn simulation_time_iterator() -> SimulationTimeIterator {
-        SimulationTime::new(7.0, 15.0, 1.0).iter()
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(7.0, 15.0, 1.0)
     }
 
     #[fixture]
@@ -2616,7 +2748,7 @@ mod tests {
     #[fixture]
     fn external_conditions() -> ExternalConditions {
         ExternalConditions::new(
-            &simulation_time_iterator(),
+            &simulation_time().iter(),
             air_temps(),
             wind_speeds(),
             wind_directions(),
@@ -2638,11 +2770,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_air_temp(
-        external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
-    ) {
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+    fn test_air_temp(external_conditions: ExternalConditions, simulation_time: SimulationTime) {
+        for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.air_temp(&simtime_step),
                 [3.5, 4.0, 4.5, 5.0, 7.5, 10.0, 12.5, 15.0][i],
@@ -2666,13 +2795,13 @@ mod tests {
     #[rstest]
     fn test_air_temp_monthly(
         external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
         let expected_monthly_air_temps: [f64; 12] = [
             6.75, 7.75, 8.75, 9.75, 10.75, 11.75, 12.75, 12.75, 11.75, 10.75, 9.75, 8.75,
         ];
         let external_conditions = external_conditions.clone();
-        for simtime_step in simulation_time_iterator {
+        for simtime_step in simulation_time.iter() {
             let month_idx = simtime_step.current_month().unwrap() as usize;
             assert_eq!(
                 external_conditions.air_temp_monthly(simtime_step.current_month_start_end_hours()),
@@ -2682,12 +2811,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_wind_speed(
-        external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
-    ) {
+    fn test_wind_speed(external_conditions: ExternalConditions, simulation_time: SimulationTime) {
         let external_conditions = external_conditions.clone();
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+        for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.wind_speed(&simtime_step),
                 [5.4, 5.7, 5.4, 5.6, 5.3, 5.1, 4.8, 4.7][i]
@@ -2707,9 +2833,9 @@ mod tests {
     #[rstest]
     fn test_wind_direction(
         external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
-        for t_it in simulation_time_iterator {
+        for t_it in simulation_time.iter() {
             assert_eq!(
                 external_conditions.wind_direction(t_it),
                 [80., 60., 40., 20., 10., 50., 100., 140.][t_it.index]
@@ -2720,10 +2846,10 @@ mod tests {
     #[rstest]
     fn test_diffuse_horizontal_radiation(
         external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
         let external_conditions = external_conditions.clone();
-        for (i, _simtime_step) in simulation_time_iterator.enumerate() {
+        for (i, _simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.diffuse_horizontal_radiation(i),
                 [0., 136., 308., 365., 300., 128., 90., 30.][i]
@@ -2734,10 +2860,10 @@ mod tests {
     #[rstest]
     fn test_direct_beam_radiation(
         external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
         let external_conditions = external_conditions.clone();
-        for (i, _simtime_step) in simulation_time_iterator.enumerate() {
+        for (i, _simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.direct_beam_radiation(i),
                 [0., 54., 113., 148., 149., 98., 50., 10.][i]
@@ -2749,10 +2875,10 @@ mod tests {
     fn should_have_correct_solar_reflectivity_of_ground(
         external_conditions: ExternalConditions,
         solar_reflectivity_of_ground: [f64; 8760],
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
         let external_conditions = external_conditions.clone();
-        for (i, simtime_step) in simulation_time_iterator.enumerate() {
+        for (i, simtime_step) in simulation_time.iter().enumerate() {
             assert_eq!(
                 external_conditions.solar_reflectivity_of_ground(&simtime_step),
                 solar_reflectivity_of_ground[i]
@@ -2764,7 +2890,7 @@ mod tests {
     #[rstest]
     fn test_window_shading(
         external_conditions: ExternalConditions,
-        simulation_time_iterator: SimulationTimeIterator,
+        simulation_time: SimulationTime,
     ) {
         let reveal_depth = 0.1;
         let reveal_distance = 0.2;
@@ -2796,7 +2922,7 @@ mod tests {
             },
         ];
 
-        for t_it in simulation_time_iterator {
+        for t_it in simulation_time.iter() {
             // Calculate shading factors with reveal
             let shading_factor_reveal = external_conditions
                 .shading_reduction_factor_direct_diffuse(
@@ -2919,5 +3045,1928 @@ mod tests {
             -0.13333333333333375,
             max_relative = 1e-8
         );
+    }
+
+    #[rstest]
+    fn test_init_solar_time() {
+        // Mid day without timeshift
+        assert_relative_eq!(
+            init_solar_time(12, 5., 0., 0),
+            12.916666666666666,
+            max_relative = 1e-8
+        );
+        // Mid day with timeshift
+        assert_relative_eq!(
+            init_solar_time(12, 5., 1., 0),
+            11.916666666666666,
+            max_relative = 1e-8
+        );
+        // End of day with -ve equation and +ve timeshift
+        assert_relative_eq!(
+            init_solar_time(23, -2.5, 1., 0),
+            23.041666666666668,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_init_solar_hour_angle() {
+        assert_eq!(init_solar_hour_angle(23.), -157.5);
+        assert_eq!(init_solar_hour_angle(1.), 172.5);
+    }
+
+    #[rstest]
+    fn test_init_solar_altitude(external_conditions: ExternalConditions) {
+        assert_relative_eq!(
+            init_solar_altitude(external_conditions.latitude, 10., 50.),
+            32.03953794285834,
+            max_relative = 1e-8
+        );
+        assert_eq!(
+            init_solar_altitude(external_conditions.latitude, -23., 60.),
+            0.0
+        );
+    }
+
+    #[rstest]
+    fn test_init_solar_azimuth_angle(external_conditions: ExternalConditions) {
+        let lat = external_conditions.latitude;
+
+        assert_relative_eq!(
+            init_solar_azimuth_angle(lat, 23., 0., 45.),
+            9.134285141104091e-15,
+            max_relative = 1e-24
+        );
+
+        // check for East
+        assert_relative_eq!(
+            init_solar_azimuth_angle(lat, 23., -15., 45.),
+            -19.49201220785029,
+            max_relative = 1e-8
+        );
+
+        // check for West
+        assert_relative_eq!(
+            init_solar_azimuth_angle(lat, 23., 15., 45.),
+            19.49201220785031,
+            max_relative = 1e-8
+        );
+
+        // Negative declination
+        assert_relative_eq!(
+            init_solar_azimuth_angle(lat, -23., 15., 45.),
+            19.49201220785031,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_init_air_mass() {
+        assert_relative_eq!(init_air_mass(5.), 10.323080326274896, max_relative = 1e-8);
+        assert_relative_eq!(init_air_mass(15.), 3.8637033051562737, max_relative = 1e-8);
+    }
+
+    #[rstest]
+    fn test_solar_angle_of_incidence(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.solar_angle_of_incidence(10., 10., &t_it),
+                [
+                    89.28367858027447,
+                    80.39193381264141,
+                    73.0084830472421,
+                    67.6707156423694,
+                    64.91086719421193,
+                    65.0693571287282,
+                    68.1252145585689,
+                    73.70764473968616
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.solar_angle_of_incidence(0., 10., &t_it),
+                [
+                    95.78366411883604,
+                    88.23114711240953,
+                    81.97931494689718,
+                    77.41946173012103,
+                    74.90762116550648,
+                    74.67327369297139,
+                    76.73922946774607,
+                    80.91274624480684
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.solar_angle_of_incidence(90., -180., &t_it),
+                [
+                    120.13031074122472,
+                    131.83510459862302,
+                    143.4374125410406,
+                    154.33449512110948,
+                    162.6874363991092,
+                    163.66695597946457,
+                    156.3258508149546,
+                    145.71870170993543
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_sun_surface_azimuth(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_azimuth(180., t_it),
+                [
+                    -110.99000000000001,
+                    -125.99,
+                    -140.99,
+                    -155.99,
+                    -170.98999999999998,
+                    174.01000000000002,
+                    159.01,
+                    144.01
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_azimuth(0., t_it),
+                [
+                    69.00999999999999,
+                    54.010000000000005,
+                    39.010000000000005,
+                    24.010000000000005,
+                    9.010000000000007,
+                    -5.989999999999993,
+                    -20.989999999999995,
+                    -35.989999999999995
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_azimuth(-180., t_it),
+                [
+                    -110.99000000000001,
+                    -125.99000000000001,
+                    -140.99,
+                    -155.99,
+                    -170.98999999999998,
+                    174.01000000000002,
+                    159.01,
+                    144.01
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_sun_surface_tilt(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_tilt(0., t_it),
+                [
+                    -90.,
+                    -88.23114711240953,
+                    -81.97931494689718,
+                    -77.41946173012103,
+                    -74.90762116550647,
+                    -74.67327369297139,
+                    -76.73922946774607,
+                    -80.91274624480684
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_tilt(90., t_it),
+                [
+                    0.,
+                    1.7688528875904694,
+                    8.020685053102824,
+                    12.580538269878971,
+                    15.09237883449353,
+                    15.326726307028608,
+                    13.260770532253929,
+                    9.08725375519316
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.sun_surface_tilt(180., t_it),
+                [
+                    90.,
+                    91.76885288759047,
+                    98.02068505310282,
+                    102.58053826987897,
+                    105.09237883449353,
+                    105.32672630702861,
+                    103.26077053225393,
+                    99.08725375519316
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_direct_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.direct_irradiance(0., 180., &t_it),
+                [
+                    0.0,
+                    1.6668397643248698,
+                    15.766957881489741,
+                    32.23613721421553,
+                    38.79603659734242,
+                    25.90364916630168,
+                    11.469168196073362,
+                    1.579383993776423
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.direct_irradiance(65., 180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.direct_irradiance(65., -180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.direct_irradiance(65., 0., &t_it),
+                [
+                    0.,
+                    33.34729692480562,
+                    88.92202737221507,
+                    134.5232406821787,
+                    145.31786982869673,
+                    96.18110717866088,
+                    46.34890065056773,
+                    8.15613633989895
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_init_extra_terrestrial_radiation() {
+        assert_relative_eq!(
+            init_extra_terrestrial_radiation(0.),
+            1412.1109999999999,
+            max_relative = 1e-8
+        );
+
+        assert_eq!(init_extra_terrestrial_radiation(90.), 1367.0);
+
+        assert_eq!(init_extra_terrestrial_radiation(180.), 1321.889);
+    }
+
+    #[rstest]
+    fn test_brightness_coefficient() {
+        assert_eq!(
+            brightness_coefficient(1., BrightnessCoefficientName::F11),
+            -0.008
+        );
+        assert_eq!(
+            brightness_coefficient(1.23, BrightnessCoefficientName::F12),
+            0.487
+        );
+        assert_eq!(
+            brightness_coefficient(1.6, BrightnessCoefficientName::F13),
+            -0.295
+        );
+        assert_eq!(
+            brightness_coefficient(2., BrightnessCoefficientName::F21),
+            0.226
+        );
+        assert_eq!(
+            brightness_coefficient(2.9, BrightnessCoefficientName::F12),
+            -1.237
+        );
+        assert_eq!(
+            brightness_coefficient(4.5, BrightnessCoefficientName::F22),
+            -1.127
+        );
+        assert_eq!(
+            brightness_coefficient(7., BrightnessCoefficientName::F23),
+            0.251
+        );
+    }
+
+    #[rstest]
+    fn test_init_f1() {
+        assert_relative_eq!(
+            init_f1_circumsolar_brightness_coefficient(1.23, 1., 30.),
+            0.7012846705927759,
+            max_relative = 1e-8
+        );
+        assert_eq!(init_f1_circumsolar_brightness_coefficient(3., 1., 30.), 0.0);
+    }
+
+    #[rstest]
+    fn test_init_f2() {
+        assert_relative_eq!(
+            init_f2_horizontal_brightness_coefficient(1.23, 1., 180.),
+            -0.09068140899333463,
+            max_relative = 1e-8
+        );
+        assert_relative_eq!(
+            init_f2_horizontal_brightness_coefficient(3., 0., 30.),
+            0.3173215314335047,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_init_dimensionless_clearness_parameter() {
+        assert_eq!(init_dimensionless_clearness_parameter(0., 5., 15.), 999.);
+        assert_relative_eq!(
+            init_dimensionless_clearness_parameter(1., 5., 15.),
+            5.910652372233723,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_init_dimensionless_sky_brightness_parameter() {
+        assert_relative_eq!(
+            init_dimensionless_sky_brightness_parameter(36.0, 50., 1412.),
+            1.274787535410765,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_a_over_b(external_conditions: ExternalConditions, simulation_time: SimulationTime) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.a_over_b(0., 0., &t_it),
+                [
+                    0.0,
+                    0.354163731154509,
+                    1.0,
+                    1.0,
+                    0.9999999999999986,
+                    1.0,
+                    1.0,
+                    1.0
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.a_over_b(90., 180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.a_over_b(180., -180., &t_it),
+                [1.156236348588363, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_diffuse_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.diffuse_irradiance(0., 0., &t_it),
+                [
+                    DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
+                    DiffuseIrradiance(
+                        51.050674242609674,
+                        4.466157979564503,
+                        46.584516263045174,
+                        -0.0
+                    ),
+                    DiffuseIrradiance(308.0, 80.07131055825931, 227.9286894417407, -0.0),
+                    DiffuseIrradiance(365.0, 142.60279131112304, 222.39720868887696, -0.0),
+                    DiffuseIrradiance(
+                        299.9999999999998,
+                        168.47209561804453,
+                        131.52790438195527,
+                        -0.0
+                    ),
+                    DiffuseIrradiance(128.0, 96.29997383163165, 31.700026168368353, 0.0),
+                    DiffuseIrradiance(90.0, 69.76354921067887, 20.236450789321122, 0.0),
+                    DiffuseIrradiance(30.0, 27.570058662939754, 2.4299413370602463, 0.0)
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.diffuse_irradiance(90., 180., &t_it),
+                [
+                    DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
+                    DiffuseIrradiance(
+                        -13.202357427309334,
+                        2.2330789897822516,
+                        0.0,
+                        -15.435436417091585
+                    ),
+                    DiffuseIrradiance(
+                        16.122288185513806,
+                        40.03565527912966,
+                        0.0,
+                        -23.91336709361585
+                    ),
+                    DiffuseIrradiance(
+                        50.83171656478211,
+                        71.30139565556152,
+                        0.0,
+                        -20.469679090779405
+                    ),
+                    DiffuseIrradiance(
+                        74.87257439807136,
+                        84.23604780902227,
+                        0.0,
+                        -9.363473410950908
+                    ),
+                    DiffuseIrradiance(53.09439354327976, 48.14998691581582, 0.0, 4.944406627463934),
+                    DiffuseIrradiance(39.20317296034313, 34.88177460533944, 0.0, 4.321398355003694),
+                    DiffuseIrradiance(
+                        14.084774138824505,
+                        13.785029331469877,
+                        0.0,
+                        0.29974480735462805
+                    )
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.diffuse_irradiance(180., -180., &t_it),
+                [
+                    DiffuseIrradiance(0.0, 0.0, 0.0, 0.0),
+                    DiffuseIrradiance(-1.89029578016337e-15, 0.0, 0.0, -1.89029578016337e-15),
+                    DiffuseIrradiance(-2.9285428468032295e-15, 0.0, 0.0, -2.9285428468032295e-15),
+                    DiffuseIrradiance(-2.50681269780965e-15, 0.0, 0.0, -2.50681269780965e-15),
+                    DiffuseIrradiance(-1.1466947741622378e-15, 0.0, 0.0, -1.1466947741622378e-15),
+                    DiffuseIrradiance(6.055151750006666e-16, 0.0, 0.0, 6.055151750006666e-16),
+                    DiffuseIrradiance(5.292186663295911e-16, 0.0, 0.0, 5.292186663295911e-16),
+                    DiffuseIrradiance(3.670815188878853e-17, 0.0, 0.0, 3.670815188878853e-17)
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_ground_reflection_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.ground_reflection_irradiance(0., &t_it),
+                [0., 0., 0., 0., 0., 0., 0., 0.][t_idx]
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.ground_reflection_irradiance(90., &t_it),
+                [
+                    0.0,
+                    13.766683976432486,
+                    32.37669578814897,
+                    39.72361372142155,
+                    33.87960365973424,
+                    15.390364916630167,
+                    10.146916819607336,
+                    3.157938399377642
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.ground_reflection_irradiance(180., &t_it),
+                [
+                    0.0,
+                    27.533367952864975,
+                    64.75339157629796,
+                    79.44722744284311,
+                    67.75920731946849,
+                    30.780729833260338,
+                    20.293833639214675,
+                    6.315876798755285
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_circumsolar_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.circumsolar_irradiance(0., 0., &t_it),
+                [
+                    0.0,
+                    46.584516263045174,
+                    227.9286894417407,
+                    222.39720868887696,
+                    131.52790438195527,
+                    31.700026168368353,
+                    20.236450789321122,
+                    2.4299413370602463
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.circumsolar_irradiance(90., 180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.circumsolar_irradiance(180., -180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calculated_direct_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_direct_irradiance(0., 0., &t_it),
+                [
+                    0.0,
+                    48.25135602737004,
+                    243.69564732323042,
+                    254.6333459030925,
+                    170.32394097929767,
+                    57.60367533467003,
+                    31.705618985394484,
+                    4.009325330836669
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.calculated_direct_irradiance(90., 180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.calculated_direct_irradiance(180., -180., &t_it),
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,][t_idx],
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calculated_diffuse_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_diffuse_irradiance(0., 0., &t_it),
+                [
+                    0.0,
+                    4.4661579795645,
+                    80.07131055825931,
+                    142.60279131112304,
+                    168.4720956180445,
+                    96.29997383163165,
+                    69.76354921067887,
+                    27.570058662939754
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_diffuse_irradiance(90., 180., &t_it),
+                [
+                    0.0,
+                    0.5643265491231517,
+                    48.498983973662774,
+                    90.55533028620366,
+                    108.7521780578056,
+                    68.48475845990993,
+                    49.350089779950466,
+                    17.24271253820215
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_diffuse_irradiance(180., -180., &t_it),
+                [
+                    0.0,
+                    27.53336795286497,
+                    64.75339157629796,
+                    79.44722744284311,
+                    67.75920731946849,
+                    30.780729833260338,
+                    20.293833639214675,
+                    6.315876798755285
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calculated_total_solar_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_total_solar_irradiance(0., 0., &t_it),
+                [
+                    0.0,
+                    52.71751400693454,
+                    323.7669578814897,
+                    397.23613721421555,
+                    338.7960365973422,
+                    153.90364916630168,
+                    101.46916819607335,
+                    31.579383993776425
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_total_solar_irradiance(90., 180., &t_it),
+                [
+                    0.0,
+                    0.5643265491231517,
+                    48.498983973662774,
+                    90.55533028620366,
+                    108.7521780578056,
+                    68.48475845990993,
+                    49.350089779950466,
+                    17.24271253820215
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_total_solar_irradiance(180., -180., &t_it),
+                [
+                    0.0,
+                    27.53336795286497,
+                    64.75339157629796,
+                    79.44722744284311,
+                    67.75920731946849,
+                    30.780729833260338,
+                    20.293833639214675,
+                    6.315876798755285
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calculated_direct_diffuse_total_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.calculated_direct_diffuse_total_irradiance(0., 0., true, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        0.0,
+                        0.0,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        48.25135602737004,
+                        4.4661579795645,
+                        52.71751400693454,
+                        Some(DiffuseBreakdown {
+                            sky: 4.466157979564503,
+                            circumsolar: 46.584516263045174,
+                            horiz: -0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        243.69564732323042,
+                        80.07131055825931,
+                        323.7669578814897,
+                        Some(DiffuseBreakdown {
+                            sky: 80.07131055825931,
+                            circumsolar: 227.9286894417407,
+                            horiz: -0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        254.6333459030925,
+                        142.60279131112304,
+                        397.23613721421555,
+                        Some(DiffuseBreakdown {
+                            sky: 142.60279131112304,
+                            circumsolar: 222.39720868887696,
+                            horiz: -0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        170.32394097929767,
+                        168.4720956180445,
+                        338.7960365973422,
+                        Some(DiffuseBreakdown {
+                            sky: 168.47209561804453,
+                            circumsolar: 131.52790438195527,
+                            horiz: -0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        57.60367533467003,
+                        96.29997383163165,
+                        153.90364916630168,
+                        Some(DiffuseBreakdown {
+                            sky: 96.29997383163165,
+                            circumsolar: 31.700026168368353,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        31.705618985394484,
+                        69.76354921067887,
+                        101.46916819607335,
+                        Some(DiffuseBreakdown {
+                            sky: 69.76354921067887,
+                            circumsolar: 20.236450789321122,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        4.009325330836669,
+                        27.570058662939754,
+                        31.579383993776425,
+                        Some(DiffuseBreakdown {
+                            sky: 27.570058662939754,
+                            circumsolar: 2.4299413370602463,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .calculated_direct_diffuse_total_irradiance(90., 180., true, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        0.0,
+                        0.0,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        0.5643265491231517,
+                        0.5643265491231517,
+                        Some(DiffuseBreakdown {
+                            sky: 2.2330789897822516,
+                            circumsolar: 0.0,
+                            horiz: -15.435436417091585,
+                            ground_refl: 13.766683976432486
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        48.498983973662774,
+                        48.498983973662774,
+                        Some(DiffuseBreakdown {
+                            sky: 40.03565527912966,
+                            circumsolar: 0.0,
+                            horiz: -23.91336709361585,
+                            ground_refl: 32.37669578814897
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        90.55533028620366,
+                        90.55533028620366,
+                        Some(DiffuseBreakdown {
+                            sky: 71.30139565556152,
+                            circumsolar: 0.0,
+                            horiz: -20.469679090779405,
+                            ground_refl: 39.72361372142155
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        108.7521780578056,
+                        108.7521780578056,
+                        Some(DiffuseBreakdown {
+                            sky: 84.23604780902227,
+                            circumsolar: 0.0,
+                            horiz: -9.363473410950908,
+                            ground_refl: 33.87960365973424
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        68.48475845990993,
+                        68.48475845990993,
+                        Some(DiffuseBreakdown {
+                            sky: 48.14998691581582,
+                            circumsolar: 0.0,
+                            horiz: 4.944406627463934,
+                            ground_refl: 15.390364916630167
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        49.350089779950466,
+                        49.350089779950466,
+                        Some(DiffuseBreakdown {
+                            sky: 34.88177460533944,
+                            circumsolar: 0.0,
+                            horiz: 4.321398355003694,
+                            ground_refl: 10.146916819607336
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        17.24271253820215,
+                        17.24271253820215,
+                        Some(DiffuseBreakdown {
+                            sky: 13.785029331469877,
+                            circumsolar: 0.0,
+                            horiz: 0.29974480735462805,
+                            ground_refl: 3.157938399377642
+                        })
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .calculated_direct_diffuse_total_irradiance(180., -180., true, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        0.0,
+                        0.0,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 0.0,
+                            ground_refl: 0.0
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        27.53336795286497,
+                        27.53336795286497,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: -1.89029578016337e-15,
+                            ground_refl: 27.533367952864975
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        64.75339157629796,
+                        64.75339157629796,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: -2.9285428468032295e-15,
+                            ground_refl: 64.75339157629796
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        79.44722744284311,
+                        79.44722744284311,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: -2.50681269780965e-15,
+                            ground_refl: 79.44722744284311
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        67.75920731946849,
+                        67.75920731946849,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: -1.1466947741622378e-15,
+                            ground_refl: 67.75920731946849
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        30.780729833260338,
+                        30.780729833260338,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 6.055151750006666e-16,
+                            ground_refl: 30.780729833260338
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        20.293833639214675,
+                        20.293833639214675,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 5.292186663295911e-16,
+                            ground_refl: 20.293833639214675
+                        })
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        6.315876798755285,
+                        6.315876798755285,
+                        Some(DiffuseBreakdown {
+                            sky: 0.0,
+                            circumsolar: 0.0,
+                            horiz: 3.670815188878853e-17,
+                            ground_refl: 6.315876798755285
+                        })
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .calculated_direct_diffuse_total_irradiance(0., 0., false, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        48.25135602737004,
+                        4.4661579795645,
+                        52.71751400693454,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        243.69564732323042,
+                        80.07131055825931,
+                        323.7669578814897,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        254.6333459030925,
+                        142.60279131112304,
+                        397.23613721421555,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        170.32394097929767,
+                        168.4720956180445,
+                        338.7960365973422,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        57.60367533467003,
+                        96.29997383163165,
+                        153.90364916630168,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        31.705618985394484,
+                        69.76354921067887,
+                        101.46916819607335,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        4.009325330836669,
+                        27.570058662939754,
+                        31.579383993776425,
+                        None
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .calculated_direct_diffuse_total_irradiance(90., 180., false, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        0.5643265491231517,
+                        0.5643265491231517,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        48.498983973662774,
+                        48.498983973662774,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        90.55533028620366,
+                        90.55533028620366,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        108.7521780578056,
+                        108.7521780578056,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        68.48475845990993,
+                        68.48475845990993,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        49.350089779950466,
+                        49.350089779950466,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        17.24271253820215,
+                        17.24271253820215,
+                        None
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .calculated_direct_diffuse_total_irradiance(180., -180., false, &t_it),
+                [
+                    CalculatedDirectDiffuseTotalIrradiance(0.0, 0.0, 0.0, None),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        27.53336795286497,
+                        27.53336795286497,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        64.75339157629796,
+                        64.75339157629796,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        79.44722744284311,
+                        79.44722744284311,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        67.75920731946849,
+                        67.75920731946849,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        30.780729833260338,
+                        30.780729833260338,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        20.293833639214675,
+                        20.293833639214675,
+                        None
+                    ),
+                    CalculatedDirectDiffuseTotalIrradiance(
+                        0.0,
+                        6.315876798755285,
+                        6.315876798755285,
+                        None
+                    ),
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_outside_solar_beam(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (_, t_it) in simulation_time.iter().enumerate() {
+            assert!(!external_conditions.outside_solar_beam(0., 0., &t_it));
+        }
+
+        for (_, t_it) in simulation_time.iter().enumerate() {
+            assert!(external_conditions.outside_solar_beam(90., 180., &t_it));
+        }
+
+        for (_, t_it) in simulation_time.iter().enumerate() {
+            assert!(external_conditions.outside_solar_beam(180., -180., &t_it));
+        }
+    }
+
+    #[rstest]
+    fn test_get_segment(
+        mut external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions.get_segment(&t_it).unwrap(),
+                [
+                    ShadingSegment {
+                        number: 3,
+                        start: 90.,
+                        end: 45.,
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 3,
+                        start: 90.,
+                        end: 45.,
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 4,
+                        start: 45.,
+                        end: 0.,
+                        shading_objects: Some(vec![ShadingObject {
+                            object_type: ShadingObjectType::Obstacle,
+                            height: 10.5,
+                            distance: 12.
+                        }]),
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 4,
+                        start: 45.,
+                        end: 0.,
+                        shading_objects: Some(vec![ShadingObject {
+                            object_type: ShadingObjectType::Obstacle,
+                            height: 10.5,
+                            distance: 12.
+                        }]),
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 4,
+                        start: 45.,
+                        end: 0.,
+                        shading_objects: Some(vec![ShadingObject {
+                            object_type: ShadingObjectType::Obstacle,
+                            height: 10.5,
+                            distance: 12.
+                        }]),
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 5,
+                        start: 0.,
+                        end: -45.,
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 5,
+                        start: 0.,
+                        end: -45.,
+                        ..Default::default()
+                    },
+                    ShadingSegment {
+                        number: 5,
+                        start: 0.,
+                        end: -45.,
+                        ..Default::default()
+                    },
+                ][t_idx]
+            );
+        }
+
+        // For the gap in second shading segment
+        external_conditions.shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 2,
+                start: 50.,
+                end: 90.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                ..Default::default()
+            },
+        ];
+
+        assert!(external_conditions
+            .get_segment(&simulation_time.iter().next().unwrap())
+            .is_err());
+
+        // For the value of end > start in second shading segment
+        external_conditions.shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 140.,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                ..Default::default()
+            },
+        ];
+
+        assert!(external_conditions
+            .get_segment(&simulation_time.iter().next().unwrap())
+            .is_err());
+
+        // Empty shading segment
+        external_conditions.shading_segments = vec![];
+
+        assert!(external_conditions
+            .get_segment(&simulation_time.iter().next().unwrap())
+            .is_err());
+    }
+
+    #[rstest]
+    fn test_obstacle_shading_height(
+        mut external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        // Test for peak hours in Jan
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.obstacle_shading_height(3., 5., 1., &t_it),
+                [
+                    2.0,
+                    1.9691178812624324,
+                    1.8590909935052966,
+                    1.7768301326744398,
+                    1.7303219853707263,
+                    1.7259295208086824,
+                    1.7643328437619492,
+                    1.8400541145006308
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // Test for peak hours in July
+        let simulation_time_july = SimulationTime::new(4474., 4482., 1.);
+        let base_zero_vec = vec![0.; 4474];
+        let mut direct_beam_radiations = base_zero_vec.clone();
+        direct_beam_radiations.extend_from_slice(&[70., 71., 39., 51., 44., 26., 108., 141.]);
+        external_conditions.direct_beam_radiations = direct_beam_radiations;
+        let mut diffuse_horizontal_radiations = base_zero_vec.clone();
+        diffuse_horizontal_radiations
+            .extend_from_slice(&[232., 310., 342., 393., 421., 426., 466., 424., 397.]);
+        external_conditions.diffuse_horizontal_radiations = diffuse_horizontal_radiations;
+        let mut solar_reflectivity_of_ground = base_zero_vec.clone();
+        solar_reflectivity_of_ground.extend_from_slice(&[0.6; 8]);
+        external_conditions.solar_reflectivity_of_ground = solar_reflectivity_of_ground;
+
+        for (t_idx, t_it) in simulation_time_july.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.obstacle_shading_height(3., 5., 1., &t_it),
+                [
+                    0.5367256982895989,
+                    0.240221480766996,
+                    0.1963213106984325,
+                    0.4473885431039979,
+                    0.79264418501541,
+                    1.1031372689550807,
+                    1.3579235500301707,
+                    1.5678670755252178
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_overhang_shading_height(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions.overhang_shading_height(5., 1., 3., 2., t_it),
+                [
+                    3.0,
+                    3.0617642374751353,
+                    3.281818012989407,
+                    3.4463397346511204,
+                    3.5393560292585473,
+                    3.548140958382635,
+                    3.4713343124761016,
+                    3.3198917709987383
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_direct_shading_reduction_factor(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        // obstacle shading defined in segment and empty window shading
+        let base_height = 1.;
+        let height = 1.25;
+        let width = 4.;
+        let orientation = 90.;
+        let window_shading = [];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        orientation,
+                        Some(&window_shading),
+                        t_it
+                    )
+                    .unwrap(),
+                [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0][t_idx]
+            );
+        }
+
+        // with window shading
+        let window_shading_val = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        orientation,
+                        Some(&window_shading_val),
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    1.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.4002331427001323,
+                    0.8511094450438235,
+                    0.9292880457188379
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // Test with zero orientation and with window shading
+        let orientation = 0.;
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        orientation,
+                        Some(&window_shading_val),
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.9201388647583034,
+                    0.9552620660549097,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // Test with negative orientation and with window shading
+        let orientation = -180.;
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .direct_shading_reduction_factor(
+                        base_height,
+                        height,
+                        width,
+                        orientation,
+                        Some(&window_shading_val),
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.9201388647583035,
+                    0.9552620660549097,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_diffuse_shading_reduction_factor(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        // With window shading
+        let diffuse_breakdown = DiffuseBreakdown {
+            sky: 12.0,
+            circumsolar: 0.0,
+            horiz: -2.0164780331874668,
+            ground_refl: 2.4,
+        };
+        let tilt = 90.;
+        let height = 1.25;
+        let base_height = 1.;
+        let width = 4.;
+        let orientation = 90.;
+        let window_shading = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+        ];
+        let f_sky = 0.5;
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .diffuse_shading_reduction_factor(
+                        diffuse_breakdown,
+                        tilt,
+                        height,
+                        base_height,
+                        width,
+                        orientation,
+                        Some(&window_shading),
+                        f_sky,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632,
+                    0.5905238865770632
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+
+        // With no window shading
+        let window_shading = vec![];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .diffuse_shading_reduction_factor(
+                        diffuse_breakdown,
+                        tilt,
+                        height,
+                        base_height,
+                        width,
+                        orientation,
+                        Some(&window_shading),
+                        f_sky,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645,
+                    0.9699932956653645
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_solar_irradiance(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        let base_height = 1.;
+        let height = 1.25;
+        let width = 4.;
+        let tilt = 0.;
+        let orientation = 90.;
+        let window_shading = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_relative_eq!(
+                external_conditions
+                    .surface_irradiance(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    0.0,
+                    50.88872899552963,
+                    47.28402151418233,
+                    84.21035456178225,
+                    99.48679668415026,
+                    114.47111015899463,
+                    72.90266120669479,
+                    20.290103525633484
+                ][t_idx],
+                max_relative = 1e-8
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_shading_reduction_factor_direct_diffuse(
+        external_conditions: ExternalConditions,
+        simulation_time: SimulationTime,
+    ) {
+        // Test without window shading
+        let base_height = 1.;
+        let height = 1.25;
+        let width = 4.;
+        let tilt = 0.;
+        let orientation = 0.;
+        let window_shading = vec![];
+        let _f_sky = 1.;
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (1.0, 1.0),
+                    (0.0, 0.9948359023012616),
+                    (0.0, 0.988044845054899),
+                    (0.0, 0.983862781044833),
+                    (1.0, 0.9816340106900042),
+                    (1.0, 0.9808582136351668),
+                    (1.0, 0.9791897009662986)
+                ][t_idx],
+            );
+        }
+
+        // Test window shading
+        let window_shading_val = vec![
+            WindowShadingObject::Overhang {
+                depth: 0.5,
+                distance: 0.5,
+            },
+            WindowShadingObject::SideFinLeft {
+                depth: 0.25,
+                distance: 0.1,
+            },
+            WindowShadingObject::SideFinRight {
+                depth: 0.25,
+                distance: 0.1,
+            },
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading_val,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (0.9552620660549097, 0.5905238865770632),
+                    (0.0, 0.5905238865770632),
+                    (0.0, 0.5905238865770632),
+                    (0.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770631)
+                ][t_idx],
+            );
+        }
+
+        // Test with different combination of tilt , orientation with and without shading
+        let base_height = 1.;
+        let height = 1.25;
+        let width = 4.;
+        let tilt = 90.;
+        let orientation = 180.;
+        let window_shading = vec![];
+        let _f_sky = 0.5;
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0)
+                ][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading_val,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (1.0, 0.5905238865770648),
+                    (1.0, 0.5905238865770633),
+                    (1.0, 0.5905238865770633),
+                    (1.0, 0.5905238865770633),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770633),
+                    (1.0, 0.5905238865770632)
+                ][t_idx],
+            );
+        }
+
+        let base_height = 1.;
+        let height = 1.25;
+        let width = 4.;
+        let tilt = 180.;
+        let orientation = -180.;
+        let window_shading = vec![];
+        let _f_sky = 0.;
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0),
+                    (1.0, 1.0)
+                ][t_idx],
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                external_conditions
+                    .shading_reduction_factor_direct_diffuse(
+                        base_height,
+                        height,
+                        width,
+                        tilt,
+                        orientation,
+                        &window_shading_val,
+                        t_it
+                    )
+                    .unwrap(),
+                [
+                    (0.0, 0.0),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632),
+                    (1.0, 0.5905238865770632)
+                ][t_idx],
+            );
+        }
     }
 }
