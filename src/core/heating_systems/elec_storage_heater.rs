@@ -8,7 +8,7 @@ use crate::{
     },
     external_conditions::ExternalConditions,
     input::ElectricStorageHeaterAirFlowType,
-    simulation_time::{SimulationTime, SimulationTimeIteration},
+    simulation_time::{SimulationTime, SimulationTimeIteration}, statistics::np_interp,
 };
 
 #[derive(Debug)]
@@ -123,14 +123,8 @@ impl ElecStorageHeater {
         // Sample a fine grid of SOCs and ensure power_max >= power_min
         let fine_soc: Vec<f64> = linspace(0., 1., 100);
 
-        // power_max_fine = interp1d(
-        //     self.__soc_max_array,
-        //     self.__power_max_array,
-        //     kind='linear',
-        //     fill_value="extrapolate",
-        //     bounds_error=False,
-        //     assume_sorted=True
-        // )(fine_soc)
+        let power_max_fine: Vec<f64> = fine_soc.iter().map(|s| np_interp(*s, &soc_max_array, &power_max_array)).collect();
+
         // power_min_fine = interp1d(
         //     self.__soc_min_array,
         //     self.__power_min_array,
