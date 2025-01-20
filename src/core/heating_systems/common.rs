@@ -263,7 +263,9 @@ impl SpaceHeatingService {
                         energy_demand,
                         temp_flow,
                         temp_return,
+                        None,
                         emitters_data_for_buffer_tank,
+                        None,
                         simulation_time_iteration,
                     )
                     .unwrap(),
@@ -320,6 +322,7 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
+                    None,
                     simulation_time_iteration,
                 ),
             _ => unreachable!(),

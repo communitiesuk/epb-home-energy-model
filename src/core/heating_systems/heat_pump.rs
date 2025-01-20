@@ -1454,9 +1454,11 @@ impl HeatPumpServiceWater {
             simulation_time_iteration,
             None,
             Some(temp_cold_water),
+            None,
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Regular(service.clone())),
+            None,
             None,
             simulation_time_iteration.index,
         )
@@ -1570,14 +1572,19 @@ impl HeatPumpServiceSpace {
     /// * `energy_demand` - space heating energy demand, in kWh
     /// * `temp_flow` - flow temperature for emitters, in deg C
     /// * `temp_return` - return temperature for emitters, in deg C
+    /// * `update_heat_source_state` - if false the heat pump state does not change
     pub fn demand_energy(
         &self,
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
+        update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        let time_start = time_start.unwrap_or(0.);
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
@@ -1601,11 +1608,13 @@ impl HeatPumpServiceSpace {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
+            Some(time_start),
             None,
             self.hybrid_boiler_service
                 .as_ref()
                 .map(|service| HybridBoilerService::Space(service.clone())),
             emitters_data_for_buffer_tank,
+            Some(update_heat_source_state),
             simulation_time_iteration.index,
         )
     }
@@ -1617,8 +1626,10 @@ impl HeatPumpServiceSpace {
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
+        time_start: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
+        let time_start = time_start.unwrap_or(0.);
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
         let mut heat_pump = self.heat_pump.lock();
@@ -1644,6 +1655,7 @@ impl HeatPumpServiceSpace {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
+            Some(time_start),
         )
     }
 
@@ -1738,6 +1750,10 @@ impl HeatPumpServiceSpaceWarmAir {
         per_control!(&self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
     }
 
+    pub(crate) fn energy_output_min(&self) -> f64 {
+        0.
+    }
+
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
@@ -1753,9 +1769,7 @@ impl HeatPumpServiceSpaceWarmAir {
         let time_constant_for_service = match pump.sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => {
-                unimplemented!("to be implemented as part of 0.32 migration")
-            }
+            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
         };
 
         let source_type = pump.source_type;
@@ -1773,6 +1787,8 @@ impl HeatPumpServiceSpaceWarmAir {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
+            None,
+            None,
             None,
             None,
             None,
@@ -1802,9 +1818,7 @@ impl HeatPumpServiceSpaceWarmAir {
         let time_constant_for_service = match self.heat_pump.lock().sink_type {
             HeatPumpSinkType::Water => TIME_CONSTANT_SPACE_WATER,
             HeatPumpSinkType::Air => TIME_CONSTANT_SPACE_AIR,
-            HeatPumpSinkType::Glycol25 => {
-                unimplemented!("to be implemented as part of 0.32 migration")
-            }
+            HeatPumpSinkType::Glycol25 => TIME_CONSTANT_SPACE_GLYCOL25,
         };
         let mut pump = self.heat_pump.lock();
         let source_type = pump.source_type;
@@ -1824,6 +1838,7 @@ impl HeatPumpServiceSpaceWarmAir {
             Some(TempSpreadCorrectionArg::Callable(
                 self.temp_spread_correction_fn(source_type),
             )),
+            None,
         )
     }
 
@@ -2164,21 +2179,18 @@ impl HeatPump {
                             .ok_or(anyhow!("expected a min_modulation_rate_20 provided"))?,
                     ),
                 ),
-                HeatPumpSinkType::Water => (
+                _ => (
                     Some(35.),
                     Some(
                         min_modulation_rate_35
                             .ok_or(anyhow!("expected a min_modulation_rate_35 provided"))?,
                     ),
                 ),
-                HeatPumpSinkType::Glycol25 => {
-                    unimplemented!("to be implemented as part of 0.32 migration")
-                }
             };
             let (temp_min_modulation_rate_high, min_modulation_rate_55) =
                 if test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
                     (
-                        Some(55.),
+                        Some(celsius_to_kelvin(55.)?),
                         Some(
                             min_modulation_rate_55
                                 .ok_or(anyhow!("expected a min_modulation_rate_55 provided"))?,
@@ -2348,7 +2360,6 @@ impl HeatPump {
     pub(crate) fn create_service_hot_water(
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
-        temp_hot_water_in_c: f64,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
         control_min: Option<Arc<Control>>,
@@ -2433,7 +2444,7 @@ impl HeatPump {
             // following is erroneous logic that is following upstream for now - error message is fixed in upstream
             if heat_pump.boiler.is_some() {
                 // TODO (from Python) More evidence is required before warm air space heating systems can work with hybrid heat pumps
-                bail!("Missing boiler object");
+                bail!("Cannot handle hybrid warm air heat pumps - calculation not implemented");
             }
             if heat_pump.source_is_exhaust_air() {
                 if let Some(volume_heated_all_services) =
@@ -2480,7 +2491,7 @@ impl HeatPump {
                 )
             }
             HeatPumpSourceType::OutsideAir => self.external_conditions.air_temp(&simulation_time_iteration),
-            HeatPumpSourceType::ExhaustAirMEV => 20.0,
+            HeatPumpSourceType::ExhaustAirMEV => (self.temp_internal_air_fn)(),
             HeatPumpSourceType::ExhaustAirMVHR => (self.temp_internal_air_fn)(),
             HeatPumpSourceType::ExhaustAirMixed => {
                 let temp_ext = self.external_conditions.air_temp(&simulation_time_iteration);
@@ -2540,6 +2551,7 @@ impl HeatPump {
         temp_output: f64,
         temp_return_feed: f64,
         time_available: f64,
+        time_start: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
     ) -> Result<f64, BelowAbsoluteZeroError> {
@@ -2637,6 +2649,7 @@ impl HeatPump {
                 temp_output,
                 temp_return_feed,
                 time_available,
+                time_start,
                 hybrid_boiler_service.clone(),
                 simtime,
             )?;
@@ -2663,6 +2676,7 @@ impl HeatPump {
                 temp_output,
                 temp_return_feed,
                 time_available,
+                time_start,
                 hybrid_boiler_service,
                 simtime,
             )?
@@ -2684,6 +2698,7 @@ impl HeatPump {
                         temp_output,
                         temp_return_feed,
                         time_available,
+                        time_start,
                         hybrid_boiler_service,
                         simtime,
                     )?;
@@ -2694,6 +2709,7 @@ impl HeatPump {
                         temp_output,
                         temp_return_feed,
                         time_available,
+                        time_start,
                         hybrid_boiler_service,
                         simtime,
                     )?;
@@ -2875,6 +2891,7 @@ impl HeatPump {
         thermal_capacity_op_cond: f64,
         temp_output: f64,
         time_available: f64,
+        time_start: f64,
         temp_return_feed: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         simtime: SimulationTimeIteration,
@@ -2890,6 +2907,7 @@ impl HeatPump {
             temp_output,
             temp_return_feed,
             time_available,
+            time_start,
             hybrid_boiler_service,
             simtime,
         )?;
@@ -2936,6 +2954,7 @@ impl HeatPump {
         thermal_capacity_op_cond: f64,
         temp_output: f64,
         time_available: f64,
+        time_start: f64,
         temp_return_feed: f64,
         hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
@@ -2947,6 +2966,7 @@ impl HeatPump {
             thermal_capacity_op_cond,
             temp_output,
             time_available,
+            time_start,
             temp_return_feed,
             hybrid_boiler_service,
             simtime,
@@ -2998,6 +3018,7 @@ impl HeatPump {
         hybrid_boiler_service: Option<HybridBoilerService>,
         boiler_eff: Option<f64>,
         additional_time_unavailable: Option<f64>,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
     ) -> anyhow::Result<HeatPumpEnergyCalculation> {
         let (flow_temp_increase_due_to_buffer, power_buffer_tank_pump, heat_loss_buffer_kwh) =
@@ -3145,6 +3166,7 @@ impl HeatPump {
             thermal_capacity_op_cond,
             temp_output,
             time_available,
+            time_start.unwrap_or(0.),
             temp_return_feed,
             hybrid_boiler_service.clone(),
             boiler_eff,
@@ -3206,6 +3228,7 @@ impl HeatPump {
                     temp_output,
                     temp_return_feed,
                     time_available,
+                    time_start.unwrap_or(0.),
                     hybrid_boiler_service.clone(),
                     simtime,
                 )?;
@@ -3308,7 +3331,43 @@ impl HeatPump {
         time_running_current_service: f64,
         temp_output: f64,
     ) -> (f64, f64, bool) {
-        todo!()
+        // Calculate load ratio
+        let load_ratio = time_running_current_service / self.simulation_timestep;
+        let load_ratio_continuous_min = if self.modulating_ctrl {
+            let min_modulation_rate_low = self
+                .min_modulation_rate_low
+                .expect("A min_modulation_rate_low was expected to have been set");
+            if self.test_data.dsgn_flow_temps.contains(&OrderedFloat(55.)) {
+                let temp_min_modulation_rate_high = self
+                    .temp_min_modulation_rate_high
+                    .expect("temp_min_modulation_rate_high expected to have been provided");
+                let temp_min_modulation_rate_low = self
+                    .temp_min_modulation_rate_low
+                    .expect("temp_min_modulation_rate_low expected to have been provided");
+                np_interp(
+                    temp_output,
+                    &vec![temp_min_modulation_rate_low, temp_min_modulation_rate_high],
+                    &vec![
+                        temp_min_modulation_rate_low,
+                        self.min_modulation_rate_55
+                            .expect("A min modulation rate was expected for a 55 air flow temp"),
+                    ],
+                )
+            } else {
+                min_modulation_rate_low
+            }
+        } else {
+            // On/off heat pump cannot modulate below maximum power
+            1.0
+        };
+        // Determine whether HP is operating in on/off mode
+        let hp_operating_in_onoff_mode = load_ratio > 0.0 && load_ratio < load_ratio_continuous_min;
+
+        (
+            load_ratio,
+            load_ratio_continuous_min,
+            hp_operating_in_onoff_mode,
+        )
     }
 
     fn energy_input_compressor(
@@ -3345,8 +3404,10 @@ impl HeatPump {
         simtime: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
         temp_used_for_scaling: Option<f64>,
+        time_start: Option<f64>,
         hybrid_boiler_service: Option<HybridBoilerService>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
+        update_heat_source_state: Option<bool>,
         timestep_idx: usize,
     ) -> anyhow::Result<f64> {
         let mut service_results = self.run_demand_energy_calc(
@@ -3364,6 +3425,7 @@ impl HeatPump {
             hybrid_boiler_service.clone(),
             None,
             None,
+            Some(time_start.unwrap_or(0.)),
             emitters_data_for_buffer_tank,
         )?;
 
@@ -3444,7 +3506,9 @@ impl HeatPump {
         volume_heated_by_service: f64,
         simtime: SimulationTimeIteration,
         temp_spread_correction: Option<TempSpreadCorrectionArg>,
+        time_start: Option<f64>,
     ) -> anyhow::Result<(f64, f64)> {
+        let time_start = time_start.unwrap_or(0.);
         let service_results = self.run_demand_energy_calc(
             service_name,
             service_type,
@@ -3460,6 +3524,7 @@ impl HeatPump {
             None,
             None,
             Some(space_heat_running_time_cumulative),
+            Some(time_start),
             None,
         )?;
 
@@ -6449,7 +6514,6 @@ mod tests {
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
             service_name,
-            50.,
             60.,
             cold_feed.clone().into(),
             None,
@@ -6476,7 +6540,6 @@ mod tests {
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump_with_boiler.into(),
             service_name,
-            50.,
             60.,
             cold_feed.into(),
             None,
@@ -6717,6 +6780,7 @@ mod tests {
         let temp_output = 300.;
         let temp_return_feed = 290.;
         let time_available = 1.;
+        let time_start = 0.;
 
         let heat_pump = create_default_heat_pump(
             None,
@@ -6730,6 +6794,7 @@ mod tests {
                 temp_output,
                 temp_return_feed,
                 time_available,
+                time_start,
                 None,
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
@@ -6753,6 +6818,7 @@ mod tests {
                 temp_output,
                 temp_return_feed,
                 time_available,
+                time_start,
                 None,
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
@@ -6807,6 +6873,7 @@ mod tests {
                 temp_output,
                 temp_return_feed,
                 time_available,
+                time_start,
                 Some(hybrid_boiler_service),
                 simulation_time_for_heat_pump.iter().current_iteration(),
             )
@@ -6945,6 +7012,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
                 t_idx,
             );
 
@@ -7007,6 +7076,7 @@ mod tests {
         let time_available = 1.0;
         let temp_return_feed = 315.0;
         let hybrid_boiler_service = None;
+        let time_start = 0.;
 
         assert!(!heat_pump
             .inadequate_capacity(
@@ -7014,6 +7084,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 hybrid_boiler_service,
                 simulation_time_for_heat_pump.iter().current_iteration()
@@ -7041,6 +7112,7 @@ mod tests {
         let time_available = 2.;
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
+        let time_start = 0.;
 
         let result = heat_pump
             .inadequate_capacity(
@@ -7048,6 +7120,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 hybrid_boiler_service,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -7077,6 +7150,7 @@ mod tests {
         let time_available = 2.;
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
+        let time_start = 0.;
 
         let result = heat_pump
             .inadequate_capacity(
@@ -7084,6 +7158,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 hybrid_boiler_service,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -7113,6 +7188,7 @@ mod tests {
         let time_available = 2.;
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
+        let time_start = 0.;
 
         let result = heat_pump
             .inadequate_capacity(
@@ -7120,6 +7196,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 hybrid_boiler_service,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -7149,6 +7226,7 @@ mod tests {
         let time_available = 2.;
         let temp_return_feed = 313.;
         let hybrid_boiler_service = None;
+        let time_start = 0.;
 
         let result = heat_pump
             .inadequate_capacity(
@@ -7156,6 +7234,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 hybrid_boiler_service,
                 simulation_time_for_heat_pump.iter().current_iteration(),
@@ -7228,6 +7307,7 @@ mod tests {
         let temp_output = 320.0;
         let time_available = 1.0;
         let temp_return_feed = 320.0;
+        let time_start = 0.;
 
         let heat_pump = create_default_heat_pump(
             None,
@@ -7243,6 +7323,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 None,
                 None,
@@ -7281,6 +7362,7 @@ mod tests {
                 thermal_capacity_op_cond,
                 temp_output,
                 time_available,
+                time_start,
                 temp_return_feed,
                 None,
                 Some(3.0),
@@ -7415,7 +7497,8 @@ mod tests {
                         Some(HybridBoilerService::Space(boiler_service_space.clone())),
                         Some(1.0),
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_energy_calcs[t_idx]
@@ -7511,7 +7594,8 @@ mod tests {
                         None,
                         None,
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_energy_calcs[t_idx]
@@ -7680,7 +7764,8 @@ mod tests {
                         None,
                         None,
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_modcontrol_calcs[t_idx]
@@ -7769,7 +7854,8 @@ mod tests {
                         None,
                         None,
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_energy_calcs[t_idx]
@@ -7902,7 +7988,8 @@ mod tests {
                         Some(HybridBoilerService::Space(boiler_service_space.clone())),
                         Some(1.0),
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_off_with_boiler_calcs[t_idx]
@@ -8071,7 +8158,8 @@ mod tests {
                         None,
                         None,
                         Some(0.0),
-                        None
+                        None,
+                        None,
                     )
                     .unwrap(),
                 expected_energy_calcs[t_idx]
@@ -8151,7 +8239,9 @@ mod tests {
                         t_it,
                         Some(TempSpreadCorrectionArg::Float(1.0)),
                         None,
+                        None,
                         Some(HybridBoilerService::Space(boiler_service_space.clone())),
+                        None,
                         None,
                         t_idx
                     )
@@ -8263,6 +8353,7 @@ mod tests {
                 100.,
                 simulation_time_for_heat_pump.iter().current_iteration(),
                 Some(TempSpreadCorrectionArg::Float(1.)),
+                None,
             )
             .unwrap();
 
@@ -8349,6 +8440,7 @@ mod tests {
             energy_demanded,
             temp_flow,
             temp_return,
+            None,
             simulation_time_for_heat_pump.iter().current_iteration(),
         );
 
@@ -8405,6 +8497,8 @@ mod tests {
                 true,
                 simtime,
                 Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -8503,6 +8597,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
                 0,
             )
             .unwrap();
@@ -8548,6 +8644,8 @@ mod tests {
                 true,
                 simtime,
                 Some(TempSpreadCorrectionArg::Float(1.0)),
+                None,
+                None,
                 None,
                 None,
                 None,

@@ -4084,7 +4084,6 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             energy_supply_conn_name.as_str(),
-                            55.,
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
                             cold_water_source.as_cold_water_source()?,
