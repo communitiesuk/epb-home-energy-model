@@ -1199,7 +1199,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "ignored during migration to 0.32"]
     pub fn should_have_correct_high_value_correction(boiler: (Boiler, Arc<RwLock<EnergySupply>>)) {
         let (boiler, _) = boiler;
         assert_eq!(
