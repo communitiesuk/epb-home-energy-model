@@ -6725,7 +6725,7 @@ mod tests {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: sink_air";
         let heat_pump_sink_air = create_heat_pump_sink_air(
             energy_supply_conn_name_auxiliary,
-            external_conditions,
+            external_conditions.clone(),
             simulation_time_for_heat_pump,
         );
         let heat_pump_sink_air = Arc::from(Mutex::from(heat_pump_sink_air));
@@ -6733,7 +6733,7 @@ mod tests {
         let result = HeatPump::create_service_space_heating_warm_air(
             heat_pump_sink_air.clone(),
             service_name.to_string(),
-            control,
+            control.clone(),
             frac_convective,
             volume_heated,
         );
@@ -6743,6 +6743,36 @@ mod tests {
             .lock()
             .energy_supply_connections
             .contains_key(service_name));
+
+        // Check that warm air hybrid heat pump service cannot be created
+        let boiler = Arc::from(RwLock::from(create_boiler(
+            external_conditions.clone(),
+            energy_supply(simulation_time_for_heat_pump),
+            simulation_time_for_heat_pump,
+            energy_supply_conn_name_auxiliary,
+        )));
+
+        let input = create_heat_pump_sink_air_input_from_json();
+        let heat_pump_sink_air_with_boiler = create_heat_pump(
+            input,
+            energy_supply_conn_name_auxiliary,
+            None,
+            Some(boiler),
+            None,
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        );
+        let result = HeatPump::create_service_space_heating_warm_air(
+            Arc::new(Mutex::new(heat_pump_sink_air_with_boiler)),
+            service_name.to_string(),
+            control.clone(),
+            frac_convective,
+            volume_heated,
+        );
+
+        assert!(result.is_err());
     }
 
     #[rstest]
