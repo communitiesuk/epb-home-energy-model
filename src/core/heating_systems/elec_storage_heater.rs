@@ -124,7 +124,9 @@ impl ElecStorageHeater {
         let fine_soc: Vec<f64> = linspace(0., 1., 100);
 
         let power_max_fine: Vec<f64> = fine_soc.iter().map(|s| np_interp(*s, &soc_max_array, &power_max_array)).collect();
+        let power_min_fine: Vec<f64> = fine_soc.iter().map(|s| np_interp(*s, &soc_min_array, &power_min_array)).collect();
 
+        
         // power_min_fine = interp1d(
         //     self.__soc_min_array,
         //     self.__power_min_array,
