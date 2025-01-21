@@ -425,7 +425,7 @@ impl BufferTank {
             // We are currently assuming that, by design, buffer tanks always work with fix pumps on the
             // tank-emitter side with higher flow than the flow in the hp-tank side.
             if hp_flow >= self.pump_fixed_flow_rate / SECONDS_PER_MINUTE as f64 {
-                bail!("Heat pump buffer tank flow > than buffer tank-emitter flow. Calculation aborted")
+                bail!("Heat pump buffer tank flow is greater than buffer tank emitter flow. Calculation aborted")
             }
 
             let flow_temp_increase_due_to_buffer = max_of_2(
@@ -2170,14 +2170,14 @@ impl HeatPump {
         ) = if modulating_ctrl {
             let (temp_min_modulation_rate_low, min_modulation_rate_low) = match sink_type {
                 HeatPumpSinkType::Air => (
-                    Some(20.),
+                    Some(celsius_to_kelvin(20.)?),
                     Some(
                         min_modulation_rate_20
                             .ok_or(anyhow!("expected a min_modulation_rate_20 provided"))?,
                     ),
                 ),
                 HeatPumpSinkType::Water | HeatPumpSinkType::Glycol25 => (
-                    Some(35.),
+                    Some(celsius_to_kelvin(35.)?),
                     Some(
                         min_modulation_rate_35
                             .ok_or(anyhow!("expected a min_modulation_rate_35 provided"))?,
@@ -2438,7 +2438,7 @@ impl HeatPump {
             if heat_pump.sink_type != HeatPumpSinkType::Air {
                 bail!("Warm air space heating service requires heat pump with sink type Air");
             }
-            // following is erroneous logic that is following upstream for now - error message is fixed in upstream
+            // following is erroneous logic that is following upstream for now
             if heat_pump.boiler.is_some() {
                 // TODO (from Python) More evidence is required before warm air space heating systems can work with hybrid heat pumps
                 bail!("Cannot handle hybrid warm air heat pumps - calculation not implemented");
@@ -3107,6 +3107,8 @@ impl HeatPump {
             self.time_available(time_start, timestep, Some(additional_time_unavailable));
         let mut time_running_current_service = min_of_2(time_required, time_available);
 
+        // TODO (from Python) Consider moving some of these checks earlier or to HeatPumpService
+        //      classes. May be able to skip a lot of the calculation.
         let mut boiler_eff = boiler_eff;
         if hybrid_boiler_service.is_some() {
             boiler_eff = Some(
@@ -3767,6 +3769,8 @@ impl HeatPump {
 
     /// Calculations to be done at the end of each timestep
     pub fn timestep_end(&mut self, timestep_idx: usize) {
+        self.calc_energy_input(timestep_idx).unwrap();
+
         let timestep = self.simulation_timestep;
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
@@ -4295,7 +4299,8 @@ pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Option<Arc<Control>>,
+    control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4320,7 +4325,8 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: f64,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control: Option<Arc<Control>>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {
@@ -4361,7 +4367,8 @@ impl HeatPumpHotWaterOnly {
             power_in_kw: power_max_in_kw,
             energy_supply_connection,
             simulation_timestep,
-            control,
+            control_min,
+            control_max,
             initial_efficiency: Self::init_efficiency(&efficiencies, vol_daily_average),
             tank_volume,
             daily_losses,
@@ -4431,6 +4438,20 @@ impl HeatPumpHotWaterOnly {
         self.initial_efficiency * in_use_factor_mismatch
     }
 
+    pub(crate) fn temp_setpnt(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        (
+            self.control_min
+                .as_ref()
+                .and_then(|c| c.setpnt(&simulation_time_iteration)),
+            self.control_max
+                .as_ref()
+                .and_then(|c| c.setpnt(&simulation_time_iteration)),
+        )
+    }
+
     /// Demand energy (in kWh) from the heat pump
     pub fn demand_energy(
         &mut self,
@@ -4442,7 +4463,7 @@ impl HeatPumpHotWaterOnly {
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
         let energy_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
+            if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(simtime) {
                 min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
             } else {
                 0.0
@@ -4461,7 +4482,7 @@ impl HeatPumpHotWaterOnly {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
+        if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0
@@ -8496,6 +8517,157 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calc_energy_input(
+        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_heat_pump: SimulationTime,
+    ) {
+        let heat_pump = Arc::new(Mutex::new(create_default_heat_pump(
+            None,
+            external_conditions,
+            simulation_time_for_heat_pump,
+            None,
+        )));
+        HeatPump::create_service_connection(heat_pump.clone(), "service_test").unwrap();
+
+        let mut heat_pump = heat_pump.lock();
+
+        let service_results = vec![
+            ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+                service_name: ResultString::try_from("service_test").unwrap(),
+                service_type: ServiceType::Water,
+                service_on: true,
+                energy_output_required: 1.0,
+                temp_output: 330.0,
+                temp_source: 273.15,
+                cop_op_cond: 2.9706605881515196,
+                thermal_capacity_op_cond: 8.417674488123662,
+                time_running: 0.11879765621857688,
+                time_constant_for_service: 1560.,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: Default::default(),
+                load_ratio_continuous_min: Default::default(),
+                load_ratio: Default::default(),
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: Default::default(),
+                energy_input_hp_divisor: None,
+                energy_input_hp: Default::default(),
+                energy_delivered_hp: 0.9999999999999999,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: Default::default(),
+                energy_delivered_total: 0.9999999999999999,
+                energy_heating_circ_pump: 0.001781964843278653,
+                energy_source_circ_pump: 0.0011879765621857687,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            })),
+            // ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+            //     service_name: ResultString::try_from("service_test").unwrap(),
+            //     service_type: ServiceType::Space,
+            //     service_on: true,
+            //     energy_output_required: 1.0,
+            //     temp_output: 330.0,
+            //     temp_source: 273.15,
+            //     cop_op_cond: 3.091723311370327,
+            //     thermal_capacity_op_cond: 6.9608039370972525,
+            //     time_running: 0.1476423586450323,
+            //     time_constant_for_service: 1560.,
+            //     deg_coeff_op_cond: 0.9,
+            //     compressor_power_min_load: Default::default(),
+            //     load_ratio_continuous_min: Default::default(),
+            //     load_ratio: Default::default(),
+            //     use_backup_heater_only: false,
+            //     hp_operating_in_onoff_mode: Default::default(),
+            //     energy_input_hp_divisor: None,
+            //     energy_input_hp: Default::default(),
+            //     energy_delivered_hp: 1.,
+            //     energy_input_backup: 0.0,
+            //     energy_delivered_backup: 0.0,
+            //     energy_input_total: Default::default(),
+            //     energy_delivered_total: 1.,
+            //     energy_heating_circ_pump: 0.0022146353796754846,
+            //     energy_source_circ_pump: 0.0014764235864503231,
+            //     energy_output_required_boiler: 0.0,
+            //     energy_heating_warm_air_fan: 0.,
+            //     energy_output_delivered_boiler: None,
+            // })),
+        ];
+
+        heat_pump.service_results = Arc::new(Mutex::new(service_results));
+
+        let expected_results = vec![
+            ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+                service_name: ResultString::try_from("service_test").unwrap(),
+                service_type: ServiceType::Water,
+                service_on: true,
+                energy_output_required: 1.0,
+                temp_output: 330.0,
+                temp_source: 273.15,
+                cop_op_cond: 2.9706605881515196,
+                thermal_capacity_op_cond: 8.417674488123662,
+                time_running: 0.11879765621857688,
+                time_constant_for_service: 1560.,
+                deg_coeff_op_cond: 0.9,
+                compressor_power_min_load: 1.133441433423604,
+                load_ratio_continuous_min: 0.4,
+                load_ratio: 0.11879765621857688,
+                use_backup_heater_only: false,
+                hp_operating_in_onoff_mode: true,
+                energy_input_hp_divisor: Some(1.),
+                energy_input_hp: 0.33789047423833063,
+                energy_delivered_hp: 0.9999999999999999,
+                energy_input_backup: 0.0,
+                energy_delivered_backup: 0.0,
+                energy_input_total: 0.34086041564379504,
+                energy_delivered_total: 0.9999999999999999,
+                energy_heating_circ_pump: 0.001781964843278653,
+                energy_source_circ_pump: 0.0011879765621857687,
+                energy_output_required_boiler: 0.0,
+                energy_heating_warm_air_fan: 0.,
+                energy_output_delivered_boiler: None,
+            })),
+            // ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
+            //     service_name: ResultString::try_from("service_test").unwrap(),
+            //     service_type: ServiceType::Space,
+            //     service_on: true,
+            //     energy_output_required: 1.0,
+            //     temp_output: 330.0,
+            //     temp_source: 273.15,
+            //     cop_op_cond: 3.091723311370327,
+            //     thermal_capacity_op_cond: 6.9608039370972525,
+            //     time_running: 0.1476423586450323,
+            //     time_constant_for_service: 1560.,
+            //     deg_coeff_op_cond: 0.9,
+            //     compressor_power_min_load: 0.9005726885711587,
+            //     load_ratio_continuous_min: 0.4,
+            //     load_ratio: 0.29130392547505757,
+            //     use_backup_heater_only: false,
+            //     hp_operating_in_onoff_mode: true,
+            //     energy_input_hp_divisor: None,
+            //     energy_input_hp: 0.3348701158353444,
+            //     energy_delivered_hp: 1.,
+            //     energy_input_backup: 0.0,
+            //     energy_delivered_backup: 0.0,
+            //     energy_input_total: 0.338561174801470,
+            //     energy_delivered_total: 1.,
+            //     energy_heating_circ_pump: 0.0022146353796754846,
+            //     energy_source_circ_pump: 0.0014764235864503231,
+            //     energy_output_required_boiler: 0.0,
+            //     energy_heating_warm_air_fan: 0.,
+            //     energy_output_delivered_boiler: None,
+            // })),
+        ];
+
+        heat_pump.calc_energy_input(0).unwrap();
+
+        assert_eq!(*heat_pump.service_results.lock().deref(), expected_results);
+        // TODO - have commented out 2nd service result as test took too long to run for now, look into or remove.
+        // In Python there is a third test case, omitting this as it doesn't add any value and the
+        // this test is already very long
+    }
+
+    #[rstest]
     fn test_calc_ancillary_energy(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8775,6 +8947,7 @@ mod tests {
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
             1.,
+            None,
             None,
         );
 

@@ -4159,6 +4159,7 @@ fn heat_source_from_input(
                         simulation_time.step_in_hours(),
                         // TODO fix control logic as part of 0.32 migration
                         controls.get(&control.expect("This may not be present during migration to 0.32")),
+                        controls.get(&control.expect("This may not be present during migration to 0.32")),
                     ),
                 ))),
                 energy_supply_conn_name.into(),
