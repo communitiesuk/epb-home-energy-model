@@ -3282,8 +3282,8 @@ impl HeatPump {
                     .expect("temp_min_modulation_rate_low expected to have been provided");
                 np_interp(
                     temp_output,
-                    &vec![temp_min_modulation_rate_low, temp_min_modulation_rate_high],
-                    &vec![
+                    &[temp_min_modulation_rate_low, temp_min_modulation_rate_high],
+                    &[
                         temp_min_modulation_rate_low,
                         self.min_modulation_rate_55
                             .expect("A min modulation rate was expected for a 55 air flow temp"),
@@ -3563,7 +3563,7 @@ impl HeatPump {
                         .iter()
                         .filter_map(|x| {
                             if let ServiceResult::Full(x) = x {
-                                (x.service_type == ServiceType::Space).then(|| x.time_running)
+                                (x.service_type == ServiceType::Space).then_some(x.time_running)
                             } else {
                                 None
                             }
