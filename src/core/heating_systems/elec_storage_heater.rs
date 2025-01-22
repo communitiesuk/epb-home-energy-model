@@ -1,4 +1,6 @@
 use itertools::Itertools;
+use nalgebra::Vector1;
+use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 
 use crate::{
     core::{
@@ -10,6 +12,27 @@ use crate::{
     input::ElectricStorageHeaterAirFlowType,
     simulation_time::{SimulationTime, SimulationTimeIteration}, statistics::np_interp,
 };
+
+type State = Vector1<f64>;
+type Time = f64;
+
+// replicates numpys's linspace function
+fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
+    let step = (end - start) / f64::from(num - 1);
+    (0..num).map(|n| start + (f64::from(n) * step)).collect()
+}
+
+// replicate numpy's clip function
+fn clip(n: f64, min: f64, max: f64) -> f64 {
+    if n < 0. {
+        0.
+    } else if n > 1. {
+        1.
+    } else {
+        n
+    }
+}
+
 
 #[derive(Debug)]
 pub struct ElecStorageHeater {
@@ -37,6 +60,7 @@ pub struct ElecStorageHeater {
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
+    heat_retention_ratio: f64,
     // TODO review - do we need to keep these as public properties?
     pub energy_for_fan: f64,
     pub energy_instant: f64,
@@ -44,11 +68,33 @@ pub struct ElecStorageHeater {
     pub energy_delivered: f64,
 }
 
-// replicates numpys's linspace function
-fn linspace(start: f64, end: f64, num: i32) -> Vec<f64> {
-    let step = (end - start) / f64::from(num - 1);
-    (0..num).map(|n| start + (f64::from(n) * step)).collect()
+struct SocOdeFunction {
+    soc_array: Vec<f64>,
+    power_array: Vec<f64>,
+    storage_capacity: f64,
 }
+
+impl System<Time, State> for SocOdeFunction {
+    fn system(&self, _x: Time, y: &State, dy: &mut State) {
+        // Define the ODE for SOC and energy delivered (no charging, only discharging)
+
+        // Ensure SOC stays within bounds
+        let soc = clip(y[0], 0., 1.);
+
+        // Discharging: calculate power used based on SOC
+        let discharge_rate = - np_interp(soc, &self.soc_array, &self.power_array);
+        
+        // Track the total energy delivered (discharged energy)
+        let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
+        
+        // SOC rate of change (discharging), divided by storage capacity
+        let dsoc_dt = -ddelivered_dt / self.storage_capacity;
+
+        dy[0] = dsoc_dt;
+    }
+}
+
+
 
 impl ElecStorageHeater {
     pub fn new(
@@ -126,19 +172,15 @@ impl ElecStorageHeater {
         let power_max_fine: Vec<f64> = fine_soc.iter().map(|s| np_interp(*s, &soc_max_array, &power_max_array)).collect();
         let power_min_fine: Vec<f64> = fine_soc.iter().map(|s| np_interp(*s, &soc_min_array, &power_min_array)).collect();
 
-        
-        // power_min_fine = interp1d(
-        //     self.__soc_min_array,
-        //     self.__power_min_array,
-        //     kind='linear',
-        //     fill_value=(0, 0),  # Ensures SOC outside bounds returns 0 power
-        //     bounds_error=False,  # No errors for SOC values outside the bounds
-        //     assume_sorted=True   # Assume the SOC array is sorted
-        // )(fine_soc)
+        for i in 0..fine_soc.len() {
+            if power_max_fine[i] < power_min_fine[i] {
+                panic!("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
+            }
+        }
 
-        // if not np.all(power_max_fine >= power_min_fine):
-        //     raise ValueError("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
-        
+        // TODO can we pass these vecs/arrays by reference instead
+        let heat_retention_ratio = Self::heat_retention_output(soc_min_array.clone(), power_min_array.clone(), storage_capacity);
+
         Self {
             pwr_in,
             pwr_instant: rated_power_instant,
@@ -164,12 +206,86 @@ impl ElecStorageHeater {
             power_max_array,
             soc_min_array,
             power_min_array,
+            heat_retention_ratio,
             // TODO ...
             energy_for_fan: 0.,
             energy_instant: 0.,
             energy_charged: 0.,
-            energy_delivered: 0.
+            energy_delivered: 0.,
         }
+    }
+
+    pub fn heat_retention_output(soc_array: Vec<f64>, power_array: Vec<f64>, storage_capacity: f64) -> f64 {
+        // Simulates the heat retention over 16 hours in OutputMode.MIN.
+        
+        // Starts with a SOC of 1.0 and calculates the SOC after 16 hours.
+        // This is a self-contained function, and the SOC is not stored in self.__state_of_charge.
+    
+        // :return: Final SOC after 16 hours.
+
+        // Set initial state of charge to 1.0 (fully charged)
+        let initial_soc = 1.0;
+        
+        // Total time for the simulation (16 hours)
+        let total_time = 16.0; // This is the value from BS EN 60531 for determining heat retention ability
+        
+        // Select the SOC and power arrays for OutputMode.MIN
+        let soc_ode = SocOdeFunction {
+            soc_array: soc_array,
+            power_array: power_array,
+            storage_capacity: storage_capacity
+        };
+
+        let f = soc_ode; // f - Structure implementing the System trait
+        let x = 0. ; // x - Initial value of the independent variable (usually time)
+        let x_end = total_time; // x_end - Final value of the independent variable
+        let dx = 0.; // dx - Increment in the dense output. This argument has no effect if the output type is Sparse
+        let y0: State = State::new(initial_soc); // y - Initial value of the dependent variable(s)
+
+        // scipy implementation for reference:
+        // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
+        let rtol = 1e-3; // rtol - set from scipy docs - Relative tolerance used in the computation of the adaptive step size
+        let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
+        let h = 0.; // initial step size - 0
+        let safety_factor = 0.9; // matches scipy implementation
+        let beta = 0.; // setting this to 0 gives us an alpha of 0.2 and matches scipy's adaptive step size logic (default was 0.04)
+        let fac_min = 0.2; // matches scipy implementation
+        let fac_max = 10.; // matches scipy implementation
+        let h_max = x_end - x;
+        let n_max = 100000;
+        let n_stiff = 1000;
+        let mut stepper = Dopri5::from_param(
+            f,
+            x,
+            x_end,
+            dx,
+            y0,
+            rtol,
+            atol,
+            safety_factor,
+            beta,
+            fac_min,
+            fac_max,
+            h_max,
+            h,
+            n_max,
+            n_stiff,
+            OutputType::Sparse,
+        );
+
+        // Solve the ODE for SOC and cumulative energy delivered
+        let _ = stepper.integrate();
+        
+        // sol = solve_ivp(soc_ode, [0, total_time], [initial_soc], method='RK45', rtol=1e-1, atol=1e-3)
+        
+        // Final state of charge after 16 hours
+        let final_soc = stepper.y_out().last().unwrap()[0];
+
+        // Clip the final SOC to ensure it's between 0 and 1
+        let final_soc = clip(final_soc, 0., 1.);
+        
+        // Return the final state of charge after 16 hours
+        return final_soc
     }
     
     pub fn energy_output_min(&self, simulation_time_iteration: &SimulationTimeIteration) -> f64 {
@@ -201,9 +317,12 @@ mod tests {
         simulation_time::{SimulationTime, SimulationTimeIteration, SimulationTimeIterator},
     };
     use approx::assert_relative_eq;
+    use indexmap::IndexMap;
     use rstest::{fixture, rstest};
     use serde_json::json;
     use super::*;
+
+    const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -326,7 +445,6 @@ mod tests {
         charge_control: ChargeControl,
         external_conditions: ExternalConditions,
     ) -> ElecStorageHeater {
-        let zone: Zone = todo!();
         let energy_supply: EnergySupplyConnection = todo!();
         let control: SetpointTimeControl = todo!();
 
@@ -341,7 +459,7 @@ mod tests {
             0.7,
             11.,
             1,
-            zone,
+            todo!(), // TODO can we pass properties of zone instead?
             energy_supply,
             simulation_time,
             control,
@@ -350,6 +468,16 @@ mod tests {
             esh_max_output,
             external_conditions, // TODO this is None in Python
         )
+    }
+
+
+    #[rstest]
+    #[ignore = "not yet implemented"]
+    pub fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
+        assert_eq!(elec_storage_heater.pwr_in, 3.5);
+        assert_eq!(elec_storage_heater.storage_capacity, 10.0);
+        assert_eq!(elec_storage_heater.air_flow_type, ElectricStorageHeaterAirFlowType::FanAssisted);
+        assert_relative_eq!(elec_storage_heater.heat_retention_ratio, 0.9237200133949534);
     }
 
     #[rstest]
@@ -554,5 +682,15 @@ mod tests {
             let energy_delivered = elec_storage_heater.energy_delivered;
             assert_relative_eq!(energy_delivered, expected_energy_delivered[t_idx]);
         }
+    }
+
+    #[test]
+    pub fn test_heat_retention_output() {
+        let soc_array = vec![0., 0.5, 1.];
+        let power_array = vec![0., 0.02, 0.05];
+        let storage_capacity = 10.;
+        let actual = ElecStorageHeater::heat_retention_output(soc_array, power_array, storage_capacity);
+
+        assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
     }
 }
