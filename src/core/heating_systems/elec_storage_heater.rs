@@ -7,10 +7,7 @@ use nalgebra::{Vector1, Vector3};
 use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 
 use crate::{
-    core::{
-        controls::time_control::Control,
-        energy_supply::energy_supply::EnergySupplyConnection,
-    },
+    core::{controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection},
     external_conditions::ExternalConditions,
     input::ElectricStorageHeaterAirFlowType,
     simulation_time::{SimulationTime, SimulationTimeIteration},
@@ -654,7 +651,7 @@ mod tests {
     use super::*;
     use crate::{
         core::{
-            controls::time_control::SetpointTimeControl,
+            controls::time_control::{ChargeControl, SetpointTimeControl},
             energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder},
         },
         external_conditions::{DaylightSavingsConfig, ExternalConditions},
