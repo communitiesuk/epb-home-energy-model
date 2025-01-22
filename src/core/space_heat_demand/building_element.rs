@@ -8,6 +8,7 @@ use crate::input::{
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
+use nalgebra::ComplexField;
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -16,8 +17,98 @@ use std::sync::Arc;
 // (default value for intermediate climatic region from BS EN ISO 52016-1:2017, Table B.19)
 const TEMP_DIFF_SKY: f64 = 11.0; // Kelvin
 
-// Values from BS EN ISO 13789:2017, Table 8: Conventional surface heat
-// transfer coefficients
+/// Calculate longwave sky view factor from pitch in degrees
+pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
+    // TODO (from Python) account for shading
+    // TODO (from Python) check longwave is correct
+    let pitch_rads = pitch * PI / 180.0;
+
+    0.5 * (1.0 + pitch_rads.cos())
+}
+
+/// calc the vertically projected height of a surface from
+/// the actual height and tilt of the surface
+pub(crate) fn projected_height(tilt: f64, height: f64) -> f64 {
+    let mut ph = height * tilt.to_radians().sin();
+    // BS EN ISO 52010-1 Table 7 geometric input data; shading. Footnote d
+    // validity interval H1;ic > 0
+    // if horizontal (height = 0): choose small value e.g. H1 = 0.01 m"""
+    if ph < 0.01 {
+        ph = 0.01;
+    }
+
+    ph
+}
+
+fn calculate_area(height: f64, width: f64) -> f64 {
+    height * width
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HeatFlowDirection {
+    Horizontal,
+    Upwards,
+    Downwards,
+}
+
+/// The different variations for each of these are:
+/// - Heat transfer with internal environment:
+///    - Common
+/// - Heat transfer through and storage within the element:
+///    - 2 nodes
+///    - 5 nodes
+///    - 3+2 nodes
+/// - Heat transfer with environment on other side of element:
+///    - Ground
+///    - Conditioned space
+///    - Unconditioned space
+///    - Outside
+/// - Interaction with solar radiation:
+///    - Absorbed
+///    - Transmitted
+///    - Not exposed
+///
+/// The different building element types are composed of the following combinations:
+/// - BuildingElementOpaque: Common, 5 nodes, Outside, Absorbed
+/// - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
+/// - BuildingElementAdjacentZTC: Common, 5 nodes, Conditioned space, Not exposed
+/// - BuildingElementAdjacentZTU_Simple: Common, 5 nodes, Unconditioned space, Not exposed
+/// - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
+///
+/// BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
+/// unused. If this is confirmed to be the case, then these can be deleted.
+///
+/// BuildingElementGround has several alternative sets of inputs, depending on the floor_type input. The current class
+/// requires all of these inputs and ignores the ones that are not relevant. This class could arguably be split into 5
+/// different classes (one for each floor_type option) to avoid this. The alternative sets of inputs are for calculating
+/// self.__h_pi and self.__h_pe, which are ultimately used in the temp_ext function. Therefore, one way to handle this would
+/// be to have 5 different classes, calculate h_pi and h_pe, then feed these into the constructor of the "Ground" object
+/// under the category "Heat transfer with environment on other side of element".
+///
+/// The relevant functions for each set of characteristics are:
+/// - Heat transfer with internal environment:
+///    - heat_flow_direction
+///    - r_si
+///    - h_ci
+///    - h_ri
+///    - pitch_class
+/// - Heat transfer through and storage within the element:
+///    - no_of_nodes
+///    - no_of_inside_nodes
+///    - init_h_pli
+///    - init_k_pli
+/// - Heat transfer with environment on other side of element:
+///    - r_se
+///    - h_ce
+///    - h_re
+///    - temp_ext
+/// - Interaction with solar radiation:
+///    - i_sol_dir_dif
+///    - solar_gains
+///    - shading_factors_direct_diffuse
+
+//Values from BS EN ISO 13789:2017, Table 8: Conventional surface heat
+//transfer coefficients
 const H_CI_UPWARDS: f64 = 5.0;
 const H_CI_HORIZONTAL: f64 = 2.5;
 const H_CI_DOWNWARDS: f64 = 0.7;
@@ -56,6 +147,501 @@ macro_rules! per_element {
             BuildingElement::Transparent($pattern) => $res,
         }
     };
+}
+
+pub(crate) trait HeatTransferInternal {
+    /// Determine direction of heat flow for a surface
+    fn heat_flow_direction(&self, temp_int_air: f64, temp_int_surface: f64) -> HeatFlowDirection {
+        let pitch = self.pitch();
+        if (PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR).contains(&pitch) {
+            HeatFlowDirection::Horizontal
+        } else {
+            let inwards_heat_flow = temp_int_air < temp_int_surface;
+            let is_floor = pitch > PITCH_LIMIT_HORIZ_FLOOR;
+            let is_ceiling = pitch < PITCH_LIMIT_HORIZ_CEILING;
+            let upwards_heat_flow =
+                (is_floor && inwards_heat_flow) || (is_ceiling && !inwards_heat_flow);
+            if upwards_heat_flow {
+                HeatFlowDirection::Upwards
+            } else {
+                HeatFlowDirection::Downwards
+            }
+        }
+    }
+
+    fn pitch(&self) -> f64;
+
+    /// Return internal surface resistance, in m2 K / W
+    fn r_si(&self, pitch: f64) -> f64 {
+        match pitch {
+            PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => R_SI_HORIZONTAL,
+            ..PITCH_LIMIT_HORIZ_CEILING => R_SI_UPWARDS,
+            PITCH_LIMIT_HORIZ_FLOOR.. => R_SI_DOWNWARDS,
+            _ => unreachable!("Rust cannot tell that above is exhaustive"),
+        }
+    }
+
+    /// Return internal convective heat transfer coefficient, in W / (m2.K)
+    fn h_ci(&self, temp_int_air: f64, temp_int_surface: f64) -> f64 {
+        match self.heat_flow_direction(temp_int_air, temp_int_surface) {
+            HeatFlowDirection::Horizontal => H_CI_HORIZONTAL,
+            HeatFlowDirection::Upwards => H_CI_UPWARDS,
+            HeatFlowDirection::Downwards => H_CI_DOWNWARDS,
+        }
+    }
+
+    /// Return internal radiative heat transfer coefficient, in W / (m2.K)
+    fn h_ri(&self) -> f64 {
+        H_RI
+    }
+
+    /// Convert U-value from input data to thermal resistance of construction only
+    /// (not incl. surface resistances)
+    fn convert_uvalue_to_resistance(&self, u_value: f64, pitch: f64) -> f64 {
+        (1.0 / u_value) - self.r_si(pitch) - R_SE
+    }
+
+    fn pitch_class(&self, pitch: f64) -> HeatFlowDirection {
+        match pitch {
+            PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => HeatFlowDirection::Horizontal,
+            ..PITCH_LIMIT_HORIZ_CEILING => HeatFlowDirection::Upwards,
+            PITCH_LIMIT_HORIZ_FLOOR.. => HeatFlowDirection::Downwards,
+            _ => unreachable!("Rust cannot tell that above is exhaustive"),
+        }
+    }
+}
+
+pub(crate) trait HeatTransferInternalCommon: HeatTransferInternal {}
+
+pub(crate) trait HeatTransferThrough {
+    fn r_c(&self) -> f64;
+    fn k_m(&self) -> f64;
+    fn set_k_m(&mut self, k_m: f64);
+    fn k_pli(&self) -> &[f64];
+    fn r_se(&self) -> f64;
+    fn r_si(&self) -> f64;
+
+    /// Return number of nodes including external and internal layers
+    fn no_of_nodes(&self) -> usize {
+        self.k_pli().len()
+    }
+
+    /// Return number of nodes excluding external and internal layers
+    fn no_of_inside_nodes(&self) -> isize {
+        (self.no_of_nodes() - 2) as isize
+    }
+
+    fn area(&self) -> f64;
+
+    /// Return the fabric heat loss for the building element
+    fn fabric_heat_loss(&self) -> f64 {
+        let u_value = 1.0 / (self.r_c() + self.r_se() + self.r_si());
+        self.area() * u_value
+    }
+
+    /// Return the fabric heat capacity for the building element
+    fn heat_capacity(&self) -> f64 {
+        self.area() * (self.k_m() / JOULES_PER_KILOJOULE as f64)
+    }
+
+    fn h_pli(&self) -> &[f64];
+
+    fn h_pli_by_idx(&self, idx: usize) -> Option<f64> {
+        self.h_pli().get(idx).copied()
+    }
+}
+
+pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
+    fn init_k_m(&self) -> f64 {
+        0.
+    }
+
+    // Calculate node conductances (h_pli) and node heat capacities (k_pli)
+    // according to BS EN ISO 52016-1:2017, section 6.5.7.4
+
+    fn init_h_pli(&self, r_c: f64) -> Vec<f64> {
+        vec![1.0 / r_c]
+    }
+
+    fn init_k_pli(&self) -> Vec<f64> {
+        vec![0.0, 0.0]
+    }
+}
+
+pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
+    fn init(&mut self, r_c: f64, mass_distribution: MassDistributionClass, k_m: f64) {
+        self.set_r_c(r_c);
+        self.set_k_m(k_m);
+        self.set_h_pli(self.init_h_pli(r_c));
+        self.set_k_pli(self.init_k_pli(mass_distribution, k_m));
+    }
+
+    fn set_r_c(&mut self, r_c: f64);
+    fn set_h_pli(&mut self, h_pli: [f64; 4]);
+    fn set_k_pli(&mut self, h_pli: [f64; 5]);
+
+    fn init_h_pli(&self, r_c: f64) -> [f64; 4] {
+        let h_outer = 6.0 / r_c;
+        let h_inner = 3.0 / r_c;
+        [h_outer, h_inner, h_inner, h_outer]
+    }
+
+    fn init_k_pli(&self, mass_distribution: MassDistributionClass, k_m: f64) -> [f64; 5] {
+        match mass_distribution {
+            MassDistributionClass::I => [0.0, 0.0, 0.0, 0.0, k_m],
+            MassDistributionClass::E => [k_m, 0.0, 0.0, 0.0, 0.0],
+            MassDistributionClass::IE => {
+                let k_ie = k_m / 2.0;
+                [k_ie, 0.0, 0.0, 0.0, k_ie]
+            }
+            MassDistributionClass::D => {
+                let k_inner = k_m / 4.0;
+                let k_outer = k_m / 8.0;
+                [k_outer, k_inner, k_inner, k_inner, k_outer]
+            }
+            MassDistributionClass::M => [0.0, 0.0, k_m, 0.0, 0.0],
+        }
+    }
+}
+
+pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
+    fn init(
+        &mut self,
+        r_f: f64,
+        r_gr: f64,
+        mass_distribution: MassDistributionClass,
+        k_gr: f64,
+        k_m: f64,
+    ) {
+        self.set_k_m(k_m);
+        // Calculate node conductances (h_pli) and node heat capacities (k_pli)
+        // according to BS EN ISO 52016-1:2017, section 6.5.7.4
+        self.set_h_pli(self.init_h_pli(r_f, r_gr));
+        self.set_k_pli(self.init_k_pli(mass_distribution, k_gr, k_m));
+    }
+
+    fn set_h_pli(&mut self, h_pli: [f64; 4]);
+    fn set_k_pli(&mut self, h_pli: [f64; 5]);
+
+    fn init_h_pli(&self, r_f: f64, r_gr: f64) -> [f64; 4] {
+        // BS EN ISO 52016:2017 states that the r_c (resistance including the
+        //         effect of the ground) should be used in the equations below. However,
+        //         this leads to double-counting of r_si, r_gr and r_vi as these are already
+        //         accounted for separately, so we have used r_f (resistance of the floor
+        //         construction only) here instead
+        let h_4 = 4.0 / r_f;
+        let h_3 = 2.0 / r_f;
+        let h_2 = 1.0 / (r_f / 4. + r_gr / 2.);
+        let h_1 = 2.0 / r_gr;
+        [h_1, h_2, h_3, h_4]
+    }
+
+    fn init_k_pli(
+        &self,
+        mass_distribution: MassDistributionClass,
+        k_gr: f64,
+        k_m: f64,
+    ) -> [f64; 5] {
+        match mass_distribution {
+            MassDistributionClass::I => [0.0, k_gr, 0.0, 0.0, k_m],
+            MassDistributionClass::E => [0.0, k_gr, k_m, 0.0, 0.0],
+            MassDistributionClass::IE => {
+                let k_ie = k_m / 2.0;
+                [0.0, k_gr, k_ie, 0.0, k_ie]
+            }
+            MassDistributionClass::D => {
+                let k_inner = k_m / 2.0;
+                let k_outer = k_m / 4.0;
+                [0.0, k_gr, k_outer, k_inner, k_outer]
+            }
+            MassDistributionClass::M => [0.0, k_gr, 0.0, k_m, 0.0],
+        }
+    }
+}
+
+pub(crate) trait HeatTransferOtherSide {
+    fn init(&mut self, f_sky: Option<f64>) {
+        self.init_super(f_sky)
+    }
+
+    fn init_super(&mut self, f_sky: Option<f64>) {
+        let f_sky = f_sky.unwrap_or(0.0);
+        self.set_f_sky(f_sky);
+        self.set_therm_rad_to_sky(f_sky * self.h_re() * TEMP_DIFF_SKY);
+    }
+
+    fn set_f_sky(&mut self, f_sky: f64);
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64);
+
+    /// Return external surface resistance, in m2 K / W
+    fn r_se(&self) -> f64 {
+        R_SE
+    }
+
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
+    fn h_ce(&self) -> f64 {
+        H_CE
+    }
+
+    fn h_re(&self) -> f64 {
+        H_RE
+    }
+
+    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+        self.external_conditions().air_temp(&simtime)
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions;
+
+    // there is a method here in the Python for fabric_heat_loss() that intentionally blows up
+    // just eliding implementing this here as we should enforce at compile time that it is never called
+}
+
+// Assume values for temp_int_annual and temp_int_monthly
+// These are based on SAP 10 notional building runs for 5 archetypes used
+// for inter-model comparison/validation. The average of the monthly mean
+// internal temperatures from each run was taken.
+const HEAT_TRANSFER_OTHER_SIDE_GROUND_TEMP_INT_MONTHLY: [f64; 12] = [
+    19.46399546,
+    19.66940204,
+    19.90785898,
+    20.19719837,
+    20.37461865,
+    20.45679018,
+    20.46767703,
+    20.46860812,
+    20.43505593,
+    20.22266322,
+    19.82726777,
+    19.45430847,
+];
+
+pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
+    fn init(
+        &mut self,
+        r_vi: f64,
+        d_we: f64,
+        thermal_conductivity: f64,
+        r_si: f64,
+        r_f: f64,
+        floor_type: FloorType,
+        periodic_penetration_depth: f64,
+        total_area: f64,
+        perimeter: f64,
+        u_value: f64,
+        psi_wall_floor_junc: f64,
+        h_upper: f64,
+        z_b: f64,
+        h_w: f64,
+        u_w: f64,
+        u_f_s: f64,
+        area_per_perimeter_vent: f64,
+        r_f_ins: f64,
+        shield_fact_location: WindShieldLocation,
+        edge_insulation: EdgeInsulation,
+        r_w_b: f64,
+    ) {
+        self.set_temp_int_annual(average_monthly_to_annual(
+            HEAT_TRANSFER_OTHER_SIDE_GROUND_TEMP_INT_MONTHLY,
+        ));
+
+        // defining following closures out of order from the Python
+        // as we are using closures which cannot be hoisted
+
+        let total_equiv_thickness =
+            || -> f64 { d_we + thermal_conductivity * (r_si + r_f + self.r_se()) };
+
+        let d_eq = total_equiv_thickness();
+
+        let init_unheated_basement = || -> (f64, f64) {
+            let thermal_capacity_air = 0.33; // Wh/(m3·K)
+            let air_vol_base = total_area * (h_w + z_b);
+
+            // air changes per hour
+            // From BS EN ISO 13370:2017 section 7.4
+            let vent_rate_base = 0.3;
+
+            // H.8.1. Internal temperature variation
+            let h_pi = (1. / (total_area * u_f_s)
+                + 1. / ((total_area + z_b * perimeter) * thermal_conductivity
+                    / periodic_penetration_depth
+                    + h_w * perimeter * u_w
+                    + thermal_capacity_air * vent_rate_base * air_vol_base))
+                .powi(-1);
+
+            // H.8.2. External temperature variation
+            // 0.37 is constant in the standard but not labelled
+            let h_pe = total_area
+                * u_f_s
+                * (0.37
+                    * perimeter
+                    * thermal_conductivity
+                    * (2. - (-z_b / periodic_penetration_depth).exp())
+                    * (periodic_penetration_depth / d_eq + 1.).ln()
+                    + h_w * perimeter * u_w
+                    + thermal_capacity_air * vent_rate_base * air_vol_base)
+                / ((total_area + z_b * perimeter) * thermal_conductivity
+                    / periodic_penetration_depth
+                    + h_w * perimeter * u_w
+                    + thermal_capacity_air * vent_rate_base * air_vol_base
+                    + total_area * u_f_s);
+            (h_pi, h_pe)
+        };
+
+        // Equivalent thickness for the basement walls
+        let equiv_thick_base_wall = || -> f64 {
+            // r_w_b is the thermal resistance of the walls
+            thermal_conductivity * (r_si + r_w_b + self.r_se())
+        };
+
+        // Heated basement periodic coefficients
+        let init_heated_basement = || -> (f64, f64) {
+            // total equivalent thickness
+            let d_w_b = equiv_thick_base_wall();
+
+            // H.7.1. Internal temperature variation
+            let h_pi = total_area
+                * ((thermal_conductivity / d_eq)
+                    * (2. / (1. + periodic_penetration_depth / d_eq).powi(2) + 1.).powf(0.5))
+                + z_b
+                    * perimeter
+                    * (thermal_conductivity / d_w_b)
+                    * (2. / ((1. + periodic_penetration_depth / d_w_b).powi(2) + 1.)).powf(0.5);
+
+            // H.7.2. External temperature variation
+            // 0.37 is constant in the standard but not labelled
+            let h_pe = 0.37
+                * perimeter
+                * thermal_conductivity
+                * ((-z_b / periodic_penetration_depth).exp()
+                    * (periodic_penetration_depth / d_eq + 1.).ln()
+                    + 2. * (1. - (-z_b / periodic_penetration_depth).exp())
+                        * (periodic_penetration_depth / d_w_b + 1.).ln());
+
+            (h_pi, h_pe)
+        };
+
+        // thermal transmittance of suspended part of floor
+        let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
+
+        let charac_dimen_floor = || -> f64 {
+            total_area / (0.5 * perimeter) // in m
+        };
+
+        // wind shielding factor
+        let wind_shield_fact = || -> f64 {
+            match shield_fact_location {
+                WindShieldLocation::Sheltered => 0.02,
+                WindShieldLocation::Average => 0.05,
+                WindShieldLocation::Exposed => 0.10,
+            }
+        };
+
+        // equivalent thermal transmittance between the underfloor space and the outside
+        let equiv_therma_trans = || -> anyhow::Result<f64> {
+            // Characteristic dimension of floor
+            let char_dimen = charac_dimen_floor();
+
+            // 1450 is constant in the standard but not labelled
+            Ok(2. * (h_upper * u_w / char_dimen)
+                + 1450. * (area_per_perimeter_vent * self.wind_speed()? * wind_shield_fact())
+                    / char_dimen)
+        };
+
+        let total_equiv_thickness_sus =
+            || -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
+
+        // thermal transmittance of suspended part of floor
+        let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
+
+        // Suspended floor periodic coefficients
+        let init_suspended_floor = || -> anyhow::Result<(f64, f64)> {
+            // H.6.1.
+            // thermal transmittance of suspended part of floor, in W/(m2·K)
+            let u_f = thermal_transmittance_sus_floor();
+
+            // equivalent thermal transmittance, in W/(m2·K)
+            let u_x = equiv_therma_trans()?;
+
+            // equivalent thickness, in m
+            let d_g = total_equiv_thickness_sus();
+
+            // H.6.2. Internal temperature variation
+            let h_pi = total_area
+                * (1. / u_f + 1. / (thermal_conductivity / periodic_penetration_depth + u_x));
+
+            // H.6.3. External temperature variation
+            // 0.37 is constant in the standard but not labelled
+            let h_pe = u_f
+                * ((0.37
+                    * perimeter
+                    * thermal_conductivity
+                    * (periodic_penetration_depth / d_g + 1.).ln()
+                    + u_x * total_area)
+                    / (thermal_conductivity / (periodic_penetration_depth + u_x + u_f)));
+            Ok((h_pi, h_pe))
+        };
+
+        // Additional equivalent thickness
+        let add_eq_thickness = |d_n: f64, r_n: f64| -> f64 {
+            // m2·K/W, thermal resistance
+            let r_add_eq = r_n - d_n / thermal_conductivity;
+
+            // m, thickness_edge-insulation or foundation
+            r_add_eq * thermal_conductivity
+        };
+
+        // horizontal edge insulation
+        let h_pe_h = |d_h: f64, r_n: f64| -> f64 {
+            // 0.37 is constant in the standard but not labelled
+            let eq_thick_additional = add_eq_thickness(d_h, r_n);
+
+            0.37 * perimeter
+                * thermal_conductivity
+                * ((1. - (-d_h / periodic_penetration_depth).exp())
+                    * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
+                    + (-d_h / periodic_penetration_depth).exp()
+                        * (periodic_penetration_depth / d_eq + 1.).ln())
+        };
+
+        // vertical edge insulation
+        let h_pe_v = |d_v: f64, r_n: f64| -> f64 {
+            // 0.37 is constant in the standard but not labelled
+            let eq_thick_additional = add_eq_thickness(d_v, r_n);
+            0.37 * perimeter
+                * thermal_conductivity
+                * ((1. - (-2. * d_v / periodic_penetration_depth).exp())
+                    * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
+                    + (-2. * d_v / periodic_penetration_depth).exp()
+                        * (periodic_penetration_depth / d_eq + 1.).ln())
+        };
+
+        let edge_type = || -> f64 {
+            // we need to know that we have a non-empty list of edge insulation here
+
+            todo!()
+        };
+
+        //         def edge_type():
+        //             """ edge insulation vertically or horizontally """
+        //             # Initialise edge width and depth
+        //             h_pe_list = []
+        //             for edge in edge_insulation:
+        //                 if edge["type"] == "horizontal":
+        //                     h_pe_list.append(h_pe_h(edge["width"], edge["edge_thermal_resistance"]))
+        //                 elif edge["type"] == "vertical":
+        //                     h_pe_list.append(h_pe_v(edge["depth"], edge["edge_thermal_resistance"]))
+        //                 else:
+        //                     sys.exit("Type edge_insulation (" + str(edge_insulation) + ") is not valid")
+        //             h_pe = min(h_pe_list)
+        //             return h_pe
+    }
+
+    fn set_temp_int_annual(&mut self, temp_int_annual: f64);
+
+    fn wind_speed(&self) -> anyhow::Result<f64> {
+        self.external_conditions().wind_speed_annual().ok_or_else(|| anyhow!("The external conditions provided do not contain data for an entire year, therefore an annual wind speed cannot be calculated."))
+    }
 }
 
 pub trait BuildingElementBehaviour {
@@ -1587,20 +2173,6 @@ pub fn area_for_building_element_input(element: &BuildingElementInput) -> f64 {
     }
 }
 
-/// calc the vertically projected height of a surface from
-/// the actual height and tilt of the surface
-pub fn projected_height(tilt: f64, height: f64) -> f64 {
-    let mut ph = height * tilt.to_radians().sin();
-    // BS EN ISO 52010-1 Table 7 geometric input data; shading. Footnote d
-    // validity interval H1;ic > 0
-    // if horizontal (height = 0): choose small value e.g. H1 = 0.01 m"""
-    if ph < 0.01 {
-        ph = 0.01;
-    }
-
-    ph
-}
-
 pub fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
     (1.0 / u_value) - r_si_for_pitch(pitch) - R_SE
 }
@@ -1614,22 +2186,6 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
         _ if pitch > PITCH_LIMIT_HORIZ_FLOOR => R_SI_DOWNWARDS,
         _ => panic!("problem with pitch value"), // this case should never happen as above cases are exhaustive but rust can't tell
     }
-}
-
-/// Calculate longwave sky view factor from pitch in degrees
-pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
-    // TODO (from Python) account for shading
-    // TODO (from Python) check longwave is correct
-    let pitch_rads = pitch * PI / 180.0;
-
-    0.5 * (1.0 + pitch_rads.cos())
-}
-
-#[derive(Debug, PartialEq)]
-pub enum HeatFlowDirection {
-    Horizontal,
-    Upwards,
-    Downwards,
 }
 
 // Thermal properties of ground from BS EN ISO 13370:2017 Table 7
