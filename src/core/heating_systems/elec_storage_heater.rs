@@ -485,11 +485,82 @@ impl ElecStorageHeater {
     }
 
     pub fn demand_energy(
-        &self,
+        &mut self,
         energy_demand: f64,
         simulation_time_iteration: &SimulationTimeIteration,
-    ) -> f64 {
-        todo!()
+    ) -> anyhow::Result<f64> {
+        
+        // Determines the amount of energy to release based on energy demand, while also handling the
+        // energy charging and logging fan energy.
+        // :param energy_demand: Energy demand in kWh.
+        // :return: Total net energy delivered (including instant heating and fan energy).
+        
+        let timestep = simulation_time_iteration.timestep;
+        let energy_demand = energy_demand / f64::from(self.n_units);
+        self.energy_instant = 0.;
+    
+        // Initialize time_used_max and energy_charged_max to default values
+        let time_used_max = 0.;
+        let energy_charged_max = 0.;
+    
+        // Calculate minimum energy that can be delivered
+        let (q_released_min, _, energy_charged, final_soc) = self.energy_output(OutputMode::Min, simulation_time_iteration)?;
+        self.energy_charged = energy_charged;
+
+        // TODO double check nesting matches Python
+
+        let mut time_instant: f64;
+        let mut time_used_max: f64;
+
+        if q_released_min > energy_demand {
+            // Deliver at least the minimum energy
+            self.energy_delivered = q_released_min;
+            self.demand_met = q_released_min;
+            self.demand_unmet = 0.;
+        }
+        else {
+            // Calculate maximum energy that can be delivered
+            let (q_released_max, time_used_max_tmp, energy_charged, final_soc) = self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+            time_used_max = time_used_max_tmp;
+            self.energy_charged = energy_charged;
+            
+            if q_released_max < energy_demand {
+                // Deliver as much as possible up to the maximum energy
+                self.energy_delivered = q_released_max;
+                self.demand_met = q_released_max;
+                self.demand_unmet = energy_demand - q_released_max;
+
+                // For now, we assume demand not met from storage is topped-up by
+                // the direct top-up heater (if applicable). If still some unmet, 
+                // this is reported as unmet demand.
+                // if self.pwr_instant {
+
+                self.energy_instant = self.demand_unmet.min(self.pwr_instant * f64::from(timestep)); // kWh
+                time_instant = self.energy_instant / self.pwr_instant;
+                time_used_max += time_instant;
+                time_used_max = time_used_max.min(timestep);
+                
+                //}
+            }
+                    
+            else {
+                // Deliver the demanded energy
+                self.energy_delivered = energy_demand;
+
+                if q_released_max > 0. {
+                    time_used_max *= energy_demand / q_released_max;
+                }
+
+                self.demand_met = energy_demand;
+                self.demand_unmet = 0.;
+            }
+        }
+    
+        todo!();
+        // Ensure energy_delivered does not exceed q_released_max
+        // self.energy_delivered = min(self.energy_delivered, q_released_max if 'q_released_max' in locals() else q_released_min)
+
+        // ...
     }
 
     pub fn target_electric_charge(
@@ -788,7 +859,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         // Test minimum energy output calculation across all timesteps.
 
@@ -834,7 +905,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         // Test maximum energy output calculation across all timesteps.
         let expected_max_energy_output = [
@@ -879,7 +950,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     fn test_electric_charge(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         // Test electric charge calculation across all timesteps.
         let expected_target_elec_charge = [
@@ -919,7 +990,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     pub fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy = [
             4.0,
@@ -949,7 +1020,7 @@ mod tests {
         ]; // Expected energy for each timestep
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            let energy_out = elec_storage_heater.demand_energy(5.0, &t_it);
+            let energy_out = elec_storage_heater.demand_energy(5.0, &t_it).unwrap();
             assert_relative_eq!(energy_out, expected_energy[t_idx]);
         }
     }
@@ -958,7 +1029,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     pub fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_for_fan = [
             0.003666666666666666,
@@ -998,7 +1069,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     pub fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_instant = [
             2.5,
@@ -1038,7 +1109,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     pub fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_charged = [
             1.5,
@@ -1078,7 +1149,7 @@ mod tests {
     #[ignore = "not yet implemented"]
     pub fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
-        elec_storage_heater: ElecStorageHeater,
+        mut elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_delivered = [
             1.5,
