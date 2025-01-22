@@ -3651,9 +3651,22 @@ pub(crate) enum HeatSource {
 }
 
 impl HeatSource {
-    // pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
-    //     todo!()
-    // }
+    pub(crate) fn temp_setpnt(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        match self {
+            HeatSource::Storage(ref storage) => match storage {
+                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().temp_setpnt(&simtime)),
+                HeatSourceWithStorageTank::Solar(ref solar) => {
+                    Ok(solar.lock().temp_setpnt(simtime))
+                }
+            },
+            HeatSource::Wet(_) => {
+                unreachable!("Expect to be only calling temp setpnt on storage tank. TODO: review this once migration to 0.32 is complete.")
+            }
+        }
+    }
     pub(crate) fn demand_energy(
         &mut self,
         energy_demand: f64,

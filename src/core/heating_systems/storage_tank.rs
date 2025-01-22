@@ -197,7 +197,9 @@ impl StorageTank {
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
-        let (_, setpntmax) = self.retrieve_setpnt(heat_source, simulation_time_iteration);
+        let (_, setpntmax) = self
+            .retrieve_setpnt(heat_source, simulation_time_iteration)
+            .expect("expect setpntmax to be set."); // TODO: review this as part of migration to 0.32
         setpntmax
     }
 
@@ -208,10 +210,9 @@ impl StorageTank {
         &self,
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64) {
-        // let (setpntmin, setpntmax) = heat_source.lock().temp_setpnt(simulation_time_iteration);
-        // (setpntmin, setpntmax)
-        todo!()
+    ) -> anyhow::Result<(f64, f64)> {
+        let setpnts = heat_source.lock().temp_setpnt(simulation_time_iteration);
+        setpnts
     }
     fn temp_surrounding_primary_pipework(
         &self,
@@ -613,7 +614,7 @@ impl StorageTank {
         &mut self,
         event: TypedScheduleEvent,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, Vec<f64>, f64, f64) {
+    ) -> (f64, Vec<f64>, f64, f64, bool) {
         // Make a copy of the volume list to keep track of remaining volumes
         // Remaining volume of water in storage tank layers
         let mut remaining_vols = self.vol_n.clone();
@@ -728,16 +729,21 @@ impl StorageTank {
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
 
-        //  Determine the new temperature distribution after displacement
-        let new_temp_distribution =
+        // Determine the new temperature distribution after displacement
+        // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
+        // only happen before after the input from heat sources, could be required after the displacement
+        // of water bringing new water from the 'cold' feed that could be warmer than the existing one.
+        // flag is calculated for that purpose.
+        let (new_temp_distribution, flag_rearrange_layers) =
             self.calculate_new_temperatures(remaining_vols, simulation_time);
 
-        //  Return the remaining storage volumes, volume used, new temperature distribution, and the met/unmet targets
+        // Return the remaining storage volumes, volume used, new temperature distribution, the met/unmet targets, and flag to rearrange layers
         (
             volume_used,
             new_temp_distribution,
             energy_withdrawn,
             energy_unmet,
+            flag_rearrange_layers,
         )
     }
 
@@ -749,8 +755,12 @@ impl StorageTank {
         &self,
         mut remaining_vols: Vec<f64>,
         simulation_time: SimulationTimeIteration,
-    ) -> Vec<f64> {
+    ) -> (Vec<f64>, bool) {
         let mut new_temps = self.temp_n.clone();
+
+        // If the 'cold' feed water is hotter than the existing water in the tank, rearrange will be needed.
+        // as if it was a heat source coming from the cold feed.
+        let mut flag_rearrange_layers = false;
 
         // Iterate from the top layer downwards
         for i in (0..self.vol_n.len()).rev() {
@@ -764,6 +774,10 @@ impl StorageTank {
             // Initialize the variables for mixing temperatures
             let mut total_volume = remaining_vols[i];
             let mut volume_weighted_temperature = remaining_vols[i] * self.temp_n[i];
+
+            // Initialisation of min temperature of tank layers to compare eventually against
+            // the 'cold' feed temperature to check if rearrangement is needed.
+            let mut temp_layer_min = self.temp_n[i];
 
             // Add water from the layers below to this layer
             for j in (0..i).rev() {
@@ -788,6 +802,16 @@ impl StorageTank {
             // If not enough water is available from the lower layers, use the cold supply
             if needed_volume > 0. {
                 total_volume += needed_volume;
+                // This is when the tank gets refilled with 'cold' water from the 'cold' feed.
+                // Amount/Volume wasn't important before as it was assumed an infinite amount at
+                // the cold feed was available.
+                // The pre-heated tank is limited in the amount of water that can be provided at
+                // a given temperature, eventually resourting to its own cold feed. So cold feed
+                // temperature for the tank depends on the volume required.
+                let temp_cold_feed = self.cold_feed.temperature(simulation_time); // In Python the temperature methods have changed to take in a needed_volume but then it is never used.
+                volume_weighted_temperature += needed_volume * temp_cold_feed;
+                flag_rearrange_layers = temp_cold_feed > temp_layer_min;
+
                 volume_weighted_temperature +=
                     needed_volume * self.cold_feed.temperature(simulation_time);
             }
@@ -798,7 +822,7 @@ impl StorageTank {
             new_temps[i] = (100. * (volume_weighted_temperature / total_volume)).round() / 100.;
             remaining_vols[i] = total_volume;
         }
-        new_temps
+        (new_temps, flag_rearrange_layers)
     }
 
     /// Draw off hot water from the tank
@@ -853,9 +877,17 @@ impl StorageTank {
             // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
             // self.__time_end_previous_event = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
-            let (volume_used, temp_s3_n_step, energy_withdrawn, energy_unmet) =
+            let (volume_used, temp_s3_n_step, energy_withdrawn, energy_unmet, rearrange) =
                 self.allocate_hot_water(event.clone(), simulation_time);
 
+            // Re-arrange the temperatures in the storage after energy input from pre-heated tank
+            let mut temp_s3_n: Vec<f64> = Default::default();
+            if rearrange {
+                temp_s3_n = self.rearrange_temperatures(&*temp_s3_n).1
+            }
+            self.temp_n = temp_s3_n.clone();
+
+            // TODO: continue here
             temp_s3_n = temp_s3_n_step;
             self.temp_n = temp_s3_n.clone();
 
@@ -1177,16 +1209,18 @@ impl ImmersionHeater {
     }
 
     pub(crate) fn temp_setpnt(
-        self,
+        &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (f64, f64) {
         (
             // TODO: use expect here probably
             self.control_min
+                .clone()
                 .unwrap()
                 .setpnt(simulation_time_iteration)
                 .unwrap(),
             self.control_max
+                .clone()
                 .unwrap()
                 .setpnt(simulation_time_iteration)
                 .unwrap(),
@@ -1604,15 +1638,6 @@ mod tests {
     #[fixture]
     pub fn simulation_time_for_storage_tank() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
-    }
-
-    #[fixture]
-    pub fn control_for_storage_tank() -> Arc<Control> {
-        Arc::new(Control::OnOffTime(OnOffTimeControl::new(
-            vec![true, false, false, false, true, true, true, true],
-            0,
-            1.,
-        )))
     }
 
     #[fixture]
