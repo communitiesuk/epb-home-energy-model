@@ -1928,7 +1928,7 @@ pub enum ZoneTemperatureControlBasis {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")]
 pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
@@ -2013,42 +2013,11 @@ pub enum BuildingElement {
         r_f: f64,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
-        floor_type: FloorType,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        height_upper_surface: Option<f64>,
-        #[serde(
-            rename = "thermal_transm_walls",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_transmission_walls: Option<f64>,
-        #[serde(
-            rename = "thermal_resist_insul",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_resistance_of_insulation: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        area_per_perimeter_vent: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        shield_fact_location: Option<WindShieldLocation>,
-        thickness_walls: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        depth_basement_floor: Option<f64>,
-        #[serde(
-            rename = "thermal_resist_walls_base",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_resistance_of_basement_walls: Option<f64>,
-        #[serde(
-            rename = "thermal_transm_envi_base",
-            skip_serializing_if = "Option::is_none"
-        )]
-        thermal_transmittance_of_floor_above_basement: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        height_basement_walls: Option<f64>,
         perimeter: f64,
         psi_wall_floor_junc: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        edge_insulation: Option<Vec<EdgeInsulation>>,
+        thickness_walls: f64,
+        #[serde(flatten)]
+        floor_data: FloorData,
     },
     #[serde(rename = "BuildingElementAdjacentZTC")]
     AdjacentZTC {
@@ -2387,7 +2356,7 @@ where
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum FloorType {
+pub(crate) enum FloorType {
     #[serde(rename = "Slab_no_edge_insulation")]
     SlabNoEdgeInsulation,
     #[serde(rename = "Slab_edge_insulation")]
@@ -2400,6 +2369,58 @@ pub enum FloorType {
     UnheatedBasement,
 }
 
+impl From<&FloorData> for FloorType {
+    fn from(value: &FloorData) -> Self {
+        match value {
+            FloorData::SlabNoEdgeInsulation => FloorType::SlabNoEdgeInsulation,
+            FloorData::SlabEdgeInsulation { .. } => FloorType::SlabEdgeInsulation,
+            FloorData::SuspendedFloor { .. } => FloorType::SuspendedFloor,
+            FloorData::HeatedBasement { .. } => FloorType::HeatedBasement,
+            FloorData::UnheatedBasement { .. } => FloorType::UnheatedBasement,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(tag = "floor_type")]
+pub(crate) enum FloorData {
+    #[serde(rename = "Slab_no_edge_insulation")]
+    SlabNoEdgeInsulation,
+    #[serde(rename = "Slab_edge_insulation")]
+    SlabEdgeInsulation {
+        edge_insulation: Vec<EdgeInsulation>,
+    },
+    #[serde(rename = "Suspended_floor")]
+    SuspendedFloor {
+        height_upper_surface: f64,
+        #[serde(rename = "thermal_transm_walls")]
+        thermal_transmission_walls: f64,
+        area_per_perimeter_vent: f64,
+        shield_fact_location: WindShieldLocation,
+        #[serde(rename = "thermal_resist_insul")]
+        thermal_resistance_of_insulation: f64,
+    },
+    #[serde(rename = "Heated_basement")]
+    HeatedBasement {
+        depth_basement_floor: f64,
+        #[serde(rename = "thermal_resist_walls_base")]
+        thermal_resistance_of_basement_walls: f64,
+    },
+    #[serde(rename = "Unheated_basement")]
+    UnheatedBasement {
+        #[serde(rename = "thermal_transm_envi_base")]
+        thermal_transmittance_of_floor_above_basement: f64,
+        #[serde(rename = "thermal_transm_walls")]
+        thermal_transmission_walls: f64,
+        depth_basement_floor: f64,
+        #[serde(rename = "thermal_resist_walls_base")]
+        thermal_resistance_of_basement_walls: f64,
+        height_basement_walls: f64,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2409,10 +2430,9 @@ pub enum WindShieldLocation {
     Exposed,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
 pub enum EdgeInsulation {
     #[serde(rename = "horizontal")]
