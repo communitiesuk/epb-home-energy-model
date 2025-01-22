@@ -8,7 +8,7 @@ use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 
 use crate::{
     core::{
-        controls::time_control::{ChargeControl, Control, SetpointTimeControl},
+        controls::time_control::Control,
         energy_supply::energy_supply::EnergySupplyConnection,
     },
     external_conditions::ExternalConditions,
@@ -117,19 +117,17 @@ impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
         let soc = clip(y[0], 0., 1.);
 
         // Discharging: calculate power used based on SOC
-        let discharge_rate = -np_interp(soc, &self.soc_array, &self.power_array);
+        let discharge_rate = -np_interp(soc, self.soc_array, self.power_array);
 
         // Track the total energy delivered (discharged energy)
         let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
 
         let dcharged_dt = if soc > self.soc_max {
             self.charge_rate
+        } else if self.target_charge > 0. {
+            ddelivered_dt.min(self.pwr_in)
         } else {
-            if self.target_charge > 0. {
-                ddelivered_dt.min(self.pwr_in)
-            } else {
-                0.0
-            }
+            0.0
         };
 
         // Net SOC rate of change (discharge + charge), divided by storage capacity
@@ -305,9 +303,9 @@ impl ElecStorageHeater {
 
         // Select the SOC and power arrays for OutputMode.MIN
         let soc_ode = SocOdeFunction {
-            soc_array: soc_array,
-            power_array: power_array,
-            storage_capacity: storage_capacity,
+            soc_array,
+            power_array,
+            storage_capacity,
         };
 
         let f = soc_ode; // f - Structure implementing the System trait
@@ -356,10 +354,10 @@ impl ElecStorageHeater {
         let final_soc = stepper.y_out().last().unwrap()[0];
 
         // Clip the final SOC to ensure it's between 0 and 1
-        let final_soc = clip(final_soc, 0., 1.);
+        
 
         // Return the final state of charge after 16 hours
-        return final_soc;
+        clip(final_soc, 0., 1.)
     }
 
     pub(crate) fn energy_output(
@@ -509,7 +507,7 @@ impl ElecStorageHeater {
 
         // TODO double check nesting matches Python
 
-        let mut time_instant: f64;
+        let time_instant: f64;
         let mut time_used_max: f64;
 
         if q_released_min > energy_demand {
@@ -535,7 +533,7 @@ impl ElecStorageHeater {
                 // this is reported as unmet demand.
                 // if self.pwr_instant {
 
-                self.energy_instant = self.demand_unmet.min(self.pwr_instant * f64::from(timestep)); // kWh
+                self.energy_instant = self.demand_unmet.min(self.pwr_instant * timestep); // kWh
                 time_instant = self.energy_instant / self.pwr_instant;
                 time_used_max += time_instant;
                 time_used_max = time_used_max.min(timestep);
@@ -578,7 +576,9 @@ impl ElecStorageHeater {
 
         let temp_air: f64 = (self.zone_internal_air_func)();
 
-        let target_charge = match logic_type {
+        
+
+        match logic_type {
             crate::input::ControlLogicType::Manual => {
                 // Implements the "Manual" control logic for ESH
                 charge_control.target_charge(simulation_time_iteration, None)
@@ -643,12 +643,9 @@ impl ElecStorageHeater {
                 // target_charge (from input file, or zero when control is off) applied here
                 // is treated as an upper limit for target charge
                 charge_control
-                    .target_charge(simulation_time_iteration, None)
-                    .and_then(|tc| Ok(tc.min(target_charge_hhrsh)))
+                    .target_charge(simulation_time_iteration, None).map(|tc| tc.min(target_charge_hhrsh))
             }
-        };
-
-        target_charge
+        }
     }
 }
 
