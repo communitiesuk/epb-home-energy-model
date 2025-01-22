@@ -1725,151 +1725,206 @@ mod tests {
     }
 
     #[fixture]
-    pub fn storage_tank(
+    fn energy_supply(
         simulation_time_for_storage_tank: SimulationTime,
+    ) -> Arc<RwLock<EnergySupply>> {
+        let energy_supply = EnergySupplyBuilder::new(
+            FuelType::Electricity,
+            simulation_time_for_storage_tank.total_steps(),
+        )
+        .build();
+
+        Arc::new(RwLock::new(energy_supply))
+    }
+
+    fn heat_source(
+        simulation_time_for_storage_tank: SimulationTime,
+        energy_supply_connection: EnergySupplyConnection,
+        rated_power: f64,
+        heater_position: f64,
+        thermostat_position: f64,
+        control_min_schedule: Vec<Option<f64>>,
+        control_max_schedule: Vec<Option<f64>>,
+    ) -> PositionedHeatSource {
+        let simulation_timestep = simulation_time_for_storage_tank.step;
+        let control_min = SetpointTimeControl::new(
+            control_min_schedule,
+            0,
+            1.,
+            None,
+            None,
+            None,
+            None,
+            simulation_timestep,
+        )
+        .unwrap();
+
+        let control_max = SetpointTimeControl::new(
+            control_max_schedule,
+            0,
+            1.,
+            None,
+            None,
+            None,
+            None,
+            simulation_timestep,
+        )
+        .unwrap();
+        let immersion_heater = ImmersionHeater::new(
+            rated_power,
+            energy_supply_connection.clone(),
+            simulation_timestep,
+            Some(Arc::new(Control::SetpointTime(control_min))),
+            Some(Arc::new(Control::SetpointTime(control_max))),
+            None,
+        );
+        let heat_source = PositionedHeatSource {
+            heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
+            ))),
+            heater_position,
+            thermostat_position,
+        };
+        heat_source
+    }
+
+    #[fixture]
+    fn storage_tank1(
         cold_water_source: Arc<ColdWaterSource>,
-        control_for_storage_tank: Arc<Control>,
-        external_conditions: Arc<ExternalConditions>,
+        simulation_time_for_storage_tank: SimulationTime,
+        energy_supply: Arc<RwLock<EnergySupply>>,
         temp_internal_air_fn: TempInternalAirFn,
-    ) -> ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>) {
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(
-                FuelType::Electricity,
-                simulation_time_for_storage_tank.total_steps(),
-            )
-            .build(),
-        ));
-        let energy_supply_conns = (
-            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap(),
-            EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap(),
+        external_conditions: Arc<ExternalConditions>,
+    ) -> StorageTank {
+        let control_min_schedule = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let control_max_schedule = vec![
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+            Some(55.),
+        ];
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
+        let heat_source = crate::core::heating_systems::storage_tank::tests::heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            50.0,
+            0.1,
+            0.33,
+            control_min_schedule,
+            control_max_schedule,
         );
 
-        let control_min = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(52.0),
-                    None,
-                    None,
-                    None,
-                    Some(52.0),
-                    Some(52.0),
-                    Some(52.0),
-                    Some(52.0),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                None,
-                simulation_time_for_storage_tank.step,
-            )
-            .unwrap(),
-        ));
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
+        let simulation_timestep = simulation_time_for_storage_tank.step;
 
-        let control_max = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                    Some(55.0),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                None,
-                simulation_time_for_storage_tank.step,
-            )
-            .unwrap(),
-        ));
-
-        let storage_tanks = (
-            StorageTank::new(
-                150.0,
-                1.68,
-                55.0,
-                WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone()),
-                simulation_time_for_storage_tank.step,
-                IndexMap::from([(
-                    "imheater".to_string(),
-                    PositionedHeatSource {
-                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
-                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
-                                ImmersionHeater::new(
-                                    50.,
-                                    energy_supply_conns.0.clone(),
-                                    simulation_time_for_storage_tank.step,
-                                    Some(control_min.clone()),
-                                    Some(control_max.clone()),
-                                    None,
-                                ),
-                            ))),
-                        ))),
-                        heater_position: 0.1,
-                        thermostat_position: 0.33,
-                    },
-                )]),
-                temp_internal_air_fn.clone(),
-                external_conditions.clone(),
-                None,
-                None,
-                Some(energy_supply_conns.0),
-                None,
-                *WATER,
-            ),
-            // Also test case where heater does not heat all layers, to ensure this is handled correctly
-            StorageTank::new(
-                210.0,
-                1.61,
-                60.0,
-                WaterSourceWithTemperature::ColdWaterSource(cold_water_source),
-                simulation_time_for_storage_tank.step,
-                IndexMap::from([(
-                    "imheater2".to_string(),
-                    PositionedHeatSource {
-                        heat_source: Arc::new(Mutex::new(HeatSource::Storage(
-                            HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
-                                ImmersionHeater::new(
-                                    50.,
-                                    energy_supply_conns.1.clone(),
-                                    simulation_time_for_storage_tank.step,
-                                    Some(control_min),
-                                    Some(control_max),
-                                    None,
-                                ),
-                            ))),
-                        ))),
-                        heater_position: 0.6,
-                        thermostat_position: 0.6,
-                    },
-                )]),
-                temp_internal_air_fn,
-                external_conditions,
-                None,
-                None,
-                Some(energy_supply_conns.1),
-                None,
-                *WATER,
-            ),
+        let heat_sources = IndexMap::from([("imheater".to_string(), heat_source)]);
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            simulation_timestep,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            None,
+            None,
+            Some(energy_supply_connection),
+            None,
+            *WATER,
         );
 
-        (storage_tanks, energy_supply)
+        storage_tank
+    }
+
+    #[fixture]
+    fn storage_tank2(
+        cold_water_source: Arc<ColdWaterSource>,
+        simulation_time_for_storage_tank: SimulationTime,
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> StorageTank {
+        let control_min_schedule = vec![
+            Some(52.),
+            None,
+            None,
+            None,
+            Some(52.),
+            Some(52.),
+            Some(52.),
+            Some(52.),
+        ];
+        let control_max_schedule = vec![
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+        ];
+        let energy_supply_connection =
+            EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap();
+        let heat_source = heat_source(
+            simulation_time_for_storage_tank,
+            energy_supply_connection.clone(),
+            5.0,
+            0.6,
+            0.6,
+            control_min_schedule,
+            control_max_schedule,
+        );
+
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(cold_water_source.clone());
+        let simulation_timestep = simulation_time_for_storage_tank.step;
+
+        let heat_sources = IndexMap::from([("imheater2".to_string(), heat_source)]);
+        let storage_tank = StorageTank::new(
+            210.0,
+            1.61,
+            60.0,
+            cold_feed,
+            simulation_timestep,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions.clone(),
+            None,
+            None,
+            Some(energy_supply_connection),
+            None,
+            *WATER,
+        );
+
+        storage_tank
     }
 
     #[rstest]
     #[ignore = "TODO"]
     pub fn test_demand_hot_water(
+        cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-        storage_tank: ((StorageTank, StorageTank), Arc<RwLock<EnergySupply>>),
+        energy_supply: Arc<RwLock<EnergySupply>>,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions: Arc<ExternalConditions>,
+        mut storage_tank1: StorageTank,
+        mut storage_tank2: StorageTank,
     ) {
-        let ((mut storage_tank1, mut storage_tank2), energy_supply) = storage_tank;
         let usage_events = [
             vec![
                 TypedScheduleEvent {
@@ -1941,7 +1996,6 @@ mod tests {
             vec![],
             vec![],
         ];
-
         //  Expected results for the unit test
         let expected_temperatures_1 = [
             [55.0, 55.0, 55.0, 55.0],
@@ -1978,6 +2032,8 @@ mod tests {
                 53.79920588690749,
             ],
         ];
+
+        // Also test case where heater does not heat all layers, to ensure this is handled correctly
 
         let expected_temperatures_2 = [
             [10.0, 24.55880864197531, 60.0, 60.0],
