@@ -3658,6 +3658,9 @@ pub(crate) enum HeatSource {
 }
 
 impl HeatSource {
+    // pub(crate) fn temp_setpnt(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+    //     todo!()
+    // }
     pub(crate) fn demand_energy(
         &mut self,
         energy_demand: f64,
@@ -3994,14 +3997,15 @@ fn heat_source_from_input(
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
-
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
                     ImmersionHeater::new(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string())),
+                        (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string())), // TODO
+                        None, // TODO
+                        None, // TODO
                     ),
                 )))),
                 name.into(),
@@ -4047,6 +4051,7 @@ fn heat_source_from_input(
                         external_conditions.clone(),
                         temp_internal_air_fn(temp_internal_air_accessor),
                         simulation_time.step_in_hours(),
+                        None, // TODO
                         *WATER,
                     ),
                 )))),
@@ -4320,7 +4325,6 @@ fn hot_water_source_from_input(
             let storage_tank = Arc::new(Mutex::new(StorageTank::new(
                 *volume,
                 *daily_losses,
-                min_temp.ok_or_else(|| anyhow!("A min temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                 setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                 cold_water_source,
                 simulation_time.step_in_hours(),
