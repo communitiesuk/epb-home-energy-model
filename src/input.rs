@@ -2415,8 +2415,6 @@ pub(crate) enum FloorData {
         #[serde(rename = "thermal_transm_walls")]
         thermal_transmission_walls: f64,
         depth_basement_floor: f64,
-        #[serde(rename = "thermal_resist_walls_base")]
-        thermal_resistance_of_basement_walls: f64,
         height_basement_walls: f64,
     },
 }

@@ -3,12 +3,11 @@ use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    BuildingElement as BuildingElementInput, EdgeInsulation, FloorType, MassDistributionClass,
-    WindShieldLocation, WindowTreatment,
+    BuildingElement as BuildingElementInput, EdgeInsulation, FloorData, FloorType,
+    MassDistributionClass, WindShieldLocation, WindowTreatment,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
-use nalgebra::ComplexField;
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -51,61 +50,61 @@ pub enum HeatFlowDirection {
     Downwards,
 }
 
-/// The different variations for each of these are:
-/// - Heat transfer with internal environment:
-///    - Common
-/// - Heat transfer through and storage within the element:
-///    - 2 nodes
-///    - 5 nodes
-///    - 3+2 nodes
-/// - Heat transfer with environment on other side of element:
-///    - Ground
-///    - Conditioned space
-///    - Unconditioned space
-///    - Outside
-/// - Interaction with solar radiation:
-///    - Absorbed
-///    - Transmitted
-///    - Not exposed
-///
-/// The different building element types are composed of the following combinations:
-/// - BuildingElementOpaque: Common, 5 nodes, Outside, Absorbed
-/// - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
-/// - BuildingElementAdjacentZTC: Common, 5 nodes, Conditioned space, Not exposed
-/// - BuildingElementAdjacentZTU_Simple: Common, 5 nodes, Unconditioned space, Not exposed
-/// - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
-///
-/// BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
-/// unused. If this is confirmed to be the case, then these can be deleted.
-///
-/// BuildingElementGround has several alternative sets of inputs, depending on the floor_type input. The current class
-/// requires all of these inputs and ignores the ones that are not relevant. This class could arguably be split into 5
-/// different classes (one for each floor_type option) to avoid this. The alternative sets of inputs are for calculating
-/// self.__h_pi and self.__h_pe, which are ultimately used in the temp_ext function. Therefore, one way to handle this would
-/// be to have 5 different classes, calculate h_pi and h_pe, then feed these into the constructor of the "Ground" object
-/// under the category "Heat transfer with environment on other side of element".
-///
-/// The relevant functions for each set of characteristics are:
-/// - Heat transfer with internal environment:
-///    - heat_flow_direction
-///    - r_si
-///    - h_ci
-///    - h_ri
-///    - pitch_class
-/// - Heat transfer through and storage within the element:
-///    - no_of_nodes
-///    - no_of_inside_nodes
-///    - init_h_pli
-///    - init_k_pli
-/// - Heat transfer with environment on other side of element:
-///    - r_se
-///    - h_ce
-///    - h_re
-///    - temp_ext
-/// - Interaction with solar radiation:
-///    - i_sol_dir_dif
-///    - solar_gains
-///    - shading_factors_direct_diffuse
+// The different variations for each of these are:
+// - Heat transfer with internal environment:
+//    - Common
+// - Heat transfer through and storage within the element:
+//    - 2 nodes
+//    - 5 nodes
+//    - 3+2 nodes
+// - Heat transfer with environment on other side of element:
+//    - Ground
+//    - Conditioned space
+//    - Unconditioned space
+//    - Outside
+// - Interaction with solar radiation:
+//    - Absorbed
+//    - Transmitted
+//    - Not exposed
+//
+// The different building element types are composed of the following combinations:
+// - BuildingElementOpaque: Common, 5 nodes, Outside, Absorbed
+// - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
+// - BuildingElementAdjacentZTC: Common, 5 nodes, Conditioned space, Not exposed
+// - BuildingElementAdjacentZTU_Simple: Common, 5 nodes, Unconditioned space, Not exposed
+// - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
+//
+// BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
+// unused. If this is confirmed to be the case, then these can be deleted.
+//
+// BuildingElementGround has several alternative sets of inputs, depending on the floor_type input. The current class
+// requires all of these inputs and ignores the ones that are not relevant. This class could arguably be split into 5
+// different classes (one for each floor_type option) to avoid this. The alternative sets of inputs are for calculating
+// self.__h_pi and self.__h_pe, which are ultimately used in the temp_ext function. Therefore, one way to handle this would
+// be to have 5 different classes, calculate h_pi and h_pe, then feed these into the constructor of the "Ground" object
+// under the category "Heat transfer with environment on other side of element".
+//
+// The relevant functions for each set of characteristics are:
+// - Heat transfer with internal environment:
+//    - heat_flow_direction
+//    - r_si
+//    - h_ci
+//    - h_ri
+//    - pitch_class
+// - Heat transfer through and storage within the element:
+//    - no_of_nodes
+//    - no_of_inside_nodes
+//    - init_h_pli
+//    - init_k_pli
+// - Heat transfer with environment on other side of element:
+//    - r_se
+//    - h_ce
+//    - h_re
+//    - temp_ext
+// - Interaction with solar radiation:
+//    - i_sol_dir_dif
+//    - solar_gains
+//    - shading_factors_direct_diffuse
 
 //Values from BS EN ISO 13789:2017, Table 8: Conventional surface heat
 //transfer coefficients
@@ -1317,6 +1316,36 @@ pub struct BuildingElementGround {
     k_pli: [f64; 5],
 }
 
+/// There are various variable names used within this type with quite obscure names - the following is provided as a guide:
+///
+/// They have generally been included into the FloorData input type, whose purpose is to encapsulate the different
+/// necessary fields dependent on the floor type.
+///
+/// * `floor_type`
+///        - Slab_no_edge_insulation
+///        - Slab_edge_insulation
+///        - Suspended_floor
+///        - Heated_basement
+///        - Unheated_basement
+/// * `edge_insulation`
+///          - horizontal edge insulation
+///          - vertical or external edge insulation
+/// * `h_upper` - height of the floor upper surface, in m
+///             average value is used if h varies
+/// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
+///         in accordance with ISO 6946
+/// * `u_f_s` - thermal transmittance of floor above basement), in W/(m2·K)
+///           in accordance with ISO 6946
+/// * `area_per_perimeter_vent` -  area of ventilation openings per perimeter, in m2/m
+/// * `shield_fact_location` - wind shielding factor
+///         - Sheltered
+///         - Average
+///         - Exposed
+/// * `d_we` - thickness of the walls, in m
+/// * `r_f_ins` - thermal resistance of insulation on base of underfloor space, in m2·K/W
+/// * `z_b` - depth of basement floor below ground level, in m
+/// * `r_w_b` - thermal resistance of walls of the basement, in m2·K/W
+/// * `h_w` - height of the basement walls above ground level, in m
 impl BuildingElementGround {
     /// Arguments (names based on those in BS EN ISO 52016-1:2017):
     /// * `total_area` - total area (in m2) of the building element across entire dwelling.
@@ -1339,36 +1368,14 @@ impl BuildingElementGround {
     ///             - 'IE': mass divided over internal and external side
     ///             - 'D':  mass equally distributed
     ///             - 'M':  mass concentrated inside
+    /// * `floor_data` - enumerated struct that encapsulated a number of parameters that are particular
+    ///                  to each floor type
+    /// * `d_we` - thickness of the walls, in m
     /// * `perimeter` - perimeter of the floor, in metres. Calculated for the entire ground floor,
     ///                 even if it is distributed among several zones.
     /// * `psi_wall_floor_junc` - linear thermal transmittance of the junction
     ///                        between the floor and the walls, in W / (m.K)
     /// * `external_conditions` - reference to ExternalConditions object
-    /// * `floor_type`
-    ///        - Slab_no_edge_insulation
-    ///        - Slab_edge_insulation
-    ///        - Suspended_floor
-    ///        - Heated_basement
-    ///        - Unheated_basement
-    /// * `edge_insulation`
-    ///          - horizontal edge insulation
-    ///          - vertical or external edge insulation
-    /// * `h_upper` - height of the floor upper surface, in m
-    ///             average value is used if h varies
-    /// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
-    ///         in accordance with ISO 6946
-    /// * `u_f_s` - thermal transmittance of floor above basement), in W/(m2·K)
-    ///           in accordance with ISO 6946
-    /// * `area_per_perimeter_vent` -  area of ventilation openings per perimeter, in m2/m
-    /// * `shield_fact_location` - wind shielding factor
-    ///         - Sheltered
-    ///         - Average
-    ///         - Exposed
-    /// * `d_we` - thickness of the walls, in m
-    /// * `r_f_ins` - thermal resistance of insulation on base of underfloor space, in m2·K/W
-    /// * `z_b` - depth of basement floor below ground level, in m
-    /// * `r_w_b` - thermal resistance of walls of the basement, in m2·K/W
-    /// * `h_w` - height of the basement walls above ground level, in m
     pub fn new(
         total_area: f64,
         area: f64,
@@ -1377,18 +1384,8 @@ impl BuildingElementGround {
         r_f: f64,
         k_m: f64,
         mass_distribution_class: MassDistributionClass,
-        floor_type: FloorType,
-        edge_insulation: Option<&[EdgeInsulation]>,
-        h_upper: Option<f64>,
-        u_f_s: Option<f64>,
-        u_w: Option<f64>,
-        area_per_perimeter_vent: Option<f64>,
-        shield_fact_location: Option<WindShieldLocation>,
+        floor_data: &FloorData,
         d_we: f64,
-        r_f_ins: Option<f64>,
-        z_b: Option<f64>,
-        r_w_b: Option<f64>,
-        h_w: Option<f64>,
         perimeter: f64,
         psi_wall_floor_junc: f64,
         external_conditions: Arc<ExternalConditions>,
@@ -1402,23 +1399,13 @@ impl BuildingElementGround {
 
         let d_eq = Self::total_equiv_thickness(d_we, r_f);
         let (h_pi, h_pe) = Self::init_periodic_heat_transfer(
-            floor_type,
             total_area,
             d_eq,
             perimeter,
             r_f,
             d_we,
-            r_f_ins,
-            h_upper,
-            u_w,
-            h_w,
-            z_b,
-            u_f_s,
-            r_w_b,
-            area_per_perimeter_vent,
-            shield_fact_location,
+            floor_data,
             external_conditions.as_ref(),
-            edge_insulation,
         )?;
 
         Ok(Self {
@@ -1494,53 +1481,57 @@ impl BuildingElementGround {
     ///             h_pe     -- external periodic heat transfer coefficient, in W / K
     ///                         BS EN ISO 13370:2017 Annex H
     fn init_periodic_heat_transfer(
-        floor_type: FloorType,
         total_area: f64,
         d_eq: f64,
         perimeter: f64,
         r_f: f64,
         d_we: f64,
-        r_f_ins: Option<f64>,
-        h_upper: Option<f64>,
-        u_w: Option<f64>,
-        h_w: Option<f64>,
-        z_b: Option<f64>,
-        u_f_s: Option<f64>,
-        r_w_b: Option<f64>,
-        area_vent: Option<f64>,
-        shield_fact_location: Option<WindShieldLocation>,
+        floor_data: &FloorData,
         external_conditions: &ExternalConditions,
-        edge_insulation: Option<&[EdgeInsulation]>,
     ) -> anyhow::Result<(f64, f64)> {
-        Ok(match floor_type {
-            FloorType::SlabNoEdgeInsulation => {
+        Ok(match floor_data {
+            FloorData::SlabNoEdgeInsulation => {
                 Self::init_slab_on_ground_floor_uninsulated_or_all_insulation(
                     total_area, d_eq, perimeter,
                 )
             }
-            FloorType::SlabEdgeInsulation => Self::init_slab_on_ground_floor_edge_insulated(
-                total_area,
-                d_eq,
-                perimeter,
-                edge_insulation,
-            )?,
-            FloorType::SuspendedFloor => Self::init_suspended_floor(
+            FloorData::SlabEdgeInsulation { edge_insulation } => {
+                Self::init_slab_on_ground_floor_edge_insulated(
+                    total_area,
+                    d_eq,
+                    perimeter,
+                    edge_insulation,
+                )?
+            }
+            FloorData::SuspendedFloor {
+                height_upper_surface: h_upper,
+                thermal_transmission_walls: u_w,
+                area_per_perimeter_vent: area_vent,
+                shield_fact_location,
+                thermal_resistance_of_insulation: r_f_ins,
+            } => Self::init_suspended_floor(
                 r_f,
                 d_we,
-                r_f_ins,
+                *r_f_ins,
                 total_area,
                 perimeter,
-                h_upper,
-                u_w,
-                area_vent,
+                *h_upper,
+                *u_w,
+                *area_vent,
                 shield_fact_location,
                 external_conditions,
             )?,
-            FloorType::HeatedBasement => {
-                Self::init_heated_basement(total_area, z_b, perimeter, d_eq, r_w_b)?
-            }
-            FloorType::UnheatedBasement => {
-                Self::init_unheated_basement(total_area, h_w, z_b, u_f_s, u_w, perimeter, d_eq)?
+            FloorData::HeatedBasement {
+                depth_basement_floor: z_b,
+                thermal_resistance_of_basement_walls: r_w_b,
+            } => Self::init_heated_basement(total_area, *z_b, perimeter, d_eq, *r_w_b),
+            FloorData::UnheatedBasement {
+                thermal_transmittance_of_floor_above_basement: u_f_s,
+                thermal_transmission_walls: u_w,
+                depth_basement_floor: z_b,
+                height_basement_walls: h_w,
+            } => {
+                Self::init_unheated_basement(total_area, *h_w, *z_b, *u_f_s, *u_w, perimeter, d_eq)
             }
         })
     }
@@ -1577,21 +1568,13 @@ impl BuildingElementGround {
         total_area: f64,
         d_eq: f64,
         perimeter: f64,
-        edge_insulation: Option<&[EdgeInsulation]>,
+        edge_insulation: &[EdgeInsulation],
     ) -> anyhow::Result<(f64, f64)> {
         // H.5.1. Internal temperature variation
         let h_pi = Self::internal_temp_variation(total_area, d_eq);
 
         // edge insulation (vertically or horizontally)
-        let h_pe = Self::edge_type(
-            edge_insulation.ok_or_else(|| {
-                anyhow!(
-                    "Edge insulation was expected to be provided for this ground building element."
-                )
-            })?,
-            d_eq,
-            perimeter,
-        )?;
+        let h_pe = Self::edge_type(edge_insulation, d_eq, perimeter)?;
 
         Ok((h_pi, h_pe))
     }
@@ -1682,13 +1665,13 @@ impl BuildingElementGround {
     fn init_suspended_floor(
         r_f: f64,
         d_we: f64,
-        r_f_ins: Option<f64>,
+        r_f_ins: f64,
         total_area: f64,
         perimeter: f64,
-        h_upper: Option<f64>,
-        u_w: Option<f64>,
-        area_vent: Option<f64>,
-        shield_fact_location: Option<WindShieldLocation>,
+        h_upper: f64,
+        u_w: f64,
+        area_vent: f64,
+        shield_fact_location: &WindShieldLocation,
         external_conditions: &ExternalConditions,
     ) -> anyhow::Result<(f64, f64)> {
         // H.6.1.
@@ -1707,7 +1690,7 @@ impl BuildingElementGround {
         )?;
 
         // equivalent thickness, in m
-        let d_g = Self::total_equiv_thickness_sus(d_we, r_f_ins)?;
+        let d_g = Self::total_equiv_thickness_sus(d_we, r_f_ins);
 
         // H.6.2. Internal temperature variation
         let h_pi = total_area
@@ -1739,21 +1722,12 @@ impl BuildingElementGround {
     fn equiv_therma_trans(
         total_area: f64,
         perimeter: f64,
-        h_upper: Option<f64>,
-        u_w: Option<f64>,
-        area_vent: Option<f64>,
-        shield_fact_location: Option<WindShieldLocation>,
+        h_upper: f64,
+        u_w: f64,
+        area_vent: f64,
+        shield_fact_location: &WindShieldLocation,
         external_conditions: &ExternalConditions,
     ) -> anyhow::Result<f64> {
-        let h_upper = h_upper.ok_or_else(|| anyhow!("A value for the height of the floor upper surface was needed for a ground building element."))?;
-        let u_w = u_w.ok_or_else(|| anyhow!("A value for the thermal transmittance of walls above ground was needed for a ground building element."))?;
-        let area_vent = area_vent.ok_or_else(|| {
-            anyhow!("An area per perimeter vent value was needed for a ground building element.")
-        })?;
-        let shield_fact_location = shield_fact_location.ok_or_else(|| {
-            anyhow!("A wind shielding factor indicator was needed for a ground building element.")
-        })?;
-
         // Characteristic dimension of floor
         let char_dimen = Self::charac_dimen_floor(total_area, perimeter);
 
@@ -1767,8 +1741,8 @@ impl BuildingElementGround {
     }
 
     /// Equivalent thickness for the ground
-    fn total_equiv_thickness_sus(d_we: f64, r_f_ins: Option<f64>) -> anyhow::Result<f64> {
-        Ok(d_we + THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_f_ins.ok_or_else(|| anyhow!("A value for thermal resistance of insulation was expected to be given for a ground building element."))? + R_SE))
+    fn total_equiv_thickness_sus(d_we: f64, r_f_ins: f64) -> f64 {
+        d_we + THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_f_ins + R_SE)
     }
 
     /// Characteristic dimension of floor, in metres
@@ -1781,7 +1755,7 @@ impl BuildingElementGround {
     }
 
     /// wind shielding factor
-    fn wind_shield_fact(shield_fact_location: WindShieldLocation) -> f64 {
+    fn wind_shield_fact(shield_fact_location: &WindShieldLocation) -> f64 {
         // Values from BS EN ISO 13370:2017 Table 8
         match shield_fact_location {
             WindShieldLocation::Sheltered => 0.02,
@@ -1793,15 +1767,13 @@ impl BuildingElementGround {
     /// Heated basement periodic coefficients
     fn init_heated_basement(
         total_area: f64,
-        z_b: Option<f64>,
+        z_b: f64,
         perimeter: f64,
         d_eq: f64,
-        r_w_b: Option<f64>,
-    ) -> anyhow::Result<(f64, f64)> {
-        let z_b = z_b.ok_or_else(|| anyhow!("A value for the depth of the basement floor below ground level was needed for this ground building element."))?;
-
+        r_w_b: f64,
+    ) -> (f64, f64) {
         // total equivalent thickness
-        let d_w_b = Self::equiv_thick_base_wall(r_w_b)?;
+        let d_w_b = Self::equiv_thick_base_wall(r_w_b);
 
         // H.7.1. Internal temperature variation
         let h_pi = total_area
@@ -1827,30 +1799,25 @@ impl BuildingElementGround {
                 + 2. * (1. - (-z_b / PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES).exp())
                     * (PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES / d_w_b + 1.).ln());
 
-        Ok((h_pi, h_pe))
+        (h_pi, h_pe)
     }
 
     /// Equivalent thickness for the basement walls
-    fn equiv_thick_base_wall(r_w_b: Option<f64>) -> anyhow::Result<f64> {
+    fn equiv_thick_base_wall(r_w_b: f64) -> f64 {
         // r_w_b is the thermal resistance of the walls
-        Ok(THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_w_b.ok_or_else(|| anyhow!("A value for thermal resistance of walls for the basement is needed for this ground building element."))? + R_SE))
+        THERMAL_CONDUCTIVITY_OF_GROUND * (R_SI_FOR_GROUND + r_w_b + R_SE)
     }
 
     /// Unheated basement
     fn init_unheated_basement(
         total_area: f64,
-        h_w: Option<f64>,
-        z_b: Option<f64>,
-        u_f_s: Option<f64>,
-        u_w: Option<f64>,
+        h_w: f64,
+        z_b: f64,
+        u_f_s: f64,
+        u_w: f64,
         perimeter: f64,
         d_eq: f64,
-    ) -> anyhow::Result<(f64, f64)> {
-        let h_w = h_w.ok_or_else(|| anyhow!("A value for the height of the basement walls above ground level was needed for this ground building element."))?;
-        let z_b = z_b.ok_or_else(|| anyhow!("A value for the depth of the basement floor below ground level was needed for this ground building element."))?;
-        let u_f_s = u_f_s.ok_or_else(|| anyhow!("A value for thermal transmittance of floor above basement was needed for this ground building element."))?;
-        let u_w = u_w.ok_or_else(|| anyhow!("A value for the thermal transmittance of walls above ground was needed for this ground building element."))?;
-
+    ) -> (f64, f64) {
         // Wh/(m3·K)
         let thermal_capacity_air = 0.33;
         let air_vol_base = total_area * (h_w + z_b);
@@ -1884,7 +1851,7 @@ impl BuildingElementGround {
                 + thermal_capacity_air * vent_rate_base * air_vol_base
                 + total_area * u_f_s);
 
-        Ok((h_pi, h_pe))
+        (h_pi, h_pe)
     }
 }
 
@@ -2774,6 +2741,13 @@ mod tests {
     pub fn ground_building_elements(
         external_conditions_for_ground: Arc<ExternalConditions>,
     ) -> [BuildingElementGround; 5] {
+        let be_i_floor_data = FloorData::SuspendedFloor {
+            height_upper_surface: 0.5,
+            thermal_transmission_walls: 0.5,
+            area_per_perimeter_vent: 0.01,
+            shield_fact_location: WindShieldLocation::Sheltered,
+            thermal_resistance_of_insulation: 7.,
+        };
         let be_i = BuildingElementGround::new(
             20.0,
             20.0,
@@ -2782,23 +2756,14 @@ mod tests {
             0.1,
             19000.0,
             MassDistributionClass::I,
-            FloorType::SuspendedFloor,
-            None,
-            Some(0.5),
-            None,
-            Some(0.5),
-            Some(0.01),
-            Some(WindShieldLocation::Sheltered),
+            &be_i_floor_data,
             0.3,
-            Some(7.),
-            None,
-            None,
-            None,
             18.0,
             0.5,
             external_conditions_for_ground.clone(),
         )
         .unwrap();
+        let be_e_floor_data = FloorData::SlabNoEdgeInsulation;
         let be_e = BuildingElementGround::new(
             22.5,
             22.5,
@@ -2807,24 +2772,14 @@ mod tests {
             0.2,
             18000.0,
             MassDistributionClass::E,
-            FloorType::SlabNoEdgeInsulation,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            &be_e_floor_data,
             0.3,
-            None,
-            None,
-            None,
-            None,
             19.0,
             0.6,
             external_conditions_for_ground.clone(),
         )
         .unwrap();
-        let edge_insulation_ie = [
+        let edge_insulation_ie = vec![
             EdgeInsulation::Horizontal {
                 width: 3.0,
                 edge_thermal_resistance: 2.0,
@@ -2834,6 +2789,9 @@ mod tests {
                 edge_thermal_resistance: 2.0,
             },
         ];
+        let be_ie_floor_data = FloorData::SlabEdgeInsulation {
+            edge_insulation: edge_insulation_ie,
+        };
         let be_ie = BuildingElementGround::new(
             25.0,
             25.0,
@@ -2842,23 +2800,17 @@ mod tests {
             0.2,
             17000.0,
             MassDistributionClass::IE,
-            FloorType::SlabEdgeInsulation,
-            Some(&edge_insulation_ie),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &be_ie_floor_data,
             0.3,
-            None,
-            None,
-            None,
-            None,
             20.0,
             0.7,
             external_conditions_for_ground.clone(),
         )
         .unwrap();
+        let be_d_floor_data = FloorData::HeatedBasement {
+            depth_basement_floor: 2.3,
+            thermal_resistance_of_basement_walls: 6.,
+        };
         let be_d = BuildingElementGround::new(
             27.5,
             27.5,
@@ -2867,23 +2819,19 @@ mod tests {
             0.2,
             16000.0,
             MassDistributionClass::D,
-            FloorType::HeatedBasement,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            &be_d_floor_data,
             0.3,
-            None,
-            Some(2.3),
-            Some(6.),
-            None,
             21.0,
             0.8,
             external_conditions_for_ground.clone(),
         )
         .unwrap();
+        let be_m_floor_data = FloorData::UnheatedBasement {
+            thermal_transmittance_of_floor_above_basement: 1.2,
+            thermal_transmission_walls: 0.5,
+            depth_basement_floor: 2.3,
+            height_basement_walls: 2.3,
+        };
         let be_m = BuildingElementGround::new(
             30.0,
             30.0,
@@ -2892,18 +2840,8 @@ mod tests {
             0.3,
             15000.0,
             MassDistributionClass::M,
-            FloorType::UnheatedBasement,
-            None,
-            None,
-            Some(1.2),
-            Some(0.5),
-            None,
-            None,
+            &be_m_floor_data,
             0.3,
-            None,
-            Some(2.3),
-            Some(0.15),
-            Some(2.3),
             22.0,
             0.9,
             external_conditions_for_ground,

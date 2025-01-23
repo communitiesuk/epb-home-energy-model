@@ -1658,7 +1658,7 @@ mod tests {
     use crate::corpus::CompletedVentilationLeaks;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
-        FloorType, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
+        FloorData, MassDistributionClass, TerrainClass, VentilationShieldClass, WindShieldLocation,
         WindowPart,
     };
     use crate::simulation_time::{SimulationTime, HOURS_IN_DAY};
@@ -1870,6 +1870,13 @@ mod tests {
             MassDistributionClass::E,
             external_conditions.clone(),
         ));
+        let be_ground_floor_data = FloorData::SuspendedFloor {
+            height_upper_surface: 0.5,
+            thermal_transmission_walls: 0.5,
+            area_per_perimeter_vent: 0.01,
+            shield_fact_location: WindShieldLocation::Sheltered,
+            thermal_resistance_of_insulation: 7.,
+        };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(
                 25.0,
@@ -1879,18 +1886,8 @@ mod tests {
                 0.2,
                 17000.0,
                 MassDistributionClass::IE,
-                FloorType::SuspendedFloor,
-                None,
-                Some(0.5),
-                None,
-                Some(0.5),
-                Some(0.01),
-                Some(WindShieldLocation::Sheltered),
+                &be_ground_floor_data,
                 0.3,
-                Some(7.),
-                None,
-                None,
-                None,
                 20.0,
                 0.7,
                 external_conditions.clone(),
