@@ -10,7 +10,7 @@ use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::corpus::{HeatSource, PositionedHeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
-use crate::simulation_time::SimulationTimeIteration;
+use crate::simulation_time::{SimulationTime, SimulationTimeIteration};
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use indexmap::IndexMap;
@@ -190,6 +190,23 @@ impl StorageTank {
             temp_average_drawoff_volweighted: None,
             total_volume_drawoff: None,
         }
+    }
+
+    fn determine_heat_source_switch_off(
+        &mut self,
+        temp_s8_n: Vec<f64>,
+        heat_source_name: String,
+        heat_source: PositionedHeatSource,
+        _heater_layer: usize,
+        thermostat_layer: usize,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        let (_, setpntmax) =
+            self.retrieve_setpnt(heat_source.heat_source, simulation_time_iteration)?;
+        if temp_s8_n[thermostat_layer] >= setpntmax {
+            self.heating_active.insert(heat_source_name, false);
+        };
+        Ok(())
     }
 
     fn temp_flow(
@@ -881,14 +898,12 @@ impl StorageTank {
                 self.allocate_hot_water(event.clone(), simulation_time);
 
             // Re-arrange the temperatures in the storage after energy input from pre-heated tank
-            let mut temp_s3_n: Vec<f64> = Default::default();
+            temp_s3_n = temp_s3_n_step;
+
             if rearrange {
                 temp_s3_n = self.rearrange_temperatures(&*temp_s3_n).1
             }
-            self.temp_n = temp_s3_n.clone();
 
-            // TODO: continue here
-            temp_s3_n = temp_s3_n_step;
             self.temp_n = temp_s3_n.clone();
 
             _volume_demanded += volume_used;
@@ -919,17 +934,21 @@ impl StorageTank {
         // TODO (from Python) - 6.4.3.7 STEP 5 Temperature of the storage after volume withdrawn (for Heating)
 
         // Run over multiple heat sources
-        let mut temp_after_prev_heat_source = temp_s3_n;
+        let mut temp_after_prev_heat_source = temp_s3_n.clone();
         let mut q_ls = 0.0;
         let mut temp_s8_n = vec![0.; self.nb_vol];
 
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
+
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
+            let (_, setpntmax) = positioned_heat_source
+                .heat_source
+                .lock()
+                .temp_setpnt(simulation_time)?;
             let heater_layer =
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
                 (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
-
             let (
                 temp_s8_n_step,
                 _q_x_in_n,
@@ -957,6 +976,16 @@ impl StorageTank {
             }
 
             temp_s8_n = temp_s8_n_step;
+
+            // Trigger heating to stop
+            self.determine_heat_source_switch_off(
+                temp_s8_n.clone(),
+                heat_source_name,
+                positioned_heat_source,
+                heater_layer,
+                thermostat_layer,
+                simulation_time,
+            )?;
         }
 
         // Additional calculations
