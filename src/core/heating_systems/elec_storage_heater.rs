@@ -543,7 +543,7 @@ impl ElecStorageHeater {
                 // if self.pwr_instant {
 
                 self.energy_instant = self.demand_unmet.min(self.pwr_instant * f64::from(timestep)); // kWh
-                time_instant = self.energy_instant / self.pwr_instant;
+                let time_instant = self.energy_instant / self.pwr_instant;
                 time_used_max += time_instant;
                 time_used_max = time_used_max.min(timestep);
 
