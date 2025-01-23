@@ -203,9 +203,13 @@ impl StorageTank {
     ) -> anyhow::Result<()> {
         let (_, setpntmax) =
             self.retrieve_setpnt(heat_source.heat_source, simulation_time_iteration)?;
-        if temp_s8_n[thermostat_layer] >= setpntmax {
+        let expect_message =
+            format!("Expected set point max to be set for storage tank with heat source: {heat_source_name}");
+        // TODO check whether we should use expect or ok_or_else on setpntmax (setpntmax.ok_or_else(expect_message))
+        if temp_s8_n[thermostat_layer] >= setpntmax.expect(&expect_message) {
             self.heating_active.insert(heat_source_name, false);
         };
+
         Ok(())
     }
 
@@ -213,11 +217,9 @@ impl StorageTank {
         &self,
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
-        let (_, setpntmax) = self
-            .retrieve_setpnt(heat_source, simulation_time_iteration)
-            .expect("expect setpntmax to be set."); // TODO: review this as part of migration to 0.32
-        setpntmax
+    ) -> anyhow::Result<Option<f64>> {
+        let (_, setpntmax) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
+        Ok(setpntmax)
     }
 
     /// No demand from heat source if the temperature of the tank at the
@@ -227,10 +229,31 @@ impl StorageTank {
         &self,
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         let setpnts = heat_source.lock().temp_setpnt(simulation_time_iteration);
         setpnts
     }
+
+    fn determine_heat_source_switch_on(
+        &mut self,
+        temp_s3_n: &[f64],
+        heat_source_name: String,
+        heat_source: Arc<Mutex<HeatSource>>,
+        _heater_layer: usize,
+        thermostat_layer: usize,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<()> {
+        // TODO - update for smarthot water tank to use SOC instead. - take out all areas where temp_setpnt functions is used and deals with systems switches on and off needs to be taken out into separate function - write as soc.
+        //  look at heating ssystems that doesn't use if conditions implement like this.
+        //  l205-217 separate function and call new function. in the new smart control object [same inputs ]
+        //  TODO remove unused parameters
+        let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
+        if setpntmin.is_some() && temp_s3_n[thermostat_layer] <= setpntmin.unwrap() {
+            self.heating_active.insert(heat_source_name, true);
+        };
+        Ok(())
+    }
+
     fn temp_surrounding_primary_pipework(
         &self,
         pipework_data: &Pipework,
@@ -291,24 +314,36 @@ impl StorageTank {
     ) -> anyhow::Result<Vec<f64>> {
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = iter::repeat(0.).take(self.nb_vol).collect_vec();
-        let temp_flow = self.temp_flow(heat_source.clone(), simulation_time);
-        let heat_source = &mut *(heat_source.lock());
+        let expect_message = format!(
+            "Expected temp flow to be set for storage tank with heat source: {heat_source_name}"
+        );
+        let temp_flow = self
+            .temp_flow(heat_source.clone(), simulation_time)?
+            .expect(&expect_message);
+
+        let heat_source_read = &*(heat_source.lock()); // TODO: can we refactor this? use a RwLock?
 
         let energy_potential =
             if let HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) =
-                heat_source
+                heat_source_read
             {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
                 solar_heat_source
                     .lock()
                     .energy_output_max(self, temp_s3_n, &simulation_time)
             } else {
-                // todo!();
-                // self._determine_heat_source_switch_on(temp_s3_n, heat_source, heater_layer, thermostat_layer)
+                self.determine_heat_source_switch_on(
+                    temp_s3_n,
+                    heat_source_name.to_string(),
+                    heat_source.clone(),
+                    heater_layer,
+                    thermostat_layer,
+                    simulation_time,
+                )?;
 
                 if self.heating_active[heat_source_name] {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
-                    let mut energy_potential = match heat_source {
+                    let mut energy_potential = match heat_source_read {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                             immersion_heater,
                         )) => immersion_heater
@@ -323,7 +358,7 @@ impl StorageTank {
                     // TODO (from Python) Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
-                        heat_source,
+                        heat_source_read,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
                         let (primary_pipework_losses_kwh, _) = self.primary_pipework_losses(
@@ -585,7 +620,10 @@ impl StorageTank {
         q_ls_n_prev_heat_source: &[f64],
         simulation_time_iteration: SimulationTimeIteration,
     ) -> TemperatureCalculation {
-        let temp_flow = self.temp_flow(heat_source.clone(), simulation_time_iteration);
+        let temp_flow = self
+            .temp_flow(heat_source.clone(), simulation_time_iteration)
+            .unwrap() // TODO review usage of result in temp_flow method
+            .expect("Expected temp flow to be set for storage tank with heat source");
 
         let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, &q_x_in_n);
 
@@ -1154,7 +1192,11 @@ impl StorageTank {
         input_energy_adj: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let temp_flow = self.temp_flow(heat_source.clone(), simulation_time_iteration);
+        let expect_message =
+            format!("Expected set point max to be set for storage tank with this heat source");
+        let temp_flow = self
+            .temp_flow(heat_source.clone(), simulation_time_iteration)?
+            .expect(&expect_message);
 
         match &mut *(heat_source.clone().lock()) {
             HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => Ok(immersion
@@ -1203,7 +1245,7 @@ pub struct ImmersionHeater {
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control_min: Option<Arc<Control>>,
-    control_max: Option<Arc<Control>>,
+    control_max: Arc<Control>,
     diverter: Option<Arc<RwLock<PVDiverter>>>,
 }
 
@@ -1223,8 +1265,8 @@ impl ImmersionHeater {
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control_min: Option<Arc<Control>>, // TODO: should this be optional?
-        control_max: Option<Arc<Control>>, // TODO: should this be optional?
+        control_min: Option<Arc<Control>>,
+        control_max: Arc<Control>,
         diverter: Option<Arc<RwLock<PVDiverter>>>,
     ) -> Self {
         Self {
@@ -1236,25 +1278,16 @@ impl ImmersionHeater {
             diverter,
         }
     }
-
     pub(crate) fn temp_setpnt(
         &self,
-        simulation_time_iteration: &SimulationTimeIteration,
-    ) -> (f64, f64) {
+        simtime: SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
         (
-            // TODO: use expect here probably
-            self.control_min
-                .clone()
-                .unwrap()
-                .setpnt(simulation_time_iteration)
-                .unwrap(),
-            self.control_max
-                .clone()
-                .unwrap()
-                .setpnt(simulation_time_iteration)
-                .unwrap(),
+            self.control_min.as_ref().and_then(|c| c.setpnt(&simtime)),
+            self.control_max.setpnt(&simtime),
         )
     }
+
     pub fn connect_diverter(&mut self, diverter: Arc<RwLock<PVDiverter>>) {
         if self.diverter.is_some() {
             panic!("diverter was already connected");
@@ -1414,7 +1447,7 @@ pub struct SolarThermalSystem {
     temp_internal_air_fn: TempInternalAirFn,
     heat_output_collector_loop: f64,
     energy_supplied: f64,
-    control_max: Option<Control>,
+    control_max: Arc<Control>,
     cp: f64,
     air_temp_coll_loop: f64, //mutating internally
     inlet_temp: f64,
@@ -1468,7 +1501,7 @@ impl SolarThermalSystem {
         external_conditions: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
         simulation_timestep: f64,
-        control_max: Option<Control>,
+        control_max: Arc<Control>,
         contents: MaterialProperties,
     ) -> Self {
         Self {
@@ -1501,14 +1534,9 @@ impl SolarThermalSystem {
 
     pub(crate) fn temp_setpnt(
         &self,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64) {
-        let temp_setpnt = self
-            .control_max
-            .as_ref()
-            .unwrap()
-            .setpnt(&simulation_time_iteration)
-            .unwrap();
+        simtime: SimulationTimeIteration,
+    ) -> (Option<f64>, Option<f64>) {
+        let temp_setpnt = self.control_max.setpnt(&simtime);
         (temp_setpnt, temp_setpnt)
     }
 
@@ -1829,7 +1857,7 @@ mod tests {
             energy_supply_connection.clone(),
             simulation_timestep,
             Some(Arc::new(Control::SetpointTime(control_min))),
-            Some(Arc::new(Control::SetpointTime(control_max))),
+            Arc::new(Control::SetpointTime(control_max)),
             None,
         );
         let heat_source = PositionedHeatSource {
@@ -2220,7 +2248,7 @@ mod tests {
             energy_supply_connection,
             timestep,
             Some(control_min),
-            Some(control_max),
+            control_max,
             None,
         )
     }
@@ -2433,7 +2461,7 @@ mod tests {
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),
             simulation_time.step,
-            None, // TODO: update
+            Arc::new(Control::SetpointTime(control_max.unwrap())),
             *WATER,
         )));
 

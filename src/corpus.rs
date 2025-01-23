@@ -3642,16 +3642,16 @@ impl HeatSource {
     pub(crate) fn temp_setpnt(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         match self {
             HeatSource::Storage(ref storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().temp_setpnt(&simtime)),
+                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().temp_setpnt(simtime)),
                 HeatSourceWithStorageTank::Solar(ref solar) => {
                     Ok(solar.lock().temp_setpnt(simtime))
                 }
             },
             HeatSource::Wet(_) => {
-                unreachable!("Expect to be only calling temp setpnt on storage tank. TODO: review this once migration to 0.32 is complete.")
+                bail!("Expect to be only calling temp setpnt on storage tank. TODO: review this once migration to 0.32 is complete.")
             }
         }
     }
@@ -3991,15 +3991,16 @@ fn heat_source_from_input(
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+            let control = (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string()));
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
                     ImmersionHeater::new(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string())), // TODO
-                        None, // TODO
-                        None, // TODO
+                        control.clone(),  // TODO
+                        control.unwrap(), // TODO
+                        None,             // TODO
                     ),
                 )))),
                 name.into(),
@@ -4020,10 +4021,14 @@ fn heat_source_from_input(
             orientation,
             solar_loop_piping_hlc,
             energy_supply,
+            control_max,
             ..
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Solar thermal system references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
+            let control_max = controls
+                .get_with_string(control_max)
+                .expect("Control max expected for Solar Thermal System");
 
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
@@ -4045,7 +4050,7 @@ fn heat_source_from_input(
                         external_conditions.clone(),
                         temp_internal_air_fn(temp_internal_air_accessor),
                         simulation_time.step_in_hours(),
-                        None, // TODO
+                        control_max, // TODO
                         *WATER,
                     ),
                 )))),
