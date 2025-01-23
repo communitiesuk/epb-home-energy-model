@@ -7,7 +7,11 @@ use nalgebra::{Vector1, Vector3};
 use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 
 use crate::{
-    core::{controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection},
+    core::{
+        controls::time_control::{ChargeControl, Control, SetpointTimeControl},
+        energy_supply::energy_supply::EnergySupplyConnection,
+        units::WATTS_PER_KILOWATT,
+    },
     external_conditions::ExternalConditions,
     input::ElectricStorageHeaterAirFlowType,
     simulation_time::{SimulationTime, SimulationTimeIteration},
@@ -280,6 +284,15 @@ impl ElecStorageHeater {
         })
     }
 
+    fn convert_to_kwh(power: f64, time: f64) -> f64 {
+        // Converts power value supplied to the correct energy unit
+        // Arguments
+        // power -- Power value in watts
+        // time -- length of the time active
+        // returns -- Energy in kWh
+        power / f64::from(WATTS_PER_KILOWATT) * time
+    }
+
     pub fn heat_retention_output(
         soc_array: Vec<f64>,
         power_array: Vec<f64>,
@@ -484,78 +497,101 @@ impl ElecStorageHeater {
         energy_demand: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        
         // Determines the amount of energy to release based on energy demand, while also handling the
         // energy charging and logging fan energy.
         // :param energy_demand: Energy demand in kWh.
         // :return: Total net energy delivered (including instant heating and fan energy).
-        
+
         let timestep = simulation_time_iteration.timestep;
         let energy_demand = energy_demand / f64::from(self.n_units);
         self.energy_instant = 0.;
-    
+
         // Initialize time_used_max and energy_charged_max to default values
         let time_used_max = 0.;
         let energy_charged_max = 0.;
-    
+
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, final_soc) = self.energy_output(OutputMode::Min, simulation_time_iteration)?;
+        let (q_released_min, _, energy_charged, final_soc) =
+            self.energy_output(OutputMode::Min, simulation_time_iteration)?;
         self.energy_charged = energy_charged;
 
-        // TODO double check nesting matches Python
-
-        let time_instant: f64;
-        let mut time_used_max: f64;
+        let mut time_used_max: f64 = 0.;
+        let mut q_released_max: Option<f64> = None;
 
         if q_released_min > energy_demand {
             // Deliver at least the minimum energy
             self.energy_delivered = q_released_min;
             self.demand_met = q_released_min;
             self.demand_unmet = 0.;
-        }
-        else {
+        } else {
             // Calculate maximum energy that can be delivered
-            let (q_released_max, time_used_max_tmp, energy_charged, final_soc) = self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+            let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc) =
+                self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+            q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
             self.energy_charged = energy_charged;
-            
-            if q_released_max < energy_demand {
+
+            if q_released_max_value < energy_demand {
                 // Deliver as much as possible up to the maximum energy
-                self.energy_delivered = q_released_max;
-                self.demand_met = q_released_max;
-                self.demand_unmet = energy_demand - q_released_max;
+                self.energy_delivered = q_released_max_value;
+                self.demand_met = q_released_max_value;
+                self.demand_unmet = energy_demand - q_released_max_value;
 
                 // For now, we assume demand not met from storage is topped-up by
-                // the direct top-up heater (if applicable). If still some unmet, 
+                // the direct top-up heater (if applicable). If still some unmet,
                 // this is reported as unmet demand.
                 // if self.pwr_instant {
 
-                self.energy_instant = self.demand_unmet.min(self.pwr_instant * timestep); // kWh
+                self.energy_instant = self.demand_unmet.min(self.pwr_instant * f64::from(timestep)); // kWh
                 time_instant = self.energy_instant / self.pwr_instant;
                 time_used_max += time_instant;
                 time_used_max = time_used_max.min(timestep);
-                
+
                 //}
-            }
-                    
-            else {
+            } else {
                 // Deliver the demanded energy
                 self.energy_delivered = energy_demand;
 
-                if q_released_max > 0. {
-                    time_used_max *= energy_demand / q_released_max;
+                if q_released_max_value > 0. {
+                    time_used_max *= energy_demand / q_released_max_value;
                 }
 
                 self.demand_met = energy_demand;
                 self.demand_unmet = 0.;
             }
         }
-    
-        todo!();
-        // Ensure energy_delivered does not exceed q_released_max
-        // self.energy_delivered = min(self.energy_delivered, q_released_max if 'q_released_max' in locals() else q_released_min)
 
-        // ...
+        // Ensure energy_delivered does not exceed q_released_max
+        let max = match q_released_max {
+            Some(max) => max,
+            None => q_released_min,
+        };
+
+        self.energy_delivered = self.energy_delivered.min(max);
+
+        let new_state_of_charge = self.state_of_charge
+            + (self.energy_charged - self.energy_delivered) / self.storage_capacity;
+        let new_state_of_charge = clip(new_state_of_charge, 0., 1.);
+        self.state_of_charge = new_state_of_charge;
+
+        // Calculate fan energy
+        self.energy_for_fan = 0.;
+
+        if self.air_flow_type == ElectricStorageHeaterAirFlowType::FanAssisted
+            && q_released_max.is_some()
+        {
+            let power_for_fan = self.fan_pwr;
+            self.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max)
+        }
+
+        // Log the energy charged, fan energy, and total energy delivered
+        let amount_demanded = f64::from(self.n_units)
+            * (self.energy_charged + self.energy_instant + self.energy_for_fan);
+        let _ = self.energy_supply_conn
+            .demand_energy(amount_demanded, simulation_time_iteration.index)?;
+
+        // Return total net energy delivered (discharged + instant heat + fan energy)
+        Ok(f64::from(self.n_units) * (self.energy_delivered + self.energy_instant))
     }
 
     pub fn target_electric_charge(
