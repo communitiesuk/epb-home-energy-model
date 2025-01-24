@@ -2381,7 +2381,7 @@ impl From<&FloorData> for FloorType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
@@ -2390,6 +2390,7 @@ pub(crate) enum FloorData {
     SlabNoEdgeInsulation,
     #[serde(rename = "Slab_edge_insulation")]
     SlabEdgeInsulation {
+        #[validate(min_items = 1)]
         edge_insulation: Vec<EdgeInsulation>,
     },
     #[serde(rename = "Suspended_floor")]

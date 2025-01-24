@@ -1635,7 +1635,7 @@ impl ExternalConditions {
         width: f64,
         tilt: f64,
         orientation: f64,
-        window_shading: &Vec<WindowShadingObject>,
+        window_shading: &[WindowShadingObject],
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         // """ calculates the direct and diffuse shading factors due to external
@@ -1737,7 +1737,7 @@ impl ExternalConditions {
         width: f64,
         tilt: f64,
         orientation: f64,
-        window_shading: &Vec<WindowShadingObject>,
+        window_shading: &[WindowShadingObject],
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self

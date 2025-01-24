@@ -171,7 +171,11 @@ pub(crate) trait HeatTransferInternal {
     fn pitch(&self) -> f64;
 
     /// Return internal surface resistance, in m2 K / W
-    fn r_si(&self, pitch: f64) -> f64 {
+    fn r_si(&self) -> f64 {
+        self.r_si_with_pitch(self.pitch())
+    }
+
+    fn r_si_with_pitch(&self, pitch: f64) -> f64 {
         match pitch {
             PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => R_SI_HORIZONTAL,
             ..PITCH_LIMIT_HORIZ_CEILING => R_SI_UPWARDS,
@@ -197,7 +201,7 @@ pub(crate) trait HeatTransferInternal {
     /// Convert U-value from input data to thermal resistance of construction only
     /// (not incl. surface resistances)
     fn convert_uvalue_to_resistance(&self, u_value: f64, pitch: f64) -> f64 {
-        (1.0 / u_value) - self.r_si(pitch) - R_SE
+        (1.0 / u_value) - self.r_si_with_pitch(pitch) - R_SE
     }
 
     fn pitch_class(&self, pitch: f64) -> HeatFlowDirection {
@@ -268,7 +272,12 @@ pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
 }
 
 pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
-    fn init(&mut self, r_c: f64, mass_distribution: MassDistributionClass, k_m: f64) {
+    fn init_heat_transfer_through_5_nodes(
+        &mut self,
+        r_c: f64,
+        mass_distribution: MassDistributionClass,
+        k_m: f64,
+    ) {
         self.set_r_c(r_c);
         self.set_k_m(k_m);
         self.set_h_pli(self.init_h_pli(r_c));
@@ -277,7 +286,7 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
 
     fn set_r_c(&mut self, r_c: f64);
     fn set_h_pli(&mut self, h_pli: [f64; 4]);
-    fn set_k_pli(&mut self, h_pli: [f64; 5]);
+    fn set_k_pli(&mut self, k_pli: [f64; 5]);
 
     fn init_h_pli(&self, r_c: f64) -> [f64; 4] {
         let h_outer = 6.0 / r_c;
@@ -304,7 +313,7 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
 }
 
 pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
-    fn init(
+    fn init_heat_transfer_through_3_plus_2_nodes(
         &mut self,
         r_f: f64,
         r_gr: f64,
@@ -359,10 +368,14 @@ pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
 }
 
 pub(crate) trait HeatTransferOtherSide {
-    fn init(&mut self, f_sky: Option<f64>) {
+    fn init_heat_transfer_other_side(&mut self, f_sky: Option<f64>) {
         self.init_super(f_sky)
     }
 
+    // The "_super" suffix naming here is to enable similar functionality to Python calling e.g. super.__init()
+    // It's impossible to do this in Rust as implementations in subtraits simply override but we can work round
+    // by using this kind of naming, even if it pollutes the interface of any implementing structs.
+    // We could use "sealed traits" for this, but likely not worth it.
     fn init_super(&mut self, f_sky: Option<f64>) {
         let f_sky = f_sky.unwrap_or(0.0);
         self.set_f_sky(f_sky);
@@ -379,10 +392,20 @@ pub(crate) trait HeatTransferOtherSide {
 
     /// Return external convective heat transfer coefficient, in W / (m2.K)
     fn h_ce(&self) -> f64 {
+        self.h_ce_super()
+    }
+
+    // See note against init_super above re purpose of this "_super" suffix here
+    fn h_ce_super(&self) -> f64 {
         H_CE
     }
 
     fn h_re(&self) -> f64 {
+        self.h_re_super()
+    }
+
+    // See note against init_super above re purpose of this "_super" suffix here
+    fn h_re_super(&self) -> f64 {
         H_RE
     }
 
@@ -437,9 +460,10 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         area_per_perimeter_vent: f64,
         r_f_ins: f64,
         shield_fact_location: WindShieldLocation,
-        edge_insulation: EdgeInsulation,
+        edge_insulation: &[EdgeInsulation],
         r_w_b: f64,
-    ) {
+    ) -> anyhow::Result<()> {
+        self.init_super(None);
         self.set_temp_int_annual(average_monthly_to_annual(
             HEAT_TRANSFER_OTHER_SIDE_GROUND_TEMP_INT_MONTHLY,
         ));
@@ -452,194 +476,765 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
 
         let d_eq = total_equiv_thickness();
 
-        let init_unheated_basement = || -> (f64, f64) {
-            let thermal_capacity_air = 0.33; // Wh/(m3·K)
-            let air_vol_base = total_area * (h_w + z_b);
+        // use sub-scope for calculating h_pi and h_pe so immutable references to self aren't
+        // kept around for setters below.
+        let (h_pi, h_pe) = {
+            let init_unheated_basement = || -> (f64, f64) {
+                let thermal_capacity_air = 0.33; // Wh/(m3·K)
+                let air_vol_base = total_area * (h_w + z_b);
 
-            // air changes per hour
-            // From BS EN ISO 13370:2017 section 7.4
-            let vent_rate_base = 0.3;
+                // air changes per hour
+                // From BS EN ISO 13370:2017 section 7.4
+                let vent_rate_base = 0.3;
 
-            // H.8.1. Internal temperature variation
-            let h_pi = (1. / (total_area * u_f_s)
-                + 1. / ((total_area + z_b * perimeter) * thermal_conductivity
-                    / periodic_penetration_depth
-                    + h_w * perimeter * u_w
-                    + thermal_capacity_air * vent_rate_base * air_vol_base))
-                .powi(-1);
+                // H.8.1. Internal temperature variation
+                let h_pi = (1. / (total_area * u_f_s)
+                    + 1. / ((total_area + z_b * perimeter) * thermal_conductivity
+                        / periodic_penetration_depth
+                        + h_w * perimeter * u_w
+                        + thermal_capacity_air * vent_rate_base * air_vol_base))
+                    .powi(-1);
 
-            // H.8.2. External temperature variation
-            // 0.37 is constant in the standard but not labelled
-            let h_pe = total_area
-                * u_f_s
-                * (0.37
+                // H.8.2. External temperature variation
+                // 0.37 is constant in the standard but not labelled
+                let h_pe = total_area
+                    * u_f_s
+                    * (0.37
+                        * perimeter
+                        * thermal_conductivity
+                        * (2. - (-z_b / periodic_penetration_depth).exp())
+                        * (periodic_penetration_depth / d_eq + 1.).ln()
+                        + h_w * perimeter * u_w
+                        + thermal_capacity_air * vent_rate_base * air_vol_base)
+                    / ((total_area + z_b * perimeter) * thermal_conductivity
+                        / periodic_penetration_depth
+                        + h_w * perimeter * u_w
+                        + thermal_capacity_air * vent_rate_base * air_vol_base
+                        + total_area * u_f_s);
+                (h_pi, h_pe)
+            };
+
+            // Equivalent thickness for the basement walls
+            let equiv_thick_base_wall = || -> f64 {
+                // r_w_b is the thermal resistance of the walls
+                thermal_conductivity * (r_si + r_w_b + self.r_se())
+            };
+
+            // Heated basement periodic coefficients
+            let init_heated_basement = || -> (f64, f64) {
+                // total equivalent thickness
+                let d_w_b = equiv_thick_base_wall();
+
+                // H.7.1. Internal temperature variation
+                let h_pi = total_area
+                    * ((thermal_conductivity / d_eq)
+                        * (2. / (1. + periodic_penetration_depth / d_eq).powi(2) + 1.).powf(0.5))
+                    + z_b
+                        * perimeter
+                        * (thermal_conductivity / d_w_b)
+                        * (2. / ((1. + periodic_penetration_depth / d_w_b).powi(2) + 1.)).powf(0.5);
+
+                // H.7.2. External temperature variation
+                // 0.37 is constant in the standard but not labelled
+                let h_pe = 0.37
                     * perimeter
                     * thermal_conductivity
-                    * (2. - (-z_b / periodic_penetration_depth).exp())
-                    * (periodic_penetration_depth / d_eq + 1.).ln()
-                    + h_w * perimeter * u_w
-                    + thermal_capacity_air * vent_rate_base * air_vol_base)
-                / ((total_area + z_b * perimeter) * thermal_conductivity
-                    / periodic_penetration_depth
-                    + h_w * perimeter * u_w
-                    + thermal_capacity_air * vent_rate_base * air_vol_base
-                    + total_area * u_f_s);
-            (h_pi, h_pe)
-        };
+                    * ((-z_b / periodic_penetration_depth).exp()
+                        * (periodic_penetration_depth / d_eq + 1.).ln()
+                        + 2. * (1. - (-z_b / periodic_penetration_depth).exp())
+                            * (periodic_penetration_depth / d_w_b + 1.).ln());
 
-        // Equivalent thickness for the basement walls
-        let equiv_thick_base_wall = || -> f64 {
-            // r_w_b is the thermal resistance of the walls
-            thermal_conductivity * (r_si + r_w_b + self.r_se())
-        };
+                (h_pi, h_pe)
+            };
 
-        // Heated basement periodic coefficients
-        let init_heated_basement = || -> (f64, f64) {
-            // total equivalent thickness
-            let d_w_b = equiv_thick_base_wall();
+            // thermal transmittance of suspended part of floor
+            let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
 
-            // H.7.1. Internal temperature variation
-            let h_pi = total_area
-                * ((thermal_conductivity / d_eq)
-                    * (2. / (1. + periodic_penetration_depth / d_eq).powi(2) + 1.).powf(0.5))
-                + z_b
-                    * perimeter
-                    * (thermal_conductivity / d_w_b)
-                    * (2. / ((1. + periodic_penetration_depth / d_w_b).powi(2) + 1.)).powf(0.5);
+            let charac_dimen_floor = || -> f64 {
+                total_area / (0.5 * perimeter) // in m
+            };
 
-            // H.7.2. External temperature variation
-            // 0.37 is constant in the standard but not labelled
-            let h_pe = 0.37
-                * perimeter
-                * thermal_conductivity
-                * ((-z_b / periodic_penetration_depth).exp()
-                    * (periodic_penetration_depth / d_eq + 1.).ln()
-                    + 2. * (1. - (-z_b / periodic_penetration_depth).exp())
-                        * (periodic_penetration_depth / d_w_b + 1.).ln());
+            // wind shielding factor
+            let wind_shield_fact = || -> f64 {
+                match shield_fact_location {
+                    WindShieldLocation::Sheltered => 0.02,
+                    WindShieldLocation::Average => 0.05,
+                    WindShieldLocation::Exposed => 0.10,
+                }
+            };
 
-            (h_pi, h_pe)
-        };
+            // equivalent thermal transmittance between the underfloor space and the outside
+            let equiv_therma_trans = || -> anyhow::Result<f64> {
+                // Characteristic dimension of floor
+                let char_dimen = charac_dimen_floor();
 
-        // thermal transmittance of suspended part of floor
-        let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
+                // 1450 is constant in the standard but not labelled
+                Ok(2. * (h_upper * u_w / char_dimen)
+                    + 1450. * (area_per_perimeter_vent * self.wind_speed()? * wind_shield_fact())
+                        / char_dimen)
+            };
 
-        let charac_dimen_floor = || -> f64 {
-            total_area / (0.5 * perimeter) // in m
-        };
+            let total_equiv_thickness_sus =
+                || -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
 
-        // wind shielding factor
-        let wind_shield_fact = || -> f64 {
-            match shield_fact_location {
-                WindShieldLocation::Sheltered => 0.02,
-                WindShieldLocation::Average => 0.05,
-                WindShieldLocation::Exposed => 0.10,
-            }
-        };
+            // thermal transmittance of suspended part of floor
+            let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
 
-        // equivalent thermal transmittance between the underfloor space and the outside
-        let equiv_therma_trans = || -> anyhow::Result<f64> {
-            // Characteristic dimension of floor
-            let char_dimen = charac_dimen_floor();
+            // Suspended floor periodic coefficients
+            let init_suspended_floor = || -> anyhow::Result<(f64, f64)> {
+                // H.6.1.
+                // thermal transmittance of suspended part of floor, in W/(m2·K)
+                let u_f = thermal_transmittance_sus_floor();
 
-            // 1450 is constant in the standard but not labelled
-            Ok(2. * (h_upper * u_w / char_dimen)
-                + 1450. * (area_per_perimeter_vent * self.wind_speed()? * wind_shield_fact())
-                    / char_dimen)
-        };
+                // equivalent thermal transmittance, in W/(m2·K)
+                let u_x = equiv_therma_trans()?;
 
-        let total_equiv_thickness_sus =
-            || -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
+                // equivalent thickness, in m
+                let d_g = total_equiv_thickness_sus();
 
-        // thermal transmittance of suspended part of floor
-        let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
+                // H.6.2. Internal temperature variation
+                let h_pi = total_area
+                    * (1. / u_f + 1. / (thermal_conductivity / periodic_penetration_depth + u_x));
 
-        // Suspended floor periodic coefficients
-        let init_suspended_floor = || -> anyhow::Result<(f64, f64)> {
-            // H.6.1.
-            // thermal transmittance of suspended part of floor, in W/(m2·K)
-            let u_f = thermal_transmittance_sus_floor();
+                // H.6.3. External temperature variation
+                // 0.37 is constant in the standard but not labelled
+                let h_pe = u_f
+                    * ((0.37
+                        * perimeter
+                        * thermal_conductivity
+                        * (periodic_penetration_depth / d_g + 1.).ln()
+                        + u_x * total_area)
+                        / (thermal_conductivity / (periodic_penetration_depth + u_x + u_f)));
+                Ok((h_pi, h_pe))
+            };
 
-            // equivalent thermal transmittance, in W/(m2·K)
-            let u_x = equiv_therma_trans()?;
+            // Additional equivalent thickness
+            let add_eq_thickness = |d_n: f64, r_n: f64| -> f64 {
+                // m2·K/W, thermal resistance
+                let r_add_eq = r_n - d_n / thermal_conductivity;
 
-            // equivalent thickness, in m
-            let d_g = total_equiv_thickness_sus();
+                // m, thickness_edge-insulation or foundation
+                r_add_eq * thermal_conductivity
+            };
 
-            // H.6.2. Internal temperature variation
-            let h_pi = total_area
-                * (1. / u_f + 1. / (thermal_conductivity / periodic_penetration_depth + u_x));
+            // horizontal edge insulation
+            let h_pe_h = |d_h: f64, r_n: f64| -> f64 {
+                // 0.37 is constant in the standard but not labelled
+                let eq_thick_additional = add_eq_thickness(d_h, r_n);
 
-            // H.6.3. External temperature variation
-            // 0.37 is constant in the standard but not labelled
-            let h_pe = u_f
-                * ((0.37
+                0.37 * perimeter
+                    * thermal_conductivity
+                    * ((1. - (-d_h / periodic_penetration_depth).exp())
+                        * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
+                        + (-d_h / periodic_penetration_depth).exp()
+                            * (periodic_penetration_depth / d_eq + 1.).ln())
+            };
+
+            // vertical edge insulation
+            let h_pe_v = |d_v: f64, r_n: f64| -> f64 {
+                // 0.37 is constant in the standard but not labelled
+                let eq_thick_additional = add_eq_thickness(d_v, r_n);
+                0.37 * perimeter
+                    * thermal_conductivity
+                    * ((1. - (-2. * d_v / periodic_penetration_depth).exp())
+                        * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
+                        + (-2. * d_v / periodic_penetration_depth).exp()
+                            * (periodic_penetration_depth / d_eq + 1.).ln())
+            };
+
+            let edge_type = || -> f64 {
+                edge_insulation
+                    .iter()
+                    .map(|edge| match edge {
+                        EdgeInsulation::Horizontal {
+                            width,
+                            edge_thermal_resistance,
+                        } => h_pe_h(*width, *edge_thermal_resistance),
+                        EdgeInsulation::Vertical {
+                            depth,
+                            edge_thermal_resistance,
+                        } => h_pe_v(*depth, *edge_thermal_resistance),
+                    })
+                    .min_by(|a, b| a.total_cmp(b))
+                    .expect("Edge insulation should not be empty")
+            };
+
+            let internal_temp_variation = || -> f64 {
+                // H.4.1., H.5.1. Internal temperature variation
+                total_area
+                    * (thermal_conductivity / d_eq)
+                    * (2. / ((1. + periodic_penetration_depth / d_eq).powi(2) + 1.0)).powf(0.5)
+            };
+
+            // Slab-on-ground floor uninsulated or with all-over insulated
+            let init_slab_on_ground_floor_uninsulated_or_all_insulation = || -> (f64, f64) {
+                // H.4.1. Internal temperature variation
+                let h_pi = internal_temp_variation();
+
+                // H.4.2. External temperature variation
+                // 0.37 is constant in the standard but not labelled
+                let h_pe = 0.37
                     * perimeter
                     * thermal_conductivity
-                    * (periodic_penetration_depth / d_g + 1.).ln()
-                    + u_x * total_area)
-                    / (thermal_conductivity / (periodic_penetration_depth + u_x + u_f)));
-            Ok((h_pi, h_pe))
+                    * (periodic_penetration_depth / d_eq + 1.).ln();
+
+                (h_pi, h_pe)
+            };
+
+            // Slab-on-ground-with-edge-insulation
+            let init_slab_on_ground_floor_edge_insulated = || -> (f64, f64) {
+                // H.5.1. Internal temperature variation
+                let h_pi = internal_temp_variation();
+
+                // edge insulation (vertically or horizontally)
+                let h_pe = edge_type();
+
+                (h_pi, h_pe)
+            };
+
+            // Return the periodic heat transfer coefficient for the building element
+            //              h_pi     -- Internal periodic heat transfer coefficient, in W / K
+            //                         BS EN ISO 13370:2017 Annex H
+            //              h_pe     -- external periodic heat transfer coefficient, in W / K
+            //                          BS EN ISO 13370:2017 Annex H
+            let init_periodic_heat_transfer = || -> anyhow::Result<(f64, f64)> {
+                Ok(match floor_type {
+                    FloorType::SlabNoEdgeInsulation => {
+                        init_slab_on_ground_floor_uninsulated_or_all_insulation()
+                    }
+                    FloorType::SlabEdgeInsulation => init_slab_on_ground_floor_edge_insulated(),
+                    FloorType::SuspendedFloor => init_suspended_floor()?,
+                    FloorType::HeatedBasement => init_heated_basement(),
+                    FloorType::UnheatedBasement => init_unheated_basement(),
+                })
+            };
+
+            init_periodic_heat_transfer()?
         };
 
-        // Additional equivalent thickness
-        let add_eq_thickness = |d_n: f64, r_n: f64| -> f64 {
-            // m2·K/W, thermal resistance
-            let r_add_eq = r_n - d_n / thermal_conductivity;
+        self.set_total_area(total_area);
+        self.set_perimeter(perimeter);
+        self.set_u_value(u_value);
+        self.set_psi_wall_floor_junc(psi_wall_floor_junc);
+        self.set_h_upper(h_upper);
+        self.set_z_b(z_b);
+        self.set_u_w(u_w);
+        self.set_u_f_s(u_f_s);
+        self.set_area_per_perimeter_vent(area_per_perimeter_vent);
+        self.set_r_f_ins(r_f_ins);
+        self.set_shield_fact_location(shield_fact_location);
 
-            // m, thickness_edge-insulation or foundation
-            r_add_eq * thermal_conductivity
-        };
+        // Set external surface heat transfer coeffs as per BS EN ISO 52016-1:2017 eqn 49
+        // Must be set before initialisation of base class, as these are referenced there
+        // BS EN ISO 52016-1:2017 Table 14 validity interval h_ce 0 to 50
+        self.set_h_ce(1.0 / r_vi); // in W/(m2.K)
+        self.set_d_eq(d_eq);
+        self.set_h_pi(h_pi);
+        self.set_h_pe(h_pe);
 
-        // horizontal edge insulation
-        let h_pe_h = |d_h: f64, r_n: f64| -> f64 {
-            // 0.37 is constant in the standard but not labelled
-            let eq_thick_additional = add_eq_thickness(d_h, r_n);
-
-            0.37 * perimeter
-                * thermal_conductivity
-                * ((1. - (-d_h / periodic_penetration_depth).exp())
-                    * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
-                    + (-d_h / periodic_penetration_depth).exp()
-                        * (periodic_penetration_depth / d_eq + 1.).ln())
-        };
-
-        // vertical edge insulation
-        let h_pe_v = |d_v: f64, r_n: f64| -> f64 {
-            // 0.37 is constant in the standard but not labelled
-            let eq_thick_additional = add_eq_thickness(d_v, r_n);
-            0.37 * perimeter
-                * thermal_conductivity
-                * ((1. - (-2. * d_v / periodic_penetration_depth).exp())
-                    * (periodic_penetration_depth / (d_eq + eq_thick_additional) + 1.).ln()
-                    + (-2. * d_v / periodic_penetration_depth).exp()
-                        * (periodic_penetration_depth / d_eq + 1.).ln())
-        };
-
-        let edge_type = || -> f64 {
-            // we need to know that we have a non-empty list of edge insulation here
-
-            todo!()
-        };
-
-        //         def edge_type():
-        //             """ edge insulation vertically or horizontally """
-        //             # Initialise edge width and depth
-        //             h_pe_list = []
-        //             for edge in edge_insulation:
-        //                 if edge["type"] == "horizontal":
-        //                     h_pe_list.append(h_pe_h(edge["width"], edge["edge_thermal_resistance"]))
-        //                 elif edge["type"] == "vertical":
-        //                     h_pe_list.append(h_pe_v(edge["depth"], edge["edge_thermal_resistance"]))
-        //                 else:
-        //                     sys.exit("Type edge_insulation (" + str(edge_insulation) + ") is not valid")
-        //             h_pe = min(h_pe_list)
-        //             return h_pe
+        Ok(())
     }
 
+    // setters to be implemented (when there is access to struct fields et al)
     fn set_temp_int_annual(&mut self, temp_int_annual: f64);
+    fn temp_int_annual(&self) -> f64;
 
     fn wind_speed(&self) -> anyhow::Result<f64> {
         self.external_conditions().wind_speed_annual().ok_or_else(|| anyhow!("The external conditions provided do not contain data for an entire year, therefore an annual wind speed cannot be calculated."))
+    }
+
+    fn set_total_area(&mut self, total_area: f64);
+    fn total_area(&self) -> f64;
+    fn set_perimeter(&mut self, perimeter: f64);
+    fn perimeter(&self) -> f64;
+    fn set_u_value(&mut self, u_value: f64);
+    fn set_psi_wall_floor_junc(&mut self, psi_wall_floor_junc: f64);
+    fn psi_wall_floor_junc(&self) -> f64;
+    fn set_h_upper(&mut self, h_upper: f64);
+    fn set_z_b(&mut self, z_b: f64);
+    fn set_u_w(&mut self, u_w: f64);
+    fn set_u_f_s(&mut self, u_f_s: f64);
+    fn set_area_per_perimeter_vent(&mut self, area_per_perimeter_vent: f64);
+    fn set_r_f_ins(&mut self, r_f_ins: f64);
+    fn set_shield_fact_location(&mut self, shield_fact_location: WindShieldLocation);
+    fn set_h_ce(&mut self, h_ce: f64);
+    fn set_d_eq(&mut self, d_eq: f64);
+    fn set_h_pi(&mut self, h_pi: f64);
+    fn h_pi(&self) -> f64;
+    fn set_h_pe(&mut self, h_pe: f64);
+    fn h_pe(&self) -> f64;
+
+    fn u_value(&self) -> f64;
+
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
+    fn h_ce(&self) -> f64;
+
+    /// Return external radiative heat transfer coefficient, in W / (m2.K)
+    fn h_re(&self) -> f64 {
+        0.
+    }
+
+    /// Return the temperature on the other side of the building element
+    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+        let temp_ext_annual = self.external_conditions().air_temp_annual().expect("The external conditions provided do not contain data for an entire year, therefore an annual temperature cannot be calculated.");
+        let temp_ext_month = self
+            .external_conditions()
+            .air_temp_monthly(simtime.current_month_start_end_hours());
+
+        let current_month = simtime
+            .current_month()
+            .expect("A timestep should be able to derive its current month here.")
+            as usize;
+        let temp_int_month = TEMP_INT_MONTHLY_FOR_GROUND[current_month];
+
+        // BS EN ISO 13370:2017 Eqn C.4
+        let heat_flow_month =
+            self.u_value() * self.total_area() * (self.temp_int_annual() - temp_ext_annual)
+                + self.perimeter() * self.psi_wall_floor_junc() * (temp_int_month - temp_ext_month)
+                - self.h_pi() * (self.temp_int_annual() - temp_int_month)
+                + self.h_pe() * (temp_ext_annual - temp_ext_month);
+
+        // BS EN ISO 13370:2017 Eqn F.2
+        temp_int_month
+            - (heat_flow_month
+                - (self.perimeter()
+                    * self.psi_wall_floor_junc()
+                    * (self.temp_int_annual() - temp_ext_annual)))
+                / (self.total_area() * self.u_value())
+    }
+}
+
+pub(crate) trait HeatTransferOtherSideConditionedSpace: HeatTransferOtherSide {
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
+    fn h_ce(&self) -> f64 {
+        // Element is adjacent to another building / thermally conditioned zone
+        // therefore according to BS EN ISO 52016-1:2017, section 6.5.6.3.6,
+        // external heat transfer coefficients are zero
+        0.0
+    }
+
+    /// Return external radiative heat transfer coefficient, in W / (m2.K)
+    fn h_re(&self) -> f64 {
+        // Element is adjacent to another building / thermally conditioned zone
+        // therefore according to BS EN ISO 52016-1:2017, section 6.5.6.3.6,
+        // external heat transfer coefficients are zero
+        0.0
+    }
+}
+
+pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide {
+    fn init(&mut self, r_u: f64) {
+        self.set_r_u(r_u);
+        self.init_super(None);
+    }
+
+    fn set_r_u(&mut self, r_u: f64);
+    fn r_u(&self) -> f64;
+
+    /// Return external convective heat transfer coefficient, in W / (m2.K)
+    fn h_ce(&self) -> f64 {
+        // Add an additional thermal resistance to the outside of the wall and
+        // incorporate this in the values for the external surface heat transfer
+        // coefficient.
+        // As this is an adjusted figure in this class, and the split between
+        // h_ce and h_re does not affect the calculation results, assign entire
+        // effective surface heat transfer to h_ce and set h_re to zero.
+        let h_ce = self.h_ce_super();
+        let h_re = self.h_re_super();
+        let h_se = h_ce + h_re;
+        let r_se = 1.0 / h_se;
+        let r_se_effective = r_se + self.r_u();
+        1.0 / r_se_effective
+    }
+
+    /// Return external radiative heat transfer coefficient, in W / (m2.K)
+    fn h_re(&self) -> f64 {
+        // As this is an adjusted figure in this class, and the split between
+        // h_ce and h_re does not affect the calculation results, assign entire
+        // effective surface heat transfer to h_ce and set h_re to zero.
+        0.0
+    }
+}
+
+pub(crate) trait HeatTransferOtherSideOutside: HeatTransferOtherSide {
+    fn init_heat_transfer_other_side_outside(&mut self, pitch: f64) {
+        let f_sky = sky_view_factor(&pitch);
+
+        self.init_super(Some(f_sky));
+    }
+}
+
+pub(crate) trait SolarRadiationInteraction {
+    fn init_solar_radiation_interaction(
+        &mut self,
+        pitch: f64,
+        orientation: f64,
+        shading: Option<Vec<WindowShadingObject>>,
+        base_height: f64,
+        projected_height: f64,
+        width: f64,
+        a_sol: f64,
+    ) {
+        self.set_external_pitch(pitch);
+        self.set_orientation(orientation);
+        self.set_shading(shading);
+        self.set_base_height(base_height);
+        self.set_projected_height(projected_height);
+        self.set_width(width);
+        self.set_a_sol(a_sol);
+    }
+
+    fn set_external_pitch(&mut self, pitch: f64);
+    fn external_pitch(&self) -> f64;
+    fn set_orientation(&mut self, orientation: f64);
+    fn orientation(&self) -> f64;
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>);
+    fn shading(&self) -> &[WindowShadingObject];
+    fn set_base_height(&mut self, base_height: f64);
+    fn base_height(&self) -> f64;
+    fn set_projected_height(&mut self, projected_height: f64);
+    fn projected_height(&self) -> f64;
+    fn set_width(&mut self, width: f64);
+    fn width(&self) -> f64;
+    fn set_a_sol(&mut self, a_sol: f64);
+
+    fn i_sol_dir_dif(&self) -> (f64, f64) {
+        // Return default of zero for i_sol_dir and i_sol_dif
+        (0.0, 0.0)
+    }
+
+    fn solar_gains(&self) -> f64 {
+        // Return default of zero for solar gains
+        0.
+    }
+
+    fn shading_factors_direct_diffuse(&self) -> (f64, f64) {
+        // Return default of one for shading factor (no shading)
+        (1.0, 1.0)
+    }
+}
+
+pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
+    fn init_solar_radiation_interaction_absorbed(
+        &mut self,
+        pitch: f64,
+        orientation: f64,
+        shading: Option<Vec<WindowShadingObject>>,
+        base_height: f64,
+        projected_height: f64,
+        width: f64,
+        a_sol: f64,
+    ) {
+        self.init_solar_radiation_interaction(
+            pitch,
+            orientation,
+            shading,
+            base_height,
+            projected_height,
+            width,
+            a_sol,
+        );
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions;
+
+    /// Return calculated i_sol_dir and i_sol_dif using pitch and orientation of element
+    fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+        let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
+            .external_conditions()
+            .calculated_direct_diffuse_total_irradiance(
+                self.external_pitch(),
+                self.orientation(),
+                false,
+                &simtime,
+            );
+        (i_sol_dir, i_sol_dif)
+    }
+
+    fn shading_factors_direct_diffuse(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        self.external_conditions()
+            .shading_reduction_factor_direct_diffuse(
+                self.base_height(),
+                self.projected_height(),
+                self.width(),
+                self.external_pitch(),
+                self.orientation(),
+                &[],
+                simtime,
+            )
+    }
+}
+
+pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction {
+    // there is an init method in the Python for this that adds a simtime into the object there,
+    // but as we do not inject simulation time references generally in the Rust, we can just inherit
+    // the init method in SolarRadiationInteraction
+
+    fn unconverted_g_value(&self) -> f64;
+
+    /// return g_value corrected for angle of solar radiation
+    fn convert_g_value(&self) -> f64 {
+        // TODO (from Python) for windows with scattering glazing or solar shading provisions
+        //      there is a different, more complex method for conversion that depends on
+        //      timestep (via solar altitude).
+        //      suggest this is implemented at the same time as window shading (devices
+        //      rather than fixed features) as will also need to link to shading schedule.
+        //      see ISO 52016 App E. Page 177
+        //      How do we know whether a window has "scattering glazing"?
+        //
+        //      # g_value = agl * g_alt + (1 - agl) * g_dif
+
+        let fw = 0.90;
+        // default from ISO 52016 App B Table B.22
+        fw * self.unconverted_g_value()
+    }
+
+    /// Return calculated solar gains using pitch and orientation of element
+    fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+        let g_value = self.convert_g_value();
+        let surf_irrad = self.external_conditions().surface_irradiance(
+            self.base_height(),
+            self.projected_height(),
+            self.width(),
+            self.pitch(),
+            self.orientation(),
+            self.shading(),
+            simtime,
+        )?;
+
+        Ok(g_value * surf_irrad * self.area() * (1. - self.frame_area_fraction()))
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions;
+    fn pitch(&self) -> f64;
+    fn area(&self) -> f64;
+    fn frame_area_fraction(&self) -> f64;
+
+    fn shading_factors_direct_diffuse(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        self.external_conditions()
+            .shading_reduction_factor_direct_diffuse(
+                self.base_height(),
+                self.projected_height(),
+                self.width(),
+                self.pitch(),
+                self.orientation(),
+                self.shading(),
+                simtime,
+            )
+    }
+}
+
+pub(crate) trait SolarRadiationInteractionNotExposed: SolarRadiationInteraction {}
+
+/// A type to represent opaque building elements (walls, roofs, etc.)
+/// TODO make this into canonical BuildingElementOpaque
+pub(crate) struct NewBuildingElementOpaque {
+    area: f64,
+    external_conditions: Arc<ExternalConditions>,
+    shading: Option<Vec<WindowShadingObject>>,
+    r_c: f64,
+    internal_pitch: f64,
+    external_pitch: f64,
+    a_sol: f64,
+    base_height: f64,
+    projected_height: f64,
+    width: f64,
+    orientation: f64,
+    k_m: f64,
+    k_pli: [f64; 5],
+    h_pli: [f64; 4],
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+}
+
+impl NewBuildingElementOpaque {
+    pub(crate) fn new(
+        area: f64,
+        is_unheated_pitched_roof: bool,
+        pitch: f64,
+        a_sol: f64,
+        r_c: f64,
+        k_m: f64,
+        mass_distribution_class: MassDistributionClass,
+        orientation: f64,
+        base_height: f64,
+        height: f64,
+        width: f64,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        let mut new_opaque: Self = Self {
+            area,
+            external_conditions,
+            shading: None,
+            r_c: Default::default(),
+            internal_pitch: if is_unheated_pitched_roof { 0. } else { pitch },
+            external_pitch: pitch,
+            a_sol,
+            base_height,
+            projected_height: Default::default(),
+            width,
+            orientation,
+            k_m: Default::default(),
+            k_pli: Default::default(),
+            h_pli: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+        };
+
+        new_opaque.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
+        new_opaque.init_heat_transfer_other_side_outside(pitch);
+        // shading is None because the model ignores nearby shading on opaque elements
+        new_opaque.init_solar_radiation_interaction_absorbed(
+            pitch,
+            orientation,
+            None,
+            base_height,
+            projected_height(pitch, height),
+            width,
+            a_sol,
+        );
+
+        new_opaque
+    }
+}
+
+impl HeatTransferInternal for NewBuildingElementOpaque {
+    fn pitch(&self) -> f64 {
+        self.external_pitch()
+    }
+}
+impl HeatTransferInternalCommon for NewBuildingElementOpaque {}
+
+impl HeatTransferThrough for NewBuildingElementOpaque {
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, k_m: f64) {
+        self.k_m = k_m;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferThrough5Nodes for NewBuildingElementOpaque {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferOtherSide for NewBuildingElementOpaque {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideOutside for NewBuildingElementOpaque {}
+
+impl SolarRadiationInteraction for NewBuildingElementOpaque {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, orientation: f64) {
+        self.orientation = orientation;
+    }
+
+    fn orientation(&self) -> f64 {
+        self.orientation
+    }
+
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+        self.shading = shading;
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        match self.shading {
+            Some(ref shading) => &shading[..],
+            None => &[],
+        }
+    }
+
+    fn set_base_height(&mut self, base_height: f64) {
+        self.base_height = base_height;
+    }
+
+    fn base_height(&self) -> f64 {
+        self.base_height
+    }
+
+    fn set_projected_height(&mut self, projected_height: f64) {
+        self.projected_height = projected_height;
+    }
+
+    fn projected_height(&self) -> f64 {
+        self.projected_height
+    }
+
+    fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    fn width(&self) -> f64 {
+        self.width
+    }
+
+    fn set_a_sol(&mut self, a_sol: f64) {
+        self.a_sol = a_sol;
+    }
+}
+impl SolarRadiationInteractionAbsorbed for NewBuildingElementOpaque {
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
     }
 }
 
@@ -998,7 +1593,7 @@ impl BuildingElementBehaviour for BuildingElementOpaque {
                 self.width,
                 self.external_pitch,
                 self.orientation,
-                &Default::default(),
+                &[],
                 simtime,
             )
     }
@@ -2140,7 +2735,8 @@ pub fn area_for_building_element_input(element: &BuildingElementInput) -> f64 {
     }
 }
 
-pub fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
+//
+pub(crate) fn convert_uvalue_to_resistance(u_value: f64, pitch: f64) -> f64 {
     (1.0 / u_value) - r_si_for_pitch(pitch) - R_SE
 }
 
