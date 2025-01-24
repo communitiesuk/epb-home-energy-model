@@ -10,11 +10,12 @@ use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::corpus::{HeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
-use crate::simulation_time::{SimulationTime, SimulationTimeIteration};
+use crate::simulation_time::SimulationTimeIteration;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::iter;
@@ -139,7 +140,7 @@ impl StorageTank {
         let rho = contents.density();
 
         // 6.4.3.2 STEP 0 Initialization
-        let temp_n = iter::repeat(init_temp).take(nb_vol).collect_vec();
+        let temp_n = vec![init_temp; nb_vol];
 
         #[cfg(test)]
         let energy_demand_test = 0.;
@@ -160,6 +161,22 @@ impl StorageTank {
             } else {
                 None
             };
+
+        // With pre-heatd storage tanks, there could be the situation of tanks without heat sources
+        // They could just get warmed up with WWHRS water.
+        let mut heat_source_data = heat_sources.clone();
+
+        if heat_sources.len() > 0 {
+            // sort heat source data in order from the bottom of the tank based on heater position
+            heat_source_data = heat_source_data
+                .iter()
+                .sorted_by(|a, b| {
+                    OrderedFloat(a.1.heater_position).cmp(&OrderedFloat(b.1.heater_position))
+                })
+                .rev()
+                .map(|x| (x.0.to_owned(), x.1.to_owned()))
+                .collect();
+        }
 
         let heating_active: HashMap<String, bool> = heat_sources
             .iter()
@@ -185,7 +202,7 @@ impl StorageTank {
             primary_pipework_lst,
             primary_pipework_losses_kwh,
             storage_losses_kwh,
-            heat_source_data: heat_sources,
+            heat_source_data,
             heating_active,
             q_ls_n_prev_heat_source: Default::default(),
             q_sto_h_ls_rbl: Default::default(),
