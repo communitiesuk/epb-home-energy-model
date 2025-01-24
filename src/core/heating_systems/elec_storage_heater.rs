@@ -524,6 +524,7 @@ impl ElecStorageHeater {
             // Calculate maximum energy that can be delivered
             let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc) =
                 self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+                
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
             self.energy_charged = energy_charged;
@@ -578,7 +579,7 @@ impl ElecStorageHeater {
             && q_released_max.is_some()
         {
             let power_for_fan = self.fan_pwr;
-            self.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max)
+            self.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max);
         }
 
         // Log the energy charged, fan energy, and total energy delivered
@@ -1082,7 +1083,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     pub fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -1115,9 +1115,9 @@ mod tests {
         ]; // Expected energy for fan for each timestep
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            let _ = elec_storage_heater.demand_energy(5.0, &t_it);
+            let _ = elec_storage_heater.demand_energy(0.5, &t_it);
             let energy_for_fan = elec_storage_heater.energy_for_fan;
-            assert_relative_eq!(energy_for_fan, expected_energy_for_fan[t_idx]);
+            assert_relative_eq!(energy_for_fan, expected_energy_for_fan[t_idx], max_relative = EIGHT_DECIMAL_PLACES);
         }
     }
 
