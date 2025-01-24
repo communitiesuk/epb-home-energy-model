@@ -1255,12 +1255,26 @@ impl StorageTank {
         (primary_pipework_losses_kwh, primary_gains_w)
     }
 
-    fn temperature(&self, volume_needed: f64) -> f64 {
-        todo!()
+    /// Return the pre-heated water temperature for the current timestep
+    fn temperature(
+        &mut self,
+        volume_needed: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        // This is only relevant when the storage tank is working as a pre-heated source.
+        // If the volume required is 0.0 or not provided, the calculation assumes the requirement is
+        // for the actual cold feed temperature of the pre-heated tank (eventually the real cold-feed)
+        // Otherwise, it calculates the average water the tank can provided for the required volume.
+        let volume_needed = volume_needed.unwrap_or(0.);
+        if volume_needed == 0. {
+            self.cold_feed.temperature(simulation_time_iteration)
+        } else {
+            self.draw_off_hot_water(volume_needed)
+        }
     }
 
     fn output_results(&self) -> f64 {
-        todo!()
+        todo!("Do we really need to replicate this in Rust?")
     }
 }
 
