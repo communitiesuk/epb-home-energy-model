@@ -7,7 +7,7 @@ use crate::core::pipework::{Pipework, PipeworkLocation, Pipeworkesque};
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::WATTS_PER_KILOWATT;
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::corpus::{HeatSource, PositionedHeatSource, TempInternalAirFn};
+use crate::corpus::{HeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::{SimulationTime, SimulationTimeIteration};
@@ -34,6 +34,13 @@ const STORAGE_TANK_F_STO_M: f64 = 0.75;
 
 // ambient temperature - degrees
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
+
+#[derive(Clone, Debug)]
+pub(crate) struct PositionedHeatSource {
+    pub heat_source: Arc<Mutex<HeatSource>>,
+    pub heater_position: f64,
+    pub thermostat_position: f64,
+}
 
 #[derive(Clone, Debug)]
 pub enum HeatSourceWithStorageTank {

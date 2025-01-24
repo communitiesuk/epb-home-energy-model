@@ -20,7 +20,8 @@ use crate::core::heating_systems::heat_pump::{
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
-    HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, SolarThermalSystem, StorageTank,
+    HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, PositionedHeatSource,
+    SolarThermalSystem, StorageTank,
 };
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
@@ -3685,14 +3686,6 @@ impl HeatSource {
         }
     }
 }
-
-#[derive(Clone, Debug)]
-pub(crate) struct PositionedHeatSource {
-    pub heat_source: Arc<Mutex<HeatSource>>,
-    pub heater_position: f64,
-    pub thermostat_position: f64,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
