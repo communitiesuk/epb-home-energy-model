@@ -756,7 +756,6 @@ dependencies = [
  "is_close",
  "itertools 0.14.0",
  "jsonschema",
- "log",
  "nalgebra 0.33.2",
  "ode_solvers",
  "ordered-float",
