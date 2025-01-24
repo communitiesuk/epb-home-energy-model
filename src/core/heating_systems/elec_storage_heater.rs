@@ -123,7 +123,7 @@ impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
         // Track the total energy delivered (discharged energy)
         let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
 
-        let dcharged_dt = if soc > self.soc_max {
+        let dcharged_dt = if soc < self.soc_max {
             self.charge_rate
         } else if self.target_charge > 0. {
             ddelivered_dt.min(self.pwr_in)
@@ -139,11 +139,12 @@ impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
         dy[2] = ddelivered_dt;
     }
 
-    fn solout(&mut self, _x: Time, y: &EnergyOutputState, _dy: &EnergyOutputState) -> bool {
-        // TODO we want to check if we've passed this value, not that we are equal to it
-        // see Emitters for example of this
-        y[0] == self.soc_max
-    }
+    // TODO implement
+    // fn solout(&mut self, _x: Time, y: &EnergyOutputState, _dy: &EnergyOutputState) -> bool {
+    //     // TODO we want to check if we've passed this value, not that we are equal to it
+    //     // see Emitters for example of this
+    //     todo!()
+    // }
 }
 
 pub(crate) enum OutputMode {
@@ -364,7 +365,6 @@ impl ElecStorageHeater {
         let final_soc = stepper.y_out().last().unwrap()[0];
 
         // Clip the final SOC to ensure it's between 0 and 1
-        
 
         // Return the final state of charge after 16 hours
         clip(final_soc, 0., 1.)
@@ -419,7 +419,7 @@ impl ElecStorageHeater {
 
         // scipy implementation for reference:
         // https://github.com/scipy/scipy/blob/6b657ede0c3c4cffef3156229afddf02a2b1d99a/scipy/integrate/_ivp/rk.py#L293
-        let rtol = 1e-4; // rtol - set to match PythonPython - Relative tolerance used in the computation of the adaptive step size
+        let rtol = 1e-4; // rtol - set to match Python - Relative tolerance used in the computation of the adaptive step size
         let atol = 1e-6; // atol - set from scipy docs - Absolute tolerance used in the computation of the adaptive step size
         let h = 0.; // initial step size - 0
         let safety_factor = 0.9; // matches scipy implementation
@@ -459,14 +459,13 @@ impl ElecStorageHeater {
 
         // Total energy delivered during the timestep
         let total_energy_delivered = stepper.y_out().last().unwrap()[2];
-
         // Total time used in delivering energy
-        let time_used = 0.; // TODO implement with root solver
+        let time_used = stepper.x_out().last().unwrap(); // TODO implement with root solver
 
         // Return the total energy delivered, time used, and total energy charged
         Ok((
             total_energy_delivered,
-            time_used,
+            *time_used,
             total_energy_charged,
             final_soc,
         ))
@@ -478,7 +477,6 @@ impl ElecStorageHeater {
     ) -> anyhow::Result<f64> {
         // Calculates the minimum energy that must be delivered based on ESH_min_output.
         // :return: Tuple containing (minimum energy deliverable in kWh, time used in hours).
-
         let (soc, _, _, _) = self.energy_output(OutputMode::Min, simulation_time_iteration)?;
         Ok(soc * f64::from(self.n_units))
     }
@@ -507,15 +505,14 @@ impl ElecStorageHeater {
         self.energy_instant = 0.;
 
         // Initialize time_used_max and energy_charged_max to default values
-        let time_used_max = 0.;
-        let energy_charged_max = 0.;
+        let mut time_used_max = 0.;
+        let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, final_soc) =
+        let (q_released_min, _, energy_charged, _final_soc) =
             self.energy_output(OutputMode::Min, simulation_time_iteration)?;
         self.energy_charged = energy_charged;
 
-        let mut time_used_max: f64 = 0.;
         let mut q_released_max: Option<f64> = None;
 
         if q_released_min > energy_demand {
@@ -540,14 +537,14 @@ impl ElecStorageHeater {
                 // For now, we assume demand not met from storage is topped-up by
                 // the direct top-up heater (if applicable). If still some unmet,
                 // this is reported as unmet demand.
-                // if self.pwr_instant {
-
-                self.energy_instant = self.demand_unmet.min(self.pwr_instant * f64::from(timestep)); // kWh
-                let time_instant = self.energy_instant / self.pwr_instant;
-                time_used_max += time_instant;
-                time_used_max = time_used_max.min(timestep);
-
-                //}
+                if self.pwr_instant != 0. {
+                    self.energy_instant = self
+                        .demand_unmet
+                        .min(self.pwr_instant * f64::from(timestep)); // kWh
+                    let time_instant = self.energy_instant / self.pwr_instant;
+                    time_used_max += time_instant;
+                    time_used_max = time_used_max.min(timestep);
+                }
             } else {
                 // Deliver the demanded energy
                 self.energy_delivered = energy_demand;
@@ -587,7 +584,8 @@ impl ElecStorageHeater {
         // Log the energy charged, fan energy, and total energy delivered
         let amount_demanded = f64::from(self.n_units)
             * (self.energy_charged + self.energy_instant + self.energy_for_fan);
-        let _ = self.energy_supply_conn
+        let _ = self
+            .energy_supply_conn
             .demand_energy(amount_demanded, simulation_time_iteration.index)?;
 
         // Return total net energy delivered (discharged + instant heat + fan energy)
@@ -608,8 +606,6 @@ impl ElecStorageHeater {
         let logic_type = charge_control.logic_type();
 
         let temp_air: f64 = (self.zone_internal_air_func)();
-
-        
 
         match logic_type {
             crate::input::ControlLogicType::Manual => {
@@ -676,7 +672,8 @@ impl ElecStorageHeater {
                 // target_charge (from input file, or zero when control is off) applied here
                 // is treated as an upper limit for target charge
                 charge_control
-                    .target_charge(simulation_time_iteration, None).map(|tc| tc.min(target_charge_hhrsh))
+                    .target_charge(simulation_time_iteration, None)
+                    .map(|tc| tc.min(target_charge_hhrsh))
             }
         }
     }
@@ -849,7 +846,7 @@ mod tests {
         let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
         let esh_max_output = vec![(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
 
-        ElecStorageHeater::new(
+        let mut elec_storage_heater = ElecStorageHeater::new(
             3.5,
             2.5,
             10.0,
@@ -867,7 +864,11 @@ mod tests {
             esh_max_output,
             external_conditions, // TODO this is None in Python
         )
-        .unwrap()
+        .unwrap();
+
+        elec_storage_heater.state_of_charge = 0.5;
+
+        elec_storage_heater
     }
 
     #[rstest]
@@ -878,6 +879,8 @@ mod tests {
             elec_storage_heater.air_flow_type,
             ElectricStorageHeaterAirFlowType::FanAssisted
         );
+        assert_eq!(elec_storage_heater.state_of_charge, 0.5);
+
         assert_relative_eq!(
             elec_storage_heater.heat_retention_ratio,
             0.92372001,
@@ -886,7 +889,24 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
+    fn test_energy_output_min_single(
+        simulation_time_iterator: SimulationTimeIterator,
+        mut elec_storage_heater: ElecStorageHeater,
+    ) {
+        let min_energy_output = elec_storage_heater
+            .energy_output_min(&simulation_time_iterator.current_iteration())
+            .unwrap();
+        let _ =
+            elec_storage_heater.demand_energy(5.0, &simulation_time_iterator.current_iteration());
+
+        assert_relative_eq!(
+            min_energy_output,
+            0.019999999999999997,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
+
+    #[rstest]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -922,17 +942,17 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let min_energy_output = elec_storage_heater.energy_output_min(&t_it).unwrap();
-
-            // TODO is this line needed?
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
 
-            assert_relative_eq!(min_energy_output, expected_min_energy_output[t_idx]);
+            assert_relative_eq!(
+                min_energy_output,
+                expected_min_energy_output[t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
         }
-        assert!(false);
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -972,15 +992,18 @@ mod tests {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
             let (energy, _, _, _) = max_energy_output;
 
-            assert_relative_eq!(energy, expected_max_energy_output[t_idx]);
+            assert_relative_eq!(
+                energy,
+                expected_max_energy_output[t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
         }
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     fn test_electric_charge(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         // Test electric charge calculation across all timesteps.
         let expected_target_elec_charge = [
@@ -1017,7 +1040,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     pub fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -1051,7 +1073,11 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let energy_out = elec_storage_heater.demand_energy(5.0, &t_it).unwrap();
-            assert_relative_eq!(energy_out, expected_energy[t_idx]);
+            assert_relative_eq!(
+                energy_out,
+                expected_energy[t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
         }
     }
 
