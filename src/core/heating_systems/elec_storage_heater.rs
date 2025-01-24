@@ -1122,7 +1122,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     pub fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -1162,7 +1161,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     pub fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -1197,12 +1195,11 @@ mod tests {
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
             let energy_charged = elec_storage_heater.energy_charged;
-            assert_relative_eq!(energy_charged, expected_energy_charged[t_idx]);
+            assert_relative_eq!(energy_charged, expected_energy_charged[t_idx], max_relative = EIGHT_DECIMAL_PLACES);
         }
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     pub fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
         mut elec_storage_heater: ElecStorageHeater,
@@ -1237,7 +1234,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
             let energy_delivered = elec_storage_heater.energy_delivered;
-            assert_relative_eq!(energy_delivered, expected_energy_delivered[t_idx]);
+            assert_relative_eq!(energy_delivered, expected_energy_delivered[t_idx], max_relative = EIGHT_DECIMAL_PLACES);
         }
     }
 
