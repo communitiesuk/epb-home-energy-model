@@ -3,8 +3,8 @@ use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    BuildingElement as BuildingElementInput, EdgeInsulation, FloorData, FloorType,
-    MassDistributionClass, WindShieldLocation, WindowTreatment,
+    BuildingElement as BuildingElementInput, EdgeInsulation, FloorData, MassDistributionClass,
+    WindShieldLocation, WindowTreatment,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
@@ -329,7 +329,7 @@ pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
     }
 
     fn set_h_pli(&mut self, h_pli: [f64; 4]);
-    fn set_k_pli(&mut self, h_pli: [f64; 5]);
+    fn set_k_pli(&mut self, k_pli: [f64; 5]);
 
     fn init_h_pli(&self, r_f: f64, r_gr: f64) -> [f64; 4] {
         // BS EN ISO 52016:2017 states that the r_c (resistance including the
@@ -439,29 +439,19 @@ const HEAT_TRANSFER_OTHER_SIDE_GROUND_TEMP_INT_MONTHLY: [f64; 12] = [
 ];
 
 pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
-    fn init(
+    fn init_heat_transfer_other_side_ground(
         &mut self,
         r_vi: f64,
         d_we: f64,
         thermal_conductivity: f64,
         r_si: f64,
         r_f: f64,
-        floor_type: FloorType,
+        floor_data: &FloorData,
         periodic_penetration_depth: f64,
         total_area: f64,
         perimeter: f64,
         u_value: f64,
         psi_wall_floor_junc: f64,
-        h_upper: f64,
-        z_b: f64,
-        h_w: f64,
-        u_w: f64,
-        u_f_s: f64,
-        area_per_perimeter_vent: f64,
-        r_f_ins: f64,
-        shield_fact_location: WindShieldLocation,
-        edge_insulation: &[EdgeInsulation],
-        r_w_b: f64,
     ) -> anyhow::Result<()> {
         self.init_super(None);
         self.set_temp_int_annual(average_monthly_to_annual(
@@ -479,7 +469,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         // use sub-scope for calculating h_pi and h_pe so immutable references to self aren't
         // kept around for setters below.
         let (h_pi, h_pe) = {
-            let init_unheated_basement = || -> (f64, f64) {
+            let init_unheated_basement = |u_f_s: f64, u_w: f64, z_b: f64, h_w: f64| -> (f64, f64) {
                 let thermal_capacity_air = 0.33; // Wh/(m3·K)
                 let air_vol_base = total_area * (h_w + z_b);
 
@@ -488,7 +478,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 let vent_rate_base = 0.3;
 
                 // H.8.1. Internal temperature variation
-                let h_pi = (1. / (total_area * u_f_s)
+                let h_pi: f64 = (1. / (total_area * u_f_s)
                     + 1. / ((total_area + z_b * perimeter) * thermal_conductivity
                         / periodic_penetration_depth
                         + h_w * perimeter * u_w
@@ -515,15 +505,15 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             };
 
             // Equivalent thickness for the basement walls
-            let equiv_thick_base_wall = || -> f64 {
+            let equiv_thick_base_wall = |r_w_b| -> f64 {
                 // r_w_b is the thermal resistance of the walls
                 thermal_conductivity * (r_si + r_w_b + self.r_se())
             };
 
             // Heated basement periodic coefficients
-            let init_heated_basement = || -> (f64, f64) {
+            let init_heated_basement = |z_b: f64, r_w_b: f64| -> (f64, f64) {
                 // total equivalent thickness
-                let d_w_b = equiv_thick_base_wall();
+                let d_w_b = equiv_thick_base_wall(r_w_b);
 
                 // H.7.1. Internal temperature variation
                 let h_pi = total_area
@@ -555,7 +545,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             };
 
             // wind shielding factor
-            let wind_shield_fact = || -> f64 {
+            let wind_shield_fact = |shield_fact_location| -> f64 {
                 match shield_fact_location {
                     WindShieldLocation::Sheltered => 0.02,
                     WindShieldLocation::Average => 0.05,
@@ -564,33 +554,45 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             };
 
             // equivalent thermal transmittance between the underfloor space and the outside
-            let equiv_therma_trans = || -> anyhow::Result<f64> {
+            let equiv_therma_trans = |h_upper,
+                                      u_w,
+                                      shield_fact_location: WindShieldLocation,
+                                      area_per_perimeter_vent|
+             -> anyhow::Result<f64> {
                 // Characteristic dimension of floor
                 let char_dimen = charac_dimen_floor();
 
                 // 1450 is constant in the standard but not labelled
                 Ok(2. * (h_upper * u_w / char_dimen)
-                    + 1450. * (area_per_perimeter_vent * self.wind_speed()? * wind_shield_fact())
+                    + 1450.
+                        * (area_per_perimeter_vent
+                            * self.wind_speed()?
+                            * wind_shield_fact(shield_fact_location))
                         / char_dimen)
             };
 
             let total_equiv_thickness_sus =
-                || -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
+                |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
 
             // thermal transmittance of suspended part of floor
             let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
 
             // Suspended floor periodic coefficients
-            let init_suspended_floor = || -> anyhow::Result<(f64, f64)> {
+            let init_suspended_floor = |h_upper,
+                                        u_w,
+                                        area_vent,
+                                        shield_fact_location,
+                                        r_f_ins|
+             -> anyhow::Result<(f64, f64)> {
                 // H.6.1.
                 // thermal transmittance of suspended part of floor, in W/(m2·K)
                 let u_f = thermal_transmittance_sus_floor();
 
                 // equivalent thermal transmittance, in W/(m2·K)
-                let u_x = equiv_therma_trans()?;
+                let u_x = equiv_therma_trans(h_upper, u_w, shield_fact_location, area_vent)?;
 
                 // equivalent thickness, in m
-                let d_g = total_equiv_thickness_sus();
+                let d_g = total_equiv_thickness_sus(r_f_ins);
 
                 // H.6.2. Internal temperature variation
                 let h_pi = total_area
@@ -642,7 +644,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                             * (periodic_penetration_depth / d_eq + 1.).ln())
             };
 
-            let edge_type = || -> f64 {
+            let edge_type = |edge_insulation: &[EdgeInsulation]| -> f64 {
                 edge_insulation
                     .iter()
                     .map(|edge| match edge {
@@ -682,12 +684,12 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             };
 
             // Slab-on-ground-with-edge-insulation
-            let init_slab_on_ground_floor_edge_insulated = || -> (f64, f64) {
+            let init_slab_on_ground_floor_edge_insulated = |edge_insulation| -> (f64, f64) {
                 // H.5.1. Internal temperature variation
                 let h_pi = internal_temp_variation();
 
                 // edge insulation (vertically or horizontally)
-                let h_pe = edge_type();
+                let h_pe = edge_type(edge_insulation);
 
                 (h_pi, h_pe)
             };
@@ -698,14 +700,44 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             //              h_pe     -- external periodic heat transfer coefficient, in W / K
             //                          BS EN ISO 13370:2017 Annex H
             let init_periodic_heat_transfer = || -> anyhow::Result<(f64, f64)> {
-                Ok(match floor_type {
-                    FloorType::SlabNoEdgeInsulation => {
+                Ok(match floor_data {
+                    FloorData::SlabNoEdgeInsulation => {
                         init_slab_on_ground_floor_uninsulated_or_all_insulation()
                     }
-                    FloorType::SlabEdgeInsulation => init_slab_on_ground_floor_edge_insulated(),
-                    FloorType::SuspendedFloor => init_suspended_floor()?,
-                    FloorType::HeatedBasement => init_heated_basement(),
-                    FloorType::UnheatedBasement => init_unheated_basement(),
+                    FloorData::SlabEdgeInsulation { edge_insulation } => {
+                        init_slab_on_ground_floor_edge_insulated(edge_insulation)
+                    }
+                    FloorData::SuspendedFloor {
+                        height_upper_surface,
+                        thermal_transmission_walls,
+                        area_per_perimeter_vent,
+                        shield_fact_location,
+                        thermal_resistance_of_insulation,
+                    } => init_suspended_floor(
+                        *height_upper_surface,
+                        *thermal_transmission_walls,
+                        *area_per_perimeter_vent,
+                        *shield_fact_location,
+                        *thermal_resistance_of_insulation,
+                    )?,
+                    FloorData::HeatedBasement {
+                        depth_basement_floor,
+                        thermal_resistance_of_basement_walls,
+                    } => init_heated_basement(
+                        *depth_basement_floor,
+                        *thermal_resistance_of_basement_walls,
+                    ),
+                    FloorData::UnheatedBasement {
+                        thermal_transmittance_of_floor_above_basement,
+                        thermal_transmission_walls,
+                        depth_basement_floor,
+                        height_basement_walls,
+                    } => init_unheated_basement(
+                        *thermal_transmittance_of_floor_above_basement,
+                        *thermal_transmission_walls,
+                        *depth_basement_floor,
+                        *height_basement_walls,
+                    ),
                 })
             };
 
@@ -716,13 +748,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         self.set_perimeter(perimeter);
         self.set_u_value(u_value);
         self.set_psi_wall_floor_junc(psi_wall_floor_junc);
-        self.set_h_upper(h_upper);
-        self.set_z_b(z_b);
-        self.set_u_w(u_w);
-        self.set_u_f_s(u_f_s);
-        self.set_area_per_perimeter_vent(area_per_perimeter_vent);
-        self.set_r_f_ins(r_f_ins);
-        self.set_shield_fact_location(shield_fact_location);
+        self.set_floor_data(floor_data.clone());
 
         // Set external surface heat transfer coeffs as per BS EN ISO 52016-1:2017 eqn 49
         // Must be set before initialisation of base class, as these are referenced there
@@ -750,13 +776,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
     fn set_u_value(&mut self, u_value: f64);
     fn set_psi_wall_floor_junc(&mut self, psi_wall_floor_junc: f64);
     fn psi_wall_floor_junc(&self) -> f64;
-    fn set_h_upper(&mut self, h_upper: f64);
-    fn set_z_b(&mut self, z_b: f64);
-    fn set_u_w(&mut self, u_w: f64);
-    fn set_u_f_s(&mut self, u_f_s: f64);
-    fn set_area_per_perimeter_vent(&mut self, area_per_perimeter_vent: f64);
-    fn set_r_f_ins(&mut self, r_f_ins: f64);
-    fn set_shield_fact_location(&mut self, shield_fact_location: WindShieldLocation);
+    fn set_floor_data(&mut self, floor_data: FloorData);
     fn set_h_ce(&mut self, h_ce: f64);
     fn set_d_eq(&mut self, d_eq: f64);
     fn set_h_pi(&mut self, h_pi: f64);
@@ -1607,6 +1627,323 @@ impl SolarRadiationInteraction for NewBuildingElementAdjacentZTUSimple {
 }
 
 impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTUSimple {}
+
+/// A type to represent ground building elements
+pub(crate) struct NewBuildingElementGround {
+    area: f64,
+    total_area: f64,
+    pitch: f64,
+    external_pitch: f64,
+    u_value: f64,
+    external_conditions: Arc<ExternalConditions>,
+    perimeter: f64,
+    floor_data: FloorData,
+    r_c: f64,
+    psi_wall_floor_junc: f64,
+    temp_int_annual: f64,
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    h_pli: [f64; 4],
+    k_pli: [f64; 5],
+    k_m: f64,
+    h_pi: f64,
+    h_pe: f64,
+    h_ce: f64,
+    d_eq: f64,
+}
+
+impl NewBuildingElementGround {
+    pub(crate) fn new(
+        total_area: f64,
+        area: f64,
+        pitch: f64,
+        u_value: f64,
+        r_f: f64,
+        k_m: f64,
+        mass_distribution_class: MassDistributionClass,
+        floor_data: &FloorData,
+        d_we: f64,
+        perimeter: f64,
+        psi_wall_floor_junc: f64,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> anyhow::Result<Self> {
+        let mut new_ground = Self {
+            total_area,
+            area,
+            u_value,
+            pitch,
+            external_conditions,
+            external_pitch: Default::default(),
+            perimeter,
+            floor_data: floor_data.clone(),
+            r_c: Default::default(),
+            psi_wall_floor_junc,
+            temp_int_annual: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            k_m: Default::default(),
+            h_pi: Default::default(),
+            h_pe: Default::default(),
+            h_ce: Default::default(),
+            d_eq: Default::default(),
+        };
+
+        // # Thermal properties of ground from BS EN ISO 13370:2017 Table 7
+        // Use values for clay or silt (same as BR 443 and SAP 10)
+        let thermal_conductivity = 1.5; // in W/(m.K)
+        let heat_capacity_per_vol = 3000000.; // in J/(m3.K)
+
+        // Periodic penetration depth of ground from BS EN ISO 13370:2017 Table H.1
+        // Use values for clay or silt (same as BR 443 and SAP 10)
+        let periodic_penetration_depth = 2.2; // in m
+
+        // Calculate thermal resistance and heat capacity of fixed ground layer
+        // using BS EN ISO 13370:2017
+        let thickness_ground_layer = 0.5; // in m. Specified in BS EN ISO 52016-1:2017 section 6.5.8.2
+
+        // thermal resistance in (m2.K)/W
+        let r_gr = thickness_ground_layer / thermal_conductivity;
+        // areal heat capacity in J/(m2.K)
+        let k_gr = thickness_ground_layer * heat_capacity_per_vol;
+
+        // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
+        let r_si = 0.17; // ISO 6946 - internal surface resistance
+        let r_vi = (1.0 / u_value) - r_si - r_f - r_gr; // in m2.K/W
+
+        // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
+        debug_assert!(
+            r_vi > 0.,
+            "r_vi should be greater than zero. check u-value and r_f inputs for floors"
+        );
+
+        new_ground.init_heat_transfer_through_3_plus_2_nodes(
+            r_f,
+            r_gr,
+            mass_distribution_class,
+            k_gr,
+            k_m,
+        );
+        new_ground.init_heat_transfer_other_side_ground(
+            r_vi,
+            d_we,
+            thermal_conductivity,
+            r_si,
+            r_f,
+            floor_data,
+            periodic_penetration_depth,
+            total_area,
+            perimeter,
+            u_value,
+            psi_wall_floor_junc,
+        )?;
+        new_ground.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
+
+        Ok(new_ground)
+    }
+
+    pub(crate) fn fabric_heat_loss(&self) -> f64 {
+        self.area * self.u_value
+    }
+}
+
+impl HeatTransferInternal for NewBuildingElementGround {
+    fn pitch(&self) -> f64 {
+        self.pitch
+    }
+}
+
+impl HeatTransferInternalCommon for NewBuildingElementGround {}
+
+impl HeatTransferThrough for NewBuildingElementGround {
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, k_m: f64) {
+        self.k_m = k_m;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferThrough3Plus2Nodes for NewBuildingElementGround {
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli
+    }
+}
+
+impl HeatTransferOtherSide for NewBuildingElementGround {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideGround for NewBuildingElementGround {
+    fn set_temp_int_annual(&mut self, temp_int_annual: f64) {
+        self.temp_int_annual = temp_int_annual;
+    }
+
+    fn temp_int_annual(&self) -> f64 {
+        self.temp_int_annual
+    }
+
+    fn set_total_area(&mut self, total_area: f64) {
+        self.total_area = total_area;
+    }
+
+    fn total_area(&self) -> f64 {
+        self.total_area
+    }
+
+    fn set_perimeter(&mut self, perimeter: f64) {
+        self.perimeter = perimeter;
+    }
+
+    fn perimeter(&self) -> f64 {
+        self.perimeter
+    }
+
+    fn set_u_value(&mut self, u_value: f64) {
+        self.u_value = u_value;
+    }
+
+    fn set_psi_wall_floor_junc(&mut self, psi_wall_floor_junc: f64) {
+        self.psi_wall_floor_junc = psi_wall_floor_junc;
+    }
+
+    fn psi_wall_floor_junc(&self) -> f64 {
+        self.psi_wall_floor_junc
+    }
+
+    fn set_floor_data(&mut self, floor_data: FloorData) {
+        self.floor_data = floor_data;
+    }
+
+    fn set_h_ce(&mut self, h_ce: f64) {
+        self.h_ce = h_ce;
+    }
+
+    fn set_d_eq(&mut self, d_eq: f64) {
+        self.d_eq = d_eq;
+    }
+
+    fn set_h_pi(&mut self, h_pi: f64) {
+        self.h_pi = h_pi;
+    }
+
+    fn h_pi(&self) -> f64 {
+        self.h_pi
+    }
+
+    fn set_h_pe(&mut self, h_pe: f64) {
+        self.h_pe = h_pe;
+    }
+
+    fn h_pe(&self) -> f64 {
+        self.h_pe
+    }
+
+    fn u_value(&self) -> f64 {
+        self.u_value
+    }
+
+    fn h_ce(&self) -> f64 {
+        self.h_ce
+    }
+}
+
+impl SolarRadiationInteraction for NewBuildingElementGround {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, _orientation: f64) {
+        // do nothing
+    }
+
+    fn orientation(&self) -> f64 {
+        0.0
+    }
+
+    fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
+        // do nothing
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        &[]
+    }
+
+    fn set_base_height(&mut self, _base_height: f64) {
+        // do nothing
+    }
+
+    fn base_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_projected_height(&mut self, _projected_height: f64) {
+        // do nothing
+    }
+
+    fn projected_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_width(&mut self, _width: f64) {
+        // do nothing
+    }
+
+    fn width(&self) -> f64 {
+        0.0
+    }
+
+    fn set_a_sol(&mut self, _a_sol: f64) {
+        // do nothing
+    }
+}
+
+impl SolarRadiationInteractionNotExposed for NewBuildingElementGround {}
 
 pub trait BuildingElementBehaviour {
     fn area(&self) -> f64;
