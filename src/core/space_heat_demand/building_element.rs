@@ -3506,13 +3506,172 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
+    struct MockHeatTransferInternal(f64);
+
+    impl HeatTransferInternal for MockHeatTransferInternal {
+        fn pitch(&self) -> f64 {
+            self.0
+        }
+    }
+
     #[fixture]
-    pub fn simulation_time() -> SimulationTimeIterator {
+    fn heat_transfer_internal_a() -> MockHeatTransferInternal {
+        MockHeatTransferInternal(0.)
+    }
+
+    #[fixture]
+    fn heat_transfer_internal_b() -> MockHeatTransferInternal {
+        MockHeatTransferInternal(45.)
+    }
+
+    #[fixture]
+    fn heat_transfer_internal_c() -> MockHeatTransferInternal {
+        MockHeatTransferInternal(90.)
+    }
+
+    #[fixture]
+    fn heat_transfer_internal_d() -> MockHeatTransferInternal {
+        MockHeatTransferInternal(180.)
+    }
+
+    #[rstest]
+    fn test_heat_flow_direction_for_heat_transfer_internal(
+        heat_transfer_internal_b: impl HeatTransferInternal,
+        heat_transfer_internal_c: impl HeatTransferInternal,
+        heat_transfer_internal_d: impl HeatTransferInternal,
+    ) {
+        assert_eq!(
+            heat_transfer_internal_b.heat_flow_direction(20., 25.),
+            HeatFlowDirection::Downwards
+        );
+        assert_eq!(
+            heat_transfer_internal_c.heat_flow_direction(20., 25.),
+            HeatFlowDirection::Horizontal
+        );
+        assert_eq!(
+            heat_transfer_internal_d.heat_flow_direction(20., 25.),
+            HeatFlowDirection::Upwards
+        );
+    }
+
+    #[rstest]
+    fn test_convert_uvalue_to_resistance(heat_transfer_internal_a: impl HeatTransferInternal) {
+        assert_relative_eq!(
+            heat_transfer_internal_a.convert_uvalue_to_resistance(1., 180.),
+            0.7870483926665635,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_r_si(heat_transfer_internal_a: impl HeatTransferInternal) {
+        assert_relative_eq!(
+            heat_transfer_internal_a.r_si(),
+            0.0987166831194472,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_r_si_pitch(heat_transfer_internal_a: impl HeatTransferInternal) {
+        // r_si_horizontal
+        assert_relative_eq!(
+            heat_transfer_internal_a.r_si_with_pitch(90.0),
+            0.1310615989515072,
+            max_relative = 1e-8
+        );
+
+        // r_si_upwards
+        assert_relative_eq!(
+            heat_transfer_internal_a.r_si_with_pitch(30.0),
+            0.0987166831194472,
+            max_relative = 1e-8
+        );
+
+        // r_si_downwards
+        assert_relative_eq!(
+            heat_transfer_internal_a.r_si_with_pitch(150.0),
+            0.17152658662092624,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_pitch_class(heat_transfer_internal_a: impl HeatTransferInternal) {
+        assert_eq!(
+            heat_transfer_internal_a.pitch_class(90.0),
+            HeatFlowDirection::Horizontal
+        );
+        assert_eq!(
+            heat_transfer_internal_a.pitch_class(30.0),
+            HeatFlowDirection::Upwards
+        );
+        assert_eq!(
+            heat_transfer_internal_a.pitch_class(150.0),
+            HeatFlowDirection::Downwards
+        );
+    }
+
+    #[rstest]
+    fn test_h_ri(heat_transfer_internal_a: impl HeatTransferInternal) {
+        assert_eq!(heat_transfer_internal_a.h_ri(), 5.13);
+    }
+
+    struct MockHeatTransferOtherSide(f64);
+
+    impl MockHeatTransferOtherSide {
+        fn f_sky(&self) -> f64 {
+            self.0
+        }
+    }
+
+    impl HeatTransferOtherSide for MockHeatTransferOtherSide {
+        fn set_f_sky(&mut self, f_sky: f64) {
+            self.0 = f_sky;
+        }
+
+        fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+            unreachable!()
+        }
+
+        fn external_conditions(&self) -> &ExternalConditions {
+            unreachable!()
+        }
+    }
+
+    #[fixture]
+    fn heat_transfer_other_side_a() -> MockHeatTransferOtherSide {
+        MockHeatTransferOtherSide(0.)
+    }
+
+    #[rstest]
+    fn test_r_se(heat_transfer_other_side_a: impl HeatTransferOtherSide) {
+        assert_relative_eq!(
+            heat_transfer_other_side_a.r_se(),
+            0.041425020712510356,
+            max_relative = 1e-8
+        );
+    }
+
+    #[rstest]
+    fn test_h_ce(heat_transfer_other_side_a: impl HeatTransferOtherSide) {
+        assert_eq!(heat_transfer_other_side_a.h_ce(), 20.0);
+    }
+
+    #[rstest]
+    fn test_h_re_for_heat_transfer_other_side(
+        heat_transfer_other_side_a: impl HeatTransferOtherSide,
+    ) {
+        assert_eq!(heat_transfer_other_side_a.h_re(), 4.14);
+    }
+
+    #[fixture]
+    fn simulation_time() -> SimulationTimeIterator {
         SimulationTime::new(0.0, 4.0, 1.0).iter()
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTimeIterator) -> Arc<ExternalConditions> {
+    fn external_conditions(simulation_time: SimulationTimeIterator) -> Arc<ExternalConditions> {
         Arc::new(ExternalConditions::new(
             &simulation_time,
             vec![0.0, 5.0, 10.0, 15.0],
@@ -3536,7 +3695,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn be_i(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
+    fn be_i(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             20.,
             false,
@@ -3554,7 +3713,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn be_e(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
+    fn be_e(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             22.5,
             false,
@@ -3572,7 +3731,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn be_ie(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
+    fn be_ie(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             25.,
             false,
@@ -3590,7 +3749,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn be_d(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
+    fn be_d(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             27.5,
             true,
@@ -3608,7 +3767,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn be_m(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
+    fn be_m(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
         BuildingElementOpaque::new(
             30.,
             false,
@@ -3626,7 +3785,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn opaque_building_elements(
+    fn opaque_building_elements(
         be_i: BuildingElementOpaque,
         be_e: BuildingElementOpaque,
         be_ie: BuildingElementOpaque,
@@ -3637,7 +3796,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_no_of_nodes_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_no_of_nodes_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_eq!(be.number_of_nodes(), 5, "incorrect number of nodes");
             assert_eq!(
@@ -3649,7 +3808,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_area_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_area_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -3662,9 +3821,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_flow_direction_for_opaque(
-        opaque_building_elements: [BuildingElementOpaque; 5],
-    ) {
+    fn test_heat_flow_direction_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [
@@ -3684,7 +3841,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_r_si_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_r_si_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -3693,7 +3850,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ci_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ci_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
@@ -3708,28 +3865,28 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ri_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ri_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_ri(), 5.13,);
         }
     }
 
     #[rstest]
-    pub fn test_h_ce_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ce_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_ce(), 20.0,);
         }
     }
 
     #[rstest]
-    pub fn test_h_re(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_re(opaque_building_elements: [BuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_re(), 4.14,);
         }
     }
 
     #[rstest]
-    pub fn test_a_sol_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_a_sol_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         // Define increment between test cases
         let a_sol_inc = 0.01;
 
@@ -3739,7 +3896,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_therm_rad_to_sky_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_therm_rad_to_sky_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let results = [0.0, 6.6691785923823135, 22.77, 38.87082140761768, 45.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -3748,7 +3905,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_pli_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_pli_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let results = [
             [24.0, 12.0, 12.0, 24.0],
             [12.0, 6.0, 6.0, 12.0],
@@ -3778,7 +3935,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_temp_ext_for_opaque(
+    fn test_temp_ext_for_opaque(
         opaque_building_elements: [BuildingElementOpaque; 5],
         simulation_time: SimulationTimeIterator,
     ) {
@@ -3795,7 +3952,7 @@ mod tests {
 
     #[ignore = "the assertion values here cause failures - upstream fix has been committed to"]
     #[rstest]
-    pub fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let results = [43.20, 35.15, 27.10, 27.15, 55.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -3804,7 +3961,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_capacity_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_heat_capacity_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         let results = [380., 405., 425., 440., 450.];
         for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
@@ -3816,7 +3973,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn adjacent_ztc_building_elements(
+    fn adjacent_ztc_building_elements(
         external_conditions: Arc<ExternalConditions>,
     ) -> [BuildingElementAdjacentZTC; 5] {
         let be_i = BuildingElementAdjacentZTC::new(
@@ -3863,7 +4020,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_no_of_nodes_for_adjacent_ztc(
+    fn test_no_of_nodes_for_adjacent_ztc(
         adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
@@ -3877,9 +4034,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_area_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
-    ) {
+    fn test_area_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
 
@@ -3889,7 +4044,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_flow_direction_for_adjacent_ztc(
+    fn test_heat_flow_direction_for_adjacent_ztc(
         adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
     ) {
         let temp_int_air = 20.0;
@@ -3912,9 +4067,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_r_si_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
-    ) {
+    fn test_r_si_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
@@ -3923,9 +4076,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ci_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
-    ) {
+    fn test_h_ci_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
