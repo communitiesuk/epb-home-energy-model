@@ -1740,7 +1740,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::FuelType;
+    use crate::input::{FuelType, WaterPipeContentsType};
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -2262,6 +2262,33 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[ignore = "TODO as part of 0.32 migration (WIP)"]
+    pub fn test_temp_surrounding_primary_pipework(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        // External Pipe
+        let pipework = Pipework::new(
+            PipeworkLocation::External,
+            0.025,
+            0.027,
+            1.0,
+            0.035,
+            0.038,
+            false,
+            WaterPipeContentsType::Water,
+        )
+        .unwrap();
+        for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
+            assert_eq!(
+                storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
+                [0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0][t_idx]
+            )
+        }
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
@@ -2560,7 +2587,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO"]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     pub fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
         storage_tank_with_solar_thermal: (
