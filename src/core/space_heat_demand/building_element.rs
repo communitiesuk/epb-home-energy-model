@@ -823,7 +823,7 @@ pub(crate) trait HeatTransferOtherSideConditionedSpace: HeatTransferOtherSide {
 }
 
 pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide {
-    fn init(&mut self, r_u: f64) {
+    fn init_heat_transfer_other_side_unconditioned_space(&mut self, r_u: f64) {
         self.set_r_u(r_u);
         self.init_super(None);
     }
@@ -868,7 +868,7 @@ pub(crate) trait SolarRadiationInteraction {
     fn init_solar_radiation_interaction(
         &mut self,
         pitch: f64,
-        orientation: f64,
+        orientation: Option<f64>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -876,7 +876,9 @@ pub(crate) trait SolarRadiationInteraction {
         a_sol: f64,
     ) {
         self.set_external_pitch(pitch);
-        self.set_orientation(orientation);
+        if let Some(orientation) = orientation {
+            self.set_orientation(orientation);
+        }
         self.set_shading(shading);
         self.set_base_height(base_height);
         self.set_projected_height(projected_height);
@@ -918,7 +920,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
     fn init_solar_radiation_interaction_absorbed(
         &mut self,
         pitch: f64,
-        orientation: f64,
+        orientation: Option<f64>,
         shading: Option<Vec<WindowShadingObject>>,
         base_height: f64,
         projected_height: f64,
@@ -1092,7 +1094,7 @@ impl NewBuildingElementOpaque {
         // shading is None because the model ignores nearby shading on opaque elements
         new_opaque.init_solar_radiation_interaction_absorbed(
             pitch,
-            orientation,
+            Some(orientation),
             None,
             base_height,
             projected_height(pitch, height),
@@ -1237,6 +1239,374 @@ impl SolarRadiationInteractionAbsorbed for NewBuildingElementOpaque {
         self.external_conditions.as_ref()
     }
 }
+
+pub(crate) struct NewBuildingElementAdjacentZTC {
+    area: f64,
+    pitch: f64,
+    external_conditions: Arc<ExternalConditions>,
+    r_c: f64,
+    h_pli: [f64; 4],
+    k_pli: [f64; 5],
+    k_m: f64,
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    external_pitch: f64,
+    orientation: f64,
+}
+
+/// A type to represent building elements adjacent to a thermally conditioned zone (ZTC)
+impl NewBuildingElementAdjacentZTC {
+    pub(crate) fn new(
+        area: f64,
+        pitch: f64,
+        r_c: f64,
+        k_m: f64,
+        mass_distribution_class: MassDistributionClass,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        let mut new_ztc = Self {
+            area,
+            pitch,
+            external_conditions,
+            r_c: Default::default(),
+            k_m: Default::default(),
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            external_pitch: Default::default(),
+            orientation: Default::default(),
+        };
+
+        new_ztc.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
+        new_ztc.init_heat_transfer_other_side(None);
+        new_ztc.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
+
+        new_ztc
+    }
+
+    pub(crate) fn fabric_heat_loss(&self) -> f64 {
+        0.0 // no heat loss to thermally conditioned zones
+    }
+}
+
+impl HeatTransferThrough for NewBuildingElementAdjacentZTC {
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, k_m: f64) {
+        self.k_m = k_m;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferThrough5Nodes for NewBuildingElementAdjacentZTC {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferInternal for NewBuildingElementAdjacentZTC {
+    fn pitch(&self) -> f64 {
+        self.pitch
+    }
+}
+
+impl HeatTransferOtherSide for NewBuildingElementAdjacentZTC {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideConditionedSpace for NewBuildingElementAdjacentZTC {}
+
+impl HeatTransferInternalCommon for NewBuildingElementAdjacentZTC {}
+
+impl SolarRadiationInteraction for NewBuildingElementAdjacentZTC {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, orientation: f64) {
+        self.orientation = orientation;
+    }
+
+    fn orientation(&self) -> f64 {
+        self.orientation
+    }
+
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+        // do nothing
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        &[]
+    }
+
+    fn set_base_height(&mut self, _base_height: f64) {
+        // do nothing
+    }
+
+    fn base_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_projected_height(&mut self, _projected_height: f64) {
+        // do nothing
+    }
+
+    fn projected_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_width(&mut self, _width: f64) {
+        // do nothing
+    }
+
+    fn width(&self) -> f64 {
+        0.0
+    }
+
+    fn set_a_sol(&mut self, _a_sol: f64) {
+        // do nothing
+    }
+}
+
+impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTC {}
+
+/// A type to represent building elements adjacent to a thermally unconditioned zone (ZTU)
+///
+/// This class uses a simple calculation by adding an additional thermal
+/// resistance to the outside of the wall and incorporating this in the values
+/// for the external surface heat transfer coefficients. This differs from both
+/// of the approaches (internal and external) in BS EN ISO 52016-1:2017 which
+/// require detailed inputs for the unconditioned zone.
+pub(crate) struct NewBuildingElementAdjacentZTUSimple {
+    area: f64,
+    pitch: f64,
+    external_pitch: f64,
+    external_conditions: Arc<ExternalConditions>,
+    r_u: f64,
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    k_m: f64,
+    h_pli: [f64; 4],
+    k_pli: [f64; 5],
+    r_c: f64,
+}
+
+impl NewBuildingElementAdjacentZTUSimple {
+    pub(crate) fn new(
+        area: f64,
+        pitch: f64,
+        r_c: f64,
+        r_u: f64,
+        k_m: f64,
+        mass_distribution_class: MassDistributionClass,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        let mut new_ztu = Self {
+            area,
+            pitch,
+            external_pitch: 0.0,
+            external_conditions,
+            r_u: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            k_m,
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            r_c,
+        };
+        new_ztu.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
+        new_ztu.init_heat_transfer_other_side_unconditioned_space(r_u);
+        new_ztu.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
+
+        new_ztu
+    }
+}
+
+impl HeatTransferInternal for NewBuildingElementAdjacentZTUSimple {
+    fn pitch(&self) -> f64 {
+        self.pitch
+    }
+}
+
+impl HeatTransferInternalCommon for NewBuildingElementAdjacentZTUSimple {}
+
+impl HeatTransferThrough for NewBuildingElementAdjacentZTUSimple {
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, k_m: f64) {
+        self.k_m = k_m;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferThrough5Nodes for NewBuildingElementAdjacentZTUSimple {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
+    fn set_h_pli(&mut self, h_pli: [f64; 4]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 5]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferOtherSide for NewBuildingElementAdjacentZTUSimple {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideUnconditionedSpace for NewBuildingElementAdjacentZTUSimple {
+    fn set_r_u(&mut self, r_u: f64) {
+        self.r_u = r_u;
+    }
+
+    fn r_u(&self) -> f64 {
+        self.r_u
+    }
+}
+
+impl SolarRadiationInteraction for NewBuildingElementAdjacentZTUSimple {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, _orientation: f64) {
+        // do nothing
+    }
+
+    fn orientation(&self) -> f64 {
+        0.0
+    }
+
+    fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
+        // do nothing
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        &[]
+    }
+
+    fn set_base_height(&mut self, _base_height: f64) {
+        // do nothing
+    }
+
+    fn base_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_projected_height(&mut self, _projected_height: f64) {
+        // do nothing
+    }
+
+    fn projected_height(&self) -> f64 {
+        0.0
+    }
+
+    fn set_width(&mut self, _width: f64) {
+        // do nothing
+    }
+
+    fn width(&self) -> f64 {
+        0.0
+    }
+
+    fn set_a_sol(&mut self, _a_sol: f64) {
+        // do nothing
+    }
+}
+
+impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTUSimple {}
 
 pub trait BuildingElementBehaviour {
     fn area(&self) -> f64;
