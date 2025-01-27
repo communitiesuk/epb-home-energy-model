@@ -580,6 +580,11 @@ impl StorageTank {
                     total_volume += move_volume;
                     volume_weighted_temperature += move_volume * self.temp_n[j];
 
+                    // Update min temperature of the tank so far.
+                    if self.temp_n[j] < temp_layer_min {
+                        temp_layer_min = self.temp_n[j]
+                    }
+
                     // Decrease the amount of volume needed for the current layer
                     needed_volume -= move_volume;
                     if needed_volume <= 0. {
@@ -600,9 +605,6 @@ impl StorageTank {
                 let temp_cold_feed = self.cold_feed.temperature(simulation_time); // In Python the temperature methods have changed to take in a needed_volume but then it is never used.
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
                 flag_rearrange_layers = temp_cold_feed > temp_layer_min;
-
-                volume_weighted_temperature +=
-                    needed_volume * self.cold_feed.temperature(simulation_time);
             }
 
             // Calculate the new temperature for the current layer
@@ -2061,7 +2063,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO"]
     pub fn test_demand_hot_water(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
