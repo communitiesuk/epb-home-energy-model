@@ -1926,10 +1926,9 @@ mod tests {
     fn storage_tank1(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-        energy_supply: Arc<RwLock<EnergySupply>>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
-    ) -> StorageTank {
+    ) -> (StorageTank, Arc<RwLock<EnergySupply>>) {
         let control_min_schedule = vec![
             Some(52.),
             None,
@@ -1950,9 +1949,16 @@ mod tests {
             Some(55.),
             Some(55.),
         ];
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_storage_tank.total_steps(),
+            )
+            .build(),
+        ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
-        let heat_source = crate::core::heating_systems::storage_tank::tests::heat_source(
+        let heat_source = heat_source(
             simulation_time_for_storage_tank,
             energy_supply_connection.clone(),
             50.0,
@@ -1982,17 +1988,16 @@ mod tests {
             *WATER,
         );
 
-        storage_tank
+        (storage_tank, energy_supply)
     }
 
     #[fixture]
     fn storage_tank2(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-        energy_supply: Arc<RwLock<EnergySupply>>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
-    ) -> StorageTank {
+    ) -> (StorageTank, Arc<RwLock<EnergySupply>>) {
         let control_min_schedule = vec![
             Some(52.),
             None,
@@ -2013,6 +2018,13 @@ mod tests {
             Some(60.),
             Some(60.),
         ];
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_storage_tank.total_steps(),
+            )
+            .build(),
+        ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap();
         let heat_source = heat_source(
@@ -2045,7 +2057,7 @@ mod tests {
             *WATER,
         );
 
-        storage_tank
+        (storage_tank, energy_supply)
     }
 
     #[rstest]
@@ -2053,12 +2065,13 @@ mod tests {
     pub fn test_demand_hot_water(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-        energy_supply: Arc<RwLock<EnergySupply>>,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions: Arc<ExternalConditions>,
-        mut storage_tank1: StorageTank,
-        mut storage_tank2: StorageTank,
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        storage_tank2: (StorageTank, Arc<RwLock<EnergySupply>>),
     ) {
+        let (mut storage_tank1, energy_supply1) = storage_tank1;
+        let (mut storage_tank2, energy_supply2) = storage_tank2;
         let usage_events = [
             vec![
                 TypedScheduleEvent {
@@ -2226,7 +2239,7 @@ mod tests {
             );
 
             assert_relative_eq!(
-                energy_supply.read().results_by_end_user()["immersion"][t_idx],
+                energy_supply1.read().results_by_end_user()["immersion"][t_idx],
                 expected_energy_supplied_1[t_idx],
                 max_relative = 1e-6
             );
@@ -2241,7 +2254,7 @@ mod tests {
             );
 
             assert_relative_eq!(
-                energy_supply.read().results_by_end_user()["immersion2"][t_idx],
+                energy_supply2.read().results_by_end_user()["immersion2"][t_idx],
                 expected_energy_supplied_2[t_idx],
                 max_relative = 1e-6
             );
