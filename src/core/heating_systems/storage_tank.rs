@@ -716,11 +716,11 @@ impl StorageTank {
             .temp_flow(heat_source.clone(), simulation_time)?
             .expect(&expect_message);
 
-        let heat_source_read = &*(heat_source.lock()); // TODO: can we refactor this? use a RwLock?
+        let heat_source = &mut *(heat_source.lock()); // TODO: can we refactor this? use a RwLock?
 
         let energy_potential =
             if let HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) =
-                heat_source_read
+                heat_source
             {
                 // we are passing the storage tank object to the SolarThermal as this needs to call back the storage tank (sic from Python)
                 solar_heat_source
@@ -730,7 +730,7 @@ impl StorageTank {
                 self.determine_heat_source_switch_on(
                     temp_s3_n,
                     heat_source_name.to_string(),
-                    heat_source.clone(),
+                    heat_source,
                     heater_layer,
                     thermostat_layer,
                     simulation_time,
@@ -738,7 +738,7 @@ impl StorageTank {
 
                 if self.heating_active[heat_source_name] {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
-                    let mut energy_potential = match heat_source_read {
+                    let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                             immersion_heater,
                         )) => immersion_heater
@@ -753,7 +753,7 @@ impl StorageTank {
                     // TODO (from Python) Consolidate checks for systems with/without primary pipework
 
                     if !matches!(
-                        heat_source_read,
+                        heat_source,
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(_))
                     ) {
                         let (primary_pipework_losses_kwh, _) = self.primary_pipework_losses(
@@ -991,10 +991,10 @@ impl StorageTank {
     /// Trigger heating to start when temperature falls below the minimum
     fn retrieve_setpnt(
         &self,
-        heat_source: Arc<Mutex<HeatSource>>,
+        heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let setpnts = heat_source.lock().temp_setpnt(simulation_time_iteration);
+        let setpnts = heat_source.temp_setpnt(simulation_time_iteration);
         setpnts
     }
 
@@ -1002,7 +1002,7 @@ impl StorageTank {
         &mut self,
         temp_s3_n: &[f64],
         heat_source_name: String,
-        heat_source: Arc<Mutex<HeatSource>>,
+        heat_source: &mut HeatSource,
         _heater_layer: usize,
         thermostat_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
@@ -1027,8 +1027,9 @@ impl StorageTank {
         thermostat_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
+        let heat_source = heat_source.heat_source;
         let (_, setpntmax) =
-            self.retrieve_setpnt(heat_source.heat_source, simulation_time_iteration)?;
+            self.retrieve_setpnt(&*(heat_source.lock()), simulation_time_iteration)?;
         let expect_message = format!(
             "Expected set point max to be set for storage tank with heat source: {heat_source_name}"
         );
@@ -1045,7 +1046,8 @@ impl StorageTank {
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<Option<f64>> {
-        let (_, setpntmax) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
+        let (_, setpntmax) =
+            self.retrieve_setpnt(&*(heat_source.lock()), simulation_time_iteration)?;
         Ok(setpntmax)
     }
 
