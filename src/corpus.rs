@@ -3381,7 +3381,6 @@ fn building_element_from_input(
             *height,
             *width,
             shading.clone(),
-            treatment.clone(),
             external_conditions,
             simulation_time_iterator,
         )),

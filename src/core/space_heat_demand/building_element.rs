@@ -4,12 +4,15 @@ use crate::external_conditions::{
 };
 use crate::input::{
     BuildingElement as BuildingElementInput, EdgeInsulation, FloorData, MassDistributionClass,
-    WindShieldLocation, WindowTreatment,
+    WindShieldLocation, WindowTreatment as WindowTreatmentInput,
+    WindowTreatmentControl as WindowTreatmentControlInput, WindowTreatmentType,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::{anyhow, bail};
+use atomic_float::AtomicF64;
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // Difference between external air temperature and sky temperature
@@ -217,6 +220,12 @@ pub(crate) trait HeatTransferInternal {
 pub(crate) trait HeatTransferInternalCommon: HeatTransferInternal {}
 
 pub(crate) trait HeatTransferThrough {
+    fn init_heat_transfer_through(&mut self, r_c: f64, k_m: f64) {
+        self.set_r_c(r_c);
+        self.set_k_m(k_m);
+    }
+
+    fn set_r_c(&mut self, r_c: f64);
     fn r_c(&self) -> f64;
     fn k_m(&self) -> f64;
     fn set_k_m(&mut self, k_m: f64);
@@ -255,6 +264,15 @@ pub(crate) trait HeatTransferThrough {
 }
 
 pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
+    fn init_heat_transfer_through_2_nodes(&mut self, r_c: f64) {
+        self.init_heat_transfer_through(r_c, 0.);
+        self.set_h_pli(self.init_h_pli(r_c));
+        self.set_k_pli(self.init_k_pli());
+    }
+
+    fn set_h_pli(&mut self, h_pli: [f64; 1]);
+    fn set_k_pli(&mut self, k_pli: [f64; 2]);
+
     fn init_k_m(&self) -> f64 {
         0.
     }
@@ -262,12 +280,12 @@ pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
     // Calculate node conductances (h_pli) and node heat capacities (k_pli)
     // according to BS EN ISO 52016-1:2017, section 6.5.7.4
 
-    fn init_h_pli(&self, r_c: f64) -> Vec<f64> {
-        vec![1.0 / r_c]
+    fn init_h_pli(&self, r_c: f64) -> [f64; 1] {
+        [1.0 / r_c]
     }
 
-    fn init_k_pli(&self) -> Vec<f64> {
-        vec![0.0, 0.0]
+    fn init_k_pli(&self) -> [f64; 2] {
+        [0.0, 0.0]
     }
 }
 
@@ -284,7 +302,6 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
         self.set_k_pli(self.init_k_pli(mass_distribution, k_m));
     }
 
-    fn set_r_c(&mut self, r_c: f64);
     fn set_h_pli(&mut self, h_pli: [f64; 4]);
     fn set_k_pli(&mut self, k_pli: [f64; 5]);
 
@@ -1134,6 +1151,10 @@ impl HeatTransferInternal for NewBuildingElementOpaque {
 impl HeatTransferInternalCommon for NewBuildingElementOpaque {}
 
 impl HeatTransferThrough for NewBuildingElementOpaque {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
     fn r_c(&self) -> f64 {
         self.r_c
     }
@@ -1169,10 +1190,6 @@ impl HeatTransferThrough for NewBuildingElementOpaque {
 }
 
 impl HeatTransferThrough5Nodes for NewBuildingElementOpaque {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
-    }
-
     fn set_h_pli(&mut self, h_pli: [f64; 4]) {
         self.h_pli = h_pli;
     }
@@ -1311,6 +1328,10 @@ impl NewBuildingElementAdjacentZTC {
 }
 
 impl HeatTransferThrough for NewBuildingElementAdjacentZTC {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
     fn r_c(&self) -> f64 {
         self.r_c
     }
@@ -1346,10 +1367,6 @@ impl HeatTransferThrough for NewBuildingElementAdjacentZTC {
 }
 
 impl HeatTransferThrough5Nodes for NewBuildingElementAdjacentZTC {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
-    }
-
     fn set_h_pli(&mut self, h_pli: [f64; 4]) {
         self.h_pli = h_pli;
     }
@@ -1500,6 +1517,10 @@ impl HeatTransferInternal for NewBuildingElementAdjacentZTUSimple {
 impl HeatTransferInternalCommon for NewBuildingElementAdjacentZTUSimple {}
 
 impl HeatTransferThrough for NewBuildingElementAdjacentZTUSimple {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
     fn r_c(&self) -> f64 {
         self.r_c
     }
@@ -1535,10 +1556,6 @@ impl HeatTransferThrough for NewBuildingElementAdjacentZTUSimple {
 }
 
 impl HeatTransferThrough5Nodes for NewBuildingElementAdjacentZTUSimple {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
-    }
-
     fn set_h_pli(&mut self, h_pli: [f64; 4]) {
         self.h_pli = h_pli;
     }
@@ -1757,6 +1774,10 @@ impl HeatTransferInternal for NewBuildingElementGround {
 impl HeatTransferInternalCommon for NewBuildingElementGround {}
 
 impl HeatTransferThrough for NewBuildingElementGround {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
     fn r_c(&self) -> f64 {
         self.r_c
     }
@@ -1945,6 +1966,443 @@ impl SolarRadiationInteraction for NewBuildingElementGround {
 
 impl SolarRadiationInteractionNotExposed for NewBuildingElementGround {}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WindowTreatmentControl {
+    Manual,
+    ManualMotorised,
+    AutoMotorised,
+    CombinedLightBlindHvac,
+}
+
+impl WindowTreatmentControl {
+    pub(crate) fn is_manual(&self) -> bool {
+        [Self::Manual, Self::ManualMotorised].contains(self)
+    }
+
+    pub(crate) fn is_automatic(&self) -> bool {
+        !self.is_manual()
+    }
+}
+
+impl From<WindowTreatmentControlInput> for WindowTreatmentControl {
+    fn from(input: WindowTreatmentControlInput) -> Self {
+        match input {
+            WindowTreatmentControlInput::Manual => WindowTreatmentControl::Manual,
+            WindowTreatmentControlInput::ManualMotorised => WindowTreatmentControl::ManualMotorised,
+            WindowTreatmentControlInput::AutoMotorised => WindowTreatmentControl::AutoMotorised,
+            WindowTreatmentControlInput::CombinedLightBlindHvac => {
+                WindowTreatmentControl::CombinedLightBlindHvac
+            }
+        }
+    }
+}
+
+pub(crate) struct WindowTreatment {
+    treatment_type: WindowTreatmentType,
+    controls: WindowTreatmentControl,
+    delta_r: f64,
+    trans_red: f64,
+    closing_irradiance: Option<f64>,
+    opening_irradiance: Option<f64>,
+    closing_irradiance_control: Option<Arc<Control>>,
+    opening_irradiance_control: Option<Arc<Control>>,
+    open_control: Option<Arc<Control>>,
+    is_open: AtomicBool,
+    waking_hour: Option<usize>,
+    opening_delay_hrs: f64,
+    time_last_adjusted: AtomicF64,
+}
+
+impl WindowTreatment {
+    pub(crate) fn from_input(
+        input: &WindowTreatmentInput,
+        controls: &Controls,
+        current_hour: u32,
+    ) -> Self {
+        Self {
+            treatment_type: input.treatment_type,
+            controls: input.controls.into(),
+            delta_r: input.delta_r,
+            trans_red: input.trans_red,
+            closing_irradiance: input.closing_irradiance,
+            opening_irradiance: input.opening_irradiance,
+            closing_irradiance_control: input
+                .closing_irradiance_control
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl)),
+            opening_irradiance_control: input
+                .opening_irradiance_control
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl)),
+            open_control: input
+                .open_control
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl)),
+            is_open: input.is_open.unwrap_or_default().into(),
+            waking_hour: input.waking_hour,
+            opening_delay_hrs: input.opening_delay_hrs,
+            time_last_adjusted: (current_hour as f64).into(),
+        }
+    }
+}
+
+/// A type to represent transparent building elements (windows etc.)
+pub(crate) struct NewBuildingElementTransparent {
+    area: f64,
+    mid_height: f64,
+    g_value: f64,
+    external_conditions: Arc<ExternalConditions>,
+    frame_area_fraction: f64,
+    pitch: f64,
+    external_pitch: f64,
+    orientation: f64,
+    base_height: f64,
+    projected_height: f64,
+    width: f64,
+    r_c: f64,
+    k_m: f64,
+    h_pli: [f64; 1],
+    k_pli: [f64; 2],
+    f_sky: f64,
+    therm_rad_to_sky: f64,
+    shading: Vec<WindowShadingObject>,
+    treatment: Vec<WindowTreatment>,
+}
+
+impl NewBuildingElementTransparent {
+    pub(crate) fn new(
+        pitch: f64,
+        r_c: f64,
+        orientation: f64,
+        g_value: f64,
+        frame_area_fraction: f64,
+        base_height: f64,
+        height: f64,
+        width: f64,
+        shading: Option<Vec<WindowShadingObject>>,
+        treatment: Vec<WindowTreatment>,
+        external_conditions: Arc<ExternalConditions>,
+    ) -> Self {
+        let mut new_trans = Self {
+            mid_height: base_height + height / 2.,
+            g_value,
+            external_conditions,
+            frame_area_fraction,
+            area: calculate_area(height, width),
+            pitch,
+            external_pitch: Default::default(),
+            orientation,
+            base_height,
+            projected_height: Default::default(),
+            width,
+            r_c,
+            k_m: Default::default(),
+            h_pli: Default::default(),
+            k_pli: Default::default(),
+            f_sky: Default::default(),
+            therm_rad_to_sky: Default::default(),
+            shading: Default::default(),
+            treatment,
+        };
+
+        new_trans.init_heat_transfer_through_2_nodes(r_c);
+        new_trans.init_heat_transfer_other_side_outside(pitch);
+        new_trans.init_solar_radiation_interaction(
+            pitch,
+            Some(orientation),
+            shading,
+            base_height,
+            projected_height(pitch, height),
+            width,
+            0.0,
+        );
+
+        new_trans
+    }
+
+    fn adjust_treatment(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        fn open_treatment(treatment: &WindowTreatment, current_time: f64) {
+            if !treatment.is_open.load(Ordering::SeqCst) {
+                treatment.is_open.store(true, Ordering::SeqCst);
+                treatment
+                    .time_last_adjusted
+                    .store(current_time, Ordering::SeqCst);
+            }
+        }
+
+        fn close_treatment(treatment: &WindowTreatment, current_time: f64) {
+            if treatment.is_open.load(Ordering::SeqCst) {
+                treatment.is_open.store(false, Ordering::SeqCst);
+                treatment
+                    .time_last_adjusted
+                    .store(current_time, Ordering::SeqCst);
+            }
+        }
+
+        // Operation and control logic for window treatments (windows, blinds, etc.)
+        // as per Annex G and Tables B.23 and B.24 in BS EN ISO 52016-1:2017.
+        // 'Manual' modes for curtains/shutters also requires occupancy driver, however
+        // only time and solar based controls for now.
+        // 'trans_red' specific to selected treatment as per BS EN 13125:2001.
+        if !self.treatment.is_empty() {
+            let surf_irrad = self.external_conditions.surface_irradiance(
+                self.base_height,
+                self.projected_height,
+                self.width,
+                self.pitch,
+                self.orientation,
+                self.shading(),
+                simtime,
+            )?;
+            let time_current = simtime.time;
+            for treatment in self.treatment.iter() {
+                let ctrl_open: Option<bool> = treatment
+                    .open_control
+                    .as_ref()
+                    .map(|ctrl| ctrl.is_on(simtime));
+                let closing_irrad_threshold: Option<f64> = treatment
+                    .closing_irradiance_control
+                    .as_ref()
+                    .and_then(|ctrl| ctrl.setpnt(&simtime));
+                let opening_irrad_threshold: Option<f64> = treatment
+                    .opening_irradiance_control
+                    .as_ref()
+                    .and_then(|ctrl| ctrl.setpnt(&simtime));
+
+                match ctrl_open {
+                    Some(true) => open_treatment(treatment, time_current),
+                    Some(false) => close_treatment(treatment, time_current),
+                    None => {
+                        if closing_irrad_threshold.is_some()
+                            && closing_irrad_threshold.is_some_and(|closing_irrad_threshold| {
+                                surf_irrad > closing_irrad_threshold
+                            })
+                        {
+                            close_treatment(treatment, time_current);
+                        } else if opening_irrad_threshold.is_some()
+                            && opening_irrad_threshold.is_some_and(|opening_irrad_threshold| {
+                                surf_irrad < opening_irrad_threshold
+                            })
+                            && (treatment.controls.is_manual()
+                                || (treatment.controls.is_automatic()
+                                    && time_current
+                                        - treatment.time_last_adjusted.load(Ordering::SeqCst)
+                                        >= treatment.opening_delay_hrs))
+                        {
+                            open_treatment(treatment, time_current);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+        let mut solar_gains = SolarRadiationInteractionTransmitted::solar_gains(self, simtime)?;
+
+        if !self.treatment.is_empty() {
+            self.adjust_treatment(simtime)?;
+            for treatment in self.treatment.iter() {
+                if !treatment.is_open.load(Ordering::SeqCst) {
+                    solar_gains -= solar_gains * treatment.trans_red;
+                }
+            }
+        }
+
+        Ok(solar_gains)
+    }
+
+    pub(crate) fn fabric_heat_loss(&self) -> f64 {
+        // Effective window U-value includes assumed use of curtains/blinds, see
+        // SAP10.2 spec, paragraph 3.2
+        // TODO (from Python) Confirm this is still the desired approach for SAP 11 (sic from Python)
+        let r_curtains_blinds = 0.04;
+        // Add standard surface resistances to resistance of construction when calculating U-value
+        let u_value = 1.0 / ((self.r_c + self.r_se() + self.r_si()) + r_curtains_blinds);
+        self.area * u_value
+    }
+
+    pub(crate) fn h_pli_by_index(
+        &self,
+        idx: usize,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        // Account for resistance of window treatment in heat transfer coefficient
+        // TODO (from Python) Check that idx refers to inside surface?
+        let mut r_c = 1.0
+            / self.h_pli.get(idx).ok_or_else(|| {
+                anyhow!("Could not get h_pli value in transparent building element for index {idx}")
+            })?;
+        for treatment in self.treatment.iter() {
+            self.adjust_treatment(simtime)?;
+            if !treatment.is_open.load(Ordering::SeqCst) {
+                r_c += treatment.delta_r;
+            }
+        }
+
+        Ok(1.0 / r_c)
+    }
+
+    pub(crate) fn r_se(&self) -> f64 {
+        HeatTransferOtherSide::r_se(self)
+    }
+
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
+    }
+}
+
+impl HeatTransferInternal for NewBuildingElementTransparent {
+    fn pitch(&self) -> f64 {
+        self.pitch
+    }
+}
+
+impl HeatTransferInternalCommon for NewBuildingElementTransparent {}
+
+impl HeatTransferThrough for NewBuildingElementTransparent {
+    fn set_r_c(&mut self, r_c: f64) {
+        self.r_c = r_c;
+    }
+
+    fn r_c(&self) -> f64 {
+        self.r_c
+    }
+
+    fn k_m(&self) -> f64 {
+        self.k_m
+    }
+
+    fn set_k_m(&mut self, k_m: f64) {
+        self.k_m = k_m;
+    }
+
+    fn k_pli(&self) -> &[f64] {
+        &self.k_pli
+    }
+
+    fn r_se(&self) -> f64 {
+        // upstream Python uses duck typing/ lookups to find which method this is, but Rust needs to be explicit
+        <dyn HeatTransferOtherSide>::r_se(self)
+    }
+
+    fn r_si(&self) -> f64 {
+        <dyn HeatTransferInternal>::r_si(self)
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        &self.h_pli
+    }
+}
+
+impl HeatTransferThrough2Nodes for NewBuildingElementTransparent {
+    fn set_h_pli(&mut self, h_pli: [f64; 1]) {
+        self.h_pli = h_pli;
+    }
+
+    fn set_k_pli(&mut self, k_pli: [f64; 2]) {
+        self.k_pli = k_pli;
+    }
+}
+
+impl HeatTransferOtherSide for NewBuildingElementTransparent {
+    fn set_f_sky(&mut self, f_sky: f64) {
+        self.f_sky = f_sky;
+    }
+
+    fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+}
+
+impl HeatTransferOtherSideOutside for NewBuildingElementTransparent {}
+
+impl SolarRadiationInteraction for NewBuildingElementTransparent {
+    fn set_external_pitch(&mut self, pitch: f64) {
+        self.external_pitch = pitch;
+    }
+
+    fn external_pitch(&self) -> f64 {
+        self.external_pitch
+    }
+
+    fn set_orientation(&mut self, orientation: f64) {
+        self.orientation = orientation;
+    }
+
+    fn orientation(&self) -> f64 {
+        self.orientation
+    }
+
+    fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+        self.shading = shading.unwrap_or_default();
+    }
+
+    fn shading(&self) -> &[WindowShadingObject] {
+        self.shading.as_slice()
+    }
+
+    fn set_base_height(&mut self, base_height: f64) {
+        self.base_height = base_height;
+    }
+
+    fn base_height(&self) -> f64 {
+        self.base_height
+    }
+
+    fn set_projected_height(&mut self, projected_height: f64) {
+        self.projected_height = projected_height;
+    }
+
+    fn projected_height(&self) -> f64 {
+        self.projected_height
+    }
+
+    fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    fn width(&self) -> f64 {
+        self.width
+    }
+
+    fn set_a_sol(&mut self, _a_sol: f64) {
+        // do nothing
+    }
+}
+
+impl SolarRadiationInteractionTransmitted for NewBuildingElementTransparent {
+    fn unconverted_g_value(&self) -> f64 {
+        self.g_value
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+
+    fn pitch(&self) -> f64 {
+        self.pitch
+    }
+
+    fn area(&self) -> f64 {
+        self.area
+    }
+
+    fn frame_area_fraction(&self) -> f64 {
+        self.frame_area_fraction
+    }
+}
+
 pub trait BuildingElementBehaviour {
     fn area(&self) -> f64;
 
@@ -2059,6 +2517,8 @@ pub trait BuildingElementBehaviour {
     fn heat_capacity(&self) -> f64;
 }
 
+use crate::core::controls::time_control::{Control, ControlBehaviour};
+use crate::corpus::Controls;
 pub(crate) use per_element;
 
 /// Implement common interface on BuildingElement wrapper to delegate down to specialised building element struct types
@@ -3258,9 +3718,8 @@ impl BuildingElementTransparent {
         height: f64,
         width: f64,
         shading: Vec<WindowShadingObject>,
-        treatment: Option<Vec<WindowTreatment>>,
         external_conditions: Arc<ExternalConditions>,
-        simulation_time: &SimulationTimeIterator,
+        _simulation_time: &SimulationTimeIterator,
     ) -> Self {
         // Solar absorption coefficient is zero because element is transparent
         let a_sol = 0.0;
@@ -4617,7 +5076,6 @@ mod tests {
             1.25,
             4.,
             vec![],
-            None, // TODO: check if this needs updating as part of migration to 0.32
             external_conditions,
             &simulation_time,
         )

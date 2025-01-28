@@ -2281,36 +2281,38 @@ pub struct WindowPart {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct WindowTreatment {
+pub(crate) struct WindowTreatment {
     #[serde(rename = "type")]
-    treatment_type: WindowTreatmentType,
-    controls: WindowTreatmentControls,
-    delta_r: f64,
-    trans_red: f64,
+    pub(crate) treatment_type: WindowTreatmentType,
+    pub(crate) controls: WindowTreatmentControl,
+    pub(crate) delta_r: f64,
+    pub(crate) trans_red: f64,
     #[serde(rename = "closing_irrad", skip_serializing_if = "Option::is_none")]
-    closing_irradiance: Option<f64>,
+    pub(crate) closing_irradiance: Option<f64>,
     #[serde(rename = "opening_irrad", skip_serializing_if = "Option::is_none")]
-    opening_irradiance: Option<f64>,
+    pub(crate) opening_irradiance: Option<f64>,
     #[serde(
         rename = "Control_closing_irrad",
         skip_serializing_if = "Option::is_none"
     )]
-    closing_irradiance_control: Option<String>,
+    pub(crate) closing_irradiance_control: Option<String>,
     #[serde(
         rename = "Control_opening_irrad",
         skip_serializing_if = "Option::is_none"
     )]
-    opening_irradiance_control: Option<String>,
+    pub(crate) opening_irradiance_control: Option<String>,
     #[serde(rename = "Control_open", skip_serializing_if = "Option::is_none")]
-    open_control: Option<String>,
+    pub(crate) open_control: Option<String>,
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_possible_string_for_boolean",
         default
     )]
-    is_open: Option<bool>,
+    pub(crate) is_open: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    waking_hour: Option<usize>,
+    pub(crate) waking_hour: Option<usize>,
+    #[serde(default)]
+    pub(crate) opening_delay_hrs: f64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -2326,7 +2328,7 @@ pub enum WindowTreatmentType {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum WindowTreatmentControls {
+pub enum WindowTreatmentControl {
     Manual,
     ManualMotorised,
     AutoMotorised,

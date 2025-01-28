@@ -1904,7 +1904,6 @@ mod tests {
             1.25,
             4.,
             vec![],
-            None,
             external_conditions.clone(),
             &simulation_time.iter(),
         ));
