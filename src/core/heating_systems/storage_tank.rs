@@ -2317,6 +2317,13 @@ mod tests {
         ));
     }
 
+    #[rstest]
+    fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_eq!(storage_tank1.get_temp_hot_water(), 55.0);
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
