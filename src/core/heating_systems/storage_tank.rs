@@ -2640,11 +2640,18 @@ mod tests {
         }
     }
 
-    //     def test_storage_tank_potential_effect(self):
-    //     energy_proposed = 0
-    //     temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0]
-    //     self.assertEqual(self.storagetank.storage_tank_potential_effect(energy_proposed,temp_s3_n),
-    // (20.0,45.0))
+    #[rstest]
+    pub fn test_storage_tank_potential_effect(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+        let energy_proposed = 0.;
+        let temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0];
+        assert_eq!(
+            storage_tank1.storage_tank_potential_effect(energy_proposed, &temp_s3_n),
+            (20.0, 45.0)
+        );
+    }
 
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
