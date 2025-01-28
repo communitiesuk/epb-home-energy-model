@@ -2692,6 +2692,44 @@ mod tests {
         )
     }
 
+    #[rstest]
+    pub fn test_thermal_losses(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        let (mut storage_tank1, _) = storage_tank1;
+        let temp_s7_n = [12.0, 18.0, 25.0, 32.0, 37.0, 45.0, 49.0, 58.0];
+        let q_x_in_n = [0., 1., 2., 3., 4., 5., 6., 7., 8.];
+        let q_h_sto_s7 = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let heater_layer = 2;
+        let q_ls_n_prev_heat_source = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let setpntmax = 55.0;
+
+        assert_eq!(
+            storage_tank1.thermal_losses(
+                &temp_s7_n,
+                &q_x_in_n,
+                q_h_sto_s7,
+                heater_layer,
+                &q_ls_n_prev_heat_source,
+                setpntmax
+            ),
+            (
+                36.0,
+                0.012203333333333333,
+                vec![
+                    12.0,
+                    17.97925925925926,
+                    24.906666666666666,
+                    31.834074074074074
+                ],
+                vec![
+                    0.0,
+                    0.0009039506172839507,
+                    0.004067777777777778,
+                    0.007231604938271605
+                ]
+            )
+        );
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
