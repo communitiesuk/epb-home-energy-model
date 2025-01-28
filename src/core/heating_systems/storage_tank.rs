@@ -1844,8 +1844,8 @@ mod tests {
             51.383,
             -0.783,
             0,
-            212,
-            Some(212),
+            0,
+            Some(0),
             1.0,
             Some(1),
             Some(DaylightSavingsConfig::NotApplicable),
@@ -2263,7 +2263,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO as part of 0.32 migration (WIP)"]
     pub fn test_temp_surrounding_primary_pipework(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
@@ -2285,6 +2284,24 @@ mod tests {
             assert_eq!(
                 storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
                 [0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0][t_idx]
+            )
+        }
+        // Internal Pipe
+        let pipework = Pipework::new(
+            PipeworkLocation::Internal,
+            0.025,
+            0.027,
+            1.0,
+            0.035,
+            0.038,
+            false,
+            WaterPipeContentsType::Water,
+        )
+        .unwrap();
+        for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
+            assert_eq!(
+                storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
+                [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx]
             )
         }
     }
