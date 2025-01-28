@@ -2063,6 +2063,228 @@ mod tests {
         (storage_tank, energy_supply)
     }
 
+    #[fixture]
+    fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
+        let simulation_time = SimulationTime::new(5088., 5112., 1.);
+
+        let air_temps = vec![
+            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
+        ];
+        let wind_speeds = vec![
+            3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9,
+            3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
+        ];
+        let wind_directions = vec![
+            30.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
+            190., 200., 320., 330., 340., 350., 355., 315., 5.,
+        ];
+        let diffuse_horizontal_radiations = vec![
+            0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225., 198.,
+            121., 68., 19., 0., 0., 0., 0., 0.,
+        ];
+        let direct_beam_radiations = vec![
+            0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285., 332.,
+            126., 7., 0., 0., 0., 0., 0.,
+        ];
+        let solar_reflectivity_of_ground = vec![
+            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        ];
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 4,
+                start: 45.,
+                end: 0.,
+                shading_objects: Some(vec![ShadingObject {
+                    object_type: ShadingObjectType::Obstacle,
+                    height: 10.5,
+                    distance: 12.,
+                }]),
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 5,
+                start: 0.,
+                end: -45.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 6,
+                start: -45.,
+                end: -90.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 7,
+                start: -90.,
+                end: -135.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 8,
+                start: -135.,
+                end: -180.,
+                shading_objects: None,
+                ..Default::default()
+            },
+        ];
+
+        Arc::new(ExternalConditions::new(
+            &simulation_time.iter(),
+            air_temps,
+            wind_speeds,
+            wind_directions,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            solar_reflectivity_of_ground,
+            51.383,
+            -0.783,
+            0,
+            212,
+            Some(212),
+            1.0,
+            Some(1),
+            Some(DaylightSavingsConfig::NotApplicable),
+            false,
+            false,
+            shading_segments,
+        ))
+    }
+
+    #[fixture]
+    pub fn storage_tank_with_solar_thermal(
+        external_conditions_for_solar_thermal: Arc<ExternalConditions>,
+        temp_internal_air_fn: TempInternalAirFn,
+    ) -> (
+        StorageTank,
+        Arc<Mutex<SolarThermalSystem>>,
+        SimulationTime,
+        Arc<RwLock<EnergySupply>>,
+    ) {
+        let cold_water_temps = [
+            17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
+            17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7,
+        ];
+        let simulation_time = SimulationTime::new(5088., 5112., 1.);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
+        ));
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
+        let control_max = SetpointTimeControl::new(
+            vec![
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+                Some(55.),
+            ],
+            212,
+            1.,
+            None,
+            None,
+            None,
+            None,
+            simulation_time.step,
+        );
+
+        let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(
+            SolarCellLocation::Out,
+            3.,
+            1,
+            0.8,
+            0.9,
+            3.5,
+            0.,
+            1.,
+            100.,
+            10.,
+            energy_supply_conn,
+            30.,
+            0.,
+            0.5,
+            external_conditions_for_solar_thermal.clone(),
+            temp_internal_air_fn.clone(),
+            simulation_time.step,
+            Arc::new(Control::SetpointTime(control_max.unwrap())),
+            *WATER,
+        )));
+
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            simulation_time.step,
+            IndexMap::from([(
+                "solthermal".to_string(),
+                PositionedHeatSource {
+                    heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                        HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
+                    ))),
+                    heater_position: 0.1,
+                    thermostat_position: 0.33,
+                },
+            )]),
+            temp_internal_air_fn,
+            external_conditions_for_solar_thermal,
+            None,
+            None,
+            None,
+            None,
+            *WATER,
+        );
+
+        (storage_tank, solar_thermal, simulation_time, energy_supply)
+    }
+
     #[rstest]
     pub fn test_demand_hot_water(
         cold_water_source: Arc<ColdWaterSource>,
@@ -2340,11 +2562,17 @@ mod tests {
     #[rstest]
     pub fn test_potential_energy_input(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        storage_tank_with_solar_thermal: (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        ),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
+        // ImmersionHeater as heat source
         let (mut storage_tank1, _) = storage_tank1;
         let temp_s3_n = [55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0];
-        // let heat_source = storage_tank1.heat_source_data.
         let heat_source = storage_tank1.heat_source_data["imheater"]
             .clone()
             .heat_source;
@@ -2363,7 +2591,53 @@ mod tests {
             [0.0, 0., 0., 0.]
         );
 
-        // TODO add more assertions from Python
+        // SolarThermal as heat source
+        let (mut storage_tank_solar_thermal, _, simtime, _) = storage_tank_with_solar_thermal;
+        let temp_s3_n = [
+            25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0, 25.0, 15.0, 35.0, 45.0, 55.0, 50.0,
+            30.0, 20.0, 25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0, 25.0, 15.0, 35.0, 45.0,
+            55.0, 50.0, 30.0, 20.0,
+        ];
+        let heat_source = storage_tank_solar_thermal.heat_source_data["solthermal"]
+            .clone()
+            .heat_source;
+
+        for (t_idx, t_it) in simtime.iter().enumerate() {
+            let actual_result = storage_tank_solar_thermal
+                .potential_energy_input(&temp_s3_n, heat_source.clone(), "solthermal", 0, 7, t_it)
+                .unwrap();
+            let expected_result = [
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0.47214338269526945, 0., 0., 0.],
+                [0.794165996101526, 0., 0., 0.],
+                [1.2488375719961642, 0., 0., 0.],
+                [1.0218936489635675, 0., 0., 0.],
+                [1.1483985152150102, 0., 0., 0.],
+                [1.5175839864027383, 0., 0., 0.],
+                [0.9602170463493307, 0., 0., 0.],
+                [0.5981490998786696, 0., 0., 0.],
+                [0.3454397002046902, 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+                [0., 0., 0., 0.],
+            ][t_idx];
+
+            // Compare each element using assert_relative_eq
+            for (expected_value, actual_value) in expected_result.iter().zip(actual_result) {
+                assert_relative_eq!(expected_value, &actual_value);
+            }
+        }
     }
 
     #[fixture]
@@ -2440,228 +2714,6 @@ mod tests {
     }
 
     // following tests are from a separate test file in the Python test_storage_tank_with_solar_thermal.py
-
-    #[fixture]
-    fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
-        let simulation_time = SimulationTime::new(5088., 5112., 1.);
-
-        let air_temps = vec![
-            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-            19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
-        ];
-        let wind_speeds = vec![
-            3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9,
-            3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
-        ];
-        let wind_directions = vec![
-            30.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
-            190., 200., 320., 330., 340., 350., 355., 315., 5.,
-        ];
-        let diffuse_horizontal_radiations = vec![
-            0., 0., 0., 0., 35., 73., 139., 244., 320., 361., 369., 348., 318., 249., 225., 198.,
-            121., 68., 19., 0., 0., 0., 0., 0.,
-        ];
-        let direct_beam_radiations = vec![
-            0., 0., 0., 0., 0., 0., 7., 53., 63., 164., 339., 242., 315., 577., 385., 285., 332.,
-            126., 7., 0., 0., 0., 0., 0.,
-        ];
-        let solar_reflectivity_of_ground = vec![
-            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-            0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-        ];
-        let shading_segments = vec![
-            ShadingSegment {
-                number: 1,
-                start: 180.,
-                end: 135.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 2,
-                start: 135.,
-                end: 90.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 3,
-                start: 90.,
-                end: 45.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 4,
-                start: 45.,
-                end: 0.,
-                shading_objects: Some(vec![ShadingObject {
-                    object_type: ShadingObjectType::Obstacle,
-                    height: 10.5,
-                    distance: 12.,
-                }]),
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 5,
-                start: 0.,
-                end: -45.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 6,
-                start: -45.,
-                end: -90.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 7,
-                start: -90.,
-                end: -135.,
-                shading_objects: None,
-                ..Default::default()
-            },
-            ShadingSegment {
-                number: 8,
-                start: -135.,
-                end: -180.,
-                shading_objects: None,
-                ..Default::default()
-            },
-        ];
-
-        Arc::new(ExternalConditions::new(
-            &simulation_time.iter(),
-            air_temps,
-            wind_speeds,
-            wind_directions,
-            diffuse_horizontal_radiations,
-            direct_beam_radiations,
-            solar_reflectivity_of_ground,
-            51.383,
-            -0.783,
-            0,
-            212,
-            Some(212),
-            1.0,
-            Some(1),
-            Some(DaylightSavingsConfig::NotApplicable),
-            false,
-            false,
-            shading_segments,
-        ))
-    }
-
-    #[fixture]
-    pub fn storage_tank_with_solar_thermal(
-        external_conditions_for_solar_thermal: Arc<ExternalConditions>,
-        temp_internal_air_fn: TempInternalAirFn,
-    ) -> (
-        StorageTank,
-        Arc<Mutex<SolarThermalSystem>>,
-        SimulationTime,
-        Arc<RwLock<EnergySupply>>,
-    ) {
-        let cold_water_temps = [
-            17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
-            17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7,
-        ];
-        let simulation_time = SimulationTime::new(5088., 5112., 1.);
-        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
-            ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
-        ));
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
-        ));
-        let energy_supply_conn =
-            EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
-        let control_max = SetpointTimeControl::new(
-            vec![
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-                Some(55.),
-            ],
-            212,
-            1.,
-            None,
-            None,
-            None,
-            None,
-            simulation_time.step,
-        );
-
-        let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(
-            SolarCellLocation::Out,
-            3.,
-            1,
-            0.8,
-            0.9,
-            3.5,
-            0.,
-            1.,
-            100.,
-            10.,
-            energy_supply_conn,
-            30.,
-            0.,
-            0.5,
-            external_conditions_for_solar_thermal.clone(),
-            temp_internal_air_fn.clone(),
-            simulation_time.step,
-            Arc::new(Control::SetpointTime(control_max.unwrap())),
-            *WATER,
-        )));
-
-        let storage_tank = StorageTank::new(
-            150.0,
-            1.68,
-            55.0,
-            cold_feed,
-            simulation_time.step,
-            IndexMap::from([(
-                "solthermal".to_string(),
-                PositionedHeatSource {
-                    heat_source: Arc::new(Mutex::new(HeatSource::Storage(
-                        HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
-                    ))),
-                    heater_position: 0.1,
-                    thermostat_position: 0.33,
-                },
-            )]),
-            temp_internal_air_fn,
-            external_conditions_for_solar_thermal,
-            None,
-            None,
-            None,
-            None,
-            *WATER,
-        );
-
-        (storage_tank, solar_thermal, simulation_time, energy_supply)
-    }
 
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
