@@ -1745,6 +1745,7 @@ mod tests {
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;
+    use std::ops::Index;
 
     #[fixture]
     pub fn simulation_time_for_storage_tank() -> SimulationTime {
@@ -2334,6 +2335,35 @@ mod tests {
             storage_tank1.stand_by_losses_coefficient(),
             1.5555555555555556
         );
+    }
+
+    #[rstest]
+    pub fn test_potential_energy_input(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        let temp_s3_n = [55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0, 55.0];
+        // let heat_source = storage_tank1.heat_source_data.
+        let heat_source = storage_tank1.heat_source_data["imheater"]
+            .clone()
+            .heat_source;
+
+        assert_eq!(
+            storage_tank1
+                .potential_energy_input(
+                    &temp_s3_n,
+                    heat_source,
+                    "imheater",
+                    0,
+                    7,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
+            [0.0, 0., 0., 0.]
+        );
+
+        // TODO add more assertions from Python
     }
 
     #[fixture]
