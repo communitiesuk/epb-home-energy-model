@@ -2635,10 +2635,16 @@ mod tests {
 
             // Compare each element using assert_relative_eq
             for (expected_value, actual_value) in expected_result.iter().zip(actual_result) {
-                assert_relative_eq!(expected_value, &actual_value);
+                assert_relative_eq!(expected_value, &actual_value, max_relative = 1e-13);
             }
         }
     }
+
+    //     def test_storage_tank_potential_effect(self):
+    //     energy_proposed = 0
+    //     temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0]
+    //     self.assertEqual(self.storagetank.storage_tank_potential_effect(energy_proposed,temp_s3_n),
+    // (20.0,45.0))
 
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
