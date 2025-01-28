@@ -2267,7 +2267,7 @@ mod tests {
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
-        let (mut storage_tank1, _) = storage_tank1;
+        let (storage_tank1, _) = storage_tank1;
         // External Pipe
         let pipework = Pipework::new(
             PipeworkLocation::External,
@@ -2304,6 +2304,17 @@ mod tests {
                 [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx]
             )
         }
+    }
+
+    #[rstest]
+    pub fn test_get_cold_water_source(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        let (storage_tank1, _) = storage_tank1;
+        let result = storage_tank1.get_cold_water_source();
+
+        assert!(matches!(
+            result,
+            WaterSourceWithTemperature::ColdWaterSource(_)
+        ));
     }
 
     #[fixture]
