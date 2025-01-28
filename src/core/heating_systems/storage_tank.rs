@@ -2653,6 +2653,27 @@ mod tests {
         );
     }
 
+    pub fn test_energy_input(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        let (storage_tank1, _) = storage_tank1;
+        let temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0];
+        let q_x_in_n = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+
+        let result = storage_tank1.energy_input(&temp_s3_n, &q_x_in_n);
+
+        assert_eq!(
+            result,
+            (
+                5.83,
+                vec![
+                    25.0,
+                    17.294455066921607,
+                    39.588910133843214,
+                    51.883365200764814
+                ]
+            )
+        );
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
