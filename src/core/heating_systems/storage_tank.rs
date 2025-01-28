@@ -2318,10 +2318,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    pub fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
 
         assert_eq!(storage_tank1.get_temp_hot_water(), 55.0);
+    }
+
+    #[rstest]
+    pub fn test_stand_by_losses_coefficient(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+
+        assert_relative_eq!(
+            storage_tank1.stand_by_losses_coefficient(),
+            1.5555555555555556
+        );
     }
 
     #[fixture]
