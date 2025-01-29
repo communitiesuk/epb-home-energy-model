@@ -2932,6 +2932,14 @@ mod tests {
         );
     }
 
+    #[rstest]
+    pub fn test_internal_gains(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+        let (mut storage_tank1, _) = storage_tank1;
+        storage_tank1.q_sto_h_ls_rbl = Some(0.05);
+
+        assert_eq!(storage_tank1.internal_gains(), 50.);
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
