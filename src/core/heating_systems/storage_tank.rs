@@ -2768,6 +2768,57 @@ mod tests {
         );
     }
 
+    #[rstest]
+    pub fn test_calculate_temperatures(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        let temp_s3_n = vec![10., 15., 20., 25., 25., 30., 35., 50.];
+        let heat_source = storage_tank1.heat_source_data["imheater"]
+            .clone()
+            .heat_source;
+        let q_x_in_n = vec![0., 1., 2., 3., 4., 5., 6., 7., 8.];
+        let heater_layer = 2;
+        let q_ls_n_prev_heat_source = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        assert_eq!(
+            storage_tank1.calculate_temperatures(
+                &temp_s3_n,
+                heat_source,
+                q_x_in_n,
+                heater_layer,
+                &q_ls_n_prev_heat_source,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            (
+                vec![10.0, 37.71697755116492, 55.0, 55.0],
+                vec![0., 1., 2., 3., 4., 5., 6., 7., 8.],
+                9.050833333333333,
+                vec![
+                    10.0,
+                    37.944550669216056,
+                    65.88910133843211,
+                    93.83365200764818
+                ],
+                vec![
+                    10.0,
+                    37.944550669216056,
+                    65.88910133843211,
+                    93.83365200764818
+                ],
+                33.86817074074074,
+                0.04517246913580247,
+                vec![
+                    0.0,
+                    0.009918395061728393,
+                    0.01762703703703704,
+                    0.01762703703703704
+                ]
+            )
+        )
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
