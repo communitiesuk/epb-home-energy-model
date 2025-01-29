@@ -2819,6 +2819,62 @@ mod tests {
         )
     }
 
+    #[rstest]
+    pub fn test_allocate_hot_water(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        storage_tank1.temp_average_drawoff_volweighted = Some(0.0);
+        storage_tank1.total_volume_drawoff = Some(0.0);
+        let event = TypedScheduleEvent {
+            start: 0.,
+            duration: Some(1.),
+            temperature: 41.0,
+            event_type: WaterScheduleEventType::Other,
+            name: "other".to_string(),
+            warm_volume: Some(8.0),
+            pipework_volume: Some(5.),
+        };
+        assert_eq!(
+            storage_tank1.allocate_hot_water(
+                event,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            (
+                10.51111111111112,
+                vec![42.39, 55.0, 55.0, 55.0],
+                0.5497311111111112,
+                0.0,
+                false
+            )
+        );
+
+        // With no pipework vol
+        let event = TypedScheduleEvent {
+            start: 0.,
+            duration: Some(1.),
+            temperature: 41.0,
+            event_type: WaterScheduleEventType::Other,
+            name: "other".to_string(),
+            warm_volume: Some(8.0),
+            pipework_volume: Some(0.),
+        };
+        assert_eq!(
+            storage_tank1.allocate_hot_water(
+                event,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            (
+                5.51111111111112,
+                vec![48.39, 55.0, 55.0, 55.0],
+                0.2882311111111111,
+                0.0,
+                false
+            )
+        );
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
