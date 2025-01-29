@@ -2875,6 +2875,23 @@ mod tests {
         );
     }
 
+    #[rstest]
+    pub fn test_calculate_new_temperatures(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (storage_tank1, _) = storage_tank1;
+        let remaining_vol = vec![0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4.];
+
+        assert_eq!(
+            storage_tank1.calculate_new_temperatures(
+                remaining_vol,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            (vec![10.0, 10.0, 10.0, 16.0], false)
+        );
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
