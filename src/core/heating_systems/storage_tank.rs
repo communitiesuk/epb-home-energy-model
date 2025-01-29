@@ -2892,6 +2892,46 @@ mod tests {
         );
     }
 
+    #[rstest]
+    pub fn test_additional_energy_input(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        storage_tank2: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        let heat_source = storage_tank1.heat_source_data["imheater"]
+            .clone()
+            .heat_source;
+        let energy_input = 5.0;
+        storage_tank1.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
+        assert_eq!(
+            storage_tank1.additional_energy_input(
+                heat_source,
+                "imheater",
+                energy_input,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            0.01762703703703572
+        );
+
+        // Test with no energy input
+        let (mut storage_tank2, _) = storage_tank2;
+        let heat_source = storage_tank2.heat_source_data["imheater2"]
+            .clone()
+            .heat_source;
+        let energy_input = 0.;
+        storage_tank2.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
+        assert_eq!(
+            storage_tank2.additional_energy_input(
+                heat_source,
+                "imheater2",
+                energy_input,
+                simulation_time_for_storage_tank.iter().current_iteration()
+            ),
+            0.0
+        );
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
