@@ -15,6 +15,16 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+// prelude for traits here in case it's needed (remove if it isn't)
+// pub(crate) mod prelude {
+//     pub(crate) use super::{
+//         HeatTransferInternal, HeatTransferInternalCommon, HeatTransferThrough,
+//         HeatTransferThrough2Nodes, HeatTransferThrough3Plus2Nodes, HeatTransferThrough5Nodes,
+//         SolarRadiationInteraction, SolarRadiationInteractionAbsorbed,
+//         SolarRadiationInteractionNotExposed, SolarRadiationInteractionTransmitted,
+//     };
+// }
+
 // Difference between external air temperature and sky temperature
 // (default value for intermediate climatic region from BS EN ISO 52016-1:2017, Table B.19)
 const TEMP_DIFF_SKY: f64 = 11.0; // Kelvin
@@ -138,6 +148,198 @@ pub enum BuildingElement {
     Transparent(BuildingElementTransparent),
 }
 
+#[derive(Debug)]
+pub(crate) enum NewBuildingElement {
+    Opaque(NewBuildingElementOpaque),
+    AdjacentZTC(NewBuildingElementAdjacentZTC),
+    AdjacentZTUSimple(NewBuildingElementAdjacentZTUSimple),
+    Ground(NewBuildingElementGround),
+    Transparent(NewBuildingElementTransparent),
+}
+
+impl NewBuildingElement {
+    pub(crate) fn area(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.area(),
+            NewBuildingElement::AdjacentZTC(el) => el.area(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.area(),
+            NewBuildingElement::Ground(el) => el.area(),
+            NewBuildingElement::Transparent(el) => el.area(),
+        }
+    }
+
+    fn as_heat_transfer_internal(&self) -> &dyn HeatTransferInternal {
+        match self {
+            NewBuildingElement::Opaque(el) => el,
+            NewBuildingElement::AdjacentZTC(el) => el,
+            NewBuildingElement::AdjacentZTUSimple(el) => el,
+            NewBuildingElement::Ground(el) => el,
+            NewBuildingElement::Transparent(el) => el,
+        }
+    }
+
+    fn as_heat_transfer_through(&self) -> &dyn HeatTransferThrough {
+        match self {
+            NewBuildingElement::Opaque(el) => el,
+            NewBuildingElement::AdjacentZTC(el) => el,
+            NewBuildingElement::AdjacentZTUSimple(el) => el,
+            NewBuildingElement::Ground(el) => el,
+            NewBuildingElement::Transparent(el) => el,
+        }
+    }
+
+    /// Return number of nodes including external and internal layers
+    pub(crate) fn number_of_nodes(&self) -> usize {
+        self.as_heat_transfer_through().number_of_nodes()
+    }
+
+    pub(crate) fn k_pli(&self) -> &[f64] {
+        self.as_heat_transfer_through().k_pli()
+    }
+
+    pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+        match self {
+            NewBuildingElement::Opaque(el) => Ok(el.solar_gains()),
+            NewBuildingElement::AdjacentZTC(el) => Ok(el.solar_gains()),
+            NewBuildingElement::AdjacentZTUSimple(el) => Ok(el.solar_gains()),
+            NewBuildingElement::Ground(el) => Ok(el.solar_gains()),
+            NewBuildingElement::Transparent(el) => el.solar_gains(simtime),
+        }
+    }
+
+    pub(crate) fn h_ce(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.h_ce(),
+            NewBuildingElement::AdjacentZTC(el) => el.h_ce(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.h_ce(),
+            NewBuildingElement::Ground(el) => el.h_ce(),
+            NewBuildingElement::Transparent(el) => el.h_ce(),
+        }
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.h_re(),
+            NewBuildingElement::AdjacentZTC(el) => el.h_re(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.h_re(),
+            NewBuildingElement::Ground(el) => el.h_re(),
+            NewBuildingElement::Transparent(el) => el.h_re(),
+        }
+    }
+
+    pub(crate) fn h_ri(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.h_ri(),
+            NewBuildingElement::AdjacentZTC(el) => el.h_ri(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.h_ri(),
+            NewBuildingElement::Ground(el) => el.h_ri(),
+            NewBuildingElement::Transparent(el) => el.h_ri(),
+        }
+    }
+
+    pub(crate) fn a_sol(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.a_sol(),
+            NewBuildingElement::AdjacentZTC(el) => el.a_sol(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.a_sol(),
+            NewBuildingElement::Ground(el) => el.a_sol(),
+            NewBuildingElement::Transparent(el) => el.a_sol(),
+        }
+    }
+
+    pub(crate) fn therm_rad_to_sky(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.therm_rad_to_sky(),
+            NewBuildingElement::AdjacentZTC(el) => el.therm_rad_to_sky(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.therm_rad_to_sky(),
+            NewBuildingElement::Ground(el) => el.therm_rad_to_sky(),
+            NewBuildingElement::Transparent(el) => el.therm_rad_to_sky(),
+        }
+    }
+
+    fn h_pli(&self) -> &[f64] {
+        self.as_heat_transfer_through().h_pli()
+    }
+
+    pub(crate) fn h_pli_by_index_unchecked(&self, idx: usize) -> f64 {
+        self.h_pli()[idx]
+    }
+
+    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+        match self {
+            NewBuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime),
+            NewBuildingElement::AdjacentZTC(el) => el.i_sol_dir_dif(simtime),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.i_sol_dir_dif(simtime),
+            NewBuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
+            NewBuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
+        }
+    }
+
+    pub(crate) fn shading_factors_direct_diffuse(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        match self {
+            NewBuildingElement::Opaque(el) => el.shading_factors_direct_diffuse(simtime),
+            NewBuildingElement::AdjacentZTC(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
+            NewBuildingElement::AdjacentZTUSimple(el) => {
+                Ok(el.shading_factors_direct_diffuse(simtime))
+            }
+            NewBuildingElement::Ground(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
+            NewBuildingElement::Transparent(el) => el.shading_factors_direct_diffuse(simtime),
+        }
+    }
+
+    fn external_conditions(&self) -> &ExternalConditions {
+        match self {
+            NewBuildingElement::Opaque(el) => el.external_conditions(),
+            NewBuildingElement::AdjacentZTC(el) => el.external_conditions(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.external_conditions(),
+            NewBuildingElement::Ground(el) => el.external_conditions(),
+            NewBuildingElement::Transparent(el) => el.external_conditions(),
+        }
+    }
+
+    pub(crate) fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+        self.external_conditions().air_temp(&simtime)
+    }
+
+    /// Return number of nodes excluding external and internal layers
+    pub(crate) fn number_of_inside_nodes(&self) -> usize {
+        self.number_of_nodes() - 2
+    }
+
+    pub(crate) fn h_ci(&self, temp_int_air: f64, temp_int_surface: f64) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.h_ci(temp_int_air, temp_int_surface),
+            NewBuildingElement::AdjacentZTC(el) => el.h_ci(temp_int_air, temp_int_surface),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.h_ci(temp_int_air, temp_int_surface),
+            NewBuildingElement::Ground(el) => el.h_ci(temp_int_air, temp_int_surface),
+            NewBuildingElement::Transparent(el) => el.h_ci(temp_int_air, temp_int_surface),
+        }
+    }
+
+    pub(crate) fn fabric_heat_loss(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.fabric_heat_loss(),
+            NewBuildingElement::AdjacentZTC(el) => el.fabric_heat_loss(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.fabric_heat_loss(),
+            NewBuildingElement::Ground(el) => el.fabric_heat_loss(),
+            NewBuildingElement::Transparent(el) => el.fabric_heat_loss(),
+        }
+    }
+
+    pub(crate) fn heat_capacity(&self) -> f64 {
+        match self {
+            NewBuildingElement::Opaque(el) => el.heat_capacity(),
+            NewBuildingElement::AdjacentZTC(el) => el.heat_capacity(),
+            NewBuildingElement::AdjacentZTUSimple(el) => el.heat_capacity(),
+            NewBuildingElement::Ground(el) => el.heat_capacity(),
+            NewBuildingElement::Transparent(el) => el.heat_capacity(),
+        }
+    }
+}
+
 // macro so accessing individual building elements through the enum isn't so repetitive
 macro_rules! per_element {
     ($val:expr, $pattern:pat => { $res:expr }) => {
@@ -230,6 +432,15 @@ pub(crate) trait HeatTransferThrough {
     fn k_m(&self) -> f64;
     fn set_k_m(&mut self, k_m: f64);
     fn k_pli(&self) -> &[f64];
+
+    fn number_of_nodes(&self) -> usize {
+        self.k_pli().len()
+    }
+
+    fn number_of_inside_nodes(&self) -> usize {
+        self.number_of_nodes() - 2
+    }
+
     fn r_se(&self) -> f64;
     fn r_si(&self) -> f64;
 
@@ -401,6 +612,8 @@ pub(crate) trait HeatTransferOtherSide {
 
     fn set_f_sky(&mut self, f_sky: f64);
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64);
+    fn therm_rad_to_sky(&self) -> f64;
+    fn f_sky(&self) -> f64;
 
     /// Return external surface resistance, in m2 K / W
     fn r_se(&self) -> f64 {
@@ -936,8 +1149,9 @@ pub(crate) trait SolarRadiationInteraction {
     fn set_width(&mut self, width: f64);
     fn width(&self) -> f64;
     fn set_a_sol(&mut self, a_sol: f64);
+    fn a_sol(&self) -> f64;
 
-    fn i_sol_dir_dif(&self) -> (f64, f64) {
+    fn i_sol_dir_dif(&self, _simtime: SimulationTimeIteration) -> (f64, f64) {
         // Return default of zero for i_sol_dir and i_sol_dif
         (0.0, 0.0)
     }
@@ -947,7 +1161,7 @@ pub(crate) trait SolarRadiationInteraction {
         0.
     }
 
-    fn shading_factors_direct_diffuse(&self) -> (f64, f64) {
+    fn shading_factors_direct_diffuse(&self, _simtime: SimulationTimeIteration) -> (f64, f64) {
         // Return default of one for shading factor (no shading)
         (1.0, 1.0)
     }
@@ -1073,6 +1287,7 @@ pub(crate) trait SolarRadiationInteractionNotExposed: SolarRadiationInteraction 
 
 /// A type to represent opaque building elements (walls, roofs, etc.)
 /// TODO make this into canonical BuildingElementOpaque
+#[derive(Clone, Debug)]
 pub(crate) struct NewBuildingElementOpaque {
     area: f64,
     external_conditions: Arc<ExternalConditions>,
@@ -1141,6 +1356,31 @@ impl NewBuildingElementOpaque {
 
         new_opaque
     }
+
+    pub(crate) fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
+
+    pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
+        SolarRadiationInteractionAbsorbed::i_sol_dir_dif(self, simtime)
+    }
+
+    pub(crate) fn shading_factors_direct_diffuse(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        Ok(SolarRadiationInteractionAbsorbed::i_sol_dir_dif(
+            self, simtime,
+        ))
+    }
+
+    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
+
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
+    }
 }
 
 impl HeatTransferInternal for NewBuildingElementOpaque {
@@ -1204,8 +1444,16 @@ impl HeatTransferOtherSide for NewBuildingElementOpaque {
         self.f_sky = f_sky;
     }
 
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
         self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
     }
 
     fn external_conditions(&self) -> &ExternalConditions {
@@ -1270,13 +1518,19 @@ impl SolarRadiationInteraction for NewBuildingElementOpaque {
     fn set_a_sol(&mut self, a_sol: f64) {
         self.a_sol = a_sol;
     }
+
+    fn a_sol(&self) -> f64 {
+        self.a_sol
+    }
 }
+
 impl SolarRadiationInteractionAbsorbed for NewBuildingElementOpaque {
     fn external_conditions(&self) -> &ExternalConditions {
         self.external_conditions.as_ref()
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct NewBuildingElementAdjacentZTC {
     area: f64,
     pitch: f64,
@@ -1324,6 +1578,18 @@ impl NewBuildingElementAdjacentZTC {
 
     pub(crate) fn fabric_heat_loss(&self) -> f64 {
         0.0 // no heat loss to thermally conditioned zones
+    }
+
+    pub(crate) fn h_ce(&self) -> f64 {
+        HeatTransferOtherSideConditionedSpace::h_ce(self)
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        HeatTransferOtherSideConditionedSpace::h_re(self)
+    }
+
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
     }
 }
 
@@ -1391,6 +1657,14 @@ impl HeatTransferOtherSide for NewBuildingElementAdjacentZTC {
         self.therm_rad_to_sky = therm_rad_to_sky;
     }
 
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
     fn external_conditions(&self) -> &ExternalConditions {
         self.external_conditions.as_ref()
     }
@@ -1452,6 +1726,10 @@ impl SolarRadiationInteraction for NewBuildingElementAdjacentZTC {
     fn set_a_sol(&mut self, _a_sol: f64) {
         // do nothing
     }
+
+    fn a_sol(&self) -> f64 {
+        0.0
+    }
 }
 
 impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTC {}
@@ -1463,6 +1741,7 @@ impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTC {}
 /// for the external surface heat transfer coefficients. This differs from both
 /// of the approaches (internal and external) in BS EN ISO 52016-1:2017 which
 /// require detailed inputs for the unconditioned zone.
+#[derive(Debug)]
 pub(crate) struct NewBuildingElementAdjacentZTUSimple {
     area: f64,
     pitch: f64,
@@ -1505,6 +1784,14 @@ impl NewBuildingElementAdjacentZTUSimple {
         new_ztu.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
         new_ztu
+    }
+
+    pub(crate) fn h_ce(&self) -> f64 {
+        HeatTransferOtherSideUnconditionedSpace::h_ce(self)
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        HeatTransferOtherSideUnconditionedSpace::h_re(self)
     }
 }
 
@@ -1574,6 +1861,14 @@ impl HeatTransferOtherSide for NewBuildingElementAdjacentZTUSimple {
         self.therm_rad_to_sky = therm_rad_to_sky;
     }
 
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
+    }
+
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
     fn external_conditions(&self) -> &ExternalConditions {
         self.external_conditions.as_ref()
     }
@@ -1641,11 +1936,16 @@ impl SolarRadiationInteraction for NewBuildingElementAdjacentZTUSimple {
     fn set_a_sol(&mut self, _a_sol: f64) {
         // do nothing
     }
+
+    fn a_sol(&self) -> f64 {
+        0.0
+    }
 }
 
 impl SolarRadiationInteractionNotExposed for NewBuildingElementAdjacentZTUSimple {}
 
 /// A type to represent ground building elements
+#[derive(Debug)]
 pub(crate) struct NewBuildingElementGround {
     area: f64,
     total_area: f64,
@@ -1763,6 +2063,22 @@ impl NewBuildingElementGround {
     pub(crate) fn fabric_heat_loss(&self) -> f64 {
         self.area * self.u_value
     }
+
+    pub(crate) fn h_ce(&self) -> f64 {
+        HeatTransferOtherSideGround::h_ce(self)
+    }
+
+    pub(crate) fn h_re(&self) -> f64 {
+        HeatTransferOtherSideGround::h_re(self)
+    }
+
+    pub(crate) fn r_si(&self) -> f64 {
+        HeatTransferInternal::r_si(self)
+    }
+
+    fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
+        HeatTransferOtherSideGround::temp_ext(self, simtime)
+    }
 }
 
 impl HeatTransferInternal for NewBuildingElementGround {
@@ -1827,8 +2143,16 @@ impl HeatTransferOtherSide for NewBuildingElementGround {
         self.f_sky = f_sky;
     }
 
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
         self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
     }
 
     fn external_conditions(&self) -> &ExternalConditions {
@@ -1962,6 +2286,10 @@ impl SolarRadiationInteraction for NewBuildingElementGround {
     fn set_a_sol(&mut self, _a_sol: f64) {
         // do nothing
     }
+
+    fn a_sol(&self) -> f64 {
+        0.0
+    }
 }
 
 impl SolarRadiationInteractionNotExposed for NewBuildingElementGround {}
@@ -1997,6 +2325,7 @@ impl From<WindowTreatmentControlInput> for WindowTreatmentControl {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct WindowTreatment {
     treatment_type: WindowTreatmentType,
     controls: WindowTreatmentControl,
@@ -2047,6 +2376,7 @@ impl WindowTreatment {
 }
 
 /// A type to represent transparent building elements (windows etc.)
+#[derive(Debug)]
 pub(crate) struct NewBuildingElementTransparent {
     area: f64,
     mid_height: f64,
@@ -2252,6 +2582,21 @@ impl NewBuildingElementTransparent {
     pub(crate) fn r_si(&self) -> f64 {
         HeatTransferInternal::r_si(self)
     }
+
+    pub(crate) fn area(&self) -> f64 {
+        self.area
+    }
+
+    pub(crate) fn shading_factors_direct_diffuse(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64)> {
+        SolarRadiationInteractionTransmitted::shading_factors_direct_diffuse(self, simtime)
+    }
+
+    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
+        self.external_conditions.as_ref()
+    }
 }
 
 impl HeatTransferInternal for NewBuildingElementTransparent {
@@ -2316,8 +2661,16 @@ impl HeatTransferOtherSide for NewBuildingElementTransparent {
         self.f_sky = f_sky;
     }
 
+    fn f_sky(&self) -> f64 {
+        self.f_sky
+    }
+
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
         self.therm_rad_to_sky = therm_rad_to_sky;
+    }
+
+    fn therm_rad_to_sky(&self) -> f64 {
+        self.therm_rad_to_sky
     }
 
     fn external_conditions(&self) -> &ExternalConditions {
@@ -2378,6 +2731,10 @@ impl SolarRadiationInteraction for NewBuildingElementTransparent {
 
     fn set_a_sol(&mut self, _a_sol: f64) {
         // do nothing
+    }
+
+    fn a_sol(&self) -> f64 {
+        0.0
     }
 }
 
@@ -4093,6 +4450,14 @@ mod tests {
             unreachable!()
         }
 
+        fn therm_rad_to_sky(&self) -> f64 {
+            unreachable!()
+        }
+
+        fn f_sky(&self) -> f64 {
+            self.0
+        }
+
         fn external_conditions(&self) -> &ExternalConditions {
             unreachable!()
         }
@@ -4154,8 +4519,8 @@ mod tests {
     }
 
     #[fixture]
-    fn be_i(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
-        BuildingElementOpaque::new(
+    fn be_i(external_conditions: Arc<ExternalConditions>) -> NewBuildingElementOpaque {
+        NewBuildingElementOpaque::new(
             20.,
             false,
             180.,
@@ -4172,8 +4537,8 @@ mod tests {
     }
 
     #[fixture]
-    fn be_e(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
-        BuildingElementOpaque::new(
+    fn be_e(external_conditions: Arc<ExternalConditions>) -> NewBuildingElementOpaque {
+        NewBuildingElementOpaque::new(
             22.5,
             false,
             135.,
@@ -4190,8 +4555,8 @@ mod tests {
     }
 
     #[fixture]
-    fn be_ie(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
-        BuildingElementOpaque::new(
+    fn be_ie(external_conditions: Arc<ExternalConditions>) -> NewBuildingElementOpaque {
+        NewBuildingElementOpaque::new(
             25.,
             false,
             90.,
@@ -4208,8 +4573,8 @@ mod tests {
     }
 
     #[fixture]
-    fn be_d(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
-        BuildingElementOpaque::new(
+    fn be_d(external_conditions: Arc<ExternalConditions>) -> NewBuildingElementOpaque {
+        NewBuildingElementOpaque::new(
             27.5,
             true,
             45.,
@@ -4226,8 +4591,8 @@ mod tests {
     }
 
     #[fixture]
-    fn be_m(external_conditions: Arc<ExternalConditions>) -> BuildingElementOpaque {
-        BuildingElementOpaque::new(
+    fn be_m(external_conditions: Arc<ExternalConditions>) -> NewBuildingElementOpaque {
+        NewBuildingElementOpaque::new(
             30.,
             false,
             0.,
@@ -4245,17 +4610,17 @@ mod tests {
 
     #[fixture]
     fn opaque_building_elements(
-        be_i: BuildingElementOpaque,
-        be_e: BuildingElementOpaque,
-        be_ie: BuildingElementOpaque,
-        be_d: BuildingElementOpaque,
-        be_m: BuildingElementOpaque,
-    ) -> [BuildingElementOpaque; 5] {
+        be_i: NewBuildingElementOpaque,
+        be_e: NewBuildingElementOpaque,
+        be_ie: NewBuildingElementOpaque,
+        be_d: NewBuildingElementOpaque,
+        be_m: NewBuildingElementOpaque,
+    ) -> [NewBuildingElementOpaque; 5] {
         [be_i, be_e, be_ie, be_d, be_m]
     }
 
     #[rstest]
-    fn test_no_of_nodes_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_no_of_nodes_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_eq!(be.number_of_nodes(), 5, "incorrect number of nodes");
             assert_eq!(
@@ -4267,7 +4632,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_area_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_area_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -4280,7 +4645,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_flow_direction_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_heat_flow_direction_for_opaque(
+        opaque_building_elements: [NewBuildingElementOpaque; 5],
+    ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [
@@ -4300,7 +4667,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_r_si_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_r_si_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -4309,7 +4676,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_ci_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ci_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
@@ -4324,28 +4691,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_ri_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ri_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_ri(), 5.13,);
         }
     }
 
     #[rstest]
-    fn test_h_ce_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_ce_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_ce(), 20.0,);
         }
     }
 
     #[rstest]
-    fn test_h_re(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_re(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         for be in opaque_building_elements.iter() {
             assert_relative_eq!(be.h_re(), 4.14,);
         }
     }
 
     #[rstest]
-    fn test_a_sol_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_a_sol_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         // Define increment between test cases
         let a_sol_inc = 0.01;
 
@@ -4355,7 +4722,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_therm_rad_to_sky_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_therm_rad_to_sky_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [0.0, 6.6691785923823135, 22.77, 38.87082140761768, 45.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -4364,7 +4731,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_pli_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_h_pli_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [
             [24.0, 12.0, 12.0, 24.0],
             [12.0, 6.0, 6.0, 12.0],
@@ -4379,7 +4746,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_k_pli_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    pub fn test_k_pli_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [
             [0.0, 0.0, 0.0, 0.0, 19000.0],
             [18000.0, 0.0, 0.0, 0.0, 0.0],
@@ -4395,7 +4762,7 @@ mod tests {
 
     #[rstest]
     fn test_temp_ext_for_opaque(
-        opaque_building_elements: [BuildingElementOpaque; 5],
+        opaque_building_elements: [NewBuildingElementOpaque; 5],
         simulation_time: SimulationTimeIterator,
     ) {
         for be in opaque_building_elements.iter() {
@@ -4411,7 +4778,7 @@ mod tests {
 
     #[ignore = "the assertion values here cause failures - upstream fix has been committed to"]
     #[rstest]
-    fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [43.20, 35.15, 27.10, 27.15, 55.54];
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
@@ -4420,7 +4787,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_capacity_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_heat_capacity_for_opaque(opaque_building_elements: [NewBuildingElementOpaque; 5]) {
         let results = [380., 405., 425., 440., 450.];
         for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_eq!(
@@ -4434,8 +4801,8 @@ mod tests {
     #[fixture]
     fn adjacent_ztc_building_elements(
         external_conditions: Arc<ExternalConditions>,
-    ) -> [BuildingElementAdjacentZTC; 5] {
-        let be_i = BuildingElementAdjacentZTC::new(
+    ) -> [NewBuildingElementAdjacentZTC; 5] {
+        let be_i = NewBuildingElementAdjacentZTC::new(
             20.0,
             180.,
             0.25,
@@ -4443,7 +4810,7 @@ mod tests {
             MassDistributionClass::I,
             external_conditions.clone(),
         );
-        let be_e = BuildingElementAdjacentZTC::new(
+        let be_e = NewBuildingElementAdjacentZTC::new(
             22.5,
             135.,
             0.50,
@@ -4451,7 +4818,7 @@ mod tests {
             MassDistributionClass::E,
             external_conditions.clone(),
         );
-        let be_ie = BuildingElementAdjacentZTC::new(
+        let be_ie = NewBuildingElementAdjacentZTC::new(
             25.0,
             90.,
             0.75,
@@ -4459,7 +4826,7 @@ mod tests {
             MassDistributionClass::IE,
             external_conditions.clone(),
         );
-        let be_d = BuildingElementAdjacentZTC::new(
+        let be_d = NewBuildingElementAdjacentZTC::new(
             27.5,
             45.,
             0.80,
@@ -4467,7 +4834,7 @@ mod tests {
             MassDistributionClass::D,
             external_conditions.clone(),
         );
-        let be_m = BuildingElementAdjacentZTC::new(
+        let be_m = NewBuildingElementAdjacentZTC::new(
             30.0,
             0.,
             0.40,
@@ -4480,7 +4847,7 @@ mod tests {
 
     #[rstest]
     fn test_no_of_nodes_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_eq!(be.number_of_nodes(), 5, "incorrect number of nodes");
@@ -4493,7 +4860,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_area_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_area_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
+    ) {
         // Define increment between test cases
         let area_inc = 2.5;
 
@@ -4504,7 +4873,7 @@ mod tests {
 
     #[rstest]
     fn test_heat_flow_direction_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
@@ -4526,7 +4895,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_r_si_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_r_si_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
+    ) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
@@ -4535,7 +4906,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_ci_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_h_ci_for_adjacent_ztc(
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
+    ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
@@ -4547,7 +4920,7 @@ mod tests {
 
     #[rstest]
     pub fn test_h_ri_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_relative_eq!(be.h_ri(), 5.13,);
@@ -4556,7 +4929,7 @@ mod tests {
 
     #[rstest]
     pub fn test_h_ce_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_relative_eq!(be.h_ce(), 0.0,);
@@ -4565,7 +4938,7 @@ mod tests {
 
     #[rstest]
     pub fn test_h_re_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_eq!(be.h_re(), 0.0, "incorrect h_re returned");
@@ -4574,7 +4947,7 @@ mod tests {
 
     #[rstest]
     pub fn test_a_sol_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
@@ -4583,7 +4956,7 @@ mod tests {
 
     #[rstest]
     pub fn test_therm_rad_to_sky_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_eq!(be.therm_rad_to_sky(), 0.0, "incorrect a_sol returned");
@@ -4592,7 +4965,7 @@ mod tests {
 
     #[rstest]
     fn test_h_pli_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         let results = [
             [24.0, 12.0, 12.0, 24.0],
@@ -4608,7 +4981,7 @@ mod tests {
 
     #[rstest]
     pub fn test_k_pli_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         let results = [
             [0.0, 0.0, 0.0, 0.0, 19000.0],
@@ -4624,7 +4997,7 @@ mod tests {
 
     #[rstest]
     pub fn test_fabric_heat_loss_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         for be in adjacent_ztc_building_elements {
             assert_eq!(
@@ -4637,7 +5010,7 @@ mod tests {
 
     #[rstest]
     pub fn test_heat_capacity_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+        adjacent_ztc_building_elements: [NewBuildingElementAdjacentZTC; 5],
     ) {
         let results = [380., 405., 425., 440., 450.];
 
@@ -4653,7 +5026,7 @@ mod tests {
     #[fixture]
     pub fn ground_building_elements(
         external_conditions_for_ground: Arc<ExternalConditions>,
-    ) -> [BuildingElementGround; 5] {
+    ) -> [NewBuildingElementGround; 5] {
         let be_i_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
@@ -4661,7 +5034,7 @@ mod tests {
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
         };
-        let be_i = BuildingElementGround::new(
+        let be_i = NewBuildingElementGround::new(
             20.0,
             20.0,
             180.,
@@ -4677,7 +5050,7 @@ mod tests {
         )
         .unwrap();
         let be_e_floor_data = FloorData::SlabNoEdgeInsulation;
-        let be_e = BuildingElementGround::new(
+        let be_e = NewBuildingElementGround::new(
             22.5,
             22.5,
             135.,
@@ -4705,7 +5078,7 @@ mod tests {
         let be_ie_floor_data = FloorData::SlabEdgeInsulation {
             edge_insulation: edge_insulation_ie,
         };
-        let be_ie = BuildingElementGround::new(
+        let be_ie = NewBuildingElementGround::new(
             25.0,
             25.0,
             90.,
@@ -4724,7 +5097,7 @@ mod tests {
             depth_basement_floor: 2.3,
             thermal_resistance_of_basement_walls: 6.,
         };
-        let be_d = BuildingElementGround::new(
+        let be_d = NewBuildingElementGround::new(
             27.5,
             27.5,
             45.,
@@ -4745,7 +5118,7 @@ mod tests {
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
         };
-        let be_m = BuildingElementGround::new(
+        let be_m = NewBuildingElementGround::new(
             30.0,
             30.0,
             0.,
@@ -4849,7 +5222,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_no_of_nodes_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_no_of_nodes_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         for be in ground_building_elements {
             assert_eq!(be.number_of_nodes(), 5, "incorrect number of nodes");
             assert_eq!(
@@ -4861,7 +5234,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_area_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_area_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
 
@@ -4872,7 +5245,7 @@ mod tests {
 
     #[rstest]
     pub fn test_heat_flow_direction_for_ground(
-        ground_building_elements: [BuildingElementGround; 5],
+        ground_building_elements: [NewBuildingElementGround; 5],
     ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
@@ -4894,7 +5267,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_r_si_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_r_si_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
         for (i, be) in ground_building_elements.iter().enumerate() {
@@ -4903,7 +5276,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ci_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_h_ci_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
@@ -4914,14 +5287,14 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ri_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_h_ri_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
             assert_eq!(be.h_ri(), 5.13, "incorrect h_ri returned");
         }
     }
 
     #[rstest]
-    pub fn test_h_ce_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_h_ce_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let results = [
             15.78947368,
             91.30434783,
@@ -4936,21 +5309,23 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_re_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_h_re_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
             assert_eq!(be.h_re(), 0.0, "incorrect h_re returned");
         }
     }
 
     #[rstest]
-    pub fn test_a_sol_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_a_sol_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
             assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
         }
     }
 
     #[rstest]
-    pub fn test_therm_rad_to_sky_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_therm_rad_to_sky_for_ground(
+        ground_building_elements: [NewBuildingElementGround; 5],
+    ) {
         for be in ground_building_elements.iter() {
             assert_eq!(
                 be.therm_rad_to_sky(),
@@ -4961,7 +5336,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_pli_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_h_pli_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let results = [
             [6.0, 5.217391304347826, 20.0, 40.0],
             [6.0, 4.615384615384615, 10.0, 20.0],
@@ -4980,7 +5355,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_k_pli_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_k_pli_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let results = [
             [0.0, 1500000.0, 0.0, 0.0, 19000.0],
             [0.0, 1500000.0, 18000.0, 0.0, 0.0],
@@ -4998,7 +5373,7 @@ mod tests {
     #[ignore = "this faulty test has been superseded upstream by a more complex (and working!) test"]
     #[rstest]
     pub fn test_temp_ext_for_ground(
-        ground_building_elements: [BuildingElementGround; 5],
+        ground_building_elements: [NewBuildingElementGround; 5],
         simulation_time_for_ground: SimulationTime,
     ) {
         let results = [
@@ -5042,7 +5417,9 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_fabric_heat_loss_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_fabric_heat_loss_for_ground(
+        ground_building_elements: [NewBuildingElementGround; 5],
+    ) {
         let expected = [30.0, 31.5, 33.25, 34.375, 30.0];
         for (i, be) in ground_building_elements.iter().enumerate() {
             assert_relative_eq!(be.fabric_heat_loss(), expected[i], max_relative = 1e-2);
@@ -5050,7 +5427,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_capacity_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    pub fn test_heat_capacity_for_ground(ground_building_elements: [NewBuildingElementGround; 5]) {
         let results = [380., 405., 425., 440., 450.];
         for (i, be) in ground_building_elements.iter().enumerate() {
             assert_eq!(
@@ -5064,9 +5441,8 @@ mod tests {
     #[fixture]
     pub fn transparent_building_element(
         external_conditions: Arc<ExternalConditions>,
-        simulation_time: SimulationTimeIterator,
-    ) -> BuildingElementTransparent {
-        BuildingElementTransparent::new(
+    ) -> NewBuildingElementTransparent {
+        NewBuildingElementTransparent::new(
             90.,
             0.4,
             180.,
@@ -5075,15 +5451,15 @@ mod tests {
             1.,
             1.25,
             4.,
-            vec![],
+            Default::default(),
+            Default::default(),
             external_conditions,
-            &simulation_time,
         )
     }
 
     #[rstest]
     pub fn test_no_of_nodes_for_transparent(
-        transparent_building_element: BuildingElementTransparent,
+        transparent_building_element: NewBuildingElementTransparent,
     ) {
         assert_eq!(
             transparent_building_element.number_of_nodes(),
@@ -5098,7 +5474,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_area_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_area_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.area(),
             5.0,
@@ -5107,7 +5483,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_flow_direction(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_heat_flow_direction(transparent_building_element: NewBuildingElementTransparent) {
         // Python test uses None here, but reasonable to expecta temperature to be passed in because
         // that example only works because of the pitch set on this building element, and would fail
         // for a different value
@@ -5120,7 +5496,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_r_si_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_r_si_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_relative_eq!(
             transparent_building_element.r_si(),
             0.13,
@@ -5129,7 +5505,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ci_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_h_ci_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         // Python test uses None here, but reasonable to expecta temperature to be passed in because
         // that example only works because of the pitch set on this building element, and would fail
         // for a different value
@@ -5142,7 +5518,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ri_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_h_ri_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.h_ri(),
             5.13,
@@ -5151,7 +5527,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_ce_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_h_ce_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.h_ce(),
             20.0,
@@ -5160,7 +5536,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_re_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_h_re_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.h_re(),
             4.14,
@@ -5169,7 +5545,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_a_sol_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_a_sol_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.a_sol(),
             0.0,
@@ -5179,7 +5555,7 @@ mod tests {
 
     #[rstest]
     pub fn test_therm_rad_to_sky_for_transparent(
-        transparent_building_element: BuildingElementTransparent,
+        transparent_building_element: NewBuildingElementTransparent,
     ) {
         assert_eq!(
             transparent_building_element.therm_rad_to_sky(),
@@ -5189,7 +5565,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_h_pli_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_h_pli_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.h_pli(),
             &[2.5],
@@ -5198,7 +5574,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_k_pli_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_k_pli_for_transparent(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.k_pli(),
             &[0.0, 0.0],
@@ -5208,7 +5584,7 @@ mod tests {
 
     #[rstest]
     pub fn test_temp_ext_for_transparent(
-        transparent_building_element: BuildingElementTransparent,
+        transparent_building_element: NewBuildingElementTransparent,
         simulation_time: SimulationTimeIterator,
     ) {
         for (t_idx, t_it) in simulation_time.enumerate() {
@@ -5222,7 +5598,7 @@ mod tests {
 
     #[rstest]
     pub fn test_fabric_heat_loss_for_transparent(
-        transparent_building_element: BuildingElementTransparent,
+        transparent_building_element: NewBuildingElementTransparent,
     ) {
         assert_relative_eq!(
             transparent_building_element.fabric_heat_loss(),
@@ -5232,7 +5608,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_heat_capacity(transparent_building_element: BuildingElementTransparent) {
+    pub fn test_heat_capacity(transparent_building_element: NewBuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.heat_capacity(),
             0.,

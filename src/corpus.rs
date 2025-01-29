@@ -34,7 +34,10 @@ use crate::core::schedule::{
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
     BuildingElementAdjacentZTUSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, HeatFlowDirection, PITCH_LIMIT_HORIZ_CEILING,
+    BuildingElementTransparent, HeatFlowDirection, NewBuildingElement,
+    NewBuildingElementAdjacentZTC, NewBuildingElementAdjacentZTUSimple, NewBuildingElementGround,
+    NewBuildingElementOpaque, NewBuildingElementTransparent, WindowTreatment,
+    PITCH_LIMIT_HORIZ_CEILING,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -240,6 +243,7 @@ impl Corpus {
                         external_conditions.clone(),
                         infiltration_ventilation.clone(),
                         window_adjust_control.clone(),
+                        &controls,
                         output_options.print_heat_balance,
                         simulation_time_iterator.clone().as_ref(),
                     )?;
@@ -2972,6 +2976,7 @@ fn zone_from_input(
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
     window_adjust_control: Option<Arc<Control>>,
+    controls: &Controls,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
 ) -> anyhow::Result<(Zone, SystemReference, SystemReference)> {
@@ -2996,11 +3001,12 @@ fn zone_from_input(
                         building_element_from_input(
                             el,
                             external_conditions.clone(),
+                            controls,
                             simulation_time_iterator,
                         )?,
                     ))
                 })
-                .collect::<anyhow::Result<IndexMap<String, BuildingElement>>>()?,
+                .collect::<anyhow::Result<IndexMap<String, Arc<NewBuildingElement>>>>()?,
             thermal_bridging_from_input(&input.thermal_bridging),
             infiltration_ventilation,
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
@@ -3318,9 +3324,10 @@ impl CompletedVentilationLeaks {
 fn building_element_from_input(
     input: &BuildingElementInput,
     external_conditions: Arc<ExternalConditions>,
+    controls: &Controls,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<BuildingElement> {
-    Ok(match input {
+) -> anyhow::Result<Arc<NewBuildingElement>> {
+    Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
             area,
@@ -3343,7 +3350,7 @@ fn building_element_from_input(
                 false
             };
 
-            BuildingElement::Opaque(BuildingElementOpaque::new(
+            NewBuildingElement::Opaque(NewBuildingElementOpaque::new(
                 *area,
                 is_unheated_pitched_roof,
                 *pitch,
@@ -3371,7 +3378,7 @@ fn building_element_from_input(
             shading,
             treatment,
             ..
-        } => BuildingElement::Transparent(BuildingElementTransparent::new(
+        } => NewBuildingElement::Transparent(NewBuildingElementTransparent::new(
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
             *orientation,
@@ -3380,9 +3387,23 @@ fn building_element_from_input(
             *base_height,
             *height,
             *width,
-            shading.clone(),
+            Some(shading.clone()),
+            treatment
+                .as_ref()
+                .map(|treatments| {
+                    treatments
+                        .into_iter()
+                        .map(|t| {
+                            WindowTreatment::from_input(
+                                t,
+                                controls,
+                                simulation_time_iterator.current_hour(),
+                            )
+                        })
+                        .collect_vec()
+                })
+                .unwrap_or_default(),
             external_conditions,
-            simulation_time_iterator,
         )),
         BuildingElementInput::Ground {
             area,
@@ -3396,105 +3417,20 @@ fn building_element_from_input(
             thickness_walls,
             perimeter,
             psi_wall_floor_junc,
-        } => {
-            let (
-                edge_insulation,
-                height_upper_surface,
-                thermal_transm_envi_base,
-                thermal_transm_walls,
-                area_per_perimeter_vent,
-                shield_fact_location,
-                thermal_resist_insul,
-                depth_basement_floor,
-                thermal_resist_walls_base,
-                height_basement_walls,
-            ) = match floor_data {
-                FloorData::SlabNoEdgeInsulation { .. } => {
-                    (None, None, None, None, None, None, None, None, None, None)
-                }
-                FloorData::SlabEdgeInsulation {
-                    edge_insulation, ..
-                } => (
-                    Some(edge_insulation.as_slice()),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-                FloorData::SuspendedFloor {
-                    height_upper_surface,
-                    thermal_transmission_walls,
-                    area_per_perimeter_vent,
-                    shield_fact_location,
-                    thermal_resistance_of_insulation,
-                    ..
-                } => (
-                    None,
-                    Some(*height_upper_surface),
-                    None,
-                    Some(*thermal_transmission_walls),
-                    Some(*area_per_perimeter_vent),
-                    Some(*shield_fact_location),
-                    Some(*thermal_resistance_of_insulation),
-                    None,
-                    None,
-                    None,
-                ),
-                FloorData::HeatedBasement {
-                    depth_basement_floor,
-                    thermal_resistance_of_basement_walls,
-                    ..
-                } => (
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some(*depth_basement_floor),
-                    Some(*thermal_resistance_of_basement_walls),
-                    None,
-                ),
-                FloorData::UnheatedBasement {
-                    thermal_transmittance_of_floor_above_basement,
-                    thermal_transmission_walls,
-                    depth_basement_floor,
-                    height_basement_walls,
-                } => (
-                    None,
-                    None,
-                    Some(*thermal_transmittance_of_floor_above_basement),
-                    Some(*thermal_transmission_walls),
-                    None,
-                    None,
-                    None,
-                    Some(*depth_basement_floor),
-                    None,
-                    Some(*height_basement_walls),
-                ),
-            };
-
-            BuildingElement::Ground(BuildingElementGround::new(
-                *total_area,
-                *area,
-                *pitch,
-                *u_value,
-                *r_f,
-                *k_m,
-                *mass_distribution_class,
-                floor_data,
-                *thickness_walls,
-                *perimeter,
-                *psi_wall_floor_junc,
-                external_conditions,
-            )?)
-        }
+        } => NewBuildingElement::Ground(NewBuildingElementGround::new(
+            *total_area,
+            *area,
+            *pitch,
+            *u_value,
+            *r_f,
+            *k_m,
+            *mass_distribution_class,
+            floor_data,
+            *thickness_walls,
+            *perimeter,
+            *psi_wall_floor_junc,
+            external_conditions,
+        )?),
         BuildingElementInput::AdjacentZTC {
             area,
             pitch,
@@ -3502,7 +3438,7 @@ fn building_element_from_input(
             r_c,
             k_m,
             mass_distribution_class,
-        } => BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
+        } => NewBuildingElement::AdjacentZTC(NewBuildingElementAdjacentZTC::new(
             *area,
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
@@ -3518,7 +3454,7 @@ fn building_element_from_input(
             r_u,
             k_m,
             mass_distribution_class,
-        } => BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
+        } => NewBuildingElement::AdjacentZTUSimple(NewBuildingElementAdjacentZTUSimple::new(
             *area,
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
@@ -3527,7 +3463,7 @@ fn building_element_from_input(
             *mass_distribution_class,
             external_conditions,
         )),
-    })
+    }))
 }
 
 fn init_r_c_for_building_element(
