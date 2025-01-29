@@ -2940,6 +2940,70 @@ mod tests {
         assert_eq!(storage_tank1.internal_gains(), 50.);
     }
 
+    #[rstest]
+    #[ignore = "TODO as part of migration"]
+    pub fn test_primary_pipework_losses(
+        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
+        simulation_time_for_storage_tank: SimulationTime,
+    ) {
+        let (mut storage_tank1, _) = storage_tank1;
+        let simtime = simulation_time_for_storage_tank;
+        let input_energy_adj = 0.0;
+        let setpnt_max = 55.0;
+        let nb_vol = 4;
+        let primary_pipework_lst = vec![
+            Pipework::new(
+                PipeworkLocation::Internal,
+                24.,
+                27.,
+                2.0,
+                0.035,
+                40.,
+                false,
+                WaterPipeContentsType::Water,
+            )
+            .unwrap(),
+            Pipework::new(
+                PipeworkLocation::External,
+                25.,
+                27.,
+                0.0,
+                0.035,
+                38.,
+                false,
+                WaterPipeContentsType::Water,
+            )
+            .unwrap(),
+        ];
+
+        storage_tank1.primary_pipework_lst = Some(primary_pipework_lst);
+        //
+        // for (t_idx, t_it) in simtime.iter().enumerate() {
+        //     assert_eq!(storage_tank1.primary_pipework_losses(input_energy_adj, setpnt_max, t_it), [(0.0, 0.0),(0.0, 0.0),(0.0, 0.0),(0.0, 0.0),
+        //         (0.0, 0.0),(0.0, 0.0),(0.0, 0.0),(0.0, 0.0)][t_idx])
+        // }
+
+        // With value for input_energy_adj
+        let input_energy_adj = 3.;
+        let simtime1 = simulation_time_for_storage_tank;
+
+        for (t_idx, t_it) in simtime1.iter().enumerate() {
+            assert_eq!(
+                storage_tank1.primary_pipework_losses(input_energy_adj, setpnt_max, t_it),
+                [
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482),
+                    (0.04665869119015863, 9.854304934823482)
+                ][t_idx]
+            )
+        }
+    }
+
     #[fixture]
     pub fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
