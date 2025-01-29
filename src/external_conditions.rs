@@ -753,7 +753,7 @@ impl ExternalConditions {
             + self.calculated_diffuse_irradiance(tilt, orientation, simulation_time)
     }
 
-    pub fn calculated_direct_diffuse_total_irradiance(
+    pub(crate) fn calculated_direct_diffuse_total_irradiance(
         &self,
         tilt: f64,
         orientation: f64,

@@ -34,10 +34,7 @@ use crate::core::schedule::{
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
     BuildingElementAdjacentZTUSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, HeatFlowDirection, NewBuildingElement,
-    NewBuildingElementAdjacentZTC, NewBuildingElementAdjacentZTUSimple, NewBuildingElementGround,
-    NewBuildingElementOpaque, NewBuildingElementTransparent, WindowTreatment,
-    PITCH_LIMIT_HORIZ_CEILING,
+    BuildingElementTransparent, HeatFlowDirection, WindowTreatment, PITCH_LIMIT_HORIZ_CEILING,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -65,9 +62,9 @@ use crate::input::{
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
     ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
-    ExternalConditionsInput, FloorData, FuelType, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
@@ -3006,7 +3003,7 @@ fn zone_from_input(
                         )?,
                     ))
                 })
-                .collect::<anyhow::Result<IndexMap<String, Arc<NewBuildingElement>>>>()?,
+                .collect::<anyhow::Result<IndexMap<String, Arc<BuildingElement>>>>()?,
             thermal_bridging_from_input(&input.thermal_bridging),
             infiltration_ventilation,
             external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
@@ -3326,7 +3323,7 @@ fn building_element_from_input(
     external_conditions: Arc<ExternalConditions>,
     controls: &Controls,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<Arc<NewBuildingElement>> {
+) -> anyhow::Result<Arc<BuildingElement>> {
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
@@ -3350,7 +3347,7 @@ fn building_element_from_input(
                 false
             };
 
-            NewBuildingElement::Opaque(NewBuildingElementOpaque::new(
+            BuildingElement::Opaque(BuildingElementOpaque::new(
                 *area,
                 is_unheated_pitched_roof,
                 *pitch,
@@ -3378,7 +3375,7 @@ fn building_element_from_input(
             shading,
             treatment,
             ..
-        } => NewBuildingElement::Transparent(NewBuildingElementTransparent::new(
+        } => BuildingElement::Transparent(BuildingElementTransparent::new(
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
             *orientation,
@@ -3417,7 +3414,7 @@ fn building_element_from_input(
             thickness_walls,
             perimeter,
             psi_wall_floor_junc,
-        } => NewBuildingElement::Ground(NewBuildingElementGround::new(
+        } => BuildingElement::Ground(BuildingElementGround::new(
             *total_area,
             *area,
             *pitch,
@@ -3438,7 +3435,7 @@ fn building_element_from_input(
             r_c,
             k_m,
             mass_distribution_class,
-        } => NewBuildingElement::AdjacentZTC(NewBuildingElementAdjacentZTC::new(
+        } => BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
             *area,
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
@@ -3454,7 +3451,7 @@ fn building_element_from_input(
             r_u,
             k_m,
             mass_distribution_class,
-        } => NewBuildingElement::AdjacentZTUSimple(NewBuildingElementAdjacentZTUSimple::new(
+        } => BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
             *area,
             *pitch,
             init_r_c_for_building_element(*r_c, *u_value, *pitch)?,

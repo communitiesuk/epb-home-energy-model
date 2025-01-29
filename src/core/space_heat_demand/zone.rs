@@ -3,9 +3,7 @@
 
 use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::material_properties::AIR;
-use crate::core::space_heat_demand::building_element::{
-    BuildingElement, BuildingElementBehaviour, NewBuildingElement,
-};
+use crate::core::space_heat_demand::building_element::BuildingElement;
 use crate::core::space_heat_demand::thermal_bridge::{
     heat_transfer_coefficient_for_thermal_bridge, ThermalBridging,
 };
@@ -100,7 +98,7 @@ impl Zone {
     pub(crate) fn new(
         area: f64,
         volume: f64,
-        building_elements: IndexMap<String, Arc<NewBuildingElement>>,
+        building_elements: IndexMap<String, Arc<BuildingElement>>,
         thermal_bridging: ThermalBridging,
         ventilation: Arc<InfiltrationVentilation>,
         temp_ext_air_init: f64,
@@ -575,19 +573,19 @@ impl Zone {
                     + eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                     + eli.area() * (-eli.therm_rad_to_sky());
                 match eli.as_ref() {
-                    NewBuildingElement::Opaque(_) => {
+                    BuildingElement::Opaque(_) => {
                         hb_fabric_ext_opaque += hb_fabric_ext;
                     }
-                    NewBuildingElement::Transparent(_) => {
+                    BuildingElement::Transparent(_) => {
                         hb_fabric_ext_transparent += hb_fabric_ext;
                     }
-                    NewBuildingElement::Ground(_) => {
+                    BuildingElement::Ground(_) => {
                         hb_fabric_ext_ground += hb_fabric_ext;
                     }
-                    NewBuildingElement::AdjacentZTC(_) => {
+                    BuildingElement::AdjacentZTC(_) => {
                         hb_fabric_ext_ztc += hb_fabric_ext;
                     }
-                    NewBuildingElement::AdjacentZTUSimple(_) => {
+                    BuildingElement::AdjacentZTUSimple(_) => {
                         hb_fabric_ext_ztu += hb_fabric_ext;
                     }
                 };
@@ -1278,10 +1276,10 @@ impl Zone {
             .filter_map(|el| {
                 if matches!(
                     el.element.as_ref(),
-                    NewBuildingElement::Opaque { .. }
-                        | NewBuildingElement::Transparent { .. }
-                        | NewBuildingElement::Ground { .. }
-                        | NewBuildingElement::AdjacentZTUSimple { .. }
+                    BuildingElement::Opaque { .. }
+                        | BuildingElement::Transparent { .. }
+                        | BuildingElement::Ground { .. }
+                        | BuildingElement::AdjacentZTUSimple { .. }
                 ) {
                     Some(el.element.area())
                 } else {
@@ -1340,9 +1338,9 @@ fn isclose(a: &Vec<f64>, b: &Vec<f64>, rtol: Option<f64>, atol: Option<f64>) -> 
 }
 
 #[derive(Clone, Debug)]
-pub struct NamedBuildingElement {
+struct NamedBuildingElement {
     pub name: String,
-    pub element: Arc<NewBuildingElement>,
+    pub element: Arc<BuildingElement>,
 }
 
 // equality and hashing based on name for identity
@@ -1649,9 +1647,7 @@ mod tests {
     use super::*;
     use crate::core::space_heat_demand::building_element::{
         BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
-        BuildingElementOpaque, BuildingElementTransparent, NewBuildingElementAdjacentZTC,
-        NewBuildingElementAdjacentZTUSimple, NewBuildingElementGround, NewBuildingElementOpaque,
-        NewBuildingElementTransparent,
+        BuildingElementOpaque, BuildingElementTransparent,
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
@@ -1835,7 +1831,7 @@ mod tests {
         infiltration_ventilation: InfiltrationVentilation,
     ) -> Zone {
         // Create objects for the different building elements in the zone
-        let be_opaque_i = NewBuildingElement::Opaque(NewBuildingElementOpaque::new(
+        let be_opaque_i = BuildingElement::Opaque(BuildingElementOpaque::new(
             20.,
             false,
             180.,
@@ -1849,7 +1845,7 @@ mod tests {
             10.,
             external_conditions.clone(),
         ));
-        let be_opaque_d = NewBuildingElement::Opaque(NewBuildingElementOpaque::new(
+        let be_opaque_d = BuildingElement::Opaque(BuildingElementOpaque::new(
             26.,
             true,
             45.,
@@ -1863,7 +1859,7 @@ mod tests {
             10.,
             external_conditions.clone(),
         ));
-        let be_ztc = NewBuildingElement::AdjacentZTC(NewBuildingElementAdjacentZTC::new(
+        let be_ztc = BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
             22.5,
             135.,
             0.50,
@@ -1878,8 +1874,8 @@ mod tests {
             shield_fact_location: WindShieldLocation::Sheltered,
             thermal_resistance_of_insulation: 7.,
         };
-        let be_ground = NewBuildingElement::Ground(
-            NewBuildingElementGround::new(
+        let be_ground = BuildingElement::Ground(
+            BuildingElementGround::new(
                 25.0,
                 25.0,
                 90.,
@@ -1895,7 +1891,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let be_transparent = NewBuildingElement::Transparent(NewBuildingElementTransparent::new(
+        let be_transparent = BuildingElement::Transparent(BuildingElementTransparent::new(
             90.,
             0.4,
             180.,
@@ -1908,16 +1904,15 @@ mod tests {
             Default::default(),
             external_conditions.clone(),
         ));
-        let be_ztu =
-            NewBuildingElement::AdjacentZTUSimple(NewBuildingElementAdjacentZTUSimple::new(
-                30.,
-                130.,
-                0.50,
-                0.6,
-                18000.0,
-                MassDistributionClass::E,
-                external_conditions.clone(),
-            ));
+        let be_ztu = BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
+            30.,
+            130.,
+            0.50,
+            0.6,
+            18000.0,
+            MassDistributionClass::E,
+            external_conditions.clone(),
+        ));
 
         // Put building element objects in a list that can be iterated over
         let be_objs = IndexMap::from([
