@@ -1757,12 +1757,12 @@ mod tests {
     use std::ops::Index;
 
     #[fixture]
-    pub fn simulation_time_for_storage_tank() -> SimulationTime {
+    fn simulation_time_for_storage_tank() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
-    pub fn cold_water_source() -> Arc<ColdWaterSource> {
+    fn cold_water_source() -> Arc<ColdWaterSource> {
         Arc::new(ColdWaterSource::new(
             vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1],
             0,
@@ -1771,7 +1771,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn external_conditions(
+    fn external_conditions(
         simulation_time_for_storage_tank: SimulationTime,
     ) -> Arc<ExternalConditions> {
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
@@ -2073,6 +2073,11 @@ mod tests {
     }
 
     #[fixture]
+    fn storage_tank_for_pv_diverter() {
+        todo!()
+    }
+
+    #[fixture]
     fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
         let simulation_time = SimulationTime::new(5088., 5112., 1.);
 
@@ -2186,7 +2191,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn storage_tank_with_solar_thermal(
+    fn storage_tank_with_solar_thermal(
         external_conditions_for_solar_thermal: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
     ) -> (
@@ -2295,7 +2300,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_demand_hot_water(
+    fn test_demand_hot_water(
         cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
@@ -2495,7 +2500,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_temp_surrounding_primary_pipework(
+    fn test_temp_surrounding_primary_pipework(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -2539,7 +2544,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_get_cold_water_source(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_get_cold_water_source(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
         let result = storage_tank1.get_cold_water_source();
 
@@ -2550,16 +2555,14 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_get_temp_hot_water(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
 
         assert_eq!(storage_tank1.get_temp_hot_water(), 55.0);
     }
 
     #[rstest]
-    pub fn test_stand_by_losses_coefficient(
-        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
-    ) {
+    fn test_stand_by_losses_coefficient(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
 
         assert_relative_eq!(
@@ -2569,7 +2572,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_potential_energy_input(
+    fn test_potential_energy_input(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         storage_tank_with_solar_thermal: (
             StorageTank,
@@ -2650,9 +2653,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_storage_tank_potential_effect(
-        storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
-    ) {
+    fn test_storage_tank_potential_effect(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
         let energy_proposed = 0.;
         let temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0];
@@ -2662,7 +2663,7 @@ mod tests {
         );
     }
 
-    pub fn test_energy_input(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_energy_input(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
         let temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0];
         let q_x_in_n = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
@@ -2684,7 +2685,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_rearrange_temperatures(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_rearrange_temperatures(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
         let temp_s6_n = [2.5, 3.7, 10.36, 17.43, 32.95, 35.91, 35.91, 42.2];
         assert_eq!(
@@ -2702,7 +2703,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_thermal_losses(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_thermal_losses(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (mut storage_tank1, _) = storage_tank1;
         let temp_s7_n = [12.0, 18.0, 25.0, 32.0, 37.0, 45.0, 49.0, 58.0];
         let q_x_in_n = [0., 1., 2., 3., 4., 5., 6., 7., 8.];
@@ -2740,7 +2741,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_run_heat_sources(
+    fn test_run_heat_sources(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -2778,7 +2779,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_calculate_temperatures(
+    fn test_calculate_temperatures(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -2829,7 +2830,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_allocate_hot_water(
+    fn test_allocate_hot_water(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -2885,7 +2886,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_calculate_new_temperatures(
+    fn test_calculate_new_temperatures(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -2902,7 +2903,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_additional_energy_input(
+    fn test_additional_energy_input(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         storage_tank2: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
@@ -2942,7 +2943,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_internal_gains(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
+    fn test_internal_gains(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (mut storage_tank1, _) = storage_tank1;
         storage_tank1.q_sto_h_ls_rbl = Some(0.05);
 
@@ -2950,7 +2951,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_primary_pipework_losses(
+    fn test_primary_pipework_losses(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
@@ -3021,14 +3022,12 @@ mod tests {
     }
 
     #[fixture]
-    pub fn simulation_time_for_immersion_heater() -> SimulationTime {
+    fn simulation_time_for_immersion_heater() -> SimulationTime {
         SimulationTime::new(0., 4., 1.)
     }
 
     #[fixture]
-    pub fn immersion_heater(
-        simulation_time_for_immersion_heater: SimulationTime,
-    ) -> ImmersionHeater {
+    fn immersion_heater(simulation_time_for_immersion_heater: SimulationTime) -> ImmersionHeater {
         let rated_power = 50.;
         let energy_supply = EnergySupplyBuilder::new(
             FuelType::MainsGas,
@@ -3078,7 +3077,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_demand_energy_for_immersion_heater(
+    fn test_demand_energy_for_immersion_heater(
         mut immersion_heater: ImmersionHeater,
         simulation_time_for_immersion_heater: SimulationTime,
     ) {
@@ -3127,7 +3126,7 @@ mod tests {
 
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
-    pub fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
+    fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
         storage_tank_with_solar_thermal: (
             StorageTank,
             Arc<Mutex<SolarThermalSystem>>,
