@@ -11,6 +11,7 @@ use crate::corpus::{HeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
+use anyhow::bail;
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use indexmap::IndexMap;
@@ -960,9 +961,9 @@ impl StorageTank {
             .expect(&expect_message);
 
         match &mut *(heat_source.clone().lock()) {
-            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => Ok(immersion
+            HeatSource::Storage(HeatSourceWithStorageTank::Immersion(immersion)) => immersion
                 .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration)),
+                .demand_energy(input_energy_adj, simulation_time_iteration),
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => Ok(solar
                 .lock()
                 .demand_energy(input_energy_adj, simulation_time_iteration.index)),
@@ -1351,7 +1352,15 @@ impl ImmersionHeater {
     }
 
     /// Demand energy (in kWh) from the heater
-    pub fn demand_energy(&mut self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
+    pub fn demand_energy(
+        &mut self,
+        energy_demand: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64)> {
+        if energy_demand < 0.0 {
+            bail!("Negative energy demand on ImmersionHeater");
+        };
+
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
@@ -1372,7 +1381,7 @@ impl ImmersionHeater {
             .demand_energy(energy_supplied, simtime.index)
             .unwrap();
 
-        energy_supplied
+        Ok(energy_supplied)
     }
 
     /// Calculate the maximum energy output (in kWh) from the heater
@@ -3077,14 +3086,22 @@ mod tests {
         let expected_energy = [40., 50., 0., 20.];
         for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
             assert_eq!(
-                immersion_heater.demand_energy(energy_inputs[t_idx], t_it),
+                immersion_heater
+                    .demand_energy(energy_inputs[t_idx], t_it)
+                    .unwrap(),
                 expected_energy[t_idx],
                 "incorrect energy demand calculated"
             );
         }
+        assert!(immersion_heater
+            .demand_energy(
+                -1.,
+                simulation_time_for_immersion_heater
+                    .iter()
+                    .current_iteration()
+            )
+            .is_err());
     }
-
-    // following tests are from a separate test file in the Python test_storage_tank_with_solar_thermal.py
 
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
