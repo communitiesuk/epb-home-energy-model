@@ -26,14 +26,21 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Input {
+    #[serde(
+        rename = "temp_internal_air_static_calcs",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) temp_internal_air_static_calcs: Option<f64>,
     pub simulation_time: SimulationTime,
     pub external_conditions: Arc<ExternalConditionsInput>,
     pub(crate) internal_gains: InternalGains,
     #[serde(default)]
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
+    #[serde(default)]
+    pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
     pub(crate) energy_supply: EnergySupplyInput,
     pub control: Control,
     pub hot_water_source: HotWaterSource,

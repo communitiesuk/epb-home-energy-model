@@ -485,12 +485,6 @@
       "EnergySupply": "mains elec"
     }
   },
-  "Ventilation": {
-    "type": "WHEV",
-    "req_ach": 0.5,
-    "SFP": 1.5,
-    "EnergySupply": "mains elec"
-  },
   "General": {
     "storeys_in_building": 1,
     "build_type": "house"
