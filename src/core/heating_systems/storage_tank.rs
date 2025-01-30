@@ -3104,6 +3104,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_energy_output_max_for_immersion_heater(
+        immersion_heater: ImmersionHeater,
+        simulation_time_for_immersion_heater: SimulationTime,
+    ) {
+        for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
+            assert_eq!(
+                immersion_heater.energy_output_max(t_it, true), // In Python another parameter (return_temp = 55.0) is passed in to energy_output_max but never used so we have skipped this in Rust
+                50.,
+                "incorrect energy output max calculated"
+            );
+        }
+
+        for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
+            assert_eq!(
+                immersion_heater.energy_output_max(t_it, false), // In Python another parameter (return_temp = 40.0) is passed in to energy_output_max but never used so we have skipped this in Rust
+                [50.0, 50.0, 0.0, 50.0][t_idx],
+                "incorrect energy output max calculated"
+            );
+        }
+    }
+
+    #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     pub fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
         storage_tank_with_solar_thermal: (
