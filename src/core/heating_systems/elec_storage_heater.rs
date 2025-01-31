@@ -6,6 +6,7 @@ use itertools::Itertools;
 use nalgebra::{Vector1, Vector3};
 use ode_solvers::{dop_shared::OutputType, Dopri5, System};
 
+use crate::input::ControlLogicType;
 use crate::{
     core::{
         controls::time_control::{ChargeControl, Control, SetpointTimeControl},
@@ -73,13 +74,13 @@ pub struct ElecStorageHeater {
     energy_delivered: f64,
 }
 
-struct SocOdeFunction {
-    soc_array: Vec<f64>,
-    power_array: Vec<f64>,
+struct SocOdeFunction<'a> {
+    soc_array: &'a [f64],
+    power_array: &'a [f64],
     storage_capacity: f64,
 }
 
-impl System<Time, State> for SocOdeFunction {
+impl<'a> System<Time, State> for SocOdeFunction<'a> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         // Define the ODE for SOC and energy delivered (no charging, only discharging)
 
@@ -218,21 +219,20 @@ impl ElecStorageHeater {
         let power_min_array = esh_min_output.iter().map(|f| f.1).collect_vec();
 
         // Validate that both SOC arrays start at 0.0 and end at 1.0
-        // TODO Result or more specific panic
         if !is_close!(*soc_max_array.first().unwrap(), 0.) {
-            panic!("The first SOC value in esh_max_output must be 0.0 (fully discharged).");
+            bail!("The first SOC value in esh_max_output must be 0.0 (fully discharged).");
         }
 
         if !is_close!(*soc_max_array.last().unwrap(), 1.) {
-            panic!("The last SOC value in esh_max_output must be 1.0 (fully charged).");
+            bail!("The last SOC value in esh_max_output must be 1.0 (fully charged).");
         }
 
         if !is_close!(*soc_min_array.first().unwrap(), 0.) {
-            panic!("The first SOC value in esh_min_output must be 0.0 (fully discharged).");
+            bail!("The first SOC value in esh_min_output must be 0.0 (fully discharged).");
         }
 
         if !is_close!(*soc_min_array.last().unwrap(), 1.) {
-            panic!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
+            bail!("The last SOC value in esh_min_output must be 1.0 (fully charged).");
         }
 
         // Validate that for any SOC, power_max >= power_min
@@ -252,16 +252,13 @@ impl ElecStorageHeater {
 
         for i in 0..fine_soc.len() {
             if power_max_fine[i] < power_min_fine[i] {
-                panic!("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
+                bail!("At all SOC levels, ESH_max_output must be >= ESH_min_output.")
             }
         }
 
         // TODO can we pass these vecs/arrays by reference instead
-        let heat_retention_ratio = Self::heat_retention_output(
-            soc_min_array.clone(),
-            power_min_array.clone(),
-            storage_capacity,
-        );
+        let heat_retention_ratio =
+            Self::heat_retention_output(&soc_min_array, &power_min_array, storage_capacity);
 
         Ok(Self {
             pwr_in,
@@ -304,8 +301,8 @@ impl ElecStorageHeater {
     }
 
     pub fn heat_retention_output(
-        soc_array: Vec<f64>,
-        power_array: Vec<f64>,
+        soc_array: &[f64],
+        power_array: &[f64],
         storage_capacity: f64,
     ) -> f64 {
         // Simulates the heat retention over 16 hours in OutputMode.MIN.
@@ -516,7 +513,7 @@ impl ElecStorageHeater {
         let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, _final_soc) =
+        let (q_released_min, _, energy_charged, mut _final_soc) =
             self.energy_output(OutputMode::Min, simulation_time_iteration)?;
         self.energy_charged = energy_charged;
 
@@ -529,8 +526,9 @@ impl ElecStorageHeater {
             self.demand_unmet = 0.;
         } else {
             // Calculate maximum energy that can be delivered
-            let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc) =
+            let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
                 self.energy_output(OutputMode::Max, simulation_time_iteration)?;
+            _final_soc = final_soc_override;
 
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
@@ -567,10 +565,7 @@ impl ElecStorageHeater {
         }
 
         // Ensure energy_delivered does not exceed q_released_max
-        let max = match q_released_max {
-            Some(max) => max,
-            None => q_released_min,
-        };
+        let max = q_released_max.unwrap_or_else(|| q_released_min);
 
         self.energy_delivered = self.energy_delivered.min(max);
 
@@ -616,11 +611,11 @@ impl ElecStorageHeater {
         let temp_air: f64 = (self.zone_internal_air_func)();
 
         match logic_type {
-            crate::input::ControlLogicType::Manual => {
+            ControlLogicType::Manual => {
                 // Implements the "Manual" control logic for ESH
                 charge_control.target_charge(simulation_time_iteration, None)
             }
-            crate::input::ControlLogicType::Automatic => {
+            ControlLogicType::Automatic => {
                 // Implements the "Automatic" control logic for ESH
                 // Automatic charge control can be achieved using internal thermostat(s) to
                 // control the extent of charging of the heaters.
@@ -632,7 +627,7 @@ impl ElecStorageHeater {
                 // TODO (from Python): Check and implement if external temperature sensors are also used for Automatic controls.
                 charge_control.target_charge(simulation_time_iteration, Some(temp_air))
             }
-            crate::input::ControlLogicType::Celect => {
+            ControlLogicType::Celect => {
                 // Implements the "CELECT" control logic for ESH
                 // A CELECT-type controller has electronic sensors throughout the dwelling linked
                 // to a central control device. It monitors the individual room sensors and optimises
@@ -640,7 +635,7 @@ impl ElecStorageHeater {
                 // heaters in preference to storage heaters).
                 charge_control.target_charge(simulation_time_iteration, Some(temp_air))
             }
-            crate::input::ControlLogicType::Hhrsh => {
+            ControlLogicType::Hhrsh => {
                 // Implements the "HHRSH" control logic for ESH
                 // A ‘high heat retention storage heater’ is one with heat retention not less
                 // than 45% measured according to BS EN 60531. It incorporates a timer, electronic
@@ -1417,7 +1412,7 @@ mod tests {
         let power_array = vec![0., 0.02, 0.05];
         let storage_capacity = 10.;
         let actual =
-            ElecStorageHeater::heat_retention_output(soc_array, power_array, storage_capacity);
+            ElecStorageHeater::heat_retention_output(&soc_array, &power_array, storage_capacity);
 
         assert_relative_eq!(actual, 0.92372001, max_relative = EIGHT_DECIMAL_PLACES);
     }
