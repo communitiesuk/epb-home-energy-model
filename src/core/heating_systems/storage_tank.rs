@@ -2073,6 +2073,107 @@ mod tests {
     }
 
     #[fixture]
+    fn external_conditions_for_pv_diverter(
+        simulation_time_for_storage_tank: SimulationTime,
+    ) -> Arc<ExternalConditions> {
+        let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
+        let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
+        let wind_directions = vec![0.0; 8];
+        let diffuse_horizontal_radiations = vec![333., 610., 572., 420., 0., 10., 90., 275.];
+        let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
+        let solar_reflectivity_of_ground = vec![0.2; 8760];
+        let latitude = 51.42;
+        let longitude = -0.75;
+        let timezone = 0;
+        let start_day = 0;
+        let end_day = 0;
+        let time_series_step = 1.;
+        let january_first = 1;
+        let leap_day_included = false;
+        let direct_beam_conversion_needed = false;
+
+        let shading_segments = vec![
+            ShadingSegment {
+                number: 1,
+                start: 180.,
+                end: 135.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 2,
+                start: 135.,
+                end: 90.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 3,
+                start: 90.,
+                end: 45.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 4,
+                start: 45.,
+                end: 0.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 5,
+                start: 0.,
+                end: -45.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 6,
+                start: -45.,
+                end: -90.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 7,
+                start: -90.,
+                end: -135.,
+                shading_objects: None,
+                ..Default::default()
+            },
+            ShadingSegment {
+                number: 8,
+                start: -135.,
+                end: -180.,
+                shading_objects: None,
+                ..Default::default()
+            },
+        ];
+
+        Arc::new(ExternalConditions::new(
+            &simulation_time_for_storage_tank.iter(),
+            air_temps,
+            wind_speeds,
+            wind_directions,
+            diffuse_horizontal_radiations,
+            direct_beam_radiations,
+            solar_reflectivity_of_ground,
+            latitude,
+            longitude,
+            timezone,
+            start_day,
+            Some(end_day),
+            time_series_step,
+            Some(january_first),
+            Some(DaylightSavingsConfig::NotApplicable),
+            leap_day_included,
+            direct_beam_conversion_needed,
+            shading_segments,
+        ))
+    }
+
+    #[fixture]
     fn storage_tank_for_pv_diverter() {
         todo!()
     }
