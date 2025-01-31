@@ -1694,7 +1694,7 @@ impl Corpus {
                 vol_hot_water_equiv_elec_shower,
             } = self
                 .domestic_hot_water_demand
-                .hot_water_demand(t_it, temp_hot_water);
+                .hot_water_demand(t_it, temp_hot_water)?;
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::StorageTank(storage_tank) =

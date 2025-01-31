@@ -1077,7 +1077,7 @@ fn calc_daily_hw_demand(
     let mut hw_energy_demand = vec![0.0; total_steps];
     for (t_idx, t_it) in simtime.iter().enumerate() {
         let DomesticHotWaterDemandData { hw_demand_vol, .. } =
-            dhw_demand.hot_water_demand(t_it, HW_TEMPERATURE);
+            dhw_demand.hot_water_demand(t_it, HW_TEMPERATURE)?;
 
         // Convert from litres to kWh
         let cold_water_temperature = cold_water_sources[&cold_water_source_type].temperature(t_it);
