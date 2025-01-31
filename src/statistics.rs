@@ -28,6 +28,24 @@ pub fn np_interp(input: f64, x: &[f64], y: &[f64]) -> f64 {
     interp(x, y, input, &InterpMode::FirstLast)
 }
 
+/// This function matches the behaviour Numpy interp
+/// https://numpy.org/doc/stable/reference/generated/numpy.interp.html
+pub fn np_interp_with_extrapolate(input: f64, x: &[f64], y: &[f64]) -> f64 {
+    if x.is_empty() {
+        panic!("x cannot be empty");
+    }
+
+    if y.is_empty() {
+        panic!("y cannot be empty");
+    }
+
+    if x.len() != y.len() {
+        panic!("x and y must be of equal length");
+    }
+
+    interp(x, y, input, &InterpMode::Extrapolate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
