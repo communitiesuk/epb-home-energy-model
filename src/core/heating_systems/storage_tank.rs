@@ -2174,8 +2174,56 @@ mod tests {
     }
 
     #[fixture]
-    fn storage_tank_for_pv_diverter() {
-        todo!()
+    fn storage_tank_for_pv_diverter(
+        simulation_time_for_storage_tank: SimulationTime,
+        immersion_heater: ImmersionHeater,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_pv_diverter: Arc<ExternalConditions>,
+    ) -> StorageTank {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(
+                FuelType::MainsGas,
+                simulation_time_for_storage_tank.total_steps(),
+            )
+            .build(),
+        ));
+
+        let heater_position = 0.1;
+        let thermostat_position = 0.33;
+        let heat_source = PositionedHeatSource {
+            heat_source: Arc::new(Mutex::new(HeatSource::Storage(
+                HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
+            ))),
+            heater_position,
+            thermostat_position,
+        };
+        let start_day = 0;
+        let time_series_step = 1.;
+        let cold_water_temps = vec![10.6, 11.0, 11.5, 12.1];
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(cold_water_temps, start_day, time_series_step),
+        ));
+        let simulation_timestep = simulation_time_for_storage_tank.step;
+
+        let heat_sources = IndexMap::from([("imheater".to_string(), heat_source)]);
+
+        let storage_tank = StorageTank::new(
+            150.0,
+            1.68,
+            55.0,
+            cold_feed,
+            simulation_timestep,
+            heat_sources,
+            temp_internal_air_fn.clone(),
+            external_conditions_for_pv_diverter.clone(),
+            None,
+            None,
+            None,
+            None,
+            *WATER,
+        );
+
+        storage_tank
     }
 
     #[fixture]
