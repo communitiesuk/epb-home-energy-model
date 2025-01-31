@@ -2227,16 +2227,16 @@ impl HeatTransferOtherSide for BuildingElementGround {
         self.f_sky = f_sky;
     }
 
-    fn f_sky(&self) -> f64 {
-        self.f_sky
-    }
-
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
         self.therm_rad_to_sky = therm_rad_to_sky;
     }
 
     fn therm_rad_to_sky(&self) -> f64 {
         self.therm_rad_to_sky
+    }
+
+    fn f_sky(&self) -> f64 {
+        self.f_sky
     }
 
     fn external_conditions(&self) -> &ExternalConditions {
