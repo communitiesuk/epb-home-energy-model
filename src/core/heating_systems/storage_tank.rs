@@ -2226,6 +2226,47 @@ mod tests {
         storage_tank
     }
 
+    #[rstest]
+    fn test_divert_surplus(
+        mut storage_tank_for_pv_diverter: StorageTank,
+        immersion_heater: ImmersionHeater,
+    ) {
+        // _StorageTank__Q_ls_n_prev_heat_source is needed for the functions to
+        // run the test but have no bearing in the results
+
+        storage_tank_for_pv_diverter.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
+        let pvdiverter = PVDiverter::new(
+            Arc::new(Mutex::new(storage_tank_for_pv_diverter)),
+            Arc::new(Mutex::new(immersion_heater)),
+            "imheater".to_string(),
+        );
+        let supply_surplus = -1.0;
+        let sim_time = SimulationTime::new(0., 4., 1.);
+
+        assert_relative_eq!(
+            pvdiverter
+                .read()
+                .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+            0.891553580246915
+        );
+
+        let supply_surplus = 0.0;
+        assert_relative_eq!(
+            pvdiverter
+                .read()
+                .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+            0.0
+        );
+        // TODO: the below assertion fails currently, we think we need to update calculate_temperatures first
+        // let supply_surplus = 1.0;
+        // assert_relative_eq!(
+        //     pvdiverter
+        //         .read()
+        //         .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+        //     0.0
+        // );
+    }
+
     #[fixture]
     fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
         let simulation_time = SimulationTime::new(5088., 5112., 1.);
