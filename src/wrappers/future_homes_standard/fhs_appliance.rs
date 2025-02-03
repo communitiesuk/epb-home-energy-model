@@ -108,7 +108,7 @@ impl FhsAppliance {
 
         let mut event_count: usize = Default::default();
         for (step, num_events_in_step) in events.into_iter().enumerate() {
-            let mut start_offset = appliance_rng.gen::<f64>();
+            let mut start_offset = appliance_rng.random::<f64>();
             for e in 0..(num_events_in_step.floor() as usize) {
                 let demand_w_event = expected_demand_w_event;
                 let duration = event_duration * (1. + event_size_deviations[event_count]);

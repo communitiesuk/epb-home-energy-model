@@ -431,7 +431,7 @@ impl HotWaterEventGenerator {
         hourly_event_distribution[time % 24].poisson_arr_idx += 1;
         for _ in 0..(count as usize) {
             out.push(HourEvent {
-                time: time as f64 + self.rng.gen::<f64>(),
+                time: time as f64 + self.rng.random::<f64>(),
                 event_type,
                 volume: digest.mean_event_volume,
                 duration: digest.mean_duration,
@@ -469,7 +469,7 @@ impl HotWaterEventGenerator {
     /// do this by adding random value between 0-30 mins to current time
     /// until it does not overlap with anything
     fn reroll_event_time(&mut self, time: f64) -> f64 {
-        (time + self.rng.gen::<f64>() / 2.) % 8760.
+        (time + self.rng.random::<f64>() / 2.) % 8760.
     }
 
     pub fn build_annual_hw_events(&mut self, start_day: usize) -> anyhow::Result<Vec<HourEvent>> {
