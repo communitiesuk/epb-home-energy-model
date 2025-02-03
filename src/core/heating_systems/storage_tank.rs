@@ -639,8 +639,8 @@ impl StorageTank {
                     .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64)
                     .sum::<f64>()
                     / (0..self.vol_n.len())
-                    .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
-                    .sum::<f64>();
+                        .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
+                        .sum::<f64>();
                 // set same temperature for all applicable layers
                 for j in 0..i + 2 {
                     if mix_layer_n[j] == 1 {
@@ -660,8 +660,8 @@ impl StorageTank {
         let _q_h_sto_end_no = self.rho
             * self.cp
             * (0..self.vol_n.len())
-            .map(|i| self.vol_n[i] * temp_s7_n[i])
-            .sum::<f64>();
+                .map(|i| self.vol_n[i] * temp_s7_n[i])
+                .sum::<f64>();
 
         (q_h_sto_end, temp_s7_n.to_owned())
     }
@@ -743,8 +743,8 @@ impl StorageTank {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
                     let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                                                immersion_heater,
-                                            )) => immersion_heater
+                            immersion_heater,
+                        )) => immersion_heater
                             .lock()
                             .energy_output_max(simulation_time, false),
                         HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
@@ -850,8 +850,8 @@ impl StorageTank {
         let q_s6 = self.rho
             * self.cp
             * (0..self.vol_n.len())
-            .map(|i| self.vol_n[i] * temp_s6_n[i])
-            .sum::<f64>();
+                .map(|i| self.vol_n[i] * temp_s6_n[i])
+                .sum::<f64>();
 
         (q_s6, temp_s6_n)
     }
@@ -1748,7 +1748,7 @@ impl SolarThermalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
+    use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::material_properties::WATER;
     use crate::core::schedule::WaterScheduleEventType;
@@ -1762,7 +1762,6 @@ mod tests {
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;
-    use std::ops::Index;
 
     #[fixture]
     fn simulation_time_for_storage_tank() -> SimulationTime {
@@ -1886,7 +1885,7 @@ mod tests {
             FuelType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
         )
-            .build();
+        .build();
 
         Arc::new(RwLock::new(energy_supply))
     }
@@ -1911,7 +1910,7 @@ mod tests {
             None,
             simulation_timestep,
         )
-            .unwrap();
+        .unwrap();
 
         let control_max = SetpointTimeControl::new(
             control_max_schedule,
@@ -1923,7 +1922,7 @@ mod tests {
             None,
             simulation_timestep,
         )
-            .unwrap();
+        .unwrap();
         let immersion_heater = ImmersionHeater::new(
             rated_power,
             energy_supply_connection.clone(),
@@ -1974,7 +1973,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
@@ -2043,7 +2042,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap();
@@ -2193,7 +2192,7 @@ mod tests {
                 FuelType::MainsGas,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
 
         let heater_position = 0.1;
@@ -2419,7 +2418,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_solar_thermal.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
@@ -2738,7 +2737,7 @@ mod tests {
             false,
             WaterPipeContentsType::Water,
         )
-            .unwrap();
+        .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
@@ -2756,7 +2755,7 @@ mod tests {
             false,
             WaterPipeContentsType::Water,
         )
-            .unwrap();
+        .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
@@ -3199,7 +3198,7 @@ mod tests {
                 false,
                 WaterPipeContentsType::Water,
             )
-                .unwrap(),
+            .unwrap(),
             Pipework::new(
                 PipeworkLocation::External,
                 0.025,
@@ -3210,7 +3209,7 @@ mod tests {
                 false,
                 WaterPipeContentsType::Water,
             )
-                .unwrap(),
+            .unwrap(),
         ];
 
         storage_tank1.primary_pipework_lst = Some(primary_pipework_lst);
@@ -3263,7 +3262,7 @@ mod tests {
             FuelType::MainsGas,
             simulation_time_for_immersion_heater.total_steps(),
         )
-            .build();
+        .build();
         let energy_supply_connection =
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
@@ -3279,7 +3278,7 @@ mod tests {
                 None,
                 timestep,
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         let control_max = Arc::new(Control::SetpointTime(
@@ -3293,7 +3292,7 @@ mod tests {
                 None,
                 timestep,
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         ImmersionHeater::new(
@@ -3481,6 +3480,33 @@ mod tests {
             assert_relative_eq!(actual, expected[t_idx], max_relative = 1e-7);
         }
     }
+
+    #[rstest]
+    fn test_demand_energy_with_solar_thermal(
+        #[from(storage_tank_with_solar_thermal)]
+        (storage_tank_solar_thermal, solar_thermal, simulation_time, _): (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        ),
+    ) {
+        let temp_storage_tank_s3_n = [
+            17.2, 17.2, 17.2, 17.2, 17.43, 32.95, 35.91, 35.91, 35.91, 42.25, 43.46, 43.46, 43.46,
+            43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46,
+        ];
+
+        solar_thermal.lock().energy_output_max(
+            &storage_tank_solar_thermal,
+            &temp_storage_tank_s3_n,
+            &simulation_time.iter().current_iteration(),
+        );
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_eq!(solar_thermal.lock().demand_energy(100., t_idx), 0.);
+        }
+    }
+
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
