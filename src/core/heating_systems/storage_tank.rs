@@ -2279,9 +2279,14 @@ mod tests {
     }
 
     #[fixture]
-    fn external_conditions_for_solar_thermal() -> Arc<ExternalConditions> {
-        let simulation_time = SimulationTime::new(5088., 5112., 1.);
+    fn simulation_time_for_solar_thermal() -> SimulationTime {
+        SimulationTime::new(5088., 5112., 1.)
+    }
 
+    #[fixture]
+    fn external_conditions_for_solar_thermal(
+        simulation_time_for_solar_thermal: SimulationTime,
+    ) -> Arc<ExternalConditions> {
         let air_temps = vec![
             19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
             19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
@@ -2291,7 +2296,7 @@ mod tests {
             3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1,
         ];
         let wind_directions = vec![
-            30.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
+            300.0, 250., 220., 180., 150., 120., 100., 80., 60., 40., 20., 10., 50., 100., 140.,
             190., 200., 320., 330., 340., 350., 355., 315., 5.,
         ];
         let diffuse_horizontal_radiations = vec![
@@ -2370,7 +2375,7 @@ mod tests {
         ];
 
         Arc::new(ExternalConditions::new(
-            &simulation_time.iter(),
+            &simulation_time_for_solar_thermal.iter(),
             air_temps,
             wind_speeds,
             wind_directions,
@@ -2395,6 +2400,7 @@ mod tests {
     fn storage_tank_with_solar_thermal(
         external_conditions_for_solar_thermal: Arc<ExternalConditions>,
         temp_internal_air_fn: TempInternalAirFn,
+        simulation_time_for_solar_thermal: SimulationTime,
     ) -> (
         StorageTank,
         Arc<Mutex<SolarThermalSystem>>,
@@ -2405,12 +2411,15 @@ mod tests {
             17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5,
             17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7,
         ];
-        let simulation_time = SimulationTime::new(5088., 5112., 1.);
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps.to_vec(), 212, 1.),
         ));
         let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_solar_thermal.total_steps(),
+            )
+            .build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
@@ -2447,7 +2456,7 @@ mod tests {
             None,
             None,
             None,
-            simulation_time.step,
+            simulation_time_for_solar_thermal.step,
         );
 
         let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(
@@ -2467,7 +2476,7 @@ mod tests {
             0.5,
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),
-            simulation_time.step,
+            simulation_time_for_solar_thermal.step,
             Arc::new(Control::SetpointTime(control_max.unwrap())),
             *WATER,
         )));
@@ -2477,7 +2486,7 @@ mod tests {
             1.68,
             55.0,
             cold_feed,
-            simulation_time.step,
+            simulation_time_for_solar_thermal.step,
             IndexMap::from([(
                 "solthermal".to_string(),
                 PositionedHeatSource {
@@ -2497,7 +2506,12 @@ mod tests {
             *WATER,
         );
 
-        (storage_tank, solar_thermal, simulation_time, energy_supply)
+        (
+            storage_tank,
+            solar_thermal,
+            simulation_time_for_solar_thermal,
+            energy_supply,
+        )
     }
 
     #[rstest]
@@ -3340,6 +3354,133 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn test_energy_output_max_with_solar_thermal(
+        storage_tank_with_solar_thermal: (
+            StorageTank,
+            Arc<Mutex<SolarThermalSystem>>,
+            SimulationTime,
+            Arc<RwLock<EnergySupply>>,
+        ),
+    ) {
+        let temp_storage_tank_s3_n = [
+            17.2, 17.2, 17.2, 17.2, 17.43, 32.95, 35.91, 35.91, 35.91, 42.25, 43.46, 43.46, 43.46,
+            43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46,
+        ];
+
+        let (storage_tank_solar_thermal, mut solar_thermal, simulation_time, _) =
+            storage_tank_with_solar_thermal;
+
+        let expected = [
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.5441009409757523,
+            0.7375096332994749,
+            1.043768276267769,
+            1.4751675743361337,
+            1.2419712751344847,
+            1.3717388178387737,
+            1.7256641787433769,
+            1.1745201463530213,
+            0.8403815010507395,
+            0.6056200608960752,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let actual = solar_thermal.lock().energy_output_max(
+                &storage_tank_solar_thermal,
+                &temp_storage_tank_s3_n,
+                &t_it,
+            );
+            assert_relative_eq!(actual, expected[t_idx]);
+        }
+
+        solar_thermal.lock().sol_loc = SolarCellLocation::Nhs;
+        let expected = [
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.5443432944582923,
+            0.7377445749305638,
+            1.044003444574131,
+            1.4754027357101285,
+            1.2422064367204904,
+            1.371973979418296,
+            1.7258993403230973,
+            1.1747553079327355,
+            0.8406166626304539,
+            0.6058552224757895,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let actual = solar_thermal.lock().energy_output_max(
+                &storage_tank_solar_thermal,
+                &temp_storage_tank_s3_n,
+                &t_it,
+            );
+            assert_relative_eq!(actual, expected[t_idx]);
+        }
+
+        solar_thermal.lock().sol_loc = SolarCellLocation::Hs;
+        let expected = [
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.5445856479408322,
+            0.7379795165616525,
+            1.044238612880493,
+            1.475637897084123,
+            1.2424415983064963,
+            1.372209140997818,
+            1.7261345019028178,
+            1.1749904695124498,
+            0.8408518242101682,
+            0.6060903840555039,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let actual = solar_thermal.lock().energy_output_max(
+                &storage_tank_solar_thermal,
+                &temp_storage_tank_s3_n,
+                &t_it,
+            );
+            assert_relative_eq!(actual, expected[t_idx]);
+        }
+    }
     #[rstest]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
