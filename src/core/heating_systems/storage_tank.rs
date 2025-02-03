@@ -11,7 +11,7 @@ use crate::corpus::{HeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{SolarCellLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use derivative::Derivative;
 use indexmap::IndexMap;
@@ -1018,10 +1018,10 @@ impl StorageTank {
         thermostat_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        // TODO - update for smarthot water tank to use SOC instead. - take out all areas where temp_setpnt functions is used and deals with systems switches on and off needs to be taken out into separate function - write as soc.
+        // TODO (from Python) - update for smarthot water tank to use SOC instead. - take out all areas where temp_setpnt functions is used and deals with systems switches on and off needs to be taken out into separate function - write as soc.
         //  look at heating ssystems that doesn't use if conditions implement like this.
         //  l205-217 separate function and call new function. in the new smart control object [same inputs ]
-        //  TODO remove unused parameters
+        //  TODO (from Python) remove unused parameters
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
         if setpntmin.is_some() && temp_s3_n[thermostat_layer] <= setpntmin.unwrap() {
             self.heating_active.insert(heat_source_name, true);
@@ -1044,8 +1044,7 @@ impl StorageTank {
         let expect_message = format!(
             "Expected set point max to be set for storage tank with heat source: {heat_source_name}"
         );
-        // TODO check whether we should use expect or ok_or_else on setpntmax (setpntmax.ok_or_else(expect_message))
-        if temp_s8_n[thermostat_layer] >= setpntmax.expect(&expect_message) {
+        if temp_s8_n[thermostat_layer] >= setpntmax.ok_or_else(|| anyhow!(expect_message))? {
             self.heating_active.insert(heat_source_name, false);
         };
 
@@ -1287,7 +1286,7 @@ impl StorageTank {
     }
 
     fn output_results(&self) -> f64 {
-        todo!("Do we really need to replicate this in Rust?")
+        todo!("Will be completed after 0.32 migration")
     }
 }
 
