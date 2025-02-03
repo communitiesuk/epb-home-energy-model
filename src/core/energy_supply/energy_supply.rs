@@ -547,7 +547,7 @@ impl EnergySupply {
     pub fn calc_energy_import_export_betafactor(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> Result<(), NotImplementedError> {
+    ) -> anyhow::Result<()> {
         let end_user_count = self.demand_by_end_user.len();
         let mut supplies = Vec::with_capacity(end_user_count);
         let mut demands = Vec::with_capacity(end_user_count);
@@ -629,7 +629,7 @@ impl EnergySupply {
 
                 if let Some(ref diverter) = &self.diverter {
                     self.energy_diverted.get(timestep_idx).unwrap().store(
-                        diverter.read().divert_surplus(supply_surplus, simtime),
+                        diverter.read().divert_surplus(supply_surplus, simtime)?,
                         Ordering::SeqCst,
                     );
                     supply_surplus += self.energy_diverted[timestep_idx].load(Ordering::SeqCst);
@@ -669,7 +669,7 @@ impl EnergySupply {
                     {
                         let diverter = self.diverter.as_ref().unwrap();
                         self.energy_diverted[simtime.index].store(
-                            diverter.read().divert_surplus(supply_surplus, simtime),
+                            diverter.read().divert_surplus(supply_surplus, simtime)?,
                             Ordering::SeqCst,
                         );
                         supply_surplus +=
@@ -883,8 +883,12 @@ mod tests {
         struct NullDiverter;
 
         impl SurplusDiverting for NullDiverter {
-            fn divert_surplus(&self, _surplus: f64, _simtime: SimulationTimeIteration) -> f64 {
-                0.
+            fn divert_surplus(
+                &self,
+                _surplus: f64,
+                _simtime: SimulationTimeIteration,
+            ) -> anyhow::Result<f64> {
+                Ok(0.)
             }
         }
 
@@ -1277,8 +1281,8 @@ mod tests {
                 &self,
                 _supply_surplus: f64,
                 _simulation_time_iteration: SimulationTimeIteration,
-            ) -> f64 {
-                10.
+            ) -> anyhow::Result<f64> {
+                Ok(10.)
             }
         }
 

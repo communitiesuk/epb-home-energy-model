@@ -687,14 +687,14 @@ impl StorageTank {
             simulation_time,
         )?;
 
-        Ok(self.calculate_temperatures(
+        self.calculate_temperatures(
             &temp_s3_n,
             heat_source,
             q_x_in_n,
             heater_layer,
             q_ls_prev_heat_source,
             simulation_time,
-        ))
+        )
     }
 
     /// Energy input for the storage from the generation system
@@ -786,10 +786,9 @@ impl StorageTank {
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> TemperatureCalculation {
+    ) -> anyhow::Result<TemperatureCalculation> {
         let temp_flow = self
-            .temp_flow(heat_source.clone(), simulation_time_iteration)
-            .unwrap() // TODO review usage of result in temp_flow method
+            .temp_flow(heat_source.clone(), simulation_time_iteration)?
             .expect("Expected temp flow to be set for storage tank with heat source");
 
         let (q_s6, temp_s6_n) = self.energy_input(temp_s3_n, &q_x_in_n);
@@ -822,9 +821,9 @@ impl StorageTank {
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
-        (
+        Ok((
             temp_s8_n, q_x_in_n, q_s6, temp_s6_n, temp_s7_n, q_in_h_w, q_ls, q_ls_n,
-        )
+        ))
     }
 
     /// The input of energy(s) is (are) allocated to the specific location(s)
@@ -1138,9 +1137,9 @@ impl StorageTank {
         heat_source_name: &str,
         energy_input: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         if energy_input == 0. {
-            return 0.;
+            return Ok(0.);
         }
 
         let heat_source_data = &self.heat_source_data[heat_source_name];
@@ -1157,7 +1156,7 @@ impl StorageTank {
                 heater_layer,
                 &self.q_ls_n_prev_heat_source.clone(),
                 simulation_time_iteration,
-            );
+            )?;
 
         for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
             self.q_ls_n_prev_heat_source[i] += *q_ls_n;
@@ -1165,7 +1164,7 @@ impl StorageTank {
 
         self.temp_n = temp_s8_n;
 
-        q_in_h_w
+        Ok(q_in_h_w)
     }
 
     #[cfg(test)]
@@ -1410,7 +1409,7 @@ pub(crate) trait SurplusDiverting: Send + Sync {
         &self,
         supply_surplus: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64;
+    ) -> anyhow::Result<f64>;
 }
 
 #[derive(Debug)]
@@ -1459,7 +1458,7 @@ impl SurplusDiverting for PVDiverter {
         &self,
         supply_surplus: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         // check how much spare capacity the immersion heater has
         let imm_heater_max_capacity_spare = self
             .immersion_heater
@@ -1479,9 +1478,9 @@ impl SurplusDiverting for PVDiverter {
             &self.heat_source_name,
             energy_diverted_max,
             simulation_time_iteration,
-        );
+        )?;
 
-        energy_diverted
+        Ok(energy_diverted)
     }
 }
 
@@ -2246,7 +2245,8 @@ mod tests {
         assert_relative_eq!(
             pvdiverter
                 .read()
-                .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+                .divert_surplus(supply_surplus, sim_time.iter().current_iteration())
+                .unwrap(),
             0.891553580246915
         );
 
@@ -2254,15 +2254,17 @@ mod tests {
         assert_relative_eq!(
             pvdiverter
                 .read()
-                .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+                .divert_surplus(supply_surplus, sim_time.iter().current_iteration())
+                .unwrap(),
             0.0
         );
         // TODO: the below assertion fails currently, we think we need to update calculate_temperatures first
-        // let supply_surplus = 1.0;
+        let supply_surplus = 1.0;
         // assert_relative_eq!(
         //     pvdiverter
         //         .read()
-        //         .divert_surplus(supply_surplus, sim_time.iter().current_iteration()),
+        //         .divert_surplus(supply_surplus, sim_time.iter().current_iteration())
+        //         .unwrap(),
         //     0.0
         // );
     }
@@ -2990,14 +2992,16 @@ mod tests {
         let q_ls_n_prev_heat_source = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
         assert_eq!(
-            storage_tank1.calculate_temperatures(
-                &temp_s3_n,
-                heat_source,
-                q_x_in_n,
-                heater_layer,
-                &q_ls_n_prev_heat_source,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ),
+            storage_tank1
+                .calculate_temperatures(
+                    &temp_s3_n,
+                    heat_source,
+                    q_x_in_n,
+                    heater_layer,
+                    &q_ls_n_prev_heat_source,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
             (
                 vec![10.0, 37.71697755116492, 55.0, 55.0],
                 vec![0., 1., 2., 3., 4., 5., 6., 7., 8.],
@@ -3114,12 +3118,14 @@ mod tests {
         let energy_input = 5.0;
         storage_tank1.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
         assert_eq!(
-            storage_tank1.additional_energy_input(
-                heat_source,
-                "imheater",
-                energy_input,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ),
+            storage_tank1
+                .additional_energy_input(
+                    heat_source,
+                    "imheater",
+                    energy_input,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
             0.01762703703703572
         );
 
@@ -3131,12 +3137,14 @@ mod tests {
         let energy_input = 0.;
         storage_tank2.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
         assert_eq!(
-            storage_tank2.additional_energy_input(
-                heat_source,
-                "imheater2",
-                energy_input,
-                simulation_time_for_storage_tank.iter().current_iteration()
-            ),
+            storage_tank2
+                .additional_energy_input(
+                    heat_source,
+                    "imheater2",
+                    energy_input,
+                    simulation_time_for_storage_tank.iter().current_iteration()
+                )
+                .unwrap(),
             0.0
         );
     }
