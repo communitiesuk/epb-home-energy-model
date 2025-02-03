@@ -904,11 +904,18 @@ impl StorageTank {
         // check temperature compared to set point
         // the temperature for each volume are limited to the set point for any volume controlled
         for i in 0..self.vol_n.len() {
-            let temp_s8_n_step = if temp_s7_n[i] > setpntmax {
+            // Need to check for heating input below, otherwise temperature will be wrongly
+            // capped at setpntmax in cases where tank temperature already exceeded setpntmax
+            // without any contribution from the heat source. This could happen if the setpntmax
+            // setting is lower in the current timestep than the previous timestep, or if
+            // another heat source has a higher setpntmax (and therefore heated the tank to a
+            // higher temperature) than the heat source currently being considered
+            let temp_s8_n_step = if q_x_in_adj > 0.0 && temp_s7_n[i] > setpntmax {
                 // Case 2 - Temperature exceeding the set point
                 setpntmax
             } else {
                 // Case 1 - Temperature below the set point
+                // TODO (from Python) - spreadsheet accounts for total thermal losses not just layer
 
                 // the final value of the temperature
                 // is reduced due to the effect of the thermal losses
@@ -919,30 +926,32 @@ impl StorageTank {
             temp_s8_n.push(temp_s8_n_step);
         }
 
-        // excess energy/ energy surplus
-        // excess energy is calculated as the difference from the energy stored, Qsto,step7, and
-        // energy stored once the set temperature is obtained, Qsto,step8, with addition of the
-        // thermal losses.
-        // Note: The surplus must be calculated only for those layers that the
-        //       heat source currently being considered is capable of heating,
-        //       i.e. excluding those below the heater position.
-        let energy_surplus = if temp_s7_n[heater_layer] > setpntmax {
-            (heater_layer..self.nb_vol).fold(0., |acc, i| {
-                acc + q_h_sto_s7[i] - q_ls_n[i] - (self.rho * self.cp * self.vol_n[i] * setpntmax)
-            })
+        let q_in_h_w = if q_x_in_adj > 0.0 {
+            // excess energy/ energy surplus
+            // excess energy is calculated as the difference from the energy stored, Qsto,step7, and
+            // energy stored once the set temperature is obtained, Qsto,step8, with addition of the
+            // thermal losses.
+            // Note: The surplus must be calculated only for those layers that the
+            //       heat source currently being considered is capable of heating,
+            //       i.e. excluding those below the heater position.
+            let mut energy_surplus = 0.0;
+            if temp_s7_n[heater_layer] > setpntmax {
+                for i in heater_layer..self.nb_vol {
+                    energy_surplus += q_h_sto_s7[i]
+                        - q_ls_n[i]
+                        - (self.rho * self.cp * self.vol_n[i] * setpntmax);
+                }
+            }
+            // the thermal energy provided to the system (from heat sources) shall be limited
+            // adjustment of the energy delivered to the storage according with the set temperature
+            // potential input from generation
+            // TODO (from Python code) - find in standard - availability of back-up - where is this from?
+            // also referred to as electrical power on
+            let sto_bu_on = 1.;
+            min_of_2(q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on)
         } else {
             0.
         };
-
-        // the thermal energy provided to the system (from heat sources) shall be limited
-        // adjustment of the energy delivered to the storage according with the set temperature
-        // potential input from generation
-        let q_x_in_adj = q_x_in_n.iter().sum::<f64>();
-        // TODO (from Python code) - find in standard - availability of back-up - where is this from?
-
-        // also referred to as electrical power on
-        let sto_bu_on = 1.;
-        let q_in_h_w = min_of_2(q_x_in_adj - energy_surplus, q_x_in_adj * sto_bu_on);
 
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
@@ -1355,7 +1364,7 @@ impl ImmersionHeater {
         &mut self,
         energy_demand: f64,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64)> {
+    ) -> anyhow::Result<f64> {
         if energy_demand < 0.0 {
             bail!("Negative energy demand on ImmersionHeater");
         };
@@ -2239,9 +2248,9 @@ mod tests {
             Arc::new(Mutex::new(immersion_heater)),
             "imheater".to_string(),
         );
-        let supply_surplus = -1.0;
         let sim_time = SimulationTime::new(0., 4., 1.);
 
+        let supply_surplus = -1.0;
         assert_relative_eq!(
             pvdiverter
                 .read()
@@ -2258,15 +2267,15 @@ mod tests {
                 .unwrap(),
             0.0
         );
-        // TODO: the below assertion fails currently, we think we need to update calculate_temperatures first
+
         let supply_surplus = 1.0;
-        // assert_relative_eq!(
-        //     pvdiverter
-        //         .read()
-        //         .divert_surplus(supply_surplus, sim_time.iter().current_iteration())
-        //         .unwrap(),
-        //     0.0
-        // );
+        assert_relative_eq!(
+            pvdiverter
+                .read()
+                .divert_surplus(supply_surplus, sim_time.iter().current_iteration())
+                .unwrap(),
+            0.0
+        );
     }
 
     #[fixture]
