@@ -313,7 +313,7 @@ impl StorageTank {
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
 
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
-            let (_, setpntmax) = positioned_heat_source
+            let (_, _setpntmax) = positioned_heat_source
                 .heat_source
                 .lock()
                 .temp_setpnt(simulation_time)?;
