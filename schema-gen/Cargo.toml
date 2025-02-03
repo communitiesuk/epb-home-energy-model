@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 hem = { path = "..", features = ["schemars"] }
 schemars = { version = "0.8.21", features = ["arrayvec07", "indexmap2"] }
-serde_json = "1.0.137"
+serde_json = "1.0.138"
