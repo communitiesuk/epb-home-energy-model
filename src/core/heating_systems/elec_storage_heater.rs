@@ -1,16 +1,7 @@
-use std::sync::Arc;
-
-use anyhow::bail;
-use derivative::Derivative;
-use itertools::Itertools;
-use nalgebra::{Vector1, Vector3};
-use ode_solvers::{dop_shared::OutputType, Dopri5, System};
-
 use crate::input::ControlLogicType;
 use crate::{
     core::{
-        controls::time_control::{ChargeControl, Control, SetpointTimeControl},
-        energy_supply::energy_supply::EnergySupplyConnection,
+        controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
         units::WATTS_PER_KILOWATT,
     },
     external_conditions::ExternalConditions,
@@ -18,6 +9,15 @@ use crate::{
     simulation_time::{SimulationTime, SimulationTimeIteration},
     statistics::{np_interp, np_interp_with_extrapolate},
 };
+use anyhow::bail;
+use atomic_float::AtomicF64;
+use derivative::Derivative;
+use itertools::Itertools;
+use nalgebra::{Vector1, Vector3};
+use ode_solvers::{dop_shared::OutputType, Dopri5, System};
+use parking_lot::RwLock;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 type State = Vector1<f64>;
 type Time = f64;
@@ -57,9 +57,9 @@ pub struct ElecStorageHeater {
     fan_pwr: f64,
     external_conditions: ExternalConditions,
     temp_air: f64,
-    state_of_charge: f64,
-    demand_met: f64,
-    demand_unmet: f64,
+    state_of_charge: AtomicF64,
+    demand_met: AtomicF64,
+    demand_unmet: AtomicF64,
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
     zone_internal_air_func: Arc<dyn Fn() -> f64>,
@@ -68,6 +68,12 @@ pub struct ElecStorageHeater {
     soc_min_array: Vec<f64>,
     power_min_array: Vec<f64>,
     heat_retention_ratio: f64,
+    current_energy_profile: RwLock<CurrentEnergyProfile>,
+}
+
+#[derive(Debug, Default)]
+/// A struct to encapsulate energy values for a current step.
+struct CurrentEnergyProfile {
     energy_for_fan: f64,
     energy_instant: f64,
     energy_charged: f64,
@@ -274,9 +280,9 @@ impl ElecStorageHeater {
             fan_pwr,
             external_conditions: ext_cond,
             temp_air,
-            state_of_charge: 0.,
-            demand_met: 0.,
-            demand_unmet: 0.,
+            state_of_charge: Default::default(),
+            demand_met: Default::default(),
+            demand_unmet: Default::default(),
             zone_setpoint_init,
             zone_internal_air_func,
             soc_max_array,
@@ -284,10 +290,7 @@ impl ElecStorageHeater {
             soc_min_array,
             power_min_array,
             heat_retention_ratio,
-            energy_for_fan: 0.,
-            energy_instant: 0.,
-            energy_charged: 0.,
-            energy_delivered: 0.,
+            current_energy_profile: Default::default(),
         })
     }
 
@@ -406,7 +409,7 @@ impl ElecStorageHeater {
         };
 
         // Set initial conditions
-        let current_soc = self.state_of_charge;
+        let current_soc = self.state_of_charge.load(Ordering::SeqCst);
         let initial_energy_charged = 0.; // No energy charged initially
         let initial_energy_delivered = 0.; // No energy delivered initially
         let time_remaining = simulation_time_iteration.timestep; // in hours
@@ -485,7 +488,7 @@ impl ElecStorageHeater {
         Ok(soc * f64::from(self.n_units))
     }
 
-    pub fn energy_output_max(
+    pub(crate) fn energy_output_max(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64)> {
@@ -494,8 +497,8 @@ impl ElecStorageHeater {
         self.energy_output(OutputMode::Max, simulation_time_iteration)
     }
 
-    pub fn demand_energy(
-        &mut self,
+    pub(crate) fn demand_energy(
+        &self,
         energy_demand: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -503,10 +506,11 @@ impl ElecStorageHeater {
         // energy charging and logging fan energy.
         // :param energy_demand: Energy demand in kWh.
         // :return: Total net energy delivered (including instant heating and fan energy).
+        let mut current_profile = self.current_energy_profile.write();
 
         let timestep = simulation_time_iteration.timestep;
         let energy_demand = energy_demand / f64::from(self.n_units);
-        self.energy_instant = 0.;
+        current_profile.energy_instant = 0.;
 
         // Initialize time_used_max and energy_charged_max to default values
         let mut time_used_max = 0.;
@@ -515,15 +519,15 @@ impl ElecStorageHeater {
         // Calculate minimum energy that can be delivered
         let (q_released_min, _, energy_charged, mut _final_soc) =
             self.energy_output(OutputMode::Min, simulation_time_iteration)?;
-        self.energy_charged = energy_charged;
+        current_profile.energy_charged = energy_charged;
 
         let mut q_released_max: Option<f64> = None;
 
         if q_released_min > energy_demand {
             // Deliver at least the minimum energy
-            self.energy_delivered = q_released_min;
-            self.demand_met = q_released_min;
-            self.demand_unmet = 0.;
+            current_profile.energy_delivered = q_released_min;
+            self.demand_met.store(q_released_min, Ordering::SeqCst);
+            self.demand_unmet.store(0., Ordering::SeqCst);
         } else {
             // Calculate maximum energy that can be delivered
             let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
@@ -532,70 +536,78 @@ impl ElecStorageHeater {
 
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
-            self.energy_charged = energy_charged;
+            current_profile.energy_charged = energy_charged;
 
             if q_released_max_value < energy_demand {
                 // Deliver as much as possible up to the maximum energy
-                self.energy_delivered = q_released_max_value;
-                self.demand_met = q_released_max_value;
-                self.demand_unmet = energy_demand - q_released_max_value;
+                current_profile.energy_delivered = q_released_max_value;
+                self.demand_met
+                    .store(q_released_max_value, Ordering::SeqCst);
+                self.demand_unmet
+                    .store(energy_demand - q_released_max_value, Ordering::SeqCst);
 
                 // For now, we assume demand not met from storage is topped-up by
                 // the direct top-up heater (if applicable). If still some unmet,
                 // this is reported as unmet demand.
                 if self.pwr_instant != 0. {
-                    self.energy_instant = self
+                    current_profile.energy_instant = self
                         .demand_unmet
+                        .load(Ordering::SeqCst)
                         .min(self.pwr_instant * f64::from(timestep)); // kWh
-                    let time_instant = self.energy_instant / self.pwr_instant;
+                    let time_instant = current_profile.energy_instant / self.pwr_instant;
                     time_used_max += time_instant;
                     time_used_max = time_used_max.min(timestep);
                 }
             } else {
                 // Deliver the demanded energy
-                self.energy_delivered = energy_demand;
+                current_profile.energy_delivered = energy_demand;
 
                 if q_released_max_value > 0. {
                     time_used_max *= energy_demand / q_released_max_value;
                 }
 
-                self.demand_met = energy_demand;
-                self.demand_unmet = 0.;
+                self.demand_met.store(energy_demand, Ordering::SeqCst);
+                self.demand_unmet.store(0., Ordering::SeqCst);
             }
         }
 
         // Ensure energy_delivered does not exceed q_released_max
         let max = q_released_max.unwrap_or_else(|| q_released_min);
 
-        self.energy_delivered = self.energy_delivered.min(max);
+        current_profile.energy_delivered = current_profile.energy_delivered.min(max);
 
-        let new_state_of_charge = self.state_of_charge
-            + (self.energy_charged - self.energy_delivered) / self.storage_capacity;
+        let new_state_of_charge = self.state_of_charge.load(Ordering::SeqCst)
+            + (current_profile.energy_charged - current_profile.energy_delivered)
+                / self.storage_capacity;
         let new_state_of_charge = clip(new_state_of_charge, 0., 1.);
-        self.state_of_charge = new_state_of_charge;
+        self.state_of_charge
+            .store(new_state_of_charge, Ordering::SeqCst);
 
         // Calculate fan energy
-        self.energy_for_fan = 0.;
+        current_profile.energy_for_fan = 0.;
 
         if self.air_flow_type == ElectricStorageHeaterAirFlowType::FanAssisted
             && q_released_max.is_some()
         {
             let power_for_fan = self.fan_pwr;
-            self.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max);
+            current_profile.energy_for_fan = Self::convert_to_kwh(power_for_fan, time_used_max);
         }
 
         // Log the energy charged, fan energy, and total energy delivered
         let amount_demanded = f64::from(self.n_units)
-            * (self.energy_charged + self.energy_instant + self.energy_for_fan);
+            * (current_profile.energy_charged
+                + current_profile.energy_instant
+                + current_profile.energy_for_fan);
         let _ = self
             .energy_supply_conn
             .demand_energy(amount_demanded, simulation_time_iteration.index)?;
 
         // Return total net energy delivered (discharged + instant heat + fan energy)
-        Ok(f64::from(self.n_units) * (self.energy_delivered + self.energy_instant))
+        Ok(f64::from(self.n_units)
+            * (current_profile.energy_delivered + current_profile.energy_instant))
     }
 
-    pub fn target_electric_charge(
+    pub(crate) fn target_electric_charge(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -644,7 +656,8 @@ impl ElecStorageHeater {
                 // settings and heat demand periods.
 
                 let energy_to_store = charge_control.energy_to_store(
-                    self.demand_met + self.demand_unmet,
+                    self.demand_met.load(Ordering::SeqCst)
+                        + self.demand_unmet.load(Ordering::SeqCst),
                     self.zone_setpoint_init,
                     simulation_time_iteration,
                 );
@@ -657,7 +670,8 @@ impl ElecStorageHeater {
                 // energy_to_store = self.__pwr_in * units.hours_per_day
 
                 let target_charge_hhrsh = if energy_to_store > 0. {
-                    let energy_stored = self.state_of_charge * self.storage_capacity; // kWh
+                    let current_state_of_charge = self.state_of_charge.load(Ordering::SeqCst);
+                    let energy_stored = current_state_of_charge * self.storage_capacity; // kWh
 
                     let energy_to_add = if self.heat_retention_ratio <= 0. {
                         self.storage_capacity - energy_stored // kWh
@@ -666,7 +680,7 @@ impl ElecStorageHeater {
                         // kWh
                     };
                     let target_charge_hhrsh =
-                        self.state_of_charge + energy_to_add / self.storage_capacity;
+                        current_state_of_charge + energy_to_add / self.storage_capacity;
                     clip(target_charge_hhrsh, 0., 1.)
                 } else {
                     0.
@@ -679,6 +693,26 @@ impl ElecStorageHeater {
                     .map(|tc| tc.min(target_charge_hhrsh))
             }
         }
+    }
+
+    #[cfg(test)]
+    fn energy_for_fan(&self) -> f64 {
+        self.current_energy_profile.read().energy_for_fan
+    }
+
+    #[cfg(test)]
+    fn energy_instant(&self) -> f64 {
+        self.current_energy_profile.read().energy_instant
+    }
+
+    #[cfg(test)]
+    fn energy_charged(&self) -> f64 {
+        self.current_energy_profile.read().energy_charged
+    }
+
+    #[cfg(test)]
+    fn energy_delivered(&self) -> f64 {
+        self.current_energy_profile.read().energy_delivered
     }
 }
 
@@ -866,7 +900,9 @@ mod tests {
         )
         .unwrap();
 
-        elec_storage_heater.state_of_charge = 0.5;
+        elec_storage_heater
+            .state_of_charge
+            .store(0.5, Ordering::SeqCst);
 
         elec_storage_heater
     }
@@ -899,7 +935,10 @@ mod tests {
             elec_storage_heater.air_flow_type,
             ElectricStorageHeaterAirFlowType::FanAssisted
         );
-        assert_eq!(elec_storage_heater.state_of_charge, 0.5);
+        assert_eq!(
+            elec_storage_heater.state_of_charge.load(Ordering::SeqCst),
+            0.5
+        );
 
         assert_relative_eq!(
             elec_storage_heater.heat_retention_ratio,
@@ -1265,7 +1304,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(0.5, &t_it);
-            let energy_for_fan = elec_storage_heater.energy_for_fan;
+            let energy_for_fan = elec_storage_heater.energy_for_fan();
             assert_relative_eq!(
                 energy_for_fan,
                 expected_energy_for_fan[t_idx],
@@ -1309,7 +1348,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
-            let energy_instant = elec_storage_heater.energy_instant;
+            let energy_instant = elec_storage_heater.energy_instant();
             assert_relative_eq!(
                 energy_instant,
                 expected_energy_instant[t_idx],
@@ -1353,7 +1392,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
-            let energy_charged = elec_storage_heater.energy_charged;
+            let energy_charged = elec_storage_heater.energy_charged();
             assert_relative_eq!(
                 energy_charged,
                 expected_energy_charged[t_idx],
@@ -1397,7 +1436,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time_iterator.enumerate() {
             let _ = elec_storage_heater.demand_energy(5.0, &t_it);
-            let energy_delivered = elec_storage_heater.energy_delivered;
+            let energy_delivered = elec_storage_heater.energy_delivered();
             assert_relative_eq!(
                 energy_delivered,
                 expected_energy_delivered[t_idx],
