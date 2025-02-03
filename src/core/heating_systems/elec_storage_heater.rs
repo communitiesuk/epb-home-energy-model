@@ -1,12 +1,11 @@
-use crate::input::ControlLogicType;
 use crate::{
     core::{
         controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
         units::WATTS_PER_KILOWATT,
     },
     external_conditions::ExternalConditions,
-    input::ElectricStorageHeaterAirFlowType,
-    simulation_time::{SimulationTime, SimulationTimeIteration},
+    input::{ControlLogicType, ElectricStorageHeaterAirFlowType},
+    simulation_time::{SimulationTimeIteration, SimulationTimeIterator},
     statistics::{np_interp, np_interp_with_extrapolate},
 };
 use anyhow::bail;
@@ -51,7 +50,6 @@ pub struct ElecStorageHeater {
     frac_convective: f64,
     n_units: i32,
     energy_supply_conn: EnergySupplyConnection,
-    simulation_time: SimulationTime,
     control: Arc<Control>,
     charge_control: Arc<Control>,
     fan_pwr: f64,
@@ -69,15 +67,29 @@ pub struct ElecStorageHeater {
     power_min_array: Vec<f64>,
     heat_retention_ratio: f64,
     current_energy_profile: RwLock<CurrentEnergyProfile>,
+    esh_detailed_results: Option<Arc<RwLock<Vec<StorageHeaterDetailedResult>>>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 /// A struct to encapsulate energy values for a current step.
 struct CurrentEnergyProfile {
     energy_for_fan: f64,
     energy_instant: f64,
     energy_charged: f64,
     energy_delivered: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StorageHeaterDetailedResult {
+    timestep_idx: usize,
+    n_units: i32,
+    energy_demand: f64,
+    energy_instant: f64,
+    energy_charged: f64,
+    energy_for_fan: f64,
+    state_of_charge: f64,
+    final_soc: f64,
+    time_used_max: f64,
 }
 
 struct SocOdeFunction<'a> {
@@ -170,6 +182,27 @@ pub(crate) enum OutputMode {
 }
 
 impl ElecStorageHeater {
+    /// Arguments:
+    /// * `pwr_in` - in kW (Charging)
+    /// * `rated_power_instant` - in kW (Instant backup)
+    /// * `storage_capacity` - in kWh
+    /// * `air_flow_type` - string specifying type of Electric Storage Heater:
+    ///                   - fan-assisted
+    ///                   - damper-only
+    /// * `frac_convective`      - convective fraction for heating (TODO: Check if necessary)
+    /// * `fan_pwr`              - Fan power [W]
+    /// * `n_units`              - number of units install in zone
+    /// * `zone_internal_air_func`  - function that provides access to the internal air temp of the zone
+    /// * `energy_supply_conn`   - reference to EnergySupplyConnection object
+    /// * `simulation_time`      - reference to SimulationTime object
+    /// * `control`              - reference to a control object which must implement is_on() and setpnt() funcs
+    /// * `charge_control`       - reference to a ChargeControl object which must implement different logic types
+    ///                         for charging the Electric Storage Heaters.
+    /// * `esh_min_output`       - Data from test showing the output from the storage heater when not actively
+    ///                         outputting heat, i.e. case losses only (with units kW)
+    /// * `esh_max_output`       - Data from test showing the output from the storage heater when it is actively
+    ///                         outputting heat, e.g. damper open / fan running (with units kW)
+    /// * `external_conditions`  - reference to ExternalConditions object
     pub fn new(
         pwr_in: f64,
         rated_power_instant: f64,
@@ -181,34 +214,15 @@ impl ElecStorageHeater {
         zone_setpoint_init: f64,
         zone_internal_air_func: Arc<dyn Fn() -> f64>,
         energy_supply_conn: EnergySupplyConnection,
-        simulation_time: SimulationTime,
+        simulation_time: &SimulationTimeIterator,
         control: Arc<Control>,
         charge_control: Arc<Control>,
         esh_min_output: Vec<(f64, f64)>,
         esh_max_output: Vec<(f64, f64)>,
-        ext_cond: ExternalConditions,
+        external_conditions: ExternalConditions,
+        output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
-        // Arguments:
-        // pwr_in               -- in kW (Charging)
-        // rated_power_instant  -- in kW (Instant backup)
-        // storage_capacity     -- in kWh
-        // air_flow_type        -- string specifying type of Electric Storage Heater:
-        //                      -- fan-assisted
-        //                      -- damper-only
-        // frac_convective      -- convective fraction for heating (TODO: Check if necessary)
-        // fan_pwr              -- Fan power [W]
-        // n_units              -- number of units install in zone
-        // zone                 -- zone where the unit(s) is/are installed
-        // energy_supply_conn   -- reference to EnergySupplyConnection object
-        // simulation_time      -- reference to SimulationTime object
-        // control              -- reference to a control object which must implement is_on() and setpnt() funcs
-        // charge_control       -- reference to a ChargeControl object which must implement different logic types
-        //                         for charging the Electric Storage Heaters.
-        // ESH_min_output       -- Data from test showing the output from the storage heater when not actively
-        //                         outputting heat, i.e. case losses only (with units kW)
-        // ESH_max_output       -- Data from test showing the output from the storage heater when it is actively
-        //                         outputting heat, e.g. damper open / fan running (with units kW)
-        // extcond              -- reference to ExternalConditions object
+        let output_detailed_results = output_detailed_results.unwrap_or(false);
 
         if !matches!(charge_control.as_ref(), Control::Charge(_)) {
             bail!("charge_control must be a ChargeControl");
@@ -274,11 +288,10 @@ impl ElecStorageHeater {
             frac_convective,
             n_units,
             energy_supply_conn,
-            simulation_time,
             control,
             charge_control,
             fan_pwr,
-            external_conditions: ext_cond,
+            external_conditions,
             temp_air,
             state_of_charge: Default::default(),
             demand_met: Default::default(),
@@ -291,6 +304,11 @@ impl ElecStorageHeater {
             power_min_array,
             heat_retention_ratio,
             current_energy_profile: Default::default(),
+            esh_detailed_results: output_detailed_results.then(|| {
+                Arc::new(RwLock::new(Vec::with_capacity(
+                    simulation_time.total_steps(),
+                )))
+            }),
         })
     }
 
@@ -517,7 +535,7 @@ impl ElecStorageHeater {
         let _energy_charged_max = 0.;
 
         // Calculate minimum energy that can be delivered
-        let (q_released_min, _, energy_charged, mut _final_soc) =
+        let (q_released_min, _, energy_charged, mut final_soc) =
             self.energy_output(OutputMode::Min, simulation_time_iteration)?;
         current_profile.energy_charged = energy_charged;
 
@@ -532,7 +550,7 @@ impl ElecStorageHeater {
             // Calculate maximum energy that can be delivered
             let (q_released_max_value, time_used_max_tmp, energy_charged, final_soc_override) =
                 self.energy_output(OutputMode::Max, simulation_time_iteration)?;
-            _final_soc = final_soc_override;
+            final_soc = final_soc_override;
 
             q_released_max = Some(q_released_max_value);
             time_used_max = time_used_max_tmp;
@@ -598,9 +616,32 @@ impl ElecStorageHeater {
             * (current_profile.energy_charged
                 + current_profile.energy_instant
                 + current_profile.energy_for_fan);
-        let _ = self
-            .energy_supply_conn
+        self.energy_supply_conn
             .demand_energy(amount_demanded, simulation_time_iteration.index)?;
+
+        // If detailed results flag is set populate with values
+        if let Some(esh_detailed_results) = &self.esh_detailed_results {
+            let CurrentEnergyProfile {
+                energy_for_fan,
+                energy_instant,
+                energy_charged,
+                energy_delivered,
+            } = *self.current_energy_profile.read();
+            let result = StorageHeaterDetailedResult {
+                timestep_idx: simulation_time_iteration.index,
+                n_units: self.n_units,
+                energy_demand,
+                energy_instant,
+                energy_charged,
+                energy_for_fan,
+                state_of_charge: self.state_of_charge.load(Ordering::SeqCst),
+                final_soc,
+                time_used_max,
+            };
+            esh_detailed_results
+                .write()
+                .insert(simulation_time_iteration.index, result);
+        }
 
         // Return total net energy delivered (discharged + instant heat + fan energy)
         Ok(f64::from(self.n_units)
@@ -693,6 +734,12 @@ impl ElecStorageHeater {
                     .map(|tc| tc.min(target_charge_hhrsh))
             }
         }
+    }
+
+    pub(crate) fn esh_detailed_results(&self) -> Option<Vec<StorageHeaterDetailedResult>> {
+        self.esh_detailed_results
+            .as_ref()
+            .map(|results| (*results.read()).clone())
     }
 
     #[cfg(test)]
@@ -891,12 +938,13 @@ mod tests {
             21.,
             Arc::new(|| 20.),
             energy_supply_conn,
-            simulation_time,
+            &simulation_time.iter(),
             Arc::new(control),
             Arc::new(charge_control),
             esh_min_output,
             esh_max_output,
             external_conditions, // NOTE this is None in Python
+            None,
         )
         .unwrap();
 
