@@ -324,16 +324,12 @@ impl StorageTank {
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
                 (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
-            let (
-                temp_s8_n_step,
-                _q_x_in_n,
-                _q_s6,
-                _temp_s6_n,
-                _temp_s7_n,
-                _q_in_h_w,
-                q_ls_this_heat_source,
-                q_ls_n_this_heat_source,
-            ) = self.run_heat_sources(
+            let TemperatureCalculation {
+                temp_s8_n: temp_s8_n_step,
+                q_ls: q_ls_this_heat_source,
+                q_ls_n: q_ls_n_this_heat_source,
+                ..
+            } = self.run_heat_sources(
                 temp_after_prev_heat_source.clone(),
                 positioned_heat_source.heat_source.clone(),
                 &heat_source_name,
@@ -821,9 +817,16 @@ impl StorageTank {
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
-        Ok((
-            temp_s8_n, q_x_in_n, q_s6, temp_s6_n, temp_s7_n, q_in_h_w, q_ls, q_ls_n,
-        ))
+        Ok(TemperatureCalculation {
+            temp_s8_n,
+            q_x_in_n,
+            q_s6,
+            temp_s6_n,
+            temp_s7_n,
+            q_in_h_w,
+            q_ls,
+            q_ls_n,
+        })
     }
 
     /// The input of energy(s) is (are) allocated to the specific location(s)
@@ -1157,7 +1160,7 @@ impl StorageTank {
 
         let mut q_x_in_n = vec![0.; self.nb_vol];
         q_x_in_n[heater_layer] = energy_input;
-        let (temp_s8_n, _, _, _, _, q_in_h_w, _, q_ls_n_this_heat_source) = self
+        let TemperatureCalculation { temp_s8_n, q_in_h_w, q_ls_n: q_ls_n_this_heat_source, .. } = self
             .calculate_temperatures(
                 &self.temp_n.clone(),
                 heat_source,
@@ -1291,16 +1294,17 @@ impl StorageTank {
     }
 }
 
-type TemperatureCalculation = (
-    Vec<f64>,
-    Vec<f64>,
-    f64,
-    Vec<f64>,
-    Vec<f64>,
-    f64,
-    f64,
-    Vec<f64>,
-);
+#[derive(Debug, PartialEq)]
+struct TemperatureCalculation {
+    temp_s8_n: Vec<f64>,
+    q_x_in_n: Vec<f64>,
+    q_s6: f64,
+    temp_s6_n: Vec<f64>,
+    temp_s7_n: Vec<f64>,
+    q_in_h_w: f64,
+    q_ls: f64,
+    q_ls_n: Vec<f64>,
+}
 
 #[derive(Clone, Debug)]
 pub struct ImmersionHeater {
@@ -2986,16 +2990,16 @@ mod tests {
                     simulation_time_for_storage_tank.iter().current_iteration()
                 )
                 .unwrap(),
-            (
-                vec![5.0, 10.0, 55.0, 55.0],
-                vec![0., 0., 50.0, 0.],
-                52.17916666666666,
-                vec![5.0, 10.0, 1162.227533460803, 20.0],
-                vec![5.0, 10.0, 591.1137667304015, 591.1137667304015],
-                3.3040040740740793,
-                0.03525407407407408,
-                vec![0.0, 0.0, 0.01762703703703704, 0.01762703703703704]
-            )
+            TemperatureCalculation {
+                temp_s8_n: vec![5.0, 10.0, 55.0, 55.0],
+                q_x_in_n: vec![0., 0., 50.0, 0.],
+                q_s6: 52.17916666666666,
+                temp_s6_n: vec![5.0, 10.0, 1162.227533460803, 20.0],
+                temp_s7_n: vec![5.0, 10.0, 591.1137667304015, 591.1137667304015],
+                q_in_h_w: 3.3040040740740793,
+                q_ls: 0.03525407407407408,
+                q_ls_n: vec![0.0, 0.0, 0.01762703703703704, 0.01762703703703704]
+            }
         );
     }
 
@@ -3024,31 +3028,31 @@ mod tests {
                     simulation_time_for_storage_tank.iter().current_iteration()
                 )
                 .unwrap(),
-            (
-                vec![10.0, 37.71697755116492, 55.0, 55.0],
-                vec![0., 1., 2., 3., 4., 5., 6., 7., 8.],
-                9.050833333333333,
-                vec![
+            TemperatureCalculation {
+                temp_s8_n: vec![10.0, 37.71697755116492, 55.0, 55.0],
+                q_x_in_n: vec![0., 1., 2., 3., 4., 5., 6., 7., 8.],
+                q_s6: 9.050833333333333,
+                temp_s6_n: vec![
                     10.0,
                     37.944550669216056,
                     65.88910133843211,
                     93.83365200764818
                 ],
-                vec![
+                temp_s7_n: vec![
                     10.0,
                     37.944550669216056,
                     65.88910133843211,
                     93.83365200764818
                 ],
-                33.86817074074074,
-                0.04517246913580247,
-                vec![
+                q_in_h_w: 33.86817074074074,
+                q_ls: 0.04517246913580247,
+                q_ls_n: vec![
                     0.0,
                     0.009918395061728393,
                     0.01762703703703704,
                     0.01762703703703704
                 ]
-            )
+            }
         )
     }
 
