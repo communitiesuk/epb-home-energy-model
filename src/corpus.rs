@@ -540,17 +540,17 @@ impl Corpus {
         );
         let gains_internal_dhw_use_storagetank = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * water_demand_to_kwh(
-            volume_water_remove_from_tank,
-            temp_average_drawoff,
-            self.temp_internal_air(),
-        );
+                volume_water_remove_from_tank,
+                temp_average_drawoff,
+                self.temp_internal_air(),
+            );
 
         let gains_internal_dhw_use_ies = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * water_demand_to_kwh(
-            vol_hot_water_equiv_elec_shower,
-            temp_hot_water,
-            self.temp_internal_air(),
-        );
+                vol_hot_water_equiv_elec_shower,
+                temp_hot_water,
+                self.temp_internal_air(),
+            );
 
         let gains_internal_dhw_use =
             gains_internal_dhw_use_storagetank + gains_internal_dhw_use_ies;
@@ -589,10 +589,10 @@ impl Corpus {
 
         let gains_internal_dhw_use = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * water_demand_to_kwh(
-            vol_hot_water_at_tapping_point,
-            temp_hot_water,
-            self.temp_internal_air(),
-        );
+                vol_hot_water_at_tapping_point,
+                temp_hot_water,
+                self.temp_internal_air(),
+            );
 
         (
             pw_losses_internal,
@@ -1073,20 +1073,20 @@ impl Corpus {
                 let z_name = z_name.as_str();
                 let (space_heat_demand_zone_current, space_cool_demand_zone_current, _, _) = zone
                     .space_heat_cool_demand(
-                        delta_t_h,
-                        temp_ext_air,
-                        gains_internal_zone[z_name],
-                        gains_solar_zone[z_name],
-                        frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                        frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                        temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                        temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                        avg_air_supply_temp,
-                        None,
-                        None,
-                        AirChangesPerHourArgument::Cooling { ach_cooling },
-                        simtime,
-                    )?;
+                    delta_t_h,
+                    temp_ext_air,
+                    gains_internal_zone[z_name],
+                    gains_solar_zone[z_name],
+                    frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                    frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                    temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                    temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                    avg_air_supply_temp,
+                    None,
+                    None,
+                    AirChangesPerHourArgument::Cooling { ach_cooling },
+                    simtime,
+                )?;
                 space_heat_demand_zone.insert(z_name.to_owned(), space_heat_demand_zone_current);
                 space_cool_demand_zone.insert(z_name.to_owned(), space_cool_demand_zone_current);
             }
@@ -1430,8 +1430,8 @@ impl Corpus {
         for hc_name in hc_name_list_sorted {
             if !hc_name.is_empty()
                 && space_heat_cool_systems
-                .in_required_period_for_name(hc_name, simtime)
-                .unwrap_or(false)
+                    .in_required_period_for_name(hc_name, simtime)
+                    .unwrap_or(false)
             {
                 hc_name_highest_req = Some(hc_name.to_owned());
                 break;
@@ -1510,17 +1510,17 @@ impl Corpus {
 
         if (h_name_highest_req.is_some() && space_heat_demand > 0.0 && energy_shortfall_heat > 0.0)
             || (c_name_highest_req.is_some()
-            && space_cool_demand < 0.0
-            && energy_shortfall_cool > 0.0)
+                && space_cool_demand < 0.0
+                && energy_shortfall_cool > 0.0)
         {
             let (unmet_demand_heat, unmet_demand_cool) = if (energy_shortfall_heat > 0.0
                 && h_name_highest_req
-                .as_ref()
-                .is_some_and(|h_name| h_name != &h_name_list_sorted[0]))
+                    .as_ref()
+                    .is_some_and(|h_name| h_name != &h_name_list_sorted[0]))
                 || (energy_shortfall_cool > 0.0
-                && c_name_highest_req
-                .as_ref()
-                .is_some_and(|c_name| c_name != &c_name_list_sorted[0]))
+                    && c_name_highest_req
+                        .as_ref()
+                        .is_some_and(|c_name| c_name != &c_name_list_sorted[0]))
             {
                 // If the highest-priority system is not in required heating
                 // period, but a lower-priority system is, calculate demand
@@ -2576,7 +2576,7 @@ fn single_control_from_details(
                 *advanced_start,
                 simulation_time_iterator.step_in_hours(),
             )
-                .unwrap(),
+            .unwrap(),
         ),
         ControlDetails::Charge { charge_level, .. } => {
             // Simulation manual charge control
@@ -2768,7 +2768,7 @@ impl RunResults {
 }
 
 pub(crate) type HeatBalanceAllResults =
-IndexMap<HeatBalanceFieldName, IndexMap<String, IndexMap<String, Vec<f64>>>>;
+    IndexMap<HeatBalanceFieldName, IndexMap<String, IndexMap<String, Vec<f64>>>>;
 
 struct SpaceHeatingCalculation {
     gains_internal_zone: HashMap<String, f64>,
@@ -3552,9 +3552,9 @@ fn appliance_gains_from_single_input(
             .as_ref()
             .ok_or_else(|| anyhow!("Appliance gains did not have schedule when expected."))?,
     ))?
-        .iter()
-        .map(|energy_data| energy_data / total_floor_area)
-        .collect();
+    .iter()
+    .map(|energy_data| energy_data / total_floor_area)
+    .collect();
 
     Ok(ApplianceGains::new(
         total_energy_supply,
@@ -3661,7 +3661,7 @@ impl WetHeatSource {
                 temp_hot_water,
                 cold_feed,
             )
-                .map_err(|err| anyhow!(format!("{err}"))),
+            .map_err(|err| anyhow!(format!("{err}"))),
             _ => {
                 bail!("Expect to only be able to create a hot water combi service for boilers and heat pumps.")
             }
@@ -3826,7 +3826,7 @@ fn heat_source_wet_from_input(
                     external_conditions.clone(),
                     simulation_time.step_in_hours(),
                 )
-                    .expect("could not construct boiler value from provided data"),
+                .expect("could not construct boiler value from provided data"),
             ))))
         }
         HeatSourceWetDetails::Hiu {
