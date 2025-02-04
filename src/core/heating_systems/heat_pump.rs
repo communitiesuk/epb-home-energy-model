@@ -8306,7 +8306,7 @@ mod tests {
 
         let mut heat_pump_with_boiler = heat_pump_with_boiler.lock();
 
-        for (t_idx, t_it) in simulation_time_for_heat_pump.iter().enumerate() {
+        for t_it in simulation_time_for_heat_pump.iter() {
             assert_relative_eq!(
                 heat_pump_with_boiler
                     .demand_energy(

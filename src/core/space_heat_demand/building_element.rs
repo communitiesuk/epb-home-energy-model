@@ -3057,7 +3057,7 @@ mod tests {
             self.0 = f_sky;
         }
 
-        fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64) {
+        fn set_therm_rad_to_sky(&mut self, _therm_rad_to_sky: f64) {
             unreachable!()
         }
 
