@@ -632,8 +632,8 @@ impl StorageTank {
                     .map(|k| self.vol_n[k] * temp_s7_n[k] * mix_layer_n[k] as f64)
                     .sum::<f64>()
                     / (0..self.vol_n.len())
-                    .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
-                    .sum::<f64>();
+                        .map(|l| self.vol_n[l] * mix_layer_n[l] as f64)
+                        .sum::<f64>();
                 // set same temperature for all applicable layers
                 for j in 0..i + 2 {
                     if mix_layer_n[j] == 1 {
@@ -653,8 +653,8 @@ impl StorageTank {
         let _q_h_sto_end_no = self.rho
             * self.cp
             * (0..self.vol_n.len())
-            .map(|i| self.vol_n[i] * temp_s7_n[i])
-            .sum::<f64>();
+                .map(|i| self.vol_n[i] * temp_s7_n[i])
+                .sum::<f64>();
 
         (q_h_sto_end, temp_s7_n.to_owned())
     }
@@ -736,8 +736,8 @@ impl StorageTank {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
                     let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
-                                                immersion_heater,
-                                            )) => immersion_heater
+                            immersion_heater,
+                        )) => immersion_heater
                             .lock()
                             .energy_output_max(simulation_time, false),
                         HeatSource::Storage(HeatSourceWithStorageTank::Solar(_)) => unreachable!(), // this case was already covered in the first arm of this if let clause, so can't repeat here
@@ -850,8 +850,8 @@ impl StorageTank {
         let q_s6 = self.rho
             * self.cp
             * (0..self.vol_n.len())
-            .map(|i| self.vol_n[i] * temp_s6_n[i])
-            .sum::<f64>();
+                .map(|i| self.vol_n[i] * temp_s6_n[i])
+                .sum::<f64>();
 
         (q_s6, temp_s6_n)
     }
@@ -1136,8 +1136,106 @@ impl StorageTank {
 
     // NB. there is a testoutput() function here in the Python to output to a test file - will not reimplement unless seen as necessary
 
-    fn draw_off_hot_water(&mut self, volume: f64) -> f64 {
-        todo!()
+    /// draw off hot water layers until required volume is provided.
+    ///
+    /// Arguments:
+    /// * volume    -- volume of water required
+    fn draw_off_hot_water(
+        &mut self,
+        volume: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        // Remaining volume of water in storage tank layers
+        let mut remaining_vols = self.vol_n.clone();
+
+        let mut remaining_demanded_volume = volume;
+
+        // Initialize the unmet and met energies
+        let mut energy_withdrawn = 0.0;
+        self.temp_average_drawoff_volweighted = Some(0.0);
+        self.total_volume_drawoff = Some(0.0);
+        self.temp_average_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
+        self.temp_final_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
+        let temp_ini_n = self.temp_n.clone();
+        let temp_s3_n = self.temp_n.clone();
+
+        // Loop through storage layers (starting from the top)
+        for layer_index in (0..self.temp_n.len()).rev() {
+            let layer_temp = self.temp_n[layer_index];
+            let layer_vol = remaining_vols[layer_index];
+
+            //  This cannot happen in the preheated tank. Check!
+            //  Skip this layer if its remaining volume is already zero
+            // if remaining_vols[layer_index] <= 0.0:
+            //     continue
+
+            // Volume of water required at this layer
+
+            let mut required_vol;
+            if layer_vol <= remaining_demanded_volume {
+                // This is the case where layer cannot meet all remaining demanded volume
+                required_vol = layer_vol;
+                remaining_vols[layer_index] -= layer_vol;
+                remaining_demanded_volume -= layer_vol;
+            } else {
+                // This is the case where layer can meet all remaining demanded volume
+                required_vol = remaining_demanded_volume;
+                // Deduct the required volume from the remaining demand and update the layer's volume
+                remaining_vols[layer_index] -= required_vol;
+                remaining_demanded_volume = 0.0;
+            }
+
+            self.temp_average_drawoff_volweighted =
+                Some(self.temp_average_drawoff_volweighted.unwrap() + required_vol * layer_temp);
+            self.total_volume_drawoff = Some(self.total_volume_drawoff.unwrap() + required_vol);
+
+            //  Record the met volume demand for the current temperature target
+            //  warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
+            energy_withdrawn +=
+                //  Calculation with event water parameters
+                // self.__rho * self.__Cp * warm_vol_removed * (warm_temp - self.__cold_feed.temperature())
+                //  Calculation with layer water parameters
+                self.rho
+                    * self.cp
+                    * required_vol
+                    * (layer_temp - self.cold_feed.temperature(simulation_time_iteration));
+
+            if remaining_demanded_volume <= 0.0 {
+                break;
+            }
+        }
+
+        if remaining_demanded_volume > 0.0 {
+            self.temp_average_drawoff_volweighted = Some(
+                self.temp_average_drawoff_volweighted.unwrap()
+                    + remaining_demanded_volume
+                        * self.cold_feed.temperature(simulation_time_iteration),
+            );
+            self.total_volume_drawoff =
+                Some(self.total_volume_drawoff.unwrap() + remaining_demanded_volume);
+        }
+
+        if self.total_volume_drawoff != Some(0.0) {
+            self.temp_average_drawoff = Some(
+                self.temp_average_drawoff_volweighted.unwrap() / self.total_volume_drawoff.unwrap(),
+            );
+        } else {
+            self.temp_average_drawoff = temp_s3_n.last().cloned();
+        }
+
+        // Determine the new temperature distribution after displacement
+        let (mut new_temp_distribution, flag_rearrange_layers) =
+            self.calculate_new_temperatures(remaining_vols, simulation_time_iteration);
+
+        if flag_rearrange_layers {
+            // Re-arrange the temperatures in the storage after energy input from pre-heated tank
+            (_, new_temp_distribution) = self.rearrange_temperatures(&*new_temp_distribution);
+        }
+
+        self.temp_n = new_temp_distribution.clone();
+
+        // Return the remaining storage volumes, volume used, new temperature distribution, and the met/unmet targets
+        self.temp_average_drawoff.unwrap()
     }
     fn additional_energy_input(
         &mut self,
@@ -1156,15 +1254,19 @@ impl StorageTank {
 
         let mut q_x_in_n = vec![0.; self.nb_vol];
         q_x_in_n[heater_layer] = energy_input;
-        let TemperatureCalculation { temp_s8_n, q_in_h_w, q_ls_n: q_ls_n_this_heat_source, .. } = self
-            .calculate_temperatures(
-                &self.temp_n.clone(),
-                heat_source,
-                q_x_in_n,
-                heater_layer,
-                &self.q_ls_n_prev_heat_source.clone(),
-                simulation_time_iteration,
-            )?;
+        let TemperatureCalculation {
+            temp_s8_n,
+            q_in_h_w,
+            q_ls_n: q_ls_n_this_heat_source,
+            ..
+        } = self.calculate_temperatures(
+            &self.temp_n.clone(),
+            heat_source,
+            q_x_in_n,
+            heater_layer,
+            &self.q_ls_n_prev_heat_source.clone(),
+            simulation_time_iteration,
+        )?;
 
         for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
             self.q_ls_n_prev_heat_source[i] += *q_ls_n;
@@ -1281,7 +1383,7 @@ impl StorageTank {
         if volume_needed == 0. {
             self.cold_feed.temperature(simulation_time_iteration)
         } else {
-            self.draw_off_hot_water(volume_needed)
+            self.draw_off_hot_water(volume_needed, simulation_time_iteration)
         }
     }
 
@@ -1885,7 +1987,7 @@ mod tests {
             FuelType::Electricity,
             simulation_time_for_storage_tank.total_steps(),
         )
-            .build();
+        .build();
 
         Arc::new(RwLock::new(energy_supply))
     }
@@ -1910,7 +2012,7 @@ mod tests {
             None,
             simulation_timestep,
         )
-            .unwrap();
+        .unwrap();
 
         let control_max = SetpointTimeControl::new(
             control_max_schedule,
@@ -1922,7 +2024,7 @@ mod tests {
             None,
             simulation_timestep,
         )
-            .unwrap();
+        .unwrap();
         let immersion_heater = ImmersionHeater::new(
             rated_power,
             energy_supply_connection.clone(),
@@ -1973,7 +2075,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion").unwrap();
@@ -2041,7 +2143,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_connection =
             EnergySupply::connection(energy_supply.clone(), "immersion2").unwrap();
@@ -2190,7 +2292,7 @@ mod tests {
                 FuelType::MainsGas,
                 simulation_time_for_storage_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
 
         let heater_position = 0.1;
@@ -2415,7 +2517,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_solar_thermal.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "solarthermal").unwrap();
@@ -2733,7 +2835,7 @@ mod tests {
             false,
             WaterPipeContentsType::Water,
         )
-            .unwrap();
+        .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
@@ -2751,7 +2853,7 @@ mod tests {
             false,
             WaterPipeContentsType::Water,
         )
-            .unwrap();
+        .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             assert_eq!(
                 storage_tank1.temp_surrounding_primary_pipework(&pipework, t_it),
@@ -3194,7 +3296,7 @@ mod tests {
                 false,
                 WaterPipeContentsType::Water,
             )
-                .unwrap(),
+            .unwrap(),
             Pipework::new(
                 PipeworkLocation::External,
                 0.025,
@@ -3205,7 +3307,7 @@ mod tests {
                 false,
                 WaterPipeContentsType::Water,
             )
-                .unwrap(),
+            .unwrap(),
         ];
 
         storage_tank1.primary_pipework_lst = Some(primary_pipework_lst);
@@ -3258,7 +3360,7 @@ mod tests {
             FuelType::MainsGas,
             simulation_time_for_immersion_heater.total_steps(),
         )
-            .build();
+        .build();
         let energy_supply_connection =
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
@@ -3274,7 +3376,7 @@ mod tests {
                 None,
                 timestep,
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         let control_max = Arc::new(Control::SetpointTime(
@@ -3288,7 +3390,7 @@ mod tests {
                 None,
                 timestep,
             )
-                .unwrap(),
+            .unwrap(),
         ));
 
         ImmersionHeater::new(
