@@ -1,6 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    Control, HeatSourceControl, OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
+    ChargeControl, CombinationTimeControl, Control, HeatSourceControl, OnOffMinimisingTimeControl,
+    OnOffTimeControl, SetpointTimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -28,8 +29,8 @@ use crate::core::heating_systems::wwhrs::{
 };
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
-    expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nulls, ScheduleEvent,
-    TypedScheduleEvent, WaterScheduleEventType,
+    expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
+    ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
@@ -61,17 +62,17 @@ use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
-    ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails, EnergySupplyInput,
-    ExternalConditionsInput, FuelType, HeatPumpSourceType, HeatSource as HeatSourceInput,
-    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
-    InfiltrationVentilation as InfiltrationVentilationInput, Input,
+    ControlCombinations, ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails,
+    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatPumpSourceType,
+    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
+    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType,
     VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
     WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
-    ZoneTemperatureControlBasis,
+    ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::ProjectFlags;
@@ -103,6 +104,286 @@ fn temp_setpnt_cool_none() -> f64 {
 
 // used for calculations re internal gains from pipework
 const FRAC_DHW_ENERGY_INTERNAL_GAINS: f64 = 0.25;
+
+fn control_from_input(
+    control_input: &ControlInput,
+    external_conditions: Arc<ExternalConditions>,
+    simulation_time_iterator: &SimulationTimeIterator,
+) -> anyhow::Result<Controls> {
+    let mut core: Vec<HeatSourceControl> = Default::default();
+    let mut extra: HashMap<String, Arc<Control>> = Default::default();
+
+    // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
+    // and the way the variants-struct crate works;
+    // we should be able to improve it in time
+    if let Some(control) = &control_input.hot_water_timer.as_ref() {
+        if let Some(ctrl) = single_control_from_details(
+            control,
+            external_conditions.clone(),
+            simulation_time_iterator,
+            control_input,
+        )? {
+            core.push(HeatSourceControl::HotWaterTimer(Arc::new(ctrl)));
+        }
+    }
+    if let Some(control) = &control_input.window_opening.as_ref() {
+        if let Some(ctrl) = single_control_from_details(
+            control,
+            external_conditions.clone(),
+            simulation_time_iterator,
+            control_input,
+        )? {
+            core.push(HeatSourceControl::WindowOpening(Arc::new(ctrl)));
+        }
+    }
+    for (name, control) in &control_input.extra {
+        if let Some(ctrl) = single_control_from_details(
+            control,
+            external_conditions.clone(),
+            simulation_time_iterator,
+            control_input,
+        )? {
+            extra.insert(name.to_string(), Arc::new(ctrl));
+        }
+    }
+
+    Ok(Controls { core, extra })
+}
+
+fn single_control_from_details(
+    details: &ControlDetails,
+    external_conditions: Arc<ExternalConditions>,
+    simulation_time_iterator: &SimulationTimeIterator,
+    control_input: &ControlInput,
+) -> anyhow::Result<Option<Control>> {
+    Ok(match details {
+        ControlDetails::OnOffTime {
+            start_day,
+            time_series_step,
+            schedule,
+            allow_null,
+            ..
+        } => {
+            let nullable = allow_null.unwrap_or(false);
+            let schedule = if nullable {
+                expand_boolean_schedule(schedule)
+            } else {
+                reject_nones(expand_boolean_schedule(schedule))?
+            };
+            Control::OnOffTime(OnOffTimeControl::new(
+                schedule,
+                *start_day,
+                *time_series_step,
+            ))
+            .into()
+        }
+        ControlDetails::SetpointTime {
+            start_day,
+            time_series_step,
+            advanced_start,
+            setpoint_min,
+            setpoint_max,
+            default_to_max,
+            schedule,
+            ..
+        } => Control::SetpointTime(
+            SetpointTimeControl::new(
+                expand_numeric_schedule(schedule),
+                *start_day,
+                *time_series_step,
+                *setpoint_min,
+                *setpoint_max,
+                *default_to_max,
+                advanced_start.unwrap_or(0.),
+                simulation_time_iterator.step_in_hours(),
+            )
+            .unwrap(),
+        )
+        .into(),
+        ControlDetails::Charge {
+            charge_level,
+            external_sensor,
+            min_target_charge_factor,
+            full_charge_temp_diff,
+            schedule,
+            start_day,
+            time_series_step,
+            temp_charge_cut,
+            temp_charge_cut_delta,
+            logic_type,
+            ..
+        } => {
+            let schedule = reject_nulls(expand_boolean_schedule(schedule))?;
+            let temp_charge_cut_delta = temp_charge_cut_delta
+                .as_ref()
+                .map(|schedule| anyhow::Ok(reject_nulls(expand_numeric_schedule(schedule))?))
+                .transpose()?;
+            let logic_type = logic_type.unwrap_or_default();
+
+            // Simulation manual charge control
+            // Set charge level to 1.0 (max) for each day of simulation (plus 1)
+            let vec_size = ((simulation_time_iterator.total_steps() as f64
+                * simulation_time_iterator.step_in_hours()
+                / 24.0)
+                + 1.0)
+                .ceil() as usize;
+            // if charge_level is present in input, overwrite initial vector
+            // user can specify a vector with all days (plus 1), or as a single float value to be used for each day
+            let charge_level_vec = if let Some(charge) = charge_level {
+                let required_length = vec_size;
+                let mut charge_level_vec = match charge {
+                    ChargeLevel::List(charge_vec) => charge_vec.iter().map(|x| Some(*x)).collect(),
+                    ChargeLevel::Single(charge) => {
+                        vec![Some(*charge); vec_size]
+                    }
+                    ChargeLevel::Schedule(schedule) => expand_numeric_schedule(schedule),
+                };
+                let shortfall = required_length - charge_level_vec.len();
+                if shortfall > 0 {
+                    let extension = vec![
+                        charge_level_vec.iter().copied().last().ok_or_else(
+                            || anyhow!("Provided charge level data was empty.")
+                        )?;
+                        shortfall
+                    ];
+                    charge_level_vec.extend(extension);
+                }
+
+                charge_level_vec
+            } else {
+                vec![Some(1.0); vec_size]
+            };
+
+            Control::Charge(ChargeControl::new(
+                logic_type,
+                schedule,
+                simulation_time_iterator.step_in_hours(),
+                *start_day,
+                *time_series_step,
+                charge_level_vec,
+                *temp_charge_cut,
+                temp_charge_cut_delta,
+                *min_target_charge_factor,
+                *full_charge_temp_diff,
+                external_conditions.clone(),
+                external_sensor.clone(),
+            )?)
+            .into()
+        }
+        ControlDetails::OnOffCostMinimisingTime {
+            start_day,
+            time_series_step,
+            time_on_daily,
+            schedule,
+            ..
+        } => Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
+            reject_nulls(expand_numeric_schedule(schedule))?,
+            *start_day,
+            *time_series_step,
+            time_on_daily.unwrap_or_default(),
+        ))
+        .into(),
+        ControlDetails::SmartAppliance { .. } => None,
+        ControlDetails::CombinationTime {
+            start_day,
+            time_series_step,
+            combination,
+        } => {
+            // resolved controls needs to be: IndexMap<String, Arc<Control>>
+
+            /// Recursively collects all unique controls from the combination control dictionary.
+            ///
+            /// Args:
+            ///    * `control_combination` : The combination control dictionary.
+            ///    * `current_key` (str): The current key to process in the dictionary.
+            ///    * `visited` (set): A set to track visited keys to detect circular references.
+            fn collect_controls(
+                control_combinations: &ControlCombinations,
+                current_key: &str,
+                visited: Option<&mut HashSet<String>>,
+                control_input: &ControlInput,
+                external_conditions: Arc<ExternalConditions>,
+                simulation_time_iterator: &SimulationTimeIterator,
+            ) -> anyhow::Result<IndexMap<String, Arc<Control>>> {
+                let mut empty_set: HashSet<String> = Default::default();
+                let visited = visited.unwrap_or(&mut empty_set);
+                let mut controls: HashSet<String> = Default::default();
+
+                if visited.contains(current_key) {
+                    bail!("Error: Circular reference detected involving '{current_key}' in CombinationTimeControl. Exiting program.")
+                }
+                visited.insert(current_key.into());
+
+                if control_combinations.contains_key(current_key) {
+                    let control = &control_combinations[current_key];
+                    for ctrl in control.controls.iter() {
+                        if control_combinations.contains_key(ctrl) {
+                            // If the control is another combination
+                            controls.extend(
+                                collect_controls(
+                                    control_combinations,
+                                    ctrl,
+                                    Some(visited),
+                                    control_input,
+                                    external_conditions.clone(),
+                                    simulation_time_iterator,
+                                )?
+                                .keys()
+                                .cloned(),
+                            );
+                        } else {
+                            controls.insert(ctrl.into());
+                        }
+                    }
+                }
+
+                let control_instances = controls
+                    .iter()
+                    .filter_map(|control_name| {
+                        let control_details = match control_input.get(control_name) {
+                            Some(control_details) => control_details,
+                            None => return Some(Err(anyhow!("There was a reference to a control with name '{control_name}' that was not provided.")))
+                        };
+                        let control = match single_control_from_details(
+                            control_details,
+                            external_conditions.clone(),
+                            simulation_time_iterator,
+                            control_input,
+                        ) {
+                            Ok(c) => c,
+                            Err(_) => return Some(Err(anyhow!("The control name '{control_name}' refers to a control that cannot be included as part of a combination.")))
+                        };
+                        control.map(|control| {
+                            Ok((
+                                control_name.into(),
+                                Arc::new(control),
+                            ))
+                        })
+                    })
+                    .try_collect()?;
+
+                Ok(control_instances)
+            }
+
+            let resolved_controls = collect_controls(
+                combination,
+                MAIN_REFERENCE,
+                None,
+                control_input,
+                external_conditions,
+                simulation_time_iterator,
+            )?;
+
+            Control::CombinationTime(CombinationTimeControl::new(
+                combination.clone(),
+                resolved_controls,
+                *start_day,
+                *time_series_step,
+            )?)
+            .into()
+        }
+    })
+}
 
 #[derive(Debug)]
 pub struct Corpus {
@@ -178,8 +459,11 @@ impl Corpus {
             external_conditions.clone(),
         );
 
-        let controls =
-            control_from_input(&input.control, simulation_time_iterator.clone().as_ref())?;
+        let controls = control_from_input(
+            &input.control,
+            external_conditions.clone(),
+            simulation_time_iterator.clone().as_ref(),
+        )?;
 
         let event_schedules = event_schedules_from_input(
             &input.water_heating_events,
@@ -2494,130 +2778,6 @@ impl Controls {
             other => self.extra.get(other).cloned(),
         }
     }
-}
-
-fn control_from_input(
-    control_input: &ControlInput,
-    simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<Controls> {
-    let mut core: Vec<HeatSourceControl> = Default::default();
-    let mut extra: HashMap<String, Arc<Control>> = Default::default();
-
-    // this is very ugly(!) but is just a reflection of the lack of clarity in the schema
-    // and the way the variants-struct crate works;
-    // we should be able to improve it in time
-    if let Some(control) = &control_input.hot_water_timer.as_ref() {
-        core.push(HeatSourceControl::HotWaterTimer(Arc::new(
-            single_control_from_details(control, simulation_time_iterator)?,
-        )));
-    }
-    if let Some(control) = &control_input.window_opening.as_ref() {
-        core.push(HeatSourceControl::WindowOpening(Arc::new(
-            single_control_from_details(control, simulation_time_iterator)?,
-        )));
-    }
-    for (name, control) in &control_input.extra {
-        extra.insert(
-            name.to_string(),
-            Arc::new(single_control_from_details(
-                control,
-                simulation_time_iterator,
-            )?),
-        );
-    }
-
-    Ok(Controls { core, extra })
-}
-
-fn single_control_from_details(
-    details: &ControlDetails,
-    simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<Control> {
-    Ok(match details {
-        ControlDetails::OnOffTime {
-            start_day,
-            time_series_step,
-            schedule,
-            ..
-        } => Control::OnOffTime(OnOffTimeControl::new(
-            reject_nulls(expand_boolean_schedule(schedule))?,
-            *start_day,
-            *time_series_step,
-        )),
-        ControlDetails::OnOffCostMinimisingTime {
-            start_day,
-            time_series_step,
-            time_on_daily,
-            schedule,
-            ..
-        } => Control::OnOffMinimisingTime(OnOffMinimisingTimeControl::new(
-            reject_nulls(expand_numeric_schedule(schedule))?,
-            *start_day,
-            *time_series_step,
-            time_on_daily.unwrap_or_default(),
-        )),
-        ControlDetails::SetpointTime {
-            start_day,
-            time_series_step,
-            advanced_start,
-            setpoint_min,
-            setpoint_max,
-            default_to_max,
-            schedule,
-            ..
-        } => Control::SetpointTime(
-            SetpointTimeControl::new(
-                expand_numeric_schedule(schedule),
-                *start_day,
-                *time_series_step,
-                *setpoint_min,
-                *setpoint_max,
-                *default_to_max,
-                *advanced_start,
-                simulation_time_iterator.step_in_hours(),
-            )
-            .unwrap(),
-        ),
-        ControlDetails::Charge { charge_level, .. } => {
-            // Simulation manual charge control
-            // Set charge level to 1.0 (max) for each day of simulation (plus 1)
-            let vec_size = ((simulation_time_iterator.total_steps() as f64
-                * simulation_time_iterator.step_in_hours()
-                / 24.0)
-                + 1.0)
-                .ceil() as usize;
-            let mut _charge_level_vec: Vec<f64> = vec![1.0; vec_size];
-            // if charge_level is present in input, overwrite initial vector
-            // user can specify a vector with all days (plus 1), or as a single float value to be used for each day
-            if let Some(charge) = charge_level {
-                match charge {
-                    ChargeLevel::List(charge_vec) => {
-                        _charge_level_vec = charge_vec.to_vec();
-                    }
-                    ChargeLevel::Single(charge) => {
-                        _charge_level_vec = vec![*charge; vec_size];
-                    }
-                    ChargeLevel::Schedule(_) => {
-                        unimplemented!("TODO 0.32 add support for schedules in charge level")
-                    }
-                }
-            }
-
-            unimplemented!("TODO 0.32 implement creation of charge control")
-            // Control::ChargeControl(ChargeControl {
-            //     schedule: reject_nulls(expand_boolean_schedule(schedule))?,
-            //     start_day: *start_day,
-            //     time_series_step: *time_series_step,
-            //     charge_level: charge_level_vec,
-            // })
-        }
-        ControlDetails::CombinationTime { .. } => {
-            unimplemented!("CombinationTime control to be implemented during 0.32 migration")
-        }
-        ControlDetails::SmartAppliance { .. } => {
-            unimplemented!("SmartAppliance control to be implemented during 0.32 migration")
-        }
-    })
 }
 
 fn wwhrs_from_input(

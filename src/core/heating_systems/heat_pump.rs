@@ -6558,7 +6558,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.,
             )
             .unwrap(),
@@ -6927,7 +6927,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 simulation_time_for_heat_pump.step,
             )
             .unwrap(),
@@ -7474,7 +7474,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             1.0,
         )
         .unwrap();
@@ -7963,7 +7963,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.0,
             )
             .unwrap(),
@@ -8272,7 +8272,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.0,
             )
             .unwrap(),
@@ -8457,7 +8457,11 @@ mod tests {
         let heat_pummp_sink_air = Arc::from(Mutex::from(heat_pummp_sink_air));
 
         let service_name = "service_space_warmair";
-        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![true], 0, 1.)));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
         let volume_heated = 250.;
         let frac_convective = 0.9;
 
@@ -8500,7 +8504,11 @@ mod tests {
         let service_name = "service_space";
         let temp_limit_upper = 50.0;
         let temp_diff_emit_dsgn = 50.0;
-        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(vec![true], 0, 1.)));
+        let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)],
+            0,
+            1.,
+        )));
         let volume_heated = 250.0;
 
         let heat_pump_service_space = HeatPump::create_service_space_heating(

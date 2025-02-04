@@ -105,7 +105,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 simulation_time.step,
             )
             .unwrap(),

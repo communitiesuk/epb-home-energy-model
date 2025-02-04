@@ -1361,7 +1361,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.,
             )
             .unwrap(),
@@ -1378,7 +1378,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.,
             )
             .unwrap(),
@@ -1507,7 +1507,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.0,
             )
             .unwrap(),
@@ -1615,12 +1615,30 @@ mod tests {
     ) {
         let service_name = "service_hot_water_regular";
         let control_min = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
-                .unwrap(),
+            SetpointTimeControl::new(
+                vec![None, None],
+                0,
+                1.0,
+                None,
+                None,
+                None,
+                Default::default(),
+                1.0,
+            )
+            .unwrap(),
         ));
         let control_max = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
-                .unwrap(),
+            SetpointTimeControl::new(
+                vec![None, None],
+                0,
+                1.0,
+                None,
+                None,
+                None,
+                Default::default(),
+                1.0,
+            )
+            .unwrap(),
         ));
 
         let boiler = Arc::new(RwLock::new(boiler));
@@ -1645,8 +1663,17 @@ mod tests {
             boiler,
             "BoilerServiceSpace",
             Arc::new(Control::SetpointTime(
-                SetpointTimeControl::new(vec![None, None], 0, 1.0, None, None, None, None, 1.0)
-                    .unwrap(),
+                SetpointTimeControl::new(
+                    vec![None, None],
+                    0,
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    Default::default(),
+                    1.0,
+                )
+                .unwrap(),
             )),
         );
         assert_eq!(

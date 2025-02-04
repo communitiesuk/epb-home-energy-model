@@ -808,7 +808,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![0.2],
+                vec![Some(0.2)],
                 None,
                 None,
                 None,
@@ -925,7 +925,8 @@ mod tests {
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
         Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, None, 1.).unwrap(),
+            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
+                .unwrap(),
         )
     }
 
@@ -1099,7 +1100,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.5, 1.6], // these values change the result
+                vec![1.5, 1.6].iter().map(|&s| s.into()).collect(), // these values change the result
                 None,
                 None,
                 None,
@@ -1463,7 +1464,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.0, 1.5],
+                vec![1.0, 1.5].iter().map(|&s| s.into()).collect(),
                 None,
                 None,
                 None,
@@ -1530,7 +1531,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.5, 1.6], // these values change the result
+                vec![1.5, 1.6].iter().map(|&s| s.into()).collect(), // these values change the result
                 None,
                 None,
                 None,

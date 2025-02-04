@@ -1,5 +1,5 @@
 use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 #[cfg(test)]
 use serde_json::Value;
 
@@ -8,6 +8,13 @@ pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<
         .into_iter()
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow!("A null was in a schedule when it was not expected."))
+}
+
+pub(crate) fn reject_nones<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<Option<T>>> {
+    if vec_of_options.iter().any(|o| o.is_none()) {
+        bail!("A null value was in a schedule when it was not expected.")
+    }
+    Ok(vec_of_options)
 }
 
 pub(crate) fn expand_boolean_schedule(schedule: &BooleanSchedule) -> Vec<Option<bool>> {

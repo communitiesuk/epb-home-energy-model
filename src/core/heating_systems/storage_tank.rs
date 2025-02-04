@@ -2005,7 +2005,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             simulation_timestep,
         )
         .unwrap();
@@ -2017,7 +2017,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             simulation_timestep,
         )
         .unwrap();
@@ -2541,7 +2541,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             simulation_time_for_solar_thermal.step,
         );
 
@@ -3359,7 +3359,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 timestep,
             )
             .unwrap(),
@@ -3373,7 +3373,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 timestep,
             )
             .unwrap(),

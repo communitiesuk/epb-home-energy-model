@@ -886,7 +886,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.0, 0.8],
+                vec![1.0, 0.8].iter().map(|&s| s.into()).collect(),
                 Some(22.),
                 None,
                 None,
@@ -908,7 +908,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 1.,
             )
             .unwrap(),

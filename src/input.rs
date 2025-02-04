@@ -468,13 +468,23 @@ pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct Control {
+pub(crate) struct Control {
     #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
     pub(crate) hot_water_timer: Option<ControlDetails>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "window opening")]
     pub(crate) window_opening: Option<ControlDetails>,
     #[serde(flatten)]
     pub(crate) extra: ExtraControls,
+}
+
+impl Control {
+    pub(crate) fn get(&self, key: &str) -> Option<&ControlDetails> {
+        match key {
+            "hw timer" => self.hot_water_timer.as_ref(),
+            "window opening" => self.window_opening.as_ref(),
+            reference => self.extra.get(reference),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -705,10 +715,11 @@ impl ControlDetails {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ControlLogicType {
+    #[default]
     Manual,
     Automatic,
     #[serde(rename = "celect")]

@@ -875,6 +875,7 @@ impl EmittersDetailedResult {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use itertools::Itertools;
     use parking_lot::RwLock;
     use rstest::fixture;
     use rstest::rstest;
@@ -1038,7 +1039,10 @@ mod tests {
             .unwrap();
 
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
-            vec![true, true, true, true, true, true, true, true],
+            vec![true, true, true, true, true, true, true, true]
+                .iter()
+                .map(|&x| Some(x))
+                .collect_vec(),
             0,
             0.25, // to match simulation time
         )));

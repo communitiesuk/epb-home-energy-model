@@ -110,7 +110,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             1.0,
         )
         .unwrap();

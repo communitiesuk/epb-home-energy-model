@@ -130,13 +130,17 @@ impl HeatSourceControl {
 #[derive(Clone, Debug)]
 pub struct OnOffTimeControl {
     /// list of boolean values where true means "on" (one entry per hour)
-    schedule: Vec<bool>,
+    schedule: Vec<Option<bool>>,
     start_day: u32,
     time_series_step: f64,
 }
 
 impl OnOffTimeControl {
-    pub fn new(schedule: Vec<bool>, start_day: u32, time_series_step: f64) -> OnOffTimeControl {
+    pub fn new(
+        schedule: Vec<Option<bool>>,
+        start_day: u32,
+        time_series_step: f64,
+    ) -> OnOffTimeControl {
         OnOffTimeControl {
             schedule,
             start_day,
@@ -144,8 +148,9 @@ impl OnOffTimeControl {
         }
     }
 
-    pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
+    pub(crate) fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
         self.schedule[timestep.time_series_idx(self.start_day, self.time_series_step)]
+            .unwrap_or(false)
     }
 }
 
@@ -161,7 +166,7 @@ pub(crate) struct ChargeControl {
     pub start_day: u32,
     pub time_series_step: f64,
     /// Proportion of the charge targeted for each day
-    pub charge_level: Vec<f64>,
+    pub charge_level: Vec<Option<f64>>,
     temp_charge_cut: Option<f64>,
     temp_charge_cut_delta: Option<Vec<f64>>,
     _min_target_charge_factor: Option<f64>,
@@ -187,7 +192,7 @@ impl ChargeControl {
         simulation_timestep: f64,
         start_day: u32,
         time_series_step: f64,
-        charge_level: Vec<f64>,
+        charge_level: Vec<Option<f64>>,
         temp_charge_cut: Option<f64>,
         temp_charge_cut_delta: Option<Vec<f64>>,
         min_target_charge_factor: Option<f64>,
@@ -276,6 +281,7 @@ impl ChargeControl {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
             self.charge_level[simtime.time_series_idx_days(self.start_day, self.time_series_step)]
+                .unwrap_or_default()
         } else {
             // If unit is off send 0.0 for target charge
             0.
@@ -567,7 +573,7 @@ impl SetpointTimeControl {
         setpoint_min: Option<f64>,
         setpoint_max: Option<f64>,
         default_to_max: Option<bool>,
-        duration_advanced_start: Option<f64>,
+        duration_advanced_start: f64,
         timestep: f64,
     ) -> Result<Self, &'static str> {
         if setpoint_min.is_some() && setpoint_max.is_some() && default_to_max.is_none() {
@@ -575,7 +581,6 @@ impl SetpointTimeControl {
                 "default_to_max should be set when both setpoint_min and setpoint_max are set",
             );
         }
-        let duration_advanced_start = duration_advanced_start.unwrap_or(0.0);
 
         Ok(SetpointTimeControl {
             schedule,
@@ -1397,7 +1402,11 @@ mod tests {
 
     #[fixture]
     pub fn on_off_time_control() -> OnOffTimeControl {
-        OnOffTimeControl::new(ON_OFF_SCHEDULE.to_vec(), 0, 1.0)
+        OnOffTimeControl::new(
+            ON_OFF_SCHEDULE.iter().map(|&v| Some(v)).collect_vec(),
+            0,
+            1.0,
+        )
     }
 
     #[rstest]
@@ -1475,7 +1484,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1493,7 +1502,7 @@ mod tests {
             Some(16.0),
             None,
             None,
-            None,
+            Default::default(),
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1511,7 +1520,7 @@ mod tests {
             None,
             Some(24.0),
             None,
-            None,
+            0.0,
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1529,7 +1538,7 @@ mod tests {
             Some(16.0),
             Some(24.0),
             Some(false),
-            None,
+            Default::default(),
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1547,7 +1556,7 @@ mod tests {
             None,
             None,
             Some(false),
-            Some(1.0),
+            1.0,
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1565,7 +1574,7 @@ mod tests {
             Some(16.0),
             Some(24.0),
             Some(false),
-            Some(1.0),
+            1.0,
             simulation_time.step_in_hours(),
         )
         .unwrap()
@@ -1859,7 +1868,7 @@ mod tests {
             simulation_time_for_charge_control.step,
             0,
             1.,
-            vec![1.0, 0.8],
+            vec![Some(1.0), Some(0.8)],
             Some(15.5),
             None,
             None,
@@ -2035,7 +2044,7 @@ mod tests {
             simulation_time_for_charge_control.step,
             0,
             1.,
-            vec![1.0, 0.8],
+            vec![1.0, 0.8].iter().map(|&x| Some(x)).collect(),
             Some(15.5),
             None,
             None,
@@ -2064,7 +2073,10 @@ mod tests {
             (
                 "ctrl1".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, true, true, true, true, true],
+                    vec![true, true, false, true, true, true, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2073,7 +2085,10 @@ mod tests {
             (
                 "ctrl2".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![false, true, true, false, false, false, true, false],
+                    vec![false, true, true, false, false, false, true, false]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2082,7 +2097,10 @@ mod tests {
             (
                 "ctrl3".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, true, false, false, false, true, false],
+                    vec![true, false, true, false, false, false, true, false]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2101,7 +2119,7 @@ mod tests {
                         None,
                         None,
                         None,
-                        None,
+                        Default::default(),
                         1.,
                     )
                     .unwrap(),
@@ -2121,7 +2139,7 @@ mod tests {
                         None,
                         None,
                         None,
-                        None,
+                        Default::default(),
                         1.,
                     )
                     .unwrap(),
@@ -2131,7 +2149,10 @@ mod tests {
             (
                 "ctrl6".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, true, true, true, true, true],
+                    vec![true, true, false, true, true, true, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2140,7 +2161,10 @@ mod tests {
             (
                 "ctrl7".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![false, true, false, false, false, false, true, false],
+                    vec![false, true, false, false, false, false, true, false]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2149,7 +2173,10 @@ mod tests {
             (
                 "ctrl8".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true],
+                    vec![true, false, false, true, true, true, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2174,7 +2201,7 @@ mod tests {
                         None,
                         None,
                         None,
-                        None,
+                        Default::default(),
                         1.,
                     )
                     .unwrap(),
@@ -2248,7 +2275,10 @@ mod tests {
             (
                 "ctrl11".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true],
+                    vec![true, false, false, true, true, true, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2261,7 +2291,10 @@ mod tests {
             (
                 "ctrl13".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true],
+                    vec![true, true, false, false, true, false, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2392,7 +2425,10 @@ mod tests {
             (
                 "ctrl14".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true],
+                    vec![true, false, false, true, true, true, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2405,7 +2441,10 @@ mod tests {
             (
                 "ctrl16".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true],
+                    vec![true, true, false, false, true, false, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))
@@ -2414,7 +2453,10 @@ mod tests {
             (
                 "ctrl17".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true],
+                    vec![true, true, false, false, true, false, true, true]
+                        .iter()
+                        .map(|&x| Some(x))
+                        .collect_vec(),
                     0,
                     1.,
                 ))

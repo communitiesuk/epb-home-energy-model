@@ -494,7 +494,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             two_len_simulation_time.step,
         )
         .unwrap();
@@ -668,7 +668,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             two_len_simulation_time.step,
         )
         .unwrap();
@@ -680,7 +680,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Default::default(),
             two_len_simulation_time.step,
         )
         .unwrap();
@@ -776,7 +776,7 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
+                Default::default(),
                 three_len_simulation_time.step,
             )
             .unwrap(),
@@ -992,7 +992,7 @@ mod tests {
                     None,
                     None,
                     None,
-                    None,
+                    Default::default(),
                     three_len_simulation_time.step,
                 )
                 .unwrap(),
