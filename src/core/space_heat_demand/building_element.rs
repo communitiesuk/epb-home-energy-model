@@ -736,9 +736,6 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 (h_pi, h_pe)
             };
 
-            // thermal transmittance of suspended part of floor
-            let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
-
             let charac_dimen_floor = || -> f64 {
                 total_area / (0.5 * perimeter) // in m
             };
