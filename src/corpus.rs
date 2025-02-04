@@ -3389,7 +3389,7 @@ fn building_element_from_input(
                 .as_ref()
                 .map(|treatments| {
                     treatments
-                        .into_iter()
+                        .iter()
                         .map(|t| {
                             WindowTreatment::from_input(
                                 t,

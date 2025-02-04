@@ -165,7 +165,7 @@ impl StorageTank {
         // They could just get warmed up with WWHRS water.
         let mut heat_source_data = heat_sources.clone();
 
-        if heat_sources.len() > 0 {
+        if !heat_sources.is_empty() {
             // sort heat source data in order from the bottom of the tank based on heater position
             heat_source_data = heat_source_data
                 .iter()
@@ -273,7 +273,7 @@ impl StorageTank {
             temp_s3_n = temp_s3_n_step;
 
             if rearrange {
-                temp_s3_n = self.rearrange_temperatures(&*temp_s3_n).1
+                temp_s3_n = self.rearrange_temperatures(&temp_s3_n).1
             }
 
             self.temp_n = temp_s3_n.clone();
@@ -959,7 +959,7 @@ impl StorageTank {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let expect_message =
-            format!("Expected set point max to be set for storage tank with this heat source");
+            "Expected set point max to be set for storage tank with this heat source".to_string();
         let temp_flow = self
             .temp_flow(heat_source.clone(), simulation_time_iteration)?
             .expect(&expect_message);
@@ -1001,8 +1001,8 @@ impl StorageTank {
         heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let setpnts = heat_source.temp_setpnt(simulation_time_iteration);
-        setpnts
+        
+        heat_source.temp_setpnt(simulation_time_iteration)
     }
 
     fn determine_heat_source_switch_on(
@@ -1036,7 +1036,7 @@ impl StorageTank {
     ) -> anyhow::Result<()> {
         let heat_source = heat_source.heat_source;
         let (_, setpntmax) =
-            self.retrieve_setpnt(&*(heat_source.lock()), simulation_time_iteration)?;
+            self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
         let expect_message = format!(
             "Expected set point max to be set for storage tank with heat source: {heat_source_name}"
         );
@@ -1053,7 +1053,7 @@ impl StorageTank {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<Option<f64>> {
         let (_, setpntmax) =
-            self.retrieve_setpnt(&*(heat_source.lock()), simulation_time_iteration)?;
+            self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
         Ok(setpntmax)
     }
 
@@ -1225,7 +1225,7 @@ impl StorageTank {
 
         if flag_rearrange_layers {
             // Re-arrange the temperatures in the storage after energy input from pre-heated tank
-            (_, new_temp_distribution) = self.rearrange_temperatures(&*new_temp_distribution);
+            (_, new_temp_distribution) = self.rearrange_temperatures(&new_temp_distribution);
         }
 
         self.temp_n = new_temp_distribution.clone();

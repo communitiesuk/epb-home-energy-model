@@ -98,7 +98,7 @@ struct SocOdeFunction<'a> {
     storage_capacity: f64,
 }
 
-impl<'a> System<Time, State> for SocOdeFunction<'a> {
+impl System<Time, State> for SocOdeFunction<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         // Define the ODE for SOC and energy delivered (no charging, only discharging)
 
@@ -106,7 +106,7 @@ impl<'a> System<Time, State> for SocOdeFunction<'a> {
         let soc = clip(y[0], 0., 1.);
 
         // Discharging: calculate power used based on SOC
-        let discharge_rate = -np_interp(soc, &self.soc_array, &self.power_array);
+        let discharge_rate = -np_interp(soc, self.soc_array, self.power_array);
 
         // Track the total energy delivered (discharged energy)
         let ddelivered_dt = -discharge_rate; // Energy delivered (positive value)
@@ -139,8 +139,8 @@ impl System<Time, EnergyOutputState> for EnergyOutputSocOdeFunction<'_> {
         // TODO confirm this is intended
         let power_max_func_result_arr = self
             .soc_array
-            .into_iter()
-            .map(|s| np_interp(*s, &self.soc_array, &self.power_array))
+            .iter()
+            .map(|s| np_interp(*s, self.soc_array, self.power_array))
             .collect_vec();
         let discharge_rate =
             -np_interp_with_extrapolate(soc, self.soc_array, &power_max_func_result_arr);
@@ -571,7 +571,7 @@ impl ElecStorageHeater {
                     current_profile.energy_instant = self
                         .demand_unmet
                         .load(Ordering::SeqCst)
-                        .min(self.pwr_instant * f64::from(timestep)); // kWh
+                        .min(self.pwr_instant * timestep); // kWh
                     let time_instant = current_profile.energy_instant / self.pwr_instant;
                     time_used_max += time_instant;
                     time_used_max = time_used_max.min(timestep);
@@ -590,7 +590,7 @@ impl ElecStorageHeater {
         }
 
         // Ensure energy_delivered does not exceed q_released_max
-        let max = q_released_max.unwrap_or_else(|| q_released_min);
+        let max = q_released_max.unwrap_or(q_released_min);
 
         current_profile.energy_delivered = current_profile.energy_delivered.min(max);
 
