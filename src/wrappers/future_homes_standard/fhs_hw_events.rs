@@ -35,13 +35,15 @@ const STANDARD_BATH_SIZE: f64 = 180.;
 
 fn bath_size_displaced(n_occupants: f64, bath_size: f64) -> anyhow::Result<f64> {
     // number of adults and children derived from Metabolic gains BSA calc
-    let n_adults = (2.0001 * n_occupants.powf(0.8492) - 1.07451 * n_occupants) / (1.888074 - 1.07451);
+    let n_adults =
+        (2.0001 * n_occupants.powf(0.8492) - 1.07451 * n_occupants) / (1.888074 - 1.07451);
     let n_children = n_occupants - n_adults;
     // average occupant weight, same assumptions as metabolic gain
     let w_kg = (78.6 * n_adults + 33.01 * n_children) / n_occupants;
     // assume density equal to water (in reality varies)
     let occupant_displacement_l = w_kg * 1.;
-    let fill_vol_l = (occupant_displacement_l + STANDARD_FILL) * (bath_size / STANDARD_BATH_SIZE) - occupant_displacement_l;
+    let fill_vol_l = (occupant_displacement_l + STANDARD_FILL) * (bath_size / STANDARD_BATH_SIZE)
+        - occupant_displacement_l;
     if fill_vol_l <= 0. {
         bail!("Bath too small, fill_vol_l: {}", fill_vol_l)
     }
@@ -350,16 +352,16 @@ impl HotWaterEventGenerator {
                     decile = 0;
                     banding_correction = daily_dhw_vol
                         / bands_file_data
-                        .first()
-                        .expect("No decile bands were read from the file")
-                        .calibration_daily_dhw_vol;
+                            .first()
+                            .expect("No decile bands were read from the file")
+                            .calibration_daily_dhw_vol;
                 } else if daily_dhw_vol > bands_file_data[9].min_daily_dhw_vol {
                     decile = 9;
                     banding_correction = daily_dhw_vol
                         / bands_file_data
-                        .last()
-                        .expect("No decile bands were read from the file")
-                        .calibration_daily_dhw_vol;
+                            .last()
+                            .expect("No decile bands were read from the file")
+                            .calibration_daily_dhw_vol;
                 }
             }
             if decile == -1 {
@@ -483,7 +485,7 @@ impl HotWaterEventGenerator {
             if matching_types.contains(&existing_event.event_type)
                 && (event_start >= existing_event.start && event_start < existing_event.end)
                 || (event_start + duration / 60. >= existing_event.start
-                && event_start + duration / 60. < existing_event.end)
+                    && event_start + duration / 60. < existing_event.end)
             {
                 // events are overlapping, and we need to reroll the time until they aren't
                 event_start = self.reroll_event_time(event_start);
