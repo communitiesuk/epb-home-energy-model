@@ -84,6 +84,7 @@ pub(crate) struct StorageHeaterDetailedResult {
     timestep_idx: usize,
     n_units: i32,
     energy_demand: f64,
+    energy_delivered: f64,
     energy_instant: f64,
     energy_charged: f64,
     energy_for_fan: f64,
@@ -630,6 +631,7 @@ impl ElecStorageHeater {
             let result = StorageHeaterDetailedResult {
                 timestep_idx: simulation_time_iteration.index,
                 n_units: self.n_units,
+                energy_delivered,
                 energy_demand,
                 energy_instant,
                 energy_charged,
@@ -927,7 +929,7 @@ mod tests {
         let energy_supply_conn =
             EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
 
-        let mut elec_storage_heater = ElecStorageHeater::new(
+        let elec_storage_heater = ElecStorageHeater::new(
             3.5,
             2.5,
             10.0,
@@ -998,7 +1000,7 @@ mod tests {
     #[rstest]
     fn test_energy_output_min_single(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let min_energy_output = elec_storage_heater
             .energy_output_min(&simulation_time_iterator.current_iteration())
@@ -1017,7 +1019,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_output_min(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         // Test minimum energy output calculation across all timesteps.
 
@@ -1064,7 +1066,7 @@ mod tests {
     #[ignore = "known issue"]
     fn test_energy_output_max(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         // Test maximum energy output calculation across all timesteps.
         let expected_max_energy_output = [
@@ -1117,7 +1119,7 @@ mod tests {
     ) {
         let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
         let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
-        let mut elec_storage_heater = create_elec_storage_heater(
+        let elec_storage_heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
@@ -1157,7 +1159,7 @@ mod tests {
     ) {
         let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
         let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
-        let mut elec_storage_heater = create_elec_storage_heater(
+        let elec_storage_heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
@@ -1282,7 +1284,7 @@ mod tests {
     #[rstest]
     pub fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy = [
             4.0,
@@ -1321,7 +1323,7 @@ mod tests {
     #[ignore = "known issue"]
     pub fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_for_fan = [
             0.003666666666666666,
@@ -1365,7 +1367,7 @@ mod tests {
     #[ignore = "known issue"]
     pub fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_instant = [
             2.5,
@@ -1409,7 +1411,7 @@ mod tests {
     #[ignore = "known issue"]
     pub fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_charged = [
             1.5,
@@ -1453,7 +1455,7 @@ mod tests {
     #[ignore = "known issue"]
     pub fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
-        mut elec_storage_heater: ElecStorageHeater,
+        elec_storage_heater: ElecStorageHeater,
     ) {
         let expected_energy_delivered = [
             1.5,
