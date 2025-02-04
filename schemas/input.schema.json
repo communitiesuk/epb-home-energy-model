@@ -1487,6 +1487,13 @@
                 }
               ]
             },
+            "full_charge_temp_diff": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
             "logic_type": {
               "anyOf": [
                 {
@@ -1496,6 +1503,13 @@
                   "type": "null"
                 }
               ]
+            },
+            "min_target_charge_factor": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
             },
             "schedule": {
               "$ref": "#/$defs/Schedule_for_Boolean",

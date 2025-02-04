@@ -537,6 +537,10 @@ pub(crate) enum ControlDetails {
         temp_charge_cut: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         temp_charge_cut_delta: Option<NumericSchedule>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min_target_charge_factor: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        full_charge_temp_diff: Option<f64>,
         #[serde(rename = "target_charge", skip_serializing_if = "Option::is_none")]
         _target_charge: Option<f64>,
         schedule: BooleanSchedule,
