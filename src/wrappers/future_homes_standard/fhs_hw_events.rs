@@ -30,6 +30,23 @@ const BEHAVIOURAL_HW_FACTOR_M: [f64; 12] = [
 const OTHER_HW_FACTOR_M: [f64; 13] = [
     1.10, 1.06, 1.02, 0.98, 0.94, 0.90, 0.90, 0.94, 0.98, 1.02, 1.06, 1.10, 1.00,
 ];
+const STANDARD_FILL: f64 = 73.;
+const STANDARD_BATH_SIZE: f64 = 180.;
+
+fn bath_size_displaced(n_occupants: f64, bath_size: f64) -> anyhow::Result<f64> {
+    // number of adults and children derived from Metabolic gains BSA calc
+    let n_adults = (2.0001 * n_occupants.powf(0.8492) - 1.07451 * n_occupants) / (1.888074 - 1.07451);
+    let n_children = n_occupants - n_adults;
+    // average occupant weight, same assumptions as metabolic gain
+    let w_kg = (78.6 * n_adults + 33.01 * n_children) / n_occupants;
+    // assume density equal to water (in reality varies)
+    let occupant_displacement_l = w_kg * 1.;
+    let fill_vol_l = (occupant_displacement_l + STANDARD_FILL) * (bath_size / STANDARD_BATH_SIZE) - occupant_displacement_l;
+    if fill_vol_l <= 0. {
+        bail!("Bath too small, fill_vol_l: {}", fill_vol_l)
+    }
+    Ok(fill_vol_l)
+}
 
 #[derive(Debug)]
 pub struct DrawoffGenerator {
@@ -42,6 +59,7 @@ pub struct DrawoffGenerator {
 }
 
 pub fn reset_events_and_provide_drawoff_generator(
+    n_occupants: f64,
     input: &mut InputForProcessing,
     fhw: f64,
     event_temperature: f64,
@@ -66,7 +84,10 @@ pub fn reset_events_and_provide_drawoff_generator(
             .iter()
             .position(|&value| value as f64 > event.time)
             .unwrap();
-        (bath_size / flowrate) * fhw * BEHAVIOURAL_HW_FACTOR_M[bath_month_index]
+        let vol = bath_size * fhw * BEHAVIOURAL_HW_FACTOR_M[bath_month_index];
+        // bath size is already a volume of warm water (not hot water)
+        // so application frac_hw is unnecessary here
+        vol / flowrate
     };
 
     let other_duration_func_gen = || {
@@ -107,6 +128,8 @@ pub fn reset_events_and_provide_drawoff_generator(
         let bath_size = input.size_for_bath_field(bath.as_str()).unwrap_or_else(|| {
             panic!("Tried to access a bath input with a nonexistent key '{bath}'")
         });
+        // displacement of average occupant subtracted from volume of bath tub to work out fill volume
+        let bath_size = bath_size_displaced(n_occupants, bath_size)?;
         let bath_flowrate = input.flowrate_for_bath_field(bath.as_str()).unwrap();
         baths.push(Drawoff {
             event_type: WaterHeatingEventType::Bath,
@@ -171,19 +194,23 @@ pub fn reset_events_and_provide_drawoff_generator(
         (false, true) => {
             baths.clone_from(&showers);
         }
-        (false, false) => {
+        (true, true) => {
+            // bath sized events occur whenever a shower or bath would
+            // if there are no shower or bath facilities in the dwelling
+            // using a default of 180L tub and 8.0l/min flowrate
+            let bath_size = bath_size_displaced(n_occupants, STANDARD_BATH_SIZE)?;
             baths.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
                 name: "other".to_string(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
-                    partial!(move bath_duration_func => 100., 8.0, _),
+                    partial!(move bath_duration_func => bath_size, 8.0, _),
                 ))),
             });
             showers.push(Drawoff {
                 event_type: WaterHeatingEventType::Other,
                 name: "other".to_string(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
-                    partial!(move bath_duration_func => 100., 8.0, _),
+                    partial!(move bath_duration_func => bath_size, 8.0, _),
                 ))),
             });
         }
@@ -323,16 +350,16 @@ impl HotWaterEventGenerator {
                     decile = 0;
                     banding_correction = daily_dhw_vol
                         / bands_file_data
-                            .first()
-                            .expect("No decile bands were read from the file")
-                            .calibration_daily_dhw_vol;
+                        .first()
+                        .expect("No decile bands were read from the file")
+                        .calibration_daily_dhw_vol;
                 } else if daily_dhw_vol > bands_file_data[9].min_daily_dhw_vol {
                     decile = 9;
                     banding_correction = daily_dhw_vol
                         / bands_file_data
-                            .last()
-                            .expect("No decile bands were read from the file")
-                            .calibration_daily_dhw_vol;
+                        .last()
+                        .expect("No decile bands were read from the file")
+                        .calibration_daily_dhw_vol;
                 }
             }
             if decile == -1 {
@@ -456,7 +483,7 @@ impl HotWaterEventGenerator {
             if matching_types.contains(&existing_event.event_type)
                 && (event_start >= existing_event.start && event_start < existing_event.end)
                 || (event_start + duration / 60. >= existing_event.start
-                    && event_start + duration / 60. < existing_event.end)
+                && event_start + duration / 60. < existing_event.end)
             {
                 // events are overlapping, and we need to reroll the time until they aren't
                 event_start = self.reroll_event_time(event_start);

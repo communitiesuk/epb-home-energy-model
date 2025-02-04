@@ -138,7 +138,7 @@ static METABOLIC_GAINS: LazyLock<MetabolicGains> = LazyLock::new(|| {
     let (weekday, weekend) = load_metabolic_gains_profile(Cursor::new(include_str!(
         "./dry_metabolic_gains_profile_Wperm2.csv"
     )))
-    .expect("Could not load in metabolic gains file.");
+        .expect("Could not load in metabolic gains file.");
     MetabolicGains { weekday, weekend }
 });
 
@@ -230,7 +230,7 @@ pub(super) fn calc_final_rates(
                 "_unmet_demand".to_string(),
                 &EnergySupplyDetails::with_fuel(FuelType::UnmetDemand),
             )]
-            .into_iter(),
+                .into_iter(),
         )
     {
         let supply_emis_result = emis_results.entry(energy_supply_key.clone()).or_default();
@@ -1123,7 +1123,7 @@ fn load_appliance_propensities(
         consumer_electronics,
         state: Default::default(),
     }
-    .normalise())
+        .normalise())
 }
 
 type AppliancePropensitiesUnderConstruction = (
@@ -1179,14 +1179,14 @@ impl AppliancePropensities<AsDataFile> {
                 cooking_gas_cooker,
                 consumer_electronics,
             ]
-            .into_iter()
-            .map(|probabilities| -> [f64; 24] {
-                let sumcol = probabilities.iter().sum::<f64>();
-                probabilities.map(|x| x / sumcol)
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("Problem normalising appliance propensities.");
+                .into_iter()
+                .map(|probabilities| -> [f64; 24] {
+                    let sumcol = probabilities.iter().sum::<f64>();
+                    probabilities.map(|x| x / sumcol)
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("Problem normalising appliance propensities.");
 
         AppliancePropensities {
             hour: self.hour,
@@ -1544,9 +1544,9 @@ fn create_appliance_gains(
 
             // if the appliance specifies load shifting, add it to the appliance gains details
             let load_shifting = if let ApplianceEntry::Object(Appliance {
-                load_shifting: Some(load_shifting),
-                ..
-            }) = &appliance
+                                                                  load_shifting: Some(load_shifting),
+                                                                  ..
+                                                              }) = &appliance
             {
                 let mut load_shifting = load_shifting.clone();
                 // create year long cost profile
@@ -1589,9 +1589,9 @@ fn create_appliance_gains(
         } else {
             // model as yearlong time series schedule of demand in W
             let annual_kwh = if let ApplianceEntry::Object(Appliance {
-                kwh_per_annum: Some(ref kwh_per_annum),
-                ..
-            }) = &appliance
+                                                               kwh_per_annum: Some(ref kwh_per_annum),
+                                                               ..
+                                                           }) = &appliance
             {
                 kwh_per_annum * map_appliance.util_unit
             } else {
@@ -1905,8 +1905,8 @@ fn appliance_kwh_cycle_loading_factor(
             .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
             .standard_load_kg
             / appliance.kg_load.as_ref().ok_or_else(|| {
-                anyhow!("Passed in appliance is expected to have a kg_load value.")
-            })?
+            anyhow!("Passed in appliance is expected to have a kg_load value.")
+        })?
     } else {
         1.0
     };
@@ -1985,6 +1985,7 @@ pub(super) fn create_hot_water_use_pattern(
     };
 
     let mut hw_event_aa = reset_events_and_provide_drawoff_generator(
+        number_of_occupants,
         input,
         fhw,
         event_temperature_others,
