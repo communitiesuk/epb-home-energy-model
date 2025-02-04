@@ -650,12 +650,6 @@ impl StorageTank {
             .map(|i| self.rho * self.cp * self.vol_n[i] * temp_s7_n[i])
             .collect::<Vec<f64>>();
 
-        let _q_h_sto_end_no = self.rho
-            * self.cp
-            * (0..self.vol_n.len())
-                .map(|i| self.vol_n[i] * temp_s7_n[i])
-                .sum::<f64>();
-
         (q_h_sto_end, temp_s7_n.to_owned())
     }
 
