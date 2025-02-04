@@ -308,9 +308,11 @@ impl StorageTank {
         // Run over multiple heat sources
         let mut temp_after_prev_heat_source = temp_s3_n.clone();
         let mut q_ls = 0.0;
-        let mut temp_s8_n = vec![0.; self.nb_vol];
-
         self.q_ls_n_prev_heat_source = vec![0.0; self.nb_vol];
+        // In Python extra variables initialized and assigned here
+        // for the purpose of passing them to the testoutput method
+        // which we have decided to port (for now)
+        let mut temp_s8_n = vec![0.; self.nb_vol];
 
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
             let (_, _setpntmax) = positioned_heat_source
@@ -1145,12 +1147,12 @@ impl StorageTank {
         let mut remaining_demanded_volume = volume;
 
         // Initialize the unmet and met energies
-        let mut energy_withdrawn = 0.0;
+        let mut _energy_withdrawn = 0.0;
         self.temp_average_drawoff_volweighted = Some(0.0);
         self.total_volume_drawoff = Some(0.0);
         self.temp_average_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
         self.temp_final_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
-        let temp_ini_n = self.temp_n.clone();
+        let _temp_ini_n = self.temp_n.clone();
         let temp_s3_n = self.temp_n.clone();
 
         // Loop through storage layers (starting from the top)
@@ -1165,7 +1167,7 @@ impl StorageTank {
 
             // Volume of water required at this layer
 
-            let mut required_vol;
+            let required_vol;
             if layer_vol <= remaining_demanded_volume {
                 // This is the case where layer cannot meet all remaining demanded volume
                 required_vol = layer_vol;
@@ -1185,7 +1187,7 @@ impl StorageTank {
 
             //  Record the met volume demand for the current temperature target
             //  warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
-            energy_withdrawn +=
+            _energy_withdrawn +=
                 //  Calculation with event water parameters
                 // self.__rho * self.__Cp * warm_vol_removed * (warm_temp - self.__cold_feed.temperature())
                 //  Calculation with layer water parameters
@@ -2281,14 +2283,6 @@ mod tests {
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions_for_pv_diverter: Arc<ExternalConditions>,
     ) -> StorageTank {
-        let energy_supply = Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(
-                FuelType::MainsGas,
-                simulation_time_for_storage_tank.total_steps(),
-            )
-            .build(),
-        ));
-
         let heater_position = 0.1;
         let thermostat_position = 0.33;
         let heat_source = PositionedHeatSource {
@@ -2607,10 +2601,7 @@ mod tests {
 
     #[rstest]
     fn test_demand_hot_water(
-        cold_water_source: Arc<ColdWaterSource>,
         simulation_time_for_storage_tank: SimulationTime,
-        temp_internal_air_fn: TempInternalAirFn,
-        external_conditions: Arc<ExternalConditions>,
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         storage_tank2: (StorageTank, Arc<RwLock<EnergySupply>>),
     ) {
@@ -2976,6 +2967,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     fn test_energy_input(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
         let (storage_tank1, _) = storage_tank1;
         let temp_s3_n = [25.0, 15.0, 35.0, 45.0, 55.0, 50.0, 30.0, 20.0];
@@ -3428,7 +3420,7 @@ mod tests {
         immersion_heater: ImmersionHeater,
         simulation_time_for_immersion_heater: SimulationTime,
     ) {
-        for (t_idx, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
+        for (_, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
             assert_eq!(
                 immersion_heater.energy_output_max(t_it, true), // In Python another parameter (return_temp = 55.0) is passed in to energy_output_max but never used so we have skipped this in Rust
                 50.,
@@ -3459,7 +3451,7 @@ mod tests {
             43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46, 43.46,
         ];
 
-        let (storage_tank_solar_thermal, mut solar_thermal, simulation_time, _) =
+        let (storage_tank_solar_thermal, solar_thermal, simulation_time, _) =
             storage_tank_with_solar_thermal;
 
         let expected = [
