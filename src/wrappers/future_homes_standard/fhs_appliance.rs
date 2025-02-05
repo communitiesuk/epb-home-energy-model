@@ -33,7 +33,7 @@ impl FhsAppliance {
             + standby_w
                 * ((HOURS_PER_DAY * DAYS_PER_YEAR) as f64 - annual_expected_uses * event_duration)
                 / WATTS_PER_KILOWATT as f64;
-        let (event_list, flat_schedule, standby_w) = Self::build_sched(
+        let (event_list, flat_schedule) = Self::build_sched(
             flat_profile,
             seed,
             annual_expected_uses,
@@ -60,7 +60,7 @@ impl FhsAppliance {
         standby_w: f64,
         event_duration: f64,
         duration_std_dev: f64,
-    ) -> anyhow::Result<(Vec<ApplianceGainsDetailsEvent>, Vec<f64>, f64)> {
+    ) -> anyhow::Result<(Vec<ApplianceGainsDetailsEvent>, Vec<f64>)> {
         // upstream Python here constructs a seed sequence from consecutive numbers - instead, here we sum the series
         let mut appliance_rng = Pcg64::seed_from_u64(
             (0..(flat_profile.len() + annual_expected_uses.ceil() as usize))
@@ -143,7 +143,7 @@ impl FhsAppliance {
             }
         }
 
-        Ok((eventlist, sched, standby_w))
+        Ok((eventlist, sched))
     }
 }
 
