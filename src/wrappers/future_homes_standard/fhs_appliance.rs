@@ -91,19 +91,29 @@ impl FhsAppliance {
         }
 
         let norm_events = num_events as f64 + event_size_deviations.iter().sum::<f64>();
-        // adjustment in overall event size for random variation
-        let f_appliance = (norm_events * op_kwh
-            + standby_w * ((HOURS_PER_DAY * DAYS_PER_YEAR) as f64 - norm_events * event_duration)
-                / WATTS_PER_KILOWATT as f64)
-            / annual_expected_demand;
+        // adjustment in mean event length  to account for random variation
+        // adjustment is not applied to standby power,
+        // the total demand of which depends on length of events
+        // expect sufficient convergence after 10 iterations
+        let mut f_appliance = 1.;
+        let convergence_threshold = 0.0000001;
+        for _i in 0..10 {
+            let f_appliance_test = f_appliance;
+            f_appliance = (norm_events * op_kwh)
+                / (annual_expected_demand
+                    - standby_w
+                        * ((HOURS_PER_DAY * DAYS_PER_YEAR) as f64
+                            - norm_events * event_duration / f_appliance)
+                        / WATTS_PER_KILOWATT as f64);
+            if (f_appliance - f_appliance_test).abs() < convergence_threshold {
+                // break out of loop if Fappliance does not change by more than convergence threshold
+                break;
+            }
+        }
 
-        // TODO (from Python) - this could be modifying the duration instead as with HW
-        let expected_demand_w_event =
-            op_kwh * WATTS_PER_KILOWATT as f64 / event_duration / f_appliance;
-        let standby_adjusted = standby_w / f_appliance;
-        let standby_w = standby_adjusted;
+        let expected_demand_w_event = op_kwh * WATTS_PER_KILOWATT as f64 / event_duration;
         let mut eventlist: Vec<ApplianceGainsDetailsEvent> = vec![];
-        let mut sched = vec![standby_adjusted; flat_profile.len()];
+        let mut sched = vec![standby_w; flat_profile.len()];
         let flat_profile_len = flat_profile.len();
 
         let mut event_count: usize = Default::default();
@@ -111,7 +121,8 @@ impl FhsAppliance {
             let mut start_offset = appliance_rng.random::<f64>();
             for e in 0..(num_events_in_step.floor() as usize) {
                 let demand_w_event = expected_demand_w_event;
-                let duration = event_duration * (1. + event_size_deviations[event_count]);
+                let duration =
+                    event_duration * (1. + event_size_deviations[event_count]) / f_appliance;
                 event_count += 1;
                 // step will depend on timestep of flatprofile, always hourly so no adjustment
                 eventlist.push(ApplianceGainsDetailsEvent {
@@ -125,7 +136,7 @@ impl FhsAppliance {
                 while integralx < duration {
                     let segment = (start_offset.ceil() - start_offset).min(duration - integralx);
                     sched[(step + (start_offset + integralx).floor() as usize)
-                        % flat_profile_len] += (demand_w_event - standby_adjusted) * segment;
+                        % flat_profile_len] += (demand_w_event - standby_w) * segment;
                     integralx += segment;
                 }
                 start_offset += e as f64 * duration;
