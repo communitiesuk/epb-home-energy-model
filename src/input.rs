@@ -3439,6 +3439,14 @@ impl InputForProcessing {
         self
     }
 
+    pub(crate) fn set_temp_internal_air_static_calcs(
+        &mut self,
+        temp_internal_air_static_calcs: Option<f64>,
+    ) -> &Self {
+        self.input.temp_internal_air_static_calcs = temp_internal_air_static_calcs;
+        self
+    }
+
     pub(crate) fn merge_external_conditions_data(
         &mut self,
         external_conditions_data: Option<ExternalConditionsInput>,

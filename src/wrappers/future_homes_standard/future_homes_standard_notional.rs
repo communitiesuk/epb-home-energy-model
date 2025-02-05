@@ -39,6 +39,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use tracing::instrument;
 
+use super::future_homes_standard::set_temp_internal_static_calcs;
+
 const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
 const NOTIONAL_HIU: &str = "notionalHIU";
 const NOTIONAL_HP: &str = "notional_HP";
@@ -1322,27 +1324,14 @@ fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> 
 fn calc_design_capacity(
     input: &InputForProcessing,
 ) -> anyhow::Result<(IndexMap<String, f64>, f64)> {
+    // Create a deep copy as init_resistance_or_uvalue() will add u_value & r_c
+    // which will raise warning when called second time
     let mut clone = input.clone();
-    clone.remove_space_heat_systems();
-    clone.clear_appliance_gains();
 
-    // Remove WWHRS. It is not needed in this part of the calculation and
-    // initialisation relies on existence of ColdWaterSource object, which has not
-    // been set yet.
-    clone.remove_wwhrs();
-    clone.remove_wwhrs_references_from_all_showers();
-
-    // Set window opening schedule (required for initialisation of Project, but does not affect
-    // HTC/HLP calculation
-    create_window_opening_schedule(&mut clone)?;
-
-    // Set initial temperature set point for all zones
-    initialise_temperature_setpoints(&mut clone)?;
-
-    // create a corpus instance
     let corpus: Corpus = (&clone).try_into()?;
 
     // Calculate heat transfer coefficients and heat loss parameters
+    set_temp_internal_static_calcs(&mut clone);
     let (_heat_trans_coeff, _heat_loss_param, htc_dict, _hlp_dict) = corpus.calc_htc_hlp();
 
     // Calculate design capacity

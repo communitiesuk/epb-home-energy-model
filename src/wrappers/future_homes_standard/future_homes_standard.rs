@@ -107,6 +107,10 @@ pub fn apply_fhs_preprocessing(
     Ok(())
 }
 
+pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) -> () {
+    input.set_temp_internal_air_static_calcs(Some(LIVING_ROOM_SETPOINT_FHS));
+}
+
 static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(|| {
     let mut factors: HashMap<String, FactorData> = Default::default();
 
