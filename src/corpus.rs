@@ -442,7 +442,7 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
 /// according to the SAP10.2 specification
-fn calc_htc_hlp(
+pub(super) fn calc_htc_hlp(
     input: &Input,
 ) -> anyhow::Result<(f64, f64, HashMap<String, f64>, HashMap<String, f64>)> {
     let simtime = input.simulation_time.clone();

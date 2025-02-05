@@ -9,7 +9,7 @@ use crate::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
-use crate::corpus::{ColdWaterSources, Corpus};
+use crate::corpus::{calc_htc_hlp, ColdWaterSources};
 use crate::input::{
     BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, GroundBuildingElement,
     HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing,
@@ -22,9 +22,9 @@ use crate::statistics::{np_interp, percentile};
 use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::wrappers::future_homes_standard::future_homes_standard::{
     calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    create_window_opening_schedule, minimum_air_change_rate, ENERGY_SUPPLY_NAME_ELECTRICITY,
-    HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END,
-    SIMTIME_START, SIMTIME_STEP,
+    minimum_air_change_rate, ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE,
+    LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START,
+    SIMTIME_STEP,
 };
 use crate::{
     compare_floats::max_of_2,
@@ -1328,11 +1328,9 @@ fn calc_design_capacity(
     // which will raise warning when called second time
     let mut clone = input.clone();
 
-    let corpus: Corpus = (&clone).try_into()?;
-
     // Calculate heat transfer coefficients and heat loss parameters
     set_temp_internal_static_calcs(&mut clone);
-    let (_heat_trans_coeff, _heat_loss_param, htc_dict, _hlp_dict) = corpus.calc_htc_hlp();
+    let (_heat_trans_coeff, _heat_loss_param, htc_dict, _hlp_dict) = calc_htc_hlp(&clone.input)?;
 
     // Calculate design capacity
     let min_air_temp = *input.external_conditions().air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
