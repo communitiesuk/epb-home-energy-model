@@ -22,16 +22,13 @@ use crate::statistics::{np_interp, percentile};
 use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::wrappers::future_homes_standard::future_homes_standard::{
     calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    create_window_opening_schedule, ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE,
-    LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START,
-    SIMTIME_STEP,
+    create_window_opening_schedule, minimum_air_change_rate, ENERGY_SUPPLY_NAME_ELECTRICITY,
+    HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END,
+    SIMTIME_START, SIMTIME_STEP,
 };
 use crate::{
     compare_floats::max_of_2,
-    core::{
-        space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
-        units::{LITRES_PER_CUBIC_METRE, SECONDS_PER_HOUR},
-    },
+    core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
     wrappers::future_homes_standard::future_homes_standard::calc_tfa,
 };
 use anyhow::{anyhow, bail};
@@ -1282,32 +1279,6 @@ fn remove_pv_diverter_if_present(input: &mut InputForProcessing) {
 
 fn remove_electric_battery_if_present(input: &mut InputForProcessing) {
     input.remove_all_batteries_from_energy_supplies();
-}
-
-/// Calculate effective air change rate according to Part F 1.24 a
-pub fn minimum_air_change_rate(
-    _input: &InputForProcessing,
-    total_floor_area: f64,
-    total_volume: f64,
-    bedroom_number: usize,
-) -> f64 {
-    // minimum ventilation rates method B
-    let min_ventilation_rates_b = [19, 25, 31, 37, 43];
-
-    // Calculate minimum whole dwelling ventilation rate l/s method A
-    let min_ventilation_rate_a = total_floor_area * 0.3;
-
-    // Calculate minimum whole dwelling ventilation rate l/s method B
-    let min_ventilation_rate_b = if bedroom_number <= 5 {
-        min_ventilation_rates_b[bedroom_number - 1]
-    } else {
-        min_ventilation_rates_b.last().unwrap() + (bedroom_number - 5) * 6
-    };
-
-    // Calculate air change rate ACH
-    (max_of_2(min_ventilation_rate_a, min_ventilation_rate_b as f64) / total_volume)
-        * SECONDS_PER_HOUR as f64
-        / LITRES_PER_CUBIC_METRE as f64
 }
 
 fn edit_space_heating_system(
