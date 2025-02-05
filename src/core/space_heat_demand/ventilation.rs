@@ -1387,7 +1387,7 @@ impl MechanicalVentilation {
 
 /// A class to represent Infiltration and Ventilation object
 #[derive(Debug)]
-pub struct InfiltrationVentilation {
+pub(crate) struct InfiltrationVentilation {
     f_cross: bool,
     shield_class: VentilationShieldClass,
     c_rgh_site: f64,

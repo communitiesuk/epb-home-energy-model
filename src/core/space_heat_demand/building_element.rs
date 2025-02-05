@@ -115,20 +115,20 @@ pub enum HeatFlowDirection {
 const H_CI_UPWARDS: f64 = 5.0;
 const H_CI_HORIZONTAL: f64 = 2.5;
 const H_CI_DOWNWARDS: f64 = 0.7;
-const H_CE: f64 = 20.0;
+pub(crate) const H_CE: f64 = 20.0;
 const H_RI: f64 = 5.13;
-const H_RE: f64 = 4.14;
+pub(crate) const H_RE: f64 = 4.14;
 
 // Surface resistances of building elements, in m2 K / W
-const R_SI_HORIZONTAL: f64 = 1.0 / (H_RI + H_CI_HORIZONTAL);
-const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
-const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
+pub(crate) const R_SI_HORIZONTAL: f64 = 1.0 / (H_RI + H_CI_HORIZONTAL);
+pub(crate) const R_SI_UPWARDS: f64 = 1.0 / (H_RI + H_CI_UPWARDS);
+pub(crate) const R_SI_DOWNWARDS: f64 = 1.0 / (H_RI + H_CI_DOWNWARDS);
 const R_SE: f64 = 1.0 / (H_CE + H_RE);
 
 // From BR 443: The values under "horizontal" apply to heat flow
 // directions +/- 30 degrees from horizontal plane.
-pub const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
-const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
+pub(crate) const PITCH_LIMIT_HORIZ_CEILING: f64 = 60.0;
+pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 
 #[derive(Debug)]
 pub(crate) enum BuildingElement {

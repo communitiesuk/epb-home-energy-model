@@ -35,7 +35,9 @@ use crate::core::schedule::{
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
     BuildingElementAdjacentZTUSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, HeatFlowDirection, WindowTreatment, PITCH_LIMIT_HORIZ_CEILING,
+    BuildingElementTransparent, HeatFlowDirection, WindowTreatment, H_CE, H_RE,
+    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
+    R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -57,7 +59,7 @@ use crate::core::water_heat_demand::dhw_demand::{
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::errors::NotImplementedError;
-use crate::external_conditions::ExternalConditions;
+use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
@@ -383,6 +385,153 @@ fn single_control_from_details(
             .into()
         }
     })
+}
+
+fn init_resistance_or_uvalue_from_data(
+    r_c: Option<f64>,
+    u_value: Option<f64>,
+    pitch: f64,
+) -> anyhow::Result<f64> {
+    Ok(if let Some(r_c) = r_c {
+        r_c
+    } else {
+        convert_uvalue_to_resistance(
+            u_value.ok_or_else(|| {
+                anyhow!(
+                    "Neither r_c nor u_value were provided for one of the building element inputs."
+                )
+            })?,
+            pitch,
+        )
+    })
+}
+
+/// Return thermal resistance of construction (r_c) based on alternative inputs
+///
+/// User will either provide r_c directly or provide u_value which needs to be converted
+fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f64> {
+    let (r_c, u_value, pitch) = match element {
+        BuildingElementInput::Opaque {
+            u_value,
+            r_c,
+            pitch,
+            ..
+        } => (*r_c, *u_value, *pitch),
+        BuildingElementInput::Transparent {
+            u_value,
+            r_c,
+            pitch,
+            ..
+        } => (*r_c, *u_value, *pitch),
+        BuildingElementInput::Ground { pitch, u_value, .. } => (None, Some(*u_value), *pitch),
+        BuildingElementInput::AdjacentZTC {
+            pitch,
+            u_value,
+            r_c,
+            ..
+        } => (*r_c, *u_value, *pitch),
+        BuildingElementInput::AdjacentZTUSimple {
+            pitch,
+            u_value,
+            r_c,
+            ..
+        } => (*r_c, *u_value, *pitch),
+    };
+    init_resistance_or_uvalue_from_data(r_c, u_value, pitch)
+}
+
+/// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
+/// according to the SAP10.2 specification
+fn calc_htc_hlp(
+    input: &Input,
+) -> anyhow::Result<(f64, f64, HashMap<String, f64>, HashMap<String, f64>)> {
+    let simtime = input.simulation_time.clone();
+    let external_conditions = create_external_conditions(
+        (*input.external_conditions.as_ref()).clone(),
+        &simtime.iter(),
+    )?;
+    let energy_supply_unmet_demand =
+        EnergySupplyBuilder::new(FuelType::UnmetDemand, simtime.total_steps()).build();
+    let mut energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = [(
+        "_unmet_demand".into(),
+        Arc::new(RwLock::new(energy_supply_unmet_demand)),
+    )]
+    .into();
+    for (name, data) in input.energy_supply.iter() {
+        energy_supplies.insert(
+            name.into(),
+            Arc::new(RwLock::new(
+                EnergySupplyBuilder::new(data.fuel, simtime.total_steps()).build(),
+            )),
+        );
+    }
+
+    let controls = control_from_input(&input.control, external_conditions.into(), &simtime.iter())?;
+
+    let ventilation = InfiltrationVentilation::create(
+        &input.infiltration_ventilation,
+        &input.zone,
+        false,
+        &energy_supplies,
+        &controls,
+    );
+
+    // HTC_dict  = {}
+    // HLP_dict  = {}
+    // zone_area = {}
+    fn calc_heat_loss(data: &BuildingElementInput) -> anyhow::Result<f64> {
+        // Calculate r_c from u_value if only the latter has been provided
+        let r_c = init_resistance_or_uvalue(data)?;
+        let r_si = match data.pitch() {
+            PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => R_SI_HORIZONTAL,
+            ..PITCH_LIMIT_HORIZ_CEILING => R_SI_UPWARDS,
+            PITCH_LIMIT_HORIZ_FLOOR.. => R_SI_DOWNWARDS,
+            _ => unreachable!("Rust cannot tell that above is exhaustive"),
+        };
+        let r_se = 1. / (H_CE + H_RE);
+
+        Ok(match data {
+            BuildingElementInput::Opaque { area, .. } => {
+                let u_value = 1.0 / (r_c + r_se + r_si);
+                *area * u_value
+            }
+            BuildingElementInput::Transparent { height, width, .. } => {
+                let r_curtains_blinds = 0.04;
+                let u_value = 1.0 / (r_c + r_se + r_si + r_curtains_blinds);
+                let area = *height * *width;
+                area * u_value
+            }
+            BuildingElementInput::Ground { area, u_value, .. } => *area * *u_value,
+            BuildingElementInput::AdjacentZTC { .. } => 0.,
+            BuildingElementInput::AdjacentZTUSimple { area, .. } => {
+                let u_value = 1.0 / (r_c + r_se + r_si);
+                *area * u_value
+            }
+        })
+    }
+
+    fn calc_heat_transfer_coeff(data: &ThermalBridging) -> f64 {
+        // If data is for individual thermal bridges, initialise the relevant
+        // objects and return a list of them. Otherwise, just use the overall
+        // figure given.
+        match data {
+            ThermalBridging::Bridges(bridges) => bridges
+                .values()
+                .map(|bridge| match bridge {
+                    ThermalBridge::Linear {
+                        linear_thermal_transmittance,
+                        length,
+                    } => *linear_thermal_transmittance * *length,
+                    ThermalBridge::Point {
+                        heat_transfer_coefficient,
+                    } => *heat_transfer_coefficient,
+                })
+                .sum::<f64>(),
+            ThermalBridging::Number(num) => *num,
+        }
+    }
+
+    todo!()
 }
 
 #[derive(Debug)]
@@ -2769,7 +2918,6 @@ impl Controls {
             .map(|heat_source_control| heat_source_control.get())
     }
 
-    // access a control using a string, possibly because it is one of the "extra" controls
     pub(crate) fn get_with_string(&self, control_name: &str) -> Option<Arc<Control>> {
         match control_name {
             // hard-code ways of resolving to core control types (for now)
@@ -3512,7 +3660,7 @@ fn building_element_from_input(
                 is_unheated_pitched_roof,
                 *pitch,
                 *a_sol,
-                init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+                init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
                 *k_m,
                 *mass_distribution_class,
                 *orientation,
@@ -3537,7 +3685,7 @@ fn building_element_from_input(
             ..
         } => BuildingElement::Transparent(BuildingElementTransparent::new(
             *pitch,
-            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
             *orientation,
             *g_value,
             *frame_area_fraction,
@@ -3598,7 +3746,7 @@ fn building_element_from_input(
         } => BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
             *area,
             *pitch,
-            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
             *k_m,
             *mass_distribution_class,
             external_conditions,
@@ -3614,32 +3762,13 @@ fn building_element_from_input(
         } => BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
             *area,
             *pitch,
-            init_r_c_for_building_element(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
             *r_u,
             *k_m,
             *mass_distribution_class,
             external_conditions,
         )),
     }))
-}
-
-fn init_r_c_for_building_element(
-    r_c: Option<f64>,
-    u_value: Option<f64>,
-    pitch: f64,
-) -> anyhow::Result<f64> {
-    Ok(if let Some(r_c) = r_c {
-        r_c
-    } else {
-        convert_uvalue_to_resistance(
-            u_value.ok_or_else(|| {
-                anyhow!(
-                    "Neither r_c nor u_value were provided for one of the building element inputs."
-                )
-            })?,
-            pitch,
-        )
-    })
 }
 
 fn set_up_energy_supply_unmet_demand_zones(
