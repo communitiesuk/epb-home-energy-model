@@ -31,7 +31,7 @@ const OTHER_HW_FACTOR_M: [f64; 13] = [
     1.10, 1.06, 1.02, 0.98, 0.94, 0.90, 0.90, 0.94, 0.98, 1.02, 1.06, 1.10, 1.00,
 ];
 const STANDARD_FILL: f64 = 73.;
-const STANDARD_BATH_SIZE: f64 = 180.;
+pub(super) const STANDARD_BATH_SIZE: f64 = 180.;
 
 fn bath_size_displaced(n_occupants: f64, bath_size: f64) -> anyhow::Result<f64> {
     // number of adults and children derived from Metabolic gains BSA calc

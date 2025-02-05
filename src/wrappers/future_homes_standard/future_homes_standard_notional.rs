@@ -19,6 +19,7 @@ use crate::input::{
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
+use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::wrappers::future_homes_standard::future_homes_standard::{
     calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
     create_window_opening_schedule, ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE,
@@ -901,7 +902,7 @@ fn edit_bath_shower_other(
     let notional_bath = json!({ NOTIONAL_BATH_NAME: {
             "ColdWaterSource": cold_water_source_type,
             "flowrate": 12,
-            "size": 73
+            "size": STANDARD_BATH_SIZE
         }
     });
     input.set_bath(notional_bath)?;
@@ -1980,7 +1981,7 @@ mod tests {
         let expected_baths: Baths = serde_json::from_value(json!({ "medium": {
             "ColdWaterSource": cold_water_source_type_string,
             "flowrate": 12,
-            "size": 73
+            "size": 180
         }}))
         .unwrap();
 
