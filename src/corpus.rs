@@ -1405,6 +1405,70 @@ impl Corpus {
         Ok(incoming_air_flow / self.total_volume)
     }
 
+    /// Get minimum output for each heating/cooling system in the specified zone
+    fn heat_cool_system_output_min(
+        &self,
+        h_name_list_sorted_zone: &HashMap<&str, Vec<String>>,
+        c_name_list_sorted_zone: &HashMap<&str, Vec<String>>,
+        frac_convective_heat_zone_system: &HashMap<&str, IndexMap<String, f64>>,
+        frac_convective_cool_zone_system: &HashMap<&str, IndexMap<String, f64>>,
+        z_name: &str,
+    ) -> (
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+        IndexMap<String, f64>,
+    ) {
+        let h_output_min = h_name_list_sorted_zone[z_name]
+            .iter()
+            .map(|h_name| {
+                (
+                    h_name.clone(),
+                    self.space_heat_systems
+                        .get(h_name)
+                        .unwrap()
+                        .lock()
+                        .energy_output_min(),
+                )
+            })
+            .collect::<IndexMap<_, _>>();
+        let c_output_min = c_name_list_sorted_zone[z_name]
+            .iter()
+            .map(|c_name| {
+                (
+                    c_name.clone(),
+                    self.space_cool_systems
+                        .get(c_name)
+                        .unwrap()
+                        .energy_output_min(),
+                )
+            })
+            .collect::<IndexMap<_, _>>();
+
+        let mut hc_output_min = h_output_min.clone();
+        hc_output_min.extend(c_output_min);
+
+        let mut frac_convective_system = frac_convective_heat_zone_system[z_name].clone();
+        frac_convective_system.extend(frac_convective_cool_zone_system[z_name].clone());
+
+        let hc_output_convective = h_name_list_sorted_zone[z_name]
+            .iter()
+            .chain(c_name_list_sorted_zone[z_name].iter())
+            .map(|hc_name| {
+                (
+                    hc_name.clone(),
+                    hc_output_min[hc_name.as_str()] * frac_convective_system[hc_name],
+                )
+            })
+            .collect::<IndexMap<_, _>>();
+        let hc_output_radiative = h_name_list_sorted_zone[z_name]
+            .iter()
+            .chain(c_name_list_sorted_zone[z_name].iter())
+            .map(|hc_name| (hc_name.clone(), 0.0))
+            .collect::<IndexMap<_, _>>();
+
+        (hc_output_convective, hc_output_radiative, hc_output_min)
+    }
+
     /// Calculate space heating demand, heating system output and temperatures
     ///
     /// Arguments:

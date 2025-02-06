@@ -190,6 +190,16 @@ impl SpaceHeatSystem {
             None
         }
     }
+
+    pub fn energy_output_min(&self) -> f64 {
+        match self {
+            SpaceHeatSystem::Instant(instant) => instant.energy_output_min(),
+            SpaceHeatSystem::WarmAir(warm_air) => warm_air.energy_output_min(),
+            SpaceHeatSystem::WetDistribution(_wet_distribution) => {
+                unimplemented!("TODO as part of 0.32 migration")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

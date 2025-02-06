@@ -56,6 +56,10 @@ impl InstantElecHeater {
         self.frac_convective
     }
 
+    pub(crate) fn energy_output_min(&self) -> f64 {
+        0.
+    }
+
     /// Demand energy (in kWh) from the heater
     pub fn demand_energy(&self, energy_demand: f64, simtime: SimulationTimeIteration) -> f64 {
         // Account for time control where present. If no control present, assume
