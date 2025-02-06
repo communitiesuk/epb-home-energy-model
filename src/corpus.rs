@@ -48,7 +48,8 @@ use crate::core::space_heat_demand::ventilation::{
     VentilationDetailedResult, Window,
 };
 use crate::core::space_heat_demand::zone::{
-    AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName, Zone,
+    calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
+    Zone,
 };
 use crate::core::units::{
     kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
@@ -474,11 +475,8 @@ pub(super) fn calc_htc_hlp(
         false,
         &energy_supplies,
         &controls,
-    );
+    )?;
 
-    // HTC_dict  = {}
-    // HLP_dict  = {}
-    // zone_area = {}
     fn calc_heat_loss(data: &BuildingElementInput) -> anyhow::Result<f64> {
         // Calculate r_c from u_value if only the latter has been provided
         let r_c = init_resistance_or_uvalue(data)?;
@@ -531,7 +529,91 @@ pub(super) fn calc_htc_hlp(
         }
     }
 
-    todo!()
+    let calc_htc = |zone: &ZoneInput| -> anyhow::Result<(f64, f64, f64)> {
+        let wind_speed = external_conditions.wind_speed_annual().ok_or_else(|| {
+            anyhow!("Expected external conditions to contain data for entire year")
+        })?;
+        let wind_direction = external_conditions.wind_direction_annual();
+        let temp_int_air = input
+            .temp_internal_air_static_calcs
+            .ok_or_else(|| anyhow!("Expected temp_internal_air_static_calcs to be set on input"))?;
+        let temp_ext_air = external_conditions.air_temp_annual_daily_average_min();
+        let ach_min = input.infiltration_ventilation.ach_min_static_calcs;
+        let ach_max = input.infiltration_ventilation.ach_max_static_calcs;
+        let initial_r_v_arg = input
+            .infiltration_ventilation
+            .vent_opening_ratio_init
+            .unwrap_or(1.);
+
+        // Adjust vent position if required to attempt to meet min or max ach
+        let r_v_arg = ventilation.find_r_v_arg_within_bounds(
+            ach_min,
+            ach_max,
+            initial_r_v_arg,
+            wind_speed,
+            wind_direction,
+            temp_int_air,
+            temp_ext_air,
+            Some(0.),
+            0.,
+            None,
+            simtime.iter().current_iteration(),
+        )?;
+        let air_changes_per_hour = ventilation.calc_air_changes_per_hour(
+            wind_speed,
+            wind_direction,
+            temp_int_air,
+            temp_ext_air,
+            r_v_arg,
+            Some(0.),
+            0.,
+            Some(ReportingFlag::Min),
+            simtime.iter().current_iteration(),
+        )?;
+        let total_vent_heat_loss = calc_vent_heat_transfer_coeff(zone.volume, air_changes_per_hour);
+
+        // Calculate fabric heat loss and total floor area
+        let total_fabric_heat_loss = zone
+            .building_elements
+            .values()
+            .map(|el| calc_heat_loss(el))
+            .try_collect()?
+            .iter()
+            .sum::<f64>();
+
+        // Read in thermal bridging data
+        let tb_heat_trans_coeff = calc_heat_transfer_coeff(&zone.thermal_bridging);
+
+        Ok((
+            total_fabric_heat_loss,
+            tb_heat_trans_coeff,
+            total_vent_heat_loss,
+        ))
+    };
+
+    // Calculate the total fabric heat loss, total heat capacity, total ventilation heat
+    // loss and total heat transfer coeffient for thermal bridges across all zones
+
+    let mut htc_map: IndexMap<String, f64> = Default::default();
+    let mut hlp_map: IndexMap<String, f64> = Default::default();
+    let mut zone_area: IndexMap<String, f64> = Default::default();
+
+    for (z_name, zone) in input.zone.iter() {
+        let (fabric_heat_loss, thermal_bridges, vent_heat_loss) = calc_htc(zone)?;
+        // Calculate the heat transfer coefficent (HTC), in W / K
+        // TODO (from Python) check ventilation losses are correct
+        let htc = fabric_heat_loss + thermal_bridges + vent_heat_loss;
+        let hlp = htc / zone.area;
+        htc_map.insert(z_name.clone(), htc);
+        hlp_map.insert(z_name.clone(), hlp);
+        zone_area.insert(z_name.clone(), zone.area);
+    }
+
+    let total_htc = htc_map.values().sum::<f64>();
+    let total_floor_area = zone_area.values().sum::<f64>();
+    let total_hlp = total_htc / total_floor_area;
+
+    Ok((total_htc, total_hlp, htc_map, hlp_map))
 }
 
 #[derive(Debug)]

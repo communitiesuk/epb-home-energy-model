@@ -32,7 +32,7 @@ const F_SOL_C: f64 = 0.1;
 const K_M_INT: f64 = 10000.0; // J / (m2.K)
 
 /// Calculate ventilation heat transfer co-efficient from air changes per hour
-fn calc_vent_heat_transfer_coeff(volume: f64, air_changes_per_hour: f64) -> f64 {
+pub(crate) fn calc_vent_heat_transfer_coeff(volume: f64, air_changes_per_hour: f64) -> f64 {
     let q_ve = air_changes_per_hour * volume / SECONDS_PER_HOUR as f64;
     AIR.density_kg_per_m3() * AIR.specific_heat_capacity() * q_ve
 }
