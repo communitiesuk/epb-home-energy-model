@@ -55,6 +55,11 @@ fn simtime() -> SimulationTime {
 
 // Central point for hot water temperature (temp_hot_water) across the code
 pub(super) const HW_TEMPERATURE: f64 = 52.0;
+const HW_SETPOINT_MAX: f64 = 60.0;
+
+// Occupant sleep+wake hours as per Part O
+const OCCUPANT_WAKING_HR: usize = 7;
+const OCCUPANT_SLEEPING_HR: usize = 23;
 
 pub fn apply_fhs_preprocessing(
     input: &mut InputForProcessing,
@@ -115,7 +120,7 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
     let mut factors: HashMap<String, FactorData> = Default::default();
 
     let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
-        "./FHS_emisPEfactors_15-05-2024.csv"
+        "./FHS_emisPEfactors_05-08-2024.csv"
     ))));
     for factor_data in factors_reader.deserialize() {
         let factor_data: FactorData = factor_data.expect("Reading the PE factors file failed.");

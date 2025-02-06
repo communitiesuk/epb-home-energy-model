@@ -1,5 +1,4 @@
 Fuel Code,Fuel,Emissions Factor kgCO2e/kWh,Emissions Factor kgCO2e/kWh including out-of-scope emissions,Primary Energy Factor kWh/kWh delivered
-electricity,electricity,0.083959064,0.083959064,1.961853329
 electricity_generated,renewable electricity generated on-site,0,0,1
 mains_gas,mains gas,0.213138926,0.213138926,1.118589036
 LPG_bulk,bulk LPG,0.239976004,0.239976004,1.105497142
@@ -19,4 +18,4 @@ biogas,biogas (including anaerobic digestion),0.02863,0.02863,1.442038473
 ,wood pellets (in bags for secondary heating),0.04818,0.04818,1.306131621
 ,wood pellets (bulk supply for main heating),0.04818,0.04818,1.306131621
 ,wood chips,0.01866,0.01866,1.068975518
-unmet_demand,energy supply shortfall,0.403502966,0.403502966,1.961853329
+unmet_demand,energy supply shortfall,0.086962732,0.086962732,2.04350289
