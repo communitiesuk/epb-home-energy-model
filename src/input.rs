@@ -3413,7 +3413,7 @@ pub struct Tariff {
 
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
-    pub(super) input: Input, // TODO: review if pub(super) is safe
+    input: Input, // TODO: review if pub(super) is safe
 }
 
 /// This type makes methods available for restricted access by wrappers,
@@ -3428,6 +3428,10 @@ impl InputForProcessing {
         let input: Input = serde_json::from_reader(reader)?;
 
         Ok(Self { input })
+    }
+
+    pub(crate) fn as_input(&self) -> &Input {
+        &self.input
     }
 
     pub fn finalize(self) -> Input {
