@@ -1495,7 +1495,7 @@ mod tests {
         )
     }
 
-    #[ignore = "currently failing as calc_design_capacity is failing to build the corpus (our test data is missing: longitude & external conditions)"]
+    #[ignore = "currently failing as calc_design_capacity is failing (our test data is missing some expected fields on external conditions)"]
     #[rstest]
     // this test does not exist in Python HEM
     fn test_apply_fhs_notional_preprocessing(mut test_input: InputForProcessing) {
@@ -2097,8 +2097,7 @@ mod tests {
         assert_eq!(test_input.hot_water_source(), &expected_hotwater_source);
     }
 
-    // TODO: Below test used to fail due to randomisation issue, now numbers are even further apart
-    #[ignore]
+    #[ignore = "Below test used to fail due to randomisation issue, now numbers are even further apart"]
     #[rstest]
     fn test_calc_daily_hw_demand(mut test_input: InputForProcessing) {
         let cold_water_source_type = ColdWaterSourceType::MainsWater;
@@ -2565,12 +2564,18 @@ mod tests {
 
     // this test does not exist in Python HEM
     #[rstest]
-    #[ignore = "This currently fails because our test data does not have a latitude field on ExternalConditions. Without it design capacity fails to build a new corpus. We expect other expected fields are also missing."]
+    #[ignore = "This currently fails because our test data does not have all expected fields on ExternalConditions."]
     fn test_design_capacity(test_input: InputForProcessing) {
-        let actual_design_capacity = calc_design_capacity(&test_input).unwrap().0;
-        // TODO: get expected design capacity from Python
-        let expected_design_capacity: IndexMap<String, f64> = Default::default();
-        assert_eq!(actual_design_capacity, expected_design_capacity)
+        let actual_design_capacity = calc_design_capacity(&test_input).unwrap();
+        assert_eq!(
+            actual_design_capacity.0.get("zone 1").unwrap(),
+            &5.356813765662826
+        );
+        assert_eq!(
+            actual_design_capacity.0.get("zone 2").unwrap(),
+            &5.356813765662826
+        );
+        assert_eq!(actual_design_capacity.1, 10.713627531325653);
     }
 
     // this test does not exist in Python HEM
