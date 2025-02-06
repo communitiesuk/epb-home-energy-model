@@ -2477,10 +2477,8 @@ mod tests {
             6.110105031454435,
         ];
 
-        assert_eq!(daily_hwd.as_ref().unwrap().len(), expected_result.len());
-
-        for (x, y) in daily_hwd.unwrap().iter().zip(expected_result.iter()) {
-            assert_relative_eq!(x, y, max_relative = 1e-4)
+        for (actual, expected) in daily_hwd.unwrap().iter().zip(expected_result.iter()) {
+            assert_relative_eq!(actual, expected, max_relative = 1e-4)
         }
     }
 

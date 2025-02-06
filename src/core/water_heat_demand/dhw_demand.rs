@@ -242,14 +242,15 @@ impl DomesticHotWaterDemand {
                             // Assume flow rate for bath event is the same as other hot water events
                             let peak_flowrate = bath.get_flowrate();
                             // litres bath  / litres per minute flowrate = minutes
-                            let bath_volume = if let Some(volume) = event.volume {
+                            let (bath_volume, bath_duration) = if let Some(volume) = event.volume {
                                 let bath_volume = volume;
                                 let bath_duration = volume / peak_flowrate;
                                 event.duration.replace(bath_duration);
-                                bath_volume
+                                (bath_volume, bath_duration)
                             } else if let Some(duration) = event.duration {
                                 let bath_duration = duration;
-                                bath_duration * peak_flowrate
+                                let bath_volume = bath_duration * peak_flowrate;
+                                (bath_volume, bath_duration)
                             } else {
                                 bail!("Water event '{name}' has no volume or duration defined.");
                             };
@@ -271,10 +272,8 @@ impl DomesticHotWaterDemand {
                                 });
 
                             hw_demand_vol += hw_demand_i;
-                            // litres bath  / litres per minute flowrate = minutes
-                            let bath_duration = bath.get_size() / peak_flowrate;
-                            event.duration = Some(bath_duration);
                             // Check if it makes sense to call again the hot_water_demand function instead of sending hw_demand_i previously calculated
+                            // bath.hot_water_demand(bath_temp, temp_hot_water)[0],
                             hw_energy_demand += water_demand_to_kwh(
                                 hw_demand_i,
                                 temp_hot_water,
