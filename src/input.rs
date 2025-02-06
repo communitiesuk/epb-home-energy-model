@@ -2466,8 +2466,8 @@ pub enum EdgeInsulation {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
 pub enum ThermalBridging {
-    ThermalBridgingElements(IndexMap<String, ThermalBridgingDetails>),
-    ThermalBridgingNumber(f64),
+    Elements(IndexMap<String, ThermalBridgingDetails>),
+    Number(f64),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -3502,8 +3502,8 @@ impl InputForProcessing {
             .values_mut()
             .map(|z| &mut z.thermal_bridging)
             .filter_map(|el| match el {
-                ThermalBridging::ThermalBridgingElements(ref mut elements) => Some(elements),
-                ThermalBridging::ThermalBridgingNumber(_) => None,
+                ThermalBridging::Elements(ref mut elements) => Some(elements),
+                ThermalBridging::Number(_) => None,
             })
             .collect::<Vec<&mut IndexMap<String, ThermalBridgingDetails>>>()
     }

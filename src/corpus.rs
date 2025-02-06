@@ -445,12 +445,12 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 /// according to the SAP10.2 specification
 pub(super) fn calc_htc_hlp(
     input: &Input,
-) -> anyhow::Result<(f64, f64, HashMap<String, f64>, HashMap<String, f64>)> {
+) -> anyhow::Result<(f64, f64, IndexMap<String, f64>, IndexMap<String, f64>)> {
     let simtime = input.simulation_time.clone();
-    let external_conditions = create_external_conditions(
+    let external_conditions = Arc::from(create_external_conditions(
         (*input.external_conditions.as_ref()).clone(),
         &simtime.iter(),
-    )?;
+    )?);
     let energy_supply_unmet_demand =
         EnergySupplyBuilder::new(FuelType::UnmetDemand, simtime.total_steps()).build();
     let mut energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = [(
@@ -467,7 +467,8 @@ pub(super) fn calc_htc_hlp(
         );
     }
 
-    let controls = control_from_input(&input.control, external_conditions.into(), &simtime.iter())?;
+    let controls =
+        control_from_input(&input.control, external_conditions.clone(), &simtime.iter())?;
 
     let ventilation = InfiltrationVentilation::create(
         &input.infiltration_ventilation,
@@ -508,24 +509,25 @@ pub(super) fn calc_htc_hlp(
         })
     }
 
-    fn calc_heat_transfer_coeff(data: &ThermalBridging) -> f64 {
+    fn calc_heat_transfer_coeff(data: &ThermalBridgingInput) -> f64 {
         // If data is for individual thermal bridges, initialise the relevant
         // objects and return a list of them. Otherwise, just use the overall
         // figure given.
         match data {
-            ThermalBridging::Bridges(bridges) => bridges
+            ThermalBridgingInput::Elements(bridges) => bridges
                 .values()
                 .map(|bridge| match bridge {
-                    ThermalBridge::Linear {
+                    ThermalBridgingDetails::Linear {
                         linear_thermal_transmittance,
                         length,
+                        ..
                     } => *linear_thermal_transmittance * *length,
-                    ThermalBridge::Point {
+                    ThermalBridgingDetails::Point {
                         heat_transfer_coefficient,
                     } => *heat_transfer_coefficient,
                 })
                 .sum::<f64>(),
-            ThermalBridging::Number(num) => *num,
+            ThermalBridgingInput::Number(num) => *num,
         }
     }
 
@@ -577,7 +579,7 @@ pub(super) fn calc_htc_hlp(
             .building_elements
             .values()
             .map(|el| calc_heat_loss(el))
-            .try_collect()?
+            .try_collect::<f64, Vec<f64>, anyhow::Error>()?
             .iter()
             .sum::<f64>();
 
@@ -3330,7 +3332,7 @@ fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
 
 fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging {
     match input {
-        ThermalBridgingInput::ThermalBridgingElements(input_bridges) => ThermalBridging::Bridges({
+        ThermalBridgingInput::Elements(input_bridges) => ThermalBridging::Bridges({
             let mut bridges = IndexMap::new();
             bridges.extend(input_bridges.iter().map(|(name, details)| {
                 (
@@ -3354,7 +3356,7 @@ fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging 
             }));
             bridges
         }),
-        ThermalBridgingInput::ThermalBridgingNumber(num) => ThermalBridging::Number(*num),
+        ThermalBridgingInput::Number(num) => ThermalBridging::Number(*num),
     }
 }
 

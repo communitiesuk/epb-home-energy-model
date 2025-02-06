@@ -1763,8 +1763,8 @@ mod tests {
 
         for thermal_bridging in test_input.all_thermal_bridgings() {
             match thermal_bridging {
-                ThermalBridging::ThermalBridgingNumber(_) => {}
-                ThermalBridging::ThermalBridgingElements(elements) => {
+                ThermalBridging::Number(_) => {}
+                ThermalBridging::Elements(elements) => {
                     for bridging in elements.values() {
                         match bridging {
                             ThermalBridgingDetails::Point {
