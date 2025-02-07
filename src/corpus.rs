@@ -3524,7 +3524,7 @@ fn infiltration_ventilation_from_input(
                                 *pitch,
                                 input.altitude,
                                 on_off_ctrl,
-                                Default::default(), // TODO correct as part of migration to 0.32
+                                input.ventilation_zone_base_height,
                             ))
                         };
 
@@ -3542,6 +3542,7 @@ fn infiltration_ventilation_from_input(
         shield_class,
         terrain_class,
         altitude,
+        ventilation_zone_base_height,
         ..
     } = input;
 
@@ -3572,7 +3573,7 @@ fn infiltration_ventilation_from_input(
                     init_orientation(vent.orientation),
                     vent.pitch,
                     *altitude,
-                    Default::default(), // TODO correct param as part of migration to 0.32
+                    *ventilation_zone_base_height,
                 ), // TODO: line 3060 as part of the migration to 0.32
             )
         })
@@ -3737,7 +3738,7 @@ fn infiltration_ventilation_from_input(
         detailed_output_heating_cooling,
         *altitude,
         zones.values().map(|zone| zone.area).sum::<f64>(),
-        Default::default(), // TODO: update as part of 0.32 updates
+        *ventilation_zone_base_height,
     );
 
     Ok((
