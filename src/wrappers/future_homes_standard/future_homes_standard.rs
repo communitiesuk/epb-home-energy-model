@@ -23,6 +23,7 @@ use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
 use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::Deserialize;
 use serde_json::{json, Number, Value};
 use std::collections::HashMap;
@@ -173,6 +174,25 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
     factors
 });
 
+static EMIS_PE_FACTORS_ELEC: LazyLock<HashMap<usize, ElectricityFactorData>> =
+    LazyLock::new(|| {
+        // Load emissions factors and primary energy factors from data file for electricity
+        let mut emis_pe_factors_elec: HashMap<usize, ElectricityFactorData> = Default::default();
+
+        let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
+            "./DEMO_variable_grid_model.csv"
+        ))));
+
+        for factor_data in factors_reader.deserialize() {
+            let factor_data: ElectricityFactorData =
+                factor_data.expect("Reading the PE factors elec file failed.");
+            let timestep = &factor_data.timestep;
+            emis_pe_factors_elec.insert(timestep.clone(), factor_data);
+        }
+
+        emis_pe_factors_elec
+    });
+
 static METABOLIC_GAINS: LazyLock<MetabolicGains> = LazyLock::new(|| {
     let (weekday, weekend) = load_metabolic_gains_profile(Cursor::new(include_str!(
         "./dry_metabolic_gains_profile_Wperm2.csv"
@@ -198,6 +218,31 @@ struct FactorData {
     emissions_factor_including_out_of_scope_emissions: f64,
     #[serde(rename = "Primary Energy Factor kWh/kWh delivered")]
     primary_energy_factor: f64,
+}
+#[derive(Clone, Debug, Deserialize)]
+struct ElectricityFactorData {
+    #[serde(rename = "Timestep")]
+    timestep: usize,
+    #[serde(rename = "Primary Energy Factor kWh/kWh delivered")]
+    primary_energy_factor: f64,
+    #[serde(rename = "Emissions Factor kgCO2e/kWh")]
+    emissions_factor: f64,
+    #[serde(rename = "Emissions Factor kgCO2e/kWh including out-of-scope emissions")]
+    emissions_factor_including_out_of_scope_emissions: f64,
+}
+
+fn apply_energy_factor_series(
+    energy_data: Vec<f64>,
+    factors: Vec<f64>,
+) -> anyhow::Result<Vec<f64>> {
+    if energy_data.len() != factors.len() {
+        bail!("Both energy_data and factors list must be of the same length.");
+    }
+    Ok(energy_data
+        .iter()
+        .zip(factors)
+        .map(|(energy, factor)| energy * factor)
+        .collect_vec())
 }
 
 pub fn apply_fhs_postprocessing(
@@ -282,39 +327,61 @@ pub(super) fn calc_final_rates(
 
         // Get emissions/PE factors for import/export
         let (emis_factor_import_export, emis_oos_factor_import_export, pe_factor_import_export) =
-            if fuel_code == FuelType::Custom {
-                let factor = energy_supply_details.factor.expect("Expected custom fuel type to have associated factor values as part of energy supply input.");
-                (
-                    factor.emissions,
-                    factor.emissions_including_out_of_scope,
-                    factor.primary_energy_factor,
-                )
-            } else {
-                let factor = EMIS_PE_FACTORS
-                    .get(&fuel_code.to_string())
-                    .unwrap_or_else(|| {
-                        panic!("Expected factor values in the table for the fuel code {fuel_code} were not present.");
-                    });
-                (
-                    factor.emissions_factor,
-                    factor.emissions_factor_including_out_of_scope_emissions,
-                    factor.primary_energy_factor,
-                )
+            match fuel_code {
+                FuelType::Custom => {
+                    let factor = energy_supply_details.factor.expect("Expected custom fuel type to have associated factor values as part of energy supply input.");
+                    (
+                        vec![factor.emissions],
+                        vec![factor.emissions_including_out_of_scope],
+                        vec![factor.primary_energy_factor],
+                    )
+                }
+                FuelType::Electricity => {
+                    let emis_factor_import_export = EMIS_PE_FACTORS_ELEC
+                        .values()
+                        .map(|factor| factor.emissions_factor)
+                        .collect_vec();
+                    let emis_oos_factor_import_export = EMIS_PE_FACTORS_ELEC
+                        .values()
+                        .map(|factor| factor.emissions_factor_including_out_of_scope_emissions)
+                        .collect_vec();
+                    let pe_factor_import_export = EMIS_PE_FACTORS_ELEC
+                        .values()
+                        .map(|factor| factor.primary_energy_factor)
+                        .collect_vec();
+                    (
+                        emis_factor_import_export,
+                        emis_oos_factor_import_export,
+                        pe_factor_import_export,
+                    )
+                }
+                _ => {
+                    let factor = EMIS_PE_FACTORS
+                        .get(&fuel_code.to_string())
+                        .unwrap_or_else(|| {
+                            panic!("Expected factor values in the table for the fuel code {fuel_code} were not present.");
+                        });
+                    (
+                        vec![factor.emissions_factor],
+                        vec![factor.emissions_factor_including_out_of_scope_emissions],
+                        vec![factor.primary_energy_factor],
+                    )
+                }
             };
 
         // Calculate energy imported and associated emissions/PE
         supply_emis_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
             .iter()
-            .map(|x| x * emis_factor_import_export)
+            .map(|x| x * emis_factor_import_export[0])
             .collect::<Vec<_>>();
         supply_emis_oos_result.import = energy_import
             [&KeyString::from(&energy_supply_key).unwrap()]
             .iter()
-            .map(|x| x * emis_oos_factor_import_export)
+            .map(|x| x * emis_oos_factor_import_export[0])
             .collect::<Vec<_>>();
         supply_pe_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
             .iter()
-            .map(|x| x * pe_factor_import_export)
+            .map(|x| x * pe_factor_import_export[0])
             .collect::<Vec<_>>();
 
         // If there is any export, Calculate energy exported and associated emissions/PE
@@ -331,15 +398,15 @@ pub(super) fn calc_final_rates(
             (
                 energy_export[&KeyString::from(&energy_supply_key).unwrap()]
                     .iter()
-                    .map(|x| x * emis_factor_import_export)
+                    .map(|x| x * emis_factor_import_export[0])
                     .collect::<Vec<_>>(),
                 energy_export[&KeyString::from(&energy_supply_key).unwrap()]
                     .iter()
-                    .map(|x| x * emis_oos_factor_import_export)
+                    .map(|x| x * emis_oos_factor_import_export[0])
                     .collect::<Vec<_>>(),
                 energy_export[&KeyString::from(&energy_supply_key).unwrap()]
                     .iter()
-                    .map(|x| x * pe_factor_import_export)
+                    .map(|x| x * pe_factor_import_export[0])
                     .collect::<Vec<_>>(),
             )
         } else {
@@ -414,15 +481,15 @@ pub(super) fn calc_final_rates(
 
         supply_emis_result.unregulated = energy_unregulated
             .iter()
-            .map(|x| x * emis_factor_import_export)
+            .map(|x| x * emis_factor_import_export[0])
             .collect::<Vec<_>>();
         supply_emis_oos_result.unregulated = energy_unregulated
             .iter()
-            .map(|x| x * emis_oos_factor_import_export)
+            .map(|x| x * emis_oos_factor_import_export[0])
             .collect::<Vec<_>>();
         supply_pe_result.unregulated = energy_unregulated
             .iter()
-            .map(|x| x * pe_factor_import_export)
+            .map(|x| x * pe_factor_import_export[0])
             .collect::<Vec<_>>();
 
         // Calculate total CO2/PE for each EnergySupply based on import and export,
