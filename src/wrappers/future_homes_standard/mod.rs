@@ -147,7 +147,7 @@ fn do_fhs_preprocessing(
             | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
             | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
     ) {
-        apply_fhs_preprocessing(input_for_processing, Some(false))?;
+        apply_fhs_preprocessing(input_for_processing, Some(false), None)?;
     } else if flags.intersects(
         ProjectFlags::FHS_FEE_ASSUMPTIONS
             | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS

@@ -60,12 +60,44 @@ const HW_SETPOINT_MAX: f64 = 60.0;
 // Occupant sleep+wake hours as per Part O
 const OCCUPANT_WAKING_HR: usize = 7;
 const OCCUPANT_SLEEPING_HR: usize = 23;
+pub(crate) struct SimSettings {
+    heat_balance: bool,
+    detailed_output_heating_cooling: bool,
+    use_fast_solver: bool,
+    tariff_data_filename: Option<String>,
+}
 
 pub fn apply_fhs_preprocessing(
     input: &mut InputForProcessing,
     is_fee: Option<bool>,
+    sim_settings: Option<SimSettings>,
 ) -> anyhow::Result<()> {
     let is_fee = is_fee.unwrap_or(false);
+    let default_sim_settings = SimSettings {
+        heat_balance: false,
+        detailed_output_heating_cooling: false,
+        use_fast_solver: false,
+        tariff_data_filename: None,
+    };
+
+    let sim_settings = sim_settings.unwrap_or(default_sim_settings);
+
+    static APPLIANCE_PROPENSITIES: LazyLock<AppliancePropensities<Normalised>> =
+        LazyLock::new(|| {
+            load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
+                .expect("Could not read and parse appliance_propensities.csv")
+        });
+
+    static EVAP_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> = LazyLock::new(|| {
+        load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
+            .expect("Could not read evap_loss_profile.csv.")
+    });
+
+    static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> =
+        LazyLock::new(|| {
+            load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
+                .expect("Could not read cold_water_loss_profile.csv")
+        });
 
     input.set_simulation_time(simtime());
 
@@ -92,7 +124,7 @@ pub fn apply_fhs_preprocessing(
     for source_key in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(&source_key);
         if source.is_storage_tank() {
-            source.set_min_temp_and_setpoint_temp_if_storage_tank(HW_TEMPERATURE, 60.0);
+            source.set_init_temp_if_storage_tank(HW_SETPOINT_MAX);
         } else {
             source.set_setpoint_temp(HW_TEMPERATURE);
         }
@@ -102,11 +134,20 @@ pub fn apply_fhs_preprocessing(
     create_hot_water_use_pattern(input, n_occupants, &cold_water_feed_temps)?;
     create_cooling(input)?;
     create_window_opening_schedule(input)?;
+    create_vent_opening_schedule(input)?;
+    window_treatment(input)?;
     if !is_fee {
         calc_sfp_mech_vent(input)?;
     }
     if input.has_mechanical_ventilation() {
         create_mev_pattern(input)?;
+    }
+
+    set_temp_internal_static_calcs(input);
+
+    if input.clone().has_control_for_loadshifting() {
+        // run project for 24 hours to obtain initial estimate for daily heating demand
+        sim_24h(input, sim_settings)?;
     }
 
     Ok(())
@@ -130,20 +171,6 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
     }
 
     factors
-});
-static EVAP_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> = LazyLock::new(|| {
-    load_evaporative_profile(Cursor::new(include_str!("./evap_loss_profile.csv")))
-        .expect("Could not read evap_loss_profile.csv.")
-});
-
-static COLD_WATER_LOSS_PROFILE_DATA: LazyLock<HalfHourWeeklyProfileData> = LazyLock::new(|| {
-    load_evaporative_profile(Cursor::new(include_str!("./cold_water_loss_profile.csv")))
-        .expect("Could not read cold_water_loss_profile.csv")
-});
-
-static APPLIANCE_PROPENSITIES: LazyLock<AppliancePropensities<Normalised>> = LazyLock::new(|| {
-    load_appliance_propensities(Cursor::new(include_str!("./appliance_propensities.csv")))
-        .expect("Could not read and parse appliance_propensities.csv")
 });
 
 static METABOLIC_GAINS: LazyLock<MetabolicGains> = LazyLock::new(|| {
@@ -1926,6 +1953,10 @@ fn appliance_kwh_cycle_loading_factor(
     Ok((kwh_cycle, loading_factor))
 }
 
+fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow::Result<()> {
+    todo!()
+}
+
 /// Check (almost an assert) whether the shower flow rate is not less than the minimum allowed.
 fn check_shower_flowrate(input: &InputForProcessing) -> anyhow::Result<()> {
     let min_flowrate = 8.0;
@@ -2063,6 +2094,10 @@ pub(super) fn create_hot_water_use_pattern(
     Ok(())
 }
 
+fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    todo!()
+}
+
 pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let window_opening_setpoint = 22.0;
 
@@ -2152,6 +2187,10 @@ pub(crate) fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64;
 
     minimum_ach
+}
+
+fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    todo!()
 }
 
 fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {

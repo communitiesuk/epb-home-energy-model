@@ -869,7 +869,7 @@ pub trait HotWaterSourceDetailsForProcessing {
         &mut self,
         control_name: impl Into<String>,
     ) -> anyhow::Result<()>;
-    fn set_min_temp_and_setpoint_temp_if_storage_tank(&mut self, min_temp: f64, setpoint_temp: f64);
+    fn set_init_temp_if_storage_tank(&mut self, init_temp: f64);
     fn set_setpoint_temp(&mut self, setpoint_temp: f64);
 }
 
@@ -936,19 +936,13 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         Ok(())
     }
 
-    fn set_min_temp_and_setpoint_temp_if_storage_tank(
-        &mut self,
-        min_temp: f64,
-        setpoint_temp: f64,
-    ) {
+    fn set_init_temp_if_storage_tank(&mut self, init_temp: f64) {
         if let HotWaterSourceDetails::StorageTank {
-            min_temp: ref mut min_temp_store,
-            setpoint_temp: ref mut setpoint_temp_store,
+            init_temp: ref mut init_temp_store,
             ..
         } = self
         {
-            *min_temp_store = Some(min_temp);
-            *setpoint_temp_store = Some(setpoint_temp);
+            *init_temp_store = Some(init_temp);
         }
     }
 
@@ -3584,6 +3578,10 @@ impl InputForProcessing {
             .insert(control_key.into(), serde_json::from_value(control_json)?);
 
         Ok(self)
+    }
+
+    pub(super) fn has_control_for_loadshifting(self) -> bool {
+        self.input.control.extra.get("loadshifting").is_some() // TODO: the "type" of these is "smartappliance" - should we not be relying on that instead of the key loadshifting?
     }
 
     pub fn zone_keys(&self) -> Vec<String> {
