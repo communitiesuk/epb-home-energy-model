@@ -2924,12 +2924,12 @@ pub struct InfiltrationVentilation {
         rename = "Control_VentAdjustMin",
         skip_serializing_if = "Option::is_none"
     )]
-    vent_adjust_min_control: Option<String>,
+    pub(crate) vent_adjust_min_control: Option<String>,
     #[serde(
         rename = "Control_VentAdjustMax",
         skip_serializing_if = "Option::is_none"
     )]
-    vent_adjust_max_control: Option<String>,
+    pub(crate) vent_adjust_max_control: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vent_opening_ratio_init: Option<f64>,
     #[serde(

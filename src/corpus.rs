@@ -1,7 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
-    ChargeControl, CombinationTimeControl, Control, HeatSourceControl, OnOffMinimisingTimeControl,
-    OnOffTimeControl, SetpointTimeControl,
+    ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
+    OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::ductwork::Ductwork;
@@ -652,6 +652,8 @@ pub struct Corpus {
     timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>>,
     initial_loop: AtomicBool,
     detailed_output_heating_cooling: bool,
+    vent_adjust_min_control: Option<Arc<Control>>,
+    vent_adjust_max_control: Option<Arc<Control>>,
 }
 
 impl Corpus {
@@ -734,6 +736,8 @@ impl Corpus {
             window_adjust_control,
             mechanical_ventilations,
             space_heating_ductwork,
+            vent_adjust_min_control,
+            vent_adjust_max_control,
         ) = infiltration_ventilation_from_input(
             &input.zone,
             &input.infiltration_ventilation,
@@ -971,6 +975,8 @@ impl Corpus {
             timestep_end_calcs,
             initial_loop: AtomicBool::new(false),
             detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
+            vent_adjust_min_control,
+            vent_adjust_max_control,
         })
     }
 
@@ -1485,6 +1491,14 @@ impl Corpus {
         let wind_direction = self.external_conditions.wind_direction(simtime);
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
         let temp_int_air = self.temp_internal_air(); // TODO in Python this now calls temp_internal_air_prev_timestep
+        let ach_min = self
+            .vent_adjust_min_control
+            .as_ref()
+            .and_then(|c| c.setpnt(&simtime));
+        let ach_max = self
+            .vent_adjust_max_control
+            .as_ref()
+            .and_then(|c| c.setpnt(&simtime));
         // Calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
 
@@ -1493,7 +1507,23 @@ impl Corpus {
 
         let internal_gains_buffer_tank = self.calc_internal_gains_buffer_tank();
 
-        // TODO implement method call here to update self.r_v_arg
+        // Adjust vent position if required to attempt to meet min or max ach
+        self.r_v_arg.store(
+            self.ventilation.find_r_v_arg_within_bounds(
+                ach_min,
+                ach_max,
+                self.r_v_arg.load(Ordering::SeqCst),
+                wind_speed,
+                wind_direction,
+                temp_int_air,
+                temp_ext_air,
+                Some(0.),
+                0.,
+                None,
+                simtime,
+            )?,
+            Ordering::SeqCst,
+        );
 
         // Windows shut
         let ach_windows_shut = self.calc_air_changes_per_hour(
@@ -1652,20 +1682,20 @@ impl Corpus {
                 let z_name = z_name.as_str();
                 let (space_heat_demand_zone_current, space_cool_demand_zone_current, _, _) = zone
                     .space_heat_cool_demand(
-                        delta_t_h,
-                        temp_ext_air,
-                        gains_internal_zone[z_name],
-                        gains_solar_zone[z_name],
-                        frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                        frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                        temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                        temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                        avg_air_supply_temp,
-                        None,
-                        None,
-                        AirChangesPerHourArgument::Cooling { ach_cooling },
-                        simtime,
-                    )?;
+                    delta_t_h,
+                    temp_ext_air,
+                    gains_internal_zone[z_name],
+                    gains_solar_zone[z_name],
+                    frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                    frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                    temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                    temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                    avg_air_supply_temp,
+                    None,
+                    None,
+                    AirChangesPerHourArgument::Cooling { ach_cooling },
+                    simtime,
+                )?;
                 space_heat_demand_zone.insert(z_name.to_owned(), space_heat_demand_zone_current);
                 space_cool_demand_zone.insert(z_name.to_owned(), space_cool_demand_zone_current);
             }
@@ -1810,9 +1840,9 @@ impl Corpus {
                     // heating/cooling system later with an input of zero will still
                     // result in the minimum output being provided.
                     if space_heat_demand_zone_system[h_name] > 0. {
-                        space_heat_demand_zone_system[h_name] += hc_output_min[h_name.clone()]
+                        space_heat_demand_zone_system[h_name] += hc_output_min[h_name.to_owned()]
                     } else if space_cool_demand_zone_system[c_name] < 0. {
-                        space_cool_demand_zone_system[c_name] += hc_output_min[c_name.clone()]
+                        space_cool_demand_zone_system[c_name] += hc_output_min[c_name.to_owned()]
                     }
                 }
 
@@ -3457,6 +3487,8 @@ fn infiltration_ventilation_from_input(
     Option<Arc<Control>>,
     IndexMap<String, Arc<MechanicalVentilation>>,
     IndexMap<String, Vec<Ductwork>>,
+    Option<Arc<Control>>,
+    Option<Arc<Control>>,
 )> {
     let windows: IndexMap<String, Window> = zones
         .values()
@@ -3515,6 +3547,14 @@ fn infiltration_ventilation_from_input(
 
     let window_adjust_control = input
         .window_adjust_control
+        .as_ref()
+        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+    let vent_adjust_min_control = input
+        .vent_adjust_min_control
+        .as_ref()
+        .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
+    let vent_adjust_max_control = input
+        .vent_adjust_max_control
         .as_ref()
         .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
 
@@ -3705,6 +3745,8 @@ fn infiltration_ventilation_from_input(
         window_adjust_control,
         mechanical_ventilations,
         space_heating_ductwork,
+        vent_adjust_min_control,
+        vent_adjust_max_control,
     ))
 }
 
