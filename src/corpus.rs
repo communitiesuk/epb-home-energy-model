@@ -1336,8 +1336,8 @@ impl Corpus {
     fn gains_heat_cool(
         &self,
         delta_t_h: f64,
-        hc_output_convective: &IndexMap<&str, f64>,
-        hc_output_radiative: &IndexMap<&str, f64>,
+        hc_output_convective: &IndexMap<String, f64>,
+        hc_output_radiative: &IndexMap<String, f64>,
     ) -> (f64, f64) {
         let gains_heat_cool_convective =
             hc_output_convective.values().sum::<f64>() * WATTS_PER_KILOWATT as f64 / delta_t_h;
@@ -1484,7 +1484,7 @@ impl Corpus {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
         let wind_direction = self.external_conditions.wind_direction(simtime);
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
-        let temp_int_air = self.temp_internal_air();
+        let temp_int_air = self.temp_internal_air(); // TODO in Python this now calls temp_internal_air_prev_timestep
         // Calculate timestep in seconds
         let delta_t = delta_t_h * SECONDS_PER_HOUR as f64;
 
@@ -1555,8 +1555,6 @@ impl Corpus {
         let mut operative_temp: HashMap<String, f64> = Default::default();
         let mut space_heat_demand_zone: HashMap<String, f64> = Default::default();
         let mut space_cool_demand_zone: HashMap<String, f64> = Default::default();
-        let mut space_heat_demand_system: HashMap<String, f64> = Default::default();
-        let mut space_cool_demand_system: HashMap<String, f64> = Default::default();
         let mut space_heat_provided_system: HashMap<String, f64> = Default::default();
         let mut space_cool_provided_system: HashMap<String, f64> = Default::default();
         let mut heat_balance_map: HashMap<String, Option<HeatBalance>> = Default::default();
@@ -1654,20 +1652,20 @@ impl Corpus {
                 let z_name = z_name.as_str();
                 let (space_heat_demand_zone_current, space_cool_demand_zone_current, _, _) = zone
                     .space_heat_cool_demand(
-                    delta_t_h,
-                    temp_ext_air,
-                    gains_internal_zone[z_name],
-                    gains_solar_zone[z_name],
-                    frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                    frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                    temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
-                    temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
-                    avg_air_supply_temp,
-                    None,
-                    None,
-                    AirChangesPerHourArgument::Cooling { ach_cooling },
-                    simtime,
-                )?;
+                        delta_t_h,
+                        temp_ext_air,
+                        gains_internal_zone[z_name],
+                        gains_solar_zone[z_name],
+                        frac_convective_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                        frac_convective_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                        temp_setpnt_heat_zone_system[z_name][&h_name_list_sorted_zone[z_name][0]],
+                        temp_setpnt_cool_zone_system[z_name][&c_name_list_sorted_zone[z_name][0]],
+                        avg_air_supply_temp,
+                        None,
+                        None,
+                        AirChangesPerHourArgument::Cooling { ach_cooling },
+                        simtime,
+                    )?;
                 space_heat_demand_zone.insert(z_name.to_owned(), space_heat_demand_zone_current);
                 space_cool_demand_zone.insert(z_name.to_owned(), space_cool_demand_zone_current);
             }
@@ -1721,17 +1719,15 @@ impl Corpus {
             drop(c_name_list_hashset);
             drop(h_name_list_hashset);
 
-            // TODO (from Python) Populate the lists below with minimum output of each heating and cooling system
-            let mut hc_output_convective = h_name_list_sorted_zone[z_name]
-                .iter()
-                .chain(c_name_list_sorted_zone[z_name].iter())
-                .map(|hc_name| (hc_name.as_str(), 0.0))
-                .collect::<IndexMap<_, _>>();
-            let mut hc_output_radiative = h_name_list_sorted_zone[z_name]
-                .iter()
-                .chain(c_name_list_sorted_zone[z_name].iter())
-                .map(|hc_name| (hc_name.as_str(), 0.0))
-                .collect::<IndexMap<_, _>>();
+            // Initialise system outputs to minimum output for each heating and cooling system
+            let (mut hc_output_convective, mut hc_output_radiative, hc_output_min) = self
+                .heat_cool_system_output_min(
+                    &h_name_list_sorted_zone,
+                    &c_name_list_sorted_zone,
+                    &frac_convective_heat_zone_system,
+                    &frac_convective_cool_zone_system,
+                    z_name,
+                );
             let mut space_heat_demand_zone_system = h_name_list_sorted_zone[z_name]
                 .iter()
                 .map(|h_name| (h_name.as_str(), 0.0))
@@ -1772,7 +1768,6 @@ impl Corpus {
                 // output from systems (either output already calculated for
                 // higher-priority systems, or min output of current or
                 // lower-priority systems).
-                // TODO (from Python) This doesn't yet handle minimum output from current or lower-priority systems
                 let (gains_heat_cool_convective, gains_heat_cool_radiative) =
                     self.gains_heat_cool(delta_t_h, &hc_output_convective, &hc_output_radiative);
                 if gains_heat_cool_convective == 0.0 && gains_heat_cool_radiative == 0.0 {
@@ -1806,6 +1801,19 @@ impl Corpus {
                     space_cool_demand_zone_system
                         .insert(c_name, space_cool_demand_zone_system_current);
                     ach_cooling_zone.insert(z_name, ach_cooling_zone_current);
+
+                    // Space heating/cooling demand calculated above already assumes
+                    // minimum output from all systems, so we need to add this on
+                    // for the current system. If minimum output is enough to meet
+                    // demand, then demand calculated above will be zero. This is
+                    // okay because calling the demand_energy function for the
+                    // heating/cooling system later with an input of zero will still
+                    // result in the minimum output being provided.
+                    if space_heat_demand_zone_system[h_name] > 0. {
+                        space_heat_demand_zone_system[h_name] += hc_output_min[h_name.clone()]
+                    } else if space_cool_demand_zone_system[c_name] < 0. {
+                        space_cool_demand_zone_system[c_name] += hc_output_min[c_name.clone()]
+                    }
                 }
 
                 // If any heating systems potentially require overventilation,
@@ -1824,11 +1832,11 @@ impl Corpus {
                             .demand_energy(space_heat_demand_zone_system[h_name], simtime)?,
                     );
                     hc_output_convective.insert(
-                        h_name,
+                        h_name.to_string(),
                         space_heat_provided_zone_system[h_name] * frac_convective_heat,
                     );
                     hc_output_radiative.insert(
-                        h_name,
+                        h_name.to_string(),
                         space_heat_provided_zone_system[h_name] * (1.0 - frac_convective_heat),
                     );
                     // If heating has been provided, then next iteration of loop
@@ -1842,11 +1850,11 @@ impl Corpus {
                             .demand_energy(space_cool_demand_zone_system[c_name], simtime),
                     );
                     hc_output_convective.insert(
-                        c_name,
+                        c_name.to_string(),
                         space_cool_provided_zone_system[c_name] * frac_convective_cool,
                     );
                     hc_output_radiative.insert(
-                        c_name,
+                        c_name.to_string(),
                         space_cool_provided_zone_system[c_name] * (1.0 - frac_convective_cool),
                     );
                     // If cooling has been provided, then next iteration of loop
@@ -1876,11 +1884,11 @@ impl Corpus {
                     },
                 );
                 hc_output_convective.insert(
-                    h_name,
+                    h_name.to_owned(),
                     space_heat_provided_zone_system[h_name] * frac_convective_heat,
                 );
                 hc_output_radiative.insert(
-                    h_name,
+                    h_name.to_owned(),
                     space_heat_provided_zone_system[h_name] * (1.0 - frac_convective_heat),
                 );
             }
@@ -1895,11 +1903,11 @@ impl Corpus {
                     },
                 );
                 hc_output_convective.insert(
-                    c_name,
+                    c_name.to_owned(),
                     space_cool_provided_zone_system[c_name] * frac_convective_cool,
                 );
                 hc_output_radiative.insert(
-                    c_name,
+                    c_name.to_owned(),
                     space_cool_provided_zone_system[c_name] * (1.0 - frac_convective_cool),
                 );
             }
@@ -1960,17 +1968,11 @@ impl Corpus {
             operative_temp.insert(z_name.to_owned(), zone.temp_operative());
 
             for h_name in h_name_list_sorted_zone[z_name].iter() {
-                *space_heat_demand_system
-                    .entry(h_name.to_owned())
-                    .or_insert(0.0) += space_heat_demand_zone_system[h_name.as_str()];
                 *space_heat_provided_system
                     .entry(h_name.to_owned())
                     .or_insert(0.0) += space_heat_provided_zone_system[h_name.as_str()];
             }
             for c_name in c_name_list_sorted_zone[z_name].iter() {
-                *space_cool_demand_system
-                    .entry(c_name.to_owned())
-                    .or_insert(0.0) += space_cool_demand_zone_system[c_name.as_str()];
                 *space_cool_provided_system
                     .entry(c_name.to_owned())
                     .or_insert(0.0) += space_cool_provided_zone_system[c_name.as_str()];
@@ -1984,8 +1986,6 @@ impl Corpus {
             internal_air_temp,
             space_heat_demand_zone,
             space_cool_demand_zone,
-            space_heat_demand_system,
-            space_cool_demand_system,
             space_heat_provided_system,
             space_cool_provided_system,
             internal_gains_ductwork,
@@ -2039,8 +2039,8 @@ impl Corpus {
         c_name_list_sorted: &[String],
         space_heat_demand: f64,
         space_cool_demand: f64,
-        hc_output_convective: &IndexMap<&str, f64>,
-        hc_output_radiative: &IndexMap<&str, f64>,
+        hc_output_convective: &IndexMap<String, f64>,
+        hc_output_radiative: &IndexMap<String, f64>,
         ach_max: f64,
         ach_target: f64,
         avg_air_supply_temp: f64,
@@ -2178,8 +2178,6 @@ impl Corpus {
         let mut internal_air_temp_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut space_heat_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut space_cool_demand_dict: IndexMap<KeyString, Vec<f64>> = Default::default();
-        let mut space_heat_demand_system_dict: IndexMap<String, Vec<f64>> = Default::default();
-        let mut space_cool_demand_system_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut space_heat_provided_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut space_cool_provided_dict: IndexMap<String, Vec<f64>> = Default::default();
         let mut zone_list: Vec<KeyString> = Default::default();
@@ -2222,12 +2220,10 @@ impl Corpus {
         }
 
         for h_name in self.heat_system_name_for_zone.values() {
-            space_heat_demand_system_dict.insert(h_name.to_owned(), vec_capacity());
             space_heat_provided_dict.insert(h_name.to_owned(), vec_capacity());
         }
 
         for c_name in self.cool_system_name_for_zone.values() {
-            space_cool_demand_system_dict.insert(c_name.to_owned(), vec_capacity());
             space_cool_provided_dict.insert(c_name.to_owned(), vec_capacity());
         }
 
@@ -2377,8 +2373,6 @@ impl Corpus {
                 internal_air_temp,
                 space_heat_demand_zone,
                 space_cool_demand_zone,
-                space_heat_demand_system,
-                space_cool_demand_system,
                 space_heat_provided_system: space_heat_provided,
                 space_cool_provided_system: space_cool_provided,
                 internal_gains_ductwork: ductwork_gains,
@@ -2434,20 +2428,6 @@ impl Corpus {
             for (z_name, demand) in space_cool_demand_zone {
                 space_cool_demand_dict
                     .get_mut(z_name.as_str())
-                    .unwrap()
-                    .push(demand);
-            }
-
-            for (h_name, demand) in space_heat_demand_system {
-                space_heat_demand_system_dict
-                    .get_mut(h_name.as_str())
-                    .unwrap()
-                    .push(demand);
-            }
-
-            for (c_name, demand) in space_cool_demand_system {
-                space_cool_demand_system_dict
-                    .get_mut(c_name.as_str())
                     .unwrap()
                     .push(demand);
             }
@@ -2605,16 +2585,8 @@ impl Corpus {
 
         let hc_system_dict = IndexMap::from([
             (
-                HeatingCoolingSystemResultKey::HeatingSystem,
-                space_heat_demand_system_dict,
-            ),
-            (
                 HeatingCoolingSystemResultKey::HeatingSystemOutput,
                 space_heat_provided_dict,
-            ),
-            (
-                HeatingCoolingSystemResultKey::CoolingSystem,
-                space_cool_demand_system_dict,
             ),
             (
                 HeatingCoolingSystemResultKey::CoolingSystemOutput,
@@ -3233,8 +3205,6 @@ struct SpaceHeatingCalculation {
     internal_air_temp: HashMap<String, f64>,
     space_heat_demand_zone: HashMap<String, f64>,
     space_cool_demand_zone: HashMap<String, f64>,
-    space_heat_demand_system: HashMap<String, f64>,
-    space_cool_demand_system: HashMap<String, f64>,
     space_heat_provided_system: HashMap<String, f64>,
     space_cool_provided_system: HashMap<String, f64>,
     internal_gains_ductwork: f64,
