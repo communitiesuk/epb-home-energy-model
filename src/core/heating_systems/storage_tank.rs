@@ -1001,7 +1001,6 @@ impl StorageTank {
         heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        
         heat_source.temp_setpnt(simulation_time_iteration)
     }
 

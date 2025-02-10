@@ -2283,8 +2283,6 @@ pub(crate) fn minimum_air_change_rate(
     let highest_min_ventilation_rate =
         f64::max(min_ventilation_rate_a, min_ventilation_rate_b as f64);
 
-    
-
     highest_min_ventilation_rate / total_volume * SECONDS_PER_HOUR as f64
         / LITRES_PER_CUBIC_METRE as f64
 }
