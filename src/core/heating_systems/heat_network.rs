@@ -87,9 +87,9 @@ impl HeatNetworkServiceWaterDirect {
 pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
-    control: Option<Arc<Control>>,
-    control_min: Option<Arc<Control>>,
-    control_max: Option<Arc<Control>>,
+    control: Arc<Control>,
+    control_min: Arc<Control>,
+    control_max: Arc<Control>,
 }
 
 impl HeatNetworkServiceWaterStorage {
@@ -101,8 +101,8 @@ impl HeatNetworkServiceWaterStorage {
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> Self {
         let control = control_min.clone();
 
@@ -119,16 +119,10 @@ impl HeatNetworkServiceWaterStorage {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
-        let control_min_setpnt = self
-            .control_min
-            .as_ref()
-            .and_then(|control| control.setpnt(simulation_time_iteration));
-        let control_max_setpnt = self
-            .control_max
-            .as_ref()
-            .and_then(|control| control.setpnt(simulation_time_iteration));
-
-        (control_min_setpnt, control_max_setpnt)
+        (
+            self.control_min.setpnt(simulation_time_iteration),
+            self.control_max.setpnt(simulation_time_iteration),
+        )
     }
 
     pub fn demand_energy(
@@ -159,10 +153,7 @@ impl HeatNetworkServiceWaterStorage {
             return 0.;
         }
 
-        let control_max_setpnt = self
-            .control_max
-            .as_ref()
-            .and_then(|control| control.setpnt(simulation_time_iteration));
+        let control_max_setpnt = self.control_max.setpnt(simulation_time_iteration);
 
         self.heat_network
             .lock()
@@ -170,12 +161,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        match &self.control {
-            Some(ctrl) => {
-                per_control!(ctrl.as_ref(), ctrl => { ctrl.is_on(simulation_time_iteration) })
-            }
-            None => true,
-        }
+        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(&simulation_time_iteration) })
     }
 }
 
@@ -347,8 +333,8 @@ impl HeatNetwork {
     pub(crate) fn create_service_hot_water_storage(
         heat_network: Arc<Mutex<Self>>,
         service_name: String,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> HeatNetworkServiceWaterStorage {
         Self::create_service_connection(heat_network.clone(), service_name.as_str()).unwrap();
 
@@ -503,16 +489,16 @@ mod tests {
         let heat_network_service = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network.clone(),
             SERVICE_NAME.to_owned(),
-            Some(Arc::new(Control::SetpointTime(control.clone()))),
-            Some(Arc::new(Control::SetpointTime(control))),
+            Arc::new(Control::SetpointTime(control.clone())),
+            Arc::new(Control::SetpointTime(control.clone())),
         );
         assert!(heat_network_service.is_on(&two_len_simulation_time.iter().next().unwrap()));
 
         let heat_network_service_no_control = HeatNetworkServiceWaterStorage::new(
             dummy_heat_network,
             SERVICE_NAME.to_owned(),
-            None,
-            None,
+            Arc::new(Control::SetpointTime(control.clone())),
+            Arc::new(Control::SetpointTime(control.clone())),
         );
         assert!(
             heat_network_service_no_control.is_on(&two_len_simulation_time.iter().next().unwrap())
@@ -688,8 +674,8 @@ mod tests {
         HeatNetworkServiceWaterStorage::new(
             heat_network.clone(),
             "heat_network_test".to_owned(),
-            Some(Arc::new(Control::SetpointTime(control_min))),
-            Some(Arc::new(Control::SetpointTime(control_max))),
+            Arc::new(Control::SetpointTime(control_min)),
+            Arc::new(Control::SetpointTime(control_max)),
         )
     }
 

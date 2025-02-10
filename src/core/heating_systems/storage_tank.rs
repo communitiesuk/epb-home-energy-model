@@ -1404,7 +1404,7 @@ pub struct ImmersionHeater {
     pwr: f64, // rated power
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Option<Arc<Control>>,
+    control_min: Arc<Control>,
     control_max: Arc<Control>,
     diverter: Option<Arc<RwLock<PVDiverter>>>,
 }
@@ -1425,7 +1425,7 @@ impl ImmersionHeater {
         rated_power: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control_min: Option<Arc<Control>>,
+        control_min: Arc<Control>,
         control_max: Arc<Control>,
         diverter: Option<Arc<RwLock<PVDiverter>>>,
     ) -> Self {
@@ -1443,7 +1443,7 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.as_ref().and_then(|c| c.setpnt(&simtime)),
+            self.control_min.setpnt(&simtime),
             self.control_max.setpnt(&simtime),
         )
     }
@@ -1466,15 +1466,13 @@ impl ImmersionHeater {
             bail!("Negative energy demand on ImmersionHeater");
         };
 
-        // Account for time control where present. If no control present, assume
-        // system is always active (except for basic thermostatic control, which
-        // is implicit in demand calculation).
-        let energy_supplied =
-            if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(simtime) {
-                min_of_2(energy_demand, self.pwr * self.simulation_timestep)
-            } else {
-                0.
-            };
+        // Account for time control. In the Python they also check here whether control_min is None
+        // but this is not possible as it's a required field for an ImmersionHeater.
+        let energy_supplied = if self.control_min.as_ref().is_on(simtime) {
+            min_of_2(energy_demand, self.pwr * self.simulation_timestep)
+        } else {
+            0.
+        };
 
         // If there is a diverter to this immersion heater, then any heating
         // capacity already in use is not available to the diverter.
@@ -1495,13 +1493,9 @@ impl ImmersionHeater {
         simtime: SimulationTimeIteration,
         ignore_standard_control: bool,
     ) -> f64 {
-        // Account for time control where present. If no control present, assume
-        // system is always active (except for basic thermostatic control, which
-        // is implicit in demand calculation).
-        if self.control_min.is_none()
-            || self.control_min.as_ref().unwrap().is_on(simtime)
-            || ignore_standard_control
-        {
+        // Account for time control. In the Python they also check here whether control_min is None
+        // but this is not possible as it's a required field for an ImmersionHeater.
+        if self.control_min.as_ref().is_on(simtime) || ignore_standard_control {
             self.pwr * self.simulation_timestep
         } else {
             0.
@@ -2024,7 +2018,7 @@ mod tests {
             rated_power,
             energy_supply_connection.clone(),
             simulation_timestep,
-            Some(Arc::new(Control::SetpointTime(control_min))),
+            Arc::new(Control::SetpointTime(control_min)),
             Arc::new(Control::SetpointTime(control_max)),
             None,
         );
@@ -3382,7 +3376,7 @@ mod tests {
             rated_power,
             energy_supply_connection,
             timestep,
-            Some(control_min),
+            control_min,
             control_max,
             None,
         )

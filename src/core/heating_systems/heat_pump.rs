@@ -1332,8 +1332,8 @@ const TIME_CONSTANT_WATER: f64 = 1560.;
 pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
-    control: Option<Arc<Control>>,
-    control_min: Option<Arc<Control>>,
+    control: Arc<Control>,
+    control_min: Arc<Control>,
     control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<ColdWaterSource>,
@@ -1346,7 +1346,7 @@ impl HeatPumpServiceWater {
         service_name: String,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
-        control_min: Option<Arc<Control>>,
+        control_min: Arc<Control>,
         control_max: Arc<Control>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
     ) -> Self {
@@ -1366,10 +1366,7 @@ impl HeatPumpServiceWater {
     }
 
     pub fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        match &self.control {
-            Some(ctrl) => ctrl.is_on(simtime),
-            None => true,
-        }
+        self.control.is_on(simtime)
     }
 
     pub(crate) fn temp_setpnt(
@@ -1377,9 +1374,7 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min
-                .as_ref()
-                .and_then(|c| c.setpnt(&simulation_time_iteration)),
+            self.control_min.setpnt(&simulation_time_iteration),
             self.control_max.setpnt(&simulation_time_iteration),
         )
     }
@@ -2353,7 +2348,7 @@ impl HeatPump {
         service_name: &str,
         temp_limit_upper_in_c: f64,
         cold_feed: Arc<ColdWaterSource>,
-        control_min: Option<Arc<Control>>,
+        control_min: Arc<Control>,
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<HeatPumpServiceWater> {
@@ -4295,8 +4290,8 @@ pub struct HeatPumpHotWaterOnly {
     power_in_kw: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control_min: Option<Arc<Control>>,
-    control_max: Option<Arc<Control>>,
+    control_min: Arc<Control>,
+    control_max: Arc<Control>,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4321,8 +4316,8 @@ impl HeatPumpHotWaterOnly {
         heat_exchanger_surface_area_declared: f64,
         daily_losses_declared: f64,
         simulation_timestep: f64,
-        control_min: Option<Arc<Control>>,
-        control_max: Option<Arc<Control>>,
+        control_min: Arc<Control>,
+        control_max: Arc<Control>,
     ) -> Self {
         let efficiencies = Efficiencies {
             l: test_data.l.as_ref().map(|profile_data| {
@@ -4439,12 +4434,8 @@ impl HeatPumpHotWaterOnly {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min
-                .as_ref()
-                .and_then(|c| c.setpnt(&simulation_time_iteration)),
-            self.control_max
-                .as_ref()
-                .and_then(|c| c.setpnt(&simulation_time_iteration)),
+            self.control_min.setpnt(&simulation_time_iteration),
+            self.control_max.setpnt(&simulation_time_iteration),
         )
     }
 
@@ -4455,15 +4446,13 @@ impl HeatPumpHotWaterOnly {
         _temp_return: f64,
         simtime: SimulationTimeIteration,
     ) -> f64 {
-        // Account for time control where present. If no control present, assume
-        // system is always active (except for basic thermostatic control, which
-        // is implicit in demand calculation).
-        let energy_supplied =
-            if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(simtime) {
-                min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
-            } else {
-                0.0
-            };
+        // Account for time control. In the Python they also check here whether control_min is None
+        // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
+        let energy_supplied = if self.control_min.as_ref().is_on(simtime) {
+            min_of_2(energy_demand, self.power_in_kw * self.simulation_timestep)
+        } else {
+            0.0
+        };
 
         let energy_required = energy_supplied / self.calc_efficiency();
         self.energy_supply_connection
@@ -4475,10 +4464,9 @@ impl HeatPumpHotWaterOnly {
 
     /// Calculate the maximum energy output (in kWh) from the heater
     pub fn energy_output_max(&self, _temp_return: f64, simtime: SimulationTimeIteration) -> f64 {
-        // Account for time control where present. If no control present, assume
-        // system is always active (except for basic thermostatic control, which
-        // is implicit in demand calculation).
-        if self.control_min.is_none() || self.control_min.as_ref().unwrap().is_on(simtime) {
+        // Account for time control. In the Python they also check here whether control_min is None
+        // but this is not possible as it's a required field for a HeatPumpHotWaterOnly object.
+        if self.control_min.as_ref().is_on(simtime) {
             self.power_in_kw * self.simulation_timestep
         } else {
             0.0
@@ -6418,6 +6406,13 @@ mod tests {
         )
     }
 
+    fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
+        Control::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
+                .unwrap(),
+        )
+    }
+
     #[rstest]
     fn test_create_service_connection(
         external_conditions: Arc<ExternalConditions>,
@@ -6563,7 +6558,7 @@ mod tests {
             service_name,
             60.,
             cold_feed.clone().into(),
-            None,
+            control.clone(),
             control.clone(),
             &simulation_time_for_heat_pump.iter(),
         )
@@ -6589,7 +6584,7 @@ mod tests {
             service_name,
             60.,
             cold_feed.into(),
-            None,
+            control.clone(),
             control,
             &simulation_time_for_heat_pump.iter(),
         )
@@ -9024,6 +9019,7 @@ mod tests {
             Arc::from(RwLock::from(energy_supply)),
             "HeatPump: hp".to_owned(),
         );
+        let ctrl = Arc::new(create_setpoint_time_control(vec![Some(21.)]));
 
         let heat_pump = HeatPumpHotWaterOnly::new(
             power_max,
@@ -9038,8 +9034,8 @@ mod tests {
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
             1.,
-            None,
-            None,
+            ctrl.clone(),
+            ctrl,
         );
 
         assert_relative_eq!(

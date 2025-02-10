@@ -238,7 +238,7 @@ impl BoilerServiceWaterCombi {
 pub struct BoilerServiceWaterRegular {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
-    control_min: Option<Arc<Control>>,
+    control_min: Arc<Control>,
     control_max: Arc<Control>,
     temperature_hot_water_in_c: Option<f64>,
 }
@@ -247,7 +247,7 @@ impl BoilerServiceWaterRegular {
     pub(crate) fn new(
         boiler: Arc<RwLock<Boiler>>,
         service_name: String,
-        control_min: Option<Arc<Control>>,
+        control_min: Arc<Control>,
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
@@ -265,7 +265,7 @@ impl BoilerServiceWaterRegular {
         simtime: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.as_ref().and_then(|c| c.setpnt(&simtime)),
+            self.control_min.setpnt(&simtime),
             self.control_max.setpnt(&simtime),
         )
     }
@@ -314,10 +314,7 @@ impl BoilerServiceWaterRegular {
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
-        match &self.control_min {
-            Some(c) => c.is_on(simtime),
-            None => true,
-        }
+        self.control_min.is_on(simtime)
     }
 }
 
@@ -645,7 +642,7 @@ impl Boiler {
     pub(crate) fn create_service_hot_water_regular(
         boiler: Arc<RwLock<Self>>,
         service_name: &str,
-        control_min: Option<Arc<Control>>,
+        control_min: Arc<Control>,
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
@@ -1395,7 +1392,7 @@ mod tests {
         BoilerServiceWaterRegular::new(
             Arc::new(RwLock::new(boiler_for_regular)),
             "boiler_test".to_string(),
-            Some(control_min),
+            control_min,
             control_max,
             &simulation_time.iter(),
         )
@@ -1646,7 +1643,7 @@ mod tests {
         let boiler_hotwater_regular_result = Boiler::create_service_hot_water_regular(
             boiler,
             service_name,
-            Some(control_min),
+            control_min,
             control_max,
             &simulation_time.iter(),
         );

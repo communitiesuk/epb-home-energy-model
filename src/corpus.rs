@@ -4101,7 +4101,6 @@ fn heat_source_from_input(
     name: &str,
     input: &HeatSourceInput,
     cold_water_source: &WaterSourceWithTemperature,
-    temp_setpoint: f64,
     volume: f64,
     daily_losses: f64,
     heat_exchanger_surface_area: Option<f64>,
@@ -4112,25 +4111,33 @@ fn heat_source_from_input(
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
+    // TODO review error handling in this method, can we make it more consistent?
     match input {
         HeatSourceInput::ImmersionHeater {
             power,
-            control,
+            control_min,
+            control_max,
             energy_supply,
             ..
         } => {
             let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Immersion heater references an undeclared energy supply '{energy_supply}'."))?.clone();
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
-            let control = (*control).and_then(|ctrl| controls.get_with_string(&ctrl.to_string()));
+            let control_min = control_min
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl));
+            let control_max = control_max
+                .as_ref()
+                .and_then(|ctrl| controls.get_with_string(ctrl));
+
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(
                     ImmersionHeater::new(
                         *power,
                         energy_supply_conn,
                         simulation_time.step_in_hours(),
-                        control.clone(),  // TODO
-                        control.unwrap(), // TODO
-                        None,             // TODO
+                        control_min.expect("A control indicated by `control_min` is needed for an ImmersionHeater object."),
+                        control_max.expect("A control indicated by `control_max` is needed for an ImmersionHeater object."),
+                        None, // TODO
                     ),
                 )))),
                 name.into(),
@@ -4158,7 +4165,7 @@ fn heat_source_from_input(
             let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), name)?;
             let control_max = controls
                 .get_with_string(control_max)
-                .expect("Control max expected for Solar Thermal System");
+                .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?;
 
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
@@ -4180,7 +4187,7 @@ fn heat_source_from_input(
                         external_conditions.clone(),
                         temp_internal_air_fn(temp_internal_air_accessor),
                         simulation_time.step_in_hours(),
-                        control_max, // TODO
+                        control_max,
                         *WATER,
                     ),
                 )))),
@@ -4201,8 +4208,6 @@ fn heat_source_from_input(
                     panic!("Expected a wet heat source registered with the name '{name}'.")
                 })
                 .clone();
-            // TODO control_min and control_max added below when porting heat_network module to 0.32,
-            //  they still need to be correctly hooked up as part of 0.32 migration
             let control_min = control_min
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl));
@@ -4221,8 +4226,8 @@ fn heat_source_from_input(
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
                             cold_water_source.as_cold_water_source()?,
-                            control_min,
-                            control_max.ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a HeatPumpServiceWater object."))?,
+                            control_min.expect("A control indicated by `control_min` is needed for a HeatPumpServiceWater object."),
+                            control_max.expect("A control indicated by `control_max` is needed for a HeatPumpServiceWater object."),
                             simulation_time,
                         )?),
                     )),
@@ -4230,8 +4235,8 @@ fn heat_source_from_input(
                         HeatSourceWet::WaterRegular(Boiler::create_service_hot_water_regular(
                             boiler.clone(),
                             energy_supply_conn_name.as_str(),
-                            control_min,
-                            control_max.ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a BoilerServiceWaterRegular object."))?,
+                            control_min.expect("A control indicated by `control_min` is needed for a BoilerServiceWaterRegular object."),
+                            control_max.expect("A control indicated by `control_max` is needed for a BoilerServiceWaterRegular object."),
                             simulation_time,
                         )?),
                     )),
@@ -4240,8 +4245,8 @@ fn heat_source_from_input(
                             HeatNetwork::create_service_hot_water_storage(
                                 heat_network,
                                 energy_supply_conn_name.clone(),
-                                control_min,
-                                control_max,
+                                control_min.expect("A control indicated by `control_min` is needed for a HeatNetworkWaterStorage object."),
+                                control_max.expect("A control indicated by `control_max` is needed for a HeatNetworkWaterStorage object."),
                             ),
                         )))
                     }
@@ -4250,8 +4255,8 @@ fn heat_source_from_input(
                             HeatBattery::create_service_hot_water_regular(
                                 battery,
                                 &energy_supply_conn_name,
-                                control_min,
-                                control_max,
+                                control_min.expect("A control indicated by `control_min` is needed for a HeatBatteryHotWater object."),
+                                control_max.expect("A control indicated by `control_max` is needed for a HeatBatteryHotWater object."),
                             ),
                         )))
                     }
@@ -4267,7 +4272,8 @@ fn heat_source_from_input(
             daily_losses_declared,
             ref test_data,
             energy_supply,
-            control,
+            control_min,
+            control_max,
             in_use_factor_mismatch,
             ..
         } => {
@@ -4275,6 +4281,12 @@ fn heat_source_from_input(
             let energy_supply_conn_name = name;
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), energy_supply_conn_name)?;
+            let control_min = controls
+                .get_with_string(control_min)
+                .ok_or_else(|| anyhow!("A control indicated by `control_min` is needed for a HeatPumpHotWaterOnly object."))?;
+            let control_max = controls
+                .get_with_string(control_max)
+                .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a HeatPumpHotWaterOnly object."))?;
 
             Ok((
                 HeatSource::Wet(Box::new(HeatSourceWet::HeatPumpWaterOnly(
@@ -4291,9 +4303,8 @@ fn heat_source_from_input(
                         *heat_exchanger_surface_area_declared,
                         *daily_losses_declared,
                         simulation_time.step_in_hours(),
-                        // TODO fix control logic as part of 0.32 migration
-                        controls.get(&control.expect("This may not be present during migration to 0.32")),
-                        controls.get(&control.expect("This may not be present during migration to 0.32")),
+                        control_min,
+                        control_max,
                     ),
                 ))),
                 energy_supply_conn_name.into(),
@@ -4425,7 +4436,6 @@ fn hot_water_source_from_input(
                     name.as_str(),
                     hs,
                     &cold_water_source,
-                    setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                     *volume,
                     *daily_losses,
                     heat_exchanger_surface_area,
