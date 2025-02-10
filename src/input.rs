@@ -857,17 +857,13 @@ pub trait HotWaterSourceDetailsForProcessing {
     fn is_hiu(&self) -> bool;
     fn is_point_of_use(&self) -> bool;
     fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
-    fn set_control_name_for_heat_sources(
+    fn set_control_min_name_for_storage_tank_heat_sources(
         &mut self,
-        control_name: impl Into<String>,
+        control_name: &str,
     ) -> anyhow::Result<()>;
-    fn set_control_min_name_for_heat_sources(
+    fn set_control_max_name_for_storage_tank_heat_sources(
         &mut self,
-        control_name: impl Into<String>,
-    ) -> anyhow::Result<()>;
-    fn set_control_max_name_for_heat_sources(
-        &mut self,
-        control_name: impl Into<String>,
+        control_name: &str,
     ) -> anyhow::Result<()>;
     fn set_init_temp_if_storage_tank(&mut self, init_temp: f64);
     fn set_setpoint_temp(&mut self, setpoint_temp: f64);
@@ -900,39 +896,35 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         }
     }
 
-    fn set_control_name_for_heat_sources(
+    fn set_control_min_name_for_storage_tank_heat_sources(
         &mut self,
-        _control_name: impl Into<String>,
+        control_name: &str,
     ) -> anyhow::Result<()> {
-        // if let Self::StorageTank {
-        //     ref mut heat_source,
-        //     ..
-        // } = self
-        // {
-        //     let control_type_for_heat_sources = control_name.into().try_into()?;
-        //     for heat_source in heat_source.values_mut() {
-        //         heat_source.set_control(control_type_for_heat_sources);
-        //     }
-        // }
-
+        if let Self::StorageTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_control_min(control_name)?;
+            }
+        }
         Ok(())
     }
 
-    fn set_control_min_name_for_heat_sources(
+    fn set_control_max_name_for_storage_tank_heat_sources(
         &mut self,
-        _control_name: impl Into<String>,
+        control_name: &str,
     ) -> anyhow::Result<()> {
-        // TODO complete implementation for migration to 0.32
-
-        Ok(())
-    }
-
-    fn set_control_max_name_for_heat_sources(
-        &mut self,
-        _control_name: impl Into<String>,
-    ) -> anyhow::Result<()> {
-        // TODO complete implementation for migration to 0.32
-
+        if let Self::StorageTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_control_max(control_name)?;
+            }
+        }
         Ok(())
     }
 
@@ -1173,12 +1165,40 @@ impl HeatSource {
         }
     }
 
-    pub(crate) fn set_control_min(&mut self, control_min: &str) {
-        // TODO complete implementation for migration to 0.32
+    pub(crate) fn set_control_min(&mut self, control_min_name: &str) -> anyhow::Result<()> {
+        match self {
+            HeatSource::ImmersionHeater { control_min, .. } => {
+                *control_min = Some(control_min_name.into());
+            }
+            HeatSource::SolarThermalSystem { .. } => {
+                unreachable!()
+            }
+            HeatSource::Wet { control_min, .. } => {
+                *control_min = Some(control_min_name.into());
+            }
+            HeatSource::HeatPumpHotWaterOnly { control_min, .. } => {
+                *control_min = control_min_name.into();
+            }
+        }
+        Ok(())
     }
 
-    pub(crate) fn set_control_max(&mut self, control_max: &str) {
-        // TODO complete implementation for migration to 0.32
+    pub(crate) fn set_control_max(&mut self, control_max_name: &str) -> anyhow::Result<()> {
+        match self {
+            HeatSource::ImmersionHeater { control_max, .. } => {
+                *control_max = Some(control_max_name.into());
+            }
+            HeatSource::SolarThermalSystem { control_max, .. } => {
+                *control_max = control_max_name.into();
+            }
+            HeatSource::Wet { control_max, .. } => {
+                *control_max = Some(control_max_name.into());
+            }
+            HeatSource::HeatPumpHotWaterOnly { control_max, .. } => {
+                *control_max = control_max_name.into();
+            }
+        }
+        Ok(())
     }
 }
 

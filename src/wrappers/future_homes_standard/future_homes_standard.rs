@@ -941,33 +941,30 @@ enum ControlType {
 /// the minimum to the maximum for two hours allows time for the tank
 /// to heat up to the required temperature before being held there
 fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let _hw_min_temp = "_HW_min_temp";
-    let _hw_max_temp = "_HW_max_temp";
+    let hw_min_temp = "_HW_min_temp";
+    let hw_max_temp = "_HW_max_temp";
 
     input.add_control(
-        HW_TIMER_MAIN_NAME,
+        hw_min_temp,
         json!({
-            "type": "OnOffTimeControl",
+            "type": "SetPointTimeControl",
             "start_day": 0,
             "time_series_step": 0.5,
             "schedule": {
                 "main": [{"value": "day", "repeat": 365}],
-                "day": [{"value": true, "repeat": 48}]
+                "day": [{"value": HW_SETPOINT_MAX, "repeat": 4},{"value": HW_TEMPERATURE, "repeat": 44}]
             }
         }),
     )?;
     input.add_control(
-        HW_TIMER_HOLD_AT_SETPNT_NAME,
+        hw_max_temp,
         json!({
-            "type": "OnOffTimeControl",
+            "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 0.5,
             "schedule": {
                 "main": [{"value": "day", "repeat": 365}],
-                "day": [
-                    {"value": true, "repeat": 4},
-                    {"value": false, "repeat": 44}
-                ]
+                "day": [{"value": HW_SETPOINT_MAX, "repeat": 48}]
             }
         }),
     )?;
@@ -975,9 +972,8 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     for hwsource in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(hwsource.as_str());
         if source.is_storage_tank() {
-            source.set_control_hold_at_setpoint(HW_TIMER_HOLD_AT_SETPNT_NAME);
-            // TODO correct logic here during migration to 0.32
-            // source.set_control_name_for_heat_sources(HW_TIMER_MAIN_NAME)?;
+            source.set_control_min_name_for_storage_tank_heat_sources(hw_min_temp)?;
+            source.set_control_max_name_for_storage_tank_heat_sources(hw_max_temp)?;
         } else if source.is_combi_boiler() || source.is_point_of_use() || source.is_hiu() {
             // do nothing
         } else {
