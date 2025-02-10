@@ -232,8 +232,8 @@ struct ElectricityFactorData {
 }
 
 fn apply_energy_factor_series(
-    energy_data: Vec<f64>,
-    factors: Vec<f64>,
+    energy_data: &Vec<f64>,
+    factors: &Vec<f64>,
 ) -> anyhow::Result<Vec<f64>> {
     if energy_data.len() != factors.len() {
         bail!("Both energy_data and factors list must be of the same length.");
@@ -369,33 +369,32 @@ pub(super) fn calc_final_rates(
                 }
             };
 
+        let energy_supply_key = &KeyString::from(&energy_supply_key).unwrap();
+
         // Calculate energy imported and associated emissions/PE
         if fuel_code == FuelType::Electricity {
-            let energy_supply_key = &KeyString::from(&energy_supply_key).unwrap();
             supply_emis_result.import = apply_energy_factor_series(
-                energy_import[energy_supply_key].clone(),
-                emis_factor_import_export.clone(),
+                &energy_import[energy_supply_key],
+                &emis_factor_import_export,
             )?;
             supply_emis_oos_result.import = apply_energy_factor_series(
-                energy_import[energy_supply_key].clone(),
-                emis_oos_factor_import_export.clone(),
+                &energy_import[energy_supply_key],
+                &emis_oos_factor_import_export,
             )?;
             supply_pe_result.import = apply_energy_factor_series(
-                energy_import[energy_supply_key].clone(),
-                pe_factor_import_export.clone(),
+                &energy_import[energy_supply_key],
+                &pe_factor_import_export,
             )?;
         } else {
-            supply_emis_result.import = energy_import
-                [&KeyString::from(&energy_supply_key).unwrap()]
+            supply_emis_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * emis_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_emis_oos_result.import = energy_import
-                [&KeyString::from(&energy_supply_key).unwrap()]
+            supply_emis_oos_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * emis_oos_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_pe_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
+            supply_pe_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * pe_factor_import_export[0])
                 .collect::<Vec<_>>();
@@ -407,25 +406,37 @@ pub(super) fn calc_final_rates(
             supply_emis_result.export,
             supply_emis_oos_result.export,
             supply_pe_result.export,
-        ) = if energy_export[&KeyString::from(&energy_supply_key).unwrap()]
-            .iter()
-            .sum::<f64>()
-            < 0.
-        {
-            (
-                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
-                    .iter()
-                    .map(|x| x * emis_factor_import_export[0])
-                    .collect::<Vec<_>>(),
-                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
-                    .iter()
-                    .map(|x| x * emis_oos_factor_import_export[0])
-                    .collect::<Vec<_>>(),
-                energy_export[&KeyString::from(&energy_supply_key).unwrap()]
-                    .iter()
-                    .map(|x| x * pe_factor_import_export[0])
-                    .collect::<Vec<_>>(),
-            )
+        ) = if energy_export[energy_supply_key].iter().sum::<f64>() < 0. {
+            match fuel_code {
+                FuelType::Electricity => (
+                    apply_energy_factor_series(
+                        &energy_export[energy_supply_key],
+                        &emis_factor_import_export,
+                    )?,
+                    apply_energy_factor_series(
+                        &energy_export[energy_supply_key],
+                        &emis_oos_factor_import_export,
+                    )?,
+                    apply_energy_factor_series(
+                        &energy_export[energy_supply_key],
+                        &pe_factor_import_export,
+                    )?,
+                ),
+                _ => (
+                    energy_export[energy_supply_key]
+                        .iter()
+                        .map(|x| x * emis_factor_import_export[0])
+                        .collect::<Vec<_>>(),
+                    energy_export[energy_supply_key]
+                        .iter()
+                        .map(|x| x * emis_oos_factor_import_export[0])
+                        .collect::<Vec<_>>(),
+                    energy_export[energy_supply_key]
+                        .iter()
+                        .map(|x| x * pe_factor_import_export[0])
+                        .collect::<Vec<_>>(),
+                ),
+            }
         } else {
             (
                 vec![0.; number_of_timesteps],
