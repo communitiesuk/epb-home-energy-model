@@ -3984,6 +3984,10 @@ impl InputForProcessing {
         self.set_gains_for_field("lighting", gains_details)
     }
 
+    pub fn set_topup_gains(&mut self, gains_details: Value) -> anyhow::Result<&Self> {
+        self.set_gains_for_field("topup", gains_details)
+    }
+
     pub fn set_gains_for_field(
         &mut self,
         field: impl Into<String>,

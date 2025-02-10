@@ -1463,12 +1463,16 @@ fn create_lighting_gains(
 
     // from analysis of EFUS 2017 data (updated to derive from harmonic mean)
     let lumens = 1_139. * (total_floor_area * number_of_occupants).powf(0.39);
+    let mut topup = top_up_lighting(input, lumens);
+    topup = topup / 21.3; // assumed efficacy of top up lighting
+    let topup_per_day = topup / 365 as f64;
 
     // dropped 1/3 - 2/3 split based on SAP2012 assumptions about portable lighting
     let kwh_per_year = lumens / lighting_efficacy;
     let kwh_per_day = kwh_per_year / 365.;
     let factor = daylight_factor(input, total_floor_area)?;
 
+    // Need to expand the monthly profiles to get an annual profile
     let annual_half_hour_profile: Vec<f64> = DAYS_IN_MONTH
         .iter()
         .enumerate()
@@ -1476,15 +1480,21 @@ fn create_lighting_gains(
         .flat_map(|month| AVERAGE_MONTHLY_LIGHTING_HALF_HOUR_PROFILES[month])
         .collect();
 
+    // for each half hour time step in annual_halfhr_profiles:
     // To obtain the lighting gains,
     // the above should be converted to Watts by multiplying the individual half-hourly figure by (2 x 1000).
     // Since some lighting energy will be used in external light
     // (e.g. outdoor security lights or lights in unheated spaces like garages and sheds)
     // a factor of 0.85 is also applied to get the internal gains from lighting.
-    let lighting_gains_w: Vec<f64> = annual_half_hour_profile
+    let (lighting_gains_w, topup_gains_w): (Vec<f64>, Vec<f64>) = annual_half_hour_profile
         .into_iter()
         .enumerate()
-        .map(|(i, profile)| (profile * kwh_per_day * factor[i]) * 2. * 1_000.)
+        .map(|(i, profile)| {
+            return (
+                (profile * kwh_per_day * factor[i]) * 2. * 1_000.,
+                (profile * topup_per_day * factor[i]) * 2. * 1_000.,
+            );
+        })
         .collect();
 
     input.clear_appliance_gains();
@@ -1496,6 +1506,18 @@ fn create_lighting_gains(
         "EnergySupply": ENERGY_SUPPLY_NAME_ELECTRICITY,
         "schedule": {
             "main": lighting_gains_w
+        },
+        "priority": -1
+    }))?;
+
+    input.set_topup_gains(json!({
+        "type": "lighting",
+        "start_day": 0,
+        "time_series_step": 0.5,
+        "gains_fraction": 0.85,
+        "EnergySupply": ENERGY_SUPPLY_NAME_ELECTRICITY,
+        "schedule": {
+            "main": topup_gains_w
         }
     }))?;
 
@@ -2889,6 +2911,10 @@ fn shading_factor(
             )
         })
         .collect()
+}
+
+fn top_up_lighting(input: &InputForProcessing, l_req: f64) -> f64 {
+    todo!()
 }
 
 #[derive(Clone, Copy)]
