@@ -447,9 +447,7 @@ pub(super) fn calc_final_rates(
 
         // Calculate energy generated and associated emissions/PE
         let mut energy_generated = vec![0.; number_of_timesteps];
-        for end_user_energy in
-            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].values()
-        {
+        for end_user_energy in results_end_user[energy_supply_key].values() {
             if end_user_energy.iter().sum::<f64>() < 0. {
                 for (t_idx, energy_generated_value) in energy_generated.iter_mut().enumerate() {
                     *energy_generated_value -= end_user_energy[t_idx];
@@ -494,10 +492,9 @@ pub(super) fn calc_final_rates(
             )
         };
 
+        // Calculate unregulated energy demand and associated emissions/PE
         let mut energy_unregulated = vec![0.; number_of_timesteps];
-        for (end_user_name, end_user_energy) in
-            results_end_user[&KeyString::from(&energy_supply_key).unwrap()].iter()
-        {
+        for (end_user_name, end_user_energy) in results_end_user[energy_supply_key].iter() {
             if [APPL_OBJ_NAME, ELEC_COOK_OBJ_NAME, GAS_COOK_OBJ_NAME]
                 .contains(&end_user_name.as_str())
             {
@@ -506,19 +503,27 @@ pub(super) fn calc_final_rates(
                 }
             }
         }
-
-        supply_emis_result.unregulated = energy_unregulated
-            .iter()
-            .map(|x| x * emis_factor_import_export[0])
-            .collect::<Vec<_>>();
-        supply_emis_oos_result.unregulated = energy_unregulated
-            .iter()
-            .map(|x| x * emis_oos_factor_import_export[0])
-            .collect::<Vec<_>>();
-        supply_pe_result.unregulated = energy_unregulated
-            .iter()
-            .map(|x| x * pe_factor_import_export[0])
-            .collect::<Vec<_>>();
+        if fuel_code == FuelType::Electricity {
+            supply_emis_result.unregulated =
+                apply_energy_factor_series(&energy_unregulated, &emis_factor_import_export)?;
+            supply_emis_oos_result.unregulated =
+                apply_energy_factor_series(&energy_unregulated, &emis_oos_factor_import_export)?;
+            supply_pe_result.unregulated =
+                apply_energy_factor_series(&energy_unregulated, &pe_factor_import_export)?;
+        } else {
+            supply_emis_result.unregulated = energy_unregulated
+                .iter()
+                .map(|x| x * emis_factor_import_export[0])
+                .collect::<Vec<_>>();
+            supply_emis_oos_result.unregulated = energy_unregulated
+                .iter()
+                .map(|x| x * emis_oos_factor_import_export[0])
+                .collect::<Vec<_>>();
+            supply_pe_result.unregulated = energy_unregulated
+                .iter()
+                .map(|x| x * pe_factor_import_export[0])
+                .collect::<Vec<_>>();
+        }
 
         // Calculate total CO2/PE for each EnergySupply based on import and export,
         // subtracting unregulated
