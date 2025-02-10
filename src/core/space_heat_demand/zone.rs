@@ -1312,6 +1312,22 @@ impl Zone {
     }
 }
 
+/// Trait to give access to a constrained set of informational data from the zone.
+pub(crate) trait SimpleZone: Send + Sync {
+    fn temp_internal_air(&self) -> f64;
+    fn area(&self) -> f64;
+}
+
+impl SimpleZone for Zone {
+    fn temp_internal_air(&self) -> f64 {
+        self.temp_internal_air()
+    }
+
+    fn area(&self) -> f64 {
+        self.area()
+    }
+}
+
 const DELTA_T_H: u32 = 8760;
 // hours in a non leap year
 const DELTA_T: u32 = DELTA_T_H * SECONDS_PER_HOUR;

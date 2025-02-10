@@ -234,8 +234,8 @@ pub struct BufferTankEmittersData {
     pub temp_rm_prev: f64,
     pub variable_flow: bool,
     pub temp_diff_emit_dsgn: f64,
-    pub min_flow_rate: Option<f64>,
-    pub max_flow_rate: Option<f64>,
+    pub min_flow_rate: f64,
+    pub max_flow_rate: f64,
 }
 
 impl BufferTankEmittersData {
@@ -392,12 +392,8 @@ impl BufferTank {
                         * self.cp
                         * self.rho
                         * KILOJOULES_PER_KILOWATT_HOUR as f64);
-                let max_flow_rate = emitters_data_for_buffer_tank
-                    .max_flow_rate
-                    .expect("Heat pump calc_buffer_tank function expects max_flow_rate to be set");
-                let min_flow_rate = emitters_data_for_buffer_tank
-                    .min_flow_rate
-                    .expect("Heat pump calc_buffer_tank function expects min_flow_rate to be set");
+                let max_flow_rate = emitters_data_for_buffer_tank.max_flow_rate;
+                let min_flow_rate = emitters_data_for_buffer_tank.min_flow_rate;
 
                 if hp_flow > max_flow_rate {
                     hp_flow = max_flow_rate
@@ -407,9 +403,7 @@ impl BufferTank {
                     flag = false;
                 };
             } else {
-                hp_flow = emitters_data_for_buffer_tank
-                    .min_flow_rate
-                    .expect("Heat pump expects min_flow_rate to be set");
+                hp_flow = emitters_data_for_buffer_tank.min_flow_rate;
             }
 
             if flag {
@@ -5602,8 +5596,8 @@ mod tests {
                 temp_rm_prev: 22.488371468978006,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 30.778566169260767,
@@ -5613,8 +5607,8 @@ mod tests {
                 temp_rm_prev: 22.61181775388348,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 50.248361664005266,
@@ -5624,8 +5618,8 @@ mod tests {
                 temp_rm_prev: 17.736483875769345,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 30.723032018863076,
@@ -5635,8 +5629,8 @@ mod tests {
                 temp_rm_prev: 16.85636993835381,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 29.646908204800425,
@@ -5646,8 +5640,8 @@ mod tests {
                 temp_rm_prev: 17.22290169647781,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 30.42417311801241,
@@ -5657,8 +5651,8 @@ mod tests {
                 temp_rm_prev: 21.897823675853978,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 39.38823309970535,
@@ -5668,8 +5662,8 @@ mod tests {
                 temp_rm_prev: 22.36470513987037,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
             BufferTankEmittersData {
                 temp_emitter_req: 28.934946810199524,
@@ -5679,8 +5673,8 @@ mod tests {
                 temp_rm_prev: 22.425363294403255,
                 variable_flow: true,
                 temp_diff_emit_dsgn: 10.,
-                min_flow_rate: Some(0.05),
-                max_flow_rate: Some(0.3),
+                min_flow_rate: 0.05,
+                max_flow_rate: 0.3,
             },
         ];
         // temperatures required to calculate buffer tank thermal losses

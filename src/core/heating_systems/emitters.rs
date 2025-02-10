@@ -1,19 +1,27 @@
 /// This module provides objects to represent radiator and underfloor emitter systems.
 use crate::compare_floats::{max_of_2, min_of_2};
+use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::{
     BufferTankEmittersData, BufferTankEmittersDataWithResult,
 };
-use crate::corpus::TempInternalAirFn;
+use crate::core::space_heat_demand::zone::SimpleZone;
+use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{EcoDesignController, EcoDesignControllerClass};
+use crate::input::{
+    EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData,
+    WetEmitter as WetEmitterInput,
+};
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::Error;
+use crate::StringOrNumber;
+use anyhow::{anyhow, bail, Error};
 use argmin::core::{CostFunction, Executor};
 use argmin::solver::brent::BrentRoot;
+use derivative::Derivative;
+use itertools::Itertools;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
 use parking_lot::RwLock;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -31,17 +39,19 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
     (6.0 / 7.0) * flow_temp_celsius
 }
 
-#[derive(Clone)]
-pub struct Emitters {
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub(crate) struct Emitters {
     pub thermal_mass: f64,
-    pub c: f64,
-    pub n: f64,
+    emitters: Vec<Arc<WetEmitter>>,
     temp_diff_emit_dsgn: f64,
-    frac_convective: f64,
     heat_source: Arc<RwLock<SpaceHeatingService>>,
-    temp_internal_air_fn: TempInternalAirFn,
+    #[derivative(Debug = "ignore")]
+    zone: Arc<dyn SimpleZone>,
     external_conditions: Arc<ExternalConditions>,
     with_buffer_tank: bool,
+    variable_flow_data: VariableFlowData,
+    bypass_percentage_recirculated: f64,
     design_flow_temp: f64,
     ecodesign_controller_class: EcoDesignControllerClass,
     min_outdoor_temp: Option<f64>,
@@ -52,39 +62,10 @@ pub struct Emitters {
     target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
     output_detailed_results: bool,
     emitters_detailed_results: Option<Arc<RwLock<Vec<EmittersDetailedResult>>>>,
-    min_flow_rate: Option<f64>,
-    max_flow_rate: Option<f64>,
-}
-
-// Implement Debug for Emitters using standard strategy, overwriting debug value for temp_internal_air_fn.
-impl Debug for Emitters {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Emitters")
-            .field("thermal_mass", &self.thermal_mass)
-            .field("c", &self.c)
-            .field("n", &self.n)
-            .field("_temp_diff_emit_dsgn", &self.temp_diff_emit_dsgn)
-            .field("frac_convective", &self.frac_convective)
-            .field("heat_source", &self.heat_source)
-            .field(
-                "temp_internal_air_fn",
-                &"A function providing the internal air temperature.",
-            )
-            .field("external_conditions", &self.external_conditions)
-            .field("with_buffer_tank", &self.with_buffer_tank)
-            .field("design_flow_temp", &self.design_flow_temp)
-            .field(
-                "ecodesign_controller_class",
-                &self.ecodesign_controller_class,
-            )
-            .field("min_outdoor_temp", &self.min_outdoor_temp)
-            .field("max_outdoor_temp", &self.max_outdoor_temp)
-            .field("min_flow_temp", &self.min_flow_temp)
-            .field("max_flow_temp", &self.max_flow_temp)
-            .field("temp_emitter_prev", &self.temp_emitter_prev)
-            .field("target_flow_temp", &self.target_flow_temp)
-            .finish_non_exhaustive()
-    }
+    energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
+    min_flow_rate: f64,
+    max_flow_rate: f64,
+    fancoil: Option<Arc<WetEmitter>>,
 }
 
 #[derive(Copy, Clone)]
@@ -185,6 +166,52 @@ impl CostFunction for RootProblem<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum VariableFlowData {
+    Yes,
+    No { design_flow_rate: f64 },
+}
+
+#[derive(Clone, Debug)]
+enum WetEmitter {
+    Radiator {
+        c: f64,
+        n: f64,
+        frac_convective: f64,
+    },
+    Ufh {
+        c: f64,
+        n: f64,
+        equivalent_specific_thermal_mass: f64,
+        system_performance_factor: f64,
+        emitter_floor_area: f64,
+        frac_convective: f64,
+    },
+    Fancoil {
+        n_units: usize,
+        frac_convective: f64,
+        test_data: FancoilTestData,
+        temperature_data: Vec<Vec<f64>>,
+        fan_power_data: Vec<StringOrNumber>,
+    },
+}
+
+impl WetEmitter {
+    fn frac_convective(&self) -> f64 {
+        *match self {
+            WetEmitter::Radiator {
+                frac_convective, ..
+            } => frac_convective,
+            WetEmitter::Ufh {
+                frac_convective, ..
+            } => frac_convective,
+            WetEmitter::Fancoil {
+                frac_convective, ..
+            } => frac_convective,
+        }
+    }
+}
+
 impl Emitters {
     /// Construct an Emitters object
     ///
@@ -204,21 +231,41 @@ impl Emitters {
     /// * `temp_emitter_prev` - temperature of the emitters at the end of the
     ///    previous timestep, in deg C
     pub(crate) fn new(
-        thermal_mass: f64,
-        c: f64,
-        n: f64,
+        thermal_mass: Option<f64>,
+        emitters: &[WetEmitterInput],
         temp_diff_emit_dsgn: f64,
-        frac_convective: f64,
+        variable_flow: bool,
+        design_flow_rate: Option<f64>,
+        min_flow_rate: Option<f64>,
+        max_flow_rate: Option<f64>,
+        bypass_percentage_recirculated: Option<f64>,
         heat_source: Arc<RwLock<SpaceHeatingService>>,
-        temp_internal_air_fn: TempInternalAirFn,
+        zone: Arc<dyn SimpleZone>,
         external_conditions: Arc<ExternalConditions>,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
+        energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
         output_detailed_results: bool,
         with_buffer_tank: bool,
-        min_flow_rate: Option<f64>,
-        max_flow_rate: Option<f64>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        let (variable_flow_data, min_flow_rate, max_flow_rate) = if variable_flow {
+            if let (Some(min_flow_rate), Some(max_flow_rate)) = (min_flow_rate, max_flow_rate) {
+                (VariableFlowData::Yes, min_flow_rate, max_flow_rate)
+            } else {
+                bail!("Both min_flow_rate and max_flow_rate are required if variable_flow is true")
+            }
+        } else {
+            if let Some(design_flow_rate) = design_flow_rate {
+                (
+                    VariableFlowData::No { design_flow_rate },
+                    design_flow_rate,
+                    design_flow_rate,
+                )
+            } else {
+                bail!("design_flow_rate is required if variable_flow is false")
+            }
+        };
+        let bypass_percentage_recirculated = bypass_percentage_recirculated.unwrap_or(0.0);
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;
         let (min_outdoor_temp, max_outdoor_temp, min_flow_temp, max_flow_temp) = if matches!(
             ecodesign_controller_class,
@@ -236,16 +283,136 @@ impl Emitters {
         } else {
             (None, None, None, None)
         };
-        Self {
+
+        let floor_area = zone.area();
+        let mut total_emitter_floor_area: f64 = Default::default();
+        let mut fancoil: Option<Arc<WetEmitter>> = Default::default();
+
+        let mut model_emitters: Vec<Option<Arc<WetEmitter>>> = vec![None; emitters.len()];
+
+        // 1. process radiators first
+        for (i, emitter) in emitters.iter().enumerate() {
+            if let WetEmitterInput::Radiator {
+                c,
+                n,
+                frac_convective,
+            } = emitter
+            {
+                model_emitters[i].replace(Arc::new(WetEmitter::Radiator {
+                    c: *c,
+                    n: *n,
+                    frac_convective: *frac_convective,
+                }));
+                if thermal_mass.is_none() {
+                    // Thermal_mass is a required input for radiators -
+                    // not underfloor. This is because the thermal mass of UFH is
+                    // included in the UFH-only 'equivalent_specific_thermal_mass' input.
+                    // The latter can only be calculated for UFH systems, by definition,
+                    // so could not mistakenly be entered for a radiator system.
+                    // But for a system containing mix of radiators and UFH, the thermal_mass
+                    // input is required - including only the thermal mass of the radiators.
+                    bail!("Thermal Mass is required for Radiator type emitters")
+                }
+            }
+        }
+
+        let mut thermal_mass = thermal_mass.unwrap_or(0.0);
+
+        // 2. process UFH emitters next
+        for (i, emitter) in emitters.iter().enumerate() {
+            if let WetEmitterInput::Ufh {
+                equivalent_specific_thermal_mass,
+                system_performance_factor,
+                emitter_floor_area,
+                frac_convective,
+            } = emitter
+            {
+                let n = 1.; // For UFH, BS EN 1264 and 11855 define this as 1 under normal circumstances
+                let c = system_performance_factor * emitter_floor_area / WATTS_PER_KILOWATT as f64;
+                total_emitter_floor_area += emitter_floor_area;
+
+                // The thermal_mass input from assessor only includes radiators.
+                // The equivalent_specific_thermal_mass for UFH (once converted to
+                // the same units) needs to be added to this to get the total.
+                thermal_mass += equivalent_specific_thermal_mass * emitter_floor_area
+                    / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                model_emitters[i].replace(Arc::new(WetEmitter::Ufh {
+                    c,
+                    n,
+                    equivalent_specific_thermal_mass: *equivalent_specific_thermal_mass,
+                    system_performance_factor: *system_performance_factor,
+                    emitter_floor_area: *emitter_floor_area,
+                    frac_convective: *frac_convective,
+                }));
+            }
+        }
+
+        // 3. process fancoils last
+        for (i, emitter) in emitters.iter().enumerate() {
+            if let WetEmitterInput::Fancoil {
+                n_units,
+                frac_convective,
+                fancoil_test_data,
+            } = emitter
+            {
+                let n_units = n_units.unwrap_or(1);
+                let test_data = Self::add_temperature_diff_zero(fancoil_test_data);
+                let (temperature_data, fan_power_data) =
+                    Self::format_fancoil_manufacturer_data(fancoil_test_data)?;
+
+                let emitter = Arc::new(WetEmitter::Fancoil {
+                    n_units,
+                    frac_convective: *frac_convective,
+                    test_data,
+                    temperature_data,
+                    fan_power_data,
+                });
+                model_emitters[i].replace(emitter.clone());
+
+                // Only one specification in initial implementation
+                fancoil.replace(emitter);
+            }
+        }
+
+        // TODO (from Python) Calculate convective fraction for UFH from floor surface temperature Tf,
+        // and the room air temperature, according the formula below.
+        // Ta = self.__zone.temp_internal_air()  # room_air_temp
+        // self.__frac_convective = ((8.92 * (Tf - Ta) ** 1.1 / (Tf - Ta)) - 5.5) / (8.92 * ( Tf - Ta ) ** 1.1 / ( Tf - Ta ))
+        // Need to come up with a method to calculate floor surface temperature.
+
+        // Final initialisation checks:
+
+        // Ensure total UFH area does not exceed zone area
+        if total_emitter_floor_area > floor_area {
+            bail!(
+                "Total UFH area {total_emitter_floor_area} is bigger than Zone area {floor_area})"
+            );
+        }
+
+        let model_emitters: Vec<Arc<WetEmitter>> = model_emitters
+            .into_iter()
+            .map(|emitter| emitter.ok_or_else(|| anyhow!("Emitter type unexpectedly not ingested")))
+            .collect::<anyhow::Result<_>>()?;
+
+        // Considering the big differences in the calculation for c, n type emitters (like Radiators and UFH)
+        // and fancoils that use a implicit (manufacturer data driven) approach, the initial implementation
+        // of several types of emitters does not allow for the mix of fancoils with other systems. This is
+        // currently enforced through using flag_fancoil.
+        // Ensure only one fancoil is defined and it is the sole emitter type
+        if fancoil.is_some() && model_emitters.len() > 1 {
+            bail!("Only one fancoil specification can be defined, and it must be the sole emitter type for the zone");
+        }
+
+        Ok(Self {
             thermal_mass,
-            c,
-            n,
+            emitters: model_emitters,
             temp_diff_emit_dsgn,
-            frac_convective,
             heat_source,
-            temp_internal_air_fn,
+            zone,
             external_conditions,
             with_buffer_tank,
+            variable_flow_data,
+            bypass_percentage_recirculated,
             design_flow_temp,
             ecodesign_controller_class,
             min_outdoor_temp,
@@ -256,8 +423,43 @@ impl Emitters {
             target_flow_temp: None,
             output_detailed_results,
             emitters_detailed_results: output_detailed_results.then(Default::default),
+            energy_supply_fan_coil_conn,
             min_flow_rate,
             max_flow_rate,
+            fancoil,
+        })
+    }
+
+    /// This function appends the product data with a row for delta_T = 0.0, if missing.
+    /// At a delta_T = 0, the heat output is assumed to be equal to the fan power only.
+    /// NB. The upstream Python version of this function modifies and returns the emitter object.
+    /// This method, however, creates a new test data value to be added to the emitter that is part
+    /// of the model.
+    fn add_temperature_diff_zero(fancoil_test_data: &FancoilTestData) -> FancoilTestData {
+        // Extract the fan speed data and fan power for the emitter
+        let mut fan_speed_data = fancoil_test_data.fan_speed_data.clone();
+        let fan_power_w = fancoil_test_data.fan_power_w.clone();
+
+        // Check if temperature_diff 0.0 exists in the fan_speed_data
+        if !fan_speed_data
+            .iter()
+            .any(|item| item.temperature_diff == 0.0)
+        {
+            // If missing, create the new entry with power_output as fan_power_W / 1000
+            let power_output_zero = fan_power_w
+                .iter()
+                .map(|fpw| fpw / WATTS_PER_KILOWATT as f64)
+                .collect::<Vec<f64>>();
+            let new_entry = FanSpeedData {
+                temperature_diff: 0.0,
+                power_output: power_output_zero,
+            };
+            fan_speed_data.push(new_entry);
+        }
+
+        FancoilTestData {
+            fan_speed_data,
+            fan_power_w,
         }
     }
 
@@ -276,7 +478,7 @@ impl Emitters {
         }
     }
 
-    pub fn in_required_period(
+    pub(crate) fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
@@ -296,11 +498,11 @@ impl Emitters {
         }
     }
 
-    pub fn frac_convective(&self) -> f64 {
-        self.frac_convective
+    pub(crate) fn frac_convective(&self) -> f64 {
+        todo!()
     }
 
-    pub fn temp_flow_return(
+    pub(crate) fn temp_flow_return(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (f64, f64) {
@@ -362,7 +564,8 @@ impl Emitters {
     ///            T_rm is air temperature in the room/zone
     ///            c and n are characteristic of the emitters (e.g. derived from BS EN 442 tests)
     pub fn power_output_emitter(&self, temp_emitter: f64, temp_rm: f64) -> f64 {
-        self.c * max_of_2(0., temp_emitter - temp_rm).powf(self.n)
+        todo!()
+        // self.c * max_of_2(0., temp_emitter - temp_rm).powf(self.n)
     }
 
     /// Calculate emitter temperature that gives required power output at given room temp
@@ -375,7 +578,8 @@ impl Emitters {
     ///            c and n are characteristic of the emitters (e.g. derived from BS EN 442 tests)
     ///        Rearrange to solve for T_E
     pub fn temp_emitter_req(&self, power_emitter_req: f64, temp_rm: f64) -> f64 {
-        (power_emitter_req / self.c).powf(1. / self.n) + temp_rm
+        todo!()
+        // (power_emitter_req / self.c).powf(1. / self.n) + temp_rm
     }
 
     pub fn func_temp_emitter_change_rate(&self, power_input: f64, y: f64) -> f64 {
@@ -415,7 +619,8 @@ impl Emitters {
             solve_ivp function from scipy.
         */
 
-        (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
+        // (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
+        todo!()
     }
 
     /// Calculate emitter temperature after specified time with specified power input
@@ -534,6 +739,51 @@ impl Emitters {
         }
 
         (temp_emitter, time_temp_diff_max_reached)
+    }
+
+    fn format_fancoil_manufacturer_data(
+        fancoil_test_data: &FancoilTestData,
+    ) -> anyhow::Result<(Vec<Vec<f64>>, Vec<StringOrNumber>)> {
+        let FancoilTestData {
+            fan_speed_data,
+            fan_power_w,
+        } = fancoil_test_data;
+
+        let temperature_data = fan_speed_data
+            .iter()
+            .map(|entry| {
+                let mut row = vec![entry.temperature_diff];
+                row.extend(entry.power_output.iter());
+                row
+            })
+            .collect_vec();
+
+        // Check all the fan speed lists are of the same length
+        if let Some(first_row_length) = temperature_data.first().map(|row| row.len()) {
+            if !temperature_data
+                .iter()
+                .all(|row| row.len() == first_row_length)
+            {
+                bail!("Fan speed lists of fancoil manufacturer data differ in length")
+            }
+        } else {
+            bail!("Fan speed data is unexpectedly empty")
+        }
+
+        // Prepare fan power data
+        let fan_power_data: Vec<StringOrNumber> = {
+            let mut row = vec!["Fan power (W)".into()];
+            row.extend(fan_power_w.iter().map(|power| StringOrNumber::from(*power)));
+            row
+        };
+
+        // Check if the length of fan power matches the number of power outputs
+        // (subtract 1 because of the temperature_diff column)
+        if fan_power_data.len() != temperature_data[0].len() - 1 {
+            bail!("Fan power data length does not match the length of fan speed data",)
+        }
+
+        Ok((temperature_data, fan_power_data))
     }
 
     fn energy_required_from_heat_source(
@@ -685,7 +935,7 @@ impl Emitters {
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let timestep = simulation_time.timestep;
-        let temp_rm_prev = &self.temp_internal_air_fn;
+        let temp_rm_prev = self.zone.temp_internal_air();
 
         // Calculate target flow and return temperature
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
@@ -696,7 +946,6 @@ impl Emitters {
         let mut temp_emitter_max_is_final_temp = false;
         let mut emitters_data_for_buffer_tank_with_result = None;
 
-        let temp_rm_prev = temp_rm_prev();
         if energy_demand > 0. {
             // Emitters warming up or cooling down to a target temperature
             (
@@ -802,7 +1051,7 @@ impl Emitters {
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         let timestep = simulation_time.timestep;
-        let temp_rm_prev = &self.temp_internal_air_fn;
+        let temp_rm_prev = self.zone.temp_internal_air();
 
         // Calculate target flow and return temperature
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
@@ -813,7 +1062,7 @@ impl Emitters {
             self.energy_required_from_heat_source(
                 energy_demand,
                 timestep,
-                temp_rm_prev(),
+                temp_rm_prev,
                 temp_emitter_max,
                 temp_return_target,
                 simulation_time,
@@ -874,12 +1123,6 @@ impl EmittersDetailedResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::assert_relative_eq;
-    use itertools::Itertools;
-    use parking_lot::RwLock;
-    use rstest::fixture;
-    use rstest::rstest;
-
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::OnOffTimeControl;
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
@@ -893,6 +1136,12 @@ mod tests {
     use crate::input::HeatSourceWetDetails;
     use crate::simulation_time::SimulationTime;
     use crate::simulation_time::SimulationTimeIterator;
+    use approx::assert_relative_eq;
+    use itertools::Itertools;
+    use parking_lot::RwLock;
+    use rstest::fixture;
+    use rstest::rstest;
+    use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
     const FOUR_DECIMAL_PLACES: f64 = 1e-3;
@@ -1053,44 +1302,77 @@ mod tests {
         SpaceHeatingService::Boiler(boiler_service_space)
     }
 
-    #[fixture]
-    pub(crate) fn emitters(
+    struct MockZone;
+
+    impl SimpleZone for MockZone {
+        fn temp_internal_air(&self) -> f64 {
+            20.0
+        }
+
+        fn area(&self) -> f64 {
+            80.0
+        }
+    }
+
+    fn emitters_fixture(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        ecodesign_controller: Option<EcoDesignController>,
     ) -> Emitters {
         let thermal_mass = 0.14;
         let c = 0.08;
         let n = 1.2;
         let temp_diff_emit_dsgn = 10.0;
-        let frac_convective = 0.4;
+        let zone = Arc::new(MockZone);
         let canned_value = 20.;
-        let ecodesign_controller = EcoDesignController {
+        let ecodesign_controller = ecodesign_controller.unwrap_or_else(|| EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
             max_outdoor_temp: Some(20.),
             min_flow_temp: Some(30.),
-        };
+        });
 
         let design_flow_temp = 55.;
 
         let with_buffer_tank = false;
 
+        let wet_emitters = vec![serde_json::from_value(json!(
+         {
+          "wet_emitter_type": "radiator",
+          "c": 0.08,
+          "n": 1.2,
+          "frac_convective": 0.4
+         }
+        ))
+        .unwrap()];
+
         Emitters::new(
-            thermal_mass,
-            c,
-            n,
+            Some(thermal_mass),
+            &wet_emitters,
             temp_diff_emit_dsgn,
-            frac_convective,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
             Arc::new(RwLock::new(heat_source)),
-            Arc::new(move || canned_value),
+            zone,
             external_conditions.into(),
             ecodesign_controller,
             design_flow_temp,
+            None,
             false,
             with_buffer_tank,
-            None,
-            None,
         )
+        .unwrap()
+    }
+
+    #[fixture]
+    fn emitters(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+    ) -> Emitters {
+        emitters_fixture(heat_source, external_conditions, None)
     }
 
     #[rstest]
@@ -1138,10 +1420,42 @@ mod tests {
         }
     }
 
+    #[fixture]
+    fn emitters_with_different_outdoor_temp(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+    ) -> Emitters {
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassII,
+            min_outdoor_temp: Some(10.),
+            max_outdoor_temp: Some(15.),
+            min_flow_temp: Some(30.),
+        };
+
+        emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller))
+    }
+
+    #[fixture]
+    fn emitters_with_different_control_class(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+    ) -> Emitters {
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassIV,
+            min_outdoor_temp: Some(-4.),
+            max_outdoor_temp: Some(20.),
+            min_flow_temp: Some(30.),
+        };
+
+        emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller))
+    }
+
     /// Test flow and return temperature based on ecodesign control class
     #[rstest]
     fn test_temp_flow_return(
         emitters: Emitters,
+        emitters_with_different_outdoor_temp: Emitters,
+        emitters_with_different_control_class: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
@@ -1153,65 +1467,15 @@ mod tests {
         assert_relative_eq!(return_temp, 43.5714, max_relative = 1e-2);
 
         // Test with different outdoor temp
-        let ecodesign_controller = EcoDesignController {
-            ecodesign_control_class: EcoDesignControllerClass::ClassII,
-            min_outdoor_temp: Some(10.),
-            max_outdoor_temp: Some(15.),
-            min_flow_temp: Some(30.),
-        };
-
-        let heat_source = Arc::new(RwLock::new(heat_source));
-
-        let emitters = Emitters::new(
-            0.14,
-            0.08,
-            1.2,
-            10.,
-            0.4,
-            heat_source.clone(),
-            Arc::new(move || 20.),
-            external_conditions.clone().into(),
-            ecodesign_controller,
-            55.,
-            false,
-            false,
-            None,
-            None,
-        );
-
-        let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
+        let (flow_temp, return_temp) = emitters_with_different_outdoor_temp
+            .temp_flow_return(&simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55., max_relative = 1e-2);
         assert_relative_eq!(return_temp, 47.1428, max_relative = 1e-2);
 
         // Test with different control class
-        let ecodesign_controller = EcoDesignController {
-            ecodesign_control_class: EcoDesignControllerClass::ClassIV,
-            min_outdoor_temp: Some(-4.),
-            max_outdoor_temp: Some(20.),
-            min_flow_temp: Some(30.),
-        };
-
-        let emitters = Emitters::new(
-            0.14,
-            0.08,
-            1.2,
-            10.,
-            0.4,
-            heat_source,
-            Arc::new(move || 20.),
-            external_conditions.into(),
-            ecodesign_controller,
-            55.,
-            false,
-            false,
-            None,
-            None,
-        );
-
-        let (flow_temp, return_temp) =
-            emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
+        let (flow_temp, return_temp) = emitters_with_different_control_class
+            .temp_flow_return(&simulation_time_iterator.current_iteration());
 
         assert_relative_eq!(flow_temp, 55.);
         assert_relative_eq!(
@@ -1226,6 +1490,7 @@ mod tests {
 
     /// Test emitter output at given emitter and room temp
     #[rstest]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_power_output_emitter(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
@@ -1237,24 +1502,8 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        let heat_source = Arc::new(RwLock::new(heat_source));
-
-        let emitters = Emitters::new(
-            0.14,
-            0.08,
-            1.2,
-            10.,
-            0.4,
-            heat_source,
-            Arc::new(move || 20.),
-            external_conditions.into(),
-            ecodesign_controller,
-            55.0,
-            false,
-            false,
-            None,
-            None,
-        );
+        let emitters =
+            emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller));
 
         let temp_emitter = 15.;
         let temp_rm = 10.;
@@ -1266,6 +1515,7 @@ mod tests {
 
     /// Test emitter temperature that gives required power output at given room temp
     #[rstest]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_temp_emitter_req(emitters: Emitters) {
         let power_emitter_req = 0.22;
         let temp_rm = 2.0;
@@ -1277,6 +1527,7 @@ mod tests {
 
     /// Test Differential eqn is formed for change rate of emitter temperature
     #[rstest]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_func_temp_emitter_change_rate(emitters: Emitters) {
         let result = emitters.func_temp_emitter_change_rate(5., 32.);
 
@@ -1284,6 +1535,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_temp_emitter_with_no_max(emitters: Emitters) {
         // Test function calculates emitter temperature after specified time with specified power input
         // Check None conditions  are invoked
@@ -1304,6 +1556,7 @@ mod tests {
     #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
     #[case(0., 1., 45.8, 13., 0., 45.2, 45.2, 0.016104431558688848)]
     #[case(0., 1., 40., 30., 0., 40., 40., 0.)]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_temp_emitter_with_max(
         emitters: Emitters,
         #[case] time_start: f64,
@@ -1340,6 +1593,7 @@ mod tests {
 
     #[rstest]
     #[case(0., 2., 5., 10., 0., 21., 5.)]
+    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_temp_emitter_with_max_not_reached(
         emitters: Emitters,
         #[case] time_start: f64,

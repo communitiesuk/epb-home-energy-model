@@ -4658,7 +4658,7 @@ fn space_heat_systems_from_input(
                         ))
                     }
                     SpaceHeatSystemDetails::ElectricStorageHeater { .. } => return Err(NotImplementedError::new("Electric storage heater module not yet implemented.").into()), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
-                    SpaceHeatSystemDetails::WetDistribution { heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { wet_emitter_type, advanced_start, emitters, energy_supply, variable_flow, design_flow_rate, min_flow_rate, max_flow_rate, bypass_percentage_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, temp_setback, } => {
                         // TODO 0.32 following are placeholder variables that we expect to come from emitters during migration to 0.32
                         let (c, n, frac_convective) = (0., 0., 0.);
 
@@ -4716,7 +4716,24 @@ fn space_heat_systems_from_input(
                             };
                         let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
                         // TODO Fix thermal mass logic as part of 0.32 migration
-                        let space_heater = Emitters::new(thermal_mass.expect("Thermal mass may not be present while migrating to 0.32"), c, n, *temp_diff_emit_dsgn, frac_convective, Arc::new(RwLock::new(heat_source_service)), temp_internal_air_fn, external_conditions.clone(), *ecodesign_controller, *design_flow_temp as f64, with_buffer_tank, detailed_output_heating_cooling, None, None);
+                        let space_heater = Emitters::new(
+                            *thermal_mass,
+                            &emitters,
+                            *temp_diff_emit_dsgn,
+                            variable_flow.unwrap_or(false),
+                            *design_flow_rate,
+                            *min_flow_rate,
+                            *max_flow_rate,
+                            *bypass_percentage_recirculated,
+                            Arc::new(RwLock::new(heat_source_service)),
+                            zones.get(zone).ok_or_else(|| anyhow!("Space heat system wet distribution had reference to undeclared zone with name '{zone}'"))?.clone(),
+                            // zone area
+                            external_conditions.clone(),
+                            *ecodesign_controller,
+                            *design_flow_temp as f64,
+                            None, // TODO provide fancoil connection in migration to 0.32
+                            detailed_output_heating_cooling,
+                            with_buffer_tank,)?;
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {

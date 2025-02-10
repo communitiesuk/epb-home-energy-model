@@ -1493,7 +1493,7 @@ pub enum WaterHeatingEventType {
 
 pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
@@ -1568,6 +1568,8 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(skip_serializing_if = "Option::is_none")]
         max_flow_rate: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         bypass_percentage_recirculated: Option<f64>,
         // unclear which values are possible here
         #[serde(rename = "HeatSource")]
@@ -1742,7 +1744,7 @@ impl SpaceHeatSystemDetails {
     tag = "wet_emitter_type",
     rename_all = "lowercase"
 )]
-pub enum WetEmitter {
+pub(crate) enum WetEmitter {
     Radiator {
         c: f64,
         n: f64,
@@ -1755,7 +1757,7 @@ pub enum WetEmitter {
         frac_convective: f64,
     },
     Fancoil {
-        n_units: usize,
+        n_units: Option<usize>,
         frac_convective: f64,
         fancoil_test_data: FancoilTestData,
     },
@@ -1764,18 +1766,18 @@ pub enum WetEmitter {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct FancoilTestData {
-    fan_speed_data: Vec<FanSpeedData>,
+pub(crate) struct FancoilTestData {
+    pub(crate) fan_speed_data: Vec<FanSpeedData>,
     #[serde(rename = "fan_power_W")]
-    fan_power_w: Vec<f64>,
+    pub(crate) fan_power_w: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct FanSpeedData {
-    temperature_diff: f64,
-    power_output: Vec<f64>,
+pub(crate) struct FanSpeedData {
+    pub(crate) temperature_diff: f64,
+    pub(crate) power_output: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
