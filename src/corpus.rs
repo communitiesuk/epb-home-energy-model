@@ -632,7 +632,7 @@ pub struct Corpus {
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
     pub(crate) space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
-    pub(crate) zones: Arc<IndexMap<String, Zone>>,
+    pub(crate) zones: IndexMap<String, Arc<Zone>>,
     pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
     pub(crate) heat_system_name_for_zone: IndexMap<String, String>,
     pub(crate) cool_system_name_for_zone: IndexMap<String, String>,
@@ -751,10 +751,10 @@ impl Corpus {
 
         let required_vent_data = required_vent_data_from_input(&input.control)?;
 
-        let zones: IndexMap<String, Zone> = input
+        let zones: IndexMap<String, Arc<Zone>> = input
             .zone
             .iter()
-            .map(|(i, zone)| -> anyhow::Result<(String, Zone)> {
+            .map(|(i, zone)| -> anyhow::Result<(String, Arc<Zone>)> {
                 Ok(((*i).clone(), {
                     let (zone_for_corpus, heat_system_name, cool_system_name) = zone_from_input(
                         zone,
@@ -787,11 +787,10 @@ impl Corpus {
                         },
                     );
 
-                    zone_for_corpus
+                    Arc::new(zone_for_corpus)
                 }))
             })
             .collect::<anyhow::Result<_>>()?;
-        let zones = Arc::new(zones);
 
         if !has_unique_non_default_values(&heat_system_name_for_zone)
             || !has_unique_non_default_values(&cool_system_name_for_zone)
@@ -1039,7 +1038,7 @@ impl Corpus {
     }
 
     pub fn temp_internal_air(&self) -> f64 {
-        temp_internal_air_for_zones(self.zones.clone(), self.total_volume)
+        temp_internal_air_for_zones(&self.zones, self.total_volume)
     }
 
     fn pipework_losses_and_internal_gains_from_hw_storage_tank(
@@ -3150,7 +3149,7 @@ impl Display for ReportingFlag {
     }
 }
 
-fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume: f64) -> f64 {
+fn temp_internal_air_for_zones(zones: &IndexMap<String, Arc<Zone>>, total_volume: f64) -> f64 {
     let internal_air_temperature = zones
         .values()
         .map(|zone| zone.temp_internal_air() * zone.volume())
@@ -3163,13 +3162,13 @@ fn temp_internal_air_for_zones(zones: Arc<IndexMap<String, Zone>>, total_volume:
 /// as an equivalent to Corpus::temp_internal_air
 #[derive(Clone, Debug)]
 pub struct TempInternalAirAccessor {
-    pub zones: Arc<IndexMap<String, Zone>>,
+    pub zones: IndexMap<String, Arc<Zone>>,
     pub total_volume: f64,
 }
 
 impl TempInternalAirAccessor {
     pub fn call(&self) -> f64 {
-        temp_internal_air_for_zones(self.zones.clone(), self.total_volume)
+        temp_internal_air_for_zones(&self.zones, self.total_volume)
     }
 }
 
@@ -4867,7 +4866,7 @@ fn space_heat_systems_from_input(
     heat_sources_wet: &IndexMap<String, WetHeatSource>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
     heat_system_name_for_zone: &IndexMap<String, String>,
-    zones: &Arc<IndexMap<String, Zone>>,
+    zones: &IndexMap<String, Arc<Zone>>,
     heat_sources_wet_with_buffer_tank: &[String],
     temp_internal_air_accessor: TempInternalAirAccessor,
     external_conditions: Arc<ExternalConditions>,
@@ -5103,7 +5102,7 @@ fn on_site_generation_from_input(
 }
 
 fn total_volume_heated_by_system(
-    zones: &Arc<IndexMap<String, Zone>>,
+    zones: &IndexMap<String, Arc<Zone>>,
     heat_system_name_for_zone: &IndexMap<String, String>,
     heat_system_name: &str,
 ) -> f64 {
