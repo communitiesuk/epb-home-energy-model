@@ -268,7 +268,7 @@ pub fn apply_fhs_postprocessing(
         energy_export,
         results_end_user,
         no_of_timesteps,
-    );
+    )?;
 
     // Write results to output files
     write_postproc_file(output, "emissions", emis_results, no_of_timesteps)?;
@@ -290,7 +290,7 @@ pub(super) fn calc_final_rates(
     energy_export: &IndexMap<ArrayString<64>, Vec<f64>>,
     results_end_user: &ResultsEndUser,
     number_of_timesteps: usize,
-) -> FinalRates {
+) -> anyhow::Result<FinalRates> {
     // Add unmet demand to list of EnergySupply objects
 
     // For each EnergySupply object:
@@ -370,19 +370,36 @@ pub(super) fn calc_final_rates(
             };
 
         // Calculate energy imported and associated emissions/PE
-        supply_emis_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
-            .iter()
-            .map(|x| x * emis_factor_import_export[0])
-            .collect::<Vec<_>>();
-        supply_emis_oos_result.import = energy_import
-            [&KeyString::from(&energy_supply_key).unwrap()]
-            .iter()
-            .map(|x| x * emis_oos_factor_import_export[0])
-            .collect::<Vec<_>>();
-        supply_pe_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
-            .iter()
-            .map(|x| x * pe_factor_import_export[0])
-            .collect::<Vec<_>>();
+        if fuel_code == FuelType::Electricity {
+            let energy_supply_key = &KeyString::from(&energy_supply_key).unwrap();
+            supply_emis_result.import = apply_energy_factor_series(
+                energy_import[energy_supply_key].clone(),
+                emis_factor_import_export.clone(),
+            )?;
+            supply_emis_oos_result.import = apply_energy_factor_series(
+                energy_import[energy_supply_key].clone(),
+                emis_oos_factor_import_export.clone(),
+            )?;
+            supply_pe_result.import = apply_energy_factor_series(
+                energy_import[energy_supply_key].clone(),
+                pe_factor_import_export.clone(),
+            )?;
+        } else {
+            supply_emis_result.import = energy_import
+                [&KeyString::from(&energy_supply_key).unwrap()]
+                .iter()
+                .map(|x| x * emis_factor_import_export[0])
+                .collect::<Vec<_>>();
+            supply_emis_oos_result.import = energy_import
+                [&KeyString::from(&energy_supply_key).unwrap()]
+                .iter()
+                .map(|x| x * emis_oos_factor_import_export[0])
+                .collect::<Vec<_>>();
+            supply_pe_result.import = energy_import[&KeyString::from(&energy_supply_key).unwrap()]
+                .iter()
+                .map(|x| x * pe_factor_import_export[0])
+                .collect::<Vec<_>>();
+        }
 
         // If there is any export, Calculate energy exported and associated emissions/PE
         // Note that by convention, exported energy is negative
@@ -531,13 +548,13 @@ pub(super) fn calc_final_rates(
         .sum::<f64>()
         / tfa;
 
-    FinalRates {
+    Ok(FinalRates {
         emission_rate: total_emissions_rate,
         primary_energy_rate: total_pe_rate,
         emissions_results: emis_results,
         emissions_out_of_scope_results: emis_oos_results,
         primary_energy_results: pe_results,
-    }
+    })
 }
 
 pub(super) struct FinalRates {

@@ -263,14 +263,14 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
                 &dwelling_fhs_results.results.energy_export,
                 &dwelling_fhs_results.results.results_end_user,
                 dwelling_fhs_results.results.timestep_array.len(),
-            ),
+            )?,
             target_final_rates: calc_final_rates(
                 notional_fhs_results.context.input,
                 &notional_fhs_results.results.energy_import,
                 &notional_fhs_results.results.energy_export,
                 &notional_fhs_results.results.results_end_user,
                 notional_fhs_results.results.timestep_array.len(),
-            ),
+            )?,
             dwelling_fabric_energy_efficiency: calc_fabric_energy_efficiency(
                 dwelling_fhs_fee_results.results.space_heat_demand_total(),
                 dwelling_fhs_fee_results.results.space_cool_demand_total(),
