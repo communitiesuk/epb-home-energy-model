@@ -4,7 +4,6 @@ use crate::core::controls::time_control::{
     OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
-use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
     EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
@@ -33,27 +32,23 @@ use crate::core::schedule::{
     ScheduleEvent, TypedScheduleEvent, WaterScheduleEventType,
 };
 use crate::core::space_heat_demand::building_element::{
-    convert_uvalue_to_resistance, pitch_class, BuildingElement, BuildingElementAdjacentZTC,
+    convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentZTC,
     BuildingElementAdjacentZTUSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, HeatFlowDirection, WindowTreatment, H_CE, H_RE,
-    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
-    R_SI_UPWARDS,
+    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, PITCH_LIMIT_HORIZ_CEILING,
+    PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
 };
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation::{
-    AirTerminalDevices, CombustionAppliances, InfiltrationVentilation, MechanicalVentilation, Vent,
-    VentilationDetailedResult, Window,
+    InfiltrationVentilation, MechanicalVentilation, VentilationDetailedResult,
 };
 use crate::core::space_heat_demand::zone::{
     calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
     Zone,
 };
-use crate::core::units::{
-    kelvin_to_celsius, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
-};
+use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::dhw_demand::{
     DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
@@ -62,10 +57,10 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::errors::NotImplementedError;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
-    init_orientation, ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
+    ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
-    ControlCombinations, ControlDetails, DuctShape, DuctType, EnergyDiverter, EnergySupplyDetails,
+    ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
     EnergySupplyInput, ExternalConditionsInput, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
@@ -630,8 +625,6 @@ pub struct Corpus {
     pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
-    mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>>,
-    pub(crate) space_heating_ductwork: IndexMap<String, Vec<Ductwork>>,
     pub(crate) zones: IndexMap<String, Arc<Zone>>,
     pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
     pub(crate) heat_system_name_for_zone: IndexMap<String, String>,
@@ -734,8 +727,6 @@ impl Corpus {
         let (
             infiltration_ventilation,
             window_adjust_control,
-            mechanical_ventilations,
-            space_heating_ductwork,
             vent_adjust_min_control,
             vent_adjust_max_control,
         ) = infiltration_ventilation_from_input(
@@ -743,7 +734,6 @@ impl Corpus {
             &input.infiltration_ventilation,
             &controls,
             &mut energy_supplies,
-            total_volume,
             output_options.detailed_output_heating_cooling,
         )?;
 
@@ -819,6 +809,7 @@ impl Corpus {
 
         let timestep_end_calcs: Arc<RwLock<Vec<WetHeatSource>>> = Default::default();
         let mut heat_sources_wet_with_buffer_tank = vec![];
+        let mechanical_ventilations = infiltration_ventilation.mech_vents();
 
         let mut wet_heat_sources: IndexMap<String, WetHeatSource> = input
             .heat_source_wet
@@ -831,7 +822,7 @@ impl Corpus {
                     (*heat_source_wet_details).clone(),
                     external_conditions.clone(),
                     simulation_time_iterator.clone(),
-                    &mechanical_ventilations,
+                    mechanical_ventilations,
                     zones.len(),
                     TempInternalAirAccessor {
                         zones: zones.clone(),
@@ -952,8 +943,6 @@ impl Corpus {
                     .unwrap_or(1.), // default to 1 if unspecified
             ),
             ventilation: infiltration_ventilation,
-            mechanical_ventilations,
-            space_heating_ductwork,
             zones,
             energy_supply_conn_unmet_demand_zone,
             heat_system_name_for_zone,
@@ -1166,7 +1155,8 @@ impl Corpus {
     /// Calculate the losses/gains in the MVHR ductwork
     fn calc_internal_gains_ductwork(&self, simulation_time: SimulationTimeIteration) -> f64 {
         let mut internal_gains_ductwork_watts = 0.0;
-        for mvhr_ductwork in self.space_heating_ductwork.values() {
+        let space_heating_ductwork = self.ventilation.space_heating_ductworks();
+        for mvhr_ductwork in space_heating_ductwork.values() {
             // assume MVHR unit is running 100% of the time
             for duct in mvhr_ductwork {
                 match duct.duct_type() {
@@ -1210,7 +1200,8 @@ impl Corpus {
 
         // Add gains from ventilation fans (also calculates elec demand from fans)
         // TODO (from Python) Remove the branch on the type of ventilation (find a better way)
-        for mech_vent in self.mechanical_ventilations.values() {
+        let mech_vents = self.ventilation.mech_vents();
+        for mech_vent in mech_vents.iter() {
             gains_internal_zone += mech_vent.fans(zone.volume(), self.total_volume, None, &simtime);
             gains_internal_zone += internal_gains_ductwork_per_m3 * zone.volume();
         }
@@ -3479,72 +3470,13 @@ fn infiltration_ventilation_from_input(
     input: &InfiltrationVentilationInput,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    total_volume: f64,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(
     InfiltrationVentilation,
     Option<Arc<Control>>,
-    IndexMap<String, Arc<MechanicalVentilation>>,
-    IndexMap<String, Vec<Ductwork>>,
     Option<Arc<Control>>,
     Option<Arc<Control>>,
 )> {
-    let windows: IndexMap<String, Window> = zones
-        .values()
-        .flat_map(|zone| {
-            zone.building_elements
-                .iter()
-                .filter_map(|(building_element_name, building_element)| {
-                    let window: Option<anyhow::Result<Window>> = if let BuildingElementInput::Transparent {
-                        window_openable_control,
-                        free_area_height,
-                        mid_height,
-                        max_window_open_area,
-                        window_part_list,
-                        orientation,
-                        pitch,
-                        ..
-                    } = building_element
-                    {
-                        // Check control for openable window
-                        let on_off_ctrl = window_openable_control.as_ref().and_then(|ctrl_name| {
-                            controls.get_with_string(ctrl_name)
-                        });
-
-                        let window_result_fn = || {
-                            Ok(Window::new(
-                                free_area_height.ok_or_else(|| anyhow!("A free_area_height value was expected for a transparent building element."))?,
-                                mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
-                                max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
-                                window_part_list.as_ref().unwrap_or(&vec![]).clone(),
-                                // running orientation through init_orientation again to convert it back to "orientation360" value, which is expected by the Python
-                                // (orientation_difference function this is used within expects values in 0-360 degree range)
-                                init_orientation(*orientation),
-                                *pitch,
-                                input.altitude,
-                                on_off_ctrl,
-                                input.ventilation_zone_base_height,
-                            ))
-                        };
-
-                        Some(window_result_fn())
-                    } else {
-                        None
-                    };
-                    window.map(|window: anyhow::Result<Window>| anyhow::Ok((building_element_name.clone(), window?)))
-                })
-        })
-        .collect::<anyhow::Result<IndexMap<String, Window>>>()?;
-
-    let InfiltrationVentilationInput {
-        cross_vent_factor: f_cross,
-        shield_class,
-        terrain_class,
-        altitude,
-        ventilation_zone_base_height,
-        ..
-    } = input;
-
     let window_adjust_control = input
         .window_adjust_control
         .as_ref()
@@ -3558,193 +3490,17 @@ fn infiltration_ventilation_from_input(
         .as_ref()
         .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
 
-    let vents: IndexMap<String, Vent> = input
-        .vents
-        .iter()
-        .map(|(vent_name, vent)| {
-            (
-                vent_name.clone(),
-                Vent::new(
-                    vent.mid_height_air_flow_path,
-                    vent.area_cm2,
-                    vent.pressure_difference_ref,
-                    // Python uses "orientation360" value here
-                    init_orientation(vent.orientation),
-                    vent.pitch,
-                    *altitude,
-                    *ventilation_zone_base_height,
-                ), // TODO: line 3060 as part of the migration to 0.32
-            )
-        })
-        .collect();
-
-    let (pitches, areas): (Vec<f64>, Vec<f64>) = zones
-        .values()
-        .flat_map(|zone| {
-            zone.building_elements
-                .values()
-                .filter_map(|building_element| {
-                    if let BuildingElementInput::Opaque { pitch, area, .. } = building_element {
-                        (pitch_class(*pitch) == HeatFlowDirection::Upwards)
-                            .then_some((*pitch, *area))
-                    } else {
-                        None
-                    }
-                })
-        })
-        .unzip();
-    // Work out the average pitch, weighted by area
-    let area_total = areas.iter().sum::<f64>();
-    let average_pitch = if !pitches.is_empty() {
-        areas
-            .iter()
-            .map(|x| x / area_total)
-            .zip(pitches.iter())
-            .map(|(x, &y)| x * y)
-            .sum::<f64>()
-    } else {
-        // This case doesn't matter as if the area of roof = 0, the leakage coefficient = 0 anyway.
-        0.
-    };
-
-    let (surface_area_facades_list, surface_area_roof_list) = zones
-        .values()
-        .flat_map(|zone| zone.building_elements.values())
-        .fold((vec![], vec![]), |(mut facades, mut roofs), item| {
-            match pitch_class(item.pitch()) {
-                HeatFlowDirection::Horizontal => match item {
-                    BuildingElementInput::Opaque { area, .. } => {
-                        facades.push(*area);
-                    }
-                    BuildingElementInput::Transparent { height, width, .. } => {
-                        facades.push(*height * *width);
-                    }
-                    _ => {}
-                },
-                HeatFlowDirection::Upwards => match item {
-                    BuildingElementInput::Opaque { area, .. } => {
-                        roofs.push(*area);
-                    }
-                    BuildingElementInput::Transparent { height, width, .. } => {
-                        roofs.push(*height * *width)
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-
-            (facades, roofs)
-        });
-
-    let surface_area_facades = surface_area_facades_list.iter().sum::<f64>();
-    let surface_area_roof = surface_area_roof_list.iter().sum::<f64>();
-
-    let leaks =
-        CompletedVentilationLeaks::complete_input(input, surface_area_facades, surface_area_roof);
-
-    // Empty map for air terminal devices until passive ducts work
-    let atds: IndexMap<String, AirTerminalDevices> = Default::default();
-
-    let mut mechanical_ventilations: IndexMap<String, Arc<MechanicalVentilation>> =
-        Default::default();
-    let mut space_heating_ductwork: IndexMap<String, Vec<Ductwork>> = Default::default();
-
-    for (mech_vents_name, mech_vents_data) in input.mechanical_ventilation.iter() {
-        let ctrl_intermittent_mev = mech_vents_data
-            .control
-            .as_ref()
-            .and_then(|ctrl_name| controls.get_with_string(ctrl_name));
-
-        let energy_supply = energy_supplies
-            .get(&mech_vents_data.energy_supply)
-            .ok_or_else(|| {
-                anyhow!(
-                    "The energy supply '{}' indicated for mechanical ventilation was not declared.",
-                    mech_vents_data.energy_supply
-                )
-            })?;
-        let energy_supply_connection =
-            EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
-
-        mechanical_ventilations.insert(
-            mech_vents_name.clone(),
-            Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, *altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
-                VentType::Mvhr => mech_vents_data.mvhr_efficiency,
-                VentType::IntermittentMev
-                | VentType::CentralisedContinuousMev
-                | VentType::DecentralisedContinuousMev => {
-                    None
-                }
-                VentType::Piv => bail!("PIV vent type is not currently recognised when building up mechanical ventilation values for calculation"),
-            }, None)),
-        );
-
-        // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
-        if mech_vents_data.vent_type == VentType::Mvhr {
-            // the upstream Python incorrectly nixes the ductwork map here. it's fixed on more-recent-than-0.30 versions of upstream HEM,
-            // so keep this in place for now and delete this comment when fixing 😉
-            space_heating_ductwork = Default::default();
-            space_heating_ductwork.insert(
-                mech_vents_name.to_owned(),
-                mech_vents_data
-                    .ductwork
-                    .as_ref()
-                    .iter()
-                    .flat_map(|ductworks| {
-                        ductworks.iter().map(|ductwork| -> anyhow::Result<Ductwork> {
-                            let (duct_perimeter, internal_diameter, external_diameter) =
-                                match ductwork.cross_section_shape {
-                                    DuctShape::Circular => (None, Some(ductwork.internal_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64), Some(ductwork.external_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64)),
-                                    DuctShape::Rectangular => (Some(ductwork.duct_perimeter_mm.ok_or_else(|| anyhow!("Expected a duct perimeter value for ductwork with a rectangular cross-section."))?), None, None),
-                                };
-
-                            Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, ductwork.insulation_thickness_mm, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
-                        })
-                    })
-                    .collect::<anyhow::Result<Vec<Ductwork>>>()?,
-            );
-        }
-    }
-
-    let combustion_appliances: IndexMap<String, CombustionAppliances> = input
-        .combustion_appliances
-        .iter()
-        .map(|(combustion_appliances_name, combustion_appliances_data)| {
-            (
-                combustion_appliances_name.to_owned(),
-                CombustionAppliances::new(
-                    combustion_appliances_data.supply_situation,
-                    combustion_appliances_data.exhaust_situation,
-                    combustion_appliances_data.fuel_type,
-                    combustion_appliances_data.appliance_type,
-                ),
-            )
-        })
-        .collect();
-
-    let ventilation = InfiltrationVentilation::new(
-        *f_cross,
-        *shield_class,
-        terrain_class,
-        average_pitch,
-        windows.into_values().collect(),
-        vents.into_values().collect(),
-        leaks,
-        combustion_appliances.into_values().collect(),
-        atds.into_values().collect(),
-        mechanical_ventilations.values().cloned().collect(),
-        Default::default(), // TODO: update as part of 0.32 updates
+    let ventilation = InfiltrationVentilation::create(
+        input,
+        zones,
         detailed_output_heating_cooling,
-        *altitude,
-        zones.values().map(|zone| zone.area).sum::<f64>(),
-        *ventilation_zone_base_height,
-    );
+        &energy_supplies,
+        &controls,
+    )?;
 
     Ok((
         ventilation,
         window_adjust_control,
-        mechanical_ventilations,
-        space_heating_ductwork,
         vent_adjust_min_control,
         vent_adjust_max_control,
     ))
@@ -4141,7 +3897,7 @@ fn heat_source_wet_from_input(
     input: HeatSourceWetDetails,
     external_conditions: Arc<ExternalConditions>,
     simulation_time: Arc<SimulationTimeIterator>,
-    mechanical_ventilations: &IndexMap<String, Arc<MechanicalVentilation>>,
+    mechanical_ventilations: &Vec<Arc<MechanicalVentilation>>,
     number_of_zones: usize,
     temp_internal_air_accessor: TempInternalAirAccessor,
     controls: &Controls,
@@ -4161,7 +3917,7 @@ fn heat_source_wet_from_input(
                 // the Python code here will assign to throughput_exhaust_air on the last iteration, though mech vents collection is not ordered - this may be erroneous
                 // reported to BRE as possible bug https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45508
                 let mut throughput_exhaust_air: Option<f64> = Default::default();
-                for mech_vent in mechanical_ventilations.values() {
+                for mech_vent in mechanical_ventilations.iter() {
                     match mech_vent.vent_type() {
                         VentType::IntermittentMev | VentType::DecentralisedContinuousMev => {
                             bail!("Exhaust air heat pump does not work with Intermittent MEV or Decentralised continuous MEV.")
