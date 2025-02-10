@@ -446,7 +446,7 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 pub(super) fn calc_htc_hlp(
     input: &Input,
 ) -> anyhow::Result<(f64, f64, IndexMap<String, f64>, IndexMap<String, f64>)> {
-    let simtime = input.simulation_time.clone();
+    let simtime = input.simulation_time;
     let external_conditions = Arc::from(create_external_conditions(
         (*input.external_conditions.as_ref()).clone(),
         &simtime.iter(),
@@ -578,7 +578,7 @@ pub(super) fn calc_htc_hlp(
         let total_fabric_heat_loss = zone
             .building_elements
             .values()
-            .map(|el| calc_heat_loss(el))
+            .map(calc_heat_loss)
             .try_collect::<f64, Vec<f64>, anyhow::Error>()?
             .iter()
             .sum::<f64>();

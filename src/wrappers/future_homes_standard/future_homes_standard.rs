@@ -154,7 +154,7 @@ pub fn apply_fhs_preprocessing(
     Ok(())
 }
 
-pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) -> () {
+pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) {
     input.set_temp_internal_air_static_calcs(Some(LIVING_ROOM_SETPOINT_FHS));
 }
 
@@ -187,7 +187,7 @@ static EMIS_PE_FACTORS_ELEC: LazyLock<HashMap<usize, ElectricityFactorData>> =
             let factor_data: ElectricityFactorData =
                 factor_data.expect("Reading the PE factors elec file failed.");
             let timestep = &factor_data.timestep;
-            emis_pe_factors_elec.insert(timestep.clone(), factor_data);
+            emis_pe_factors_elec.insert(*timestep, factor_data);
         }
 
         emis_pe_factors_elec
@@ -2283,10 +2283,10 @@ pub(crate) fn minimum_air_change_rate(
     let highest_min_ventilation_rate =
         f64::max(min_ventilation_rate_a, min_ventilation_rate_b as f64);
 
-    let minimum_ach = highest_min_ventilation_rate / total_volume * SECONDS_PER_HOUR as f64
-        / LITRES_PER_CUBIC_METRE as f64;
+    
 
-    minimum_ach
+    highest_min_ventilation_rate / total_volume * SECONDS_PER_HOUR as f64
+        / LITRES_PER_CUBIC_METRE as f64
 }
 
 fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
