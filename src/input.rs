@@ -3396,16 +3396,22 @@ impl Appliance {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ApplianceLoadShifting {
+pub(crate) struct ApplianceLoadShifting {
     #[serde(skip_serializing_if = "Option::is_none")]
     priority: Option<usize>,
-    pub max_shift_hrs: f64,
-    pub demand_limit_weighted: f64,
-    #[serde(rename = "weight")]
-    _weight: String, // not sure yet what these can be
+    pub(crate) max_shift_hrs: f64,
+    pub(crate) demand_limit_weighted: f64,
+    pub(crate) weight: WeightLabel,
     // In Python these are set from the FHS wrapper
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub weight_timeseries: Option<Vec<f64>>,
+    pub(crate) weight_timeseries: Option<Vec<f64>>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) enum WeightLabel {
+    Tariff,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
