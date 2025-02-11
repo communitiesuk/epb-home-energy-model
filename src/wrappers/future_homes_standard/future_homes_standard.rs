@@ -1540,6 +1540,11 @@ fn create_appliance_gains(
 
     let flat_annual_propensities: FlatAnnualPropensities = appliance_propensities.into();
 
+    // add any missing required appliances to the assessment,
+    // get default demand figures for any unknown appliances
+    appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
+    let cookparams = cooking_demand(input, number_of_occupants);
+
     // TODO (from Python) change to enum
     // TODO (from Python) check appliances are named correctly and what to do if not?
 
@@ -1550,6 +1555,10 @@ fn create_appliance_gains(
         ),
         (
             ApplianceKey::Freezer,
+            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+        ),
+        (
+            ApplianceKey::FridgeFreezer,
             ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
         ),
         (
@@ -1580,7 +1589,7 @@ fn create_appliance_gains(
                 number_of_occupants,
                 174, // HES 2012 final report table 22
                 220, // EU standard
-                5.,
+                7.,
                 0.75,
                 0.3,
                 flat_annual_propensities.cleaning_washing_machine.clone(),
@@ -1594,7 +1603,7 @@ fn create_appliance_gains(
                 number_of_occupants,
                 145, // HES 2012 final report table 22
                 160, // EU standard
-                5.,
+                7.,
                 0.50,
                 0.7,
                 flat_annual_propensities.cleaning_tumble_dryer.clone(),
@@ -1605,8 +1614,8 @@ fn create_appliance_gains(
         (
             ApplianceKey::Oven,
             ApplianceUseProfile::complex(
-                number_of_occupants,
-                178, // analysis of HES - see folder
+                1.,
+                cookparams.get(&ApplianceKey::Oven).unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 0.5,
@@ -1618,8 +1627,8 @@ fn create_appliance_gains(
         (
             ApplianceKey::Hobs,
             ApplianceUseProfile::complex(
-                number_of_occupants,
-                235, // analysis of HES - see folder
+                1.,
+                cookparams.get(&ApplianceKey::Hobs).unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 0.5,
@@ -1631,8 +1640,11 @@ fn create_appliance_gains(
         (
             ApplianceKey::Microwave,
             ApplianceUseProfile::complex(
-                number_of_occupants,
-                315, // analysis of HES - see folder
+                1.,
+                cookparams
+                    .get(&ApplianceKey::Microwave)
+                    .unwrap()
+                    .event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 1.,
@@ -1644,8 +1656,8 @@ fn create_appliance_gains(
         (
             ApplianceKey::Kettle,
             ApplianceUseProfile::complex(
-                number_of_occupants,
-                921, // analysis of HES - see folder
+                1.,
+                cookparams.get(&ApplianceKey::Kettle).unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 1.,
@@ -1658,10 +1670,9 @@ fn create_appliance_gains(
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
-    appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
-
-    let mut demand_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
-
+    let mut priority: IndexMap<ApplianceKey, Vec<Option<f64>>> = Default::default();
+    let mut power_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
+    let mut weight_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
     // loop through appliances in the assessment.
     let input_appliances = input.clone_appliances();
 
@@ -1671,14 +1682,15 @@ fn create_appliance_gains(
             .get(&appliance_key)
             .expect("Appliance key was not in appliance map");
 
+        let (kwhcycle, loadingfactor) =
+            appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
+        let kwhcycle = kwhcycle.ok_or_else(|| {
+            anyhow!("Could not get kwhcycle value for appliance with key {appliance_key}.")
+        })?;
+
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
             // TODO (from Python) - translation of efficiencies should be its own function
-            let (kwhcycle, loadingfactor) =
-                appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
-            let kwhcycle = kwhcycle.ok_or_else(|| {
-                anyhow!("Could not get kwhcycle value for appliance with key {appliance_key}.")
-            })?;
 
             let app = FhsAppliance::new(
                 map_appliance.util_unit,
@@ -1705,10 +1717,25 @@ fn create_appliance_gains(
                 ..
             }) = &appliance
             {
+                if load_shifting.max_shift_hrs >= 24. {
+                    // could instead change length of buffers/initial simulation match this, but unclear what benefit this would have
+                    bail!("{} max_shift_hrs too high, FHS wrapper cannot handle max shift >= 24 hours", appliance_key);
+                }
+
+                // establish priority between appliances based on user defined priority,
+                // and failing that, demand per cycle
+                priority.insert(
+                    appliance_key,
+                    vec![load_shifting.priority.map(|p| p as f64), Some(kwhcycle)],
+                );
+
                 let mut load_shifting = load_shifting.clone();
                 // create year long cost profile
                 // loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
                 // so the weight timeseries is generic.
+
+                // TODO (Python) - create weight timeseries as combination of PE, CO2, cost factors.
+                // could also multiply by propensity factor
                 let weight_timeseries = reject_nulls(expand_numeric_schedule(
                     input.tariff_schedule().ok_or_else(|| {
                         anyhow!(
@@ -1716,15 +1743,14 @@ fn create_appliance_gains(
                         )
                     })?,
                 ))?;
-                load_shifting.weight_timeseries = Some(weight_timeseries);
+                load_shifting.weight_timeseries = Some(weight_timeseries.clone());
+                weight_scheds.insert(appliance_key, weight_timeseries);
 
                 Some(load_shifting)
             } else {
                 // only add demand from appliances that DO NOT have loadshifting to the demands
-                demand_scheds.append(&mut IndexMap::from([(
-                    appliance_key,
-                    app.flat_schedule.clone(),
-                )]));
+                power_scheds.insert(appliance_key, app.flat_schedule.clone());
+                priority.insert(appliance_key, vec![None, Some(kwhcycle)]);
                 None
             };
 
@@ -1759,9 +1785,10 @@ fn create_appliance_gains(
                 .iter()
                 .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
                 .collect();
-            demand_scheds.insert(appliance_key, flat_schedule.clone());
+            power_scheds.insert(appliance_key, flat_schedule.clone());
+            priority.insert(appliance_key, vec![None, Some(kwhcycle)]);
 
-            let appliance_uses_gas = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
+            let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
             input.set_gains_for_field(String::from(appliance_key), json!({
                 "type": appliance_key,
@@ -1778,20 +1805,28 @@ fn create_appliance_gains(
     }
     // sum schedules for use with loadshifting
     // will this work with variable timestep?
-    let sched_len = demand_scheds
+    let sched_len = power_scheds
         .values()
         .next()
         .ok_or_else(|| anyhow!("Demand schedules are empty"))?
         .len();
-    let mut main_sched = vec![0.; sched_len];
-    for sched in demand_scheds.values() {
-        for (i, main_sched_item) in main_sched.iter_mut().enumerate() {
-            *main_sched_item += sched[i];
-        }
-    }
-    for key in input.keys_for_appliance_gains_with_load_shifting() {
-        input.set_load_shifting_demand_timeseries_for_appliance(&key, main_sched.clone());
-    }
+
+    let sched_zeros = vec![0.; sched_len];
+
+    let mut main_power_schedule = IndexMap::from([
+        (ENERGY_SUPPLY_NAME_GAS, sched_zeros.clone()),
+        (ENERGY_SUPPLY_NAME_ELECTRICITY, sched_zeros.clone()),
+    ]);
+
+    let mut main_weight_sched = IndexMap::from([
+        (ENERGY_SUPPLY_NAME_GAS, sched_zeros.clone()),
+        (ENERGY_SUPPLY_NAME_ELECTRICITY, sched_zeros.clone()),
+    ]);
+
+    todo!();
+    // for key in input.keys_for_appliance_gains_with_load_shifting() {
+    //     input.set_load_shifting_demand_timeseries_for_appliance(&key, main_sched.clone());
+    // }
 
     Ok(())
 }
@@ -1881,6 +1916,71 @@ struct ApplianceUseData {
 #[derive(Clone, Copy, Debug)]
 struct ClothesUseData {
     standard_load_kg: f64,
+}
+struct ApplianceCookingDemand {
+    mean_annual_demand: f64,
+    mean_annual_events: f64,
+    mean_event_demand: f64,
+    fuel: Option<EnergySupplyType>,
+    event_count: usize,
+}
+
+impl ApplianceCookingDemand {
+    fn event_count(&self) -> f64 {
+        // for each appliance, work out number of usage events based on
+        // average HES annual demand and demand per cycle
+        // do not consider gas and electricity separately for this purpose
+        // let demandprop = cookparams[cook]["mean_annual_demand"]/(electot + gastot)
+        // annualkWh = demandprop * annual_cooking_elec_kWh
+        // events = annualkWh / cookparams[cook]["mean_event_demand"]
+        // cookparams[cook]["eventcount"] = events
+        // let demand_prop = self.mean_annual_demand
+        todo!()
+    }
+}
+
+fn cooking_demand(
+    input: &mut InputForProcessing,
+    number_of_occupants: f64,
+) -> IndexMap<ApplianceKey, ApplianceCookingDemand> {
+    // let oven_fuel = input.appliances_contain_key("Oven");
+    let oven = ApplianceCookingDemand {
+        mean_annual_demand: 285.14,
+        mean_annual_events: 441.11,
+        mean_event_demand: 0.762,
+        fuel: None, // TODO
+        event_count: Default::default(),
+    };
+
+    let hobs = ApplianceCookingDemand {
+        mean_annual_demand: 352.53,
+        mean_annual_events: 520.86,
+        mean_event_demand: 0.810,
+        fuel: None, // TODO,
+        event_count: Default::default(),
+    };
+    let microwave = ApplianceCookingDemand {
+        mean_annual_demand: 44.11,
+        mean_annual_events: 710.65,
+        mean_event_demand: 0.0772,
+        fuel: None, // TODO "electricity" if "Microwave" in project_dict["Appliances"] else None},
+        event_count: Default::default(),
+    };
+    let kettle = ApplianceCookingDemand {
+        mean_annual_demand: 173.03,
+        mean_annual_events: 1782.5,
+        mean_event_demand: 0.0985,
+        fuel: None, // TODO "electricity" if "Kettle" in project_dict["Appliances"] else None},
+        event_count: Default::default(),
+    };
+    let cook_params = IndexMap::from([
+        (ApplianceKey::Oven, oven),
+        (ApplianceKey::Hobs, hobs),
+        (ApplianceKey::Microwave, microwave),
+        (ApplianceKey::Kettle, kettle),
+    ]);
+
+    todo!()
 }
 
 fn appliance_cooking_defaults(

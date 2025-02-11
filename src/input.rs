@@ -3398,7 +3398,7 @@ impl Appliance {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
     #[serde(skip_serializing_if = "Option::is_none")]
-    priority: Option<usize>,
+    pub(crate) priority: Option<usize>,
     pub(crate) max_shift_hrs: f64,
     pub(crate) demand_limit_weighted: f64,
     pub(crate) weight: WeightLabel,
