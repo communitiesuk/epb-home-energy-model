@@ -1427,7 +1427,6 @@ impl ImmersionHeater {
         simulation_timestep: f64,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-        diverter: Option<Arc<RwLock<PVDiverter>>>,
     ) -> Self {
         Self {
             pwr: rated_power,
@@ -1435,7 +1434,7 @@ impl ImmersionHeater {
             simulation_timestep,
             control_min,
             control_max,
-            diverter,
+            diverter: None,
         }
     }
     pub(crate) fn temp_setpnt(
@@ -2020,7 +2019,6 @@ mod tests {
             simulation_timestep,
             Arc::new(Control::SetpointTime(control_min)),
             Arc::new(Control::SetpointTime(control_max)),
-            None,
         );
         let heat_source = PositionedHeatSource {
             heat_source: Arc::new(Mutex::new(HeatSource::Storage(
@@ -3378,7 +3376,6 @@ mod tests {
             timestep,
             control_min,
             control_max,
-            None,
         )
     }
 
