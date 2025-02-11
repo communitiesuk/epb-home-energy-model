@@ -32,8 +32,8 @@ impl HeatBatteryServiceWaterRegular {
     /// Arguments:
     /// * `heat_battery` - reference to the Heat Battery object providing the service
     /// * `service_name` - name of the service demanding energy
-    /// * `control_min` - optional reference to a control object which must select current the minimum timestep temperature
-    /// * `control_max` - optional reference to a control object which must select current the maximum timestep temperature
+    /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
+    /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,

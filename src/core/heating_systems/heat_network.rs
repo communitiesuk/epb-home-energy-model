@@ -96,8 +96,8 @@ impl HeatNetworkServiceWaterStorage {
     /// Arguments:
     /// * `heat_network` - reference to the HeatNetwork object providing the service
     /// * `service_name` - name of the service demanding energy from the heat network
-    /// * `control_min` - optional reference to a control object which must select current the minimum timestep temperature
-    /// * `control_max` - optional reference to a control object which must select current the maximum timestep temperature
+    /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
+    /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
         heat_network: Arc<Mutex<HeatNetwork>>,
         service_name: String,
