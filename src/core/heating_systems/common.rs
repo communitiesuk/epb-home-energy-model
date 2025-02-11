@@ -3,6 +3,7 @@ use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult}
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
+use crate::core::heating_systems::elec_storage_heater::ElecStorageHeater;
 use crate::core::heating_systems::heat_battery::{
     HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
 };
@@ -98,8 +99,9 @@ impl HeatSourceWet {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum SpaceHeatSystem {
+    ElecStorage(ElecStorageHeater),
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),
     WetDistribution(Emitters),
@@ -108,6 +110,7 @@ pub enum SpaceHeatSystem {
 impl SpaceHeatSystem {
     pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
         match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
@@ -118,6 +121,7 @@ impl SpaceHeatSystem {
 
     pub fn frac_convective(&self) -> f64 {
         match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(instant) => instant.frac_convective(),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.frac_convective(),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
@@ -133,6 +137,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
                 energy_demand,
@@ -154,6 +159,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(ref mut instant) => {
                 instant.demand_energy(energy_demand, simulation_time_iteration)
             }
@@ -171,6 +177,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<bool> {
         match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(instant) => {
                 instant.in_required_period(&simulation_time_iteration)
             }
@@ -193,6 +200,7 @@ impl SpaceHeatSystem {
 
     pub fn energy_output_min(&self) -> f64 {
         match self {
+            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
             SpaceHeatSystem::Instant(instant) => instant.energy_output_min(),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.energy_output_min(),
             SpaceHeatSystem::WetDistribution(_wet_distribution) => {

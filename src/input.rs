@@ -1527,7 +1527,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         air_flow_type: ElectricStorageHeaterAirFlowType,
         frac_convective: f64,
         fan_pwr: f64,
-        n_units: u32,
+        n_units: i32,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
         #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]

@@ -53,14 +53,14 @@ pub struct ElecStorageHeater {
     control: Arc<Control>,
     charge_control: Arc<Control>,
     fan_pwr: f64,
-    external_conditions: ExternalConditions,
+    external_conditions: Arc<ExternalConditions>,
     temp_air: f64,
     state_of_charge: AtomicF64,
     demand_met: AtomicF64,
     demand_unmet: AtomicF64,
     zone_setpoint_init: f64,
     #[derivative(Debug = "ignore")]
-    zone_internal_air_func: Arc<dyn Fn() -> f64>,
+    zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
     soc_max_array: Vec<f64>,
     power_max_array: Vec<f64>,
     soc_min_array: Vec<f64>,
@@ -213,14 +213,14 @@ impl ElecStorageHeater {
         fan_pwr: f64,
         n_units: i32,
         zone_setpoint_init: f64,
-        zone_internal_air_func: Arc<dyn Fn() -> f64>,
+        zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
         energy_supply_conn: EnergySupplyConnection,
         simulation_time: &SimulationTimeIterator,
         control: Arc<Control>,
         charge_control: Arc<Control>,
         esh_min_output: Vec<(f64, f64)>,
         esh_max_output: Vec<(f64, f64)>,
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
         let output_detailed_results = output_detailed_results.unwrap_or(false);
@@ -945,7 +945,7 @@ mod tests {
             Arc::new(charge_control),
             esh_min_output,
             esh_max_output,
-            external_conditions, // NOTE this is None in Python
+            Arc::new(external_conditions), // NOTE this is None in Python
             None,
         )
         .unwrap();

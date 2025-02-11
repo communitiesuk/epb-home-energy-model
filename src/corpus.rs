@@ -11,6 +11,7 @@ use crate::core::energy_supply::energy_supply::{
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
+use crate::core::heating_systems::elec_storage_heater::ElecStorageHeater;
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
@@ -54,7 +55,6 @@ use crate::core::water_heat_demand::dhw_demand::{
     DemandVolTargetKey, DomesticHotWaterDemand, DomesticHotWaterDemandData, VolumeReference,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
-use crate::errors::NotImplementedError;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
@@ -4665,11 +4665,20 @@ fn space_heat_systems_from_input(
                                 .and_then(|ctrl| controls.get_with_string(ctrl)),
                         ))
                     }
-                    SpaceHeatSystemDetails::ElectricStorageHeater { .. } => return Err(NotImplementedError::new("Electric storage heater module not yet implemented.").into()), // requires implementation of ElecStorageHeater, make sure to add energy supply conn name to energy_conn_names_for_systems collection
-                    SpaceHeatSystemDetails::WetDistribution { wet_emitter_type, advanced_start, emitters, energy_supply, variable_flow, design_flow_rate, min_flow_rate, max_flow_rate, bypass_percentage_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, temp_setback, } => {
-                        // TODO 0.32 following are placeholder variables that we expect to come from emitters during migration to 0.32
-                        let (c, n, frac_convective) = (0., 0., 0.);
+                    SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, esh_min_output, esh_max_output, .. } => {
+                        let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
+                        let energy_supply_conn_name = system_name;
+                        energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
+                        let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
 
+                        let zone_setpoint_init = zones.get(zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.setpnt_init();
+                        let control = control
+                            .as_ref()
+                            .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control object was expected for a heat pump system"))?;
+                        let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
+                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, temp_internal_air_fn(temp_internal_air_accessor.clone()), energy_supply_conn, simulation_time, control, charge_control, esh_min_output.clone(), esh_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
+                    }
+                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, variable_flow, design_flow_rate, min_flow_rate, max_flow_rate, bypass_percentage_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, .. } => {
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
@@ -4722,8 +4731,16 @@ fn space_heat_systems_from_input(
                                     SpaceHeatingService::HeatBattery(heat_source_service)
                                 }
                             };
-                        let temp_internal_air_fn = temp_internal_air_fn(temp_internal_air_accessor.clone());
-                        // TODO Fix thermal mass logic as part of 0.32 migration
+
+                        let energy_supply_fc_conn  = if energy_supply.is_none() {
+                            None
+                        } else {
+                            let energy_supply = energy_supplies.get(&energy_supply.clone().unwrap()).ok_or_else(|| anyhow!(""))?.clone();
+                            let energy_supply_fc_conn_name = format!("FC_fan {system_name}");
+                            energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_fc_conn_name.clone());
+                            Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_str()).unwrap()))
+                        };
+
                         let space_heater = Emitters::new(
                             *thermal_mass,
                             emitters,
@@ -4739,9 +4756,10 @@ fn space_heat_systems_from_input(
                             external_conditions.clone(),
                             *ecodesign_controller,
                             *design_flow_temp as f64,
-                            None, // TODO provide fancoil connection in migration to 0.32
+                            energy_supply_fc_conn,
                             detailed_output_heating_cooling,
-                            with_buffer_tank,)?;
+                            with_buffer_tank,
+                        )?;
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }
                     SpaceHeatSystemDetails::WarmAir {
