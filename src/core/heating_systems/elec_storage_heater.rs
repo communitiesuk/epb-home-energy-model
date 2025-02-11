@@ -1,3 +1,4 @@
+use crate::core::controls::time_control::{per_control, ControlBehaviour};
 use crate::{
     core::{
         controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
@@ -311,6 +312,20 @@ impl ElecStorageHeater {
                 )))
             }),
         })
+    }
+
+    pub(crate) fn temp_setpnt(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<f64> {
+        per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
+    }
+
+    pub(crate) fn in_required_period(
+        &self,
+        simulation_time_iteration: &SimulationTimeIteration,
+    ) -> Option<bool> {
+        per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
     fn convert_to_kwh(power: f64, time: f64) -> f64 {

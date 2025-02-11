@@ -110,7 +110,9 @@ pub enum SpaceHeatSystem {
 impl SpaceHeatSystem {
     pub fn temp_setpnt(&self, simulation_time_iteration: SimulationTimeIteration) -> Option<f64> {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
+            SpaceHeatSystem::ElecStorage(elec_storage) => {
+                elec_storage.temp_setpnt(&simulation_time_iteration)
+            }
             SpaceHeatSystem::Instant(instant) => instant.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.temp_setpnt(&simulation_time_iteration),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
@@ -137,7 +139,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
+            SpaceHeatSystem::ElecStorage(..) => unreachable!(), // it isn't expected that this will be called on electric storage heaters,
             SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
                 energy_demand,
@@ -159,7 +161,9 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         Ok(match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
+            SpaceHeatSystem::ElecStorage(elec_storage) => {
+                elec_storage.demand_energy(energy_demand, &simulation_time_iteration)?
+            }
             SpaceHeatSystem::Instant(ref mut instant) => {
                 instant.demand_energy(energy_demand, simulation_time_iteration)
             }
@@ -177,7 +181,9 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Option<bool> {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
+            SpaceHeatSystem::ElecStorage(elec_storage) => {
+                elec_storage.in_required_period(&simulation_time_iteration)
+            }
             SpaceHeatSystem::Instant(instant) => {
                 instant.in_required_period(&simulation_time_iteration)
             }
