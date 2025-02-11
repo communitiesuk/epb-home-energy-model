@@ -5,6 +5,7 @@ use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::{
     BufferTankEmittersData, BufferTankEmittersDataWithResult,
 };
+use crate::core::solvers::fsolve;
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
@@ -13,6 +14,7 @@ use crate::input::{
     WetEmitter as WetEmitterInput,
 };
 use crate::simulation_time::SimulationTimeIteration;
+use crate::statistics::np_interp;
 use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use argmin::core::{CostFunction, Executor};
@@ -20,6 +22,7 @@ use argmin::solver::brent::BrentRoot;
 use derivative::Derivative;
 use itertools::Itertools;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
+use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -104,7 +107,7 @@ impl System<Time, State> for EmittersAndPowerInput<'_> {
     fn system(&self, _x: Time, y: &State, dy: &mut State) {
         dy[0] = self
             .emitters
-            .func_temp_emitter_change_rate(self.power_input, y[0]);
+            .func_temp_emitter_change_rate(self.power_input)([y[0]]);
     }
 
     // Stop function called at every successful integration step. The integration is stopped when this function returns true.
@@ -172,6 +175,12 @@ enum VariableFlowData {
     No { design_flow_rate: f64 },
 }
 
+impl From<VariableFlowData> for bool {
+    fn from(v: VariableFlowData) -> Self {
+        matches!(v, VariableFlowData::Yes)
+    }
+}
+
 #[derive(Clone, Debug)]
 enum WetEmitter {
     Radiator {
@@ -208,6 +217,22 @@ impl WetEmitter {
             WetEmitter::Fancoil {
                 frac_convective, ..
             } => frac_convective,
+        }
+    }
+
+    fn c(&self) -> anyhow::Result<f64> {
+        match self {
+            WetEmitter::Radiator { c, .. } => Ok(*c),
+            WetEmitter::Ufh { c, .. } => Ok(*c),
+            WetEmitter::Fancoil { .. } => bail!("Fancoil emitters do not have a c value"),
+        }
+    }
+
+    fn n(&self) -> anyhow::Result<f64> {
+        match self {
+            WetEmitter::Radiator { n, .. } => Ok(*n),
+            WetEmitter::Ufh { n, .. } => Ok(*n),
+            WetEmitter::Fancoil { .. } => bail!("Fancoil emitters do not have a n value"),
         }
     }
 }
@@ -496,8 +521,75 @@ impl Emitters {
         }
     }
 
-    pub(crate) fn frac_convective(&self) -> f64 {
-        todo!()
+    pub(crate) fn frac_convective(&self, simtime: SimulationTimeIteration) -> f64 {
+        if let Some(WetEmitter::Fancoil {
+            frac_convective, ..
+        }) = self.fancoil.as_ref().map(|f| f.as_ref())
+        {
+            return *frac_convective;
+        }
+
+        // For other systems
+        let frac_convective: Vec<f64> = self
+            .emitters
+            .iter()
+            .map(|emitter| emitter.frac_convective())
+            .collect();
+
+        // weighted average for each emitter
+        let power_total_weight = self.power_output_emitter_weight(simtime);
+
+        (0..frac_convective.len())
+            .map(|i| power_total_weight[i] * frac_convective[i])
+            .sum::<f64>()
+    }
+
+    /// Weighted average of emitter power output
+    fn power_output_emitter_weight(&self, simtime: SimulationTimeIteration) -> Vec<f64> {
+        let t_rm = 20.; // assumed internal air temperature
+
+        // flow and return temperatures
+        let (flow_temp, return_temp) = self.temp_flow_return(&simtime);
+        let t_e = (flow_temp + return_temp) / 2.;
+
+        let power_total_weight = if t_e > t_rm {
+            let (power_total, power_total_list) = self.emitters.iter().fold(
+                <(f64, Vec<f64>)>::default(),
+                |(mut power_total, mut power_total_list), emitter| {
+                    let power_emitter = if let (Ok(c), Ok(n)) = (emitter.c(), emitter.n()) {
+                        c * (t_e - t_rm).powf(n)
+                    } else {
+                        panic!("Fancoil emitter, or an emitter with no c and n values, was logically not expected here");
+                    };
+                    power_total += power_emitter;
+                    power_total_list.push(power_emitter);
+
+                    (power_total, power_total_list)
+                },
+            );
+
+            power_total_list
+                .iter()
+                .map(|power_emitter| power_emitter / power_total)
+                .collect_vec()
+        } else {
+            vec![1.0 / self.emitters.len() as f64; self.emitters.len()]
+        };
+
+        // If this error is triggered, then there is probably an error in the code above
+        // NB. debug_* assertions are elided for production builds
+        debug_assert_ne!(
+            {
+                let six_dec_places_divisor = 1e6;
+                (power_total_weight.iter().sum::<f64>() * six_dec_places_divisor).round()
+                    / six_dec_places_divisor
+            },
+            1.0,
+            "ERROR: Sum of emitter weightings should equal 1.0, not {}",
+            power_total_weight.iter().sum::<f64>()
+        );
+
+        power_total_weight
     }
 
     pub(crate) fn temp_flow_return(
@@ -561,9 +653,16 @@ impl Emitters {
     ///            T_E is mean emitter temperature
     ///            T_rm is air temperature in the room/zone
     ///            c and n are characteristic of the emitters (e.g. derived from BS EN 442 tests)
+    ///
+    /// NB. this method will panic if called where there are fancoils amongst the emitters.
     pub fn power_output_emitter(&self, temp_emitter: f64, temp_rm: f64) -> f64 {
-        todo!()
-        // self.c * max_of_2(0., temp_emitter - temp_rm).powf(self.n)
+        self.emitters.iter().map(|emitter| {
+            if let (Ok(c), Ok(n)) = (emitter.c(), emitter.n()) {
+                c * (0_f64).max(temp_emitter - temp_rm).powf(n)
+            } else {
+                panic!("Fancoil emitter, or an emitter with no c and n values, was logically not expected here");
+            }
+        }).sum::<f64>()
     }
 
     /// Calculate emitter temperature that gives required power output at given room temp
@@ -575,12 +674,40 @@ impl Emitters {
     ///            T_rm is air temperature in the room/zone
     ///            c and n are characteristic of the emitters (e.g. derived from BS EN 442 tests)
     ///        Rearrange to solve for T_E
+    ///
+    /// Panics if called when one of the emitters is a fancoil.
     pub fn temp_emitter_req(&self, power_emitter_req: f64, temp_rm: f64) -> f64 {
-        todo!()
-        // (power_emitter_req / self.c).powf(1. / self.n) + temp_rm
+        // extract out c and n values from emitters so we don't need to hold a reference to emitters
+        // in following function
+        let c_n_pairs = self.extract_c_n_pairs();
+
+        let func_temp_emitter_req = |temp_emitter: f64, _args| {
+            power_emitter_req
+                - c_n_pairs
+                    .iter()
+                    .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n))
+                    .sum::<f64>()
+        };
+
+        fsolve(func_temp_emitter_req, temp_rm + 10., [])
     }
 
-    pub fn func_temp_emitter_change_rate(&self, power_input: f64, y: f64) -> f64 {
+    /// Extract out c and n values from emitters so we don't need to hold a reference to emitters elsewhere
+    /// Panics if called when one of the emitters is a fancoil.
+    fn extract_c_n_pairs(&self) -> Vec<(f64, f64)> {
+        self.emitters.iter().map(|emitter| {
+            if let (Ok(c), Ok(n)) = (emitter.c(), emitter.n()) {
+                (c, n)
+            } else {
+                panic!("Fancoil emitter, or an emitter with no c and n values, was logically not expected here");
+            }
+        }).collect()
+    }
+
+    pub(crate) fn func_temp_emitter_change_rate(
+        &self,
+        power_input: f64,
+    ) -> impl Fn([f64; 1]) -> f64 {
         /*
             Differential eqn for change rate of emitter temperature, to be solved iteratively
 
@@ -617,8 +744,18 @@ impl Emitters {
             solve_ivp function from scipy.
         */
 
+        let c_n_pairs = self.extract_c_n_pairs();
+        let thermal_mass = self.thermal_mass;
+
         // (power_input - self.c * max_of_2(0., y).powf(self.n)) / self.thermal_mass
-        todo!()
+        move |temp_diff: [f64; 1]| -> f64 {
+            (power_input
+                - c_n_pairs
+                    .iter()
+                    .map(|&(c, n)| c * 0_f64.max(temp_diff[0]).powf(n))
+                    .sum::<f64>())
+                / thermal_mass
+        }
     }
 
     /// Calculate emitter temperature after specified time with specified power input
@@ -784,54 +921,156 @@ impl Emitters {
         Ok((temperature_data, fan_power_data))
     }
 
+    /// Calculate the power output (kW) from fan coil manufacturer data.
+    /// For a given delta T, interpolate values for each fan speed column, and
+    /// the maximum is calculated. The actual power output is the minimum between this maximum and
+    /// the heat demanded.
+    ///
+    /// Parameters:
+    /// * `delta_T_fancoil` (float): temp dif between primary circuit water temp (average of flow and return temp)
+    ///                          and room air temp.
+    /// * `temperature_data` (array): product data relating to temperature diff from manufacturer.
+    /// * `fan_power_data` (array): product data relating to fan power from manufacturer
+    /// * `power_req_from_fan_coil` (float): in kW.
+    ///
+    ///        Returns:
+    ///        Tuple containing the actual power output, fan power and fraction of timestep running.
+    fn fancoil_output(
+        &self,
+        delta_t_fancoil: f64,
+        temperature_data: &[&[f64]],
+        fan_power_data: &[StringOrNumber],
+        power_req_from_fan_coil: f64,
+    ) -> (f64, f64, f64) {
+        let delta_t_values = temperature_data.iter().map(|row| row[0]).collect_vec();
+        let _min_delta_t = delta_t_values.iter().min_by(|a, b| a.total_cmp(b));
+
+        let fan_power_values = fan_power_data[1..].iter().map(|&f| {
+            <f64>::try_from(f).expect("fan power data is not a number when expected to be")
+        });
+
+        // Parsing product data to get outputs and fan speeds
+        let interpolated_outputs: Vec<_> = (1..temperature_data[1].len())
+            .map(|col| {
+                let output_values_for_fan_speed = temperature_data.iter().map(|row| row[col]);
+                let delta_t_output_pairs = delta_t_values.iter().zip(output_values_for_fan_speed);
+                let unique_delta_t_output_pairs =
+                    delta_t_output_pairs.unique_by(|&(&a, b)| (OrderedFloat(a), OrderedFloat(b)));
+                let sorted_delta_t_output_pairs = unique_delta_t_output_pairs
+                    .map(|(&a, b)| (OrderedFloat(a), OrderedFloat(b)))
+                    .sorted()
+                    .map(|(a, b)| (a.0, b.0));
+                let (sorted_delta_t_values, sorted_output_values_for_fan_speed): (
+                    Vec<f64>,
+                    Vec<f64>,
+                ) = sorted_delta_t_output_pairs.unzip();
+
+                // Find the min and max values from the output
+                let _min_output_value = sorted_output_values_for_fan_speed
+                    .iter()
+                    .min_by(|a, b| a.total_cmp(b))
+                    .expect("Expected at least one output value");
+                let _max_output_value = sorted_output_values_for_fan_speed
+                    .iter()
+                    .max_by(|a, b| a.total_cmp(b))
+                    .expect("Expected at least one output value");
+
+                // TODO (from Python): Currently interpolation follows a linear equation. We think it can be improved with
+                // an equation of the form output = c + a * deltaT ^ b that gives a good fit (where c is the fan power)
+
+                // Interpolate value for the given delta T and fan speed output column
+                // NB. fill values are specified here in Python, not yet implemented in Rust (TODO?)
+                np_interp(
+                    delta_t_fancoil,
+                    &sorted_delta_t_values,
+                    &sorted_output_values_for_fan_speed,
+                )
+            })
+            .collect_vec();
+
+        let fancoil_max_output = *interpolated_outputs
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .expect("Expected at least one output value");
+        let fancoil_min_output = *interpolated_outputs
+            .iter()
+            .min_by(|a, b| a.total_cmp(b))
+            .expect("Expected at least one output value");
+
+        let mut actual_output = power_req_from_fan_coil.min(fancoil_max_output);
+        let fraction_timestep_running = if fancoil_min_output == 0. {
+            1.
+        } else {
+            1f64.min(actual_output / fancoil_min_output)
+        };
+
+        let fan_power_value = if actual_output <= 0. {
+            actual_output = 0.;
+            0.
+        } else {
+            let interpolated_output_pairs = interpolated_outputs.iter().zip(fan_power_values);
+            let unique_interpolated_output_pairs =
+                interpolated_output_pairs.unique_by(|&(&a, b)| (OrderedFloat(a), OrderedFloat(b)));
+            let sorted_interpolated_output_pairs = unique_interpolated_output_pairs
+                .map(|(&a, b)| (OrderedFloat(a), OrderedFloat(b)))
+                .sorted()
+                .map(|(a, b)| (a.0, b.0));
+            let (sorted_interpolated_values, sorted_fan_power_values): (Vec<f64>, Vec<f64>) =
+                sorted_interpolated_output_pairs.unzip();
+
+            // Find the min and max fan power values
+            let _min_fan_power_value = sorted_fan_power_values
+                .iter()
+                .min_by(|a, b| a.total_cmp(b))
+                .expect("Expected at least one fan power value");
+            let _max_fan_power_value = sorted_fan_power_values
+                .iter()
+                .max_by(|a, b| a.total_cmp(b))
+                .expect("Expected at least one fan power value");
+
+            // TODO (from Python): Currently interpolation follows a linear equation. We think it can be improved with
+            // an equation of form to be determined that gives a better fit
+
+            // Interpolate fan power without extrapolation
+            // NB. in the Python there are defined fill values, unimplemented here
+            np_interp(
+                actual_output,
+                &sorted_interpolated_values,
+                &sorted_fan_power_values,
+            )
+        };
+
+        (actual_output, fan_power_value, fraction_timestep_running)
+    }
+
     fn energy_required_from_heat_source(
         &self,
-        energy_demand: f64,
+        energy_demand_heating_period: f64,
+        time_heating_start: f64,
         timestep: f64,
         temp_rm_prev: f64,
+        temp_emitter_heating_start: f64,
+        temp_emitter_req: f64,
         temp_emitter_max: f64,
         temp_return: f64,
         simulation_time: SimulationTimeIteration,
-    ) -> (f64, bool, Option<BufferTankEmittersDataWithResult>) {
+    ) -> anyhow::Result<(f64, bool, Option<BufferTankEmittersDataWithResult>)> {
         // When there is some demand, calculate max. emitter temperature
         // achievable and emitter temperature required, and base calculation
         // on the lower of the two.
-        // TODO (from Python) The final calculation of emitter temperature below assumes
-        // constant power output from heating source over the timestep.
-        // It does not account for:
-        // - overshoot/undershoot and then stabilisation of emitter temp.
-        // This leads to emitter temp at end of timestep not exactly
-        // matching temp_emitter_target.
-        // - On warm-up, calculate max. temp achievable, then cap at target
-        // and record time this is reached, then assume target temp is
-        // maintained? Would there be an overshoot to make up for
-        // underheating during warm-up?
-        // - On cool-down to lower target temp, calculate lowest temp achievable,
-        // with target temp as floor and record time this is reached, then
-        // assume target temp is maintained? Would there be an undershoot
-        // to make up for overheating during cool-down?
-        // - other services being served by heat source (e.g. DHW) as a
-        // higher priority. This may cause intermittent operation or
-        // delayed start which could cause the emitters to cool
-        // through part of the timestep. We could assume that all the
-        // time spent on higher priority services is at the start of
-        // the timestep and run solve_ivp for time periods 0 to
-        // higher service running time (with no heat input) and higher
-        // service running time to timestep end (with heat input). However,
-        // this may not be realistic where there are multiple space
-        // heating services which in reality would be running at the same
-        // time.
-
-        // Calculate emitter temperature required
-        let power_emitter_req = energy_demand / timestep;
-        let temp_emitter_req = self.temp_emitter_req(power_emitter_req, temp_rm_prev);
 
         // Calculate extra energy required for emitters to reach temp required
-        let energy_req_to_warm_emitters =
-            self.thermal_mass * (temp_emitter_req - self.temp_emitter_prev);
+        let energy_req_to_warm_emitters = if let Some(_) = self.fancoil.as_ref() {
+            0.0
+        } else {
+            self.thermal_mass * (temp_emitter_req - temp_emitter_heating_start)
+        };
+
         // Calculate energy input required to meet energy demand
-        let energy_req_from_heat_source =
-            max_of_2(energy_req_to_warm_emitters + energy_demand, 0.0);
+        let energy_req_from_heat_source = max_of_2(
+            energy_req_to_warm_emitters + energy_demand_heating_period,
+            0.0,
+        );
         // potential demand from buffer tank
 
         let energy_req_from_buffer_tank = energy_req_from_heat_source;
@@ -842,86 +1081,100 @@ impl Emitters {
         // falls to maximum
         // Otherwise:
         let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
-            if self.temp_emitter_prev <= temp_emitter_max {
+            if self.fancoil.is_some() || self.temp_emitter_prev <= temp_emitter_max {
                 // If emitters are below max. temp for this timestep, then max energy
                 // required from heat source will depend on maximum warm-up rate,
                 // which depends on the maximum energy output from the heat source
-                let emitters_data_for_buffer_tank = match self.with_buffer_tank {
-                    true => Some(BufferTankEmittersData {
+                let emitters_data_for_buffer_tank = self.with_buffer_tank.then(|| {
+                    let power_req_from_buffer_tank = if (timestep - time_heating_start) <= 0.0 {
+                        // If there is no time remaining in the timestep, then there
+                        // is no power requirement (and we need to avoid div-by-zero)
+                        0.0
+                    } else {
+                        energy_req_from_buffer_tank / (timestep - time_heating_start)
+                    };
+
+                    BufferTankEmittersData {
                         temp_emitter_req,
-                        power_req_from_buffer_tank: energy_req_from_buffer_tank / timestep,
+                        power_req_from_buffer_tank,
                         design_flow_temp: self.design_flow_temp,
                         target_flow_temp: self
                             .target_flow_temp
                             .expect("Expect a target_flow_temp to have been set at this point"),
                         temp_rm_prev,
-                        // TODO check/implement correct logic for below variables as part of 0.32 migration
-                        variable_flow: false,
+                        variable_flow: self.variable_flow_data.into(),
                         temp_diff_emit_dsgn: self.temp_diff_emit_dsgn,
                         min_flow_rate: self.min_flow_rate,
                         max_flow_rate: self.max_flow_rate,
-                    }),
-                    false => None,
-                };
+                    }
+                });
 
-                self.heat_source
-                    .read()
-                    .energy_output_max(
-                        temp_emitter_max,
-                        temp_return,
-                        emitters_data_for_buffer_tank,
-                        simulation_time,
-                    )
-                    .unwrap()
+                self.heat_source.read().energy_output_max(
+                    temp_emitter_max,
+                    temp_return,
+                    emitters_data_for_buffer_tank,
+                    simulation_time,
+                )?
             } else {
                 (Default::default(), None)
             };
 
-        // Calculate time to reach max. emitter temp at max heat source output
-        let power_output_max_min = energy_provided_by_heat_source_max_min / timestep;
+        let (energy_req_from_heat_source_max, temp_emitter_max_is_final_temp) =
+            if self.fancoil.is_some() {
+                (energy_req_from_heat_source, true)
+            } else {
+                // Radiators and/or UFH
+                // Calculate time to reach max. emitter temp at max heat source output
+                let power_output_max_min = energy_provided_by_heat_source_max_min / timestep;
 
-        let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
-            0.0,
-            timestep,
-            self.temp_emitter_prev,
-            temp_rm_prev,
-            power_output_max_min,
-            Some(temp_emitter_max),
-        );
+                let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
+                    0.0,
+                    timestep,
+                    self.temp_emitter_prev,
+                    temp_rm_prev,
+                    power_output_max_min,
+                    Some(temp_emitter_max),
+                );
 
-        let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
-            match time_temp_emitter_max_reached {
-                None => (timestep, false),
-                Some(time) => (time, true),
+                let (time_in_warmup_cooldown_phase, temp_emitter_max_reached) =
+                    match time_temp_emitter_max_reached {
+                        None => (timestep, false),
+                        Some(time) => (time, true),
+                    };
+
+                // Before this time, energy output from heat source is maximum
+                let energy_req_from_heat_source_before_temp_emitter_max_reached =
+                    power_output_max_min * time_in_warmup_cooldown_phase;
+
+                // After this time, energy output is amount needed to maintain
+                // emitter temp (based on emitter output at constant emitter temp)
+                let energy_req_from_heat_source_after_temp_emitter_max_reached = self
+                    .power_output_emitter(temp_emitter, temp_rm_prev)
+                    * (timestep - time_in_warmup_cooldown_phase);
+
+                // Total energy input req from heat source is therefore sum of energy
+                // output required before and after max emitter temp reached
+                let energy_req_from_heat_source_max =
+                    energy_req_from_heat_source_before_temp_emitter_max_reached
+                        + energy_req_from_heat_source_after_temp_emitter_max_reached;
+
+                let temp_emitter_max_is_final_temp =
+                    temp_emitter_max_reached && temp_emitter_req > temp_emitter_max;
+
+                (
+                    energy_req_from_heat_source_max,
+                    temp_emitter_max_is_final_temp,
+                )
             };
-
-        // Before this time, energy output from heat source is maximum
-        let energy_req_from_heat_source_before_temp_emitter_max_reached =
-            power_output_max_min * time_in_warmup_cooldown_phase;
-
-        // After this time, energy output is amount needed to maintain
-        // emitter temp (based on emitter output at constant emitter temp)
-        let energy_req_from_heat_source_after_temp_emitter_max_reached = self
-            .power_output_emitter(temp_emitter, temp_rm_prev)
-            * (timestep - time_in_warmup_cooldown_phase);
-
-        // Total energy input req from heat source is therefore sum of energy
-        // output required before and after max emitter temp reached
-        let energy_req_from_heat_source_max =
-            energy_req_from_heat_source_before_temp_emitter_max_reached
-                + energy_req_from_heat_source_after_temp_emitter_max_reached;
-
-        let temp_emitter_max_is_final_temp =
-            temp_emitter_max_reached && temp_emitter_req > temp_emitter_max;
 
         // Total energy input req from heat source is therefore lower of:
         // - energy output required to meet space heating demand
         // - energy output when emitters reach maximum temperature
-        (
+        Ok((
             min_of_2(energy_req_from_heat_source, energy_req_from_heat_source_max),
             temp_emitter_max_is_final_temp,
             emitters_data_for_buffer_tank_with_result,
-        )
+        ))
     }
 
     /// Demand energy from emitters and calculate how much energy can be provided
@@ -940,25 +1193,26 @@ impl Emitters {
         let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.0;
         self.target_flow_temp = Some(temp_flow_target);
 
-        let mut energy_req_from_heat_source = Default::default();
-        let mut temp_emitter_max_is_final_temp = false;
-        let mut emitters_data_for_buffer_tank_with_result = None;
+        let energy_req_from_heat_source = Default::default();
+        let temp_emitter_max_is_final_temp = false;
+        let emitters_data_for_buffer_tank_with_result = None;
 
-        if energy_demand > 0. {
-            // Emitters warming up or cooling down to a target temperature
-            (
-                energy_req_from_heat_source,
-                temp_emitter_max_is_final_temp,
-                emitters_data_for_buffer_tank_with_result,
-            ) = self.energy_required_from_heat_source(
-                energy_demand,
-                timestep,
-                temp_rm_prev,
-                temp_emitter_max,
-                temp_return_target,
-                simulation_time,
-            )
-        }
+        // commented out while migrating to 0.32
+        // if energy_demand > 0. {
+        //     // Emitters warming up or cooling down to a target temperature
+        //     (
+        //         energy_req_from_heat_source,
+        //         temp_emitter_max_is_final_temp,
+        //         emitters_data_for_buffer_tank_with_result,
+        //     ) = self.energy_required_from_heat_source(
+        //         energy_demand,
+        //         timestep,
+        //         temp_rm_prev,
+        //         temp_emitter_max,
+        //         temp_return_target,
+        //         simulation_time,
+        //     )
+        // }
 
         // Get energy output of heat source (i.e. energy input to emitters)
         // TODO (from Python) - Instead of passing temp_flow_req into heating system module,
@@ -1055,21 +1309,24 @@ impl Emitters {
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
         let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.;
 
-        let energy_req_from_heat_source = if energy_demand > 0. {
-            // Emitters warming up or cooling down to a target temperature
-            self.energy_required_from_heat_source(
-                energy_demand,
-                timestep,
-                temp_rm_prev,
-                temp_emitter_max,
-                temp_return_target,
-                simulation_time,
-            )
-            .0
-        } else {
-            // Emitters cooling down or at steady-state with heating off
-            0.
-        };
+        let energy_req_from_heat_source = 0.0;
+
+        // commented out while migrating to 0.32
+        // let energy_req_from_heat_source = if energy_demand > 0. {
+        //     // Emitters warming up or cooling down to a target temperature
+        //     self.energy_required_from_heat_source(
+        //         energy_demand,
+        //         timestep,
+        //         temp_rm_prev,
+        //         temp_emitter_max,
+        //         temp_return_target,
+        //         simulation_time,
+        //     )
+        //     .0
+        // } else {
+        //     // Emitters cooling down or at steady-state with heating off
+        //     0.
+        // };
 
         self.heat_source.read().running_time_throughput_factor(
             space_heat_running_time_cumulative,
@@ -1527,7 +1784,7 @@ mod tests {
     #[rstest]
     #[ignore = "while emitters module being migrated to 0.32"]
     fn test_func_temp_emitter_change_rate(emitters: Emitters) {
-        let result = emitters.func_temp_emitter_change_rate(5., 32.);
+        let result = emitters.func_temp_emitter_change_rate(5.)([32.]);
 
         assert_eq!(result, -0.8571428571428514);
     }
@@ -1625,34 +1882,35 @@ mod tests {
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
     ) {
-        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
-        let mut energy_demand = 0.0;
-
-        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-            energy_demand += energy_demand_list[t_idx];
-
-            let (energy_req, temp_emitter_max_is_final_temp, _) =
-                emitters.energy_required_from_heat_source(energy_demand, 1., 10., 25., 30., t_it);
-
-            assert_relative_eq!(
-                energy_req,
-                [
-                    0.7487346289045738,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754,
-                    2.458950517761754
-                ][t_idx]
-            );
-
-            assert_eq!(
-                temp_emitter_max_is_final_temp,
-                [false, false, true, true, true, true, true, true][t_idx]
-            );
-        }
+        // commented out while migrating to 0.32
+        // let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        // let mut energy_demand = 0.0;
+        //
+        // for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+        //     energy_demand += energy_demand_list[t_idx];
+        //
+        //     let (energy_req, temp_emitter_max_is_final_temp, _) =
+        //         emitters.energy_required_from_heat_source(energy_demand, 1., 10., 25., 30., t_it);
+        //
+        //     assert_relative_eq!(
+        //         energy_req,
+        //         [
+        //             0.7487346289045738,
+        //             2.458950517761754,
+        //             2.458950517761754,
+        //             2.458950517761754,
+        //             2.458950517761754,
+        //             2.458950517761754,
+        //             2.458950517761754,
+        //             2.458950517761754
+        //         ][t_idx]
+        //     );
+        //
+        //     assert_eq!(
+        //         temp_emitter_max_is_final_temp,
+        //         [false, false, true, true, true, true, true, true][t_idx]
+        //     );
+        // }
     }
 
     // Python has a test_running_time_throughput_factor which we've not ported for now as it relies

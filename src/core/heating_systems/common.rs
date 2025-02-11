@@ -121,13 +121,13 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub fn frac_convective(&self) -> f64 {
+    pub fn frac_convective(&self, simtime: SimulationTimeIteration) -> f64 {
         match self {
             SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.frac_convective(),
             SpaceHeatSystem::Instant(instant) => instant.frac_convective(),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.frac_convective(),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
-                wet_distribution.frac_convective()
+                wet_distribution.frac_convective(simtime)
             }
         }
     }

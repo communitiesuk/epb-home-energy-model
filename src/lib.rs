@@ -1928,6 +1928,17 @@ impl From<f64> for StringOrNumber {
     }
 }
 
+impl TryFrom<StringOrNumber> for f64 {
+    type Error = anyhow::Error;
+
+    fn try_from(value: StringOrNumber) -> Result<Self, Self::Error> {
+        match value {
+            StringOrNumber::Float(number) => Ok(number),
+            _ => Err(anyhow!("Cannot convert {} to f64", value)),
+        }
+    }
+}
+
 impl AddAssign for StringOrNumber {
     fn add_assign(&mut self, rhs: Self) {
         match (self, rhs) {

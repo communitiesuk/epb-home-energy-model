@@ -1289,8 +1289,10 @@ impl Corpus {
                 }
                 h_name => {
                     let space_heat_system = self.space_heat_systems.get(h_name).unwrap().lock();
-                    frac_convective_heat
-                        .insert((*h_name).to_owned(), space_heat_system.frac_convective());
+                    frac_convective_heat.insert(
+                        (*h_name).to_owned(),
+                        space_heat_system.frac_convective(simtime),
+                    );
                     temp_setpnt_heat.insert(
                         (*h_name).to_owned(),
                         space_heat_system

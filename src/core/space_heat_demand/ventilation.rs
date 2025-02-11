@@ -6,6 +6,7 @@ use crate::core::controls::time_control::{Control, ControlBehaviour};
 use crate::core::ductwork::Ductwork;
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::AIR;
+use crate::core::solvers::fsolve;
 use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 use crate::core::units::{
     celsius_to_kelvin, LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE, SECONDS_PER_HOUR,
@@ -1587,11 +1588,11 @@ impl InfiltrationVentilation {
 
     /// Implicit solver for qv_pdu
     fn calculate_qv_pdu(&self, qv_pdu: f64, p_z_ref: f64, t_z: f64, t_e: f64, h_z: f64) -> f64 {
-        let func = |qv_pdu, p_z_ref, t_z, h_z| {
+        let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
             self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z)
         };
 
-        fsolve(func, qv_pdu, (p_z_ref, t_z, h_z)) // returns qv_pdu
+        fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
     }
 
     /// Implicit formula solving for qv_pdu as unknown.
@@ -2560,13 +2561,6 @@ impl VentilationDetailedResult {
             self.qm_out.to_string(),
         ]
     }
-}
-
-// TODO this is from scipy
-// Find equivalent function in a Rust library or implement
-fn fsolve(_func: impl FnOnce(f64, f64, f64, f64) -> f64, x0: f64, _args: (f64, f64, f64)) -> f64 {
-    // Stub implementation for the timebeing
-    x0
 }
 
 #[derive(Debug, Error)]
