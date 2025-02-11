@@ -1811,22 +1811,51 @@ fn create_appliance_gains(
         .ok_or_else(|| anyhow!("Demand schedules are empty"))?
         .len();
 
-    let sched_zeros = vec![0.; sched_len];
+    let sched_zeros: Vec<f64> = vec![0.; sched_len];
 
-    let mut main_power_schedule = IndexMap::from([
+    let mut main_power_schedule: IndexMap<String, Vec<f64>> = IndexMap::from([
+        (ENERGY_SUPPLY_NAME_GAS.to_string(), sched_zeros.clone()),
+        (
+            ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
+            sched_zeros.clone(),
+        ),
+    ]);
+
+    let mut main_weight_sched: IndexMap<&str, Vec<f64>> = IndexMap::from([
         (ENERGY_SUPPLY_NAME_GAS, sched_zeros.clone()),
         (ENERGY_SUPPLY_NAME_ELECTRICITY, sched_zeros.clone()),
     ]);
 
-    let mut main_weight_sched = IndexMap::from([
-        (ENERGY_SUPPLY_NAME_GAS, sched_zeros.clone()),
-        (ENERGY_SUPPLY_NAME_ELECTRICITY, sched_zeros.clone()),
-    ]);
+    for appliance_key in power_scheds.keys() {
+        let energy_supply_name = input
+            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())
+            .ok_or_else(|| {
+                anyhow!(
+                    "No energy supply type for appliance gains for {}",
+                    appliance_key
+                )
+            })?;
+
+        let main_power_schedule_for_energy_supply: &Vec<f64> = main_power_schedule
+            .get(&energy_supply_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "There was no main power schedule for energy supply {}",
+                    energy_supply_name
+                )
+            })?;
+
+        main_power_schedule.insert(
+            energy_supply_name,
+            main_power_schedule_for_energy_supply
+                .iter()
+                .enumerate()
+                .map(|(i, main_power)| main_power + power_scheds.get(appliance_key).unwrap()[i])
+                .collect(),
+        );
+    }
 
     todo!();
-    // for key in input.keys_for_appliance_gains_with_load_shifting() {
-    //     input.set_load_shifting_demand_timeseries_for_appliance(&key, main_sched.clone());
-    // }
 
     Ok(())
 }
