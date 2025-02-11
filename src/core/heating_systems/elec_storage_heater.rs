@@ -328,6 +328,10 @@ impl ElecStorageHeater {
         per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
+    pub(crate) fn frac_convective(&self) -> f64 {
+        self.frac_convective
+    }
+
     fn convert_to_kwh(power: f64, time: f64) -> f64 {
         // Converts power value supplied to the correct energy unit
         // Arguments

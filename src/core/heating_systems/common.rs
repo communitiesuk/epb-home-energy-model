@@ -123,7 +123,7 @@ impl SpaceHeatSystem {
 
     pub fn frac_convective(&self) -> f64 {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
+            SpaceHeatSystem::ElecStorage(elec_storage) => elec_storage.frac_convective(),
             SpaceHeatSystem::Instant(instant) => instant.frac_convective(),
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.frac_convective(),
             SpaceHeatSystem::WetDistribution(wet_distribution) => {
