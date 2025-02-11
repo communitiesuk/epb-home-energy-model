@@ -254,16 +254,14 @@ impl Emitters {
             } else {
                 bail!("Both min_flow_rate and max_flow_rate are required if variable_flow is true")
             }
+        } else if let Some(design_flow_rate) = design_flow_rate {
+            (
+                VariableFlowData::No { design_flow_rate },
+                design_flow_rate,
+                design_flow_rate,
+            )
         } else {
-            if let Some(design_flow_rate) = design_flow_rate {
-                (
-                    VariableFlowData::No { design_flow_rate },
-                    design_flow_rate,
-                    design_flow_rate,
-                )
-            } else {
-                bail!("design_flow_rate is required if variable_flow is false")
-            }
+            bail!("design_flow_rate is required if variable_flow is false")
         };
         let bypass_percentage_recirculated = bypass_percentage_recirculated.unwrap_or(0.0);
         let ecodesign_controller_class = ecodesign_controller.ecodesign_control_class;

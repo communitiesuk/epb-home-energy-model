@@ -1464,8 +1464,8 @@ fn create_lighting_gains(
     // from analysis of EFUS 2017 data (updated to derive from harmonic mean)
     let lumens = 1_139. * (total_floor_area * number_of_occupants).powf(0.39);
     let mut topup = top_up_lighting(input, lumens);
-    topup = topup / 21.3; // assumed efficacy of top up lighting
-    let topup_per_day = topup / 365 as f64;
+    topup /= 21.3; // assumed efficacy of top up lighting
+    let topup_per_day = topup / 365_f64;
 
     // dropped 1/3 - 2/3 split based on SAP2012 assumptions about portable lighting
     let kwh_per_year = lumens / lighting_efficacy;
@@ -1490,10 +1490,10 @@ fn create_lighting_gains(
         .into_iter()
         .enumerate()
         .map(|(i, profile)| {
-            return (
+            (
                 (profile * kwh_per_day * factor[i]) * 2. * 1_000.,
                 (profile * topup_per_day * factor[i]) * 2. * 1_000.,
-            );
+            )
         })
         .collect();
 

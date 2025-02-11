@@ -3494,8 +3494,8 @@ fn infiltration_ventilation_from_input(
         input,
         zones,
         detailed_output_heating_cooling,
-        &energy_supplies,
-        &controls,
+        energy_supplies,
+        controls,
     )?;
 
     Ok((
@@ -4726,7 +4726,7 @@ fn space_heat_systems_from_input(
                         // TODO Fix thermal mass logic as part of 0.32 migration
                         let space_heater = Emitters::new(
                             *thermal_mass,
-                            &emitters,
+                            emitters,
                             *temp_diff_emit_dsgn,
                             variable_flow.unwrap_or(false),
                             *design_flow_rate,

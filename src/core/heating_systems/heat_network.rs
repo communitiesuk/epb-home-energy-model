@@ -161,7 +161,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(&simulation_time_iteration) })
+        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(simulation_time_iteration) })
     }
 }
 
