@@ -444,7 +444,10 @@
           ]
         },
         "weight": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "Tariff"
+          ]
         },
         "weight_timeseries": {
           "type": [
