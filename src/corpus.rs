@@ -1411,24 +1411,25 @@ impl Corpus {
         frac_convective_heat_zone_system: &HashMap<&str, IndexMap<String, f64>>,
         frac_convective_cool_zone_system: &HashMap<&str, IndexMap<String, f64>>,
         z_name: &str,
-    ) -> (
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<(
         IndexMap<String, f64>,
         IndexMap<String, f64>,
         IndexMap<String, f64>,
-    ) {
-        let h_output_min = h_name_list_sorted_zone[z_name]
+    )> {
+        let h_output_min: IndexMap<String, f64> = h_name_list_sorted_zone[z_name]
             .iter()
-            .map(|h_name| {
-                (
+            .map(|h_name| -> anyhow::Result<(String, f64)> {
+                Ok((
                     h_name.clone(),
                     self.space_heat_systems
                         .get(h_name)
                         .unwrap()
                         .lock()
-                        .energy_output_min(),
-                )
+                        .energy_output_min(simulation_time_iteration)?,
+                ))
             })
-            .collect::<IndexMap<_, _>>();
+            .try_collect()?;
         let c_output_min = c_name_list_sorted_zone[z_name]
             .iter()
             .map(|c_name| {
@@ -1464,7 +1465,7 @@ impl Corpus {
             .map(|hc_name| (hc_name.clone(), 0.0))
             .collect::<IndexMap<_, _>>();
 
-        (hc_output_convective, hc_output_radiative, hc_output_min)
+        Ok((hc_output_convective, hc_output_radiative, hc_output_min))
     }
 
     /// Calculate space heating demand, heating system output and temperatures
@@ -1749,7 +1750,8 @@ impl Corpus {
                     &frac_convective_heat_zone_system,
                     &frac_convective_cool_zone_system,
                     z_name,
-                );
+                    simtime,
+                )?;
             let mut space_heat_demand_zone_system = h_name_list_sorted_zone[z_name]
                 .iter()
                 .map(|h_name| (h_name.as_str(), 0.0))

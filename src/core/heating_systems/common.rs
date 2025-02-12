@@ -139,7 +139,7 @@ impl SpaceHeatSystem {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unreachable!(), // it isn't expected that this will be called on electric storage heaters,
+            SpaceHeatSystem::ElecStorage(..) => unreachable!(), // it isn't expected that this will be called on electric storage heaters
             SpaceHeatSystem::Instant(_instant) => unreachable!(), // it isn't expected that this will be called on instant heaters
             SpaceHeatSystem::WarmAir(warm_air) => warm_air.running_time_throughput_factor(
                 energy_demand,
@@ -204,11 +204,16 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub fn energy_output_min(&self) -> f64 {
+    pub fn energy_output_min(
+        &self,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
         match self {
-            SpaceHeatSystem::ElecStorage(..) => unimplemented!("TODO 0.32"),
-            SpaceHeatSystem::Instant(instant) => instant.energy_output_min(),
-            SpaceHeatSystem::WarmAir(warm_air) => warm_air.energy_output_min(),
+            SpaceHeatSystem::ElecStorage(elec_storage) => {
+                elec_storage.energy_output_min(&simulation_time_iteration)
+            }
+            SpaceHeatSystem::Instant(instant) => Ok(instant.energy_output_min()),
+            SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
             SpaceHeatSystem::WetDistribution(_wet_distribution) => {
                 unimplemented!("TODO as part of 0.32 migration")
             }
