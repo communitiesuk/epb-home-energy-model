@@ -564,8 +564,8 @@ pub(crate) enum ControlDetails {
     #[serde(rename = "smartappliance")]
     SmartAppliance {
         #[serde(rename = "battery24hr")]
-        battery_24hr: Box<SmartApplianceBattery>,
-        non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+        battery_24hr: Option<Box<SmartApplianceBattery>>,
+        non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
         power_timeseries: IndexMap<String, Vec<f64>>,
         time_series_step: f64,
         weight_timeseries: IndexMap<String, Vec<f64>>,
@@ -3609,7 +3609,15 @@ impl InputForProcessing {
     }
 
     pub(super) fn has_control_for_loadshifting(self) -> bool {
-        self.input.control.extra.get("loadshifting").is_some() // TODO: the "type" of these is "smartappliance" - should we not be relying on that instead of the key loadshifting?
+        self.input.control.extra.get("loadshifting").is_some() // TODO: the "type" of these is "smartappliance" - should we be relying on that instead of the key loadshifting?
+    }
+
+    pub(super) fn set_loadshifting_control(&mut self, smart_control: ControlDetails) -> &Self {
+        self.input
+            .control
+            .extra
+            .insert("loadshifting".to_string(), smart_control);
+        self
     }
 
     pub fn zone_keys(&self) -> Vec<String> {

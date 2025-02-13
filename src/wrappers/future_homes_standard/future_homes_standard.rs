@@ -1,3 +1,4 @@
+use crate::compare_floats::order_of_2;
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR, SECONDS_PER_HOUR,
@@ -7,7 +8,7 @@ use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
-    EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+    ControlDetails, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
     MechanicalVentilationForProcessing, SpaceHeatControlType, SystemReference,
     TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
@@ -1813,7 +1814,7 @@ fn create_appliance_gains(
 
     let sched_zeros: Vec<f64> = vec![0.; sched_len];
 
-    let mut main_power_schedule: IndexMap<String, Vec<f64>> = IndexMap::from([
+    let mut main_power_sched: IndexMap<String, Vec<f64>> = IndexMap::from([
         (ENERGY_SUPPLY_NAME_GAS.to_string(), sched_zeros.clone()),
         (
             ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
@@ -1839,16 +1840,15 @@ fn create_appliance_gains(
                 )
             })?;
 
-        let main_power_schedule_for_energy_supply: &Vec<f64> = main_power_schedule
-            .get(&energy_supply_name)
-            .ok_or_else(|| {
+        let main_power_schedule_for_energy_supply: &Vec<f64> =
+            main_power_sched.get(&energy_supply_name).ok_or_else(|| {
                 anyhow!(
                     "There was no main power schedule for energy supply {}",
                     energy_supply_name
                 )
             })?;
 
-        main_power_schedule.insert(
+        main_power_sched.insert(
             energy_supply_name,
             main_power_schedule_for_energy_supply
                 .iter()
@@ -1885,6 +1885,42 @@ fn create_appliance_gains(
                 .collect(),
         );
     }
+
+    let smart_control: ControlDetails = ControlDetails::SmartAppliance {
+        battery_24hr: None,
+        non_appliance_demand_24hr: None,
+        power_timeseries: main_power_sched,
+        time_series_step: 1.,
+        weight_timeseries: main_weight_sched,
+    };
+
+    input.set_loadshifting_control(smart_control);
+
+    // work out order in which to process loadshifting appliances
+    let defined_priority = priority
+        .iter()
+        .filter_map(|(appliance_name, priorities)| {
+            if priorities[0].is_some() {
+                Some(appliance_name)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<&ApplianceKey>>();
+
+    let mut first_priority_ranks: Vec<f64> = defined_priority
+        .iter()
+        .map(|appliance_name| priority.get(appliance_name.to_owned()))
+        .flatten()
+        .filter_map(|p| p[0])
+        .collect_vec();
+
+    first_priority_ranks.append(&mut vec![0.]);
+
+    let lowest_priority = first_priority_ranks
+        .iter()
+        .max_by(|first, second| order_of_2(*first, *second))
+        .unwrap();
 
     todo!();
 

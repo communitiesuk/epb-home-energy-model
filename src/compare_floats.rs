@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub fn min_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     if first < second {
         first
@@ -11,6 +13,16 @@ pub fn max_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
         first
     } else {
         second
+    }
+}
+
+pub fn order_of_2<T: PartialOrd + Copy>(first: T, second: T) -> Ordering {
+    if first > second {
+        Ordering::Greater
+    } else if second > first {
+        Ordering::Less
+    } else {
+        Ordering::Equal
     }
 }
 
