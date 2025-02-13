@@ -3435,7 +3435,7 @@ pub struct Tariff {
 
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
-    input: Input, // TODO: review if pub(super) is safe
+    input: Input,
 }
 
 /// This type makes methods available for restricted access by wrappers,
