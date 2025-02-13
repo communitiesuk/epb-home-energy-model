@@ -800,8 +800,8 @@ impl Corpus {
             internal_gains_from_input(&input.internal_gains, total_floor_area)?;
 
         // setup smart control for loadshifting
-        let smart_control = if let Some(smart_control) = input.control.extra.get("loadshifting") {
-            match smart_control {
+        let smart_control = if let Some(control) = input.control.extra.get("loadshifting") {
+            match control {
                 ControlDetails::SmartAppliance {
                     battery_24hr,
                     non_appliance_demand_24hr,
