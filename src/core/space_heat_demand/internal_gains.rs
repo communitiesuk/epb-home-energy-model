@@ -686,8 +686,8 @@ mod tests {
             )]),
             appliance_data.time_series_step,
             &simulation_time_for_event_appliance_gains.iter(),
-            non_appliance_demand_24hr,
-            &battery24hr,
+            Some(non_appliance_demand_24hr),
+            Some(&battery24hr),
             &IndexMap::from([("mains elec".into(), energy_supply)]),
             vec!["Clothes_drying".into()],
         )

@@ -815,7 +815,7 @@ impl Corpus {
                     *time_series_step,
                     &*simulation_time_iterator,
                     non_appliance_demand_24hr.clone(),
-                    battery_24hr,
+                    battery_24hr.as_deref(),
                     &energy_supplies,
                     input.appliance_gains.keys().cloned().collect::<Vec<_>>(),
                 )?)),
