@@ -5,9 +5,13 @@ use crate::core::heating_systems::common::SpaceHeatingService;
 use crate::core::heating_systems::heat_pump::{
     BufferTankEmittersData, BufferTankEmittersDataWithResult,
 };
-use crate::core::solvers::fsolve;
+use crate::core::material_properties::WATER;
+use crate::core::solvers::{fsolve, root};
 use crate::core::space_heat_demand::zone::SimpleZone;
-use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT};
+use crate::core::units::{
+    JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, WATTS_PER_KILOWATT,
+};
+use crate::corpus::KeyString;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     EcoDesignController, EcoDesignControllerClass, FanSpeedData, FancoilTestData,
@@ -19,6 +23,7 @@ use crate::StringOrNumber;
 use anyhow::{anyhow, bail, Error};
 use argmin::core::{CostFunction, Executor};
 use argmin::solver::brent::BrentRoot;
+use atomic_float::AtomicF64;
 use derivative::Derivative;
 use itertools::Itertools;
 use ode_solvers::{dop_shared::OutputType, Dopri5, System, Vector1};
@@ -26,6 +31,7 @@ use ordered_float::OrderedFloat;
 use parking_lot::RwLock;
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 type State = Vector1<f64>;
@@ -42,7 +48,7 @@ pub fn convert_flow_to_return_temp(flow_temp_celsius: f64) -> f64 {
     (6.0 / 7.0) * flow_temp_celsius
 }
 
-#[derive(Clone, Derivative)]
+#[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct Emitters {
     pub thermal_mass: f64,
@@ -61,8 +67,8 @@ pub(crate) struct Emitters {
     max_outdoor_temp: Option<f64>,
     min_flow_temp: Option<f64>,
     max_flow_temp: Option<f64>,
-    temp_emitter_prev: f64,
-    target_flow_temp: Option<f64>, // In Python this is set from inside demand energy and does not exist before then
+    temp_emitter_prev: AtomicF64,
+    target_flow_temp: AtomicF64, // In Python this is set from inside demand energy and does not exist before then
     output_detailed_results: bool,
     emitters_detailed_results: Option<Arc<RwLock<Vec<EmittersDetailedResult>>>>,
     energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
@@ -442,8 +448,8 @@ impl Emitters {
             max_outdoor_temp,
             min_flow_temp,
             max_flow_temp,
-            temp_emitter_prev: 20.0,
-            target_flow_temp: None,
+            temp_emitter_prev: 20.0.into(),
+            target_flow_temp: 20.0.into(), // initial value, though expected to be updated before being used
             output_detailed_results,
             emitters_detailed_results: output_detailed_results.then(Default::default),
             energy_supply_fan_coil_conn,
@@ -676,17 +682,17 @@ impl Emitters {
     ///        Rearrange to solve for T_E
     ///
     /// Panics if called when one of the emitters is a fancoil.
-    pub fn temp_emitter_req(&self, power_emitter_req: f64, temp_rm: f64) -> f64 {
+    pub fn temp_emitter_req(&self, power_emitter_req: f64, temp_rm: f64) -> anyhow::Result<f64> {
         // extract out c and n values from emitters so we don't need to hold a reference to emitters
         // in following function
         let c_n_pairs = self.extract_c_n_pairs();
 
         let func_temp_emitter_req = |temp_emitter: f64, _args| {
-            power_emitter_req
+            Ok(power_emitter_req
                 - c_n_pairs
                     .iter()
                     .map(|&(c, n)| c * (temp_emitter - temp_rm).powf(n))
-                    .sum::<f64>()
+                    .sum::<f64>())
         };
 
         fsolve(func_temp_emitter_req, temp_rm + 10., [])
@@ -938,7 +944,7 @@ impl Emitters {
     fn fancoil_output(
         &self,
         delta_t_fancoil: f64,
-        temperature_data: &[&[f64]],
+        temperature_data: &[Vec<f64>],
         fan_power_data: &[StringOrNumber],
         power_req_from_fan_coil: f64,
     ) -> (f64, f64, f64) {
@@ -1081,7 +1087,7 @@ impl Emitters {
         // falls to maximum
         // Otherwise:
         let (energy_provided_by_heat_source_max_min, emitters_data_for_buffer_tank_with_result) =
-            if self.fancoil.is_some() || self.temp_emitter_prev <= temp_emitter_max {
+            if self.fancoil.is_some() || self.temp_emitter_prev() <= temp_emitter_max {
                 // If emitters are below max. temp for this timestep, then max energy
                 // required from heat source will depend on maximum warm-up rate,
                 // which depends on the maximum energy output from the heat source
@@ -1098,9 +1104,7 @@ impl Emitters {
                         temp_emitter_req,
                         power_req_from_buffer_tank,
                         design_flow_temp: self.design_flow_temp,
-                        target_flow_temp: self
-                            .target_flow_temp
-                            .expect("Expect a target_flow_temp to have been set at this point"),
+                        target_flow_temp: self.target_flow_temp.load(Ordering::SeqCst),
                         temp_rm_prev,
                         variable_flow: self.variable_flow_data.into(),
                         temp_diff_emit_dsgn: self.temp_diff_emit_dsgn,
@@ -1130,7 +1134,7 @@ impl Emitters {
                 let (temp_emitter, time_temp_emitter_max_reached) = self.temp_emitter(
                     0.0,
                     timestep,
-                    self.temp_emitter_prev,
+                    self.temp_emitter_prev(),
                     temp_rm_prev,
                     power_output_max_min,
                     Some(temp_emitter_max),
@@ -1177,170 +1181,633 @@ impl Emitters {
         ))
     }
 
-    /// Demand energy from emitters and calculate how much energy can be provided
+    fn temp_emitter_prev(&self) -> f64 {
+        self.temp_emitter_prev.load(Ordering::SeqCst)
+    }
+
+    fn energy_surplus_during_cooldown(
+        &self,
+        time_cooldown: f64,
+        [timestep, energy_demand, temp_rm_prev]: [f64; 3],
+    ) -> f64 {
+        // Calculate emitter temperature after specified time with no heat input
+        let temp_emitter_prev = self.temp_emitter_prev();
+        let (time_emitter_no_heat_input, _) = self.temp_emitter(
+            0.0,
+            time_cooldown,
+            temp_emitter_prev,
+            temp_rm_prev,
+            0.0, // no heat from heat source during initial cool-down
+            None,
+        );
+        let energy_released_from_emitters =
+            self.thermal_mass * (temp_emitter_prev - time_emitter_no_heat_input);
+        let energy_demand_cooldown = energy_demand * time_cooldown / timestep;
+
+        energy_released_from_emitters - energy_demand_cooldown
+    }
+
+    ///
+    fn calc_emitter_cooldown(
+        &self,
+        energy_demand: f64,
+        temp_emitter_req: f64,
+        temp_rm_prev: f64,
+        timestep: f64,
+    ) -> anyhow::Result<(f64, f64)> {
+        let temp_emitter_prev = self.temp_emitter_prev();
+        Ok(if temp_emitter_prev < temp_emitter_req {
+            (0.0, temp_emitter_prev)
+        } else {
+            // Calculate time that emitters are cooling down (accounting for
+            // undershoot), during which the heat source does not provide any
+            // heat, by iterating to find the end time which leads to the heat
+            // output matching the energy demand accumulated so far during the
+            // timestep
+            // TODO (from Python) Is there a more efficient way to do this than iterating?
+
+            // The starting guess below is the end of the timestep rather
+            // than the start because at the start of the timestep the
+            // function being solved will effectively be 0 minus 0, which
+            // is not the result we are seeking (unless no other exists)
+            let time_cooldown = root(
+                |time_cooldown, args| self.energy_surplus_during_cooldown(time_cooldown, args),
+                timestep,
+                [timestep, energy_demand, temp_rm_prev],
+                Some(1e-8),
+            )?;
+
+            // Limit cooldown time to be within timestep
+            let time_heating_start = 0f64.max(time_cooldown.min(timestep));
+            // Calculate emitter temperature at heating start time
+            let (time_emitter_heating_start, _) = self.temp_emitter(
+                0.0,
+                time_heating_start,
+                temp_emitter_prev,
+                temp_rm_prev,
+                0.0, // No heat from heat source during initial cool-down
+                None,
+            );
+
+            (time_heating_start, time_emitter_heating_start)
+        })
+    }
+
+    /// Demand energy from emitters and calculate how much energy can be provided.
+    /// This function is called in a loop inside each timestep, where the return temp
+    /// is recalculated in each iteration.
+    ///
     /// Arguments:
-    /// energy_demand -- in kWh
+    /// * `energy_demand` - in kWh
+    /// * `temp_flow_target` - flow temp in C
+    /// * `temp_return_target` - return temp in C
+    /// * `update_heat_source_state` - if False, when heat_source.demand_energy is called,
+    ///                                the heat source state does not change.
+    /// * `update_temp_emitter_prev` - if False, the emitter temperature is not
+    ///                                saved for next timestep.
+    /// * `blended_temp_flow` - temp when there is bypass recirculated water.
+    ///                         If no recirculated water, the it will be equal to the flow temp.
+    fn demand_energy_flow_return(
+        &self,
+        energy_demand: f64,
+        temp_flow_target: f64,
+        temp_return_target: f64,
+        simtime: SimulationTimeIteration,
+        update_heat_source_state: Option<bool>,
+        update_temp_emitter_prev: Option<bool>,
+        blended_temp_flow: Option<f64>,
+    ) -> anyhow::Result<(f64, f64)> {
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
+        let update_temp_emitter_prev = update_temp_emitter_prev.unwrap_or(true);
+
+        let timestep = simtime.timestep;
+        let temp_rm_prev = self.zone.temp_internal_air();
+
+        // Calculate target flow and return temperature
+        let temp_emitter_max = if let Some(blended_temp_flow) = blended_temp_flow {
+            (blended_temp_flow + temp_return_target) / 2.
+        } else {
+            (temp_flow_target + temp_return_target) / 2.
+        };
+
+        // Calculate emitter temperature required
+        let power_emitter_req = energy_demand / timestep;
+        let temp_emitter_req = if self.fancoil.is_some() {
+            temp_emitter_max
+        } else {
+            self.temp_emitter_req(power_emitter_req, temp_rm_prev)?
+        };
+
+        self.target_flow_temp
+            .store(temp_flow_target, Ordering::SeqCst);
+
+        let mut emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult> = None;
+
+        let mut temp_emitter_output = StringOrNumber::String(KeyString::from("n/a").unwrap());
+
+        let (
+            time_heating_start,
+            temp_emitter_heating_start,
+            energy_req_from_heat_source,
+            temp_emitter_max_is_final_temp,
+            fan_energy_kwh,
+        ) = if energy_demand <= 0. {
+            (0.0, self.temp_emitter_prev(), 0.0, false, 0.0)
+        } else {
+            let (time_heating_start, temp_emitter_heating_start, fan_energy_kwh) =
+                if let Some(WetEmitter::Fancoil {
+                    n_units,
+                    frac_convective,
+                    test_data,
+                    temperature_data,
+                    fan_power_data,
+                }) = self.fancoil.as_ref().map(|f| f.as_ref())
+                {
+                    let n_units = *n_units as f64;
+                    let delta_t_fancoil = temp_emitter_max - temp_rm_prev;
+                    let power_req_from_fan_coil = energy_demand / n_units / timestep;
+                    let (
+                        power_delivered_by_fancoil,
+                        fan_power_single_unit,
+                        fraction_timestep_running,
+                    ) = self.fancoil_output(
+                        delta_t_fancoil,
+                        temperature_data,
+                        fan_power_data,
+                        power_req_from_fan_coil,
+                    );
+                    let power_req_from_heat_source =
+                        (power_delivered_by_fancoil - fan_power_single_unit) * n_units;
+                    let fan_power = fan_power_single_unit * n_units;
+                    let energy_demand = (power_req_from_heat_source + fan_power) * timestep;
+                    let fan_energy_kwh = fan_power / WATTS_PER_KILOWATT as f64
+                        * timestep
+                        * fraction_timestep_running;
+                    if update_heat_source_state {
+                        if let Some(conn) = self.energy_supply_fan_coil_conn.as_ref() {
+                            conn.demand_energy(fan_energy_kwh, simtime.index)?;
+                        }
+                    }
+
+                    // Emitters (fancoils) don't have a warning up or cooling down period:
+                    let time_heating_start = 0.0;
+                    let temp_emitter_heating_start = self.temp_emitter_prev();
+
+                    (
+                        time_heating_start,
+                        temp_emitter_heating_start,
+                        fan_energy_kwh,
+                    )
+                } else {
+                    let fan_energy_kwh = 0.;
+                    // Emitters (radiators and ufh) warming up or cooling down to a target temperature:
+                    // - First we calculate the time taken for the emitters to cool
+                    //   before the heating system activates, and the temperature that
+                    //   the emitters reach at this time. Note that the emitters will
+                    //   cool to below the target temperature so that the total heat
+                    //   output in this cooling period matches the demand accumulated so
+                    //   far in the timestep (assumed to be proportional to the fraction
+                    //   of the timestep that has elapsed)
+                    let (time_heating_start, temp_emitter_heating_start) = self
+                        .calc_emitter_cooldown(
+                            energy_demand,
+                            temp_emitter_req,
+                            temp_rm_prev,
+                            timestep,
+                        )?;
+
+                    (
+                        time_heating_start,
+                        temp_emitter_heating_start,
+                        fan_energy_kwh,
+                    )
+                };
+
+            // Then, we calculate the energy required from the heat source in
+            // the remaining part of the timestep - (full timestep for fancoils)
+            let (
+                energy_req_from_heat_source,
+                temp_emitter_max_is_final_temp,
+                new_emitters_data_for_buffer_tank,
+            ) = self.energy_required_from_heat_source(
+                (energy_demand - fan_energy_kwh) * (1.0 - time_heating_start / timestep),
+                time_heating_start,
+                timestep,
+                temp_rm_prev,
+                temp_emitter_heating_start,
+                temp_emitter_req,
+                temp_emitter_max,
+                temp_return_target,
+                simtime,
+            )?;
+
+            if let Some(new_emitters_data_for_buffer_tank) = new_emitters_data_for_buffer_tank {
+                emitters_data_for_buffer_tank.replace(new_emitters_data_for_buffer_tank);
+            }
+
+            (
+                time_heating_start,
+                temp_emitter_heating_start,
+                energy_req_from_heat_source,
+                temp_emitter_max_is_final_temp,
+                fan_energy_kwh,
+            )
+        };
+
+        // Get energy output of heat source (i.e. energy input to emitters)
+        // TODO (from Python) Instead of passing temp_flow_req into heating system module,
+        // calculate average flow temp achieved across timestep?
+
+        // Catering for the possibility of a BufferTank in the emitters' loop
+        let (energy_provided_by_heat_source, _) = self.heat_source.write().demand_energy(
+            energy_req_from_heat_source,
+            temp_flow_target,
+            temp_return_target,
+            Some(time_heating_start),
+            emitters_data_for_buffer_tank.and_then(|data| self.with_buffer_tank.then_some(data)),
+            Some(update_heat_source_state),
+            simtime,
+        )?;
+
+        let energy_released_from_emitters = if self.fancoil.is_some() {
+            energy_provided_by_heat_source + fan_energy_kwh
+        } else {
+            // Calculate emitter temperature achieved at end of timestep.
+            // Do not allow emitter temp to rise above maximum
+            // Do not allow emitter temp to fall below room temp
+            let temp_emitter = if temp_emitter_max_is_final_temp {
+                temp_emitter_max
+            } else {
+                let power_provided_by_heat_source =
+                    energy_provided_by_heat_source / (timestep - time_heating_start);
+                let (mut temp_emitter, time_temp_target_reached) = self.temp_emitter(
+                    time_heating_start,
+                    timestep,
+                    temp_emitter_heating_start,
+                    temp_rm_prev,
+                    power_provided_by_heat_source,
+                    Some(temp_emitter_req),
+                );
+                // If target emitter temperature is reached on warm-up, assume that
+                // this is maintained to the end of the timestep. This accounts for
+                // overshoot and stabilisation without having to model it explicitly
+                if temp_emitter_heating_start < temp_emitter_req
+                    && time_temp_target_reached.is_some()
+                {
+                    temp_emitter = temp_emitter_req;
+                }
+
+                temp_emitter
+            };
+
+            let temp_emitter = temp_emitter.max(temp_rm_prev);
+
+            temp_emitter_output = StringOrNumber::Float(temp_emitter);
+
+            let energy_released_from_emitters = energy_provided_by_heat_source
+                + self.thermal_mass * (self.temp_emitter_prev() - temp_emitter);
+
+            // Save emitter temperature for next timestep
+            if update_temp_emitter_prev {
+                self.temp_emitter_prev.store(temp_emitter, Ordering::SeqCst);
+            }
+
+            energy_released_from_emitters
+        };
+
+        // If detailed results flag is set populate dict with values
+        if self.output_detailed_results && update_heat_source_state {
+            let result = EmittersDetailedResult {
+                timestep_index: simtime.index,
+                energy_demand,
+                temp_emitter_req,
+                time_heating_start,
+                energy_provided_by_heat_source,
+                temp_emitter: temp_emitter_output,
+                temp_emitter_max,
+                energy_released_from_emitters,
+                temp_flow_target,
+                temp_return_target,
+                temp_emitter_max_is_final_temp,
+                energy_req_from_heat_source,
+                fan_energy_kwh,
+            };
+            self.emitters_detailed_results.as_ref().unwrap().write()[simtime.index] = result;
+        }
+
+        Ok((energy_released_from_emitters, energy_req_from_heat_source))
+    }
+
+    /// Energy released from emitters after doing a previous loop
+    /// that updates the return temperature.
     pub(crate) fn demand_energy(
         &mut self,
         energy_demand: f64,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let timestep = simulation_time.timestep;
-        let temp_rm_prev = self.zone.temp_internal_air();
-
-        // Calculate target flow and return temperature
+        // ecodesign controls to determine flow temperature,
+        // and 6/7th rule to calculate the initial return temperature
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
-        let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.0;
-        self.target_flow_temp = Some(temp_flow_target);
 
-        let energy_req_from_heat_source = Default::default();
-        let temp_emitter_max_is_final_temp = false;
-        let emitters_data_for_buffer_tank_with_result = None;
+        // TODO use real method in migration to 0.32 when implemented
+        // let (temp_return_target, blended_temp_flow, flow_rate_m3s) =
+        //     self.return_temp_from_flow_rate(energy_demand, temp_flow_target, temp_return_target);
+        let (temp_return_target, blended_temp_flow, _flow_rate_m3s) =
+            (temp_return_target, Default::default(), 0.);
 
-        // commented out while migrating to 0.32
-        // if energy_demand > 0. {
-        //     // Emitters warming up or cooling down to a target temperature
-        //     (
-        //         energy_req_from_heat_source,
-        //         temp_emitter_max_is_final_temp,
-        //         emitters_data_for_buffer_tank_with_result,
-        //     ) = self.energy_required_from_heat_source(
-        //         energy_demand,
-        //         timestep,
-        //         temp_rm_prev,
-        //         temp_emitter_max,
-        //         temp_return_target,
-        //         simulation_time,
-        //     )
-        // }
-
-        // Get energy output of heat source (i.e. energy input to emitters)
-        // TODO (from Python) - Instead of passing temp_flow_req into heating system module,
-        // calculate average flow temp achieved across timestep?
-
-        // Catering for the possibility of a BufferTank in the emitters' loop
-        let energy_provided_by_heat_source: f64 = if self.with_buffer_tank {
-            // Call to HeatSourceServiceSpace with buffer_tank relevant data
-            self.heat_source
-                .write()
-                .demand_energy(
-                    energy_req_from_heat_source,
-                    temp_flow_target,
-                    temp_return_target,
-                    emitters_data_for_buffer_tank_with_result,
-                    simulation_time,
-                )?
-                .0
-        } else {
-            self.heat_source
-                .write()
-                .demand_energy(
-                    energy_req_from_heat_source,
-                    temp_flow_target,
-                    temp_return_target,
-                    None,
-                    simulation_time,
-                )?
-                .0
-        };
-        // Calculate emitter temperature achieved at end of timestep.
-        // Do not allow emitter temp to rise above maximum
-        // Do not allow emitter temp to fall below room temp
-        let mut temp_emitter = if temp_emitter_max_is_final_temp {
-            temp_emitter_max
-        } else {
-            let power_provided_by_heat_source = energy_provided_by_heat_source / timestep;
-            self.temp_emitter(
-                0.0,
-                timestep,
-                self.temp_emitter_prev,
-                temp_rm_prev,
-                power_provided_by_heat_source,
-                None,
-            )
-            .0
-        };
-        temp_emitter = max_of_2(temp_emitter, temp_rm_prev);
-
-        // Calculate emitter output achieved at end of timestep.
-        let energy_released_from_emitters = energy_provided_by_heat_source
-            + self.thermal_mass * (self.temp_emitter_prev - temp_emitter);
-
-        // Save emitter temperature for next timestep
-        self.temp_emitter_prev = temp_emitter;
-
-        if self.output_detailed_results {
-            self.emitters_detailed_results
-                .as_ref()
-                .unwrap()
-                .write()
-                .push(EmittersDetailedResult {
-                    timestep_index: simulation_time.index,
-                    energy_demand,
-                    energy_provided_by_heat_source,
-                    temp_emitter,
-                    temp_emitter_max,
-                    energy_released_from_emitters,
-                    temp_flow_target,
-                    temp_return_target,
-                    temp_emitter_max_is_final_temp,
-                    energy_req_from_heat_source,
-                });
-        }
+        // Last call to demand_energy_flow_return that updates the heat source state and other internal variables
+        // before going to the next timestep.
+        let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
+            energy_demand,
+            temp_flow_target,
+            temp_return_target,
+            simulation_time,
+            Some(true),
+            Some(true),
+            Some(blended_temp_flow),
+        )?;
 
         Ok(energy_released_from_emitters)
     }
 
-    /// Return the cumulative running time and throughput factor for the heat source
+    /// Calculate the return temperature for a given flow temp.
+    /// If, for a given design delta T, the corresponding flow rate is in
+    /// the allowed range, then the return temp is given directly.
+    /// If the flow rate is out of the allowed range or the flow rate is fixed,
+    /// (no change with timesteps) then the return temp is calculated by iteration.
+    /// If there is bypass recirculated water the blended temperature is returned too.
+    ///
     /// Arguments:
-    /// energy_demand -- in kWh
-    /// space_heat_running_time_cumulative
-    ///     -- running time spent on higher-priority space heating services
-    pub(crate) fn running_time_throughput_factor(
+    /// * `energy_demand` - in kWh
+    /// * `temp_flow_target` - flow temp in C
+    /// * `temp_return_target` - return temp in C
+    fn return_temp_from_flow_rate(
         &self,
         energy_demand: f64,
-        space_heat_running_time_cumulative: f64,
-        simulation_time: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
-        let timestep = simulation_time.timestep;
-        let temp_rm_prev = self.zone.temp_internal_air();
+        temp_flow_target: f64,
+        temp_return_target: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64, f64)> {
+        let update_heat_source_state = false;
+        let update_temp_emitter_prev = false;
+        let specific_heat_capacity = WATER.specific_heat_capacity() / JOULES_PER_KILOJOULE as f64;
+        let density = WATER.density() * LITRES_PER_CUBIC_METRE as f64;
 
-        // Calculate target flow and return temperature
-        let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
-        let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.;
+        // The heat source can modulate the flow rate
+        let flow_rate_m3s = match self.variable_flow_data {
+            VariableFlowData::Yes => {
+                // The return temperature is calculated from temp_diff_emit_dsgn (not the 6/7th rule).
+                let temp_return_target = temp_flow_target - self.temp_diff_emit_dsgn;
+                let (energy_released_from_emitters, energy_required_from_heat_source) = self
+                    .demand_energy_flow_return(
+                        energy_demand,
+                        temp_flow_target,
+                        temp_return_target,
+                        simtime,
+                        Some(update_heat_source_state),
+                        Some(update_temp_emitter_prev),
+                        None,
+                    )?;
 
-        let energy_req_from_heat_source = 0.0;
+                if energy_released_from_emitters < 0. || energy_required_from_heat_source <= 0. {
+                    return Ok((temp_flow_target, temp_flow_target, 0.0));
+                }
 
-        // commented out while migrating to 0.32
-        // let energy_req_from_heat_source = if energy_demand > 0. {
-        //     // Emitters warming up or cooling down to a target temperature
-        //     self.energy_required_from_heat_source(
-        //         energy_demand,
-        //         timestep,
-        //         temp_rm_prev,
-        //         temp_emitter_max,
-        //         temp_return_target,
-        //         simulation_time,
-        //     )
-        //     .0
-        // } else {
-        //     // Emitters cooling down or at steady-state with heating off
-        //     0.
-        // };
+                // The flow rate is calculated from energy_released_from_emitters and delta T
+                let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
+                let flow_rate_m3s = power_released_from_emitters
+                    / (specific_heat_capacity * density * self.temp_diff_emit_dsgn);
+                let flow_rate = flow_rate_m3s * LITRES_PER_CUBIC_METRE as f64;
 
-        self.heat_source.read().running_time_throughput_factor(
-            space_heat_running_time_cumulative,
-            energy_req_from_heat_source,
+                let (flow_rate, flow_rate_in_range) = if flow_rate < self.min_flow_rate {
+                    (self.min_flow_rate, false)
+                } else if flow_rate > self.max_flow_rate {
+                    (self.max_flow_rate, false)
+                } else {
+                    (flow_rate, true)
+                };
+
+                let flow_rate_m3s = flow_rate / LITRES_PER_CUBIC_METRE as f64;
+
+                if flow_rate_in_range {
+                    // The heat source can operate at this flow rate, so no need of loop.
+
+                    // If there is bypass recirculated water, blended temp is calculated and return temp reduced accordingly.
+                    let blended_temp_flow_target = self.blended_temp(
+                        temp_flow_target,
+                        temp_return_target,
+                        self.bypass_percentage_recirculated,
+                    );
+                    let temp_return_target =
+                        temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
+                    return Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s));
+                }
+
+                flow_rate_m3s
+            }
+            VariableFlowData::No { design_flow_rate } => {
+                let (emitters_released_from_emitters, energy_required_from_heat_source) = self
+                    .demand_energy_flow_return(
+                        energy_demand,
+                        temp_flow_target,
+                        temp_return_target,
+                        simtime,
+                        update_heat_source_state.into(),
+                        update_temp_emitter_prev.into(),
+                        Default::default(),
+                    )?;
+
+                if energy_required_from_heat_source <= 0. {
+                    return Ok((temp_flow_target, temp_flow_target, 0.0));
+                } else {
+                    self.design_flow_temp / LITRES_PER_CUBIC_METRE as f64
+                }
+            }
+        };
+
+        // Loop when the flow rate is constant (design_flow_rate). The initial return temp is the 6/7th rule.
+        // Also, for the case of variable flow rate with flow rate out of the allowed range.
+        // In this case the initial return temp is calculated from the temp_diff_emit_dsgn.
+        let temp_return_target = self.update_return_temp(
+            energy_demand,
             temp_flow_target,
             temp_return_target,
-            simulation_time,
-        )
+            specific_heat_capacity,
+            density,
+            flow_rate_m3s,
+            simtime,
+            update_heat_source_state,
+            update_temp_emitter_prev,
+        )?;
+
+        // If there is bypass recirculated water, blended temp is calculated and return temp reduced accordingly.
+        let blended_temp_flow_target = self.blended_temp(
+            temp_flow_target,
+            temp_return_target,
+            self.bypass_percentage_recirculated,
+        );
+        let mut temp_return_target =
+            temp_return_target - (blended_temp_flow_target - temp_flow_target).abs();
+
+        if self.bypass_percentage_recirculated > 0. {
+            // Loop again but this time using blended temp and initial reduced return temp.
+            temp_return_target = self.update_return_temp(
+                energy_demand,
+                blended_temp_flow_target,
+                temp_return_target,
+                specific_heat_capacity,
+                density,
+                flow_rate_m3s,
+                simtime,
+                update_heat_source_state,
+                update_temp_emitter_prev,
+            )?;
+        }
+
+        Ok((temp_return_target, blended_temp_flow_target, flow_rate_m3s))
     }
+
+    fn blended_temp(
+        &self,
+        temp_flow_target: f64,
+        temp_return_target: f64,
+        bypass_percentage_recirculated: f64,
+    ) -> f64 {
+        // When there is bypass recirculated water, the blended temperature is calculated following
+        // the formula of final temperature of the water mixture T(final)=(m1*T1+m2*T2)/(m1+m2)
+        (temp_flow_target + bypass_percentage_recirculated * temp_return_target)
+            / (1. + bypass_percentage_recirculated)
+    }
+
+    /// Calculate the return temperature for a given flow temperature using fsolve.
+    ///
+    /// Arguments:
+    /// * `energy_demand` - in kWh
+    /// * `temp_flow_target` - flow temp in C
+    /// * `temp_return_target` - initial guess for the return temperature.
+    /// * `specific_heat_capacity` - water specific heat capacity (kJ/KgC)
+    /// * `density` - water density (kg/m3)
+    /// * `flow_rate_m3s` - flow rate (m3/s)
+    /// * `update_heat_source_state` - if False then heat source state not updated.
+    /// * `update_temp_emitter_prev` - if False then emitter temperature is not updated for next time step.
+    fn update_return_temp(
+        &self,
+        energy_demand: f64,
+        temp_flow_target: f64,
+        temp_return_target: f64,
+        specific_heat_capacity: f64,
+        density: f64,
+        flow_rate_m3s: f64,
+        simtime: SimulationTimeIteration,
+        update_heat_source_state: bool,
+        update_temp_emitter_prev: bool,
+    ) -> anyhow::Result<f64> {
+        let energy_difference = |temp_return: f64, _: [f64; 0]| -> anyhow::Result<f64> {
+            let (energy_released_from_emitters, _) = self.demand_energy_flow_return(
+                energy_demand,
+                temp_flow_target,
+                temp_return,
+                simtime,
+                Some(update_heat_source_state),
+                Some(update_temp_emitter_prev),
+                None,
+            )?;
+            let power_released_from_emitters = energy_released_from_emitters / simtime.timestep;
+            let calculated_power =
+                specific_heat_capacity * density * flow_rate_m3s * (temp_flow_target - temp_return);
+            Ok(power_released_from_emitters - calculated_power)
+        };
+
+        // Use fsolve to find the return temperature that makes energy_difference zero
+        let initial_guess = temp_return_target;
+
+        // TODO original Python call is:
+        // fsolve(energy_difference, initial_guess, xtol=1e-2, maxfev=100)[0]
+        // and the extra parameters are not reflected here. this may matter
+        let temp_return_target = fsolve(energy_difference, initial_guess, [])?;
+
+        Ok(if temp_return_target > temp_flow_target {
+            temp_flow_target
+        } else {
+            temp_return_target
+        })
+    }
+
+    // Commented out in Python:
+    //
+    // /// Return the cumulative running time and throughput factor for the heat source
+    // /// Arguments:
+    // /// energy_demand -- in kWh
+    // /// space_heat_running_time_cumulative
+    // ///     -- running time spent on higher-priority space heating services
+    // pub(crate) fn running_time_throughput_factor(
+    //     &self,
+    //     energy_demand: f64,
+    //     space_heat_running_time_cumulative: f64,
+    //     simulation_time: SimulationTimeIteration,
+    // ) -> anyhow::Result<(f64, f64)> {
+    //     let timestep = simulation_time.timestep;
+    //     let temp_rm_prev = self.zone.temp_internal_air();
+    //
+    //     // Calculate target flow and return temperature
+    //     let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
+    //     let temp_emitter_max = (temp_flow_target + temp_return_target) / 2.;
+    //
+    //     let energy_req_from_heat_source = 0.0;
+    //
+    //     // commented out while migrating to 0.32
+    //     // let energy_req_from_heat_source = if energy_demand > 0. {
+    //     //     // Emitters warming up or cooling down to a target temperature
+    //     //     self.energy_required_from_heat_source(
+    //     //         energy_demand,
+    //     //         timestep,
+    //     //         temp_rm_prev,
+    //     //         temp_emitter_max,
+    //     //         temp_return_target,
+    //     //         simulation_time,
+    //     //     )
+    //     //     .0
+    //     // } else {
+    //     //     // Emitters cooling down or at steady-state with heating off
+    //     //     0.
+    //     // };
+    //
+    //     self.heat_source.read().running_time_throughput_factor(
+    //         space_heat_running_time_cumulative,
+    //         energy_req_from_heat_source,
+    //         temp_flow_target,
+    //         temp_return_target,
+    //         simulation_time,
+    //     )
+    // }
 
     pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
         self.emitters_detailed_results
             .as_ref()
             .map(|results| results.read().clone())
+    }
+
+    /// Calculate minimum possible energy output
+    pub(crate) fn energy_output_min(&self, simtime: SimulationTimeIteration) -> f64 {
+        if self.fancoil.is_some() {
+            0.
+        } else {
+            let timestep = simtime.timestep;
+            let temp_rm_prev = self.zone.temp_internal_air();
+
+            let (temp_emitter, _) = self.temp_emitter(
+                0.0,
+                timestep,
+                self.temp_emitter_prev(),
+                temp_rm_prev,
+                0.0,
+                None,
+            );
+            let temp_emitter = temp_emitter.max(temp_rm_prev);
+
+            // Calculate emitter output achieved at end of timestep
+            self.thermal_mass * (self.temp_emitter_prev() - temp_emitter)
+        }
     }
 }
 
@@ -1348,14 +1815,17 @@ impl Emitters {
 pub(crate) struct EmittersDetailedResult {
     timestep_index: usize,
     energy_demand: f64,
+    temp_emitter_req: f64,
+    time_heating_start: f64,
     energy_provided_by_heat_source: f64,
-    temp_emitter: f64,
+    temp_emitter: StringOrNumber,
     temp_emitter_max: f64,
     energy_released_from_emitters: f64,
     temp_flow_target: f64,
     temp_return_target: f64,
     temp_emitter_max_is_final_temp: bool,
     energy_req_from_heat_source: f64,
+    fan_energy_kwh: f64,
 }
 
 impl EmittersDetailedResult {
@@ -1363,6 +1833,8 @@ impl EmittersDetailedResult {
         vec![
             self.timestep_index.to_string(),
             self.energy_demand.to_string(),
+            self.temp_emitter_req.to_string(),
+            self.time_heating_start.to_string(),
             self.energy_provided_by_heat_source.to_string(),
             self.temp_emitter.to_string(),
             self.temp_emitter_max.to_string(),
@@ -1371,6 +1843,7 @@ impl EmittersDetailedResult {
             self.temp_return_target.to_string(),
             self.temp_emitter_max_is_final_temp.to_string(),
             self.energy_req_from_heat_source.to_string(),
+            self.fan_energy_kwh.to_string(),
         ]
     }
 }
@@ -1660,7 +2133,7 @@ mod tests {
             );
 
             assert_relative_eq!(
-                emitters.temp_emitter_prev,
+                emitters.temp_emitter_prev(),
                 [
                     35.96557640041081,
                     47.20238095238095,
@@ -1775,7 +2248,9 @@ mod tests {
         let power_emitter_req = 0.22;
         let temp_rm = 2.0;
 
-        let result = emitters.temp_emitter_req(power_emitter_req, temp_rm);
+        let result = emitters
+            .temp_emitter_req(power_emitter_req, temp_rm)
+            .unwrap();
 
         assert_relative_eq!(result, 4.32332827, max_relative = EIGHT_DECIMAL_PLACES);
     }

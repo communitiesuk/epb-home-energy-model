@@ -146,12 +146,7 @@ impl SpaceHeatSystem {
                 space_heat_running_time_cumulative,
                 simulation_time_iteration,
             ),
-            SpaceHeatSystem::WetDistribution(wet_distribution) => wet_distribution
-                .running_time_throughput_factor(
-                    energy_demand,
-                    space_heat_running_time_cumulative,
-                    simulation_time_iteration,
-                ),
+            SpaceHeatSystem::WetDistribution(wet_distribution) => unreachable!(),
         }
     }
 
@@ -282,22 +277,22 @@ impl SpaceHeatingService {
         energy_demand: f64,
         temp_flow: f64,
         temp_return: f64,
+        time_start: Option<f64>,
         emitters_data_for_buffer_tank: Option<BufferTankEmittersDataWithResult>,
+        update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> Result<(f64, Option<f64>), Error> {
         match self {
             SpaceHeatingService::HeatPump(heat_pump_service_space) => Ok((
-                heat_pump_service_space
-                    .demand_energy(
-                        energy_demand,
-                        temp_flow,
-                        temp_return,
-                        None,
-                        emitters_data_for_buffer_tank,
-                        None,
-                        simulation_time_iteration,
-                    )
-                    .unwrap(),
+                heat_pump_service_space.demand_energy(
+                    energy_demand,
+                    temp_flow,
+                    temp_return,
+                    time_start,
+                    emitters_data_for_buffer_tank,
+                    update_heat_source_state,
+                    simulation_time_iteration,
+                )?,
                 None,
             )),
             SpaceHeatingService::Boiler(ref mut boiler_service_space) => boiler_service_space
@@ -305,10 +300,10 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
+                    time_start,
                     None,
                     None,
-                    None,
-                    None,
+                    update_heat_source_state,
                     simulation_time_iteration,
                 ),
             SpaceHeatingService::HeatNetwork(ref mut heat_network_service_space) => Ok((
@@ -316,8 +311,8 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
-                    None,
-                    None,
+                    time_start,
+                    update_heat_source_state,
                     &simulation_time_iteration,
                 ),
                 None,
@@ -327,8 +322,8 @@ impl SpaceHeatingService {
                     energy_demand,
                     temp_flow,
                     temp_return,
-                    None,
-                    None,
+                    time_start,
+                    update_heat_source_state,
                     simulation_time_iteration,
                 )?,
                 None,

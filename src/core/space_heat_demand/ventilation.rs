@@ -1587,9 +1587,16 @@ impl InfiltrationVentilation {
     }
 
     /// Implicit solver for qv_pdu
-    fn calculate_qv_pdu(&self, qv_pdu: f64, p_z_ref: f64, t_z: f64, t_e: f64, h_z: f64) -> f64 {
+    fn calculate_qv_pdu(
+        &self,
+        qv_pdu: f64,
+        p_z_ref: f64,
+        t_z: f64,
+        t_e: f64,
+        h_z: f64,
+    ) -> anyhow::Result<f64> {
         let func = |qv_pdu, [p_z_ref, t_z, h_z]: [f64; 3]| {
-            self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z)
+            Ok(self.implicit_formula_for_qv_pdu(qv_pdu, p_z_ref, t_z, t_e, h_z))
         };
 
         fsolve(func, qv_pdu, [p_z_ref, t_z, h_z]) // returns qv_pdu
@@ -1844,7 +1851,7 @@ impl InfiltrationVentilation {
         for _atd in &self.air_terminal_devices {
             let qv_pdu_initial = 0.; // TODO (from Python) get from prev timestep
             let h_z = self.ventilation_zone_height;
-            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, t_e, h_z);
+            let qv_pdu = self.calculate_qv_pdu(qv_pdu_initial, p_z_ref, t_z, t_e, h_z)?;
 
             let (qv_pdu_in, qv_pdu_out) = if qv_pdu >= 0. {
                 (qv_pdu, 0.)
