@@ -4808,8 +4808,8 @@ fn space_heat_systems_from_input(
                             *ecodesign_controller,
                             *design_flow_temp as f64,
                             energy_supply_fc_conn,
-                            detailed_output_heating_cooling,
-                            with_buffer_tank,
+                            detailed_output_heating_cooling.into(),
+                            with_buffer_tank.into(),
                         )?;
                         SpaceHeatSystem::WetDistribution(space_heater)
                     }

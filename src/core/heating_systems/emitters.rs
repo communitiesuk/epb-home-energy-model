@@ -276,9 +276,11 @@ impl Emitters {
         ecodesign_controller: EcoDesignController,
         design_flow_temp: f64,
         energy_supply_fan_coil_conn: Option<Arc<EnergySupplyConnection>>,
-        output_detailed_results: bool,
-        with_buffer_tank: bool,
+        output_detailed_results: Option<bool>,
+        with_buffer_tank: Option<bool>,
     ) -> anyhow::Result<Self> {
+        let output_detailed_results = output_detailed_results.unwrap_or(false);
+        let with_buffer_tank = with_buffer_tank.unwrap_or(false);
         let (variable_flow_data, min_flow_rate, max_flow_rate) = if variable_flow {
             if let (Some(min_flow_rate), Some(max_flow_rate)) = (min_flow_rate, max_flow_rate) {
                 (VariableFlowData::Yes, min_flow_rate, max_flow_rate)
@@ -920,7 +922,7 @@ impl Emitters {
 
         // Check if the length of fan power matches the number of power outputs
         // (subtract 1 because of the temperature_diff column)
-        if fan_power_data.len() != temperature_data[0].len() - 1 {
+        if fan_power_w.len() != temperature_data[0].len() - 1 {
             bail!("Fan power data length does not match the length of fan speed data",)
         }
 
@@ -1269,7 +1271,7 @@ impl Emitters {
     ///                         If no recirculated water, the it will be equal to the flow temp.
     fn demand_energy_flow_return(
         &self,
-        energy_demand: f64,
+        mut energy_demand: f64,
         temp_flow_target: f64,
         temp_return_target: f64,
         simtime: SimulationTimeIteration,
@@ -1317,10 +1319,9 @@ impl Emitters {
             let (time_heating_start, temp_emitter_heating_start, fan_energy_kwh) =
                 if let Some(WetEmitter::Fancoil {
                     n_units,
-                    frac_convective,
-                    test_data,
                     temperature_data,
                     fan_power_data,
+                    ..
                 }) = self.fancoil.as_ref().map(|f| f.as_ref())
                 {
                     let n_units = *n_units as f64;
@@ -1339,7 +1340,7 @@ impl Emitters {
                     let power_req_from_heat_source =
                         (power_delivered_by_fancoil - fan_power_single_unit) * n_units;
                     let fan_power = fan_power_single_unit * n_units;
-                    let energy_demand = (power_req_from_heat_source + fan_power) * timestep;
+                    energy_demand = (power_req_from_heat_source + fan_power) * timestep;
                     let fan_energy_kwh = fan_power / WATTS_PER_KILOWATT as f64
                         * timestep
                         * fraction_timestep_running;
@@ -1606,7 +1607,7 @@ impl Emitters {
                 flow_rate_m3s
             }
             VariableFlowData::No { design_flow_rate } => {
-                let (emitters_released_from_emitters, energy_required_from_heat_source) = self
+                let (_energy_released_from_emitters, energy_required_from_heat_source) = self
                     .demand_energy_flow_return(
                         energy_demand,
                         temp_flow_target,
@@ -1620,7 +1621,7 @@ impl Emitters {
                 if energy_required_from_heat_source <= 0. {
                     return Ok((temp_flow_target, temp_flow_target, 0.0));
                 } else {
-                    self.design_flow_temp / LITRES_PER_CUBIC_METRE as f64
+                    design_flow_rate / LITRES_PER_CUBIC_METRE as f64
                 }
             }
         };
@@ -1853,8 +1854,8 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::Control;
     use crate::core::controls::time_control::OnOffTimeControl;
-    use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
+    use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
     use crate::core::heating_systems::boiler::Boiler;
     use crate::core::heating_systems::boiler::BoilerServiceSpace;
     use crate::external_conditions::DaylightSavingsConfig;
@@ -1875,19 +1876,17 @@ mod tests {
     const FOUR_DECIMAL_PLACES: f64 = 1e-3;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
-    pub(crate) fn simulation_time_iterator() -> SimulationTimeIterator {
+    fn simulation_time_iterator() -> SimulationTimeIterator {
         simulation_time().iter()
     }
 
     #[fixture]
-    pub(crate) fn external_conditions(
-        simulation_time_iterator: SimulationTimeIterator,
-    ) -> ExternalConditions {
+    fn external_conditions(simulation_time_iterator: SimulationTimeIterator) -> ExternalConditions {
         let wind_speeds = vec![3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4];
         let wind_directions = vec![200., 220., 230., 240., 250., 260., 260., 270.];
         let air_temps = vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0];
@@ -1974,7 +1973,7 @@ mod tests {
     }
 
     #[fixture]
-    pub(crate) fn heat_source(
+    fn heat_source(
         simulation_time_iterator: SimulationTimeIterator,
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
@@ -2042,23 +2041,31 @@ mod tests {
         }
     }
 
-    fn emitters_fixture(
-        heat_source: SpaceHeatingService,
-        external_conditions: ExternalConditions,
-        ecodesign_controller: Option<EcoDesignController>,
-    ) -> Emitters {
-        let thermal_mass = 0.14;
-        let c = 0.08;
-        let n = 1.2;
-        let temp_diff_emit_dsgn = 10.0;
-        let zone = Arc::new(MockZone);
-        let canned_value = 20.;
-        let ecodesign_controller = ecodesign_controller.unwrap_or_else(|| EcoDesignController {
+    #[fixture]
+    fn zone() -> Arc<dyn SimpleZone> {
+        Arc::new(MockZone)
+    }
+
+    #[fixture]
+    fn ecodesign_controller() -> EcoDesignController {
+        EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
             min_outdoor_temp: Some(-4.),
             max_outdoor_temp: Some(20.),
             min_flow_temp: Some(30.),
-        });
+        }
+    }
+
+    fn emitters_fixture(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
+        ecodesign_controller: EcoDesignController,
+        override_ecodesign_controller: Option<EcoDesignController>,
+    ) -> Emitters {
+        let thermal_mass = 0.14;
+        let temp_diff_emit_dsgn = 10.0;
+        let ecodesign_controller = override_ecodesign_controller.unwrap_or(ecodesign_controller);
 
         let design_flow_temp = 55.;
 
@@ -2089,8 +2096,8 @@ mod tests {
             ecodesign_controller,
             design_flow_temp,
             None,
-            false,
-            with_buffer_tank,
+            false.into(),
+            with_buffer_tank.into(),
         )
         .unwrap()
     }
@@ -2099,12 +2106,100 @@ mod tests {
     fn emitters(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
+        ecodesign_controller: EcoDesignController,
     ) -> Emitters {
-        emitters_fixture(heat_source, external_conditions, None)
+        emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            None,
+        )
+    }
+
+    #[fixture]
+    fn energy_supply_conn(simulation_time: SimulationTime) -> EnergySupplyConnection {
+        let energy_supply =
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build();
+        EnergySupply::connection(Arc::from(RwLock::from(energy_supply)), "main").unwrap()
+    }
+
+    #[fixture]
+    fn fancoil(
+        heat_source: SpaceHeatingService,
+        zone: Arc<dyn SimpleZone>,
+        external_conditions: ExternalConditions,
+        ecodesign_controller: EcoDesignController,
+        energy_supply_conn: EnergySupplyConnection,
+    ) -> Emitters {
+        let emitters = vec![serde_json::from_value(json!({
+            "wet_emitter_type": "fancoil",
+            "n_units": 1,
+            "frac_convective": 0.4,
+            "fancoil_test_data": {
+                "fan_speed_data": [
+                    {
+                    "temperature_diff": 80.0,
+                    "power_output": [2.7, 3.6, 5, 5.3, 6.2, 7.4]
+                    },
+                    {
+                    "temperature_diff": 70.0,
+                    "power_output": [2.3, 3.1, 4.2, 4.5, 5.3, 6.3]
+                    },
+                    {
+                    "temperature_diff": 60.0,
+                    "power_output": [1.9, 2.6, 3.5, 3.8, 4.4, 5.3]
+                    },
+                    {
+                    "temperature_diff": 50.0,
+                    "power_output": [1.5, 2, 2.8, 3, 3.5, 4.2]
+                    },
+                    {
+                    "temperature_diff": 40.0,
+                    "power_output": [1.1, 1.5, 2.05, 2.25, 2.6, 3.15]
+                    },
+                    {
+                    "temperature_diff": 30.0,
+                    "power_output": [0.7, 0.97, 1.32, 1.49, 1.7, 2.09]
+                    },
+                    {
+                    "temperature_diff": 20.0,
+                    "power_output": [0.3, 0.44, 0.59, 0.73, 0.8, 1.03]
+                    },
+                    {
+                    "temperature_diff": 10.0,
+                    "power_output": [0, 0, 0, 0, 0, 0]
+                    }
+                ],
+                "fan_power_W": [15, 19, 25, 33, 43, 56]
+                }
+            }
+        ))
+        .unwrap()];
+        Emitters::new(
+            None,
+            &emitters,
+            10.0,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::new(RwLock::new(heat_source)),
+            zone,
+            Arc::new(external_conditions),
+            ecodesign_controller,
+            55.0,
+            Some(Arc::new(energy_supply_conn)),
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     #[rstest]
-    #[ignore = "blocked by temp_emitters issue"]
+    #[ignore = "while fsolve unimplemented"]
     fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         mut emitters: Emitters,
@@ -2122,13 +2217,13 @@ mod tests {
                 energy_provided,
                 [
                     0.26481930394248643,
-                    0.8287480680413242,
-                    1.053315069769369,
-                    1.053315069769369,
-                    0.9604801440326911,
-                    0.9419772896929609,
-                    0.915353814620655,
-                    0.7639281136418886
+                    0.8203297684307538,
+                    0.9900258469156371,
+                    0.9900258469156371,
+                    0.8941786531029309,
+                    0.8715059403189445,
+                    0.8715059403189445,
+                    0.7471884447241743
                 ][t_idx]
             );
 
@@ -2136,13 +2231,13 @@ mod tests {
                 emitters.temp_emitter_prev(),
                 [
                     35.96557640041081,
-                    47.20238095238095,
-                    47.20238095238095,
-                    47.20238095238095,
-                    44.78422619047619,
-                    44.78422619047619,
-                    43.67306169524251,
-                    38.21643231208616
+                    45.833333333333336,
+                    45.833333333333336,
+                    45.833333333333336,
+                    43.22916666666667,
+                    43.22916666666667,
+                    43.22916666666667,
+                    37.89210634720828
                 ][t_idx]
             )
         }
@@ -2152,6 +2247,7 @@ mod tests {
     fn emitters_with_different_outdoor_temp(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
     ) -> Emitters {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
@@ -2160,13 +2256,20 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller))
+        emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            None,
+        )
     }
 
     #[fixture]
     fn emitters_with_different_control_class(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
     ) -> Emitters {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassIV,
@@ -2175,7 +2278,46 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller))
+        emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            None,
+        )
+    }
+
+    #[rstest]
+    #[ignore = "while fsolve unimplemented"]
+    fn test_demand_energy_fancoil(
+        mut fancoil: Emitters,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let mut energy_demand = 0.0;
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            energy_demand += energy_demand_list[t_idx];
+            let energy_provided = fancoil.demand_energy(energy_demand, t_it).unwrap();
+            energy_demand -= energy_provided;
+            assert_relative_eq!(
+                energy_provided,
+                [
+                    0.43450355962369697,
+                    0.43450355962369697,
+                    0.43450355962369697,
+                    0.43450355962369697,
+                    0.37944261695906434,
+                    0.37944261695906434,
+                    0.37944261695906434,
+                    0.37944261695906434
+                ][t_idx],
+                max_relative = EIGHT_DECIMAL_PLACES
+            );
+            assert_relative_eq!(
+                fancoil.temp_emitter_prev(),
+                [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0][t_idx],
+            )
+        }
     }
 
     /// Test flow and return temperature based on ecodesign control class
@@ -2185,8 +2327,6 @@ mod tests {
         emitters_with_different_outdoor_temp: Emitters,
         emitters_with_different_control_class: Emitters,
         simulation_time_iterator: SimulationTimeIterator,
-        heat_source: SpaceHeatingService,
-        external_conditions: ExternalConditions,
     ) {
         let (flow_temp, return_temp) =
             emitters.temp_flow_return(&simulation_time_iterator.current_iteration());
@@ -2218,10 +2358,10 @@ mod tests {
 
     /// Test emitter output at given emitter and room temp
     #[rstest]
-    #[ignore = "while emitters module being migrated to 0.32"]
     fn test_power_output_emitter(
         heat_source: SpaceHeatingService,
         external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
     ) {
         let ecodesign_controller = EcoDesignController {
             ecodesign_control_class: EcoDesignControllerClass::ClassII,
@@ -2230,8 +2370,13 @@ mod tests {
             min_flow_temp: Some(30.),
         };
 
-        let emitters =
-            emitters_fixture(heat_source, external_conditions, Some(ecodesign_controller));
+        let emitters = emitters_fixture(
+            heat_source,
+            external_conditions,
+            zone,
+            ecodesign_controller,
+            None,
+        );
 
         let temp_emitter = 15.;
         let temp_rm = 10.;
@@ -2241,9 +2386,60 @@ mod tests {
         assert_relative_eq!(result, 0.55189186, max_relative = EIGHT_DECIMAL_PLACES);
     }
 
+    #[fixture]
+    fn emitter_ufh(
+        heat_source: SpaceHeatingService,
+        external_conditions: ExternalConditions,
+        zone: Arc<dyn SimpleZone>,
+    ) -> Emitters {
+        let thermal_mass = 0.14;
+        let temp_diff_emit_dsgn = 10.0;
+        let ecodesign_controller = EcoDesignController {
+            ecodesign_control_class: EcoDesignControllerClass::ClassII,
+            min_outdoor_temp: Some(-4.),
+            max_outdoor_temp: Some(20.),
+            min_flow_temp: Some(30.),
+        };
+
+        let emitters = vec![serde_json::from_value(json!({
+            "wet_emitter_type": "ufh",
+            "equivalent_specific_thermal_mass": 80,
+            "system_performance_factor": 5,
+            "emitter_floor_area": 80.0,
+            "frac_convective": 0.43
+        }))
+        .unwrap()];
+
+        Emitters::new(
+            thermal_mass.into(),
+            &emitters,
+            temp_diff_emit_dsgn,
+            true,
+            None,
+            Some(3.),
+            Some(18.),
+            Some(0.0),
+            Arc::from(RwLock::from(heat_source)),
+            zone,
+            external_conditions.into(),
+            ecodesign_controller,
+            55.0,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    fn test_power_output_emitter_ufh(emitter_ufh: Emitters) {
+        let temp_emitter = 15.;
+        let temp_rm = 10.;
+        assert_eq!(emitter_ufh.power_output_emitter(temp_emitter, temp_rm), 2.0);
+    }
+
     /// Test emitter temperature that gives required power output at given room temp
     #[rstest]
-    #[ignore = "while emitters module being migrated to 0.32"]
+    #[ignore = "while fsolve unimplemented"]
     fn test_temp_emitter_req(emitters: Emitters) {
         let power_emitter_req = 0.22;
         let temp_rm = 2.0;
@@ -2255,18 +2451,10 @@ mod tests {
         assert_relative_eq!(result, 4.32332827, max_relative = EIGHT_DECIMAL_PLACES);
     }
 
-    /// Test Differential eqn is formed for change rate of emitter temperature
-    #[rstest]
-    #[ignore = "while emitters module being migrated to 0.32"]
-    fn test_func_temp_emitter_change_rate(emitters: Emitters) {
-        let result = emitters.func_temp_emitter_change_rate(5.)([32.]);
-
-        assert_eq!(result, -0.8571428571428514);
-    }
+    // Python test_func_temp_emitter_change_rate is unnecessary
 
     #[rstest]
-    #[ignore = "while emitters module being migrated to 0.32"]
-    fn test_temp_emitter_with_no_max(emitters: Emitters) {
+    fn test_temp_emitter(emitters: Emitters) {
         // Test function calculates emitter temperature after specified time with specified power input
         // Check None conditions  are invoked
         let (temp_emitter, time_temp_diff_max_reached) =
@@ -2278,116 +2466,148 @@ mod tests {
             max_relative = EIGHT_DECIMAL_PLACES
         );
         assert!(time_temp_diff_max_reached.is_none());
-    }
 
-    #[rstest]
-    #[case(0., 2., 70., 10., 0.2, 25., 25., 1.29981138)]
-    #[case(0., 5., 25., 3., 0.8, 19., 19., 0.44239778)]
-    #[case(5., 25., 6., 14., 0.95, 21., 21., 8.42980041)]
-    #[case(0., 1., 45.8, 13., 0., 45.2, 45.2, 0.016104431558688848)]
-    #[case(0., 1., 40., 30., 0., 40., 40., 0.)]
-    #[ignore = "while emitters module being migrated to 0.32"]
-    fn test_temp_emitter_with_max(
-        emitters: Emitters,
-        #[case] time_start: f64,
-        #[case] time_end: f64,
-        #[case] temp_emitter_start: f64,
-        #[case] temp_rm: f64,
-        #[case] power_input: f64,
-        #[case] temp_emitter_max: f64,
-        #[case] expected_temp: f64,
-        #[case] expected_time: f64,
-    ) {
-        // Check not None conditions are invoked
-        // Test when max temp is reached (early exit)
-        let (temp_emitter, time_temp_diff_max_reached) = emitters.temp_emitter(
-            time_start,
-            time_end,
-            temp_emitter_start,
-            temp_rm,
-            power_input,
-            Some(temp_emitter_max),
-        );
-
-        assert_relative_eq!(
-            temp_emitter,
-            expected_temp,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
+        let (temp_emitter, time_temp_diff_max_reached) =
+            emitters.temp_emitter(0., 2., 70., 10., 0.2, Some(25.));
+        assert_eq!(temp_emitter, 25.);
         assert_relative_eq!(
             time_temp_diff_max_reached.unwrap(),
-            expected_time,
+            1.29981138,
             max_relative = FOUR_DECIMAL_PLACES
         );
     }
 
-    #[rstest]
-    #[case(0., 2., 5., 10., 0., 21., 5.)]
-    #[ignore = "while emitters module being migrated to 0.32"]
-    fn test_temp_emitter_with_max_not_reached(
-        emitters: Emitters,
-        #[case] time_start: f64,
-        #[case] time_end: f64,
-        #[case] temp_emitter_start: f64,
-        #[case] temp_rm: f64,
-        #[case] power_input: f64,
-        #[case] temp_emitter_max: f64,
-        #[case] expected_temp: f64,
-    ) {
-        let (temp_emitter, time_temp_diff_max_reached) = emitters.temp_emitter(
-            time_start,
-            time_end,
-            temp_emitter_start,
-            temp_rm,
-            power_input,
-            Some(temp_emitter_max),
-        );
+    fn test_format_fancoil_manufacturer_data() {
+        let test_data: FancoilTestData = serde_json::from_value(json!({
+            "fan_speed_data": [
+                {"temperature_diff": 80.0, "power_output": [2.7, 3.6, 5, 5.3, 6.2, 7.4]},
+                {"temperature_diff": 70.0, "power_output": [2.3, 3.1, 4.2, 4.5, 5.3, 6.3]}
+            ],
+            "fan_power_W": [15, 19, 25, 33, 43, 56]
+        }))
+        .unwrap();
 
-        assert_relative_eq!(
-            temp_emitter,
-            expected_temp,
-            max_relative = EIGHT_DECIMAL_PLACES
-        );
-        assert!(time_temp_diff_max_reached.is_none());
+        let (fc_temperature_data, fc_fan_power_data) =
+            Emitters::format_fancoil_manufacturer_data(&test_data).unwrap();
+
+        let expected_temperature = vec![
+            vec![80.0, 2.7, 3.6, 5.0, 5.3, 6.2, 7.4],
+            vec![70.0, 2.3, 3.1, 4.2, 4.5, 5.3, 6.3],
+        ];
+
+        let expected_fan_power: Vec<StringOrNumber> = vec![
+            "Fan power (W)".into(),
+            15f64.into(),
+            19f64.into(),
+            25f64.into(),
+            33f64.into(),
+            43f64.into(),
+            56f64.into(),
+        ];
+
+        assert_eq!(fc_temperature_data, expected_temperature);
+
+        assert_eq!(fc_fan_power_data, expected_fan_power);
+
+        // Test the function errors if the fan_speeds list differ in length
+        let test_data_invalid: FancoilTestData = serde_json::from_value(json!({
+            "fan_speed_data": [
+                {"temperature_diff": 80.0, "power_output": [2, 4, 6, 8, 9, 11]},
+                {"temperature_diff": 70.0, "power_output": [2, 4, 6, 8, 9]}
+            ],
+            "fan_power_W": [15, 19, 25, 33, 43, 56]
+        }))
+        .unwrap();
+
+        assert!(Emitters::format_fancoil_manufacturer_data(&test_data_invalid).is_err());
     }
 
+    #[rstest]
+    //
     #[rstest]
     #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source(
         simulation_time_iterator: SimulationTimeIterator,
         emitters: Emitters,
     ) {
-        // commented out while migrating to 0.32
-        // let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
-        // let mut energy_demand = 0.0;
-        //
-        // for (t_idx, t_it) in simulation_time_iterator.enumerate() {
-        //     energy_demand += energy_demand_list[t_idx];
-        //
-        //     let (energy_req, temp_emitter_max_is_final_temp, _) =
-        //         emitters.energy_required_from_heat_source(energy_demand, 1., 10., 25., 30., t_it);
-        //
-        //     assert_relative_eq!(
-        //         energy_req,
-        //         [
-        //             0.7487346289045738,
-        //             2.458950517761754,
-        //             2.458950517761754,
-        //             2.458950517761754,
-        //             2.458950517761754,
-        //             2.458950517761754,
-        //             2.458950517761754,
-        //             2.458950517761754
-        //         ][t_idx]
-        //     );
-        //
-        //     assert_eq!(
-        //         temp_emitter_max_is_final_temp,
-        //         [false, false, true, true, true, true, true, true][t_idx]
-        //     );
-        // }
+        let energy_demand_list = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+        let mut energy_demand = 0.0;
+        let timestep = 1.0;
+        let temp_rm_prev = 10.0;
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            energy_demand += energy_demand_list[t_idx];
+            let power_emitter_req = energy_demand / timestep;
+            let temp_emitter_req = emitters
+                .temp_emitter_req(power_emitter_req, temp_rm_prev)
+                .unwrap();
+
+            let (energy_req, temp_emitter_max_is_final_temp, _) = emitters
+                .energy_required_from_heat_source(
+                    energy_demand,
+                    0.,
+                    timestep,
+                    temp_rm_prev,
+                    emitters.temp_emitter_prev(),
+                    temp_emitter_req,
+                    25.,
+                    30.,
+                    t_it,
+                )
+                .unwrap();
+
+            assert_relative_eq!(
+                energy_req,
+                [
+                    0.7487346289045738,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754,
+                    2.458950517761754
+                ][t_idx]
+            );
+
+            assert_eq!(
+                temp_emitter_max_is_final_temp,
+                [false, false, true, true, true, true, true, true][t_idx]
+            );
+        }
     }
 
     // Python has a test_running_time_throughput_factor which we've not ported for now as it relies
-    // on mocking
+    // on mocking - it is also now commented out
+
+    #[fixture]
+    fn zone_for_energy_output_min() -> Arc<dyn SimpleZone> {
+        Arc::from(EnergyOutputMinZone)
+    }
+
+    struct EnergyOutputMinZone;
+
+    impl SimpleZone for EnergyOutputMinZone {
+        fn temp_internal_air(&self) -> f64 {
+            10.0
+        }
+
+        fn area(&self) -> f64 {
+            80.
+        }
+    }
+
+    fn test_energy_output_min(
+        mut emitters: Emitters,
+        zone_for_energy_output_min: Arc<dyn SimpleZone>,
+        simulation_time_iterator: SimulationTimeIterator,
+    ) {
+        emitters.zone = zone_for_energy_output_min;
+
+        assert_relative_eq!(
+            emitters.energy_output_min(simulation_time_iterator.current_iteration()),
+            0.2780866841016483,
+            max_relative = EIGHT_DECIMAL_PLACES
+        );
+    }
 }

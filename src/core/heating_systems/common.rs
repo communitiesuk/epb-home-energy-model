@@ -146,7 +146,7 @@ impl SpaceHeatSystem {
                 space_heat_running_time_cumulative,
                 simulation_time_iteration,
             ),
-            SpaceHeatSystem::WetDistribution(wet_distribution) => unreachable!(),
+            SpaceHeatSystem::WetDistribution(_wet_distribution) => unreachable!(),
         }
     }
 
