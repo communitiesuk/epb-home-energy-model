@@ -4900,7 +4900,8 @@ fn on_site_generation_from_input(
                     width,
                     energy_supply,
                     shading,
-                    inverter_peak_power,
+                    inverter_peak_power_dc,
+                    inverter_peak_power_ac,
                     inverter_is_inside,
                     inverter_type,
                     ..
@@ -4919,12 +4920,12 @@ fn on_site_generation_from_input(
                     energy_supply_conn,
                     simulation_time_iterator.step_in_hours(),
                     shading.clone(),
-                    inverter_peak_power
-                        .expect("Became optional during migration to 0.32 - correct for this (DC power)"),
-                    inverter_peak_power
-                        .expect("Became optional during migration to 0.32 - correct for this (AC power"),
+                    inverter_peak_power_dc
+                        .ok_or_else(|| anyhow!("On site generation (photovoltaic) requires inverter_peak_power_dc to be set"))?,
+                    inverter_peak_power_ac
+                        .ok_or_else(|| anyhow!("On site generation (photovoltaic) requires inverter_peak_power_ac to be set"))?,
                     *inverter_is_inside,
-                    inverter_type.expect("Inverter type may be expected to be set (migration to 0.32)"),
+                    inverter_type.ok_or_else(|| anyhow!("On site generation (photovoltaic) requires inverter_type to be set"))?,
                 )
             }))
         })
