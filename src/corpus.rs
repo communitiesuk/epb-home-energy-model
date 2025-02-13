@@ -647,6 +647,7 @@ pub struct Corpus {
     detailed_output_heating_cooling: bool,
     vent_adjust_min_control: Option<Arc<Control>>,
     vent_adjust_max_control: Option<Arc<Control>>,
+    temp_internal_air_prev: AtomicF64,
 }
 
 impl Corpus {
@@ -991,6 +992,7 @@ impl Corpus {
             detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
             vent_adjust_min_control,
             vent_adjust_max_control,
+            temp_internal_air_prev: Default::default(),
         })
     }
 
@@ -1052,8 +1054,25 @@ impl Corpus {
         total_heat_loss_area / self.total_floor_area
     }
 
-    pub fn temp_internal_air(&self) -> f64 {
-        temp_internal_air_for_zones(&self.zones, self.total_volume)
+    pub fn update_temp_internal_air(&self) {
+        self.temp_internal_air_prev.store(
+            temp_internal_air_for_zones(&self.zones, self.total_volume),
+            Ordering::SeqCst,
+        );
+    }
+
+    /// Return the volume-weighted average internal air temperature from the previous timestep
+    /// Some parts of the calculation rely on the whole-dwelling internal air
+    /// temperature before it has been calculated for the current timestep, so
+    /// we use the air temperature calculated in the previous timestep as an
+    /// approximation. Note that this returns a stored value rather than
+    /// calculating from the internal air temperature of each Zone object,
+    /// because this function may be called after the temperatures of some Zone
+    /// objects have been updated for the current timestep but before the
+    /// temperatures of other Zone objects have been updated, which would be
+    /// inconsistent.
+    fn temp_internal_air_prev_timestep(&self) -> f64 {
+        self.temp_internal_air_prev.load(Ordering::SeqCst)
     }
 
     fn pipework_losses_and_internal_gains_from_hw_storage_tank(
@@ -1079,14 +1098,14 @@ impl Corpus {
             * water_demand_to_kwh(
                 volume_water_remove_from_tank,
                 temp_average_drawoff,
-                self.temp_internal_air(),
+                self.temp_internal_air_prev_timestep(),
             );
 
         let gains_internal_dhw_use_ies = FRAC_DHW_ENERGY_INTERNAL_GAINS
             * water_demand_to_kwh(
                 vol_hot_water_equiv_elec_shower,
                 temp_hot_water,
-                self.temp_internal_air(),
+                self.temp_internal_air_prev_timestep(),
             );
 
         let gains_internal_dhw_use =
@@ -1128,7 +1147,7 @@ impl Corpus {
             * water_demand_to_kwh(
                 vol_hot_water_at_tapping_point,
                 temp_hot_water,
-                self.temp_internal_air(),
+                self.temp_internal_air_prev_timestep(),
             );
 
         (
@@ -1147,7 +1166,7 @@ impl Corpus {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (f64, f64) {
         let demand_water_temperature = temp_hot_water;
-        let internal_air_temperature = self.temp_internal_air();
+        let internal_air_temperature = self.temp_internal_air_prev_timestep();
         let external_air_temperature = self
             .external_conditions
             .air_temp(&simulation_time_iteration);
@@ -1190,7 +1209,7 @@ impl Corpus {
                         // Heat loss from intake or exhaust ducts is to zone, so add
                         // to internal gains (may be negative gains)
                         internal_gains_ductwork_watts += duct.total_duct_heat_loss(
-                            self.temp_internal_air(),
+                            self.temp_internal_air_prev_timestep(),
                             self.external_conditions.air_temp(&simulation_time),
                         );
                     }
@@ -1198,7 +1217,7 @@ impl Corpus {
                         // Heat loss from supply and extract ducts is to outside, so
                         // subtract from internal gains
                         internal_gains_ductwork_watts -= duct.total_duct_heat_loss(
-                            self.temp_internal_air(),
+                            self.temp_internal_air_prev_timestep(),
                             self.external_conditions.air_temp(&simulation_time),
                         );
                     }
@@ -1509,7 +1528,7 @@ impl Corpus {
         let wind_speed = self.external_conditions.wind_speed(&simtime);
         let wind_direction = self.external_conditions.wind_direction(simtime);
         let temp_ext_air = self.external_conditions.air_temp(&simtime);
-        let temp_int_air = self.temp_internal_air(); // TODO in Python this now calls temp_internal_air_prev_timestep
+        let temp_int_air = self.temp_internal_air_prev_timestep();
         let ach_min = self
             .vent_adjust_min_control
             .as_ref()
@@ -2306,6 +2325,7 @@ impl Corpus {
 
         for t_it in simulation_time_iter {
             timestep_array.push(t_it.time);
+            self.update_temp_internal_air();
             let temp_hot_water = self.hot_water_sources["hw cylinder"].temp_hot_water();
             let _temp_final_drawoff = temp_hot_water;
             let _temp_average_drawoff = temp_hot_water;
