@@ -1,7 +1,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{
     ChargeControl, CombinationTimeControl, Control, ControlBehaviour, HeatSourceControl,
-    OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl,
+    OnOffMinimisingTimeControl, OnOffTimeControl, SetpointTimeControl, SmartApplianceControl,
 };
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
@@ -799,11 +799,37 @@ impl Corpus {
         let mut internal_gains =
             internal_gains_from_input(&input.internal_gains, total_floor_area)?;
 
+        // setup smart control for loadshifting
+        let smart_control = if let Some(smart_control) = input.control.extra.get("loadshifting") {
+            match smart_control {
+                ControlDetails::SmartAppliance {
+                    battery_24hr,
+                    non_appliance_demand_24hr,
+                    power_timeseries,
+                    time_series_step,
+                    weight_timeseries,
+                } => Some(Arc::new(SmartApplianceControl::new(
+                    power_timeseries,
+                    weight_timeseries,
+                    *time_series_step,
+                    &*simulation_time_iterator,
+                    non_appliance_demand_24hr.clone(),
+                    battery_24hr,
+                    &energy_supplies,
+                    input.appliance_gains.keys().cloned().collect::<Vec<_>>(),
+                )?)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         apply_appliance_gains_from_input(
             &mut internal_gains,
             &input.appliance_gains,
             &mut energy_supplies,
             total_floor_area,
+            smart_control,
             simulation_time_iterator.as_ref(),
         )?;
 
@@ -3712,6 +3738,7 @@ fn apply_appliance_gains_from_input(
     input: &ApplianceGainsInput,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     total_floor_area: f64,
+    smart_control: Option<Arc<SmartApplianceControl>>,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     for (name, gains_details) in input {
@@ -3734,7 +3761,7 @@ fn apply_appliance_gains_from_input(
                 simulation_time,
                 gains_details,
                 total_floor_area,
-                None, // TODO complete argument during migration to 0.32
+                smart_control.clone(),
             )?)
         } else {
             Gains::Appliance(appliance_gains_from_single_input(
