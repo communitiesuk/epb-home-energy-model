@@ -47,7 +47,7 @@ use crate::core::space_heat_demand::ventilation::{
 };
 use crate::core::space_heat_demand::zone::{
     calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
-    Zone,
+    Zone, ZoneTempInternalAir,
 };
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
@@ -627,8 +627,8 @@ pub struct Corpus {
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
     pub(crate) zones: IndexMap<String, Arc<Zone>>,
     pub(crate) energy_supply_conn_unmet_demand_zone: IndexMap<String, Arc<EnergySupplyConnection>>,
-    pub(crate) heat_system_name_for_zone: IndexMap<String, String>,
-    pub(crate) cool_system_name_for_zone: IndexMap<String, String>,
+    pub(crate) heat_system_name_for_zone: IndexMap<String, Vec<String>>,
+    pub(crate) cool_system_name_for_zone: IndexMap<String, Vec<String>>,
     pub(crate) total_floor_area: f64,
     pub(crate) total_volume: f64,
     pub(crate) wet_heat_sources: IndexMap<String, WetHeatSource>,
@@ -647,7 +647,7 @@ pub struct Corpus {
     detailed_output_heating_cooling: bool,
     vent_adjust_min_control: Option<Arc<Control>>,
     vent_adjust_max_control: Option<Arc<Control>>,
-    temp_internal_air_prev: AtomicF64,
+    temp_internal_air_prev: Arc<RwLock<f64>>,
 }
 
 impl Corpus {
@@ -721,8 +721,8 @@ impl Corpus {
 
         let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
 
-        let mut heat_system_name_for_zone: IndexMap<String, String> = Default::default();
-        let mut cool_system_name_for_zone: IndexMap<String, String> = Default::default();
+        let mut heat_system_name_for_zone: IndexMap<String, Vec<String>> = Default::default();
+        let mut cool_system_name_for_zone: IndexMap<String, Vec<String>> = Default::default();
 
         // infiltration ventilation
         let (
@@ -745,10 +745,13 @@ impl Corpus {
         let zones: IndexMap<String, Arc<Zone>> = input
             .zone
             .iter()
-            .map(|(i, zone)| -> anyhow::Result<(String, Arc<Zone>)> {
-                Ok(((*i).clone(), {
-                    let (zone_for_corpus, heat_system_name, cool_system_name) = zone_from_input(
+            .map(|(zone_name, zone)| -> anyhow::Result<(String, Arc<Zone>)> {
+                Ok(((*zone_name).clone(), {
+                    let zone_for_corpus = zone_from_input(
                         zone,
+                        zone_name,
+                        &mut heat_system_name_for_zone,
+                        &mut cool_system_name_for_zone,
                         external_conditions.clone(),
                         infiltration_ventilation.clone(),
                         window_adjust_control.clone(),
@@ -756,27 +759,6 @@ impl Corpus {
                         output_options.print_heat_balance,
                         simulation_time_iterator.clone().as_ref(),
                     )?;
-                    // TODO 0.32 correct logic here for possible multiple heat system names
-                    heat_system_name_for_zone.insert(
-                        (*i).clone(),
-                        match heat_system_name {
-                            SystemReference::None(_) => String::default(),
-                            SystemReference::Single(name) => name.clone(),
-                            SystemReference::Multiple(names) => {
-                                names.first().cloned().unwrap_or_default()
-                            }
-                        },
-                    );
-                    cool_system_name_for_zone.insert(
-                        (*i).clone(),
-                        match cool_system_name {
-                            SystemReference::None(_) => String::default(),
-                            SystemReference::Single(name) => name.clone(),
-                            SystemReference::Multiple(names) => {
-                                names.first().cloned().unwrap_or_default()
-                            }
-                        },
-                    );
 
                     Arc::new(zone_for_corpus)
                 }))
@@ -838,6 +820,8 @@ impl Corpus {
         let mut heat_sources_wet_with_buffer_tank = vec![];
         let mechanical_ventilations = infiltration_ventilation.mech_vents();
 
+        let temp_internal_air_prev: Arc<RwLock<f64>> = Default::default();
+
         let mut wet_heat_sources: IndexMap<String, WetHeatSource> = input
             .heat_source_wet
             .clone()
@@ -851,10 +835,7 @@ impl Corpus {
                     simulation_time_iterator.clone(),
                     mechanical_ventilations,
                     zones.len(),
-                    TempInternalAirAccessor {
-                        zones: zones.clone(),
-                        total_volume,
-                    },
+                    shareable_fn(&temp_internal_air_prev),
                     &controls,
                     &mut energy_supplies,
                     output_options.detailed_output_heating_cooling,
@@ -884,10 +865,7 @@ impl Corpus {
             &mut energy_supplies,
             &diverter_types,
             &mut diverters,
-            TempInternalAirAccessor {
-                zones: zones.clone(),
-                total_volume,
-            },
+            shareable_fn(&temp_internal_air_prev),
             simulation_time_iterator.clone().as_ref(),
             external_conditions.clone(),
         )?;
@@ -911,10 +889,7 @@ impl Corpus {
                     &heat_system_name_for_zone,
                     &zones,
                     &heat_sources_wet_with_buffer_tank,
-                    TempInternalAirAccessor {
-                        zones: zones.clone(),
-                        total_volume,
-                    },
+                    shareable_fn(&temp_internal_air_prev),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
                 )?)
@@ -930,7 +905,9 @@ impl Corpus {
                     system,
                     cool_system_name_for_zone
                         .values()
+                        .flatten()
                         .map(|s| s.as_str())
+                        .unique()
                         .collect::<Vec<_>>(),
                     &controls,
                     &mut energy_supplies,
@@ -992,7 +969,7 @@ impl Corpus {
             detailed_output_heating_cooling: output_options.detailed_output_heating_cooling,
             vent_adjust_min_control,
             vent_adjust_max_control,
-            temp_internal_air_prev: Default::default(),
+            temp_internal_air_prev,
         })
     }
 
@@ -1055,10 +1032,8 @@ impl Corpus {
     }
 
     pub fn update_temp_internal_air(&self) {
-        self.temp_internal_air_prev.store(
-            temp_internal_air_for_zones(&self.zones, self.total_volume),
-            Ordering::SeqCst,
-        );
+        *self.temp_internal_air_prev.write() =
+            temp_internal_air_for_zones(&self.zones, self.total_volume);
     }
 
     /// Return the volume-weighted average internal air temperature from the previous timestep
@@ -1072,7 +1047,7 @@ impl Corpus {
     /// temperatures of other Zone objects have been updated, which would be
     /// inconsistent.
     fn temp_internal_air_prev_timestep(&self) -> f64 {
-        self.temp_internal_air_prev.load(Ordering::SeqCst)
+        *self.temp_internal_air_prev.read()
     }
 
     fn pipework_losses_and_internal_gains_from_hw_storage_tank(
@@ -1266,14 +1241,18 @@ impl Corpus {
         let h_name_list = self
             .heat_system_name_for_zone
             .get(z_name)
-            .iter()
+            .into_iter()
+            .flatten()
             .map(|x| (*x).clone())
+            .unique()
             .collect::<Vec<String>>();
         let c_name_list = self
             .cool_system_name_for_zone
             .get(z_name)
-            .iter()
+            .into_iter()
+            .flatten()
             .map(|x| (*x).clone())
+            .unique()
             .collect::<Vec<String>>();
 
         let SetpointsAndConvectiveFractions {
@@ -2288,12 +2267,16 @@ impl Corpus {
             }
         }
 
-        for h_name in self.heat_system_name_for_zone.values() {
-            space_heat_provided_dict.insert(h_name.to_owned(), vec_capacity());
+        for z_h_names in self.heat_system_name_for_zone.values() {
+            for h_name in z_h_names {
+                space_heat_provided_dict.insert(h_name.to_owned(), vec_capacity());
+            }
         }
 
-        for c_name in self.cool_system_name_for_zone.values() {
-            space_cool_provided_dict.insert(c_name.to_owned(), vec_capacity());
+        for z_c_names in self.cool_system_name_for_zone.values() {
+            for c_name in z_c_names {
+                space_cool_provided_dict.insert(c_name.to_owned(), vec_capacity());
+            }
         }
 
         hot_water_demand_dict.insert("demand".try_into().unwrap(), vec_capacity());
@@ -3199,25 +3182,11 @@ fn temp_internal_air_for_zones(zones: &IndexMap<String, Arc<Zone>>, total_volume
     internal_air_temperature / total_volume
 }
 
-/// This is a struct that encapsulates a shared part of the corpus, just enough to be able to provide temperature of internal air
-/// as an equivalent to Corpus::temp_internal_air
-#[derive(Clone, Debug)]
-pub struct TempInternalAirAccessor {
-    pub zones: IndexMap<String, Arc<Zone>>,
-    pub total_volume: f64,
-}
-
-impl TempInternalAirAccessor {
-    pub fn call(&self) -> f64 {
-        temp_internal_air_for_zones(&self.zones, self.total_volume)
-    }
-}
-
 pub(crate) type TempInternalAirFn = Arc<dyn Fn() -> f64 + Send + Sync>;
 
-fn temp_internal_air_fn(accessor: impl Into<Arc<TempInternalAirAccessor>>) -> TempInternalAirFn {
-    let accessor: Arc<TempInternalAirAccessor> = accessor.into();
-    Arc::new(move || accessor.call())
+fn shareable_fn(num: &Arc<RwLock<f64>>) -> TempInternalAirFn {
+    let clone = num.clone();
+    Arc::from(move || *clone.read())
 }
 
 pub type KeyString = ArrayString<64>;
@@ -3466,52 +3435,97 @@ fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging 
 
 fn zone_from_input(
     input: &ZoneInput,
+    zone_name: &str,
+    heat_system_name_for_zone: &mut IndexMap<String, Vec<String>>,
+    cool_system_name_for_zone: &mut IndexMap<String, Vec<String>>,
     external_conditions: Arc<ExternalConditions>,
     infiltration_ventilation: Arc<InfiltrationVentilation>,
     window_adjust_control: Option<Arc<Control>>,
     controls: &Controls,
     print_heat_balance: bool,
     simulation_time_iterator: &SimulationTimeIterator,
-) -> anyhow::Result<(Zone, SystemReference, SystemReference)> {
+) -> anyhow::Result<Zone> {
     let heat_system_name = input.space_heat_system.clone();
     let cool_system_name = input.space_cool_system.clone();
+
+    let heat_system_names = match heat_system_name {
+        SystemReference::None(_) => vec![],
+        SystemReference::Single(name) => vec![name.clone()],
+        SystemReference::Multiple(names) => names.clone(),
+    };
+
+    for zone_h_name in heat_system_name_for_zone.values() {
+        let zone_h_name_set: HashSet<String> =
+            HashSet::from_iter(zone_h_name.to_owned().into_iter());
+        let h_overassigned: Vec<String> = HashSet::from_iter(heat_system_names.clone().into_iter())
+            .intersection(&zone_h_name_set)
+            .cloned()
+            .collect_vec();
+        if h_overassigned.len() > 0 {
+            bail!(
+                "Invalid input: SpaceHeatSystem ({}) has been assigned to more than one Zone",
+                h_overassigned.into_iter().join(", ")
+            )
+        }
+    }
+
+    heat_system_name_for_zone.insert(zone_name.to_owned(), heat_system_names);
+
+    let cool_system_names = match cool_system_name {
+        SystemReference::None(_) => vec![],
+        SystemReference::Single(name) => vec![name.clone()],
+        SystemReference::Multiple(names) => names.clone(),
+    };
+
+    for zone_c_name in cool_system_name_for_zone.values() {
+        let zone_c_name_set: HashSet<String> =
+            HashSet::from_iter(zone_c_name.to_owned().into_iter());
+        let c_overassigned: Vec<String> = HashSet::from_iter(cool_system_names.clone().into_iter())
+            .intersection(&zone_c_name_set)
+            .cloned()
+            .collect_vec();
+        if c_overassigned.len() > 0 {
+            bail!(
+                "Invalid input: SpaceCoolSystem ({}) has been assigned to more than one Zone",
+                c_overassigned.into_iter().join(", ")
+            )
+        }
+    }
+
+    cool_system_name_for_zone.insert(zone_name.to_owned(), cool_system_names);
 
     // Default setpoint basis to 'operative' if not provided in input
     let temp_setpnt_basis = input
         .temp_setpnt_basis
         .unwrap_or(ZoneTemperatureControlBasis::Operative);
 
-    Ok((
-        Zone::new(
-            input.area,
-            input.volume,
-            input
-                .building_elements
-                .iter()
-                .map(|(element_name, el)| {
-                    Ok((
-                        element_name.to_owned(),
-                        building_element_from_input(
-                            el,
-                            external_conditions.clone(),
-                            controls,
-                            simulation_time_iterator,
-                        )?,
-                    ))
-                })
-                .collect::<anyhow::Result<IndexMap<String, Arc<BuildingElement>>>>()?,
-            thermal_bridging_from_input(&input.thermal_bridging),
-            infiltration_ventilation,
-            external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
-            input.temp_setpnt_init.unwrap(),
-            temp_setpnt_basis,
-            window_adjust_control,
-            print_heat_balance,
-            simulation_time_iterator,
-        )?,
-        heat_system_name,
-        cool_system_name,
-    ))
+    Ok(Zone::new(
+        input.area,
+        input.volume,
+        input
+            .building_elements
+            .iter()
+            .map(|(element_name, el)| {
+                Ok((
+                    element_name.to_owned(),
+                    building_element_from_input(
+                        el,
+                        external_conditions.clone(),
+                        controls,
+                        simulation_time_iterator,
+                    )?,
+                ))
+            })
+            .collect::<anyhow::Result<IndexMap<String, Arc<BuildingElement>>>>()?,
+        thermal_bridging_from_input(&input.thermal_bridging),
+        infiltration_ventilation,
+        external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
+        input.temp_setpnt_init.unwrap(),
+        temp_setpnt_basis,
+        window_adjust_control,
+        print_heat_balance,
+        simulation_time_iterator,
+    )?)
 }
 
 #[allow(clippy::type_complexity)]
@@ -3950,7 +3964,7 @@ fn heat_source_wet_from_input(
     simulation_time: Arc<SimulationTimeIterator>,
     mechanical_ventilations: &Vec<Arc<MechanicalVentilation>>,
     number_of_zones: usize,
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    temp_internal_air_fn: TempInternalAirFn,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     detailed_output_heating_cooling: bool,
@@ -4054,7 +4068,7 @@ fn heat_source_wet_from_input(
                     detailed_output_heating_cooling,
                     boiler.map(|boiler: Boiler| Arc::new(RwLock::new(boiler))),
                     cost_schedule_hybrid_hp,
-                    temp_internal_air_fn(temp_internal_air_accessor),
+                    temp_internal_air_fn,
                 )?,
             ))))
         }
@@ -4159,7 +4173,7 @@ fn heat_source_from_input(
     simulation_time: &SimulationTimeIterator,
     controls: &Controls,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HeatSource, String)> {
     match input {
@@ -4234,7 +4248,7 @@ fn heat_source_from_input(
                         *orientation,
                         *solar_loop_piping_hlc,
                         external_conditions.clone(),
-                        temp_internal_air_fn(temp_internal_air_accessor),
+                        temp_internal_air_fn,
                         simulation_time.step_in_hours(),
                         control_max,
                         *WATER,
@@ -4422,7 +4436,7 @@ fn hot_water_source_from_input(
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     diverter_types: &DiverterTypes,
     diverters: &mut Vec<Arc<RwLock<PVDiverter>>>,
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    temp_internal_air_fn: TempInternalAirFn,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
@@ -4492,7 +4506,7 @@ fn hot_water_source_from_input(
                     simulation_time,
                     controls,
                     energy_supplies,
-                    temp_internal_air_accessor.clone(),
+                    temp_internal_air_fn.clone(),
                     external_conditions.clone(),
                 )?;
                 let heat_source = Arc::new(Mutex::new(heat_source));
@@ -4514,7 +4528,7 @@ fn hot_water_source_from_input(
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources.clone(),
-                temp_internal_air_fn(temp_internal_air_accessor),
+                temp_internal_air_fn,
                 external_conditions,
                 Some(24),
                 primary_pipework_lst,
@@ -4680,17 +4694,17 @@ fn space_heat_systems_from_input(
     simulation_time: &SimulationTimeIterator,
     heat_sources_wet: &IndexMap<String, WetHeatSource>,
     heat_system_names_requiring_overvent: &mut Vec<String>,
-    heat_system_name_for_zone: &IndexMap<String, String>,
+    heat_system_name_for_zone: &IndexMap<String, Vec<String>>,
     zones: &IndexMap<String, Arc<Zone>>,
     heat_sources_wet_with_buffer_tank: &[String],
-    temp_internal_air_accessor: TempInternalAirAccessor,
+    temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
     let mut energy_conn_names_for_systems: IndexMap<String, String> = Default::default();
     let space_heat_systems = input
         .iter()
-        .filter(|(system_name, _)| heat_system_name_for_zone.values().any(|heat_system_name| heat_system_name == system_name.as_str()))
+        .filter(|(system_name, _)| heat_system_name_for_zone.values().flatten().any(|heat_system_name| heat_system_name == system_name.as_str()))
         .map(|(system_name, space_heat_system_details)| {
             Ok((
                 (*system_name).clone(),
@@ -4722,12 +4736,13 @@ fn space_heat_systems_from_input(
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
                         let energy_supply_conn = EnergySupply::connection(energy_supply, energy_supply_conn_name.as_str()).unwrap();
 
-                        let zone_setpoint_init = zones.get(zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.setpnt_init();
+                        let zone = zones.get(zone).ok_or_else(|| anyhow!("Space heat system references an undeclared zone '{zone}'."))?.clone();
+                        let zone_setpoint_init = zone.setpnt_init();
                         let control = control
                             .as_ref()
                             .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control object was expected for a heat pump system"))?;
                         let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
-                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, temp_internal_air_fn(temp_internal_air_accessor.clone()), energy_supply_conn, simulation_time, control, charge_control, esh_min_output.clone(), esh_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
+                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, esh_min_output.clone(), esh_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
                     }
                     SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, variable_flow, design_flow_rate, min_flow_rate, max_flow_rate, bypass_percentage_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, .. } => {
                         let heat_source_name = &heat_source.name;
@@ -4954,14 +4969,14 @@ fn on_site_generation_from_input(
 
 fn total_volume_heated_by_system(
     zones: &IndexMap<String, Arc<Zone>>,
-    heat_system_name_for_zone: &IndexMap<String, String>,
+    heat_system_name_for_zone: &IndexMap<String, Vec<String>>,
     heat_system_name: &str,
 ) -> f64 {
     zones
         .iter()
         .filter_map(|(z_name, zone)| {
-            if let Some(system_name) = heat_system_name_for_zone.get(z_name) {
-                (system_name == heat_system_name).then(|| zone.volume())
+            if let Some(system_names) = heat_system_name_for_zone.get(z_name) {
+                (system_names.iter().any(|name| heat_system_name == name)).then(|| zone.volume())
             } else {
                 None
             }

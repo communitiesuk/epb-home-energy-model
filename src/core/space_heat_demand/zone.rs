@@ -9,6 +9,7 @@ use crate::core::space_heat_demand::thermal_bridge::{
 };
 use crate::core::space_heat_demand::ventilation::InfiltrationVentilation;
 use crate::core::units::{kelvin_to_celsius, SECONDS_PER_HOUR, WATTS_PER_KILOWATT};
+use crate::corpus::TempInternalAirFn;
 use crate::input::ZoneTemperatureControlBasis;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
@@ -1325,6 +1326,21 @@ impl SimpleZone for Zone {
 
     fn area(&self) -> f64 {
         self.area()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ZoneTempInternalAir(pub(crate) Arc<Zone>);
+
+// utility struct for when a zone needs to be injected into another module only to access temp_internal_air
+impl ZoneTempInternalAir {
+    pub(crate) fn temp_internal_air(&self) -> f64 {
+        self.0.temp_internal_air()
+    }
+
+    pub(crate) fn as_fn(&self) -> TempInternalAirFn {
+        let zone = self.0.clone();
+        Arc::from(move || zone.temp_internal_air())
     }
 }
 
