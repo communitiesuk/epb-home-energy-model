@@ -1910,8 +1910,7 @@ fn create_appliance_gains(
 
     let mut first_priority_ranks: Vec<f64> = defined_priority
         .iter()
-        .map(|appliance_name| priority.get(appliance_name.to_owned()))
-        .flatten()
+        .filter_map(|appliance_name| priority.get(appliance_name.to_owned()))
         .filter_map(|p| p[0])
         .collect_vec();
 

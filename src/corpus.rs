@@ -813,7 +813,7 @@ impl Corpus {
                     power_timeseries,
                     weight_timeseries,
                     *time_series_step,
-                    &*simulation_time_iterator,
+                    &simulation_time_iterator,
                     non_appliance_demand_24hr.clone(),
                     battery_24hr.as_deref(),
                     &energy_supplies,

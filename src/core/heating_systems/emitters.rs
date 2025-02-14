@@ -1068,7 +1068,7 @@ impl Emitters {
         // on the lower of the two.
 
         // Calculate extra energy required for emitters to reach temp required
-        let energy_req_to_warm_emitters = if let Some(_) = self.fancoil.as_ref() {
+        let energy_req_to_warm_emitters = if self.fancoil.as_ref().is_some() {
             0.0
         } else {
             self.thermal_mass * (temp_emitter_req - temp_emitter_heating_start)
