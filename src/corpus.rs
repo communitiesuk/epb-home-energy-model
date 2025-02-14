@@ -618,6 +618,7 @@ pub struct Corpus {
     pub(crate) simulation_time: Arc<SimulationTimeIterator>,
     pub(crate) external_conditions: Arc<ExternalConditions>,
     pub(crate) cold_water_sources: ColdWaterSources,
+    pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
     pub(crate) controls: Controls,
@@ -680,7 +681,7 @@ impl Corpus {
             input.waste_water_heat_recovery.as_ref(),
             &cold_water_sources,
             simulation_time_iterator.current_iteration(),
-        );
+        )?;
 
         let mut energy_supplies = energy_supplies_from_input(
             &input.energy_supply,
@@ -852,13 +853,47 @@ impl Corpus {
             })
             .collect::<anyhow::Result<IndexMap<String, WetHeatSource>>>()?;
 
-        let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         let mut energy_supply_conn_names_for_hot_water_source: IndexMap<String, Vec<String>> =
             Default::default();
+
+        // processing pre-heated sources
+        let pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> = input
+            .pre_heated_water_source
+            .iter()
+            .map(|(source_name, source_details)| {
+                anyhow::Ok((source_name.to_owned(), {
+                    let (heat_source, energy_conn_names) = hot_water_source_from_input(
+                        source_name.to_owned(),
+                        source_details,
+                        &cold_water_sources,
+                        &IndexMap::from([]),
+                        &mut wet_heat_sources,
+                        &wwhrs,
+                        &controls,
+                        &mut energy_supplies,
+                        &diverter_types,
+                        &mut diverters,
+                        shareable_fn(&temp_internal_air_prev),
+                        simulation_time_iterator.clone().as_ref(),
+                        external_conditions.clone(),
+                    )?;
+                    energy_supply_conn_names_for_hot_water_source
+                        .insert(source_name.to_owned(), energy_conn_names);
+                    if let HotWaterSource::StorageTank(storage_tank) = heat_source {
+                        storage_tank.clone()
+                    } else {
+                        bail!("Pre-heated water sources must be storage tanks")
+                    }
+                }))
+            })
+            .try_collect()?;
+
+        let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
             "hw cylinder".to_string(),
             &input.hot_water_source.hot_water_cylinder,
             &cold_water_sources,
+            &pre_heated_water_sources,
             &mut wet_heat_sources,
             &wwhrs,
             &controls,
@@ -935,6 +970,7 @@ impl Corpus {
             simulation_time: simulation_time_iterator,
             external_conditions,
             cold_water_sources,
+            pre_heated_water_sources,
             energy_supplies,
             internal_gains,
             controls,
@@ -2337,7 +2373,7 @@ impl Corpus {
                         temp_average_drawoff,
                         volume_water_remove_from_tank,
                     ) = storage_tank
-                        .lock()
+                        .write()
                         .demand_hot_water(&mut usage_events, t_it)?;
 
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
@@ -2383,7 +2419,7 @@ impl Corpus {
 
             // Convert from litres to kWh
             let cold_water_source = self.hot_water_sources["hw cylinder"].get_cold_water_source();
-            let cold_water_temperature = cold_water_source.temperature(t_it);
+            let cold_water_temperature = cold_water_source.temperature(t_it, None);
             let hw_energy_demand_incl_pipework_loss =
                 water_demand_to_kwh(hw_demand_vol, temp_hot_water, cold_water_temperature);
             let mut gains_internal_dhw = (pw_losses_internal + gains_internal_dhw_use)
@@ -2391,7 +2427,7 @@ impl Corpus {
                 / t_it.timestep;
             match self.hot_water_sources.get("hw cylinder").unwrap() {
                 HotWaterSource::StorageTank(ref source) => {
-                    gains_internal_dhw += source.lock().internal_gains();
+                    gains_internal_dhw += source.read().internal_gains();
                 }
                 HotWaterSource::CombiBoiler(ref source) => {
                     gains_internal_dhw += source.internal_gains();
@@ -2414,7 +2450,7 @@ impl Corpus {
                 if let HotWaterSource::StorageTank(storage_tank) =
                     &self.hot_water_sources["hw cylinder"]
                 {
-                    storage_tank.lock().to_report()
+                    storage_tank.read().to_report()
                 } else {
                     (0.0, 0.0)
                 };
@@ -2889,7 +2925,7 @@ fn external_conditions_from_input(
     )
 }
 
-pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, ColdWaterSource>;
+pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, Arc<ColdWaterSource>>;
 
 fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSources {
     input
@@ -2897,7 +2933,7 @@ fn cold_water_sources_from_input(input: &ColdWaterSourceInput) -> ColdWaterSourc
         .map(|(source_type, source_details)| {
             (
                 *source_type,
-                cold_water_source_from_input_details(source_details),
+                Arc::from(cold_water_source_from_input_details(source_details)),
             )
         })
         .collect()
@@ -3105,7 +3141,7 @@ fn wwhrs_from_input(
     wwhrs: Option<&WasteWaterHeatRecovery>,
     cold_water_sources: &ColdWaterSources,
     initial_simtime: SimulationTimeIteration,
-) -> IndexMap<String, Arc<Mutex<Wwhrs>>> {
+) -> anyhow::Result<IndexMap<String, Arc<Mutex<Wwhrs>>>> {
     let mut wwhr_systems: IndexMap<String, Arc<Mutex<Wwhrs>>> = IndexMap::from([]);
     if let Some(systems) = wwhrs {
         for (name, system) in systems {
@@ -3115,30 +3151,40 @@ fn wwhrs_from_input(
                     system.clone(),
                     cold_water_sources,
                     initial_simtime,
-                ))));
+                )?)));
         }
     }
 
-    wwhr_systems
+    Ok(wwhr_systems)
 }
 
 fn wwhr_system_from_details(
     system: WasteWaterHeatRecoveryDetails,
     cold_water_sources: &ColdWaterSources,
     initial_simtime: SimulationTimeIteration,
-) -> Wwhrs {
-    match system.system_type {
+) -> anyhow::Result<Wwhrs> {
+    Ok(match system.system_type {
         WwhrsType::SystemA => Wwhrs::WWHRSInstantaneousSystemA(WWHRSInstantaneousSystemA::new(
             system.flow_rates,
             system.efficiencies,
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                .unwrap(),
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Could not find cold water source '{:?}'",
+                        system.cold_water_source
+                    )
+                })?,
             system.utilisation_factor,
             initial_simtime,
         )),
         WwhrsType::SystemB => Wwhrs::WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB::new(
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                .unwrap(),
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Could not find cold water source '{:?}'",
+                        system.cold_water_source
+                    )
+                })?,
             system.flow_rates,
             system.efficiencies,
             system.utilisation_factor,
@@ -3147,11 +3193,16 @@ fn wwhr_system_from_details(
             system.flow_rates,
             system.efficiencies,
             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                .unwrap(),
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Could not find cold water source '{:?}'",
+                        system.cold_water_source
+                    )
+                })?,
             system.utilisation_factor,
             initial_simtime,
         )),
-    }
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -3316,7 +3367,7 @@ pub(crate) enum HotWaterResultKey {
 fn get_cold_water_source_ref_for_type(
     source_type: ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
-) -> Option<ColdWaterSource> {
+) -> Option<Arc<ColdWaterSource>> {
     cold_water_sources.get(&source_type).cloned()
 }
 
@@ -4378,7 +4429,7 @@ fn heat_source_from_input(
 
 #[derive(Debug)]
 pub(crate) enum HotWaterSource {
-    StorageTank(Arc<Mutex<StorageTank>>),
+    StorageTank(Arc<RwLock<StorageTank>>),
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
@@ -4387,7 +4438,7 @@ pub(crate) enum HotWaterSource {
 impl HotWaterSource {
     pub fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
         match self {
-            HotWaterSource::StorageTank(source) => source.lock().get_cold_water_source().clone(),
+            HotWaterSource::StorageTank(source) => source.read().get_cold_water_source().clone(),
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
@@ -4396,7 +4447,7 @@ impl HotWaterSource {
 
     pub(crate) fn temp_hot_water(&self) -> f64 {
         match self {
-            HotWaterSource::StorageTank(storage_tank) => storage_tank.lock().get_temp_hot_water(),
+            HotWaterSource::StorageTank(storage_tank) => storage_tank.read().get_temp_hot_water(),
             HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
@@ -4430,6 +4481,7 @@ fn hot_water_source_from_input(
     source_name: String,
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
+    pre_heated_water_sources: &IndexMap<String, Arc<RwLock<StorageTank>>>,
     wet_heat_sources: &mut IndexMap<String, WetHeatSource>,
     wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
     controls: &Controls,
@@ -4447,23 +4499,24 @@ fn hot_water_source_from_input(
             volume,
             daily_losses,
             heat_exchanger_surface_area,
-            min_temp,
             setpoint_temp,
-            control_hold_at_setpoint,
             cold_water_source: cold_water_source_type,
             primary_pipework,
             heat_source,
             ..
         } => {
-            let mut cold_water_source: WaterSourceWithTemperature = cold_water_source_for_type(
-                match cold_water_source_type {
-                    ColdWaterSourceReference::Type(source_type) => source_type,
-                    ColdWaterSourceReference::Reference(_) => {
-                        unimplemented!("TODO 0.32 allow for free references to cold water sources")
+            let mut cold_water_source: WaterSourceWithTemperature = match cold_water_source_type {
+                ColdWaterSourceReference::Type(source_type) => {
+                    cold_water_source_for_type(source_type, cold_water_sources)?
+                }
+                ColdWaterSourceReference::Reference(reference) => {
+                    if let Some(preheated) = pre_heated_water_sources.get(reference) {
+                        WaterSourceWithTemperature::Preheated(preheated.clone())
+                    } else {
+                        WaterSourceWithTemperature::Wwhrs(wwhrs.get(reference).ok_or_else(|| anyhow!("Could not find pre-heated or WWHRS water source for name '{reference}'"))?.clone())
                     }
-                },
-                cold_water_sources,
-            )?;
+                }
+            };
             // TODO (from Python) Need to handle error if ColdWaterSource name is invalid.
             // TODO (from Python) assuming here there is only one WWHRS
             if !wwhrs.is_empty() {
@@ -4521,7 +4574,7 @@ fn hot_water_source_from_input(
                 energy_supply_conn_names.push(energy_supply_conn_name);
             }
 
-            let storage_tank = Arc::new(Mutex::new(StorageTank::new(
+            let storage_tank = Arc::new(RwLock::new(StorageTank::new(
                 *volume,
                 *daily_losses,
                 setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
@@ -4679,12 +4732,12 @@ fn cold_water_source_for_type(
     cold_water_source_type: &ColdWaterSourceType,
     cold_water_sources: &ColdWaterSources,
 ) -> anyhow::Result<WaterSourceWithTemperature> {
-    Ok(WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+    Ok(WaterSourceWithTemperature::ColdWaterSource(
         cold_water_sources
             .get(cold_water_source_type)
             .ok_or_else(|| anyhow!("referenced cold water source was expected to exist"))?
             .clone(),
-    )))
+    ))
 }
 
 fn space_heat_systems_from_input(

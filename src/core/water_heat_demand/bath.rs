@@ -1,16 +1,21 @@
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::simulation_time::SimulationTimeIteration;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Bath {
     size_in_litres: f64,
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     flowrate: f64,
 }
 
 impl Bath {
-    pub fn new(size_in_litres: f64, cold_water_source: ColdWaterSource, flowrate: f64) -> Self {
+    pub fn new(
+        size_in_litres: f64,
+        cold_water_source: Arc<ColdWaterSource>,
+        flowrate: f64,
+    ) -> Self {
         Self {
             size_in_litres,
             cold_water_source,
@@ -64,7 +69,7 @@ mod tests {
     #[fixture]
     fn bath() -> Bath {
         let cold_water_source = ColdWaterSource::new(vec![2.0, 3.0, 4.0], 0, 1.0);
-        Bath::new(100.0, cold_water_source, 4.5)
+        Bath::new(100.0, cold_water_source.into(), 4.5)
     }
 
     #[rstest]
@@ -76,7 +81,7 @@ mod tests {
     pub fn should_give_cold_water_source(bath: Bath) {
         assert_eq!(
             bath.get_cold_water_source(),
-            &bath.cold_water_source,
+            bath.cold_water_source.as_ref(),
             "cold water source not returned"
         );
     }

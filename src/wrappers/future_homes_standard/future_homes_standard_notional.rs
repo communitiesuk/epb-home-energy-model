@@ -997,11 +997,11 @@ fn calc_daily_hw_demand(
         .map(|(key, source)| {
             (
                 *key,
-                ColdWaterSource::new(
+                Arc::from(ColdWaterSource::new(
                     source.temperatures.clone(),
                     source.start_day,
                     source.time_series_step,
-                ),
+                )),
             )
         })
         .collect();

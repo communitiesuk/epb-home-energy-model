@@ -52,7 +52,7 @@ impl PointOfUse {
         let water_energy_demand = water_demand_to_kwh(
             volume_demanded,
             demand_temp,
-            self.cold_feed.temperature(*simulation_time_iteration),
+            self.cold_feed.temperature(*simulation_time_iteration, None),
         );
 
         // Assumption is that system specified has sufficient capacity to meet any realistic demand

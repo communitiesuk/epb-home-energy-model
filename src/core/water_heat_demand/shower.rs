@@ -44,14 +44,14 @@ impl Shower {
 #[derive(Debug)]
 pub struct MixerShower {
     flowrate: f64,
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     wwhrs: Option<Arc<Mutex<Wwhrs>>>,
 }
 
 impl MixerShower {
     pub fn new(
         flowrate: f64,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         wwhrs: Option<Arc<Mutex<Wwhrs>>>,
     ) -> Self {
         Self {
@@ -119,14 +119,14 @@ impl MixerShower {
 #[derive(Debug)]
 pub struct InstantElectricShower {
     power_in_kilowatts: f64,
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     energy_supply_connection: EnergySupplyConnection,
 }
 
 impl InstantElectricShower {
     pub(crate) fn new(
         power_in_kilowatts: f64,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         energy_supply_connection: EnergySupplyConnection,
     ) -> Self {
         Self {
@@ -188,7 +188,7 @@ mod tests {
         let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
-        let mixer_shower = MixerShower::new(6.5, cold_water_source, None);
+        let mixer_shower = MixerShower::new(6.5, cold_water_source.into(), None);
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -209,7 +209,7 @@ mod tests {
         ));
         let energy_supply_conn = EnergySupply::connection(energy_supply.clone(), "shower").unwrap();
         let instant_shower =
-            InstantElectricShower::new(50.0, cold_water_source, energy_supply_conn);
+            InstantElectricShower::new(50.0, cold_water_source.into(), energy_supply_conn);
         let expected_results_by_end_user = [5.0, 10.0, 15.0];
         let expected_demands = [86.04206500956023, 175.59605103991885, 268.8814531548757];
         for (idx, t_it) in simulation_time.iter().enumerate() {

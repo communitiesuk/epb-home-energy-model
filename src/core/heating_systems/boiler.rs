@@ -123,7 +123,7 @@ impl BoilerServiceWaterCombi {
 
         let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water_in_c,
-            self.cold_feed.temperature(simtime),
+            self.cold_feed.temperature(simtime, None),
         );
 
         let volume_demanded = volume_demanded_target

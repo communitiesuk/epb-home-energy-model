@@ -496,7 +496,7 @@ mod tests {
             2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 2.0, 3.0,
             4.0, 2.0, 3.0, 4.0, 2.0, 3.0, 4.0,
         ];
-        let cold_water_source = ColdWaterSource::new(cold_water_temps, 0, 1.);
+        let cold_water_source = Arc::from(ColdWaterSource::new(cold_water_temps, 0, 1.));
         let cold_water_sources =
             ColdWaterSources::from([(ColdWaterSourceType::MainsWater, cold_water_source.clone())]);
         let flow_rates = vec![5., 7., 9., 11., 13.];

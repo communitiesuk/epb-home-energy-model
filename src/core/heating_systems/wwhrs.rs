@@ -1,5 +1,6 @@
 use crate::simulation_time::SimulationTimeIteration;
 use crate::{core::water_heat_demand::cold_water_source::ColdWaterSource, statistics::np_interp};
+use std::sync::Arc;
 
 /// This module provides types to model waste water heat recovery systems of different kinds.
 
@@ -43,7 +44,7 @@ impl Wwhrs {
 
 #[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemB {
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     flow_rates: Vec<f64>,
     efficiencies: Vec<f64>,
     utilisation_factor: f64,
@@ -54,7 +55,7 @@ pub struct WWHRSInstantaneousSystemB {
 /// For System B WWHRS, output of the heat exchanger is fed to the shower only
 impl WWHRSInstantaneousSystemB {
     pub fn new(
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         flow_rates: Vec<f64>,
         efficiencies: Vec<f64>,
         utilisation_factor: f64,
@@ -100,7 +101,7 @@ impl WWHRSInstantaneousSystemB {
 /// For System C WWHRS, output of the heat exchanger is fed to the hot water system only
 #[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemC {
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     stored_temperature: f64,
     flow_rates: Vec<f64>,
     efficiencies: Vec<f64>,
@@ -108,10 +109,10 @@ pub struct WWHRSInstantaneousSystemC {
 }
 
 impl WWHRSInstantaneousSystemC {
-    pub fn new(
+    pub(crate) fn new(
         flow_rates: Vec<f64>,
         efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         utilisation_factor: f64,
         initial_simtime: SimulationTimeIteration,
     ) -> Self {
@@ -169,7 +170,7 @@ impl WWHRSInstantaneousSystemC {
 /// and the hot water system
 #[derive(Clone, Debug)]
 pub struct WWHRSInstantaneousSystemA {
-    cold_water_source: ColdWaterSource,
+    cold_water_source: Arc<ColdWaterSource>,
     stored_temperature: f64,
     flow_rates: Vec<f64>,
     efficiencies: Vec<f64>,
@@ -180,7 +181,7 @@ impl WWHRSInstantaneousSystemA {
     pub fn new(
         flow_rates: Vec<f64>,
         efficiencies: Vec<f64>,
-        cold_water_source: ColdWaterSource,
+        cold_water_source: Arc<ColdWaterSource>,
         utilisation_factor: f64,
         initial_simtime: SimulationTimeIteration,
     ) -> Self {
@@ -246,7 +247,7 @@ mod tests {
 
     #[fixture]
     fn wwhrs_b() -> WWHRSInstantaneousSystemB {
-        let cold_water_source = ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0);
+        let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.0, 17.0, 17.0], 0, 1.0));
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -278,7 +279,7 @@ mod tests {
 
     #[fixture]
     fn wwhrs_c(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemC {
-        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0);
+        let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0));
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;
@@ -315,7 +316,7 @@ mod tests {
 
     #[fixture]
     fn wwhrs_a(simulation_time: SimulationTime) -> WWHRSInstantaneousSystemA {
-        let cold_water_source = ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0);
+        let cold_water_source = Arc::from(ColdWaterSource::new(vec![17.1, 17.2, 17.3], 0, 1.0));
         let flow_rates = vec![5., 7., 9., 11., 13.];
         let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
         let utilisation_factor = 0.7;

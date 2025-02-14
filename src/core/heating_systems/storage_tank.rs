@@ -83,7 +83,7 @@ pub struct StorageTank {
     heating_active: HashMap<String, bool>,
     q_ls_n_prev_heat_source: Vec<f64>,
     q_sto_h_ls_rbl: Option<f64>, // total recoverable heat losses for heating in kWh, memoised between steps
-    primary_gains: f64,          // primary pipework gains for a timestep (mutates over lifetime)
+    primary_gains: AtomicF64,    // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
     energy_demand_test: f64,
     temp_final_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
@@ -413,7 +413,7 @@ impl StorageTank {
         // Initialize the unmet and met energies
         let mut energy_unmet = 0.0;
         let mut energy_withdrawn = 0.0;
-        let mut pipework_temp = self.cold_feed.temperature(simulation_time); // This value set to initialise, but is never used - overwritten later.
+        let mut pipework_temp = self.cold_feed.temperature(simulation_time, None); // This value set to initialise, but is never used - overwritten later.
 
         let mut pipework_considered = event.pipework_volume.unwrap() <= 0.0;
 
@@ -456,7 +456,7 @@ impl StorageTank {
             let fraction = frac_hot_water(
                 warm_temp,
                 layer_temp,
-                self.cold_feed.temperature(simulation_time),
+                self.cold_feed.temperature(simulation_time, None),
             );
 
             let _warm_vol_removed: f64;
@@ -490,7 +490,7 @@ impl StorageTank {
                 self.rho
                     * self.cp
                     * required_vol
-                    * (layer_temp - self.cold_feed.temperature(simulation_time))
+                    * (layer_temp - self.cold_feed.temperature(simulation_time, None))
         }
 
         self.temp_average_drawoff_volweighted = Some(temp_average_drawoff_volweighted);
@@ -506,7 +506,7 @@ impl StorageTank {
         energy_unmet += self.rho
             * self.cp
             * remaining_demanded_warm_volume
-            * (warm_temp - self.cold_feed.temperature(simulation_time));
+            * (warm_temp - self.cold_feed.temperature(simulation_time, None));
 
         //  Calculate the remaining total volume
         let remaining_total_volume: f64 = remaining_vols.iter().sum();
@@ -598,7 +598,9 @@ impl StorageTank {
                 // The pre-heated tank is limited in the amount of water that can be provided at
                 // a given temperature, eventually resourting to its own cold feed. So cold feed
                 // temperature for the tank depends on the volume required.
-                let temp_cold_feed = self.cold_feed.temperature(simulation_time); // In Python the temperature methods have changed to take in a needed_volume but then it is never used.
+                let temp_cold_feed = self
+                    .cold_feed
+                    .temperature(simulation_time, Some(needed_volume)); // In Python the temperature methods have changed to take in a needed_volume but then it is never used.
                 volume_weighted_temperature += needed_volume * temp_cold_feed;
                 flag_rearrange_layers = temp_cold_feed > temp_layer_min;
             }
@@ -985,7 +987,7 @@ impl StorageTank {
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;
                 self.input_energy_adj_prev_timestep = input_energy_adj;
-                self.primary_gains = primary_gains;
+                self.primary_gains.store(primary_gains, Ordering::SeqCst);
 
                 // TODO (from Python) - how are these gains reflected in the calculations? allocation by zone?
                 Ok(heat_source_output)
@@ -1149,8 +1151,9 @@ impl StorageTank {
         let mut _energy_withdrawn = 0.0;
         self.temp_average_drawoff_volweighted = Some(0.0);
         self.total_volume_drawoff = Some(0.0);
-        self.temp_average_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
-        self.temp_final_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration));
+        self.temp_average_drawoff =
+            Some(self.cold_feed.temperature(simulation_time_iteration, None));
+        self.temp_final_drawoff = Some(self.cold_feed.temperature(simulation_time_iteration, None));
         let _temp_ini_n = self.temp_n.clone();
         let temp_s3_n = self.temp_n.clone();
 
@@ -1193,7 +1196,7 @@ impl StorageTank {
                 self.rho
                     * self.cp
                     * required_vol
-                    * (layer_temp - self.cold_feed.temperature(simulation_time_iteration));
+                    * (layer_temp - self.cold_feed.temperature(simulation_time_iteration, None));
 
             if remaining_demanded_volume <= 0.0 {
                 break;
@@ -1204,7 +1207,10 @@ impl StorageTank {
             self.temp_average_drawoff_volweighted = Some(
                 self.temp_average_drawoff_volweighted.unwrap()
                     + remaining_demanded_volume
-                        * self.cold_feed.temperature(simulation_time_iteration),
+                        * self.cold_feed.temperature(
+                            simulation_time_iteration,
+                            remaining_demanded_volume.into(),
+                        ),
             );
             self.total_volume_drawoff =
                 Some(self.total_volume_drawoff.unwrap() + remaining_demanded_volume);
@@ -1278,9 +1284,10 @@ impl StorageTank {
     }
 
     /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
-    pub fn internal_gains(&mut self) -> f64 {
-        let primary_gains_timestep = self.primary_gains;
-        self.primary_gains = Default::default();
+    pub fn internal_gains(&self) -> f64 {
+        let primary_gains_timestep = self.primary_gains.load(Ordering::SeqCst);
+        self.primary_gains
+            .store(Default::default(), Ordering::SeqCst);
 
         (self.q_sto_h_ls_rbl.expect(
             "storage tank logic expects q_sto_h_ls_rbl to have been set internally at this point",
@@ -1365,7 +1372,7 @@ impl StorageTank {
     }
 
     /// Return the pre-heated water temperature for the current timestep
-    fn temperature(
+    pub(crate) fn temperature(
         &mut self,
         volume_needed: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -1376,7 +1383,7 @@ impl StorageTank {
         // Otherwise, it calculates the average water the tank can provided for the required volume.
         let volume_needed = volume_needed.unwrap_or(0.);
         if volume_needed == 0. {
-            self.cold_feed.temperature(simulation_time_iteration)
+            self.cold_feed.temperature(simulation_time_iteration, None)
         } else {
             self.draw_off_hot_water(volume_needed, simulation_time_iteration)
         }
@@ -1513,7 +1520,7 @@ pub(crate) trait SurplusDiverting: Send + Sync {
 
 #[derive(Debug)]
 pub struct PVDiverter {
-    storage_tank: Arc<Mutex<StorageTank>>,
+    storage_tank: Arc<RwLock<StorageTank>>,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
     capacity_already_in_use: AtomicF64,
@@ -1521,7 +1528,7 @@ pub struct PVDiverter {
 
 impl PVDiverter {
     pub fn new(
-        storage_tank: Arc<Mutex<StorageTank>>,
+        storage_tank: Arc<RwLock<StorageTank>>,
         heat_source: Arc<Mutex<ImmersionHeater>>,
         heat_source_name: String,
     ) -> Arc<RwLock<Self>> {
@@ -1570,7 +1577,7 @@ impl SurplusDiverting for PVDiverter {
         let energy_diverted_max = min_of_2(imm_heater_max_capacity_spare, -supply_surplus);
 
         // Add additional energy to storage tank and calculate how much energy was accepted
-        let energy_diverted = self.storage_tank.lock().additional_energy_input(
+        let energy_diverted = self.storage_tank.write().additional_energy_input(
             Arc::new(Mutex::new(HeatSource::Storage(
                 HeatSourceWithStorageTank::Immersion(self.immersion_heater.clone()),
             ))),
@@ -2321,7 +2328,7 @@ mod tests {
 
         storage_tank_for_pv_diverter.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
         let pvdiverter = PVDiverter::new(
-            Arc::new(Mutex::new(storage_tank_for_pv_diverter)),
+            Arc::new(RwLock::new(storage_tank_for_pv_diverter)),
             Arc::new(Mutex::new(immersion_heater)),
             "imheater".to_string(),
         );

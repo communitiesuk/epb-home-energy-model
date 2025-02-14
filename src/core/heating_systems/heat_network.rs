@@ -65,7 +65,7 @@ impl HeatNetworkServiceWaterDirect {
             .unwrap_or(0.0);
         let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
             self.temperature_hot_water,
-            self.cold_feed.temperature(simtime),
+            self.cold_feed.temperature(simtime, None),
         );
         let energy_demand = volume_demanded * energy_content_kwh_per_litre;
 
