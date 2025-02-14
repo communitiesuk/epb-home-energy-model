@@ -134,7 +134,7 @@
         {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/HotWaterSourceDetails"
+            "$ref": "#/$defs/StorageTank"
           }
         },
         {
@@ -3355,88 +3355,7 @@
     "HotWaterSourceDetails": {
       "oneOf": [
         {
-          "type": "object",
-          "title": "StorageTank",
-          "required": [
-            "ColdWaterSource",
-            "HeatSource",
-            "daily_losses",
-            "type",
-            "volume"
-          ],
-          "properties": {
-            "ColdWaterSource": {
-              "type": "string"
-            },
-            "Control_hold_at_setpnt": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "HeatSource": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/HeatSource"
-              }
-            },
-            "daily_losses": {
-              "type": "number",
-              "format": "double",
-              "description": "Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)"
-            },
-            "heat_exchanger_surface_area": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double"
-            },
-            "init_temp": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double"
-            },
-            "min_temp": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double",
-              "description": "Minimum temperature required for domestic hot water (unit: ˚C)"
-            },
-            "primary_pipework": {
-              "type": [
-                "array",
-                "null"
-              ],
-              "items": {
-                "$ref": "#/$defs/WaterPipework"
-              }
-            },
-            "setpoint_temp": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double",
-              "description": "Setpoint temperature (unit: ˚C)"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "StorageTank"
-              ]
-            },
-            "volume": {
-              "type": "number",
-              "format": "double",
-              "description": "Total volume of tank (unit: litre)"
-            }
-          },
-          "additionalProperties": false
+          "$ref": "#/$defs/StorageTank"
         },
         {
           "type": "object",
@@ -4977,6 +4896,90 @@
             "null"
           ],
           "format": "double"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StorageTank": {
+      "type": "object",
+      "title": "StorageTank",
+      "required": [
+        "ColdWaterSource",
+        "HeatSource",
+        "daily_losses",
+        "type",
+        "volume"
+      ],
+      "properties": {
+        "ColdWaterSource": {
+          "type": "string"
+        },
+        "Control_hold_at_setpnt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "HeatSource": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/HeatSource"
+          }
+        },
+        "daily_losses": {
+          "type": "number",
+          "format": "double",
+          "description": "Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)"
+        },
+        "heat_exchanger_surface_area": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "init_temp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_temp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "Minimum temperature required for domestic hot water (unit: ˚C)"
+        },
+        "primary_pipework": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/WaterPipework"
+          }
+        },
+        "setpoint_temp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "Setpoint temperature (unit: ˚C)"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "StorageTank"
+          ]
+        },
+        "volume": {
+          "type": "number",
+          "format": "double",
+          "description": "Total volume of tank (unit: litre)"
         }
       },
       "additionalProperties": false

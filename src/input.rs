@@ -22,7 +22,7 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
     InputForProcessing::init_with_json(json)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -40,6 +40,7 @@ pub struct Input {
     pub appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     #[serde(default)]
+    #[validate(custom = validate_only_storage_tanks)]
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
     pub(crate) energy_supply: EnergySupplyInput,
     pub control: Control,
@@ -94,6 +95,15 @@ pub struct Input {
     pub(crate) appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tariff: Option<Tariff>,
+}
+
+fn validate_only_storage_tanks(
+    sources: &IndexMap<String, HotWaterSourceDetails>,
+) -> Result<(), serde_valid::validation::Error> {
+    sources.values()
+        .all(|details| matches!(details, HotWaterSourceDetails::StorageTank { .. }))
+        .then(|| ())
+        .ok_or_else(|| serde_valid::validation::Error::Custom("PreHeatedWaterSource input can only contain HotWaterSource data of the type StorageTank".to_owned()))
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
