@@ -2011,24 +2011,10 @@ struct ClothesUseData {
 }
 struct ApplianceCookingDemand {
     mean_annual_demand: f64,
-    mean_annual_events: f64,
+    _mean_annual_events: f64,
     mean_event_demand: f64,
     fuel: Option<String>,
     event_count: usize,
-}
-
-impl ApplianceCookingDemand {
-    fn event_count(&self) -> f64 {
-        // for each appliance, work out number of usage events based on
-        // average HES annual demand and demand per cycle
-        // do not consider gas and electricity separately for this purpose
-        // let demandprop = cookparams[cook]["mean_annual_demand"]/(electot + gastot)
-        // annualkWh = demandprop * annual_cooking_elec_kWh
-        // events = annualkWh / cookparams[cook]["mean_event_demand"]
-        // cookparams[cook]["eventcount"] = events
-        // let demand_prop = self.mean_annual_demand
-        todo!()
-    }
 }
 
 fn cooking_demand(
@@ -2044,7 +2030,7 @@ fn cooking_demand(
     };
     let oven = ApplianceCookingDemand {
         mean_annual_demand: 285.14,
-        mean_annual_events: 441.11,
+        _mean_annual_events: 441.11,
         mean_event_demand: 0.762,
         fuel: oven_fuel,
         event_count: Default::default(),
@@ -2059,7 +2045,7 @@ fn cooking_demand(
     };
     let hobs = ApplianceCookingDemand {
         mean_annual_demand: 352.53,
-        mean_annual_events: 520.86,
+        _mean_annual_events: 520.86,
         mean_event_demand: 0.810,
         fuel: hobs_fuel,
         event_count: Default::default(),
@@ -2071,7 +2057,7 @@ fn cooking_demand(
     };
     let microwave = ApplianceCookingDemand {
         mean_annual_demand: 44.11,
-        mean_annual_events: 710.65,
+        _mean_annual_events: 710.65,
         mean_event_demand: 0.0772,
         fuel: microwave_fuel,
         event_count: Default::default(),
@@ -2083,19 +2069,55 @@ fn cooking_demand(
     };
     let kettle = ApplianceCookingDemand {
         mean_annual_demand: 173.03,
-        mean_annual_events: 1782.5,
+        _mean_annual_events: 1782.5,
         mean_event_demand: 0.0985,
         fuel: kettle_fuel,
         event_count: Default::default(),
     };
-    let cook_params = IndexMap::from([
+    let mut cook_params = IndexMap::from([
         (ApplianceKey::Oven, oven),
         (ApplianceKey::Hobs, hobs),
         (ApplianceKey::Microwave, microwave),
         (ApplianceKey::Kettle, kettle),
     ]);
 
-    todo!()
+    let gas_total: f64 = cook_params
+        .values()
+        .filter(|appliance_details| {
+            appliance_details
+                .fuel
+                .as_ref()
+                .is_some_and(|fuel| *fuel == FuelType::MainsGas.to_string())
+        })
+        .map(|appliance_details| appliance_details.mean_annual_demand)
+        .sum();
+
+    let elec_total: f64 = cook_params
+        .values()
+        .filter(|appliance_details| {
+            appliance_details
+                .fuel
+                .as_ref()
+                .is_some_and(|fuel| *fuel == FuelType::Electricity.to_string())
+        })
+        .map(|appliance_details| appliance_details.mean_annual_demand)
+        .sum();
+
+    // top down cooking demand estimate based on analysis of EFUS 2017 electricity monitoring data
+    // and HES 2012
+    let annual_cooking_elec_kwh = 448. * 0.8 + (171. + 98. * number_of_occupants) * 0.2;
+
+    for cooking_demand in cook_params.values_mut() {
+        // for each appliance, work out number of usage events based on
+        // average HES annual demand and demand per cycle
+        // do not consider gas and electricity separately for this purpose
+        let demand_prop = cooking_demand.mean_annual_demand / (elec_total + gas_total);
+        let annual_kwh = demand_prop * annual_cooking_elec_kwh;
+        let events = annual_kwh / cooking_demand.mean_event_demand;
+        cooking_demand.event_count = events as usize;
+    }
+
+    Ok(cook_params)
 }
 
 fn appliance_cooking_defaults(
