@@ -225,7 +225,7 @@ impl StorageTank {
     /// * `usage_events` -- All draw off events for the timestep
     pub(crate) fn demand_hot_water(
         &mut self,
-        usage_events: &mut Option<Vec<TypedScheduleEvent>>,
+        mut usage_events: Option<Vec<TypedScheduleEvent>>,
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         let mut q_use_w = 0.;
@@ -2774,7 +2774,7 @@ mod tests {
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
             let mut usage_events_for_iteration = Some(usage_events[t_idx].clone());
             storage_tank1
-                .demand_hot_water(&mut usage_events_for_iteration, t_it)
+                .demand_hot_water(usage_events_for_iteration.clone(), t_it)
                 .unwrap();
 
             // Verify the temperatures against expected results
@@ -2790,7 +2790,7 @@ mod tests {
             );
 
             storage_tank2
-                .demand_hot_water(&mut usage_events_for_iteration, t_it)
+                .demand_hot_water(usage_events_for_iteration.clone(), t_it)
                 .unwrap();
 
             assert_eq!(
@@ -3799,7 +3799,7 @@ mod tests {
 
         for (t_idx, t_it) in simulation_time.iter().enumerate() {
             storage_tank
-                .demand_hot_water(&mut Some(usage_events.get(t_idx).unwrap().clone()), t_it)
+                .demand_hot_water(Some(usage_events.get(t_idx).unwrap().clone()), t_it)
                 .unwrap();
             assert_relative_eq!(
                 storage_tank.test_energy_demand(),

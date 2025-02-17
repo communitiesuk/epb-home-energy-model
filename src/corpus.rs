@@ -2269,6 +2269,8 @@ impl Corpus {
         let mut emitters_output_dict: IndexMap<String, Vec<EmittersDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
+        let mut esh_output_list: Vec<VentilationDetailedResult> = Default::default();
+        let mut hot_water_source_results_list: Vec<VentilationDetailedResult> = Default::default();
 
         for z_name in self.zones.keys() {
             let z_name = z_name.as_str().try_into().unwrap();
@@ -2343,6 +2345,11 @@ impl Corpus {
                 .domestic_hot_water_demand
                 .hot_water_demand(t_it, temp_hot_water)?;
 
+            // Running heat sources of pre-heated tanks and updating thermal losses, etc.
+            for storage_tank in self.pre_heated_water_sources.values() {
+                storage_tank.write().demand_hot_water(None, t_it)?;
+            }
+
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::StorageTank(storage_tank) =
                     &self.hot_water_sources["hw cylinder"]
@@ -2353,9 +2360,7 @@ impl Corpus {
                         temp_final_drawoff,
                         temp_average_drawoff,
                         volume_water_remove_from_tank,
-                    ) = storage_tank
-                        .write()
-                        .demand_hot_water(&mut usage_events, t_it)?;
+                    ) = storage_tank.write().demand_hot_water(usage_events, t_it)?;
 
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                         .pipework_losses_and_internal_gains_from_hw_storage_tank(
