@@ -2138,41 +2138,41 @@ fn appliance_cooking_defaults(
         (true, true) => IndexMap::from([
             (
                 ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
                 ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
             ),
         ]),
         (_, true) => IndexMap::from([
             (
                 ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 1.57),
             ),
             (
                 ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
             ),
         ]),
         (true, _) => IndexMap::from([
             (
                 ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
                 ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
             ),
         ]),
         _ => IndexMap::from([
             (
                 ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
                 ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.8),
+                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
             ),
         ]),
     };
@@ -2191,18 +2191,22 @@ fn appliance_cooking_defaults(
         ),
         (
             ApplianceKey::Dishwasher,
-            Appliance::with_kwh_per_100_cycle(92.0, None),
+            Appliance::with_kwh_per_100_cycle(53.0, None),
         ),
         (
             ApplianceKey::ClothesWashing,
-            Appliance::with_kwh_per_100_cycle(79.0, Some(7.0)),
+            Appliance::with_kwh_per_100_cycle(53.0, Some(7.0)),
         ),
         (
             ApplianceKey::ClothesDrying,
-            Appliance::with_kwh_per_100_cycle(213.0, Some(7.0)),
+            Appliance::with_kwh_per_100_cycle(98.0, Some(7.0)),
         ),
-        (ApplianceKey::Fridge, Appliance::with_kwh_per_annum(223.0)),
-        (ApplianceKey::Freezer, Appliance::with_kwh_per_annum(209.0)),
+        (ApplianceKey::Fridge, Appliance::with_kwh_per_annum(76.7)),
+        (ApplianceKey::Freezer, Appliance::with_kwh_per_annum(128.2)),
+        (
+            ApplianceKey::FridgeFreezer,
+            Appliance::with_kwh_per_annum(137.4),
+        ),
     ]);
 
     if !input.has_appliances() {
@@ -2222,6 +2226,20 @@ fn appliance_cooking_defaults(
                 .appliance_key_has_reference(appliance_name, &ApplianceReference::NotInstalled)
             {
                 input.remove_appliance(appliance_name);
+            } else {
+                // user has specified appliance efficiency, overwrite efficiency with default
+                input.merge_in_appliances(&IndexMap::from([(
+                    appliance_name.to_owned(),
+                    appliance_defaults[appliance_name].clone(),
+                )]));
+
+                match input.loadshifting_for_appliance(appliance_name) {
+                    // do not overwrite user defined load shifting
+                    Some(load_shifting) => {
+                        input.set_loadshifting_for_appliance(appliance_name, load_shifting);
+                    }
+                    None => {}
+                }
             }
         }
         if !cooking_defaults

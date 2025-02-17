@@ -4606,6 +4606,16 @@ impl InputForProcessing {
             .and_then(|appliances| appliances.get(key))
     }
 
+    pub(crate) fn appliance_with_key_mut(
+        &mut self,
+        key: &ApplianceKey,
+    ) -> Option<&mut ApplianceEntry> {
+        self.input
+            .appliances
+            .as_mut()
+            .and_then(|appliances| appliances.get_mut(key))
+    }
+
     pub(crate) fn clone_appliances(&self) -> IndexMap<ApplianceKey, ApplianceEntry> {
         self.input.appliances.clone().unwrap_or_default()
     }
@@ -4633,6 +4643,35 @@ impl InputForProcessing {
                 .ok_or_else(|| anyhow!("No energy supply for appliance {}", key))
         } else {
             Err(anyhow!(""))
+        }
+    }
+
+    pub(crate) fn loadshifting_for_appliance(
+        &self,
+        appliance_key: &ApplianceKey,
+    ) -> Option<ApplianceLoadShifting> {
+        let appliance = self.appliance_with_key(appliance_key);
+
+        if let Some(ApplianceEntry::Object(a)) = appliance {
+            a.load_shifting.clone()
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn set_loadshifting_for_appliance(
+        &mut self,
+        appliance_key: &ApplianceKey,
+        new_load_shifting: ApplianceLoadShifting,
+    ) {
+        // TODO: review with others
+        let appliance = self.appliance_with_key_mut(appliance_key);
+        if let Some(ApplianceEntry::Object(Appliance {
+            load_shifting: Some(ref mut load_shifting),
+            ..
+        })) = appliance
+        {
+            *load_shifting = new_load_shifting;
         }
     }
 
