@@ -211,7 +211,7 @@ pub struct ApplianceGainsDetails {
     #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
     pub load_shifting: Option<ApplianceLoadShifting>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    priority: Option<isize>,
+    pub(crate) priority: Option<isize>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]

@@ -926,7 +926,6 @@ impl Corpus {
                     &heat_system_name_for_zone,
                     &zones,
                     &heat_sources_wet_with_buffer_tank,
-                    shareable_fn(&temp_internal_air_prev),
                     external_conditions.clone(),
                     output_options.detailed_output_heating_cooling,
                 )?)
@@ -1088,6 +1087,41 @@ impl Corpus {
         *self.temp_internal_air_prev.read()
     }
 
+    /// Return:
+    ///  # - losses from internal distribution pipework (kWh)
+    ///  # - losses from external distribution pipework (kWh)
+    ///  # - internal gains due to hot water use (kWh)
+    fn pipework_losses_and_internal_gains_from_hw(
+        &self,
+        delta_t_h: f64,
+        vol_hot_water_at_tapping_point: f64,
+        hw_duration: f64,
+        no_of_hw_events: usize,
+        temp_hot_water: f64,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> (f64, f64, f64) {
+        let (pw_losses_internal, pw_losses_external) = self.calc_pipework_losses(
+            delta_t_h,
+            hw_duration,
+            no_of_hw_events,
+            temp_hot_water,
+            simulation_time_iteration,
+        );
+
+        let gains_internal_dhw_use = FRAC_DHW_ENERGY_INTERNAL_GAINS
+            * water_demand_to_kwh(
+                vol_hot_water_at_tapping_point,
+                temp_hot_water,
+                self.temp_internal_air_prev_timestep(),
+            );
+
+        (
+            pw_losses_internal,
+            pw_losses_external,
+            gains_internal_dhw_use,
+        )
+    }
+
     fn pipework_losses_and_internal_gains_from_hw_storage_tank(
         &self,
         delta_t_h: f64,
@@ -1128,41 +1162,6 @@ impl Corpus {
         // losses from internal distribution pipework (kWh)
         // losses from external distribution pipework (kWh)
         // internal gains due to hot water use (kWh)
-        (
-            pw_losses_internal,
-            pw_losses_external,
-            gains_internal_dhw_use,
-        )
-    }
-
-    /// Return:
-    ///  # - losses from internal distribution pipework (kWh)
-    ///  # - losses from external distribution pipework (kWh)
-    ///  # - internal gains due to hot water use (kWh)
-    fn pipework_losses_and_internal_gains_from_hw(
-        &self,
-        delta_t_h: f64,
-        vol_hot_water_at_tapping_point: f64,
-        hw_duration: f64,
-        no_of_hw_events: usize,
-        temp_hot_water: f64,
-        simulation_time_iteration: SimulationTimeIteration,
-    ) -> (f64, f64, f64) {
-        let (pw_losses_internal, pw_losses_external) = self.calc_pipework_losses(
-            delta_t_h,
-            hw_duration,
-            no_of_hw_events,
-            temp_hot_water,
-            simulation_time_iteration,
-        );
-
-        let gains_internal_dhw_use = FRAC_DHW_ENERGY_INTERNAL_GAINS
-            * water_demand_to_kwh(
-                vol_hot_water_at_tapping_point,
-                temp_hot_water,
-                self.temp_internal_air_prev_timestep(),
-            );
-
         (
             pw_losses_internal,
             pw_losses_external,
@@ -3808,7 +3807,38 @@ fn apply_appliance_gains_from_input(
     smart_control: Option<Arc<SmartApplianceControl>>,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
-    for (name, gains_details) in input {
+    fn check_priority(appliance_gains: &ApplianceGainsInput) -> ApplianceGainsInput {
+        let (defined_priority, priorities): (Vec<&String>, Vec<isize>) = appliance_gains
+            .iter()
+            .filter_map(|(app, x)| x.priority.as_ref().map(|priority| (app, priority)))
+            .unzip();
+        let mut lowest_priority = priorities.into_iter().max().unwrap_or(0);
+        let mut new_details = appliance_gains.clone();
+        for appliance in appliance_gains.keys() {
+            if defined_priority.contains(&appliance) {
+                continue;
+            }
+            lowest_priority += 1;
+            new_details
+                .get_mut(appliance)
+                .unwrap()
+                .priority
+                .replace(lowest_priority);
+        }
+
+        new_details
+    }
+
+    let sorted_input = check_priority(&input)
+        .sorted_by(|_, details1, _, details2| {
+            details1.priority.expect(
+                "All details in the output from check_priority were expected to have a priority.",
+            ).cmp(&details2.priority.expect("All details in the output from check_priority were expected to have a priority."))
+        })
+        .rev()
+        .collect::<IndexMap<_, _>>();
+
+    for (name, gains_details) in sorted_input {
         let energy_supply_conn = EnergySupply::connection(
             energy_supplies
                 .get(&gains_details.energy_supply)
@@ -3826,13 +3856,13 @@ fn apply_appliance_gains_from_input(
             Gains::Event(EventApplianceGains::new(
                 energy_supply_conn,
                 simulation_time,
-                gains_details,
+                &gains_details,
                 total_floor_area,
                 smart_control.clone(),
             )?)
         } else {
             Gains::Appliance(appliance_gains_from_single_input(
-                gains_details,
+                &gains_details,
                 energy_supply_conn,
                 total_floor_area,
             )?)
@@ -4725,7 +4755,6 @@ fn space_heat_systems_from_input(
     heat_system_name_for_zone: &IndexMap<String, Vec<String>>,
     zones: &IndexMap<String, Arc<Zone>>,
     heat_sources_wet_with_buffer_tank: &[String],
-    temp_internal_air_fn: TempInternalAirFn,
     external_conditions: Arc<ExternalConditions>,
     detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<SpaceHeatSystemsWithEnergyConnections> {
