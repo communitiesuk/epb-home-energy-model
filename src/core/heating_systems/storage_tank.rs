@@ -125,6 +125,7 @@ impl StorageTank {
         primary_pipework_lst: Option<&Vec<WaterPipework>>,
         energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
         contents: MaterialProperties,
+        _detailed_output_heating_cooling: bool, // TODO implement logic for this to match Python 0.32
     ) -> Self {
         let q_std_ls_ref = losses;
 
@@ -2100,6 +2101,7 @@ mod tests {
             None,
             Some(energy_supply_connection),
             *WATER,
+            false,
         );
 
         (storage_tank, energy_supply)
@@ -2168,6 +2170,7 @@ mod tests {
             None,
             Some(energy_supply_connection),
             *WATER,
+            false,
         );
 
         (storage_tank, energy_supply)
@@ -2313,6 +2316,7 @@ mod tests {
             None,
             None,
             *WATER,
+            false,
         );
 
         storage_tank
@@ -2587,6 +2591,7 @@ mod tests {
             None,
             None,
             *WATER,
+            false,
         );
 
         (

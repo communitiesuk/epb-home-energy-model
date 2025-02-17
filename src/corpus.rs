@@ -876,6 +876,7 @@ impl Corpus {
                         shareable_fn(&temp_internal_air_prev),
                         simulation_time_iterator.clone().as_ref(),
                         external_conditions.clone(),
+                        output_options.detailed_output_heating_cooling,
                     )?;
                     energy_supply_conn_names_for_hot_water_source
                         .insert(source_name.to_owned(), energy_conn_names);
@@ -903,6 +904,7 @@ impl Corpus {
             shareable_fn(&temp_internal_air_prev),
             simulation_time_iterator.clone().as_ref(),
             external_conditions.clone(),
+            output_options.detailed_output_heating_cooling,
         )?;
         hot_water_sources.insert("hw cylinder".to_string(), hot_water_source);
         energy_supply_conn_names_for_hot_water_source
@@ -4471,6 +4473,7 @@ fn hot_water_source_from_input(
     temp_internal_air_fn: TempInternalAirFn,
     simulation_time: &SimulationTimeIterator,
     external_conditions: Arc<ExternalConditions>,
+    detailed_output_heating_cooling: bool,
 ) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
     let mut energy_supply_conn_names = vec![];
     let cloned_input = input.clone();
@@ -4479,13 +4482,13 @@ fn hot_water_source_from_input(
             volume,
             daily_losses,
             heat_exchanger_surface_area,
-            setpoint_temp,
+            init_temp,
             cold_water_source: cold_water_source_type,
             primary_pipework,
             heat_source,
             ..
         } => {
-            let mut cold_water_source: WaterSourceWithTemperature = match cold_water_source_type {
+            let cold_water_source: WaterSourceWithTemperature = match cold_water_source_type {
                 ColdWaterSourceReference::Type(source_type) => {
                     cold_water_source_for_type(source_type, cold_water_sources)?
                 }
@@ -4497,25 +4500,24 @@ fn hot_water_source_from_input(
                     }
                 }
             };
-            // TODO (from Python) Need to handle error if ColdWaterSource name is invalid.
-            // TODO (from Python) assuming here there is only one WWHRS
-            if !wwhrs.is_empty() {
-                for heat_recovery_system in wwhrs.values() {
-                    match *heat_recovery_system.lock() {
-                        Wwhrs::WWHRSInstantaneousSystemC(_)
-                        | Wwhrs::WWHRSInstantaneousSystemA(_) => {
-                            cold_water_source =
-                                WaterSourceWithTemperature::Wwhrs(heat_recovery_system.clone());
-                        }
-                        _ => {}
-                    }
-                }
-            }
+
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
             let primary_pipework_lst = primary_pipework.as_ref();
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
 
+            let heat_exchanger_surface_area =
+                heat_exchanger_surface_area.and_then(|surface_area| {
+                    heat_source
+                        .values()
+                        .any(|source| {
+                            matches!(source, HeatSourceInput::HeatPumpHotWaterOnly { .. })
+                        })
+                        .then(|| surface_area)
+                });
+
+            // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed
+            // could be a pre-heated source or wwhr that might be enough
             for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
@@ -4557,7 +4559,7 @@ fn hot_water_source_from_input(
             let storage_tank = Arc::new(RwLock::new(StorageTank::new(
                 *volume,
                 *daily_losses,
-                setpoint_temp.ok_or_else(|| anyhow!("A setpoint temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
+                init_temp.ok_or_else(|| anyhow!("An init temp for a storage tank was expected to be available when building the corpus for the HEM calculation."))?,
                 cold_water_source,
                 simulation_time.step_in_hours(),
                 heat_sources.clone(),
@@ -4570,6 +4572,7 @@ fn hot_water_source_from_input(
                     &source_name,
                 )?),
                 *WATER,
+                detailed_output_heating_cooling,
             )));
             for (heat_source_name, hs) in heat_source {
                 let energy_supply_name = hs.energy_supply_name();
