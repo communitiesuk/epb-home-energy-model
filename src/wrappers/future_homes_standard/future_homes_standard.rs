@@ -232,10 +232,7 @@ struct ElectricityFactorData {
     emissions_factor_including_out_of_scope_emissions: f64,
 }
 
-fn apply_energy_factor_series(
-    energy_data: &Vec<f64>,
-    factors: &Vec<f64>,
-) -> anyhow::Result<Vec<f64>> {
+fn apply_energy_factor_series(energy_data: &[f64], factors: &Vec<f64>) -> anyhow::Result<Vec<f64>> {
     if energy_data.len() != factors.len() {
         bail!("Both energy_data and factors list must be of the same length.");
     }
@@ -1544,7 +1541,7 @@ fn create_appliance_gains(
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
     appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
-    let cookparams = cooking_demand(input, number_of_occupants);
+    let cookparams = cooking_demand(input, number_of_occupants)?;
 
     // TODO (from Python) change to enum
     // TODO (from Python) check appliances are named correctly and what to do if not?
@@ -2016,7 +2013,7 @@ struct ApplianceCookingDemand {
     mean_annual_demand: f64,
     mean_annual_events: f64,
     mean_event_demand: f64,
-    fuel: Option<EnergySupplyType>,
+    fuel: Option<String>,
     event_count: usize,
 }
 
@@ -2037,35 +2034,58 @@ impl ApplianceCookingDemand {
 fn cooking_demand(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
-) -> IndexMap<ApplianceKey, ApplianceCookingDemand> {
-    // let oven_fuel = input.appliances_contain_key("Oven");
+) -> anyhow::Result<IndexMap<ApplianceKey, ApplianceCookingDemand>> {
+    let oven_energy_supply = input.energy_supply_for_appliance(&ApplianceKey::Oven);
+    let oven_fuel = match oven_energy_supply {
+        Ok(energy_supply) => {
+            Some(input.fuel_type_for_energy_supply_field(&energy_supply.to_string())?)
+        }
+        Err(_) => None,
+    };
     let oven = ApplianceCookingDemand {
         mean_annual_demand: 285.14,
         mean_annual_events: 441.11,
         mean_event_demand: 0.762,
-        fuel: None, // TODO
+        fuel: oven_fuel,
         event_count: Default::default(),
     };
 
+    let hobs_energy_supply = input.energy_supply_for_appliance(&ApplianceKey::Hobs);
+    let hobs_fuel = match hobs_energy_supply {
+        Ok(energy_supply) => {
+            Some(input.fuel_type_for_energy_supply_field(&energy_supply.to_string())?)
+        }
+        Err(_) => None,
+    };
     let hobs = ApplianceCookingDemand {
         mean_annual_demand: 352.53,
         mean_annual_events: 520.86,
         mean_event_demand: 0.810,
-        fuel: None, // TODO,
+        fuel: hobs_fuel,
         event_count: Default::default(),
+    };
+
+    let microwave_fuel = match input.appliances_contain_key(&ApplianceKey::Microwave) {
+        true => Some(EnergySupplyType::Electricity.to_string()),
+        false => None,
     };
     let microwave = ApplianceCookingDemand {
         mean_annual_demand: 44.11,
         mean_annual_events: 710.65,
         mean_event_demand: 0.0772,
-        fuel: None, // TODO "electricity" if "Microwave" in project_dict["Appliances"] else None},
+        fuel: microwave_fuel,
         event_count: Default::default(),
+    };
+
+    let kettle_fuel = match input.appliances_contain_key(&ApplianceKey::Kettle) {
+        true => Some(EnergySupplyType::Electricity.to_string()),
+        false => None,
     };
     let kettle = ApplianceCookingDemand {
         mean_annual_demand: 173.03,
         mean_annual_events: 1782.5,
         mean_event_demand: 0.0985,
-        fuel: None, // TODO "electricity" if "Kettle" in project_dict["Appliances"] else None},
+        fuel: kettle_fuel,
         event_count: Default::default(),
     };
     let cook_params = IndexMap::from([

@@ -4614,6 +4614,28 @@ impl InputForProcessing {
         self.input.tariff.as_ref().map(|tariff| &tariff.schedule)
     }
 
+    pub(crate) fn energy_supply_for_appliance(
+        &self,
+        key: &ApplianceKey,
+    ) -> anyhow::Result<EnergySupplyType> {
+        let appliances = self
+            .input
+            .appliances
+            .as_ref()
+            .ok_or_else(|| anyhow!("No appliances in input"))?;
+
+        let appliance = appliances
+            .get(key)
+            .ok_or_else(|| anyhow!("No {} in appliances input", key))?;
+        if let ApplianceEntry::Object(appliance_object) = appliance {
+            appliance_object
+                .energy_supply
+                .ok_or_else(|| anyhow!("No energy supply for appliance {}", key))
+        } else {
+            Err(anyhow!(""))
+        }
+    }
+
     pub(crate) fn keys_for_appliance_gains_with_load_shifting(&self) -> Vec<String> {
         self.input
             .appliance_gains
