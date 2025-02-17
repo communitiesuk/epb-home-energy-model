@@ -3034,7 +3034,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_init_time_shift(mut external_conditions: ExternalConditions) {
+    fn test_init_time_shift(external_conditions: ExternalConditions) {
         assert_eq!(
             init_time_shift(external_conditions.timezone, external_conditions.longitude),
             0.05
@@ -4264,15 +4264,15 @@ mod tests {
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) {
-        for (_, t_it) in simulation_time.iter().enumerate() {
+        for t_it in simulation_time.iter() {
             assert!(!external_conditions.outside_solar_beam(0., 0., &t_it));
         }
 
-        for (_, t_it) in simulation_time.iter().enumerate() {
+        for t_it in simulation_time.iter() {
             assert!(external_conditions.outside_solar_beam(90., 180., &t_it));
         }
 
-        for (_, t_it) in simulation_time.iter().enumerate() {
+        for t_it in simulation_time.iter() {
             assert!(external_conditions.outside_solar_beam(180., -180., &t_it));
         }
     }

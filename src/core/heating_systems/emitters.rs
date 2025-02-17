@@ -197,9 +197,7 @@ enum WetEmitter {
     Ufh {
         c: f64,
         n: f64,
-        equivalent_specific_thermal_mass: f64,
         system_performance_factor: f64,
-        emitter_floor_area: f64,
         frac_convective: f64,
     },
     Fancoil {
@@ -370,9 +368,7 @@ impl Emitters {
                 model_emitters[i].replace(Arc::new(WetEmitter::Ufh {
                     c,
                     n,
-                    equivalent_specific_thermal_mass: *equivalent_specific_thermal_mass,
                     system_performance_factor: *system_performance_factor,
-                    emitter_floor_area: *emitter_floor_area,
                     frac_convective: *frac_convective,
                 }));
             }
@@ -1209,7 +1205,7 @@ impl Emitters {
         energy_released_from_emitters - energy_demand_cooldown
     }
 
-    ///
+    /// Calculate emitter cooling time and emitter temperature at this time
     fn calc_emitter_cooldown(
         &self,
         energy_demand: f64,
@@ -2015,9 +2011,9 @@ mod tests {
             .unwrap();
 
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
-            vec![true, true, true, true, true, true, true, true]
-                .iter()
-                .map(|&x| Some(x))
+            [true, true, true, true, true, true, true, true]
+                .into_iter()
+                .map(Some)
                 .collect_vec(),
             0,
             0.25, // to match simulation time

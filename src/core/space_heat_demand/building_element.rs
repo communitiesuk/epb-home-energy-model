@@ -150,16 +150,6 @@ impl BuildingElement {
         }
     }
 
-    fn as_heat_transfer_internal(&self) -> &dyn HeatTransferInternal {
-        match self {
-            BuildingElement::Opaque(el) => el,
-            BuildingElement::AdjacentZTC(el) => el,
-            BuildingElement::AdjacentZTUSimple(el) => el,
-            BuildingElement::Ground(el) => el,
-            BuildingElement::Transparent(el) => el,
-        }
-    }
-
     fn as_heat_transfer_through(&self) -> &dyn HeatTransferThrough {
         match self {
             BuildingElement::Opaque(el) => el,
@@ -388,6 +378,7 @@ pub(crate) trait HeatTransferInternal {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) trait HeatTransferInternalCommon: HeatTransferInternal {}
 
 pub(crate) trait HeatTransferThrough {
@@ -1001,7 +992,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
             .current_month()
             .expect("A timestep should be able to derive its current month here.")
             as usize;
-        let temp_int_month = TEMP_INT_MONTHLY_FOR_GROUND[current_month];
+        let temp_int_month = HEAT_TRANSFER_OTHER_SIDE_GROUND_TEMP_INT_MONTHLY[current_month];
 
         // BS EN ISO 13370:2017 Eqn C.4
         let heat_flow_month =
@@ -1249,6 +1240,7 @@ pub(crate) trait SolarRadiationInteractionTransmitted: SolarRadiationInteraction
     }
 }
 
+#[allow(dead_code)]
 pub(crate) trait SolarRadiationInteractionNotExposed: SolarRadiationInteraction {}
 
 /// A type to represent opaque building elements (walls, roofs, etc.)
@@ -2882,45 +2874,6 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
     }
 }
 
-// Thermal properties of ground from BS EN ISO 13370:2017 Table 7
-// Use values for clay or silt (same as BR 443 and SAP 10)
-const THERMAL_CONDUCTIVITY_OF_GROUND: f64 = 1.5;
-// in W/(m.K)
-const HEAT_CAPACITY_PER_VOLUME_OF_GROUND: f64 = 3_000_000.;
-
-// Periodic penetration depth of ground from BS EN ISO 13370:2017 Table H.1
-// Use values for clay or silt (same as BR 443 and SAP 10)
-const PERIODIC_PENETRATION_DEPTH_FOR_GROUND_IN_METRES: f64 = 2.2;
-
-// in J/(m3.K)
-const THICKNESS_GROUND_LAYER: f64 = 0.5; // in m. Specified in BS EN ISO 52016-1:2017 section 6.5.8.2
-
-// thermal resistance in (m2.K)/W
-const R_GR_FOR_GROUND: f64 = THICKNESS_GROUND_LAYER / THERMAL_CONDUCTIVITY_OF_GROUND;
-// areal heat capacity in J/(m2.K)
-const K_GR_FOR_GROUND: f64 = THICKNESS_GROUND_LAYER * HEAT_CAPACITY_PER_VOLUME_OF_GROUND;
-
-const R_SI_FOR_GROUND: f64 = 0.17; // ISO 6946 - internal surface resistance
-
-// Assume values for temp_int_annual and temp_int_monthly
-// These are based on SAP 10 notional building runs for 5 archetypes used
-// for inter-model comparison/validation. The average of the monthly mean
-// internal temperatures from each run was taken.
-const TEMP_INT_MONTHLY_FOR_GROUND: [f64; 12] = [
-    19.46399546,
-    19.66940204,
-    19.90785898,
-    20.19719837,
-    20.37461865,
-    20.45679018,
-    20.46767703,
-    20.46860812,
-    20.43505593,
-    20.22266322,
-    19.82726777,
-    19.45430847,
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3042,12 +2995,6 @@ mod tests {
     }
 
     struct MockHeatTransferOtherSide(f64);
-
-    impl MockHeatTransferOtherSide {
-        fn f_sky(&self) -> f64 {
-            self.0
-        }
-    }
 
     impl HeatTransferOtherSide for MockHeatTransferOtherSide {
         fn set_f_sky(&mut self, f_sky: f64) {

@@ -2028,14 +2028,13 @@ mod tests {
             Arc::new(Control::SetpointTime(control_min)),
             Arc::new(Control::SetpointTime(control_max)),
         );
-        let heat_source = PositionedHeatSource {
+        PositionedHeatSource {
             heat_source: Arc::new(Mutex::new(HeatSource::Storage(
                 HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
             ))),
             heater_position,
             thermostat_position,
-        };
-        heat_source
+        }
     }
 
     #[fixture]
@@ -2303,7 +2302,7 @@ mod tests {
 
         let heat_sources = IndexMap::from([("imheater".to_string(), heat_source)]);
 
-        let storage_tank = StorageTank::new(
+        StorageTank::new(
             150.0,
             1.68,
             55.0,
@@ -2317,9 +2316,7 @@ mod tests {
             None,
             *WATER,
             false,
-        );
-
-        storage_tank
+        )
     }
 
     #[rstest]
@@ -3422,7 +3419,7 @@ mod tests {
         immersion_heater: ImmersionHeater,
         simulation_time_for_immersion_heater: SimulationTime,
     ) {
-        for (_, t_it) in simulation_time_for_immersion_heater.iter().enumerate() {
+        for t_it in simulation_time_for_immersion_heater.iter() {
             assert_eq!(
                 immersion_heater.energy_output_max(t_it, true), // In Python another parameter (return_temp = 55.0) is passed in to energy_output_max but never used so we have skipped this in Rust
                 50.,

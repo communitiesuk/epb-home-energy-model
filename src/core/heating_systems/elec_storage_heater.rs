@@ -43,7 +43,7 @@ fn clip(n: f64, min: f64, max: f64) -> f64 {
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct ElecStorageHeater {
+pub(crate) struct ElecStorageHeater {
     pwr_in: f64,
     pwr_instant: f64,
     storage_capacity: f64,
@@ -205,7 +205,7 @@ impl ElecStorageHeater {
     /// * `esh_max_output`       - Data from test showing the output from the storage heater when it is actively
     ///                         outputting heat, e.g. damper open / fan running (with units kW)
     /// * `external_conditions`  - reference to ExternalConditions object
-    pub fn new(
+    pub(crate) fn new(
         pwr_in: f64,
         rated_power_instant: f64,
         storage_capacity: f64,
@@ -786,6 +786,7 @@ impl ElecStorageHeater {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::excessive_precision)]
     use super::*;
     use crate::{
         core::{
@@ -905,7 +906,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.0, 0.8].iter().map(|&s| s.into()).collect(),
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
                 Some(22.),
                 None,
                 None,

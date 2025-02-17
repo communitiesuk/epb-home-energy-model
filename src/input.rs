@@ -37,13 +37,13 @@ pub struct Input {
     pub external_conditions: Arc<ExternalConditionsInput>,
     pub(crate) internal_gains: InternalGains,
     #[serde(default)]
-    pub appliance_gains: ApplianceGains,
+    pub(crate) appliance_gains: ApplianceGains,
     pub cold_water_source: ColdWaterSourceInput,
     #[serde(default)]
     #[validate(custom = validate_only_storage_tanks)]
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
     pub(crate) energy_supply: EnergySupplyInput,
-    pub control: Control,
+    pub(crate) control: Control,
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
@@ -102,7 +102,7 @@ fn validate_only_storage_tanks(
 ) -> Result<(), serde_valid::validation::Error> {
     sources.values()
         .all(|details| matches!(details, HotWaterSourceDetails::StorageTank { .. }))
-        .then(|| ())
+        .then_some(())
         .ok_or_else(|| serde_valid::validation::Error::Custom("PreHeatedWaterSource input can only contain HotWaterSource data of the type StorageTank".to_owned()))
 }
 
@@ -185,14 +185,14 @@ pub(crate) struct InternalGainsDetails {
     pub(crate) schedule: NumericSchedule,
 }
 
-pub type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
+pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ApplianceGainsDetails {
+pub(crate) struct ApplianceGainsDetails {
     #[serde(rename = "type")]
     _gain_type: Option<String>,
     pub start_day: u32,
@@ -1863,26 +1863,26 @@ pub struct ZoneInput {
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
-    pub space_heat_system: SystemReference,
+    pub(crate) space_heat_system: SystemReference,
     #[serde(
         rename = "SpaceCoolSystem",
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
-    pub space_cool_system: SystemReference,
+    pub(crate) space_cool_system: SystemReference,
     #[serde(rename = "SpaceHeatControl", skip_serializing_if = "Option::is_none")]
-    pub space_heat_control: Option<SpaceHeatControlType>,
+    pub(crate) space_heat_control: Option<SpaceHeatControlType>,
     // don't know what the options are yet
     #[serde(
         rename = "Control_WindowOpening",
         skip_serializing_if = "Option::is_none"
     )]
-    pub control_window_opening: Option<HeatSourceControlType>,
-    pub area: f64,
-    pub volume: f64,
+    pub(crate) control_window_opening: Option<HeatSourceControlType>,
+    pub(crate) area: f64,
+    pub(crate) volume: f64,
     // check upstream whether this is used
     #[serde(rename = "Lighting", skip_serializing_if = "Option::is_none")]
-    pub lighting: Option<ZoneLighting>,
+    pub(crate) lighting: Option<ZoneLighting>,
     // check upstream whether these two are used
     #[serde(rename = "temp_setpnt_heat", skip_serializing_if = "Option::is_none")]
     _temp_setpnt_heat: Option<f64>,
@@ -1891,11 +1891,11 @@ pub struct ZoneInput {
     #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
     pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub temp_setpnt_init: Option<f64>,
+    pub(crate) temp_setpnt_init: Option<f64>,
     #[serde(rename = "BuildingElement")]
-    pub building_elements: IndexMap<String, BuildingElement>,
+    pub(crate) building_elements: IndexMap<String, BuildingElement>,
     #[serde(rename = "ThermalBridging")]
-    pub thermal_bridging: ThermalBridging,
+    pub(crate) thermal_bridging: ThermalBridging,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1967,7 +1967,7 @@ pub enum ZoneTemperatureControlBasis {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
-pub enum BuildingElement {
+pub(crate) enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
         #[serde(skip_serializing_if = "Option::is_none")]

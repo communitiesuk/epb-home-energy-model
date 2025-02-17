@@ -100,7 +100,7 @@ impl HeatSourceWet {
 }
 
 #[derive(Debug)]
-pub enum SpaceHeatSystem {
+pub(crate) enum SpaceHeatSystem {
     ElecStorage(ElecStorageHeater),
     Instant(InstantElecHeater),
     WarmAir(HeatPumpServiceSpaceWarmAir),

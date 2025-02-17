@@ -1675,7 +1675,7 @@ mod tests {
         );
         assert_eq!(
             type_of(boiler_service_space_heating),
-            &*type_name::<BoilerServiceSpace>()
+            type_name::<BoilerServiceSpace>()
         );
     }
 

@@ -145,7 +145,7 @@ fn control_from_input(
         }
     }
 
-    Ok(Controls { core, extra })
+    Ok(Controls::new(core, extra))
 }
 
 fn single_control_from_details(
@@ -3492,13 +3492,12 @@ fn zone_from_input(
     };
 
     for zone_h_name in heat_system_name_for_zone.values() {
-        let zone_h_name_set: HashSet<String> =
-            HashSet::from_iter(zone_h_name.to_owned().into_iter());
+        let zone_h_name_set: HashSet<String> = HashSet::from_iter(zone_h_name.iter().cloned());
         let h_overassigned: Vec<String> = HashSet::from_iter(heat_system_names.clone().into_iter())
             .intersection(&zone_h_name_set)
             .cloned()
             .collect_vec();
-        if h_overassigned.len() > 0 {
+        if !h_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceHeatSystem ({}) has been assigned to more than one Zone",
                 h_overassigned.into_iter().join(", ")
@@ -3515,13 +3514,12 @@ fn zone_from_input(
     };
 
     for zone_c_name in cool_system_name_for_zone.values() {
-        let zone_c_name_set: HashSet<String> =
-            HashSet::from_iter(zone_c_name.to_owned().into_iter());
+        let zone_c_name_set: HashSet<String> = HashSet::from_iter(zone_c_name.iter().cloned());
         let c_overassigned: Vec<String> = HashSet::from_iter(cool_system_names.clone().into_iter())
             .intersection(&zone_c_name_set)
             .cloned()
             .collect_vec();
-        if c_overassigned.len() > 0 {
+        if !c_overassigned.is_empty() {
             bail!(
                 "Invalid input: SpaceCoolSystem ({}) has been assigned to more than one Zone",
                 c_overassigned.into_iter().join(", ")
@@ -3536,7 +3534,7 @@ fn zone_from_input(
         .temp_setpnt_basis
         .unwrap_or(ZoneTemperatureControlBasis::Operative);
 
-    Ok(Zone::new(
+    Zone::new(
         input.area,
         input.volume,
         input
@@ -3562,7 +3560,7 @@ fn zone_from_input(
         window_adjust_control,
         print_heat_balance,
         simulation_time_iterator,
-    )?)
+    )
 }
 
 #[allow(clippy::type_complexity)]
@@ -3834,7 +3832,7 @@ fn apply_appliance_gains_from_input(
         new_details
     }
 
-    let sorted_input = check_priority(&input)
+    let sorted_input = check_priority(input)
         .sorted_by(|_, details1, _, details2| {
             details1.priority.expect(
                 "All details in the output from check_priority were expected to have a priority.",
@@ -4030,7 +4028,7 @@ fn heat_source_wet_from_input(
     input: HeatSourceWetDetails,
     external_conditions: Arc<ExternalConditions>,
     simulation_time: Arc<SimulationTimeIterator>,
-    mechanical_ventilations: &Vec<Arc<MechanicalVentilation>>,
+    mechanical_ventilations: &[Arc<MechanicalVentilation>],
     number_of_zones: usize,
     temp_internal_air_fn: TempInternalAirFn,
     controls: &Controls,
@@ -4548,7 +4546,7 @@ fn hot_water_source_from_input(
                         .any(|source| {
                             matches!(source, HeatSourceInput::HeatPumpHotWaterOnly { .. })
                         })
-                        .then(|| surface_area)
+                        .then_some(surface_area)
                 });
 
             // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed

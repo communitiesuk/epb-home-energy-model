@@ -23,7 +23,9 @@ impl Bath {
         }
     }
 
-    pub fn get_size(&self) -> f64 {
+    #[cfg(test)]
+    // method is only referenced in tests
+    fn get_size(&self) -> f64 {
         self.size_in_litres
     }
 

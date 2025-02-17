@@ -1334,10 +1334,6 @@ pub(crate) struct ZoneTempInternalAir(pub(crate) Arc<Zone>);
 
 // utility struct for when a zone needs to be injected into another module only to access temp_internal_air
 impl ZoneTempInternalAir {
-    pub(crate) fn temp_internal_air(&self) -> f64 {
-        self.0.temp_internal_air()
-    }
-
     pub(crate) fn as_fn(&self) -> TempInternalAirFn {
         let zone = self.0.clone();
         Arc::from(move || zone.temp_internal_air())

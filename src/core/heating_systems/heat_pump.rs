@@ -8269,7 +8269,7 @@ mod tests {
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
-            "service_boilerspace".into(),
+            "service_boilerspace",
             Arc::new(ctrl),
         )));
 

@@ -29,7 +29,7 @@ pub(crate) struct EnergySupplyConnection {
 }
 
 impl EnergySupplyConnection {
-    pub fn new(energy_supply: Arc<RwLock<EnergySupply>>, end_user_name: String) -> Self {
+    pub(crate) fn new(energy_supply: Arc<RwLock<EnergySupply>>, end_user_name: String) -> Self {
         Self {
             energy_supply,
             end_user_name,
@@ -37,7 +37,7 @@ impl EnergySupplyConnection {
     }
 
     /// Forwards the amount of energy out (in kWh) to the relevant EnergySupply object
-    pub fn energy_out(
+    pub(crate) fn energy_out(
         &self,
         amount_demanded: f64,
         timestep_idx: usize,
@@ -50,7 +50,7 @@ impl EnergySupplyConnection {
     }
 
     /// Forwards the amount of energy demanded (in kWh) to the relevant EnergySupply object
-    pub fn demand_energy(
+    pub(crate) fn demand_energy(
         &self,
         amount_demanded: f64,
         timestep_idx: usize,
@@ -62,7 +62,7 @@ impl EnergySupplyConnection {
         )
     }
 
-    pub fn supply_energy(
+    pub(crate) fn supply_energy(
         &self,
         amount_produced: f64,
         timestep_idx: usize,
@@ -72,10 +72,6 @@ impl EnergySupplyConnection {
             amount_produced,
             timestep_idx,
         )
-    }
-
-    pub fn fuel_type(&self) -> FuelType {
-        self.energy_supply.read().fuel_type()
     }
 }
 
@@ -183,7 +179,7 @@ impl EnergySupply {
         })
     }
 
-    pub fn fuel_type(&self) -> FuelType {
+    pub(crate) fn fuel_type(&self) -> FuelType {
         self.fuel_type
     }
 
@@ -245,10 +241,10 @@ impl EnergySupply {
             .entry(end_user_name.into())
             .or_insert(init_demand_list(timesteps));
 
-        Ok(EnergySupplyConnection {
-            energy_supply: energy_supply.clone(),
-            end_user_name: end_user_name.to_string(),
-        })
+        Ok(EnergySupplyConnection::new(
+            energy_supply.clone(),
+            end_user_name.into(),
+        ))
     }
 
     pub fn energy_out(

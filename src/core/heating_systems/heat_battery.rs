@@ -703,7 +703,6 @@ mod tests {
     use std::sync::Arc;
 
     const SERVICE_NAME: &str = "TestService";
-    const TEMP_HOT_WATER: f64 = 55.;
 
     #[fixture]
     pub fn simulation_time() -> SimulationTime {
@@ -1061,7 +1060,7 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 service_control_off.clone(),
-                service_control_off.into(),
+                service_control_off,
             );
 
         let result = heat_battery_service
@@ -1087,7 +1086,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.5, 1.6].iter().map(|&s| s.into()).collect(), // these values change the result
+                [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
                 None,
@@ -1461,7 +1460,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.0, 1.5].iter().map(|&s| s.into()).collect(),
+                [1.0, 1.5].into_iter().map(Into::into).collect(),
                 None,
                 None,
                 None,
@@ -1528,7 +1527,7 @@ mod tests {
                 1.,
                 0,
                 1.,
-                vec![1.5, 1.6].iter().map(|&s| s.into()).collect(), // these values change the result
+                [1.5, 1.6].into_iter().map(Into::into).collect(), // these values change the result
                 None,
                 None,
                 None,

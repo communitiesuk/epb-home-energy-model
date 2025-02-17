@@ -2053,7 +2053,7 @@ mod tests {
             simulation_time_for_charge_control.step,
             0,
             1.,
-            vec![1.0, 0.8].iter().map(|&x| Some(x)).collect(),
+            [1.0, 0.8].into_iter().map(Some).collect(),
             Some(15.5),
             None,
             None,
@@ -2082,9 +2082,9 @@ mod tests {
             (
                 "ctrl1".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, true, true, true, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, true, false, true, true, true, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2094,9 +2094,9 @@ mod tests {
             (
                 "ctrl2".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![false, true, true, false, false, false, true, false]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [false, true, true, false, false, false, true, false]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2106,9 +2106,9 @@ mod tests {
             (
                 "ctrl3".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, true, false, false, false, true, false]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, false, true, false, false, false, true, false]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2158,9 +2158,9 @@ mod tests {
             (
                 "ctrl6".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, true, true, true, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, true, false, true, true, true, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2170,9 +2170,9 @@ mod tests {
             (
                 "ctrl7".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![false, true, false, false, false, false, true, false]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [false, true, false, false, false, false, true, false]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2182,9 +2182,9 @@ mod tests {
             (
                 "ctrl8".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, false, false, true, true, true, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2284,9 +2284,9 @@ mod tests {
             (
                 "ctrl11".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, false, false, true, true, true, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2300,9 +2300,9 @@ mod tests {
             (
                 "ctrl13".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, true, false, false, true, false, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2434,9 +2434,9 @@ mod tests {
             (
                 "ctrl14".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, false, false, true, true, true, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, false, false, true, true, true, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2450,9 +2450,9 @@ mod tests {
             (
                 "ctrl16".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, true, false, false, true, false, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
@@ -2462,9 +2462,9 @@ mod tests {
             (
                 "ctrl17".to_string(),
                 Control::OnOffTime(OnOffTimeControl::new(
-                    vec![true, true, false, false, true, false, true, true]
-                        .iter()
-                        .map(|&x| Some(x))
+                    [true, true, false, false, true, false, true, true]
+                        .into_iter()
+                        .map(Some)
                         .collect_vec(),
                     0,
                     1.,
