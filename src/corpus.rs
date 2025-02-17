@@ -1271,41 +1271,21 @@ impl Corpus {
         z_name: &str,
         simtime: SimulationTimeIteration,
     ) -> (Vec<String>, Vec<String>, SetpointsAndConvectiveFractions) {
-        // TODO (from Python) For now, the existing single system inputs are each added to a
-        //      list. This will eventually need to handle a list being specified
-        //      in the inputs.
-        let h_name_list = self
-            .heat_system_name_for_zone
-            .get(z_name)
-            .into_iter()
-            .flatten()
-            .map(|x| (*x).clone())
-            .unique()
-            .collect::<Vec<String>>();
-        let c_name_list = self
-            .cool_system_name_for_zone
-            .get(z_name)
-            .into_iter()
-            .flatten()
-            .map(|x| (*x).clone())
-            .unique()
-            .collect::<Vec<String>>();
-
         let SetpointsAndConvectiveFractions {
             temp_setpnt_heat: temp_setpnt_heat_system,
             temp_setpnt_cool: temp_setpnt_cool_system,
             frac_convective_heat: frac_convective_heat_system,
             frac_convective_cool: frac_convective_cool_system,
         } = self.setpoints_and_convective_fractions(
-            h_name_list.as_slice(),
-            c_name_list.as_slice(),
+            &self.heat_system_name_for_zone[z_name],
+            &self.cool_system_name_for_zone[z_name],
             simtime,
         );
 
         // Sort heating and cooling systems by setpoint (highest first for
         // heating, lowest first for cooling)
-        // TODO (from Python) In the event of two systems having the same setpoint, make
-        //      sure the one listed first by the user takes priority
+        // In the event of two systems having the same setpoint, the one
+        // listed first by the user takes priority
         let h_name_list_sorted: Vec<String> = temp_setpnt_heat_system
             .iter()
             .sorted_by(|a, b| OrderedFloat(*a.1).cmp(&OrderedFloat(*b.1)))
@@ -1332,8 +1312,8 @@ impl Corpus {
 
     fn setpoints_and_convective_fractions(
         &self,
-        h_name_list: &[String],
-        c_name_list: &[String],
+        h_name_list: &Vec<String>,
+        c_name_list: &Vec<String>,
         simtime: SimulationTimeIteration,
     ) -> SetpointsAndConvectiveFractions {
         let mut frac_convective_heat: IndexMap<String, f64> = Default::default();
