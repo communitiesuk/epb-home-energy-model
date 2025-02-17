@@ -4522,14 +4522,6 @@ fn hot_water_source_from_input(
                 let heater_position = hs.heater_position();
                 let thermostat_position = hs.thermostat_position();
 
-                //heat exchanger area
-                let heat_exchanger_surface_area =
-                    if let HeatSourceInput::HeatPumpHotWaterOnly { .. } = hs {
-                        *heat_exchanger_surface_area
-                    } else {
-                        None
-                    };
-
                 let (heat_source, energy_supply_conn_name) = heat_source_from_input(
                     name.as_str(),
                     hs,
