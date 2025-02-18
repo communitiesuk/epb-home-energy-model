@@ -2579,9 +2579,16 @@ impl Corpus {
                 .unwrap()
                 .push(storage_losses);
 
-            self.energy_supplies.values().try_for_each(|supply| {
-                anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)
-            })?;
+            for supply in self.energy_supplies.values() {
+                (
+                    anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)?,
+                    anyhow::Ok(
+                        supply
+                            .read()
+                            .calc_energy_import_from_grid_to_battery(t_it)?,
+                    )?,
+                );
+            }
 
             for diverter in &self.diverters {
                 diverter.write().timestep_end();

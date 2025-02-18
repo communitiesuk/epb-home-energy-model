@@ -499,7 +499,7 @@ impl EnergySupply {
     pub(crate) fn calc_energy_import_from_grid_to_battery(
         &self,
         simtime: SimulationTimeIteration,
-    ) -> Option<f64> {
+    ) -> anyhow::Result<Option<f64>> {
         if let Some(electric_battery) = &self.electric_battery {
             let t_idx = simtime.index;
             if electric_battery.is_grid_charging_possible() {
@@ -529,12 +529,12 @@ impl EnergySupply {
                 electric_battery.timestep_end();
                 self.battery_state_of_charge[t_idx]
                     .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
-                Some(energy_accepted)
+                Ok(Some(energy_accepted))
             } else {
-                None
+                Ok(None)
             }
         } else {
-            None
+            Ok(None)
         }
     }
 
