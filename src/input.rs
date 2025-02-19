@@ -672,11 +672,11 @@ pub enum ControlCombinationOperation {
 pub(crate) struct SmartApplianceBattery {
     pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    energy_out_of_battery: IndexMap<String, Vec<f64>>,
+    pub(crate) energy_out_of_battery: IndexMap<String, Vec<f64>>,
 }
 
 impl ControlDetails {
@@ -3628,6 +3628,50 @@ impl InputForProcessing {
             .extra
             .insert("loadshifting".to_string(), smart_control);
         self
+    }
+
+    pub(super) fn set_non_appliance_demand_24hr(
+        &mut self,
+        non_appliance_demand_24hr_input: IndexMap<String, Vec<f64>>,
+    ) -> anyhow::Result<()> {
+        let control = self
+            .input
+            .control
+            .extra
+            .get_mut("loadshifting")
+            .ok_or_else(|| anyhow!("Expected control to have 'loadshifting' as key"))?;
+
+        if let ControlDetails::SmartAppliance {
+            ref mut non_appliance_demand_24hr,
+            ..
+        } = control
+        {
+            *non_appliance_demand_24hr = Some(non_appliance_demand_24hr_input);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn set_battery24hr(
+        &mut self,
+        battery24hr_input: SmartApplianceBattery,
+    ) -> anyhow::Result<()> {
+        let control = self
+            .input
+            .control
+            .extra
+            .get_mut("loadshifting")
+            .ok_or_else(|| anyhow!("Expected control to have 'loadshifting' as key"))?;
+
+        if let ControlDetails::SmartAppliance {
+            ref mut battery_24hr,
+            ..
+        } = control
+        {
+            *battery_24hr = Some(Box::new(battery24hr_input));
+        }
+
+        Ok(())
     }
 
     pub fn zone_keys(&self) -> Vec<String> {

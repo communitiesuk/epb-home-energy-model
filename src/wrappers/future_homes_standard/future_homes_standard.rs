@@ -1,8 +1,8 @@
 use crate::compare_floats::order_of_2;
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
-    DAYS_IN_MONTH, DAYS_PER_YEAR, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR, SECONDS_PER_HOUR,
-    WATTS_PER_KILOWATT,
+    DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
+    SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{KeyString, ResultsEndUser};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
@@ -10,8 +10,9 @@ use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     ControlDetails, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SpaceHeatControlType, SystemReference,
-    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
+    MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
+    SystemReference, TransparentBuildingElement, VentType, WaterHeatingEvent,
+    WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -2335,6 +2336,29 @@ fn appliance_kwh_cycle_loading_factor(
 }
 
 fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow::Result<()> {
+    let mut _24h_input = input.clone();
+    let range = (HOURS_PER_DAY as f64 / SIMTIME_STEP).ceil() as usize;
+    let _24h_0s_by_supply = IndexMap::from([
+        (ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(), vec![0.; range]),
+        (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
+    ]);
+
+    _24h_input.set_non_appliance_demand_24hr(_24h_0s_by_supply.clone())?;
+
+    _24h_input.set_battery24hr(SmartApplianceBattery {
+        energy_into_battery_from_generation: _24h_0s_by_supply.clone(),
+        energy_out_of_battery: _24h_0s_by_supply.clone(),
+        energy_into_battery_from_grid: _24h_0s_by_supply.clone(),
+        battery_state_of_charge: _24h_0s_by_supply.clone(),
+    })?;
+
+    _24h_input.set_simulation_time(simtime());
+
+    // create a corpus instance
+    // let corpus: Corpus = (&_24h_input).try_into()?;
+    // let corpus = Corpus::from_inputs(_24h_input, external_conditions, sim_settings.
+    // proj = project.Project(_24h_proj_dict, heat_balance, detailed_output_heating_cooling, use_fast_solver, tariff_data_filename)
+
     todo!()
 }
 
