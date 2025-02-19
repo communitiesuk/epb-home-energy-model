@@ -2771,7 +2771,7 @@ mod tests {
 
         // Loop through the timesteps and the associated data pairs using `subTest`
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
-            let mut usage_events_for_iteration = Some(usage_events[t_idx].clone());
+            let usage_events_for_iteration = Some(usage_events[t_idx].clone());
             storage_tank1
                 .demand_hot_water(usage_events_for_iteration.clone(), t_it)
                 .unwrap();

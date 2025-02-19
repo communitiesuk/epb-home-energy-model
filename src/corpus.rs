@@ -2312,7 +2312,7 @@ impl Corpus {
                 hw_duration,
                 all_events: no_events,
                 hw_energy_demand,
-                mut usage_events,
+                usage_events,
                 vol_hot_water_equiv_elec_shower,
             } = self
                 .domestic_hot_water_demand
@@ -2553,14 +2553,12 @@ impl Corpus {
                 .push(storage_losses);
 
             for supply in self.energy_supplies.values() {
-                (
-                    anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)?,
-                    anyhow::Ok(
-                        supply
-                            .read()
-                            .calc_energy_import_from_grid_to_battery(t_it)?,
-                    )?,
-                );
+                anyhow::Ok(supply.read().calc_energy_import_export_betafactor(t_it)?)?;
+                anyhow::Ok(
+                    supply
+                        .read()
+                        .calc_energy_import_from_grid_to_battery(t_it)?,
+                )?;
             }
 
             for diverter in &self.diverters {
