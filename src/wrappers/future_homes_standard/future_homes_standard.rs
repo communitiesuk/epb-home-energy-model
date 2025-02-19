@@ -2309,24 +2309,27 @@ fn appliance_kwh_cycle_loading_factor(
 
     let map_appliance = appliance_map.get(appliance_key).ok_or_else(|| anyhow!("The appliance name '{appliance_key}' was expected to be found within the appliance map: {appliance_map:?}."))?;
 
-    let loading_factor = if appliance_key.is_clothes_appliance() {
+    let mut loading_factor = 1.;
+    if appliance_key.is_clothes_appliance() {
         // additionally, laundry appliances have variable load size,
         // which affects the required number of uses to do all the occupants' laundry for the year
+        loading_factor = {
+            map_appliance
+                .use_data
+                .as_ref()
+                .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
+                .clothes_use_data
+                .as_ref()
+                .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
+                .standard_load_kg
+                / appliance.kg_load.as_ref().ok_or_else(|| {
+                    anyhow!("Passed in appliance is expected to have a kg_load value.")
+                })?
+        };
 
-        map_appliance
-            .use_data
-            .as_ref()
-            .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
-            .clothes_use_data
-            .as_ref()
-            .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
-            .standard_load_kg
-            / appliance.kg_load.as_ref().ok_or_else(|| {
-                anyhow!("Passed in appliance is expected to have a kg_load value.")
-            })?
-    } else {
-        1.0
-    };
+        // There is some unreachable code in the Python here around spin dry efficiency class
+        // TODO - implement in future if needed
+    }
 
     Ok((kwh_cycle, loading_factor))
 }
