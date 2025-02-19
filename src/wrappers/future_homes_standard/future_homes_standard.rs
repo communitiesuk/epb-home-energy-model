@@ -1682,9 +1682,6 @@ fn create_appliance_gains(
 
         let (kwhcycle, loadingfactor) =
             appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
-        let kwhcycle = kwhcycle.ok_or_else(|| {
-            anyhow!("Could not get kwhcycle value for appliance with key {appliance_key}.")
-        })?;
 
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
@@ -2285,29 +2282,30 @@ fn appliance_kwh_cycle_loading_factor(
     input: &InputForProcessing,
     appliance_key: &ApplianceKey,
     appliance_map: &IndexMap<ApplianceKey, ApplianceUseProfile>,
-) -> anyhow::Result<(Option<f64>, f64)> {
+) -> anyhow::Result<(f64, f64)> {
     // value on energy label is defined differently between appliance types,
     // convert any different input types to simple kWh per cycle
 
-    let (kwh_cycle, appliance) =
-        if let Some(ApplianceEntry::Object(appliance)) = input.appliance_with_key(appliance_key) {
-            (
-                (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
-                    Some(kwh_per_cycle)
-                } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
-                    Some(kwh_per_100_cycle / 100.)
-                } else if let (Some(kwh_per_annum), Some(standard_use)) =
-                    (appliance.kwh_per_annum, appliance.standard_use)
-                {
-                    Some(kwh_per_annum / standard_use)
-                } else {
-                    None
-                }),
-                appliance,
-            )
-        } else {
-            bail!("Appliance with name '{appliance_key}' must exist.")
-        };
+    let (kwh_cycle, appliance) = if let Some(ApplianceEntry::Object(appliance)) =
+        input.appliance_with_key(appliance_key)
+    {
+        (
+            (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
+                kwh_per_cycle
+            } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
+                kwh_per_100_cycle / 100.
+            } else if let (Some(kwh_per_annum), Some(standard_use)) =
+                (appliance.kwh_per_annum, appliance.standard_use)
+            {
+                kwh_per_annum / standard_use
+            } else {
+                bail!("{} demand must be specified as one of 'kWh_per_cycle', 'kWh_per_100cycle' or 'kWh_per_annum'", appliance_key)
+            }),
+            appliance,
+        )
+    } else {
+        bail!("Appliance with name '{appliance_key}' must exist.")
+    };
 
     let map_appliance = appliance_map.get(appliance_key).ok_or_else(|| anyhow!("The appliance name '{appliance_key}' was expected to be found within the appliance map: {appliance_map:?}."))?;
 
