@@ -2228,13 +2228,16 @@ fn appliance_cooking_defaults(
                 input.remove_appliance(appliance_name);
             } else {
                 // user has specified appliance efficiency, overwrite efficiency with default
+                let original_load_shifting_value = input.loadshifting_for_appliance(appliance_name);
+
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
                 )]));
 
-                match input.loadshifting_for_appliance(appliance_name) {
+                match original_load_shifting_value {
                     // do not overwrite user defined load shifting
+                    // (set loadshifting back to the original value)
                     Some(load_shifting) => {
                         input.set_loadshifting_for_appliance(appliance_name, load_shifting);
                     }
@@ -2247,8 +2250,6 @@ fn appliance_cooking_defaults(
             .any(|cooking_appliance_name| input.appliances_contain_key(cooking_appliance_name))
         {
             // neither cooker nor oven specified, add cooker as minimum requirement
-            // NB. upstream Python looks to be erroneous here (does not specify a dict with the key of "Hobs"), but implementing what appears to be the intent
-            // reported this up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45524
             input.merge_in_appliances(&IndexMap::from([(
                 ApplianceKey::Hobs,
                 cooking_defaults[&ApplianceKey::Hobs].clone(),
@@ -2267,6 +2268,12 @@ fn appliance_cooking_defaults(
                 .appliance_key_has_reference(cooking_name, &ApplianceReference::NotInstalled)
             {
                 input.remove_appliance(cooking_name);
+            } else {
+                // NB: there is a possible issue in the Python here where the wrong key is used
+                input.merge_in_appliances(&IndexMap::from([(
+                    cooking_name.to_owned(),
+                    cooking_appliance.clone(),
+                )]));
             }
         }
     }
