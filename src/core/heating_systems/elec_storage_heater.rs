@@ -757,7 +757,7 @@ impl ElecStorageHeater {
         }
     }
 
-    pub(crate) fn esh_detailed_results(&self) -> Option<Vec<StorageHeaterDetailedResult>> {
+    pub(crate) fn output_esh_results(&self) -> Option<Vec<StorageHeaterDetailedResult>> {
         self.esh_detailed_results
             .as_ref()
             .map(|results| (*results.read()).clone())

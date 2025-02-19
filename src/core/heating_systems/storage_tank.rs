@@ -92,6 +92,8 @@ pub struct StorageTank {
     total_volume_drawoff: Option<f64>, // In Python this is created from inside allocate_hot_water()
 }
 
+pub(crate) struct StorageTankDetailedResult {} // TODO implement detailed results for StorageTank
+
 impl StorageTank {
     /// Arguments:
     /// * `volume` - total volume of the tank, in litres
@@ -1390,7 +1392,7 @@ impl StorageTank {
         }
     }
 
-    fn output_results(&self) -> f64 {
+    pub(crate) fn output_results(&self) -> Option<Vec<StorageTankDetailedResult>> {
         todo!("Will be completed after 0.32 migration")
     }
 }

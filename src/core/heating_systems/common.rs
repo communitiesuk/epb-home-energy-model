@@ -3,7 +3,9 @@ use super::heat_pump::{BufferTankEmittersData, BufferTankEmittersDataWithResult}
 use crate::core::heating_systems::boiler::{
     BoilerServiceSpace, BoilerServiceWaterCombi, BoilerServiceWaterRegular,
 };
-use crate::core::heating_systems::elec_storage_heater::ElecStorageHeater;
+use crate::core::heating_systems::elec_storage_heater::{
+    ElecStorageHeater, StorageHeaterDetailedResult,
+};
 use crate::core::heating_systems::heat_battery::{
     HeatBatteryServiceSpace, HeatBatteryServiceWaterRegular,
 };
@@ -194,6 +196,14 @@ impl SpaceHeatSystem {
     pub(crate) fn output_emitter_results(&self) -> Option<Vec<EmittersDetailedResult>> {
         if let SpaceHeatSystem::WetDistribution(emitters) = self {
             emitters.output_emitter_results()
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn output_esh_results(&self) -> Option<Vec<StorageHeaterDetailedResult>> {
+        if let SpaceHeatSystem::ElecStorage(elec_storage) = self {
+            elec_storage.output_esh_results()
         } else {
             None
         }

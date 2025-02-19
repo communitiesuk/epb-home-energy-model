@@ -11,7 +11,9 @@ use crate::core::energy_supply::energy_supply::{
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
 use crate::core::heating_systems::common::{HeatSourceWet, SpaceHeatSystem, SpaceHeatingService};
-use crate::core::heating_systems::elec_storage_heater::ElecStorageHeater;
+use crate::core::heating_systems::elec_storage_heater::{
+    ElecStorageHeater, StorageHeaterDetailedResult,
+};
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
 use crate::core::heating_systems::heat_battery::HeatBattery;
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
@@ -22,7 +24,7 @@ use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, PositionedHeatSource,
-    SolarThermalSystem, StorageTank,
+    SolarThermalSystem, StorageTank, StorageTankDetailedResult,
 };
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
@@ -2269,8 +2271,10 @@ impl Corpus {
         let mut emitters_output_dict: IndexMap<String, Vec<EmittersDetailedResult>> =
             Default::default();
         let mut vent_output_list: Vec<VentilationDetailedResult> = Default::default();
-        let mut esh_output_list: Vec<VentilationDetailedResult> = Default::default();
-        let mut hot_water_source_results_list: Vec<VentilationDetailedResult> = Default::default();
+        let mut esh_output_dict: IndexMap<String, Vec<StorageHeaterDetailedResult>> =
+            Default::default();
+        let mut hot_water_source_results_dict: IndexMap<String, Vec<StorageTankDetailedResult>> =
+            Default::default();
 
         for z_name in self.zones.keys() {
             let z_name = z_name.as_str().try_into().unwrap();
@@ -2621,6 +2625,8 @@ impl Corpus {
         let mut energy_generated_consumed: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut energy_to_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut energy_from_storage: IndexMap<KeyString, Vec<f64>> = Default::default();
+        let mut storage_from_grid: IndexMap<KeyString, Vec<f64>> = Default::default();
+        let mut battery_state_of_charge: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut energy_diverted: IndexMap<KeyString, Vec<f64>> = Default::default();
         let mut betafactor: IndexMap<KeyString, Vec<f64>> = Default::default();
         for (name, supply) in self.energy_supplies.iter().map(|(name, supply)| {
@@ -2636,10 +2642,12 @@ impl Corpus {
             energy_export.insert(name, supply.get_energy_export().to_owned());
             energy_generated_consumed
                 .insert(name, supply.get_energy_generated_consumed().to_owned());
-            // TODO update following during migration to 0.32
-            let (energy_to, energy_from, _, _) = supply.get_energy_to_from_battery();
+            let (energy_to, energy_from, storage_from, state_of_charge) =
+                supply.get_energy_to_from_battery();
             energy_to_storage.insert(name, energy_to.to_owned());
             energy_from_storage.insert(name, energy_from.to_owned());
+            storage_from_grid.insert(name, storage_from.to_owned());
+            battery_state_of_charge.insert(name, state_of_charge.to_owned());
             energy_diverted.insert(name, supply.get_energy_diverted().to_owned());
             betafactor.insert(name, supply.get_beta_factor().to_owned());
         }
@@ -2751,7 +2759,24 @@ impl Corpus {
                 }
             }
 
+            // ESH detailed output results are stored with respect to heat_system_name
+            for (heat_system_name, heat_system) in self.space_heat_systems.iter() {
+                if let Some(esh_output) = heat_system.lock().output_esh_results() {
+                    esh_output_dict.insert(heat_system_name.to_owned(), esh_output);
+                }
+            }
+
             vent_output_list = self.ventilation.output_vent_results().read().clone();
+
+            // Detailed output results collected from storage tank class function
+            for (name, hot_water_source) in self.hot_water_sources.iter() {
+                if let HotWaterSource::StorageTank(storage_tank) = hot_water_source {
+                    if let Some(hot_water_source_output) = storage_tank.read().output_results() {
+                        hot_water_source_results_dict
+                            .insert(name.to_owned(), hot_water_source_output);
+                    }
+                }
+            }
         }
 
         Ok(RunResults {
@@ -2777,7 +2802,9 @@ impl Corpus {
             heat_source_wet_results_dict,
             heat_source_wet_results_annual_dict,
             emitters_output_dict,
+            esh_output_dict,
             vent_output_list,
+            hot_water_source_results_dict,
         })
     }
 
@@ -3276,7 +3303,9 @@ pub struct RunResults {
     pub(crate) heat_source_wet_results_dict: IndexMap<String, ResultsPerTimestep>,
     pub(crate) heat_source_wet_results_annual_dict: IndexMap<String, ResultsAnnual>,
     pub(crate) emitters_output_dict: IndexMap<String, Vec<EmittersDetailedResult>>,
+    pub(crate) esh_output_dict: IndexMap<String, Vec<StorageHeaterDetailedResult>>,
     pub(crate) vent_output_list: Vec<VentilationDetailedResult>,
+    pub(crate) hot_water_source_results_dict: IndexMap<String, Vec<StorageTankDetailedResult>>,
 }
 
 impl RunResults {
