@@ -2593,6 +2593,23 @@ impl Corpus {
             for diverter in &self.diverters {
                 diverter.write().timestep_end();
             }
+
+            if self
+                .controls
+                .extra
+                .keys()
+                .contains(&"SmartApplianceControl".to_string())
+            {
+                if let Control::SmartAppliance(ctrl) = self
+                    .controls
+                    .extra
+                    .get("SmartApplianceControl")
+                    .unwrap()
+                    .as_ref()
+                {
+                    ctrl.update_demand_buffer(t_it)
+                };
+            }
         }
 
         // Return results from all energy supplies
