@@ -21,8 +21,8 @@ use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
-    Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap, KeyString,
-    NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
+    calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
+    KeyString, NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
@@ -119,6 +119,8 @@ pub fn run_project(
         ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
+
+        let cloned_input = input_for_processing.clone();
 
         let input = match catch_unwind(AssertUnwindSafe(|| {
             apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
@@ -243,6 +245,7 @@ pub fn run_project(
         // 6. Write out to core output files.
         #[instrument(skip_all)]
         fn write_core_output_files(
+            cloned_input: &InputForProcessing,
             output: &impl Output,
             results: &HashMap<CalculationKey, CalculationResultsWithContext>,
             corpora: &HashMap<CalculationKey, Corpus>,
@@ -332,7 +335,7 @@ pub fn run_project(
 
                 let corpus = results.context.corpus;
 
-                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = corpus.calc_htc_hlp();
+                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = calc_htc_hlp(cloned_input.as_input())?;
                 let heat_capacity_parameter = corpus.calc_hcp();
                 let heat_loss_form_factor = corpus.calc_hlff();
 
@@ -356,7 +359,7 @@ pub fn run_project(
             Ok(())
         }
 
-        write_core_output_files(&output, &contextualised_results, &corpora, flags)?;
+        write_core_output_files(&cloned_input, &output, &contextualised_results, &corpora, flags)?;
 
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]

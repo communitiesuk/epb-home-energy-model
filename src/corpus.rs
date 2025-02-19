@@ -778,7 +778,6 @@ impl Corpus {
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
             &input.zone,
         );
-        // TODO: there needs to be some equivalent here of the Python code that builds the dict __energy_supply_conn_unmet_demand_zone
 
         let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
 
@@ -1014,36 +1013,6 @@ impl Corpus {
 
     pub fn total_floor_area(&self) -> f64 {
         self.total_floor_area
-    }
-
-    /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
-    /// according to the SAP10.2 specification
-    pub fn calc_htc_hlp(&self) -> (f64, f64, HashMap<String, f64>, HashMap<String, f64>) {
-        let mut htc_map: HashMap<String, f64> = Default::default();
-        let mut hlp_map: HashMap<String, f64> = Default::default();
-
-        // Calculate the total fabric heat loss, total heat capacity, total ventilation heat
-        // loss and total heat transfer coeffient for thermal bridges across all zones
-        for (z_name, zone) in self.zones.iter() {
-            let fabric_heat_loss = zone.total_fabric_heat_loss();
-            let thermal_bridges = zone.total_thermal_bridges();
-            let vent_heat_loss = zone.total_vent_heat_loss();
-
-            // Calculate the heat transfer coefficent (HTC), in W / K
-            // TODO (from Python) check ventilation losses are correct
-            let htc = fabric_heat_loss + thermal_bridges + vent_heat_loss;
-
-            // Calculate the HLP, in W/m2 K
-            let hlp = htc / zone.area();
-
-            htc_map.insert((*z_name).clone(), htc);
-            hlp_map.insert((*z_name).clone(), hlp);
-        }
-
-        let total_htc = htc_map.values().sum();
-        let total_hlp = total_htc / self.total_floor_area;
-
-        (total_htc, total_hlp, htc_map, hlp_map)
     }
 
     /// Calculate the total heat capacity normalised for floor area
