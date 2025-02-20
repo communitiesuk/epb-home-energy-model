@@ -2365,32 +2365,66 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     // Run main simulation sim
     let results = corpus.run()?;
 
-    // timestep_array, results_totals, results_end_user, \
-    //     energy_import, energy_export, energy_generated_consumed, \
-    //     energy_to_storage, energy_from_storage, storage_from_grid, battery_state_of_charge, energy_diverted, betafactor, \
-    //     zone_dict, zone_list, hc_system_dict, hot_water_dict, \
-    //     heat_cop_dict, cool_cop_dict, dhw_cop_dict, \
-    //     ductwork_gains_dict, heat_balance_all_dict, \
-    //     heat_source_wet_results_dict, heat_source_wet_results_annual_dict, \
-    //     emitters_output_dict, esh_output_dict, vent_output_list, hot_water_source_results_dict = proj.run()
-
     // sum results for electricity demand other than appliances to get 24h demand buffer for loadshifting
+    let electricity_users = results
+        .results_end_user
+        .get(ENERGY_SUPPLY_NAME_ELECTRICITY)
+        .ok_or_else(|| anyhow!("Expected one or more users of mains elec energy supply"))?;
+
+    let min_demand_length = electricity_users
+        .values()
+        .map(|demand| demand.len())
+        .min()
+        .unwrap_or(0);
+
+    let mut non_appliance_electricity_demand = vec![];
+    for i in 0..min_demand_length {
+        for (name, user) in electricity_users {
+            let name = ApplianceKey::try_from(name.as_str())?;
+            if !input.appliances_contain_key(&name) {
+                non_appliance_electricity_demand[i] += user[i];
+            }
+        }
+    }
+
     let non_appliance_demand_24hr = IndexMap::from([
-        (ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(), vec![0.; range]),
+        (
+            ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(),
+            non_appliance_electricity_demand,
+        ),
         (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
     ]);
-    let _temp = results.results_end_user.get(ENERGY_SUPPLY_NAME_ELECTRICITY);
     input.set_non_appliance_demand_24hr(non_appliance_demand_24hr)?;
 
-    // project_dict["Control"]["loadshifting"]["non_appliance_demand_24hr"] = {
-    //     energysupplyname_electricity:[sum(timestep) for timestep in zip(*[
-    //         user for (name,user) in results_end_user[energysupplyname_electricity].items()
-    //         if name not in project_dict["Appliances"].keys()
-    //     ])],
-    //     energysupplyname_gas:[0 for x in range(math.ceil(units.hours_per_day / simtime_step))]
-    // }
+    let energy_into_battery_from_generation = results
+        .energy_to_storage
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.clone()))
+        .collect::<IndexMap<String, Vec<f64>>>();
+    let energy_out_of_battery = results
+        .energy_from_storage
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.clone()))
+        .collect::<IndexMap<String, Vec<f64>>>();
+    let energy_into_battery_from_grid = results
+        .storage_from_grid
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.clone()))
+        .collect::<IndexMap<String, Vec<f64>>>();
+    let battery_state_of_charge = results
+        .battery_state_of_charge
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.clone()))
+        .collect::<IndexMap<String, Vec<f64>>>();
 
-    todo!()
+    input.set_battery24hr(SmartApplianceBattery {
+        energy_into_battery_from_generation,
+        energy_out_of_battery,
+        energy_into_battery_from_grid,
+        battery_state_of_charge,
+    })?;
+
+    Ok(())
 }
 
 /// Check (almost an assert) whether the shower flow rate is not less than the minimum allowed.
