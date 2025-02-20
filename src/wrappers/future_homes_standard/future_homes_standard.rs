@@ -4,7 +4,7 @@ use crate::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
     SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
-use crate::corpus::{KeyString, ResultsEndUser};
+use crate::corpus::{Corpus, KeyString, OutputOptions, ResultsEndUser};
 use crate::external_conditions::{ExternalConditions, WindowShadingObject};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
@@ -2355,9 +2355,40 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     _24h_input.set_simulation_time(simtime());
 
     // create a corpus instance
-    // let corpus: Corpus = (&_24h_input).try_into()?;
-    // let corpus = Corpus::from_inputs(_24h_input, external_conditions, sim_settings.
-    // proj = project.Project(_24h_proj_dict, heat_balance, detailed_output_heating_cooling, use_fast_solver, tariff_data_filename)
+    let output_options = OutputOptions {
+        print_heat_balance: sim_settings.heat_balance,
+        detailed_output_heating_cooling: sim_settings.detailed_output_heating_cooling,
+    };
+    // TODO review output_options and external_conditions below
+    let corpus = Corpus::from_inputs(_24h_input.as_input(), None, &output_options)?;
+
+    // Run main simulation sim
+    let results = corpus.run()?;
+
+    // timestep_array, results_totals, results_end_user, \
+    //     energy_import, energy_export, energy_generated_consumed, \
+    //     energy_to_storage, energy_from_storage, storage_from_grid, battery_state_of_charge, energy_diverted, betafactor, \
+    //     zone_dict, zone_list, hc_system_dict, hot_water_dict, \
+    //     heat_cop_dict, cool_cop_dict, dhw_cop_dict, \
+    //     ductwork_gains_dict, heat_balance_all_dict, \
+    //     heat_source_wet_results_dict, heat_source_wet_results_annual_dict, \
+    //     emitters_output_dict, esh_output_dict, vent_output_list, hot_water_source_results_dict = proj.run()
+
+    // sum results for electricity demand other than appliances to get 24h demand buffer for loadshifting
+    let non_appliance_demand_24hr = IndexMap::from([
+        (ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(), vec![0.; range]),
+        (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
+    ]);
+    let _temp = results.results_end_user.get(ENERGY_SUPPLY_NAME_ELECTRICITY);
+    input.set_non_appliance_demand_24hr(non_appliance_demand_24hr)?;
+
+    // project_dict["Control"]["loadshifting"]["non_appliance_demand_24hr"] = {
+    //     energysupplyname_electricity:[sum(timestep) for timestep in zip(*[
+    //         user for (name,user) in results_end_user[energysupplyname_electricity].items()
+    //         if name not in project_dict["Appliances"].keys()
+    //     ])],
+    //     energysupplyname_gas:[0 for x in range(math.ceil(units.hours_per_day / simtime_step))]
+    // }
 
     todo!()
 }

@@ -2823,8 +2823,8 @@ impl Corpus {
 
 #[derive(Debug, Default)]
 pub struct OutputOptions {
-    print_heat_balance: bool,
-    detailed_output_heating_cooling: bool,
+    pub(crate) print_heat_balance: bool,
+    pub(crate) detailed_output_heating_cooling: bool,
 }
 
 impl From<&ProjectFlags> for OutputOptions {
