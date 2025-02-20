@@ -2232,14 +2232,8 @@ fn appliance_cooking_defaults(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
                 )]));
-
-                match original_load_shifting_value {
-                    // do not overwrite user defined load shifting
-                    // (set loadshifting back to the original value)
-                    Some(load_shifting) => {
-                        input.set_loadshifting_for_appliance(appliance_name, load_shifting);
-                    }
-                    None => {}
+                if let Some(load_shifting) = original_load_shifting_value {
+                    input.set_loadshifting_for_appliance(appliance_name, load_shifting);
                 }
             }
         }
