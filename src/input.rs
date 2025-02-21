@@ -2131,6 +2131,7 @@ impl BuildingElement {
 pub(crate) trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
+    fn treatment(&self) -> Option<Vec<WindowTreatment>>;
 }
 
 impl TransparentBuildingElement for BuildingElement {
@@ -2150,6 +2151,14 @@ impl TransparentBuildingElement for BuildingElement {
         match self {
             BuildingElement::Transparent { security_risk, .. } => security_risk.unwrap_or(false),
             _ => unreachable!(),
+        }
+    }
+
+    fn treatment(&self) -> Option<Vec<WindowTreatment>> {
+        match self {
+            BuildingElement::Transparent { treatment, .. } => treatment.clone(),
+            _=> unreachable!()
+
         }
     }
 }
@@ -2372,6 +2381,12 @@ pub enum WindowTreatmentControl {
     AutoMotorised,
     #[serde(rename = "combined_light_blind_HVAC")]
     CombinedLightBlindHvac,
+}
+
+impl WindowTreatmentControl {
+    pub(crate) fn is_manual(&self) -> bool {
+        [Self::Manual, Self::ManualMotorised].contains(self)
+    }
 }
 
 pub(crate) fn deserialize_possible_string_for_boolean<'de, D>(

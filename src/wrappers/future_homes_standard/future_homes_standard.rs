@@ -5,14 +5,16 @@ use crate::core::units::{
     SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
 use crate::corpus::{Corpus, KeyString, OutputOptions, ResultsEndUser};
-use crate::external_conditions::{ExternalConditions, WindowShadingObject};
+use crate::external_conditions::{
+    create_external_conditions, ExternalConditions, WindowShadingObject,
+};
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     ControlDetails, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
     MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
     SystemReference, TransparentBuildingElement, VentType, WaterHeatingEvent,
-    WaterHeatingEventType,
+    WaterHeatingEventType, WindowTreatmentType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -2594,7 +2596,147 @@ pub(super) fn create_hot_water_use_pattern(
 }
 
 fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    todo!()
+    let simtime = simtime();
+    let extcond = create_external_conditions(
+        input.external_conditions().as_ref().clone(),
+        &simtime.iter(),
+    )?;
+    let mut curtain_opening_sched_manual: Vec<Option<bool>> = Default::default();
+    let mut curtain_opening_sched_auto: Vec<bool> = Default::default();
+    let mut blinds_closing_irrad_manual: Vec<Option<f64>> = Default::default();
+    let mut blinds_opening_irrad_manual: Vec<Option<f64>> = Default::default();
+
+    // TODO review loop and use of simtime here
+    for _ in simtime.iter() {
+        let hour_of_day = simtime.iter().current_iteration().hour_of_day() as usize;
+        // TODO (from Python) Are these waking hours correct? Check consistency with other parts of calculation
+        let waking_hours = hour_of_day >= OCCUPANT_WAKING_HR && hour_of_day < OCCUPANT_SLEEPING_HR;
+        let sun_above_horizon = extcond.sun_above_horizon(simtime.iter().current_iteration());
+
+        curtain_opening_sched_manual.push(if waking_hours && sun_above_horizon {
+            Some(true) // Open during waking hours after sunrise
+        } else if waking_hours && !sun_above_horizon {
+            Some(false) // Close during waking hours after sunset
+        } else {
+            None // Do not adjust outside waking hours
+        });
+        curtain_opening_sched_auto.push(sun_above_horizon);
+        blinds_closing_irrad_manual.push(if waking_hours { Some(300.) } else { None });
+        blinds_opening_irrad_manual.push(if waking_hours { Some(200.) } else { None });
+    }
+
+    input.add_control(
+        "_curtains_open_manual",
+        json!({
+            "type": "OnOffTimeControl",
+            "allow_null": true,
+            "start_day": 0,
+            "time_series_step": SIMTIME_STEP,
+            "schedule": {
+                "main": curtain_opening_sched_manual,
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_curtains_open_auto",
+        json!({
+            "type": "OnOffTimeControl",
+            "start_day": 0,
+            "time_series_step": SIMTIME_STEP,
+            "schedule": {
+                "main": curtain_opening_sched_auto,
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_blinds_closing_irrad_manual",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": SIMTIME_STEP,
+            "schedule": {
+                "main": blinds_closing_irrad_manual,
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_blinds_closing_irrad_auto",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.,
+            "schedule": {
+                "main": [{"repeat": SIMTIME_END as usize, "value": 200.}],
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_blinds_opening_irrad_manual",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": SIMTIME_STEP,
+            "schedule": {
+                "main": blinds_opening_irrad_manual,
+            }
+        }),
+    )?;
+
+    input.add_control(
+        "_blinds_opening_irrad_auto",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.,
+            "schedule": {
+                "main": [{"repeat": SIMTIME_END as usize, "value": 200.}],
+            }
+        }),
+    )?;
+
+    let transparent_building_elements = input.all_transparent_building_elements_mut();
+
+    for building_element in transparent_building_elements.iter() {
+        if let Some(window_treatments) = building_element.treatment() {
+            for mut treatment in window_treatments {
+                // TODO do we need setters for all the treatment fields that are set/updated below?
+                treatment.is_open = Some(false);
+
+                match treatment.treatment_type {
+                    WindowTreatmentType::Curtains => {
+                        if treatment.controls.is_manual() {
+                            treatment.open_control = Some("_curtains_open_manual".to_string());
+                        } else {
+                            treatment.open_control = Some("_curtains_open_auto".to_string());
+                        }
+                    }
+                    // blinds are opened and closed in response to solar irradiance incident upon them
+                    WindowTreatmentType::Blinds => {
+                        if treatment.controls.is_manual() {
+                            // manual control - Table B.24 in BS EN ISO 52016-1:2017.
+                            treatment.closing_irradiance_control =
+                                Some("_blinds_closing_irrad_manual".to_string());
+                            treatment.opening_irradiance_control =
+                                Some("_blinds_opening_irrad_manual".to_string());
+                        } else {
+                            // automatic control - Table B.24 in BS EN ISO 52016-1:2017.
+                            treatment.closing_irradiance_control =
+                                Some("_blinds_closing_irrad_auto".to_string());
+                            treatment.opening_irradiance_control =
+                                Some("_blinds_opening_irrad_auto".to_string());
+                            treatment.opening_delay_hrs = 2.;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
