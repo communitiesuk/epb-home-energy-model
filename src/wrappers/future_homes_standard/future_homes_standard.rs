@@ -2776,9 +2776,9 @@ pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> 
             "schedule": {
                 "main": [{"repeat": 365, "value": "day"}],
                 "day": [
-                    {"repeat": 7, "value": false},
-                    {"repeat": 15, "value": true},
-                    {"repeat": 2, "value": false},
+                    {"repeat": OCCUPANT_WAKING_HR, "value": false},
+                    {"repeat": OCCUPANT_SLEEPING_HR - OCCUPANT_WAKING_HR, "value": true},
+                    {"repeat": 24 - OCCUPANT_SLEEPING_HR, "value": false},
                 ]
             }
         }),
