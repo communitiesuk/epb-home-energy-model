@@ -2828,8 +2828,44 @@ pub(crate) fn minimum_air_change_rate(
         / LITRES_PER_CUBIC_METRE as f64
 }
 
+/// Set min and max vent opening thresholds
 fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    todo!()
+    let tfa = calc_tfa(input);
+    let number_of_bedrooms = input
+        .number_of_bedrooms()
+        .ok_or_else(|| anyhow!("Expected number of bedrooms to be indicated."))?;
+    let total_volume = input.total_zone_volume();
+
+    let vent_adjust_min_ach = minimum_air_change_rate(input, tfa, total_volume, number_of_bedrooms);
+    let vent_adjust_max_ach = 2.;
+
+    input.add_control(
+        "_vent_adjust_min_ach",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.0,
+            "schedule": {
+                "main": [{"repeat": (SIMTIME_END - SIMTIME_START) as usize, "value": vent_adjust_min_ach}],
+            }
+        }),
+    )?;
+    input.set_vent_adjust_min_control_for_infiltration_ventilation("_vent_adjust_min_ach");
+
+    input.add_control(
+        "_vent_adjust_max_ach",
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1.0,
+            "schedule": {
+                "main": [{"repeat": (SIMTIME_END - SIMTIME_START) as usize, "value": vent_adjust_max_ach}],
+            }
+        }),
+    )?;
+    input.set_vent_adjust_max_control_for_infiltration_ventilation("_vent_adjust_max_ach");
+
+    Ok(())
 }
 
 fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {

@@ -2157,8 +2157,7 @@ impl TransparentBuildingElement for BuildingElement {
     fn treatment(&self) -> Option<Vec<WindowTreatment>> {
         match self {
             BuildingElement::Transparent { treatment, .. } => treatment.clone(),
-            _=> unreachable!()
-
+            _ => unreachable!(),
         }
     }
 }
@@ -4824,6 +4823,20 @@ impl InputForProcessing {
 
     pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(&mut self, control: &str) {
         self.input.infiltration_ventilation.window_adjust_control = Some(control.to_owned());
+    }
+
+    pub(crate) fn set_vent_adjust_min_control_for_infiltration_ventilation(
+        &mut self,
+        control: &str,
+    ) {
+        self.input.infiltration_ventilation.vent_adjust_min_control = Some(control.to_owned());
+    }
+
+    pub(crate) fn set_vent_adjust_max_control_for_infiltration_ventilation(
+        &mut self,
+        control: &str,
+    ) {
+        self.input.infiltration_ventilation.vent_adjust_max_control = Some(control.to_owned());
     }
 
     pub(crate) fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
