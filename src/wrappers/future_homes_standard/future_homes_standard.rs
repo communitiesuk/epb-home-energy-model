@@ -2460,7 +2460,32 @@ pub(super) fn create_hot_water_use_pattern(
 
     // new relation based on Boiler Manufacturer data and EST surveys
     // reduced by 30% to account for pipework losses present in the source data
-    let vol_hw_daily_average = 0.70 * 60.3 * number_of_occupants.powf(0.71);
+    let mut vol_hw_daily_average = 0.70 * 60.3 * number_of_occupants.powf(0.71);
+
+    // The hot water data set only included hot water use via the central hot water system
+    // Electric showers are common in the UK, sometimes in addition to a central shower.
+    // It is therefore very likely more showers were taken than are recorded in our main dataset.
+    // To attempt to correct for this additional shower events (and their equivalent volume)
+    // need to be added for use in generating the correct list of water use events.
+    // It was assumed that 30% of the homes had an additional electric shower and these were
+    // used half as often as showers from the central water heating system (due to lower flow).
+    // This would mean that about 15% of showers taken were missing from the data.
+    // The proportion of total hot water volume due to with showers in the original sample
+    // was 60.685%. Increasing this by 15%, then re-adding it to the non-shower total gives
+    // 109.10%. So we need to multiply the hot water use by 1.0910 to correct for the missing showers.
+    // (Note that this is only being used to generate the correct events list so does not assume
+    // the dwelling being modelled actually has an electric shower, or a central shower. Allocation
+    // of events to the actual showers types present in the home is done later.)
+    let prop_with_elec_shower = 0.3; // 30% of homes had an additional electric shower
+    let elec_shower_use_prop_of_main = 0.5; // they are used half as often as the main shower
+    let correction_for_missing_elec_showers =
+        1. + prop_with_elec_shower * elec_shower_use_prop_of_main; // 1.15
+    let original_prop_hot_water_showers = 0.60685; // from original data set
+    let uplifted_prop_hot_water_showers =
+        original_prop_hot_water_showers * correction_for_missing_elec_showers;
+    let elec_shower_correction_factor =
+        1. - original_prop_hot_water_showers + uplifted_prop_hot_water_showers;
+    vol_hw_daily_average *= elec_shower_correction_factor;
 
     let mut hw_event_gen = HotWaterEventGenerator::new(vol_hw_daily_average, None, None)?;
     let ref_event_list = hw_event_gen.build_annual_hw_events(startmod)?;
@@ -2507,6 +2532,9 @@ pub(super) fn create_hot_water_use_pattern(
     let mut hourly_events: Vec<Vec<HourlyHotWaterEvent>> =
         std::iter::repeat_with(Vec::new).take(8760).collect();
     for event in &ref_event_list {
+        // assign HW usage events to end users and work out their durations
+        // note that if there are no baths in the dwelling "bath" events are
+        // assigned to showers, and vice versa
         let drawoff = if event.event_type.is_shower_type() {
             hw_event_aa.get_shower()
         } else if event.event_type.is_bath_type() {
@@ -2514,9 +2542,9 @@ pub(super) fn create_hot_water_use_pattern(
         } else {
             hw_event_aa.get_other()
         };
+        let duration = drawoff.call_duration_fn(*event);
 
         let event_start = event.time;
-        let duration = drawoff.call_duration_fn(*event);
         if !input.shower_name_refers_to_instant_electric(&drawoff.name) {
             // IES can overlap with anything so ignore them entirely
             // TODO (from Python) - implies 2 uses of the same IES may overlap, could check them separately
@@ -2542,8 +2570,15 @@ pub(super) fn create_hot_water_use_pattern(
             WaterHeatingEvent {
                 start: event_start,
                 duration: Some(duration),
-                // This field is updated in 0.32, below is just a placeholder
-                volume: None,
+                volume: if event.event_type.is_bath_type() {
+                    // if the end user the event is being assigned to has a defined flowrate
+                    // we are able to supply a volume
+                    input
+                        .flowrate_for_bath_field(&drawoff.name)
+                        .map(|flowrate| duration * flowrate)
+                } else {
+                    None
+                },
                 temperature: if event.event_type.is_shower_type() {
                     event_temperature_showers
                 } else if event.event_type.is_bath_type() {
