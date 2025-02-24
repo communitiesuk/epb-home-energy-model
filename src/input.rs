@@ -3831,7 +3831,7 @@ impl InputForProcessing {
         self
     }
 
-    pub fn all_zones_have_bulbs(&self) -> bool {
+    pub(crate) fn all_zones_have_bulbs(&self) -> bool {
         self.input.zone.values().all(|zone| {
             zone.lighting
                 .as_ref()
@@ -3839,7 +3839,7 @@ impl InputForProcessing {
         })
     }
 
-    pub fn light_bulbs_for_all_zones(&self) -> Vec<ZoneLightingBulbs> {
+    pub(crate) fn light_bulbs_for_all_zones(&self) -> Vec<ZoneLightingBulbs> {
         self.input
             .zone
             .values()
@@ -4242,23 +4242,6 @@ impl InputForProcessing {
         }
 
         Ok(())
-    }
-
-    pub(crate) fn remove_wwhrs_references_from_all_showers(&mut self) {
-        self.input
-            .hot_water_demand
-            .shower
-            .iter_mut()
-            .flat_map(|hwd| hwd.0.values_mut())
-            .for_each(|shower| {
-                if let Shower::MixerShower {
-                    ref mut waste_water_heat_recovery,
-                    ..
-                } = shower
-                {
-                    *waste_water_heat_recovery = None;
-                }
-            });
     }
 
     pub(crate) fn baths(&self) -> Option<&Baths> {
@@ -4799,15 +4782,6 @@ impl InputForProcessing {
         {
             *load_shifting = new_load_shifting;
         }
-    }
-
-    pub(crate) fn keys_for_appliance_gains_with_load_shifting(&self) -> Vec<String> {
-        self.input
-            .appliance_gains
-            .iter()
-            .filter(|&(_, gain)| gain.load_shifting.is_some())
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>()
     }
 
     pub(crate) fn mechanical_ventilations_for_processing(

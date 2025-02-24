@@ -44,8 +44,6 @@ pub(crate) const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";
 const APPL_OBJ_NAME: &str = "appliances";
 const ELEC_COOK_OBJ_NAME: &str = "Eleccooking";
 const GAS_COOK_OBJ_NAME: &str = "Gascooking";
-const HW_TIMER_MAIN_NAME: &str = "hw timer";
-const HW_TIMER_HOLD_AT_SETPNT_NAME: &str = "hw timer eco7";
 
 pub(super) const LIVING_ROOM_SETPOINT_FHS: f64 = 21.0;
 pub(super) const REST_OF_DWELLING_SETPOINT_FHS: f64 = 20.0;
@@ -67,8 +65,8 @@ const OCCUPANT_SLEEPING_HR: usize = 23;
 pub(crate) struct SimSettings {
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
-    use_fast_solver: bool,
-    tariff_data_filename: Option<String>,
+    _use_fast_solver: bool,
+    _tariff_data_filename: Option<String>,
 }
 
 pub fn apply_fhs_preprocessing(
@@ -80,8 +78,8 @@ pub fn apply_fhs_preprocessing(
     let default_sim_settings = SimSettings {
         heat_balance: false,
         detailed_output_heating_cooling: false,
-        use_fast_solver: false,
-        tariff_data_filename: None,
+        _use_fast_solver: false,
+        _tariff_data_filename: None,
     };
 
     let sim_settings = sim_settings.unwrap_or(default_sim_settings);
@@ -2624,7 +2622,7 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for t_it in simtime.iter() {
         let hour_of_day = t_it.hour_of_day() as usize;
         // TODO (from Python) Are these waking hours correct? Check consistency with other parts of calculation
-        let waking_hours = hour_of_day >= OCCUPANT_WAKING_HR && hour_of_day < OCCUPANT_SLEEPING_HR;
+        let waking_hours = (OCCUPANT_WAKING_HR..OCCUPANT_SLEEPING_HR).contains(&hour_of_day);
         let sun_above_horizon = extcond.sun_above_horizon(t_it);
 
         curtain_opening_sched_manual.push(if waking_hours && sun_above_horizon {
