@@ -1905,18 +1905,26 @@ fn create_appliance_gains(
 
     let lowest_priority = first_priority_ranks.iter().max().unwrap();
 
-    let priority_kwhcycle: Vec<ApplianceKey> = priority.clone()
+    let priority_kwhcycle: Vec<ApplianceKey> = priority
+        .clone()
         .sorted_by(|_, (_, kwhcycle1), _, (_, kwhcycle2)| kwhcycle1.total_cmp(kwhcycle2))
         .filter(|(_, (priority, _))| priority.is_none())
         .rev()
         .map(|x| x.0)
         .collect();
-    
+
     for appliance in priority.keys() {
         let new_priority = if defined_priority.contains(&appliance) {
-            defined_priority.iter().position(|&a| a == appliance).unwrap() as isize
+            defined_priority
+                .iter()
+                .position(|&a| a == appliance)
+                .unwrap() as isize
         } else {
-            priority_kwhcycle.iter().position(|a| a == appliance).unwrap() as isize + *lowest_priority
+            priority_kwhcycle
+                .iter()
+                .position(|a| a == appliance)
+                .unwrap() as isize
+                + *lowest_priority
         };
         input.set_priority_for_gains_appliance(new_priority, appliance)?;
     }
