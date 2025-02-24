@@ -3059,6 +3059,19 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                                 _ => unreachable!(),
                             }
                         }
+                        if let Some(advanced_start) =
+                            input.advanced_start_for_space_heat_system(&space_cool_system)?
+                        {
+                            match living_room_control {
+                                Value::Object(ref mut control_map) => {
+                                    control_map.insert(
+                                        "advanced_start".into(),
+                                        Value::Number(Number::from_f64(advanced_start).unwrap()),
+                                    );
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
                         input.add_control("Cooling_LivingRoom", living_room_control)?;
                     }
                 }
@@ -3088,6 +3101,19 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                                     control_map.insert(
                                         "setpoint_max".into(),
                                         Value::Number(Number::from_f64(temp_setback).unwrap()),
+                                    );
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        if let Some(advanced_start) =
+                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                        {
+                            match rest_of_dwelling_control {
+                                Value::Object(ref mut control_map) => {
+                                    control_map.insert(
+                                        "advanced_start".into(),
+                                        Value::Number(Number::from_f64(advanced_start).unwrap()),
                                     );
                                 }
                                 _ => unreachable!(),
