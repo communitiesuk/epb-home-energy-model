@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 pub fn min_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     if first < second {
         first
