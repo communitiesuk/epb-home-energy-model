@@ -1,4 +1,5 @@
 use super::future_homes_standard::{apply_fhs_preprocessing, calc_tfa, minimum_air_change_rate};
+use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::{input::InputForProcessing, output::Output};
 use anyhow::anyhow;
 use csv::WriterBuilder;
@@ -101,7 +102,7 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     }))?;
     input.set_bath(json!({
         "bath for FEE calc": {
-            "size": 73,
+            "size": STANDARD_BATH_SIZE,
             "ColdWaterSource": cold_water_source_name,
             "flowrate": 12.0,
         }
