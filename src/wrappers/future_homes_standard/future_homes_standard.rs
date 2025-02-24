@@ -2606,12 +2606,11 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut blinds_closing_irrad_manual: Vec<Option<f64>> = Default::default();
     let mut blinds_opening_irrad_manual: Vec<Option<f64>> = Default::default();
 
-    // TODO review loop and use of simtime here
-    for _ in simtime.iter() {
-        let hour_of_day = simtime.iter().current_iteration().hour_of_day() as usize;
+    for t_it in simtime.iter() {
+        let hour_of_day = t_it.hour_of_day() as usize;
         // TODO (from Python) Are these waking hours correct? Check consistency with other parts of calculation
         let waking_hours = hour_of_day >= OCCUPANT_WAKING_HR && hour_of_day < OCCUPANT_SLEEPING_HR;
-        let sun_above_horizon = extcond.sun_above_horizon(simtime.iter().current_iteration());
+        let sun_above_horizon = extcond.sun_above_horizon(t_it);
 
         curtain_opening_sched_manual.push(if waking_hours && sun_above_horizon {
             Some(true) // Open during waking hours after sunrise
