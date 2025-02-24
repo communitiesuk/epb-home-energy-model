@@ -2703,32 +2703,29 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for building_element in transparent_building_elements.iter() {
         if let Some(window_treatments) = building_element.treatment() {
             for mut treatment in window_treatments {
-                // TODO do we need setters for all the treatment fields that are set/updated below?
-                treatment.is_open = Some(false);
+                treatment.set_is_open(false);
 
                 match treatment.treatment_type {
                     WindowTreatmentType::Curtains => {
                         if treatment.controls.is_manual() {
-                            treatment.open_control = Some("_curtains_open_manual".to_string());
+                            treatment.set_open_control("_curtains_open_manual");
                         } else {
-                            treatment.open_control = Some("_curtains_open_auto".to_string());
+                            treatment.set_open_control("_curtains_open_auto");
                         }
                     }
                     // blinds are opened and closed in response to solar irradiance incident upon them
                     WindowTreatmentType::Blinds => {
                         if treatment.controls.is_manual() {
                             // manual control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment.closing_irradiance_control =
-                                Some("_blinds_closing_irrad_manual".to_string());
-                            treatment.opening_irradiance_control =
-                                Some("_blinds_opening_irrad_manual".to_string());
+                            treatment
+                                .set_closing_irradiance_control("_blinds_closing_irrad_manual");
+                            treatment
+                                .set_opening_irradiance_control("_blinds_opening_irrad_manual");
                         } else {
                             // automatic control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment.closing_irradiance_control =
-                                Some("_blinds_closing_irrad_auto".to_string());
-                            treatment.opening_irradiance_control =
-                                Some("_blinds_opening_irrad_auto".to_string());
-                            treatment.opening_delay_hrs = 2.;
+                            treatment.set_closing_irradiance_control("_blinds_closing_irrad_auto");
+                            treatment.set_opening_irradiance_control("_blinds_opening_irrad_auto");
+                            treatment.set_opening_delay_hrs(2.);
                         }
                     }
                 }

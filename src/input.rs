@@ -2367,6 +2367,28 @@ pub(crate) struct WindowTreatment {
     pub(crate) opening_delay_hrs: f64,
 }
 
+impl WindowTreatment {
+    pub(crate) fn set_is_open(&mut self, is_open: bool) {
+        self.is_open = Some(is_open);
+    }
+
+    pub(crate) fn set_open_control(&mut self, control: &str) {
+        self.open_control = Some(control.to_string())
+    }
+
+    pub(crate) fn set_closing_irradiance_control(&mut self, control: &str) {
+        self.closing_irradiance_control = Some(control.to_string())
+    }
+
+    pub(crate) fn set_opening_irradiance_control(&mut self, control: &str) {
+        self.opening_irradiance_control = Some(control.to_string())
+    }
+
+    pub(crate) fn set_opening_delay_hrs(&mut self, delay: f64) {
+        self.opening_delay_hrs = delay;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
