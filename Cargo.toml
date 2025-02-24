@@ -38,7 +38,7 @@ rayon = "1.10.0"
 schemars = { version = "0.8.21", optional = true }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.137"
+serde_json = "1.0.139"
 serde_repr = "0.1.19"
 serde_valid = "1.0.4"
 statrs = "0.18.0"
