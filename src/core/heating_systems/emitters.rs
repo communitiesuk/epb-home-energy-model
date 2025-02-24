@@ -1507,10 +1507,13 @@ impl Emitters {
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
 
         // TODO use real method in migration to 0.32 when implemented
-        // let (temp_return_target, blended_temp_flow, flow_rate_m3s) =
-        //     self.return_temp_from_flow_rate(energy_demand, temp_flow_target, temp_return_target);
-        let (temp_return_target, blended_temp_flow, _flow_rate_m3s) =
-            (temp_return_target, Default::default(), 0.);
+        let (temp_return_target, blended_temp_flow, _flow_rate_m3s) = self
+            .return_temp_from_flow_rate(
+                energy_demand,
+                temp_flow_target,
+                temp_return_target,
+                simulation_time,
+            )?;
 
         // Last call to demand_energy_flow_return that updates the heat source state and other internal variables
         // before going to the next timestep.
@@ -1752,22 +1755,21 @@ impl Emitters {
     //
     //     let energy_req_from_heat_source = 0.0;
     //
-    //     // commented out while migrating to 0.32
-    //     // let energy_req_from_heat_source = if energy_demand > 0. {
-    //     //     // Emitters warming up or cooling down to a target temperature
-    //     //     self.energy_required_from_heat_source(
-    //     //         energy_demand,
-    //     //         timestep,
-    //     //         temp_rm_prev,
-    //     //         temp_emitter_max,
-    //     //         temp_return_target,
-    //     //         simulation_time,
-    //     //     )
-    //     //     .0
-    //     // } else {
-    //     //     // Emitters cooling down or at steady-state with heating off
-    //     //     0.
-    //     // };
+    //     let energy_req_from_heat_source = if energy_demand > 0. {
+    //         // Emitters warming up or cooling down to a target temperature
+    //         self.energy_required_from_heat_source(
+    //             energy_demand,
+    //             timestep,
+    //             temp_rm_prev,
+    //             temp_emitter_max,
+    //             temp_return_target,
+    //             simulation_time,
+    //         )
+    //         .0
+    //     } else {
+    //         // Emitters cooling down or at steady-state with heating off
+    //         0.
+    //     };
     //
     //     self.heat_source.read().running_time_throughput_factor(
     //         space_heat_running_time_cumulative,
@@ -2518,8 +2520,6 @@ mod tests {
         assert!(Emitters::format_fancoil_manufacturer_data(&test_data_invalid).is_err());
     }
 
-    #[rstest]
-    //
     #[rstest]
     #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_required_from_heat_source(

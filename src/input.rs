@@ -4788,29 +4788,6 @@ impl InputForProcessing {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn set_load_shifting_demand_timeseries_for_appliance(
-        &mut self,
-        _appliance_name: &str,
-        _timeseries: Vec<f64>,
-    ) {
-        // TODO remove completely during migration to 0.32
-        // if let Some(ApplianceEntry::Object(Appliance {
-        //     load_shifting: Some(ref mut load_shifting),
-        //     ..
-        // })) = ApplianceKey::try_from(appliance_name)
-        //     .ok()
-        //     .and_then(|appliance_key| {
-        //         self.input
-        //             .appliances
-        //             .as_mut()
-        //             .map(|gains| gains.get_mut(&appliance_key))
-        //     })
-        //     .flatten()
-        // {
-        //     load_shifting.demand_timeseries = Some(timeseries);
-        // }
-    }
-
     pub(crate) fn mechanical_ventilations_for_processing(
         &mut self,
     ) -> Vec<&mut impl MechanicalVentilationForProcessing> {
