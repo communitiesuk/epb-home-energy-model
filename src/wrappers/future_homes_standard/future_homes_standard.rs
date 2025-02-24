@@ -873,16 +873,19 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                     }
                 );
                 let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                // TODO 0.32 correct following logic for possibility of multiple space heat systems for a zone
-                if let SystemReference::Single(space_heat_system) = space_heat_system {
-                    input.set_control_string_for_space_heat_system(space_heat_system.as_str(), living_room_space_heat_system_name)?;
-                    let control_schedule = living_room_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
-                        control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
+                match space_heat_system {
+                    SystemReference::Single(space_heat_system) => {
+                        input.set_control_string_for_space_heat_system(space_heat_system.as_str(), living_room_space_heat_system_name)?;
+                        let control_schedule = living_room_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
+                        if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                            control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
+                        }
+                        if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                            control_schedule.insert("advanced_start".to_string(), advanced_start.into());
+                        }
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
-                        control_schedule.insert("advanced_start".to_string(), advanced_start.into());
-                    }
+                    SystemReference::Multiple(_) => bail!("Multiple space heat system references under zone not currently supported for FHS inputs"),
+                    SystemReference::None(_) => {}
                 }
                 input.add_control(living_room_space_heat_system_name, living_room_control)?;
             }
@@ -906,16 +909,19 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                     }
                 );
                 let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                // TODO 0.32 correct following logic for possibility of multiple space heat systems for a zone
-                if let SystemReference::Single(space_heat_system) = space_heat_system {
-                    input.set_control_string_for_space_heat_system(space_heat_system.as_str(), rest_of_dwelling_space_heat_system_name)?;
-                    let control_schedule = rest_of_dwelling_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
-                        control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
+                match space_heat_system {
+                    SystemReference::Single(space_heat_system) => {
+                        input.set_control_string_for_space_heat_system(space_heat_system.as_str(), rest_of_dwelling_space_heat_system_name)?;
+                        let control_schedule = rest_of_dwelling_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
+                        if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                            control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
+                        }
+                        if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                            control_schedule.insert("advanced_start".to_string(), advanced_start.into());
+                        }
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
-                        control_schedule.insert("advanced_start".to_string(), advanced_start.into());
-                    }
+                    SystemReference::Multiple(_) => bail!("Multiple space heat systems defined on a zone are not currently supported for FHS inputs"),
+                    SystemReference::None(_) => {}
                 }
                 input.add_control(rest_of_dwelling_space_heat_system_name, rest_of_dwelling_control)?;
             }
@@ -2341,31 +2347,31 @@ fn appliance_kwh_cycle_loading_factor(
 }
 
 fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow::Result<()> {
-    let mut _24h_input = input.clone();
+    let mut input_24h = input.clone();
     let range = (HOURS_PER_DAY as f64 / SIMTIME_STEP).ceil() as usize;
-    let _24h_0s_by_supply = IndexMap::from([
+    let zeros_24h_by_supply = IndexMap::from([
         (ENERGY_SUPPLY_NAME_ELECTRICITY.to_string(), vec![0.; range]),
         (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
     ]);
 
-    _24h_input.set_non_appliance_demand_24hr(_24h_0s_by_supply.clone())?;
+    input_24h.set_non_appliance_demand_24hr(zeros_24h_by_supply.clone())?;
 
-    _24h_input.set_battery24hr(SmartApplianceBattery {
-        energy_into_battery_from_generation: _24h_0s_by_supply.clone(),
-        energy_out_of_battery: _24h_0s_by_supply.clone(),
-        energy_into_battery_from_grid: _24h_0s_by_supply.clone(),
-        battery_state_of_charge: _24h_0s_by_supply.clone(),
+    input_24h.set_battery24hr(SmartApplianceBattery {
+        energy_into_battery_from_generation: zeros_24h_by_supply.clone(),
+        energy_out_of_battery: zeros_24h_by_supply.clone(),
+        energy_into_battery_from_grid: zeros_24h_by_supply.clone(),
+        battery_state_of_charge: zeros_24h_by_supply.clone(),
     })?;
 
-    _24h_input.set_simulation_time(simtime());
+    input_24h.set_simulation_time(simtime());
 
     // create a corpus instance
     let output_options = OutputOptions {
         print_heat_balance: sim_settings.heat_balance,
         detailed_output_heating_cooling: sim_settings.detailed_output_heating_cooling,
     };
-    // TODO review output_options and external_conditions below
-    let corpus = Corpus::from_inputs(_24h_input.as_input(), None, &output_options)?;
+
+    let corpus = Corpus::from_inputs(input_24h.as_input(), None, &output_options)?;
 
     // Run main simulation sim
     let results = corpus.run()?;
@@ -3031,100 +3037,102 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
         if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
             match space_heat_control {
                 SpaceHeatControlType::LivingRoom => {
-                    // TODO 0.32 correct following logic to allow for possible multiple cool systems on zone
-                    if let SystemReference::Single(space_cool_system) =
-                        input.space_cool_system_for_zone(zone_key)?
-                    {
-                        let mut living_room_control = json!({
-                            "type": "SetpointTimeControl",
-                            "start_day": 0,
-                            "time_series_step": 0.5,
-                            "schedule": {
-                                "main": [{"repeat": 53, "value": "week"}],
-                                "week": [{"repeat": 5, "value": "weekday"},
-                                        {"repeat": 2, "value": "weekend"}],
-                                "weekday": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKDAY.to_vec(),
-                                "weekend": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKEND.to_vec(),
-                            }
-                        });
-                        input.set_control_string_for_space_cool_system(
-                            &space_cool_system,
-                            "Cooling_LivingRoom",
-                        )?;
-                        if let Some(temp_setback) =
-                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
-                        {
-                            match living_room_control {
-                                Value::Object(ref mut control_map) => {
-                                    control_map.insert(
-                                        "setpoint_max".into(),
-                                        Value::Number(Number::from_f64(temp_setback).unwrap()),
-                                    );
+                    match input.space_cool_system_for_zone(zone_key)? {
+                        SystemReference::Single(space_cool_system) => {
+                            let mut living_room_control = json!({
+                                "type": "SetpointTimeControl",
+                                "start_day": 0,
+                                "time_series_step": 0.5,
+                                "schedule": {
+                                    "main": [{"repeat": 53, "value": "week"}],
+                                    "week": [{"repeat": 5, "value": "weekday"},
+                                            {"repeat": 2, "value": "weekend"}],
+                                    "weekday": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKDAY.to_vec(),
+                                    "weekend": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKEND.to_vec(),
                                 }
-                                _ => unreachable!(),
-                            }
-                        }
-                        if let Some(advanced_start) =
-                            input.advanced_start_for_space_heat_system(&space_cool_system)?
-                        {
-                            match living_room_control {
-                                Value::Object(ref mut control_map) => {
-                                    control_map.insert(
-                                        "advanced_start".into(),
-                                        Value::Number(Number::from_f64(advanced_start).unwrap()),
-                                    );
+                            });
+                            input.set_control_string_for_space_cool_system(
+                                &space_cool_system,
+                                "Cooling_LivingRoom",
+                            )?;
+                            if let Some(temp_setback) =
+                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                            {
+                                match living_room_control {
+                                    Value::Object(ref mut control_map) => {
+                                        control_map.insert(
+                                            "setpoint_max".into(),
+                                            Value::Number(Number::from_f64(temp_setback).unwrap()),
+                                        );
+                                    }
+                                    _ => unreachable!(),
                                 }
-                                _ => unreachable!(),
                             }
+                            if let Some(advanced_start) =
+                                input.advanced_start_for_space_heat_system(&space_cool_system)?
+                            {
+                                match living_room_control {
+                                    Value::Object(ref mut control_map) => {
+                                        control_map.insert(
+                                            "advanced_start".into(),
+                                            Value::Number(Number::from_f64(advanced_start).unwrap()),
+                                        );
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            input.add_control("Cooling_LivingRoom", living_room_control)?;
                         }
-                        input.add_control("Cooling_LivingRoom", living_room_control)?;
+                        SystemReference::Multiple(_) => bail!("Multiple space heat systems references in zones not currently supported for FHS inputs"),
+                        SystemReference::None(_) => {}
                     }
                 }
                 SpaceHeatControlType::RestOfDwelling => {
-                    // TODO 0.32 correct following logic to allow for possible multiple cool systems on zone
-                    if let SystemReference::Single(space_cool_system) =
-                        input.space_cool_system_for_zone(zone_key)?
-                    {
-                        let mut rest_of_dwelling_control = json!({
-                            "type": "SetpointTimeControl",
-                            "start_day": 0,
-                            "time_series_step": 0.5,
-                            "schedule": {
-                                "main": [{"repeat": 365, "value": "day"}],
-                                "day": COOLING_SUBSCHEDULE_RESTOFDWELLING.to_vec(),
-                            }
-                        });
-                        input.set_control_string_for_space_cool_system(
-                            &space_cool_system,
-                            "Cooling_RestOfDwelling",
-                        )?;
-                        if let Some(temp_setback) =
-                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
-                        {
-                            match rest_of_dwelling_control {
-                                Value::Object(ref mut control_map) => {
-                                    control_map.insert(
-                                        "setpoint_max".into(),
-                                        Value::Number(Number::from_f64(temp_setback).unwrap()),
-                                    );
+                    match input.space_cool_system_for_zone(zone_key)? {
+                        SystemReference::Single(space_cool_system) => {
+                            let mut rest_of_dwelling_control = json!({
+                                "type": "SetpointTimeControl",
+                                "start_day": 0,
+                                "time_series_step": 0.5,
+                                "schedule": {
+                                    "main": [{"repeat": 365, "value": "day"}],
+                                    "day": COOLING_SUBSCHEDULE_RESTOFDWELLING.to_vec(),
                                 }
-                                _ => unreachable!(),
-                            }
-                        }
-                        if let Some(advanced_start) =
-                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
-                        {
-                            match rest_of_dwelling_control {
-                                Value::Object(ref mut control_map) => {
-                                    control_map.insert(
-                                        "advanced_start".into(),
-                                        Value::Number(Number::from_f64(advanced_start).unwrap()),
-                                    );
+                            });
+                            input.set_control_string_for_space_cool_system(
+                                &space_cool_system,
+                                "Cooling_RestOfDwelling",
+                            )?;
+                            if let Some(temp_setback) =
+                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                            {
+                                match rest_of_dwelling_control {
+                                    Value::Object(ref mut control_map) => {
+                                        control_map.insert(
+                                            "setpoint_max".into(),
+                                            Value::Number(Number::from_f64(temp_setback).unwrap()),
+                                        );
+                                    }
+                                    _ => unreachable!(),
                                 }
-                                _ => unreachable!(),
                             }
+                            if let Some(advanced_start) =
+                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                            {
+                                match rest_of_dwelling_control {
+                                    Value::Object(ref mut control_map) => {
+                                        control_map.insert(
+                                            "advanced_start".into(),
+                                            Value::Number(Number::from_f64(advanced_start).unwrap()),
+                                        );
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            input.add_control("Cooling_RestOfDwelling", rest_of_dwelling_control)?;
                         }
-                        input.add_control("Cooling_RestOfDwelling", rest_of_dwelling_control)?;
+                        SystemReference::Multiple(_) => bail!("Multiple space cool systems references in zones not currently supported for FHS inputs"),
+                        SystemReference::None(_) => {}
                     }
                 }
             }
