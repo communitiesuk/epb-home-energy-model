@@ -1941,7 +1941,7 @@ pub struct ZoneLighting {
     bulbs: Option<IndexMap<String, ZoneLightingBulbs>>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1949,6 +1949,12 @@ pub(crate) struct ZoneLightingBulbs {
     count: usize,
     power: f64,
     efficacy: f64,
+}
+
+impl ZoneLightingBulbs {
+    pub(crate) fn capacity(&self) -> f64 {
+        self.count as f64 * self.power * self.efficacy
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -3795,6 +3801,25 @@ impl InputForProcessing {
             lighting.efficacy = efficacy;
         }
         self
+    }
+
+    pub fn all_zones_have_bulbs(&self) -> bool {
+        self.input.zone.values().all(|zone| {
+            zone.lighting
+                .as_ref()
+                .is_some_and(|lighting| lighting.bulbs.is_some())
+        })
+    }
+
+    pub fn light_bulbs_for_all_zones(&self) -> Vec<ZoneLightingBulbs> {
+        self.input
+            .zone
+            .values()
+            .filter_map(|zone| zone.lighting.as_ref())
+            .filter_map(|lighting| lighting.bulbs.as_ref())
+            .flat_map(|bulbs| bulbs.values())
+            .copied()
+            .collect_vec()
     }
 
     pub fn set_control_window_opening_for_zone(

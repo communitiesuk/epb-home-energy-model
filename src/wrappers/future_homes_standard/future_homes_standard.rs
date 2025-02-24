@@ -14,7 +14,7 @@ use crate::input::{
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
     MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
     SystemReference, TransparentBuildingElement, VentType, WaterHeatingEvent,
-    WaterHeatingEventType, WindowTreatmentType,
+    WaterHeatingEventType, WindowTreatmentType, ZoneLightingBulbs,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -1464,7 +1464,7 @@ fn create_lighting_gains(
 
     // from analysis of EFUS 2017 data (updated to derive from harmonic mean)
     let lumens = 1_139. * (total_floor_area * number_of_occupants).powf(0.39);
-    let mut topup = top_up_lighting(input, lumens);
+    let mut topup = top_up_lighting(input, lumens)?;
     topup /= 21.3; // assumed efficacy of top up lighting
     let topup_per_day = topup / 365_f64;
 
@@ -3497,8 +3497,29 @@ fn shading_factor(
         .collect()
 }
 
-fn top_up_lighting(input: &InputForProcessing, l_req: f64) -> f64 {
-    todo!()
+fn top_up_lighting(input: &InputForProcessing, l_req: f64) -> anyhow::Result<f64> {
+    if !input.all_zones_have_bulbs() {
+        bail!("At least one zone has lighting that does not have bulbs defined.");
+    }
+
+    let capacity_tot = input
+        .light_bulbs_for_all_zones()
+        .iter()
+        .map(ZoneLightingBulbs::capacity)
+        .sum::<f64>();
+
+    let tfa = calc_tfa(input);
+    let capacity_ref = 330. * tfa;
+
+    let l_prov = l_req * (capacity_tot / capacity_ref);
+
+    let l_topup = if l_prov < (l_req / 3.) {
+        (l_req / 3.) - l_prov
+    } else {
+        0.
+    };
+
+    Ok(l_topup)
 }
 
 #[derive(Clone, Copy)]
