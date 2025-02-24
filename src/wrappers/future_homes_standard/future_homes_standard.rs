@@ -1,4 +1,3 @@
-use crate::compare_floats::order_of_2;
 use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
 use crate::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
@@ -1671,7 +1670,7 @@ fn create_appliance_gains(
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
-    let mut priority: IndexMap<ApplianceKey, Vec<Option<f64>>> = Default::default();
+    let mut priority: IndexMap<ApplianceKey, (Option<isize>, f64)> = Default::default();
     let mut power_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
     let mut weight_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
     // loop through appliances in the assessment.
@@ -1722,10 +1721,7 @@ fn create_appliance_gains(
 
                 // establish priority between appliances based on user defined priority,
                 // and failing that, demand per cycle
-                priority.insert(
-                    appliance_key,
-                    vec![load_shifting.priority.map(|p| p as f64), Some(kwhcycle)],
-                );
+                priority.insert(appliance_key, (load_shifting.priority, kwhcycle));
 
                 let mut load_shifting = load_shifting.clone();
                 // create year long cost profile
@@ -1748,7 +1744,7 @@ fn create_appliance_gains(
             } else {
                 // only add demand from appliances that DO NOT have loadshifting to the demands
                 power_scheds.insert(appliance_key, app.flat_schedule.clone());
-                priority.insert(appliance_key, vec![None, Some(kwhcycle)]);
+                priority.insert(appliance_key, (None, kwhcycle));
                 None
             };
 
@@ -1784,7 +1780,7 @@ fn create_appliance_gains(
                 .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
                 .collect();
             power_scheds.insert(appliance_key, flat_schedule.clone());
-            priority.insert(appliance_key, vec![None, Some(kwhcycle)]);
+            priority.insert(appliance_key, (None, kwhcycle));
 
             let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
@@ -1896,29 +1892,34 @@ fn create_appliance_gains(
     // work out order in which to process loadshifting appliances
     let defined_priority = priority
         .iter()
-        .filter_map(|(appliance_name, priorities)| {
-            if priorities[0].is_some() {
-                Some(appliance_name)
-            } else {
-                None
-            }
-        })
+        .filter_map(|(appliance_name, priorities)| priorities.0.map(|_| appliance_name))
         .collect::<Vec<&ApplianceKey>>();
 
-    let mut first_priority_ranks: Vec<f64> = defined_priority
+    let mut first_priority_ranks: Vec<isize> = defined_priority
         .iter()
         .filter_map(|appliance_name| priority.get(appliance_name.to_owned()))
-        .filter_map(|p| p[0])
+        .filter_map(|p| p.0)
         .collect_vec();
 
-    first_priority_ranks.append(&mut vec![0.]);
+    first_priority_ranks.append(&mut vec![0]);
 
-    let lowest_priority = first_priority_ranks
-        .iter()
-        .max_by(|first, second| order_of_2(*first, *second))
-        .unwrap();
+    let lowest_priority = first_priority_ranks.iter().max().unwrap();
 
-    todo!();
+    let priority_kwhcycle: Vec<ApplianceKey> = priority.clone()
+        .sorted_by(|_, (_, kwhcycle1), _, (_, kwhcycle2)| kwhcycle1.total_cmp(kwhcycle2))
+        .filter(|(_, (priority, _))| priority.is_none())
+        .rev()
+        .map(|x| x.0)
+        .collect();
+    
+    for appliance in priority.keys() {
+        let new_priority = if defined_priority.contains(&appliance) {
+            defined_priority.iter().position(|&a| a == appliance).unwrap() as isize
+        } else {
+            priority_kwhcycle.iter().position(|a| a == appliance).unwrap() as isize + *lowest_priority
+        };
+        input.set_priority_for_gains_appliance(new_priority, appliance)?;
+    }
 
     Ok(())
 }

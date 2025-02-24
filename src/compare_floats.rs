@@ -16,16 +16,6 @@ pub fn max_of_2<T: PartialOrd + Copy>(first: T, second: T) -> T {
     }
 }
 
-pub fn order_of_2<T: PartialOrd + Copy>(first: T, second: T) -> Ordering {
-    if first > second {
-        Ordering::Greater
-    } else if second > first {
-        Ordering::Less
-    } else {
-        Ordering::Equal
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

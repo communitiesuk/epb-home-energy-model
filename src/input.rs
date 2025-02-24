@@ -3331,6 +3331,12 @@ impl From<ApplianceKey> for String {
     }
 }
 
+impl From<&ApplianceKey> for String {
+    fn from(appliance_key: &ApplianceKey) -> Self {
+        appliance_key.to_string()
+    }
+}
+
 impl TryFrom<&str> for ApplianceKey {
     type Error = anyhow::Error;
 
@@ -3428,7 +3434,7 @@ impl Appliance {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) priority: Option<usize>,
+    pub(crate) priority: Option<isize>,
     pub(crate) max_shift_hrs: f64,
     pub(crate) demand_limit_weighted: f64,
     pub(crate) weight: WeightLabel,
@@ -4125,6 +4131,21 @@ impl InputForProcessing {
 
     pub fn clear_appliance_gains(&mut self) {
         self.input.appliance_gains.clear();
+    }
+
+    pub(crate) fn set_priority_for_gains_appliance(
+        &mut self,
+        priority: isize,
+        appliance: &ApplianceKey,
+    ) -> anyhow::Result<()> {
+        self.input
+            .appliance_gains
+            .get_mut(&String::from(appliance))
+            .ok_or_else(|| anyhow!("Encountered bad appliance gains reference {appliance:?}"))?
+            .priority
+            .replace(priority);
+
+        Ok(())
     }
 
     pub fn fuel_type_for_energy_supply_field(&self, field: &str) -> anyhow::Result<String> {
