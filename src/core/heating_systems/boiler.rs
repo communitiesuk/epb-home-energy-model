@@ -444,7 +444,7 @@ impl Boiler {
                 let corrected_part_load_gross = corrected_part_load_net * net_to_gross;
 
                 // SAP model properties
-                let room_temperature = 19.5; // TODO in the Python there is a todo to make this less hard-coded
+                let room_temperature = 19.5; // TODO (from Python) use actual room temp instead of hard coding
 
                 // 30 is the nominal temperature difference between boiler and test room
                 // during standby loss test (EN15502-1 or EN15034)
