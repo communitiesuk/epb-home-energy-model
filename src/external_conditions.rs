@@ -351,7 +351,7 @@ impl ExternalConditions {
         self.air_temps[idx]
     }
 
-    fn air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
+    fn _air_temp_for_timestep_idx(&self, timestep_idx: usize) -> f64 {
         self.air_temps[timestep_idx]
     }
 
@@ -509,6 +509,7 @@ impl ExternalConditions {
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the inclined
     ///                   surface normal, -180 to 180, in degrees;
+    #[cfg(test)]
     fn sun_surface_azimuth(&self, orientation: f64, simtime: SimulationTimeIteration) -> f64 {
         let current_hour = simtime.current_hour();
         let test_angle = self.solar_hour_angles[current_hour as usize] - orientation;
@@ -529,6 +530,7 @@ impl ExternalConditions {
     ///
     /// * `tilt` - is the tilt angle of the inclined surface from horizontal, measured
     ///            upwards facing, 0 to 180, in degrees;
+    #[cfg(test)]
     fn sun_surface_tilt(&self, tilt: f64, simtime: SimulationTimeIteration) -> f64 {
         let current_hour = simtime.current_hour();
         let test_angle = tilt - self.solar_zenith_angles[current_hour as usize];
@@ -2963,10 +2965,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_init_direct_beam_radiation(
-        external_conditions: ExternalConditions,
-        direct_beam_conversion_needed: bool,
-    ) {
+    fn test_init_direct_beam_radiation(direct_beam_conversion_needed: bool) {
         // Check with direct_beam_conversion_needed = false
         assert_eq!(
             init_direct_beam_radiation(direct_beam_conversion_needed, 100., 5.0),

@@ -3963,7 +3963,7 @@ impl HeatSource {
             }
         }
     }
-    pub(crate) fn demand_energy(
+    pub(crate) fn _demand_energy(
         &mut self,
         energy_demand: f64,
         temp_return: f64,

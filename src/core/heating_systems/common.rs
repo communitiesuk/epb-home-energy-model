@@ -134,7 +134,7 @@ impl SpaceHeatSystem {
         }
     }
 
-    pub fn running_time_throughput_factor(
+    pub fn _running_time_throughput_factor(
         &self,
         energy_demand: f64,
         space_heat_running_time_cumulative: f64,

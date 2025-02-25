@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct ElectricBattery {
     /// the maximum capacity of the battery
-    capacity: f64,
+    _capacity: f64,
     /// charge/discharge round trip efficiency of battery system (between 0 & 1)
     charge_discharge_efficiency: f64,
     minimum_charge_rate: f64,
@@ -61,7 +61,7 @@ impl ElectricBattery {
         let reverse_one_way_battery_efficiency = 1. / one_way_battery_efficiency;
 
         Self {
-            capacity,
+            _capacity: capacity,
             charge_discharge_efficiency,
             minimum_charge_rate,
             maximum_charge_rate,

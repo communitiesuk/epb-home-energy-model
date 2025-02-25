@@ -115,7 +115,7 @@ impl HeatNetworkServiceWaterStorage {
         }
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn _temp_setpnt(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
