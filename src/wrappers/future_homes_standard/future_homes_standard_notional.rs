@@ -1357,7 +1357,7 @@ fn calc_design_capacity(
 /// Initialise temperature setpoints for all zones.
 /// The initial set point is needed to call the Project class.
 /// Set as 18C for now. The FHS wrapper will overwrite temp_setpnt_init '''
-fn initialise_temperature_setpoints(input: &mut InputForProcessing) -> anyhow::Result<()> {
+fn _initialise_temperature_setpoints(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for zone_key in input.zone_keys() {
         input.set_init_temp_setpoint_for_zone(zone_key.as_str(), 18.)?;
     }
