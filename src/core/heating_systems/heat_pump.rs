@@ -1333,7 +1333,7 @@ pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
     control: Arc<Control>,
-    control_min: Arc<Control>,
+    _control_min: Arc<Control>,
     control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<ColdWaterSource>,
@@ -1355,7 +1355,7 @@ impl HeatPumpServiceWater {
             heat_pump,
             service_name,
             control,
-            control_min,
+            _control_min: control_min,
             control_max,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
                 "Upper temp limit for heat pump is never expected to be below absolute zero.",
@@ -1369,12 +1369,12 @@ impl HeatPumpServiceWater {
         self.control.is_on(simtime)
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn _temp_setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.setpnt(&simulation_time_iteration),
+            self._control_min.setpnt(&simulation_time_iteration),
             self.control_max.setpnt(&simulation_time_iteration),
         )
     }
@@ -4291,7 +4291,7 @@ pub struct HeatPumpHotWaterOnly {
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
     control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    _control_max: Arc<Control>,
     initial_efficiency: f64,
     tank_volume: f64,
     daily_losses: f64,
@@ -4359,7 +4359,7 @@ impl HeatPumpHotWaterOnly {
             energy_supply_connection,
             simulation_timestep,
             control_min,
-            control_max,
+            _control_max: control_max,
             initial_efficiency: Self::init_efficiency(&efficiencies, vol_daily_average),
             tank_volume,
             daily_losses,
@@ -4429,13 +4429,13 @@ impl HeatPumpHotWaterOnly {
         self.initial_efficiency * in_use_factor_mismatch
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn _temp_setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simulation_time_iteration),
-            self.control_max.setpnt(&simulation_time_iteration),
+            self._control_max.setpnt(&simulation_time_iteration),
         )
     }
 

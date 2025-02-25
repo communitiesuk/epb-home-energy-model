@@ -1251,7 +1251,7 @@ pub(crate) struct BuildingElementOpaque {
     external_conditions: Arc<ExternalConditions>,
     shading: Option<Vec<WindowShadingObject>>,
     r_c: f64,
-    internal_pitch: f64,
+    _internal_pitch: f64,
     external_pitch: f64,
     a_sol: f64,
     base_height: f64,
@@ -1308,7 +1308,7 @@ impl BuildingElementOpaque {
             external_conditions,
             shading: None,
             r_c: Default::default(),
-            internal_pitch: if is_unheated_pitched_roof { 0. } else { pitch },
+            _internal_pitch: if is_unheated_pitched_roof { 0. } else { pitch },
             external_pitch: pitch,
             a_sol,
             base_height,
@@ -1359,6 +1359,7 @@ impl BuildingElementOpaque {
         self.external_conditions.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn r_si(&self) -> f64 {
         HeatTransferInternal::r_si(self)
     }
@@ -1584,6 +1585,7 @@ impl BuildingElementAdjacentZTC {
         HeatTransferOtherSideConditionedSpace::h_re(self)
     }
 
+    #[cfg(test)]
     pub(crate) fn r_si(&self) -> f64 {
         HeatTransferInternal::r_si(self)
     }
@@ -2145,10 +2147,12 @@ impl BuildingElementGround {
         HeatTransferOtherSideGround::h_re(self)
     }
 
+    #[cfg(test)]
     pub(crate) fn r_si(&self) -> f64 {
         HeatTransferInternal::r_si(self)
     }
 
+    #[cfg(test)]
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
         HeatTransferOtherSideGround::temp_ext(self, simtime)
     }
@@ -2452,7 +2456,7 @@ impl WindowTreatment {
 #[derive(Debug)]
 pub(crate) struct BuildingElementTransparent {
     area: f64,
-    mid_height: f64,
+    _mid_height: f64,
     g_value: f64,
     external_conditions: Arc<ExternalConditions>,
     frame_area_fraction: f64,
@@ -2504,7 +2508,7 @@ impl BuildingElementTransparent {
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         let mut new_trans = Self {
-            mid_height: base_height + height / 2.,
+            _mid_height: base_height + height / 2.,
             g_value,
             external_conditions,
             frame_area_fraction,
@@ -3905,9 +3909,6 @@ mod tests {
         }
     }
 
-    // following test seems incomplete - Python test only seems to exercise the first building element in the list, and other elements come out with different values
-
-    #[ignore = "this faulty test has been superseded upstream by a more complex (and working!) test"]
     #[rstest]
     fn test_temp_ext_for_ground(
         ground_building_elements: [BuildingElementGround; 5],

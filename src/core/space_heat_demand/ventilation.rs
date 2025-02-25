@@ -1404,7 +1404,6 @@ pub(crate) struct InfiltrationVentilation {
     p_a_alt: f64,
     total_volume: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
-    ventilation_zone_base_height: f64,
     #[cfg(test)] // optional behaviour override for tests, akin to mocking
     calc_air_changes_fn: Option<
         fn(
@@ -1482,7 +1481,6 @@ impl InfiltrationVentilation {
             p_a_alt: adjust_air_density_for_altitude(altitude),
             total_volume,
             detailed_results: Default::default(),
-            ventilation_zone_base_height,
             #[cfg(test)]
             calc_air_changes_fn: None,
         }
@@ -2546,6 +2544,7 @@ impl VentilationDetailedResult {
         vec![
             self.timestep_index.to_string(),
             self.reporting_flag.to_string(),
+            self.r_v_arg.to_string(),
             self.incoming_air_flow.to_string(),
             self.total_volume.to_string(),
             self.air_changes_per_hour.to_string(),

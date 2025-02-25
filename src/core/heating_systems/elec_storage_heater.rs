@@ -526,6 +526,7 @@ impl ElecStorageHeater {
         Ok(soc * f64::from(self.n_units))
     }
 
+    #[cfg(test)]
     pub(crate) fn energy_output_max(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,

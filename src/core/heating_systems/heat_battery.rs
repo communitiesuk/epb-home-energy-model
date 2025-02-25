@@ -24,7 +24,7 @@ pub struct HeatBatteryServiceWaterRegular {
     heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
     control: Arc<Control>,
-    control_min: Arc<Control>,
+    _control_min: Arc<Control>,
     control_max: Arc<Control>,
 }
 
@@ -46,17 +46,17 @@ impl HeatBatteryServiceWaterRegular {
             heat_battery,
             service_name,
             control,
-            control_min,
+            _control_min: control_min,
             control_max,
         }
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn _temp_setpnt(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.setpnt(simulation_time_iteration),
+            self._control_min.setpnt(simulation_time_iteration),
             self.control_max.setpnt(simulation_time_iteration),
         )
     }

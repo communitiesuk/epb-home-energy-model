@@ -88,7 +88,7 @@ pub struct HeatNetworkServiceWaterStorage {
     heat_network: Arc<Mutex<HeatNetwork>>,
     service_name: String,
     control: Arc<Control>,
-    control_min: Arc<Control>,
+    _control_min: Arc<Control>,
     control_max: Arc<Control>,
 }
 
@@ -110,7 +110,7 @@ impl HeatNetworkServiceWaterStorage {
             heat_network,
             service_name,
             control,
-            control_min,
+            _control_min: control_min,
             control_max,
         }
     }
@@ -120,7 +120,7 @@ impl HeatNetworkServiceWaterStorage {
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self.control_min.setpnt(simulation_time_iteration),
+            self._control_min.setpnt(simulation_time_iteration),
             self.control_max.setpnt(simulation_time_iteration),
         )
     }

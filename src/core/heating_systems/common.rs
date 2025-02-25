@@ -341,7 +341,7 @@ impl SpaceHeatingService {
         }
     }
 
-    pub(crate) fn running_time_throughput_factor(
+    pub(crate) fn _running_time_throughput_factor(
         &self,
         space_heat_running_time_cumulative: f64,
         energy_demand: f64,
