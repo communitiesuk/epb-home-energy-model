@@ -1050,7 +1050,6 @@ pub enum HeatSource {
         control_min: Option<String>,
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
-        // TODO 0.32 determine whether 'Control' field has been replaced by new 'Controlmin' and 'Controlmax'
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
@@ -1096,7 +1095,6 @@ pub enum HeatSource {
         control_min: Option<String>,
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
-        // TODO 0.32 determine whether 'Control' field has been replaced by new 'Controlmin' and 'Controlmax'
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
@@ -1119,9 +1117,6 @@ pub enum HeatSource {
         control_min: String,
         #[serde(rename = "Controlmax")]
         control_max: String,
-        // TODO 0.32 determine whether 'Control' field has been replaced by new 'Controlmin' and 'Controlmax'
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<HeatSourceControlType>,
         heater_position: f64,
         thermostat_position: f64,
     },

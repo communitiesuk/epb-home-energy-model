@@ -219,8 +219,8 @@ impl SpaceHeatSystem {
             }
             SpaceHeatSystem::Instant(instant) => Ok(instant.energy_output_min()),
             SpaceHeatSystem::WarmAir(warm_air) => Ok(warm_air.energy_output_min()),
-            SpaceHeatSystem::WetDistribution(_wet_distribution) => {
-                unimplemented!("TODO as part of 0.32 migration")
+            SpaceHeatSystem::WetDistribution(wet_distribution) => {
+                Ok(wet_distribution.energy_output_min(simulation_time_iteration))
             }
         }
     }

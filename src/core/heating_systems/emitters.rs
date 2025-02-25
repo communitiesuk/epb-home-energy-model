@@ -1506,7 +1506,6 @@ impl Emitters {
         // and 6/7th rule to calculate the initial return temperature
         let (temp_flow_target, temp_return_target) = self.temp_flow_return(&simulation_time);
 
-        // TODO use real method in migration to 0.32 when implemented
         let (temp_return_target, blended_temp_flow, _flow_rate_m3s) = self
             .return_temp_from_flow_rate(
                 energy_demand,
