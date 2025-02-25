@@ -223,8 +223,7 @@ pub struct HeatBattery {
     q_in_ts: Option<f64>,
     q_out_ts: Option<f64>,
     q_loss_ts: Option<f64>,
-    // TODO - check upstream whether it's an error that these numbers are not used
-    labs_tests_rated_output: Vec<(f64, f64)>,
+    _labs_tests_rated_output: Vec<(f64, f64)>,
     labs_tests_rated_output_enhanced: Vec<(f64, f64)>,
     labs_tests_losses: Vec<(f64, f64)>,
 }
@@ -299,7 +298,7 @@ impl HeatBattery {
             q_in_ts: Default::default(),
             q_out_ts: Default::default(),
             q_loss_ts: Default::default(),
-            labs_tests_rated_output,
+            _labs_tests_rated_output: labs_tests_rated_output,
             labs_tests_rated_output_enhanced,
             labs_tests_losses,
         }
