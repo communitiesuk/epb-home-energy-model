@@ -720,8 +720,6 @@ impl Corpus {
             event_schedules,
         )?;
 
-        let _opening_area_total_from_zones = opening_area_total_from_zones(&input.zone);
-
         let total_volume = input.zone.values().map(|zone| zone.volume).sum::<f64>();
 
         let mut heat_system_name_for_zone: IndexMap<String, Vec<String>> = Default::default();
@@ -3448,20 +3446,6 @@ fn schedule_event_from_input(
         event_type,
         existing_schedule,
     )
-}
-
-fn opening_area_total_from_zones(zones: &ZoneDictionary) -> f64 {
-    zones
-        .iter()
-        .flat_map(|(_, zone)| {
-            zone.building_elements
-                .iter()
-                .map(|(_, building_element)| match building_element {
-                    BuildingElementInput::Transparent { height, width, .. } => height * width,
-                    _ => 0.,
-                })
-        })
-        .sum()
 }
 
 fn thermal_bridging_from_input(input: &ThermalBridgingInput) -> ThermalBridging {
