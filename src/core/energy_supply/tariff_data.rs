@@ -1,16 +1,9 @@
+use crate::input::EnergySupplyTariff;
 use anyhow::anyhow;
 use serde::Deserialize;
 use std::io::Read;
 
 /// This module contains data on the energy tariffs.
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Tariff {
-    Standard,
-    SevenHourOffPeak,
-    TenHourOffPeak,
-    VariableTimeOfDay,
-}
 
 #[derive(Clone, Debug)]
 pub(super) struct TariffData {
@@ -30,12 +23,12 @@ struct TariffRow {
 }
 
 impl TariffRow {
-    fn get(&self, tariff: &Tariff) -> f64 {
+    fn get(&self, tariff: &EnergySupplyTariff) -> f64 {
         match tariff {
-            Tariff::Standard => self.standard,
-            Tariff::SevenHourOffPeak => self.seven_hour_off_peak,
-            Tariff::TenHourOffPeak => self.ten_hour_off_peak,
-            Tariff::VariableTimeOfDay => self.variable_time_of_day,
+            EnergySupplyTariff::Standard => self.standard,
+            EnergySupplyTariff::SevenHourOffPeak => self.seven_hour_off_peak,
+            EnergySupplyTariff::TenHourOffPeak => self.ten_hour_off_peak,
+            EnergySupplyTariff::VariableTimeOfDay => self.variable_time_of_day,
         }
     }
 }
@@ -51,7 +44,11 @@ impl TariffData {
         })
     }
 
-    pub(super) fn price(&self, tariff: &Tariff, timestep_id: usize) -> anyhow::Result<f64> {
+    pub(super) fn price(
+        &self,
+        tariff: &EnergySupplyTariff,
+        timestep_id: usize,
+    ) -> anyhow::Result<f64> {
         // TODO (from Python) Current solution is based on tariff data file that has at least as many timesteps (whatever length)
         //                    as the simtime object in the json file. This will need to be revisited when tariffs move to
         //                    PCDB and its processing is integrated alongside other database objects.
@@ -79,7 +76,7 @@ mod tests {
         let tariff_data = TariffData::new(data).unwrap();
         assert_eq!(
             tariff_data
-                .price(&Tariff::VariableTimeOfDay, 10644)
+                .price(&EnergySupplyTariff::VariableTimeOfDay, 10644)
                 .unwrap(),
             22.92342657
         );

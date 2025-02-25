@@ -66,7 +66,7 @@ pub(crate) struct SimSettings {
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
     _use_fast_solver: bool,
-    _tariff_data_filename: Option<String>,
+    tariff_data_filename: Option<String>,
 }
 
 pub fn apply_fhs_preprocessing(
@@ -79,7 +79,7 @@ pub fn apply_fhs_preprocessing(
         heat_balance: false,
         detailed_output_heating_cooling: false,
         _use_fast_solver: false,
-        _tariff_data_filename: None,
+        tariff_data_filename: None,
     };
 
     let sim_settings = sim_settings.unwrap_or(default_sim_settings);
@@ -2369,7 +2369,15 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         detailed_output_heating_cooling: sim_settings.detailed_output_heating_cooling,
     };
 
-    let corpus = Corpus::from_inputs(input_24h.as_input(), None, &output_options)?;
+    let corpus = Corpus::from_inputs(
+        input_24h.as_input(),
+        None,
+        sim_settings
+            .tariff_data_filename
+            .as_ref()
+            .map(String::as_str),
+        &output_options,
+    )?;
 
     // Run main simulation sim
     let results = corpus.run()?;

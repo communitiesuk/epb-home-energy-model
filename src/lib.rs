@@ -65,6 +65,7 @@ pub fn run_project(
     input: impl Read + Debug,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
+    tariff_data_file: Option<&str>,
     flags: &ProjectFlags,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
@@ -188,17 +189,18 @@ pub fn run_project(
             fn build_corpus(
                 input: &HashMap<CalculationKey, Input>,
                 external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+                tariff_data_file: Option<&str>,
                 flags: &ProjectFlags,
             ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
                 let output_options = flags.into();
                 iterate_maps(input, external_conditions)
                     .map(|(key, input, external_conditions)| {
-                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions), &output_options)?))
+                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)?))
                     })
                     .collect()
             }
 
-            build_corpus(&input, &external_conditions, flags).map_err(|e| {
+            build_corpus(&input, &external_conditions, tariff_data_file, flags).map_err(|e| {
                 capture_specific_error_case(&e).unwrap_or_else(|| HemError::InvalidRequest(e))
             })?
         };

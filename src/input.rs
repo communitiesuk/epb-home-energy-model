@@ -248,7 +248,7 @@ pub struct EnergySupplyDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub threshold_prices: Option<[f64; 12]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tariff: Option<String>,
+    pub tariff: Option<EnergySupplyTariff>,
 }
 
 impl EnergySupplyDetails {
@@ -265,6 +265,20 @@ impl EnergySupplyDetails {
             tariff: None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) enum EnergySupplyTariff {
+    #[serde(rename = "Standard Tariff")]
+    Standard,
+    #[serde(rename = "7-Hour Off Peak Tariff")]
+    SevenHourOffPeak,
+    #[serde(rename = "10-Hour Off Peak Tariff")]
+    TenHourOffPeak,
+    #[serde(rename = "Variable Time of Day Tariff")]
+    VariableTimeOfDay,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -4945,7 +4959,7 @@ impl TryFrom<&InputForProcessing> for Corpus {
     type Error = anyhow::Error;
 
     fn try_from(input: &InputForProcessing) -> Result<Self, Self::Error> {
-        Corpus::from_inputs(&input.input, None, &Default::default())
+        Corpus::from_inputs(&input.input, None, None, &Default::default())
     }
 }
 

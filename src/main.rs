@@ -18,6 +18,8 @@ struct SapArgs {
     input_file: String,
     #[command(flatten)]
     weather_file: WeatherFileType,
+    #[arg(long, short, help = "Path to tariff data file in .csv format")]
+    tariff_file: Option<String>,
     #[arg(
         long,
         short,
@@ -44,7 +46,7 @@ struct SapArgs {
     detailed_output_heating_cooling: bool,
 }
 
-#[derive(Args, Clone, Default, Debug)]
+#[derive(Args, Clone, Copy, Default, Debug)]
 #[group(required = false, multiple = false)]
 #[cfg(feature = "fhs")]
 struct WrapperChoice {
@@ -148,11 +150,14 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    let project_flags = (&args).into();
+
     let response = run_project(
         BufReader::new(File::open(Path::new(input_file))?),
         file_output,
         external_conditions,
-        &(args.into()),
+        args.tariff_file.as_ref().map(|f| f.as_str()),
+        &project_flags,
     )?;
 
     if let Some(response) = response {
@@ -183,8 +188,8 @@ fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
     }
 }
 
-impl From<SapArgs> for ProjectFlags {
-    fn from(args: SapArgs) -> Self {
+impl From<&SapArgs> for ProjectFlags {
+    fn from(args: &SapArgs) -> Self {
         let mut flags = ProjectFlags::empty();
         if args.preprocess_only {
             flags.insert(ProjectFlags::PRE_PROCESS_ONLY);

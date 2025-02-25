@@ -1,9 +1,9 @@
 use crate::compare_floats::min_of_2;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
-use crate::core::energy_supply::tariff_data::{Tariff, TariffData};
+use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
-use crate::input::{FuelType, SecondarySupplyType};
+use crate::input::{EnergySupplyTariff, FuelType, SecondarySupplyType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
@@ -76,15 +76,31 @@ impl EnergySupplyConnection {
 }
 
 pub(crate) struct EnergySupplyTariffInput {
-    tariff: Tariff,
+    tariff: EnergySupplyTariff,
     tariff_data: Box<dyn Read>,
     threshold_charges: Vec<f64>,
     threshold_prices: Vec<f64>,
 }
 
+impl EnergySupplyTariffInput {
+    pub(crate) fn new(
+        tariff: EnergySupplyTariff,
+        tariff_data: Box<dyn Read>,
+        threshold_charges: Vec<f64>,
+        threshold_prices: Vec<f64>,
+    ) -> Self {
+        Self {
+            tariff,
+            tariff_data,
+            threshold_charges,
+            threshold_prices,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct EnergySupplyTariffInfo {
-    tariff: Tariff,
+    tariff: EnergySupplyTariff,
     tariff_data: TariffData,
     threshold_charges: Vec<f64>,
     threshold_prices: Vec<f64>,

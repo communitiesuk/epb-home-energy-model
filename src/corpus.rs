@@ -6,7 +6,8 @@ use crate::core::controls::time_control::{
 use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
-    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, UNMET_DEMAND_SUPPLY_NAME,
+    EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInput,
+    UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -89,7 +90,9 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::Hash;
+use std::io::{BufReader, Cursor, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -657,6 +660,7 @@ impl Corpus {
     pub fn from_inputs(
         input: &Input,
         external_conditions: Option<&ExternalConditions>,
+        tariff_file_path: Option<&str>,
         output_options: &OutputOptions,
     ) -> anyhow::Result<Self> {
         let simulation_time_iterator = Arc::new(input.simulation_time.iter());
@@ -688,8 +692,9 @@ impl Corpus {
         let mut energy_supplies = energy_supplies_from_input(
             &input.energy_supply,
             simulation_time_iterator.clone().as_ref(),
+            tariff_file_path,
             external_conditions.clone(),
-        );
+        )?;
 
         let controls = control_from_input(
             &input.control,
@@ -2954,21 +2959,23 @@ fn cold_water_source_from_input_details(details: &ColdWaterSourceDetails) -> Col
 fn energy_supplies_from_input(
     input: &EnergySupplyInput,
     simulation_time_iterator: &SimulationTimeIterator,
+    tariff_data_file: Option<&str>,
     external_conditions: Arc<ExternalConditions>,
-) -> IndexMap<String, Arc<RwLock<EnergySupply>>> {
+) -> anyhow::Result<IndexMap<String, Arc<RwLock<EnergySupply>>>> {
     let mut supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = input
         .iter()
         .map(|(name, supply)| {
-            (
+            anyhow::Ok((
                 name.to_owned(),
                 energy_supply_from_input(
                     supply,
                     simulation_time_iterator,
+                    tariff_data_file,
                     external_conditions.clone(),
-                ),
-            )
+                )?,
+            ))
         })
-        .collect();
+        .try_collect()?;
     // set up supply representing unmet demand
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.to_string(),
@@ -2977,15 +2984,16 @@ fn energy_supplies_from_input(
         )),
     );
 
-    supplies
+    Ok(supplies)
 }
 
 fn energy_supply_from_input(
     input: &EnergySupplyDetails,
     simulation_time_iterator: &SimulationTimeIterator,
+    tariff_file_path: Option<&str>,
     external_conditions: Arc<ExternalConditions>,
-) -> Arc<RwLock<EnergySupply>> {
-    Arc::new(RwLock::new({
+) -> anyhow::Result<Arc<RwLock<EnergySupply>>> {
+    Ok(Arc::new(RwLock::new({
         let mut builder =
             EnergySupplyBuilder::new(input.fuel, simulation_time_iterator.total_steps());
         if let Some(battery) = input.electric_battery.as_ref() {
@@ -3002,8 +3010,31 @@ fn energy_supply_from_input(
             builder = builder.with_export_capable(is_export_capable);
         }
 
+        if input
+            .electric_battery
+            .as_ref()
+            .is_some_and(|battery| battery.grid_charging_possible)
+        {
+            let tariff_data: Box<dyn Read> = match tariff_file_path {
+                // fall back to using tariff data for entire year for now
+                None => Box::new(Cursor::new(include_str!(
+                    "../examples/tariff_data/tariff_data_25-06-2024.csv"
+                ))),
+                Some(tariff_file_path) => Box::new(BufReader::new(
+                    File::open(tariff_file_path)
+                        .expect("Provided tariff file at provided path was not found."),
+                )),
+            };
+            builder = builder.with_tariff_input(EnergySupplyTariffInput::new(
+                input.tariff.ok_or_else(|| anyhow!("Energy supply with electric battery that allows grid charging expected tariff to be indicated"))?,
+                tariff_data,
+                input.threshold_charges.ok_or_else(|| anyhow!("Threshold charges expected to be indicated for energy supply that uses tariff data"))?.to_vec(),
+                input.threshold_prices.ok_or_else(|| anyhow!("Threshold prices expected to be indicated for energy supply that uses tariff data"))?.to_vec(),
+            ))?;
+        }
+
         builder.build()
-    }))
+    })))
 }
 
 type DiverterTypes = IndexMap<String, EnergyDiverter>;
