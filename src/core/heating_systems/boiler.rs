@@ -227,11 +227,6 @@ impl BoilerServiceWaterCombi {
             .read()
             .energy_output_max(Some(self.temperature_hot_water_in_c), None, None)
     }
-
-    pub fn is_on(&self) -> bool {
-        // always true as there is no associated control
-        true
-    }
 }
 
 #[derive(Debug)]
@@ -239,7 +234,7 @@ pub struct BoilerServiceWaterRegular {
     boiler: Arc<RwLock<Boiler>>,
     service_name: String,
     control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    _control_max: Arc<Control>,
     temperature_hot_water_in_c: Option<f64>,
 }
 
@@ -255,18 +250,19 @@ impl BoilerServiceWaterRegular {
             boiler,
             service_name,
             control_min,
-            control_max: control_max.clone(),
+            _control_max: control_max.clone(),
             temperature_hot_water_in_c: control_max.setpnt(&simulation_time.current_iteration()),
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn temp_setpnt(
         &self,
         simtime: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simtime),
-            self.control_max.setpnt(&simtime),
+            self._control_max.setpnt(&simtime),
         )
     }
 
@@ -412,7 +408,7 @@ pub(crate) struct Boiler {
     external_conditions: Arc<ExternalConditions>,
     energy_supply_connections: HashMap<String, EnergySupplyConnection>,
     energy_supply_connection_aux: EnergySupplyConnection,
-    energy_supply_type: String,
+    _energy_supply_type: String,
     // service_results: (),
     boiler_location: HeatSourceLocation,
     min_modulation_load: f64,
@@ -507,7 +503,7 @@ impl Boiler {
                     energy_supply_connection_aux: energy_supply_conn_aux,
                     energy_supply_connections: Default::default(),
                     simulation_timestep,
-                    energy_supply_type,
+                    _energy_supply_type: energy_supply_type,
                     boiler_location,
                     min_modulation_load,
                     boiler_power,

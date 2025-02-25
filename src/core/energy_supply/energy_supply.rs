@@ -292,6 +292,7 @@ impl EnergySupply {
     }
 
     /// This method is used in place of calling .connection() in the Python codebase in order to register an end user name
+    #[cfg(test)]
     pub fn register_end_user_name(&mut self, end_user_name: String) {
         self.demand_by_end_user.insert(
             end_user_name.clone(),
