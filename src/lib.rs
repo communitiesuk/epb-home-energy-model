@@ -18,6 +18,7 @@ extern crate is_close;
 use crate::core::heating_systems::elec_storage_heater::StorageHeaterDetailedResult;
 use crate::core::heating_systems::emitters::EmittersDetailedResult;
 use crate::core::heating_systems::heat_pump::{ResultsAnnual, ResultsPerTimestep};
+use crate::core::heating_systems::storage_tank::StorageTankDetailedResult;
 use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
@@ -286,6 +287,7 @@ pub fn run_project(
                         storage_from_grid,
                         battery_state_of_charge,
                         esh_output_dict,
+                        hot_water_source_results_dict,
                         ..
                     },
                     ..
@@ -339,6 +341,10 @@ pub fn run_project(
                     // Function call to write detailed ventilation results
                     let vent_output_file = "ventilation_results";
                     write_core_output_file_ventilation_detailed(output, vent_output_file, vent_output_list)?;
+                    for (hot_water_source_name, hot_water_source_results) in hot_water_source_results_dict.iter() {
+                        let hot_water_source_file = format!("results_hot_water_source_summary__{}", hot_water_source_name.replace(" ", "_"));
+                        write_core_output_file_hot_water_source_summary(output, &hot_water_source_file, hot_water_source_results);
+                    }
                 }
 
                 write_core_output_file_summary(output, results.try_into()?)?;
@@ -1927,6 +1933,14 @@ fn write_core_output_file_ventilation_detailed(
     }
 
     Ok(())
+}
+
+fn write_core_output_file_hot_water_source_summary(
+    _output: &impl Output,
+    _output_file: &str,
+    _hot_water_source_results: &[StorageTankDetailedResult],
+)  {
+    // TODO complete when hot water source results defined
 }
 
 const HOURS_TO_END_JAN: f64 = 744.;
