@@ -26,7 +26,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    let resp = match run_project(input, &output, external_conditions, &ProjectFlags::empty()) {
+    let resp = match run_project(input, &output, external_conditions, None, &ProjectFlags::empty()) {
         Ok(Some(resp)) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")
