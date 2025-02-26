@@ -27,7 +27,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ingest_for_processing, ExternalConditionsInput, HotWaterSourceDetails, Input,
+    ingest_for_processing, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
     InputForProcessing,
 };
 use crate::output::Output;
@@ -39,6 +39,8 @@ use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalc
 use crate::wrappers::{ChosenWrapper, HemResponse, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
+use chrono::prelude::*;
+use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use indexmap::IndexMap;
@@ -259,29 +261,29 @@ pub fn run_project(
                 }
                 let CalculationResultsWithContext {
                     results:
-                        RunResults {
-                            timestep_array,
-                            results_totals,
-                            results_end_user,
-                            energy_import,
-                            energy_export,
-                            energy_generated_consumed,
-                            energy_to_storage,
-                            energy_from_storage,
-                            energy_diverted,
-                            betafactor,
-                            zone_dict,
-                            zone_list,
-                            hc_system_dict,
-                            hot_water_dict,
-                            ductwork_gains,
-                            heat_balance_dict,
-                            heat_source_wet_results_dict,
-                            heat_source_wet_results_annual_dict,
-                            vent_output_list,
-                            emitters_output_dict,
-                            ..
-                        },
+                    RunResults {
+                        timestep_array,
+                        results_totals,
+                        results_end_user,
+                        energy_import,
+                        energy_export,
+                        energy_generated_consumed,
+                        energy_to_storage,
+                        energy_from_storage,
+                        energy_diverted,
+                        betafactor,
+                        zone_dict,
+                        zone_list,
+                        hc_system_dict,
+                        hot_water_dict,
+                        ductwork_gains,
+                        heat_balance_dict,
+                        heat_source_wet_results_dict,
+                        heat_source_wet_results_annual_dict,
+                        vent_output_list,
+                        emitters_output_dict,
+                        ..
+                    },
                     ..
                 } = results;
                 write_core_output_file(
@@ -377,13 +379,13 @@ pub fn run_project(
         run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
             .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
     }))
-    .map_err(|e| {
-        HemError::GeneralPanic(
-            e.downcast_ref::<&str>()
-                .map_or("Error not captured", |v| v)
-                .to_owned(),
-        )
-    })?
+        .map_err(|e| {
+            HemError::GeneralPanic(
+                e.downcast_ref::<&str>()
+                    .map_or("Error not captured", |v| v)
+                    .to_owned(),
+            )
+        })?
 }
 
 fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
@@ -904,6 +906,7 @@ struct SummaryOutputFileArgs<'a> {
     energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
     energy_import: &'a IndexMap<KeyString, Vec<f64>>,
     energy_export: &'a IndexMap<KeyString, Vec<f64>>,
+    storage_from_grid: &'a IndexMap<KeyString, Vec<f64>>,
     space_heat_demand_total: f64,
     space_cool_demand_total: f64,
     total_floor_area: f64,
@@ -918,6 +921,7 @@ struct SummaryOutputFileArgs<'a> {
 struct SummaryInputDigest {
     simulation_time: SimulationTime,
     hot_water_source_digests: IndexMap<String, SummaryInputHotWaterSourceDigest>,
+    electricity_keys: Vec<String>,
 }
 
 impl From<&Input> for SummaryInputDigest {
@@ -930,6 +934,13 @@ impl From<&Input> for SummaryInputDigest {
                 .iter()
                 .map(|(key, details)| (key.clone(), details.into()))
                 .collect::<IndexMap<_, _>>(),
+            electricity_keys: input
+                .energy_supply
+                .iter()
+                .filter_map(|(key, energy_supply_details)| {
+                    (energy_supply_details.fuel == FuelType::Electricity).then(|| key.clone())
+                })
+                .collect(),
         }
     }
 }
@@ -962,6 +973,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'
             energy_generated_consumed,
             energy_to_storage,
             energy_from_storage,
+            storage_from_grid,
             energy_diverted,
             heat_cop_dict,
             cool_cop_dict,
@@ -979,6 +991,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'
             energy_diverted,
             energy_import,
             energy_export,
+            storage_from_grid,
             space_heat_demand_total: value.results.space_heat_demand_total(),
             space_cool_demand_total: value.results.space_cool_demand_total(),
             total_floor_area: value.context.corpus.total_floor_area,
@@ -1002,6 +1015,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
             energy_generated_consumed,
             energy_to_storage,
             energy_from_storage,
+            storage_from_grid,
             energy_diverted,
             ..
         } = results.results;
@@ -1012,6 +1026,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
             energy_generated_consumed,
             energy_to_storage,
             energy_from_storage,
+            storage_from_grid,
             energy_diverted,
             energy_import,
             energy_export,
@@ -1034,6 +1049,7 @@ fn write_core_output_file_summary(
         energy_generated_consumed,
         energy_to_storage,
         energy_from_storage,
+        storage_from_grid,
         energy_diverted,
         energy_import,
         energy_export,
@@ -1050,16 +1066,7 @@ fn write_core_output_file_summary(
 
     let SummaryData {
         delivered_energy_map,
-        elec_generated,
-        elec_consumed,
-        gen_to_consumption,
-        gen_to_diverter,
-        gen_to_storage,
-        grid_to_consumption,
-        generation_to_grid,
-        storage_to_consumption,
-        storage_eff,
-        net_import,
+        stats,
         peak_elec_consumption,
         index_peak_elec_consumption,
         step_peak_elec_consumption,
@@ -1071,6 +1078,7 @@ fn write_core_output_file_summary(
         energy_generated_consumed,
         energy_to_storage,
         energy_from_storage,
+        storage_from_grid,
         energy_diverted,
         energy_import,
         energy_export,
@@ -1151,10 +1159,10 @@ fn write_core_output_file_summary(
         (space_cool_demand_total / total_floor_area).to_string(),
     ])?;
     writer.write_record(&blank_line)?;
-    writer.write_record(["Electricity Summary"])?;
+    writer.write_record(["Energy Supply Summary"])?;
     writer.write_record(["", "kWh", "timestep", "month", "day", "hour of day"])?;
     writer.write_record([
-        "Peak half-hour consumption".to_string(),
+        "Peak half-hour consumption (electricity)".to_string(),
         peak_elec_consumption.to_string(),
         index_peak_elec_consumption.to_string(),
         timestep_to_date[&(step_peak_elec_consumption as usize)]
@@ -1167,57 +1175,62 @@ fn write_core_output_file_summary(
             .hour
             .to_string(),
     ])?;
-    writer.write_record(["", "", "Total"])?;
-    writer.write_record([
-        "Consumption".to_string(),
-        "kWh".to_string(),
-        elec_consumed.to_string(),
-    ])?;
-    writer.write_record([
-        "Generation".to_string(),
-        "kWh".to_string(),
-        elec_generated.to_string(),
-    ])?;
-    writer.write_record([
-        "Generation to consumption (immediate excl. diverter)".to_string(),
-        "kWh".to_string(),
-        gen_to_consumption.to_string(),
-    ])?;
-    writer.write_record([
-        "Generation to storage".to_string(),
-        "kWh".to_string(),
-        gen_to_storage.to_string(),
-    ])?;
-    writer.write_record([
-        "Generation to diverter".to_string(),
-        "kWh".to_string(),
-        gen_to_diverter.to_string(),
-    ])?;
-    writer.write_record([
-        "Generation to grid (export)".to_string(),
-        "kWh".to_string(),
-        generation_to_grid.to_string(),
-    ])?;
-    writer.write_record([
-        "Storage to consumption".to_string(),
-        "kWh".to_string(),
-        storage_to_consumption.to_string(),
-    ])?;
-    writer.write_record([
-        "Grid to consumption (import)".to_string(),
-        "kWh".to_string(),
-        grid_to_consumption.to_string(),
-    ])?;
-    writer.write_record([
-        String::from("Net import").into_bytes(),
-        String::from("kWh").into_bytes(),
-        format!("{}", net_import).into_bytes(),
-    ])?;
-    writer.write_record([
-        "Storage round-trip efficiency".to_string(),
-        "ratio".to_string(),
-        storage_eff.to_string(),
-    ])?;
+    writer.write_record(&blank_line)?;
+    let mut header_row = vec!["".to_owned(), "Total".to_owned()];
+    header_row.extend(stats.keys().map(|x| x.to_string()));
+    writer.write_record(&header_row)?;
+    let fields = [
+        ("Consumption", "kWh", EnergySupplyStatKey::ElecConsumed),
+        ("Generation", "kWh", EnergySupplyStatKey::ElecGenerated),
+        (
+            "Generation to consumption (immediate excl. diverter)",
+            "kWh",
+            EnergySupplyStatKey::GenToConsumption,
+        ),
+        (
+            "Generation to storage",
+            "kWh",
+            EnergySupplyStatKey::GenToStorage,
+        ),
+        (
+            "Generation to diverter",
+            "kWh",
+            EnergySupplyStatKey::GenToDiverter,
+        ),
+        (
+            "Generation to grid (export)",
+            "kWh",
+            EnergySupplyStatKey::GenerationToGrid,
+        ),
+        (
+            "Storage to consumption",
+            "kWh",
+            EnergySupplyStatKey::StorageToConsumption,
+        ),
+        (
+            "Grid to storage",
+            "kWh",
+            EnergySupplyStatKey::StorageFromGrid,
+        ),
+        (
+            "Grid to consumption (import)",
+            "kWh",
+            EnergySupplyStatKey::GridToConsumption,
+        ),
+        ("Net import", "kWh", EnergySupplyStatKey::NetImport),
+        (
+            "Storage round-trip efficiency",
+            "ratio",
+            EnergySupplyStatKey::StorageEff,
+        ),
+    ];
+    for field in fields {
+        let mut row = vec![field.0.to_owned(), field.1.to_owned()];
+        for stat in stats.values() {
+            row.push(stat.display_for_key(&field.2));
+        }
+        writer.write_record(&row)?;
+    }
     writer.write_record(&blank_line)?;
     writer.write_record(["Delivered Energy Summary"])?;
     writer.write_record(
@@ -1288,9 +1301,58 @@ struct SummaryDataArgs<'a> {
     energy_generated_consumed: &'a IndexMap<KeyString, Vec<f64>>,
     energy_to_storage: &'a IndexMap<KeyString, Vec<f64>>,
     energy_from_storage: &'a IndexMap<KeyString, Vec<f64>>,
+    storage_from_grid: &'a IndexMap<KeyString, Vec<f64>>,
     energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
     energy_import: &'a IndexMap<KeyString, Vec<f64>>,
     energy_export: &'a IndexMap<KeyString, Vec<f64>>,
+}
+
+#[derive(Clone, Copy)]
+struct EnergySupplyStat {
+    elec_generated: f64,
+    elec_consumed: f64,
+    gen_to_consumption: f64,
+    grid_to_consumption: f64,
+    generation_to_grid: f64,
+    net_import: f64,
+    gen_to_storage: f64,
+    storage_to_consumption: f64,
+    storage_from_grid: f64,
+    gen_to_diverter: f64,
+    storage_eff: NumberOrDivisionByZero,
+}
+
+impl EnergySupplyStat {
+    fn display_for_key(&self, key: &EnergySupplyStatKey) -> String {
+        match key {
+            EnergySupplyStatKey::ElecGenerated => self.elec_generated.to_string(),
+            EnergySupplyStatKey::ElecConsumed => self.elec_consumed.to_string(),
+            EnergySupplyStatKey::GenToConsumption => self.gen_to_consumption.to_string(),
+            EnergySupplyStatKey::GridToConsumption => self.grid_to_consumption.to_string(),
+            EnergySupplyStatKey::GenerationToGrid => self.generation_to_grid.to_string(),
+            EnergySupplyStatKey::NetImport => self.net_import.to_string(),
+            EnergySupplyStatKey::GenToStorage => self.gen_to_storage.to_string(),
+            EnergySupplyStatKey::StorageToConsumption => self.storage_to_consumption.to_string(),
+            EnergySupplyStatKey::StorageFromGrid => self.storage_from_grid.to_string(),
+            EnergySupplyStatKey::GenToDiverter => self.gen_to_diverter.to_string(),
+            EnergySupplyStatKey::StorageEff => self.storage_eff.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EnergySupplyStatKey {
+    ElecGenerated,
+    ElecConsumed,
+    GenToConsumption,
+    GridToConsumption,
+    GenerationToGrid,
+    NetImport,
+    GenToStorage,
+    StorageToConsumption,
+    StorageFromGrid,
+    GenToDiverter,
+    StorageEff,
 }
 
 fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
@@ -1301,48 +1363,82 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
         energy_generated_consumed,
         energy_to_storage,
         energy_from_storage,
+        storage_from_grid,
         energy_diverted,
         energy_import,
         energy_export,
     } = args;
 
-    // Electricity breakdown
-    let (elec_generated, elec_consumed) = results_end_user["mains elec"].iter().fold(
-        (0.0, 0.0),
-        |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
-            let values_sum = values.iter().sum::<f64>();
-            if values_sum < 0.0 {
-                (elec_generated_acc + values_sum.abs(), elec_consumed_acc)
-            } else {
-                (elec_generated_acc, elec_consumed_acc + values_sum)
-            }
-        },
-    );
-    let gen_to_consumption = energy_generated_consumed["mains elec"].iter().sum::<f64>();
-    let grid_to_consumption = energy_import["mains elec"].iter().sum::<f64>();
-    let generation_to_grid = energy_export["mains elec"].iter().sum::<f64>().abs();
-    let net_import = grid_to_consumption - generation_to_grid;
-    let gen_to_storage = energy_to_storage["mains elec"].iter().sum::<f64>();
-    let storage_to_consumption = energy_from_storage["mains elec"].iter().sum::<f64>().abs();
-    let gen_to_diverter = energy_diverted["mains elec"].iter().sum::<f64>();
-    let storage_eff = if gen_to_storage > 0.0 {
-        NumberOrDivisionByZero::Number(storage_to_consumption / gen_to_storage)
-    } else {
-        NumberOrDivisionByZero::DivisionByZero
-    };
+    // Energy Supply breakdown for all EnergySupply objects
+    let stats: IndexMap<KeyString, EnergySupplyStat> = results_end_user
+        .iter()
+        .map(|(key, value)| {
+            (key.clone(), {
+                let (elec_generated, elec_consumed) = value.iter().fold(
+                    (0.0, 0.0),
+                    |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
+                        let values_sum = values.iter().sum::<f64>();
+                        if values_sum < 0.0 {
+                            (elec_generated_acc + values_sum.abs(), elec_consumed_acc)
+                        } else {
+                            (elec_generated_acc, elec_consumed_acc + values_sum)
+                        }
+                    },
+                );
+
+                let grid_to_consumption = energy_import[key].iter().sum::<f64>();
+                let generation_to_grid = energy_export[key].iter().sum::<f64>().abs();
+                let gen_to_storage = energy_to_storage[key].iter().sum::<f64>();
+                let storage_to_consumption = energy_from_storage[key].iter().sum::<f64>().abs();
+                let gen_to_diverter = energy_diverted[key].iter().sum::<f64>();
+                let storage_eff = if gen_to_storage > 0.0 {
+                    NumberOrDivisionByZero::Number(
+                        storage_to_consumption
+                            / (gen_to_storage + storage_from_grid[key].iter().sum::<f64>()),
+                    )
+                } else {
+                    NumberOrDivisionByZero::DivisionByZero
+                };
+
+                EnergySupplyStat {
+                    elec_generated,
+                    elec_consumed,
+                    gen_to_consumption: energy_generated_consumed[key].iter().sum::<f64>(),
+                    grid_to_consumption,
+                    generation_to_grid,
+                    net_import: grid_to_consumption - generation_to_grid,
+                    gen_to_storage,
+                    storage_to_consumption,
+                    storage_from_grid: storage_from_grid[key].iter().sum::<f64>().abs(),
+                    gen_to_diverter,
+                    storage_eff,
+                }
+            })
+        })
+        .collect();
 
     // get peak electricity consumption, and when it happens
     let start_timestep = input.simulation_time.start_time();
     let stepping = input.simulation_time.step;
+
+    // Get energy supply objects with fuel type 'electricity'
+    let electricity_keys = &input.electricity_keys;
+
     // Calculate net import by adding gross import and export figures. Add
     // because export figures are already negative
-    let net_import_per_timestep = {
-        let mains_energy_import = &energy_import["mains elec"];
-        let mains_energy_export = &energy_export["mains elec"];
-        (0..timestep_array.len())
-            .map(|i| mains_energy_import[i] + mains_energy_export[i])
-            .collect::<Vec<_>>()
-    };
+    let net_import_per_timestep = (0..timestep_array.len())
+        .map(|i| {
+            electricity_keys
+                .into_iter()
+                .map(|k| {
+                    let key = KeyString::from(k).unwrap();
+                    energy_import[&key][i] + energy_export[&key][i]
+                })
+                .sum::<f64>()
+        })
+        .collect::<Vec<_>>();
+
+    // Find peak electricity consumption
     let peak_elec_consumption = *net_import_per_timestep
         .iter()
         .max_by(|a, b| a.total_cmp(b))
@@ -1357,109 +1453,23 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     // hence + start_timestep
     let step_peak_elec_consumption = index_peak_elec_consumption as f64 + start_timestep;
 
-    let months_start_end_timesteps = IndexMap::from([
-        ("JAN", (0., HOURS_TO_END_JAN / stepping - 1.)),
-        (
-            "FEB",
-            (
-                HOURS_TO_END_JAN / stepping,
-                HOURS_TO_END_FEB / stepping - 1.,
-            ),
-        ),
-        (
-            "MAR",
-            (
-                HOURS_TO_END_FEB / stepping,
-                HOURS_TO_END_MAR / stepping - 1.,
-            ),
-        ),
-        (
-            "APR",
-            (
-                HOURS_TO_END_MAR / stepping,
-                HOURS_TO_END_APR / stepping - 1.,
-            ),
-        ),
-        (
-            "MAY",
-            (
-                HOURS_TO_END_APR / stepping,
-                HOURS_TO_END_MAY / stepping - 1.,
-            ),
-        ),
-        (
-            "JUN",
-            (
-                HOURS_TO_END_MAY / stepping,
-                HOURS_TO_END_JUN / stepping - 1.,
-            ),
-        ),
-        (
-            "JUL",
-            (
-                HOURS_TO_END_JUN / stepping,
-                HOURS_TO_END_JUL / stepping - 1.,
-            ),
-        ),
-        (
-            "AUG",
-            (
-                HOURS_TO_END_JUL / stepping,
-                HOURS_TO_END_AUG / stepping - 1.,
-            ),
-        ),
-        (
-            "SEP",
-            (
-                HOURS_TO_END_AUG / stepping,
-                HOURS_TO_END_SEP / stepping - 1.,
-            ),
-        ),
-        (
-            "OCT",
-            (
-                HOURS_TO_END_SEP / stepping,
-                HOURS_TO_END_OCT / stepping - 1.,
-            ),
-        ),
-        (
-            "NOV",
-            (
-                HOURS_TO_END_OCT / stepping,
-                HOURS_TO_END_NOV / stepping - 1.,
-            ),
-        ),
-        (
-            "DEC",
-            (
-                HOURS_TO_END_NOV / stepping,
-                HOURS_TO_END_DEC / stepping - 1.,
-            ),
-        ),
-    ]);
     let mut timestep_to_date: HashMap<usize, HourForTimestep> = Default::default();
-    let mut step = start_timestep;
-    for _ in timestep_array {
-        for (month, (start, end)) in months_start_end_timesteps.iter() {
-            if step <= end.floor() && step >= start.floor() {
-                let hour_of_year = step * stepping;
-                let hour_start_month = start * stepping;
-                let hour_of_month = hour_of_year - hour_start_month;
-                // add +1 to day_of_month for first day to be day 1 (not day 0)
-                let day_of_month = (hour_of_month / 24.).floor() as usize + 1;
-                // add +1 to hour_of_month for first hour to be hour 1 (not hour 0)
-                let hour_of_day = ((step % (24. / stepping)) * stepping) + 1.;
-                timestep_to_date.insert(
-                    step as usize,
-                    HourForTimestep {
-                        month,
-                        day: day_of_month,
-                        hour: hour_of_day,
-                    },
-                );
-            }
-        }
-        step += 1.;
+
+    // Set the base for any non-leap year
+    let base_time = Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0).unwrap();
+
+    let mut step = start_timestep as usize;
+    for (count, t) in timestep_array.iter().enumerate() {
+        let current_time = base_time + TimeDelta::minutes((*t * 60.).round() as i64);
+        timestep_to_date.insert(
+            step,
+            HourForTimestep {
+                month: current_time.format("%b").to_string().to_ascii_uppercase(),
+                day: current_time.day() as usize,
+                hour: (step as f64 % (24. / stepping)) * stepping + 1.,
+            },
+        );
+        step += 1;
     }
 
     // Delivered energy by end-use and by fuel
@@ -1497,16 +1507,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
 
     SummaryData {
         delivered_energy_map,
-        elec_generated,
-        elec_consumed,
-        gen_to_consumption,
-        gen_to_diverter,
-        gen_to_storage,
-        grid_to_consumption,
-        generation_to_grid,
-        storage_to_consumption,
-        storage_eff,
-        net_import,
+        stats,
         peak_elec_consumption,
         index_peak_elec_consumption,
         step_peak_elec_consumption,
@@ -1516,16 +1517,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
 
 struct SummaryData {
     delivered_energy_map: IndexMap<KeyString, IndexMap<KeyString, f64>>,
-    elec_generated: f64,
-    elec_consumed: f64,
-    gen_to_consumption: f64,
-    gen_to_diverter: f64,
-    gen_to_storage: f64,
-    grid_to_consumption: f64,
-    generation_to_grid: f64,
-    storage_to_consumption: f64,
-    storage_eff: NumberOrDivisionByZero,
-    net_import: f64,
+    stats: IndexMap<KeyString, EnergySupplyStat>,
     peak_elec_consumption: f64,
     index_peak_elec_consumption: usize,
     step_peak_elec_consumption: f64,
@@ -1872,7 +1864,7 @@ const HOURS_TO_END_NOV: f64 = 8016.;
 const HOURS_TO_END_DEC: f64 = 8760.;
 
 struct HourForTimestep {
-    month: &'static str,
+    month: String,
     day: usize,
     hour: f64,
 }
