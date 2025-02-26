@@ -1692,6 +1692,8 @@ fn create_appliance_gains(
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
             // TODO (from Python) - translation of efficiencies should be its own function
+            let (kwhcycle, loadingfactor) =
+                appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
 
             let app = FhsAppliance::new(
                 map_appliance.util_unit,
@@ -1784,7 +1786,10 @@ fn create_appliance_gains(
                 .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
                 .collect();
             power_scheds.insert(appliance_key, flat_schedule.clone());
-            priority.insert(appliance_key, (None, kwhcycle));
+
+            // Python has the below line which references a variable that hasn't been assigned at this point(kwhcycle), may be erroneous.
+            // Commenting out so the Rust can compile
+            // priority.insert(appliance_key, (None, kwhcycle));
 
             let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
