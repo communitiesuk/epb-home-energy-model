@@ -1797,6 +1797,7 @@ fn write_core_output_file_ventilation_detailed(
     writer.write_record([
         "Timestep",
         "Incoming air changes per hour",
+        "Vent opening ratio",
         "incoming air flow",
         "total_volume",
         "air changes per hour",
@@ -1821,6 +1822,7 @@ fn write_core_output_file_ventilation_detailed(
     writer.write_record([
         "[count]",
         "[indicator]",
+        "[ratio]",
         "[m3/h]",
         "[m3]",
         "[ACH]",
