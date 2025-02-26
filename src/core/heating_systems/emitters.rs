@@ -197,13 +197,13 @@ enum WetEmitter {
     Ufh {
         c: f64,
         n: f64,
-        system_performance_factor: f64,
+        _system_performance_factor: f64,
         frac_convective: f64,
     },
     Fancoil {
         n_units: usize,
         frac_convective: f64,
-        test_data: FancoilTestData,
+        _test_data: FancoilTestData,
         temperature_data: Vec<Vec<f64>>,
         fan_power_data: Vec<StringOrNumber>,
     },
@@ -368,7 +368,7 @@ impl Emitters {
                 model_emitters[i].replace(Arc::new(WetEmitter::Ufh {
                     c,
                     n,
-                    system_performance_factor: *system_performance_factor,
+                    _system_performance_factor: *system_performance_factor,
                     frac_convective: *frac_convective,
                 }));
             }
@@ -390,7 +390,7 @@ impl Emitters {
                 let emitter = Arc::new(WetEmitter::Fancoil {
                     n_units,
                     frac_convective: *frac_convective,
-                    test_data,
+                    _test_data: test_data,
                     temperature_data,
                     fan_power_data,
                 });
@@ -2474,6 +2474,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     fn test_format_fancoil_manufacturer_data() {
         let test_data: FancoilTestData = serde_json::from_value(json!({
             "fan_speed_data": [
@@ -2592,6 +2593,8 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[ignore = "blocked by temp_emitters issue"]
     fn test_energy_output_min(
         mut emitters: Emitters,
         zone_for_energy_output_min: Arc<dyn SimpleZone>,

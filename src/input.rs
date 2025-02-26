@@ -248,7 +248,7 @@ pub struct EnergySupplyDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub threshold_prices: Option<[f64; 12]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tariff: Option<EnergySupplyTariff>,
+    pub(crate) tariff: Option<EnergySupplyTariff>,
 }
 
 impl EnergySupplyDetails {

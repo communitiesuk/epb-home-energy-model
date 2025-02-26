@@ -899,8 +899,8 @@ impl ControlBehaviour for SmartApplianceControl {}
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
-    start_day: u32,
-    time_series_step: f64,
+    _start_day: u32,
+    _time_series_step: f64,
 }
 
 impl CombinationTimeControl {
@@ -915,8 +915,8 @@ impl CombinationTimeControl {
         Ok(Self {
             combinations,
             controls,
-            start_day,
-            time_series_step,
+            _start_day: start_day,
+            _time_series_step: time_series_step,
         })
     }
 

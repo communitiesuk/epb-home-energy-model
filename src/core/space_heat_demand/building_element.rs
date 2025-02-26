@@ -364,10 +364,12 @@ pub(crate) trait HeatTransferInternal {
 
     /// Convert U-value from input data to thermal resistance of construction only
     /// (not incl. surface resistances)
+    #[cfg(test)]
     fn convert_uvalue_to_resistance(&self, u_value: f64, pitch: f64) -> f64 {
         (1.0 / u_value) - self.r_si_with_pitch(pitch) - R_SE
     }
 
+    #[cfg(test)]
     fn pitch_class(&self, pitch: f64) -> HeatFlowDirection {
         match pitch {
             PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => HeatFlowDirection::Horizontal,
@@ -410,7 +412,7 @@ pub(crate) trait HeatTransferThrough {
     }
 
     /// Return number of nodes excluding external and internal layers
-    fn no_of_inside_nodes(&self) -> isize {
+    fn _no_of_inside_nodes(&self) -> isize {
         (self.no_of_nodes() - 2) as isize
     }
 
