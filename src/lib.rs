@@ -15,6 +15,7 @@ mod wrappers;
 #[macro_use]
 extern crate is_close;
 
+use crate::core::heating_systems::elec_storage_heater::StorageHeaterDetailedResult;
 use crate::core::heating_systems::emitters::EmittersDetailedResult;
 use crate::core::heating_systems::heat_pump::{ResultsAnnual, ResultsPerTimestep};
 use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
@@ -284,6 +285,7 @@ pub fn run_project(
                         emitters_output_dict,
                         storage_from_grid,
                         battery_state_of_charge,
+                        esh_output_dict,
                         ..
                     },
                     ..
@@ -361,6 +363,9 @@ pub fn run_project(
                 if flags.contains(ProjectFlags::DETAILED_OUTPUT_HEATING_COOLING) {
                     let output_prefix = "results_emitters_";
                     write_core_output_file_emitters_detailed(output, output_prefix, emitters_output_dict)?;
+
+                    let esh_output_prefix = "results_esh_";
+                    write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
                 }
             }
 
@@ -1798,6 +1803,42 @@ fn write_core_output_file_emitters_detailed(
         ])?;
         for emitters_detailed_result in emitters_detailed_results {
             writer.write_record(emitters_detailed_result.as_string_values())?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_core_output_file_esh_detailed(
+    output: &impl Output,
+    output_prefix: &str,
+    esh_output: &IndexMap<String, Vec<StorageHeaterDetailedResult>>,
+) -> Result<(), anyhow::Error> {
+    let headings = [
+        "timestep",
+        "n_units",
+        "demand_energy",
+        "energy_delivered",
+        "energy_instant",
+        "energy_charged",
+        "energy_for_fan",
+        "state_of_charge",
+        "final_soc_ivp",
+        "time_used_max",
+    ];
+    let units_row = [
+        "[count]", "[count]", "[kWh]", "[kWh]", "[kWh]", "[kWh]", "[kWh]", "[ratio]", "[ratio]",
+        "[hours]",
+    ];
+
+    for (esh, esh_output) in esh_output {
+        let output_key = format!("{output_prefix}_{esh}");
+        let writer = output.writer_for_location_key(&output_key, "csv")?;
+        let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
+        writer.write_record(&headings)?;
+        writer.write_record(&units_row)?;
+        for esh_results in esh_output {
+            writer.write_record(esh_results.as_string_values())?;
         }
     }
 

@@ -94,6 +94,23 @@ pub(crate) struct StorageHeaterDetailedResult {
     time_used_max: f64,
 }
 
+impl StorageHeaterDetailedResult {
+    pub(crate) fn as_string_values(&self) -> Vec<String> {
+        vec![
+            self.timestep_idx.to_string(),
+            self.n_units.to_string(),
+            self.energy_demand.to_string(),
+            self.energy_delivered.to_string(),
+            self.energy_instant.to_string(),
+            self.energy_charged.to_string(),
+            self.energy_for_fan.to_string(),
+            self.state_of_charge.to_string(),
+            self.final_soc.to_string(),
+            self.time_used_max.to_string(),
+        ]
+    }
+}
+
 struct SocOdeFunction<'a> {
     soc_array: &'a [f64],
     power_array: &'a [f64],
