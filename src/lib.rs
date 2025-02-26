@@ -65,6 +65,7 @@ pub fn run_project(
     input: impl Read + Debug,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
+    _tariff_data_file: Option<&str>,
     flags: &ProjectFlags,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
