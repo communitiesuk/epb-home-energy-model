@@ -1771,6 +1771,8 @@ fn write_core_output_file_emitters_detailed(
         writer.write_record([
             "timestep",
             "demand_energy",
+            "temp_emitter_req",
+            "time_before_heating_start",
             "energy_provided_by_heat_source",
             "temp_emitter",
             "temp_emitter_max",
@@ -1783,6 +1785,8 @@ fn write_core_output_file_emitters_detailed(
         writer.write_record([
             "[count]",
             "[kWh]",
+            "[Celsius]",
+            "[hours]",
             "[kWh]",
             "[Celsius]",
             "[Celsius]",
