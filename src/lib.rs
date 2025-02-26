@@ -357,6 +357,8 @@ pub fn run_project(
                         heat_loss_parameter,
                         heat_capacity_parameter,
                         heat_loss_form_factor,
+                        temp_internal_air: cloned_input.temp_internal_air_static_calcs().ok_or_else(|| anyhow!("A value for the temp_internal_air_static_calcs field was expected to have been provided on the input."))?,
+                        temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
                     },
                 )?;
 
@@ -1550,6 +1552,8 @@ struct StaticOutputFileArgs {
     heat_loss_parameter: f64,
     heat_capacity_parameter: f64,
     heat_loss_form_factor: f64,
+    temp_internal_air: f64,
+    temp_external_air: f64,
 }
 
 fn write_core_output_file_static(
@@ -1562,6 +1566,8 @@ fn write_core_output_file_static(
         heat_loss_parameter,
         heat_capacity_parameter,
         heat_loss_form_factor,
+        temp_internal_air,
+        temp_external_air,
     } = args;
 
     debug!("writing out to {output_key}");
@@ -1588,6 +1594,17 @@ fn write_core_output_file_static(
         "Heat loss form factor".to_owned(),
         "".to_owned(),
         heat_loss_form_factor.to_string(),
+    ])?;
+    writer.write_record(["Assumptions used for HTC/HLP calculation:"])?;
+    writer.write_record([
+        "Internal air temperature".to_owned(),
+        "Celsius".to_owned(),
+        temp_internal_air.to_string(),
+    ])?;
+    writer.write_record([
+        "External air temperature".to_owned(),
+        "Celsius".to_owned(),
+        temp_external_air.to_string(),
     ])?;
 
     debug!("flushing out static CSV");

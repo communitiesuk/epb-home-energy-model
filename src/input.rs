@@ -4953,6 +4953,10 @@ impl InputForProcessing {
         self.input.zone = zone;
         self
     }
+
+    pub(crate) fn temp_internal_air_static_calcs(&self) -> Option<f64> {
+        self.input.temp_internal_air_static_calcs
+    }
 }
 
 impl TryFrom<&InputForProcessing> for Corpus {
