@@ -70,7 +70,7 @@ pub struct Zone {
     ///                      solved for
     no_of_temps: usize,
     print_heat_balance: bool,
-    // TODO: Python has a use_fast_solver variable, do we need this?
+    // Python has a use_fast_solver field that we don't need because we always use the equivalent fast solver in Rust
     temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
