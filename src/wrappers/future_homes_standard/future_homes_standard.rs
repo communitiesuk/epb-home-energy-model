@@ -951,7 +951,7 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     input.add_control(
         hw_min_temp,
         json!({
-            "type": "SetPointTimeControl",
+            "type": "SetpointTimeControl",
             "start_day": 0,
             "time_series_step": 0.5,
             "schedule": {
