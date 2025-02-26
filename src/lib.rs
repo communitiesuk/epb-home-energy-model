@@ -965,7 +965,7 @@ impl From<&Input> for SummaryInputDigest {
                 .energy_supply
                 .iter()
                 .filter(|&(key, energy_supply_details)| {
-                    (energy_supply_details.fuel == FuelType::Electricity)
+                    energy_supply_details.fuel == FuelType::Electricity
                 })
                 .map(|(key, energy_supply_details)| key.clone())
                 .collect(),
@@ -1939,7 +1939,7 @@ fn write_core_output_file_hot_water_source_summary(
     _output: &impl Output,
     _output_file: &str,
     _hot_water_source_results: &[StorageTankDetailedResult],
-)  {
+) {
     // TODO complete when hot water source results defined
 }
 
