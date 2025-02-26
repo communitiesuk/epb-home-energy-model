@@ -3102,7 +3102,7 @@ fn internal_gains_from_input(
     }
     if let Some(internal_gains) = input.evaporative_losses.as_ref() {
         gains_collection.insert(
-            "evaporative_losses".to_string(),
+            "evaporativelosses".to_string(),
             Gains::Internal(internal_gains_from_details(
                 internal_gains,
                 total_floor_area,
