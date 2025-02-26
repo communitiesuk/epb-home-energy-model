@@ -399,6 +399,7 @@ pub(crate) trait HeatTransferThrough {
         self.k_pli().len()
     }
 
+    #[cfg(test)]
     fn number_of_inside_nodes(&self) -> usize {
         self.number_of_nodes() - 2
     }
@@ -431,7 +432,7 @@ pub(crate) trait HeatTransferThrough {
 
     fn h_pli(&self) -> &[f64];
 
-    fn h_pli_by_idx(&self, idx: usize) -> Option<f64> {
+    fn _h_pli_by_idx(&self, idx: usize) -> Option<f64> {
         self.h_pli().get(idx).copied()
     }
 }
@@ -575,6 +576,7 @@ pub(crate) trait HeatTransferOtherSide {
     fn set_f_sky(&mut self, f_sky: f64);
     fn set_therm_rad_to_sky(&mut self, therm_rad_to_sky: f64);
     fn therm_rad_to_sky(&self) -> f64;
+    #[allow(dead_code)]
     fn f_sky(&self) -> f64;
 
     /// Return external surface resistance, in m2 K / W
@@ -1163,7 +1165,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
         (i_sol_dir, i_sol_dif)
     }
 
-    fn shading_factors_direct_diffuse(
+    fn _shading_factors_direct_diffuse(
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
@@ -2406,17 +2408,18 @@ impl From<WindowTreatmentControlInput> for WindowTreatmentControl {
 
 #[derive(Debug)]
 pub(crate) struct WindowTreatment {
-    treatment_type: WindowTreatmentType,
+    _treatment_type: WindowTreatmentType,
     controls: WindowTreatmentControl,
+    #[allow(dead_code)]
     delta_r: f64,
     trans_red: f64,
-    closing_irradiance: Option<f64>,
-    opening_irradiance: Option<f64>,
+    _closing_irradiance: Option<f64>,
+    _opening_irradiance: Option<f64>,
     closing_irradiance_control: Option<Arc<Control>>,
     opening_irradiance_control: Option<Arc<Control>>,
     open_control: Option<Arc<Control>>,
     is_open: AtomicBool,
-    waking_hour: Option<usize>,
+    _waking_hour: Option<usize>,
     opening_delay_hrs: f64,
     time_last_adjusted: AtomicF64,
 }
@@ -2428,12 +2431,12 @@ impl WindowTreatment {
         current_hour: u32,
     ) -> Self {
         Self {
-            treatment_type: input.treatment_type,
+            _treatment_type: input.treatment_type,
             controls: input.controls.into(),
             delta_r: input.delta_r,
             trans_red: input.trans_red,
-            closing_irradiance: input.closing_irradiance,
-            opening_irradiance: input.opening_irradiance,
+            _closing_irradiance: input.closing_irradiance,
+            _opening_irradiance: input.opening_irradiance,
             closing_irradiance_control: input
                 .closing_irradiance_control
                 .as_ref()
@@ -2447,7 +2450,7 @@ impl WindowTreatment {
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             is_open: input.is_open.unwrap_or_default().into(),
-            waking_hour: input.waking_hour,
+            _waking_hour: input.waking_hour,
             opening_delay_hrs: input.opening_delay_hrs,
             time_last_adjusted: (current_hour as f64).into(),
         }

@@ -2428,6 +2428,7 @@ mod tests {
         .unwrap()
     }
 
+    #[rstest]
     fn test_power_output_emitter_ufh(emitter_ufh: Emitters) {
         let temp_emitter = 15.;
         let temp_rm = 10.;
