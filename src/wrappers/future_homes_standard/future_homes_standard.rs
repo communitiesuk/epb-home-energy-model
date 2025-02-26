@@ -2373,9 +2373,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         input_24h.as_input(),
         None,
         sim_settings
-            .tariff_data_filename
-            .as_ref()
-            .map(String::as_str),
+            .tariff_data_filename.as_deref(),
         &output_options,
     )?;
 

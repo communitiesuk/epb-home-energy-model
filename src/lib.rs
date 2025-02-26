@@ -956,9 +956,7 @@ impl From<&Input> for SummaryInputDigest {
             electricity_keys: input
                 .energy_supply
                 .iter()
-                .filter_map(|(key, energy_supply_details)| {
-                    (energy_supply_details.fuel == FuelType::Electricity).then(|| key.clone())
-                })
+                .filter(|&(key, energy_supply_details)| (energy_supply_details.fuel == FuelType::Electricity)).map(|(key, energy_supply_details)| key.clone())
                 .collect(),
         }
     }
@@ -1392,7 +1390,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let stats: IndexMap<KeyString, EnergySupplyStat> = results_end_user
         .iter()
         .map(|(key, value)| {
-            (key.clone(), {
+            (*key, {
                 let (elec_generated, elec_consumed) = value.iter().fold(
                     (0.0, 0.0),
                     |(elec_generated_acc, elec_consumed_acc), (_end_use, values)| {
@@ -1448,7 +1446,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let net_import_per_timestep = (0..timestep_array.len())
         .map(|i| {
             electricity_keys
-                .into_iter()
+                .iter()
                 .map(|k| {
                     let key = KeyString::from(k).unwrap();
                     energy_import[&key][i] + energy_export[&key][i]
@@ -1835,8 +1833,8 @@ fn write_core_output_file_esh_detailed(
         let output_key = format!("{output_prefix}_{esh}");
         let writer = output.writer_for_location_key(&output_key, "csv")?;
         let mut writer = WriterBuilder::new().flexible(true).from_writer(writer);
-        writer.write_record(&headings)?;
-        writer.write_record(&units_row)?;
+        writer.write_record(headings)?;
+        writer.write_record(units_row)?;
         for esh_results in esh_output {
             writer.write_record(esh_results.as_string_values())?;
         }
