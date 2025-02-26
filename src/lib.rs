@@ -956,7 +956,10 @@ impl From<&Input> for SummaryInputDigest {
             electricity_keys: input
                 .energy_supply
                 .iter()
-                .filter(|&(key, energy_supply_details)| (energy_supply_details.fuel == FuelType::Electricity)).map(|(key, energy_supply_details)| key.clone())
+                .filter(|&(key, energy_supply_details)| {
+                    (energy_supply_details.fuel == FuelType::Electricity)
+                })
+                .map(|(key, energy_supply_details)| key.clone())
                 .collect(),
         }
     }
@@ -1686,8 +1689,8 @@ fn write_core_output_file_heat_source_wet(
     heat_source_wet_results: &ResultsPerTimestep,
 ) -> Result<(), anyhow::Error> {
     // Repeat column headings for each service
-    let mut col_headings = vec!["Timestep count".to_string()];
-    let mut col_units_row = vec!["".to_string()];
+    let mut col_headings = vec!["Timestep".to_string()];
+    let mut col_units_row = vec!["count".to_string()];
     let mut columns: IndexMap<String, Vec<(String, String)>> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
@@ -1701,7 +1704,7 @@ fn write_core_output_file_heat_source_wet(
                 .cloned()
                 .collect::<IndexMap<_, _>>()
                 .values()
-                .map(|x| x.to_string())
+                .map(|col_heading| format!("{service_name}: {col_heading}"))
                 .collect::<Vec<String>>(),
         );
         col_units_row.extend(
