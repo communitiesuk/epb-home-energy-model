@@ -282,6 +282,8 @@ pub fn run_project(
                         heat_source_wet_results_annual_dict,
                         vent_output_list,
                         emitters_output_dict,
+                        storage_from_grid,
+                        battery_state_of_charge,
                         ..
                     },
                     ..
@@ -298,6 +300,8 @@ pub fn run_project(
                         energy_generated_consumed,
                         energy_to_storage,
                         energy_from_storage,
+                        storage_from_grid,
+                        battery_state_of_charge,
                         energy_diverted,
                         betafactor,
                         zone_dict,
@@ -573,6 +577,8 @@ struct OutputFileArgs<'a> {
     energy_generated_consumed: &'a IndexMap<KeyString, Vec<f64>>,
     energy_to_storage: &'a IndexMap<KeyString, Vec<f64>>,
     energy_from_storage: &'a IndexMap<KeyString, Vec<f64>>,
+    storage_from_grid: &'a IndexMap<KeyString, Vec<f64>>,
+    battery_state_of_charge: &'a IndexMap<KeyString, Vec<f64>>,
     energy_diverted: &'a IndexMap<KeyString, Vec<f64>>,
     betafactor: &'a IndexMap<KeyString, Vec<f64>>,
     zone_dict: &'a IndexMap<ZoneResultKey, IndexMap<KeyString, Vec<f64>>>,
@@ -593,6 +599,8 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         energy_generated_consumed,
         energy_to_storage,
         energy_from_storage,
+        storage_from_grid,
+        battery_state_of_charge,
         energy_diverted,
         betafactor,
         zone_dict,
@@ -716,10 +724,14 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
         units_row.push("[kWh]");
         headings.push(format!("{totals_key}: beta factor").into());
         units_row.push("[ratio]");
-        headings.push(format!("{totals_key}: to storage").into());
+        headings.push(format!("{totals_key}: generation to storage").into());
         units_row.push("[kWh]");
         headings.push(format!("{totals_key}: from storage").into());
         units_row.push("[kWh]");
+        headings.push(format!("{totals_key}: grid to storage").into());
+        units_row.push("[kWh]");
+        headings.push(format!("{totals_key}: battery charge level").into());
+        units_row.push("[ratio]");
         headings.push(format!("{totals_key}: diverted").into());
         units_row.push("[kWh]");
     }
@@ -753,6 +765,8 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
             energy_use_row.push(betafactor[totals_key][t_idx]);
             energy_use_row.push(energy_to_storage[totals_key][t_idx]);
             energy_use_row.push(energy_from_storage[totals_key][t_idx]);
+            energy_use_row.push(storage_from_grid[totals_key][t_idx]);
+            energy_use_row.push(battery_state_of_charge[totals_key][t_idx]);
             energy_use_row.push(energy_diverted[totals_key][t_idx]);
         }
 
