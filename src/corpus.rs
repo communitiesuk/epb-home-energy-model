@@ -3551,7 +3551,7 @@ fn zone_from_input(
     heat_system_name_for_zone.insert(zone_name.to_owned(), heat_system_names);
 
     let cool_system_names = match cool_system_name {
-        SystemReference::None(_) => vec![],
+        SystemReference::None(_) => vec!["".to_owned()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
         SystemReference::Single(name) => vec![name.clone()],
         SystemReference::Multiple(names) => names.clone(),
     };
