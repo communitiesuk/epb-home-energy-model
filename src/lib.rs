@@ -125,8 +125,6 @@ pub fn run_project(
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
 
-        let cloned_input = input_for_processing.clone();
-
         let input = match catch_unwind(AssertUnwindSafe(|| {
             apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
                 .map_err(HemError::InvalidRequest)
@@ -141,6 +139,8 @@ pub fn run_project(
                 ))
             }
         };
+
+        let cloned_input = input.get(&CalculationKey::Primary).map(|input| input.clone());
 
         // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
         if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
@@ -251,7 +251,7 @@ pub fn run_project(
         // 6. Write out to core output files.
         #[instrument(skip_all)]
         fn write_core_output_files(
-            cloned_input: &InputForProcessing,
+            primary_input: Option<&Input>,
             output: &impl Output,
             results: &HashMap<CalculationKey, CalculationResultsWithContext>,
             corpora: &HashMap<CalculationKey, Corpus>,
@@ -351,7 +351,9 @@ pub fn run_project(
 
                 let corpus = results.context.corpus;
 
-                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = calc_htc_hlp(cloned_input.as_input())?;
+                let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
+
+                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = calc_htc_hlp(primary_input)?;
                 let heat_capacity_parameter = corpus.calc_hcp();
                 let heat_loss_form_factor = corpus.calc_hlff();
 
@@ -363,7 +365,7 @@ pub fn run_project(
                         heat_loss_parameter,
                         heat_capacity_parameter,
                         heat_loss_form_factor,
-                        temp_internal_air: cloned_input.temp_internal_air_static_calcs().ok_or_else(|| anyhow!("A value for the temp_internal_air_static_calcs field was expected to have been provided on the input."))?,
+                        temp_internal_air: primary_input.temp_internal_air_static_calcs.ok_or_else(|| anyhow!("A value for the temp_internal_air_static_calcs field was expected to have been provided on the input."))?,
                         temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
                     },
                 )?;
@@ -380,7 +382,7 @@ pub fn run_project(
             Ok(())
         }
 
-        write_core_output_files(&cloned_input, &output, &contextualised_results, &corpora, flags)?;
+        write_core_output_files(cloned_input.as_ref(), &output, &contextualised_results, &corpora, flags)?;
 
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
