@@ -2047,7 +2047,7 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             air_temperatures: Some(value.air_temperatures.clone()),
             wind_speeds: Some(value.wind_speeds.clone()),
             wind_directions: Some(value.wind_directions.clone()),
-            diffuse_horizontal_radiation: Some(value.wind_directions.clone()),
+            diffuse_horizontal_radiation: Some(value.diffuse_horizontal_radiation.clone()),
             direct_beam_radiation: Some(value.direct_beam_radiation.clone()),
             solar_reflectivity_of_ground: Some(value.solar_reflectivity_of_ground.clone()),
             latitude: Some(value.latitude),
