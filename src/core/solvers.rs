@@ -25,7 +25,7 @@ pub(crate) fn root<const ARGCOUNT: usize>(
     let guess_interval = 5.; // initial guess for guess interval
 
     find_root_brent::<f64, _>(
-        x0 - guess_interval,
+        (x0 - guess_interval).max(0.), // ensure first bracket is at least zero
         x0 + guess_interval,
         |f| fun(f, args),
         &mut convergency,
