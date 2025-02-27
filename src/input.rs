@@ -2588,6 +2588,8 @@ pub struct SpaceCoolSystemDetails {
     #[serde(rename = "type")]
     pub system_type: SpaceCoolSystemType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    advanced_start: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temp_setback: Option<f64>,
     pub cooling_capacity: f64,
     pub efficiency: f64,
@@ -2614,6 +2616,10 @@ impl SpaceCoolSystemDetails {
 
     pub(crate) fn set_energy_supply(&mut self, energy_supply_type: &str) {
         self.energy_supply = energy_supply_type.to_string();
+    }
+
+    pub fn advanced_start(&self) -> Option<f64> {
+        self.advanced_start
     }
 
     pub fn temp_setback(&self) -> Option<f64> {
@@ -4009,9 +4015,27 @@ impl InputForProcessing {
             ))?
             .get(space_cool_system)
             .ok_or(anyhow!(
-                "There is no provided space heat system with the name '{space_cool_system}'"
+                "There is no provided space cool system with the name '{space_cool_system}'"
             ))?
             .temp_setback())
+    }
+
+    pub fn advanced_start_for_space_cool_system(
+        &self,
+        space_cool_system: &str,
+    ) -> anyhow::Result<Option<f64>> {
+        Ok(self
+            .input
+            .space_cool_system
+            .as_ref()
+            .ok_or(anyhow!(
+                "There is no space cool system provided at the root of the input"
+            ))?
+            .get(space_cool_system)
+            .ok_or(anyhow!(
+                "There is no provided space cool system with the name '{space_cool_system}'"
+            ))?
+            .advanced_start())
     }
 
     pub fn advanced_start_for_space_heat_system(

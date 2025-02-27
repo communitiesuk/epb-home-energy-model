@@ -3072,7 +3072,7 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                                 }
                             }
                             if let Some(advanced_start) =
-                                input.advanced_start_for_space_heat_system(&space_cool_system)?
+                                input.advanced_start_for_space_cool_system(&space_cool_system)?
                             {
                                 match living_room_control {
                                     Value::Object(ref mut control_map) => {
@@ -3119,8 +3119,9 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                                     _ => unreachable!(),
                                 }
                             }
+                            
                             if let Some(advanced_start) =
-                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                                input.advanced_start_for_space_cool_system(&space_cool_system)?
                             {
                                 match rest_of_dwelling_control {
                                     Value::Object(ref mut control_map) => {
