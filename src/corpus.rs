@@ -2980,7 +2980,11 @@ fn energy_supplies_from_input(
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.to_string(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::UnmetDemand, 0).build(),
+            EnergySupplyBuilder::new(
+                FuelType::UnmetDemand,
+                simulation_time_iterator.total_steps(),
+            )
+            .build(),
         )),
     );
 
