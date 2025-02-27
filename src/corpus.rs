@@ -1434,6 +1434,7 @@ impl Corpus {
     )> {
         let h_output_min: IndexMap<String, f64> = h_name_list_sorted_zone[z_name]
             .iter()
+            .filter(|h_name| h_name.as_str() != "") // we need to exclude the empty string as it stands for None (yes, we're stringly typing this)
             .map(|h_name| -> anyhow::Result<(String, f64)> {
                 Ok((
                     h_name.clone(),
@@ -1447,6 +1448,7 @@ impl Corpus {
             .try_collect()?;
         let c_output_min = c_name_list_sorted_zone[z_name]
             .iter()
+            .filter(|c_name| c_name.as_str() != "") // we need to exclude the empty string as it stands for None (yes, we're stringly typing this)
             .map(|c_name| {
                 (
                     c_name.clone(),
@@ -1460,6 +1462,7 @@ impl Corpus {
 
         let mut hc_output_min = h_output_min.clone();
         hc_output_min.extend(c_output_min);
+        hc_output_min.extend(IndexMap::from([("".to_owned(), 0.0)])); // empty string used here as equivalent of None in Python
 
         let mut frac_convective_system = frac_convective_heat_zone_system[z_name].clone();
         frac_convective_system.extend(frac_convective_cool_zone_system[z_name].clone());
