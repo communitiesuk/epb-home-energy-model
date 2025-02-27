@@ -3542,6 +3542,7 @@ fn zone_from_input(
         let h_overassigned: Vec<String> = HashSet::from_iter(heat_system_names.clone().into_iter())
             .intersection(&zone_h_name_set)
             .cloned()
+            .filter(|name| name != "")
             .collect_vec();
         if !h_overassigned.is_empty() {
             bail!(
@@ -3564,6 +3565,7 @@ fn zone_from_input(
         let c_overassigned: Vec<String> = HashSet::from_iter(cool_system_names.clone().into_iter())
             .intersection(&zone_c_name_set)
             .cloned()
+            .filter(|name| name != "")
             .collect_vec();
         if !c_overassigned.is_empty() {
             bail!(
