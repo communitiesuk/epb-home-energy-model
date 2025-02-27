@@ -3529,7 +3529,7 @@ fn zone_from_input(
     let cool_system_name = input.space_cool_system.clone();
 
     let heat_system_names = match heat_system_name {
-        SystemReference::None(_) => vec![],
+        SystemReference::None(_) => vec!["".to_owned()], // equivalent of [None] in Python - we are using empty string to denote absence rather than using Option<String> everywhere
         SystemReference::Single(name) => vec![name.clone()],
         SystemReference::Multiple(names) => names.clone(),
     };
