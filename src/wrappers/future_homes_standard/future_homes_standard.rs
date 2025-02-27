@@ -2394,9 +2394,20 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let mut non_appliance_electricity_demand = vec![];
     for i in 0..min_demand_length {
         for (name, user) in electricity_users {
-            let name = ApplianceKey::try_from(name.as_str())?;
-            if !input.appliances_contain_key(&name) {
-                non_appliance_electricity_demand[i] += user[i];
+            let name = ApplianceKey::try_from(name.as_str());
+            let do_increment = match name {
+                Ok(name) => !input.appliances_contain_key(&name),
+                Err(_) => true,
+            };
+            if do_increment {
+                non_appliance_electricity_demand.insert(
+                    i,
+                    non_appliance_electricity_demand
+                        .get(i)
+                        .unwrap_or(&0.)
+                        .clone()
+                        + user[i],
+                );
             }
         }
     }
@@ -3119,7 +3130,7 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                                     _ => unreachable!(),
                                 }
                             }
-                            
+
                             if let Some(advanced_start) =
                                 input.advanced_start_for_space_cool_system(&space_cool_system)?
                             {
