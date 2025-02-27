@@ -437,7 +437,7 @@ impl ExternalConditions {
         // but this could potentially change in the future - the precision is marked as "unspecified".
         let wind_direction_average = y_average.atan2(x_average).to_degrees();
 
-        wind_direction_average % 360.
+        wind_direction_average.rem_euclid(360.) // cannot use % operator here as we need lowest non-negative remainder, which % does not give us
     }
 
     pub fn diffuse_horizontal_radiation(&self, timestep_idx: usize) -> f64 {
