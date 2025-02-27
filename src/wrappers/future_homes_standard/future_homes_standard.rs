@@ -1686,9 +1686,6 @@ fn create_appliance_gains(
             .get(&appliance_key)
             .expect("Appliance key was not in appliance map");
 
-        let (kwhcycle, loadingfactor) =
-            appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
-
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
             // TODO (from Python) - translation of efficiencies should be its own function
@@ -1787,9 +1784,7 @@ fn create_appliance_gains(
                 .collect();
             power_scheds.insert(appliance_key, flat_schedule.clone());
 
-            // Python has the below line which references a variable that hasn't been assigned at this point(kwhcycle), may be erroneous.
-            // Commenting out so the Rust can compile
-            // priority.insert(appliance_key, (None, kwhcycle));
+            priority.insert(appliance_key, (None, 1.)); // Python passes in kwhcycle here instead of 1. but kwhcycle hasn't been assigned at this point, may be erroneous.
 
             let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
@@ -2377,8 +2372,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let corpus = Corpus::from_inputs(
         input_24h.as_input(),
         None,
-        sim_settings
-            .tariff_data_filename.as_deref(),
+        sim_settings.tariff_data_filename.as_deref(),
         &output_options,
     )?;
 
