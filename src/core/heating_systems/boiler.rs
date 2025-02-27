@@ -255,7 +255,6 @@ impl BoilerServiceWaterRegular {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn temp_setpnt(
         &self,
         simtime: SimulationTimeIteration,

@@ -1369,7 +1369,7 @@ impl HeatPumpServiceWater {
         self.control.is_on(simtime)
     }
 
-    pub(crate) fn _temp_setpnt(
+    pub(crate) fn temp_setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -4429,7 +4429,7 @@ impl HeatPumpHotWaterOnly {
         self.initial_efficiency * in_use_factor_mismatch
     }
 
-    pub(crate) fn _temp_setpnt(
+    pub(crate) fn temp_setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {

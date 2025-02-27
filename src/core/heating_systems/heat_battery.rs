@@ -51,13 +51,13 @@ impl HeatBatteryServiceWaterRegular {
         }
     }
 
-    pub(crate) fn _temp_setpnt(
+    pub(crate) fn temp_setpnt(
         &self,
-        simulation_time_iteration: &SimulationTimeIteration,
+        simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self._control_min.setpnt(simulation_time_iteration),
-            self.control_max.setpnt(simulation_time_iteration),
+            self._control_min.setpnt(&simulation_time_iteration),
+            self.control_max.setpnt(&simulation_time_iteration),
         )
     }
 

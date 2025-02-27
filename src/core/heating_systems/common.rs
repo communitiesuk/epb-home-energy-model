@@ -99,6 +99,28 @@ impl HeatSourceWet {
             }
         }
     }
+
+    pub(crate) fn temp_setpnt(
+        &self,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        Ok(match self {
+            HeatSourceWet::WaterCombi(_) => {
+                bail!("BoilerServiceWaterCombi does not implement temp_setpnt")
+            }
+            HeatSourceWet::WaterRegular(regular) => regular.temp_setpnt(simtime),
+            HeatSourceWet::Space(space) => {
+                let minmax = space.temp_setpnt(simtime);
+                (minmax, minmax)
+            }
+            HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.temp_setpnt(simtime),
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.temp_setpnt(simtime),
+            HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.temp_setpnt(simtime),
+            HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
+                heat_pump_water_only.temp_setpnt(simtime)
+            }
+        })
+    }
 }
 
 #[derive(Debug)]
