@@ -771,12 +771,6 @@ impl Corpus {
             })
             .collect::<anyhow::Result<_>>()?;
 
-        if !has_unique_non_default_values(&heat_system_name_for_zone)
-            || !has_unique_non_default_values(&cool_system_name_for_zone)
-        {
-            bail!("the heat or cool systems do not have unique names in the inputs");
-        }
-
         let energy_supply_conn_unmet_demand_zone = set_up_energy_supply_unmet_demand_zones(
             energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
             &input.zone,
@@ -2897,12 +2891,6 @@ impl SpaceHeatCoolSystems<'_> {
             SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
         }
     }
-}
-
-fn has_unique_non_default_values<K, V: Default + Eq + Hash>(map: &IndexMap<K, V>) -> bool {
-    let values: Vec<&V> = map.values().filter(|x| x != &&V::default()).collect();
-    let value_set: HashSet<&&V> = values.iter().collect();
-    values.len() == value_set.len()
 }
 
 fn external_conditions_from_input(
