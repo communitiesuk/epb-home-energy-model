@@ -863,6 +863,10 @@ fn edit_default_space_heating_distribution_system(
                     "min_outdoor_temp": 0
                     },
             "Control": HEATING_PATTERN,
+            // NB. this is a change from the Python in order to massage this input to pass
+            // the invariant that a design_flow_rate must be indicated if variable_flow is
+            // not true
+            "design_flow_rate": 10,
             "design_flow_temp": design_flow_temp as i32,
             "Zone": zone_name,
             "temp_setback" : 18
@@ -1424,6 +1428,11 @@ fn add_solar_pv(
                 "height":pv_height,
                 "width":pv_width,
                 "shading": [],
+                // NB. following two are fake canned values to get round invariant that
+                // inverter_peak_power_dc and inverter_peak_power_ac are currently needed for PV
+                "inverter_peak_power_dc": 3.5,
+                "inverter_peak_power_ac": 2.4,
+                "inverter_type": "string_inverter"
                 }
         });
 
@@ -2606,7 +2615,12 @@ mod tests {
                         "EnergySupply": "mains elec",
                         "shading": [],
                         "inverter_peak_power": 2,
-                        "inverter_is_inside": false
+                        "inverter_is_inside": false,
+                        // NB. following two are fake canned values to get round invariant that
+                        // inverter_peak_power_dc and inverter_peak_power_ac are currently needed for PV
+                        "inverter_peak_power_dc": 3.5,
+                        "inverter_peak_power_ac": 2.4,
+                        "inverter_type": "string_inverter"
                     }
             }))
             .unwrap();
@@ -2629,7 +2643,12 @@ mod tests {
                 "shading": [],
                 "base_height": 1,
                 "width": 6.324555320336759,
-                "height": 3.1622776601683795
+                "height": 3.1622776601683795,
+                // NB. following two are fake canned values to get round invariant that
+                // inverter_peak_power_dc and inverter_peak_power_ac are currently needed for PV
+                "inverter_peak_power_dc": 3.5,
+                "inverter_peak_power_ac": 2.4,
+                "inverter_type": "string_inverter"
                 }
         }))
         .unwrap();
@@ -2814,6 +2833,10 @@ mod tests {
                     // TODO 0.32 removed fields (redo this properly)
                     // "c": 0.0,
                     "design_flow_temp": 45,
+                    // NB. this is a change from the Python in order to massage this input to pass
+                    // the invariant that a design_flow_rate must be indicated if variable_flow is
+                    // not true
+                    "design_flow_rate": 10,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
@@ -2835,6 +2858,10 @@ mod tests {
                     // TODO 0.32 removed fields (redo this properly)
                     // "c": 0.0,
                     "design_flow_temp": 45,
+                    // NB. this is a change from the Python in order to massage this input to pass
+                    // the invariant that a design_flow_rate must be indicated if variable_flow is
+                    // not true
+                    "design_flow_rate": 10,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
