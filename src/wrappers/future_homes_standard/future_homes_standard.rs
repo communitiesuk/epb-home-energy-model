@@ -2361,7 +2361,11 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         battery_state_of_charge: zeros_24h_by_supply.clone(),
     })?;
 
-    input_24h.set_simulation_time(simtime());
+    input_24h.set_simulation_time(SimulationTime::new(
+        SIMTIME_START,
+        SIMTIME_START + HOURS_PER_DAY as f64,
+        SIMTIME_STEP,
+    ));
 
     // create a corpus instance
     let output_options = OutputOptions {
