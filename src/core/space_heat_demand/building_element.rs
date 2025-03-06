@@ -1165,7 +1165,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
         (i_sol_dir, i_sol_dif)
     }
 
-    fn _shading_factors_direct_diffuse(
+    fn shading_factors_direct_diffuse(
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
@@ -1354,9 +1354,7 @@ impl BuildingElementOpaque {
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
-        Ok(SolarRadiationInteractionAbsorbed::i_sol_dir_dif(
-            self, simtime,
-        ))
+        SolarRadiationInteractionAbsorbed::shading_factors_direct_diffuse(self, simtime)
     }
 
     pub(crate) fn external_conditions(&self) -> &ExternalConditions {
