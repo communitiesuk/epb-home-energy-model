@@ -2406,10 +2406,9 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
             if do_increment {
                 non_appliance_electricity_demand.insert(
                     i,
-                    non_appliance_electricity_demand
+                    *non_appliance_electricity_demand
                         .get(i)
                         .unwrap_or(&0.)
-                        .clone()
                         + user[i],
                 );
             }

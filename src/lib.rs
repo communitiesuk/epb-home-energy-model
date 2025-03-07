@@ -140,7 +140,7 @@ pub fn run_project(
             }
         };
 
-        let cloned_input = input.get(&CalculationKey::Primary).map(|input| input.clone());
+        let cloned_input = input.get(&CalculationKey::Primary).cloned();
 
         // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
         if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
