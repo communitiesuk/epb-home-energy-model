@@ -23,7 +23,6 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
@@ -107,7 +106,6 @@ fn validate_only_storage_tanks(
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -154,7 +152,6 @@ pub struct ExternalConditionsInput {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -175,7 +172,6 @@ pub(crate) struct InternalGains {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -188,7 +184,6 @@ pub(crate) struct InternalGainsDetails {
 pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -215,7 +210,6 @@ pub(crate) struct ApplianceGainsDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGainsDetailsEvent {
@@ -228,7 +222,6 @@ pub struct ApplianceGainsDetailsEvent {
 pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
@@ -268,7 +261,6 @@ impl EnergySupplyDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EnergySupplyTariff {
     #[serde(rename = "Standard Tariff")]
@@ -282,7 +274,6 @@ pub(crate) enum EnergySupplyTariff {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SecondarySupplyType {
     ElectricBattery,
@@ -296,7 +287,6 @@ pub enum SecondarySupplyType {
 // (It's also hard to see some of these as types of fuel)
 // We expect to reach more clarity when the input specification is finalised.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum FuelType {
@@ -346,7 +336,6 @@ impl TryFrom<EnergySupplyType> for FuelType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EnergySupplyType {
     #[serde(rename = "mains elec")]
@@ -381,7 +370,6 @@ impl Display for EnergySupplyType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
@@ -400,7 +388,6 @@ impl Default for EnergyDiverter {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum StorageTankType {
     #[serde(rename = "hw cylinder")]
@@ -417,7 +404,6 @@ impl StorageTankType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum DiverterHeatSourceType {
     #[serde(rename = "immersion")]
@@ -434,7 +420,6 @@ impl DiverterHeatSourceType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
@@ -450,7 +435,6 @@ pub struct ElectricBattery {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum BatteryLocation {
@@ -459,7 +443,6 @@ pub enum BatteryLocation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct CustomEnergySourceFactor {
@@ -474,7 +457,6 @@ pub struct CustomEnergySourceFactor {
 pub(crate) type ColdWaterSourceInput = IndexMap<ColdWaterSourceType, ColdWaterSourceDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -489,7 +471,6 @@ pub struct ColdWaterSourceDetails {
 pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct Control {
@@ -512,7 +493,6 @@ impl Control {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -597,7 +577,6 @@ pub(crate) enum ControlDetails {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
@@ -608,7 +587,6 @@ pub(crate) enum ChargeLevel {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExternalSensor {
@@ -616,7 +594,6 @@ pub(crate) struct ExternalSensor {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExternalSensorCorrelation {
@@ -625,7 +602,6 @@ pub(crate) struct ExternalSensorCorrelation {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct ControlCombinations {
     pub(crate) main: ControlCombination,
@@ -656,7 +632,6 @@ impl Index<&str> for ControlCombinations {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ControlCombination {
@@ -666,7 +641,6 @@ pub(crate) struct ControlCombination {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
 pub enum ControlCombinationOperation {
@@ -680,7 +654,6 @@ pub enum ControlCombinationOperation {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SmartApplianceBattery {
@@ -740,7 +713,6 @@ impl ControlDetails {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ControlLogicType {
     #[default]
@@ -754,7 +726,6 @@ pub enum ControlLogicType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HotWaterSource {
@@ -783,7 +754,6 @@ impl HotWaterSource {
 }
 
 #[derive(Clone, Deserialize_enum_str, PartialEq, Debug, Serialize_enum_str)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum BoilerHotWaterTest {
     #[serde(rename = "M&L")]
@@ -797,7 +767,6 @@ pub enum BoilerHotWaterTest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HotWaterSourceDetails {
@@ -993,7 +962,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ColdWaterSourceType {
     #[serde(rename = "mains water")]
@@ -1003,7 +971,6 @@ pub enum ColdWaterSourceType {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
 pub enum ColdWaterSourceReference {
@@ -1012,7 +979,6 @@ pub enum ColdWaterSourceReference {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceWetType {
     #[serde(rename = "boiler")]
@@ -1036,7 +1002,6 @@ impl HeatSourceWetType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceControlType {
     #[serde(rename = "hw timer")]
@@ -1052,7 +1017,6 @@ pub enum HeatSourceControlType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum HeatSource {
@@ -1222,7 +1186,6 @@ impl HeatSource {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SolarCellLocation {
     #[serde(rename = "OUT")]
@@ -1234,7 +1197,6 @@ pub enum SolarCellLocation {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterTestData {
@@ -1245,7 +1207,6 @@ pub struct HeatPumpHotWaterTestData {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpHotWaterOnlyTestDatum {
@@ -1267,7 +1228,6 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipeworkSimple {
@@ -1288,7 +1248,6 @@ pub struct WaterPipeworkSimple {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
@@ -1303,7 +1262,6 @@ pub struct WaterPipework {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterPipeworkLocation {
     #[serde(rename = "internal")]
@@ -1313,7 +1271,6 @@ pub enum WaterPipeworkLocation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterPipeContentsType {
     #[serde(rename = "water")]
@@ -1325,7 +1282,6 @@ pub enum WaterPipeContentsType {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -1341,7 +1297,6 @@ pub struct HotWaterDemand {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Showers(pub IndexMap<String, Shower>);
 
@@ -1359,7 +1314,6 @@ impl Showers {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
 pub enum Shower {
@@ -1381,7 +1335,6 @@ pub enum Shower {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct Baths(pub IndexMap<String, BathDetails>);
@@ -1402,7 +1355,6 @@ impl Baths {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct BathDetails {
@@ -1413,7 +1365,6 @@ pub struct BathDetails {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUses(pub IndexMap<String, OtherWaterUseDetails>);
@@ -1430,7 +1381,6 @@ impl OtherWaterUses {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct OtherWaterUseDetails {
@@ -1442,7 +1392,6 @@ pub struct OtherWaterUseDetails {
 pub type WaterDistribution = Vec<WaterPipeworkSimple>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct WaterHeatingEvents(
@@ -1488,7 +1437,6 @@ impl WaterHeatingEventsForProcessing for WaterHeatingEvents {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -1502,7 +1450,6 @@ pub struct WaterHeatingEvent {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterHeatingEventType {
     Shower,
@@ -1513,7 +1460,6 @@ pub enum WaterHeatingEventType {
 pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
 pub(crate) enum SpaceHeatSystemDetails {
@@ -1757,7 +1703,6 @@ impl SpaceHeatSystemDetails {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(
     deny_unknown_fields,
@@ -1784,7 +1729,6 @@ pub(crate) enum WetEmitter {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FancoilTestData {
     pub(crate) fan_speed_data: Vec<FanSpeedData>,
@@ -1793,7 +1737,6 @@ pub(crate) struct FancoilTestData {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FanSpeedData {
     pub(crate) temperature_diff: f64,
@@ -1801,7 +1744,6 @@ pub(crate) struct FanSpeedData {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct SpaceHeatSystemHeatSource {
@@ -1812,7 +1754,6 @@ pub struct SpaceHeatSystemHeatSource {
 
 // it is unclear whether this struct should be used - see reference to the struct above
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(dead_code)]
 #[serde(deny_unknown_fields)]
@@ -1828,7 +1769,6 @@ pub(crate) struct EcoDesignController {
 
 #[derive(Clone, Copy, Debug, Deserialize_repr, PartialEq, Serialize_repr)]
 #[repr(u8)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EcoDesignControllerClass {
     // exact possible classes tbc
@@ -1843,7 +1783,6 @@ pub(crate) enum EcoDesignControllerClass {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum MVHRLocation {
@@ -1852,7 +1791,6 @@ pub enum MVHRLocation {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ElectricStorageHeaterAirFlowType {
@@ -1863,7 +1801,6 @@ pub(crate) enum ElectricStorageHeaterAirFlowType {
 pub type ZoneDictionary = IndexMap<String, ZoneInput>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -1909,7 +1846,6 @@ pub struct ZoneInput {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
 pub enum SystemReference {
@@ -1931,7 +1867,6 @@ impl Default for SystemReference {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SpaceHeatControlType {
     #[serde(rename = "livingroom")]
@@ -1941,7 +1876,6 @@ pub enum SpaceHeatControlType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ZoneLighting {
@@ -1952,7 +1886,6 @@ pub struct ZoneLighting {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ZoneLightingBulbs {
@@ -1968,7 +1901,6 @@ impl ZoneLightingBulbs {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum ZoneTemperatureControlBasis {
@@ -1979,7 +1911,6 @@ pub enum ZoneTemperatureControlBasis {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
@@ -2321,7 +2252,6 @@ pub(crate) fn init_orientation(value: f64) -> f64 {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MassDistributionClass {
     D,
@@ -2332,7 +2262,6 @@ pub enum MassDistributionClass {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WindowPart {
@@ -2340,7 +2269,6 @@ pub struct WindowPart {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WindowTreatment {
@@ -2400,7 +2328,6 @@ impl WindowTreatment {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
 pub enum WindowTreatmentType {
@@ -2409,7 +2336,6 @@ pub enum WindowTreatmentType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum WindowTreatmentControl {
@@ -2446,7 +2372,6 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum FloorType {
     #[serde(rename = "Slab_no_edge_insulation")]
@@ -2474,7 +2399,6 @@ impl From<&FloorData> for FloorType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
 pub(crate) enum FloorData {
@@ -2513,7 +2437,6 @@ pub(crate) enum FloorData {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WindShieldLocation {
     Sheltered,
@@ -2522,7 +2445,6 @@ pub enum WindShieldLocation {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
 pub enum EdgeInsulation {
@@ -2539,7 +2461,6 @@ pub enum EdgeInsulation {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
@@ -2549,7 +2470,6 @@ pub enum ThermalBridging {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -2569,7 +2489,6 @@ pub enum ThermalBridgingDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatingControlType {
     #[serde(rename = "SeparateTimeAndTempControl")]
@@ -2581,7 +2500,6 @@ pub enum HeatingControlType {
 pub type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -2629,14 +2547,12 @@ impl SpaceCoolSystemDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SpaceCoolSystemType {
     AirConditioning,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WaterHeatingSchedule {
     AllDay,
@@ -2646,7 +2562,6 @@ pub enum WaterHeatingSchedule {
 pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
 #[derive(Clone, Debug, Deserialize, Validate, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -2770,7 +2685,6 @@ impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatPumpSourceType {
     Ground,
@@ -2784,7 +2698,6 @@ pub enum HeatPumpSourceType {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatPumpSinkType {
     Water,
@@ -2793,7 +2706,6 @@ pub enum HeatPumpSinkType {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatPumpBackupControlType {
     None,
@@ -2802,7 +2714,6 @@ pub enum HeatPumpBackupControlType {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBufferTank {
@@ -2813,7 +2724,6 @@ pub struct HeatPumpBufferTank {
 }
 
 #[derive(Clone, Debug, Deserialize, Validate, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpTestDatum {
@@ -2837,7 +2747,6 @@ pub struct HeatPumpTestDatum {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
@@ -2859,7 +2768,6 @@ pub struct HeatPumpBoiler {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BoilerCostScheduleHybrid {
@@ -2870,7 +2778,6 @@ pub(crate) struct BoilerCostScheduleHybrid {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HeatSourceLocation {
     #[serde(rename = "internal")]
@@ -2882,7 +2789,6 @@ pub enum HeatSourceLocation {
 pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WasteWaterHeatRecoveryDetails {
@@ -2898,7 +2804,6 @@ pub struct WasteWaterHeatRecoveryDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum WwhrsType {
     #[serde(rename = "WWHRS_InstantaneousSystemA")]
@@ -2912,7 +2817,6 @@ pub enum WwhrsType {
 pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum OnSiteGenerationDetails {
@@ -2945,7 +2849,6 @@ pub enum OnSiteGenerationDetails {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum OnSiteGenerationVentilationStrategy {
     #[serde(rename = "unventilated")]
@@ -2959,7 +2862,6 @@ pub enum OnSiteGenerationVentilationStrategy {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum InverterType {
@@ -2968,7 +2870,6 @@ pub enum InverterType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WindowOpeningForCooling {
@@ -2976,7 +2877,6 @@ pub struct WindowOpeningForCooling {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -2988,7 +2888,6 @@ pub struct General {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum BuildType {
     #[serde(rename = "house")]
@@ -2998,7 +2897,6 @@ pub enum BuildType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
@@ -3047,7 +2945,6 @@ pub struct InfiltrationVentilation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum VentilationShieldClass {
     Open,
@@ -3056,7 +2953,6 @@ pub enum VentilationShieldClass {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TerrainClass {
     OpenWater,
@@ -3066,7 +2962,6 @@ pub enum TerrainClass {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct Vent {
@@ -3083,7 +2978,6 @@ pub struct Vent {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct VentilationLeaks {
@@ -3099,7 +2993,6 @@ pub struct VentilationLeaks {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilation {
@@ -3173,7 +3066,6 @@ impl MechanicalVentilationForProcessing for MechanicalVentilation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SupplyAirFlowRateControlType {
     ODA,
@@ -3182,7 +3074,6 @@ pub enum SupplyAirFlowRateControlType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum SupplyAirTemperatureControlType {
     #[serde(rename = "CONST")]
@@ -3194,7 +3085,6 @@ pub enum SupplyAirTemperatureControlType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum VentType {
     #[serde(rename = "Intermittent MEV")]
@@ -3220,7 +3110,6 @@ impl Display for VentType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilationDuctwork {
@@ -3239,7 +3128,6 @@ pub struct MechanicalVentilationDuctwork {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum DuctShape {
@@ -3248,7 +3136,6 @@ pub enum DuctShape {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum DuctType {
@@ -3259,7 +3146,6 @@ pub enum DuctType {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 // type is not read in 0.30 version of code - please remove following once data is used
@@ -3270,7 +3156,6 @@ pub struct AirTerminalDevice {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct CombustionAppliance {
@@ -3281,7 +3166,6 @@ pub struct CombustionAppliance {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum CombustionAirSupplySituation {
     #[serde(rename = "room_air")]
@@ -3291,7 +3175,6 @@ pub enum CombustionAirSupplySituation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum FlueGasExhaustSituation {
     #[serde(rename = "into_room")]
@@ -3303,7 +3186,6 @@ pub enum FlueGasExhaustSituation {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum CombustionFuelType {
@@ -3314,7 +3196,6 @@ pub enum CombustionFuelType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
 pub enum CombustionApplianceType {
@@ -3327,7 +3208,6 @@ pub enum CombustionApplianceType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum ApplianceKey {
     Fridge,
@@ -3384,7 +3264,6 @@ impl TryFrom<&str> for ApplianceKey {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
@@ -3394,7 +3273,6 @@ pub enum ApplianceEntry {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -3466,7 +3344,6 @@ impl Appliance {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -3482,14 +3359,12 @@ pub(crate) struct ApplianceLoadShifting {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum WeightLabel {
     Tariff,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum ApplianceReference {
     Default,
@@ -3498,7 +3373,6 @@ pub enum ApplianceReference {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]

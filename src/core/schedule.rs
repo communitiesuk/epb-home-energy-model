@@ -207,7 +207,6 @@ pub(crate) mod input {
     use std::collections::HashMap;
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct Schedule<T: Copy> {
         pub(crate) main: Vec<ScheduleEntry<T>>,
@@ -259,7 +258,6 @@ pub(crate) mod input {
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleEntry<T: Copy> {
@@ -270,7 +268,6 @@ pub(crate) mod input {
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleReferenceEntry<T: Copy> {
@@ -279,7 +276,6 @@ pub(crate) mod input {
     }
 
     #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleRepeaterEntry<T> {
@@ -288,7 +284,6 @@ pub(crate) mod input {
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct ScheduleRepeater<T: Copy> {
         pub(crate) value: ScheduleRepeaterValue<T>,
@@ -296,7 +291,6 @@ pub(crate) mod input {
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
     pub(crate) enum ScheduleRepeaterValue<T: Copy> {
