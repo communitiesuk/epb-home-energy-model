@@ -36,7 +36,7 @@ use serde_enum_str::Serialize_enum_str;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div};
+use std::ops::{Add, AddAssign, Deref, Div};
 use std::sync::Arc;
 
 const N_EXER: f64 = 3.0;
@@ -1516,7 +1516,7 @@ impl HeatPumpServiceSpace {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl, simulation_time_iteration) })
+        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl.deref(), simulation_time_iteration) })
     }
 
     /// Calculate the maximum energy output of the HP, accounting for time
@@ -1730,7 +1730,7 @@ impl HeatPumpServiceSpaceWarmAir {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl, simulation_time_iteration) })
+        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl.deref(), simulation_time_iteration) })
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {

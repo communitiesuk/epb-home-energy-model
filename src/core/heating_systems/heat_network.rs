@@ -10,6 +10,7 @@ use anyhow::bail;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -239,7 +240,7 @@ impl HeatNetworkServiceSpace {
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl, simulation_time_iteration) })
+        per_control!(&self.control.as_ref(), ctrl => { <_ as ControlBehaviour>::in_required_period(ctrl.deref(), simulation_time_iteration) })
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {

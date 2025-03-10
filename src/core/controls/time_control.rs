@@ -26,7 +26,7 @@ pub(crate) enum Control {
     Charge(ChargeControl),
     OnOffMinimisingTime(OnOffMinimisingTimeControl),
     SetpointTime(SetpointTimeControl),
-    SmartAppliance(SmartApplianceControl),
+    SmartAppliance(Box<SmartApplianceControl>),
     CombinationTime(CombinationTimeControl),
 }
 
@@ -34,11 +34,16 @@ pub(crate) enum Control {
 macro_rules! per_control {
     ($val:expr, $pattern:pat => { $res:expr }) => {
         match $val {
+            #[allow(noop_method_call)]
             Control::OnOffTime($pattern) => $res,
+            #[allow(noop_method_call)]
             Control::Charge($pattern) => $res,
+            #[allow(noop_method_call)]
             Control::OnOffMinimisingTime($pattern) => $res,
+            #[allow(noop_method_call)]
             Control::SetpointTime($pattern) => $res,
             Control::SmartAppliance($pattern) => $res,
+            #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
         }
     };
