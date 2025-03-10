@@ -1405,21 +1405,21 @@ pub(crate) struct InfiltrationVentilation {
     total_volume: f64,
     detailed_results: Arc<RwLock<Vec<VentilationDetailedResult>>>,
     #[cfg(test)] // optional behaviour override for tests, akin to mocking
-    calc_air_changes_fn: Option<
-        fn(
-            &InfiltrationVentilation,
-            f64,
-            f64,
-            f64,
-            f64,
-            f64,
-            Option<f64>,
-            f64,
-            Option<ReportingFlag>,
-            SimulationTimeIteration,
-        ) -> anyhow::Result<f64>,
-    >,
+    calc_air_changes_fn: Option<CalcAirChangesFn>,
 }
+
+type CalcAirChangesFn = fn(
+    &InfiltrationVentilation,
+    f64,
+    f64,
+    f64,
+    f64,
+    f64,
+    Option<f64>,
+    f64,
+    Option<ReportingFlag>,
+    SimulationTimeIteration,
+) -> anyhow::Result<f64>;
 
 /// Arguments:
 /// * `f_cross` - cross-ventilation factor
@@ -1487,21 +1487,7 @@ impl InfiltrationVentilation {
     }
 
     #[cfg(test)] // set override of ach function under test scenario
-    fn set_calc_air_changes_fn(
-        &mut self,
-        calc_air_changes_fn: fn(
-            &InfiltrationVentilation,
-            f64,
-            f64,
-            f64,
-            f64,
-            f64,
-            Option<f64>,
-            f64,
-            Option<ReportingFlag>,
-            SimulationTimeIteration,
-        ) -> anyhow::Result<f64>,
-    ) {
+    fn set_calc_air_changes_fn(&mut self, calc_air_changes_fn: CalcAirChangesFn) {
         self.calc_air_changes_fn.replace(calc_air_changes_fn);
     }
 

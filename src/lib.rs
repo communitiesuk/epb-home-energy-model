@@ -24,7 +24,7 @@ use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
-    KeyString, NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
+    HtcHlpCalculation, KeyString, NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
@@ -353,7 +353,7 @@ pub fn run_project(
 
                 let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
 
-                let (heat_transfer_coefficient, heat_loss_parameter, _, _) = calc_htc_hlp(primary_input)?;
+                let HtcHlpCalculation { total_htc: heat_transfer_coefficient, total_hlp: heat_loss_parameter, .. } = calc_htc_hlp(primary_input)?;
                 let heat_capacity_parameter = corpus.calc_hcp();
                 let heat_loss_form_factor = corpus.calc_hlff();
 

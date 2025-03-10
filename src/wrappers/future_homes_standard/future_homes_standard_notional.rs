@@ -9,7 +9,7 @@ use crate::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
 };
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
-use crate::corpus::{calc_htc_hlp, ColdWaterSources};
+use crate::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
 use crate::input::{
     BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, GroundBuildingElement,
     HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing,
@@ -1330,8 +1330,9 @@ fn calc_design_capacity(
 
     // Calculate heat transfer coefficients and heat loss parameters
     set_temp_internal_static_calcs(&mut clone);
-    let (_heat_trans_coeff, _heat_loss_param, htc_dict, _hlp_dict) =
-        calc_htc_hlp(clone.as_input())?;
+    let HtcHlpCalculation {
+        htc_map: htc_dict, ..
+    } = calc_htc_hlp(clone.as_input())?;
 
     // Calculate design capacity
     let min_air_temp = *input.external_conditions().air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;

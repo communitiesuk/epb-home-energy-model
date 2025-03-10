@@ -443,9 +443,7 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
 /// according to the SAP10.2 specification
-pub(super) fn calc_htc_hlp(
-    input: &Input,
-) -> anyhow::Result<(f64, f64, IndexMap<String, f64>, IndexMap<String, f64>)> {
+pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
     let simtime = input.simulation_time;
     let external_conditions = Arc::from(create_external_conditions(
         (*input.external_conditions.as_ref()).clone(),
@@ -615,7 +613,19 @@ pub(super) fn calc_htc_hlp(
     let total_floor_area = zone_area.values().sum::<f64>();
     let total_hlp = total_htc / total_floor_area;
 
-    Ok((total_htc, total_hlp, htc_map, hlp_map))
+    Ok(HtcHlpCalculation {
+        total_htc,
+        total_hlp,
+        htc_map,
+        hlp_map,
+    })
+}
+
+pub(crate) struct HtcHlpCalculation {
+    pub(crate) total_htc: f64,
+    pub(crate) total_hlp: f64,
+    pub(crate) htc_map: IndexMap<String, f64>,
+    pub(crate) hlp_map: IndexMap<String, f64>,
 }
 
 #[derive(Debug)]
@@ -1421,11 +1431,7 @@ impl Corpus {
         frac_convective_cool_zone_system: &HashMap<&str, IndexMap<String, f64>>,
         z_name: &str,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-        IndexMap<String, f64>,
-    )> {
+    ) -> anyhow::Result<HeatCoolOutputs> {
         let h_output_min: IndexMap<String, f64> = h_name_list_sorted_zone[z_name]
             .iter()
             .filter(|h_name| h_name.as_str() != "") // we need to exclude the empty string as it stands for None (yes, we're stringly typing this)
@@ -1477,7 +1483,11 @@ impl Corpus {
             .map(|hc_name| (hc_name.clone(), 0.0))
             .collect::<IndexMap<_, _>>();
 
-        Ok((hc_output_convective, hc_output_radiative, hc_output_min))
+        Ok(HeatCoolOutputs {
+            hc_output_convective,
+            hc_output_radiative,
+            hc_output_min,
+        })
     }
 
     /// Calculate space heating demand, heating system output and temperatures
@@ -1755,15 +1765,18 @@ impl Corpus {
             drop(h_name_list_hashset);
 
             // Initialise system outputs to minimum output for each heating and cooling system
-            let (mut hc_output_convective, mut hc_output_radiative, hc_output_min) = self
-                .heat_cool_system_output_min(
-                    &h_name_list_sorted_zone,
-                    &c_name_list_sorted_zone,
-                    &frac_convective_heat_zone_system,
-                    &frac_convective_cool_zone_system,
-                    z_name,
-                    simtime,
-                )?;
+            let HeatCoolOutputs {
+                mut hc_output_convective,
+                mut hc_output_radiative,
+                hc_output_min,
+            } = self.heat_cool_system_output_min(
+                &h_name_list_sorted_zone,
+                &c_name_list_sorted_zone,
+                &frac_convective_heat_zone_system,
+                &frac_convective_cool_zone_system,
+                z_name,
+                simtime,
+            )?;
             let mut space_heat_demand_zone_system = h_name_list_sorted_zone[z_name]
                 .iter()
                 .map(|h_name| (h_name.as_str(), 0.0))
@@ -2822,6 +2835,22 @@ impl Corpus {
         cop_dict
     }
 }
+
+struct HeatCoolOutputs {
+    hc_output_convective: IndexMap<String, f64>,
+    hc_output_radiative: IndexMap<String, f64>,
+    hc_output_min: IndexMap<String, f64>,
+}
+
+// let (mut hc_output_convective, mut hc_output_radiative, hc_output_min) = self
+//                 .heat_cool_system_output_min(
+//                     &h_name_list_sorted_zone,
+//                     &c_name_list_sorted_zone,
+//                     &frac_convective_heat_zone_system,
+//                     &frac_convective_cool_zone_system,
+//                     z_name,
+//                     simtime,
+//                 )?;
 
 #[derive(Debug, Default)]
 pub struct OutputOptions {
