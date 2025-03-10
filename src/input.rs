@@ -1536,7 +1536,6 @@ pub(crate) enum SpaceHeatSystemDetails {
         _zone: Option<String>,
     },
     #[serde(rename = "ElecStorageHeater")]
-    #[allow(dead_code)]
     ElectricStorageHeater {
         pwr_in: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1566,7 +1565,6 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(rename = "ESH_max_output")]
         esh_max_output: Vec<(f64, f64)>,
     },
-    #[allow(dead_code)]
     WetDistribution {
         #[serde(skip_serializing_if = "Option::is_none")]
         wet_emitter_type: Option<String>,
@@ -1603,7 +1601,6 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(skip_serializing_if = "Option::is_none")]
         temp_setback: Option<f64>,
     },
-    #[allow(dead_code)]
     WarmAir {
         #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
@@ -1619,7 +1616,10 @@ pub(crate) enum SpaceHeatSystemDetails {
 }
 
 impl SpaceHeatSystemDetails {
-    pub fn set_control(&mut self, control_string: impl Into<String>) -> anyhow::Result<&Self> {
+    pub(crate) fn set_control(
+        &mut self,
+        control_string: impl Into<String>,
+    ) -> anyhow::Result<&Self> {
         match self {
             SpaceHeatSystemDetails::InstantElectricHeater {
                 ref mut control, ..
@@ -1671,7 +1671,8 @@ impl SpaceHeatSystemDetails {
         }
     }
 
-    pub fn advanced_start(&self) -> Option<f64> {
+    #[cfg(feature = "fhs")]
+    pub(crate) fn advanced_start(&self) -> Option<f64> {
         match self {
             SpaceHeatSystemDetails::WetDistribution { advanced_start, .. } => *advanced_start,
             SpaceHeatSystemDetails::InstantElectricHeater { advanced_start, .. } => *advanced_start,
@@ -3878,7 +3879,7 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub fn set_control_string_for_space_heat_system(
+    pub(crate) fn set_control_string_for_space_heat_system(
         &mut self,
         space_heat_system: &str,
         control_string: &str,
@@ -4056,7 +4057,7 @@ impl InputForProcessing {
             .advanced_start())
     }
 
-    pub fn set_advance_start_for_space_heat_system(
+    pub(crate) fn set_advance_start_for_space_heat_system(
         &mut self,
         space_heat_system: &str,
         new_advanced_start: f64,

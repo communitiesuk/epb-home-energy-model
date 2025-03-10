@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_arguments, dead_code, unused_variables)]
 
 mod compare_floats;
 pub mod core;
@@ -966,10 +966,10 @@ impl From<&Input> for SummaryInputDigest {
             electricity_keys: input
                 .energy_supply
                 .iter()
-                .filter(|&(key, energy_supply_details)| {
+                .filter(|&(_, energy_supply_details)| {
                     energy_supply_details.fuel == FuelType::Electricity
                 })
-                .map(|(key, energy_supply_details)| key.clone())
+                .map(|(key, _)| key.clone())
                 .collect(),
         }
     }
