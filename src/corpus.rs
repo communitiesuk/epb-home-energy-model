@@ -865,37 +865,33 @@ impl Corpus {
             Default::default();
 
         // processing pre-heated sources
-        let pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> = input
-            .pre_heated_water_source
-            .iter()
-            .map(|(source_name, source_details)| {
-                anyhow::Ok((source_name.to_owned(), {
-                    let (heat_source, energy_conn_names) = hot_water_source_from_input(
-                        source_name.to_owned(),
-                        source_details,
-                        &cold_water_sources,
-                        &IndexMap::from([]),
-                        &mut wet_heat_sources,
-                        &wwhrs,
-                        &controls,
-                        &mut energy_supplies,
-                        &diverter_types,
-                        &mut diverters,
-                        shareable_fn(&temp_internal_air_prev),
-                        simulation_time_iterator.clone().as_ref(),
-                        external_conditions.clone(),
-                        output_options.detailed_output_heating_cooling,
-                    )?;
-                    energy_supply_conn_names_for_hot_water_source
-                        .insert(source_name.to_owned(), energy_conn_names);
-                    if let HotWaterSource::StorageTank(storage_tank) = heat_source {
-                        storage_tank.clone()
-                    } else {
-                        bail!("Pre-heated water sources must be storage tanks")
-                    }
-                }))
-            })
-            .try_collect()?;
+        let mut pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> = Default::default();
+
+        for (source_name, source_details) in &input.pre_heated_water_source {
+            let (heat_source, energy_conn_names) = hot_water_source_from_input(
+                source_name.to_owned(),
+                source_details,
+                &cold_water_sources,
+                &pre_heated_water_sources,
+                &mut wet_heat_sources,
+                &wwhrs,
+                &controls,
+                &mut energy_supplies,
+                &diverter_types,
+                &mut diverters,
+                shareable_fn(&temp_internal_air_prev),
+                simulation_time_iterator.clone().as_ref(),
+                external_conditions.clone(),
+                output_options.detailed_output_heating_cooling,
+            )?;
+            energy_supply_conn_names_for_hot_water_source
+                .insert(source_name.to_owned(), energy_conn_names);
+            if let HotWaterSource::StorageTank(storage_tank) = heat_source {
+                pre_heated_water_sources.insert(source_name.to_owned(), storage_tank);
+            } else {
+                bail!("Pre-heated water sources must be storage tanks");
+            }
+        }
 
         let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
         let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
