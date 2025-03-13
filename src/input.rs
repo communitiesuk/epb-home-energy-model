@@ -3913,7 +3913,8 @@ impl InputForProcessing {
             .advanced_start())
     }
 
-    pub fn advanced_start_for_space_heat_system(
+    #[cfg(feature = "fhs")]
+    pub(crate) fn advanced_start_for_space_heat_system(
         &self,
         space_heat_system: &str,
     ) -> anyhow::Result<Option<f64>> {
