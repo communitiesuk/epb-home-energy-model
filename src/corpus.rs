@@ -4417,7 +4417,7 @@ fn heat_source_from_input(
                             energy_supply_conn_name.as_str(),
                             temp_flow_limit_upper
                                 .expect("temp_flow_limit_upper field was expected to be set"),
-                            cold_water_source.as_cold_water_source()?,
+                            Arc::new(cold_water_source.clone()),
                             control_min,
                             control_max,
                             simulation_time,

@@ -14,7 +14,6 @@ use crate::core::units::{
     celsius_to_kelvin, kelvin_to_celsius, BelowAbsoluteZeroError, HOURS_PER_DAY,
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
@@ -1335,7 +1334,7 @@ pub struct HeatPumpServiceWater {
     _control_min: Arc<Control>,
     control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
-    cold_feed: Arc<ColdWaterSource>,
+    cold_feed: Arc<WaterSourceWithTemperature>,
     hybrid_boiler_service: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
 }
 
@@ -1344,7 +1343,7 @@ impl HeatPumpServiceWater {
         heat_pump: Arc<Mutex<HeatPump>>,
         service_name: String,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: Arc<WaterSourceWithTemperature>,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
         boiler_service_water_regular: Option<Arc<Mutex<BoilerServiceWaterRegular>>>,
@@ -1420,7 +1419,7 @@ impl HeatPumpServiceWater {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let temp_cold_water =
-            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration))?;
+            celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration, None))?;
         let temp_return_k = celsius_to_kelvin(temp_return)?;
         let temp_hot_water = celsius_to_kelvin(
             self.control_max
@@ -2346,7 +2345,7 @@ impl HeatPump {
         heat_pump: Arc<Mutex<Self>>,
         service_name: &str,
         temp_limit_upper_in_c: f64,
-        cold_feed: Arc<ColdWaterSource>,
+        cold_feed: Arc<WaterSourceWithTemperature>,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
         simulation_time: &SimulationTimeIterator,
@@ -4486,6 +4485,7 @@ mod tests {
     use super::*;
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
         BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceControlType,
@@ -6536,7 +6536,9 @@ mod tests {
 
         let service_name = "service_hot_water";
 
-        let cold_feed = ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step);
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(
+            ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
+        );
 
         let control = Arc::new(Control::SetpointTime(
             SetpointTimeControl::new(
