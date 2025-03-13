@@ -2271,10 +2271,13 @@
     "FuelType": {
       "type": "string",
       "enum": [
-        "electricity",
-        "mains_gas",
-        "custom",
+        "LPG_bottled",
         "LPG_bulk",
+        "LPG_condition_11F",
+        "custom",
+        "electricity",
+        "energy_from_environment",
+        "mains_gas",
         "unmet_demand"
       ]
     },

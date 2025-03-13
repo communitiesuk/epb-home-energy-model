@@ -302,6 +302,7 @@ pub enum FuelType {
     #[serde(rename = "LPG_condition_11F")]
     LpgCondition11F,
     UnmetDemand,
+    EnergyFromEnvironment,
 }
 
 impl From<&EnergySupplyDetails> for FuelType {
