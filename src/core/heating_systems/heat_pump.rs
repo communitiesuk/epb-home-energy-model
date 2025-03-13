@@ -3271,7 +3271,7 @@ impl HeatPump {
                     temp_output,
                     &[temp_min_modulation_rate_low, temp_min_modulation_rate_high],
                     &[
-                        temp_min_modulation_rate_low,
+                        min_modulation_rate_low,
                         self.min_modulation_rate_55
                             .expect("A min modulation rate was expected for a 55 air flow temp"),
                     ],
