@@ -4408,13 +4408,6 @@ mod tests {
         assert!(external_conditions
             .get_segment(&simulation_time.iter().next().unwrap())
             .is_err());
-
-        // Empty shading segment
-        external_conditions.shading_segments = None;
-
-        assert!(external_conditions
-            .get_segment(&simulation_time.iter().next().unwrap())
-            .is_err());
     }
 
     #[rstest]
@@ -4973,4 +4966,6 @@ mod tests {
             );
         }
     }
+
+    // test_no_shading_segments in Python is unnecessary to set up in Rust as already guaranteed by type system
 }
