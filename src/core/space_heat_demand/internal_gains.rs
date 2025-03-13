@@ -674,16 +674,6 @@ mod tests {
         .unwrap();
         let smart_control = SmartApplianceControl::new(
             &IndexMap::from([("mains elec".into(), power_timeseries)]),
-            &IndexMap::from([(
-                "mains elec".into(),
-                appliance_data
-                    .load_shifting
-                    .as_ref()
-                    .unwrap()
-                    .clone()
-                    .weight_timeseries
-                    .unwrap(),
-            )]),
             appliance_data.time_series_step,
             &simulation_time_for_event_appliance_gains.iter(),
             Some(non_appliance_demand_24hr),

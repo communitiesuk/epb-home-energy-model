@@ -577,7 +577,6 @@ pub(crate) enum ControlDetails {
         non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
         power_timeseries: IndexMap<String, Vec<f64>>,
         time_series_step: f64,
-        weight_timeseries: IndexMap<String, Vec<f64>>,
     },
 }
 

@@ -799,10 +799,9 @@ impl Corpus {
                     non_appliance_demand_24hr,
                     power_timeseries,
                     time_series_step,
-                    weight_timeseries,
+                    ..
                 } => Some(Arc::new(SmartApplianceControl::new(
                     power_timeseries,
-                    weight_timeseries,
                     *time_series_step,
                     &simulation_time_iterator,
                     non_appliance_demand_24hr.clone(),

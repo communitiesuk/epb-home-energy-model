@@ -252,7 +252,9 @@ impl ChargeControl {
                 // TODO (from Python) Consider adding solar data for HHRSH logic in addition to heating degree hours.
             }
             ControlLogicType::HeatBattery => {
-                unimplemented!("HeatBattery ChargeControl logic is not implemented yet.");
+                // in the Python, energy_to_store is initialised at 0, but this value is not then accessed
+                // therefore, just eliding this field as it's defined here within ChargeControlHhrshFields
+                None
             }
         };
 
@@ -296,7 +298,7 @@ impl ChargeControl {
         };
 
         Ok(match self.logic_type {
-            ControlLogicType::Manual => target_charge_nominal,
+            ControlLogicType::Manual | ControlLogicType::HeatBattery => target_charge_nominal,
             _ => {
                 // automatic, celect and hhrsh control include temperature charge cut logic
                 let temp_charge_cut = self.temp_charge_cut_corr(simtime)?;
@@ -692,7 +694,6 @@ pub(crate) struct SmartApplianceControl {
     energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     battery_states_of_charge: IndexMap<String, Vec<AtomicF64>>,
     ts_power: IndexMap<String, Vec<AtomicF64>>,
-    _ts_weight: IndexMap<String, Vec<f64>>,
     ts_step: f64,
     simulation_timestep: f64,
     ts_step_ratio: f64,
@@ -714,10 +715,9 @@ impl SmartApplianceControl {
     /// * `battery_24hr`      - dictionary of lists containing 24 hour buffers of
     ///                         battery state of charge for each energy supply
     /// * `energy_supplies`   - dictionary of energy supply objects in the simulation
-    /// * `appliance_names`   - list of names of appliances
+    /// * `appliance_names`   - list of names of all appliance objects in the simulation
     pub(crate) fn new(
         power_timeseries: &IndexMap<String, Vec<f64>>,
-        weight_timeseries: &IndexMap<String, Vec<f64>>,
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
         non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
@@ -749,14 +749,11 @@ impl SmartApplianceControl {
             })
             .collect();
         for energy_supply in energy_supplies.keys() {
-            if power_timeseries[energy_supply].len() != weight_timeseries[energy_supply].len() {
-                bail!("ERROR: loadshifting weight and power timeseries not equal in length")
-            }
             if power_timeseries[energy_supply].len() as f64 * timeseries_step
                 < simulation_time_iterator.total_steps() as f64
                     * simulation_time_iterator.step_in_hours()
             {
-                bail!("ERROR: loadshifting weight+power timeseries shorter than simulation length")
+                bail!("ERROR: loadshifting power timeseries shorter than simulation length")
             }
         }
         Ok(Self {
@@ -764,7 +761,6 @@ impl SmartApplianceControl {
             energy_supplies,
             battery_states_of_charge,
             ts_power: power_timeseries.iter().map(|(name, series)| (name.to_owned(), series.iter().map(|x| AtomicF64::new(*x)).collect_vec())).collect(),
-            _ts_weight: weight_timeseries.clone(),
             ts_step: timeseries_step,
             simulation_timestep: simulation_time_iterator.step_in_hours(),
             ts_step_ratio: simulation_time_iterator.step_in_hours() / timeseries_step,

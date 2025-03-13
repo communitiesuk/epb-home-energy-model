@@ -1888,7 +1888,6 @@ fn create_appliance_gains(
         non_appliance_demand_24hr: None,
         power_timeseries: main_power_sched,
         time_series_step: 1.,
-        weight_timeseries: main_weight_sched,
     };
 
     input.set_loadshifting_control(smart_control);
@@ -2406,10 +2405,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
             if do_increment {
                 non_appliance_electricity_demand.insert(
                     i,
-                    *non_appliance_electricity_demand
-                        .get(i)
-                        .unwrap_or(&0.)
-                        + user[i],
+                    *non_appliance_electricity_demand.get(i).unwrap_or(&0.) + user[i],
                 );
             }
         }
