@@ -1947,7 +1947,8 @@ mod tests {
                 shading_objects: None,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
         ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,

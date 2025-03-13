@@ -113,7 +113,7 @@ pub struct ExternalConditions {
     pub january_first: Option<u32>,
     pub daylight_savings: Option<DaylightSavingsConfig>,
     pub leap_day_included: bool,
-    shading_segments: Vec<ShadingSegment>,
+    shading_segments: Option<Vec<ShadingSegment>>,
     solar_declinations: Vec<f64>,
     solar_hour_angles: Vec<f64>,
     solar_altitudes: Vec<f64>,
@@ -170,7 +170,7 @@ impl ExternalConditions {
         daylight_savings: Option<DaylightSavingsConfig>,
         leap_day_included: bool,
         direct_beam_conversion_needed: bool,
-        shading_segments: Vec<ShadingSegment>,
+        shading_segments: Option<Vec<ShadingSegment>>,
     ) -> Self {
         let days_in_year = if leap_day_included { 366 } else { 365 };
         let hours_in_year = days_in_year * HOURS_IN_DAY;
@@ -838,20 +838,22 @@ impl ExternalConditions {
 
         let mut previous_segment_end: Option<f64> = None;
 
-        for segment in &self.shading_segments {
-            if let Some(previous_segment_end) = previous_segment_end {
-                if previous_segment_end != segment.start {
-                    return Err(anyhow!("No gaps between shading segments allowed"));
+        if let Some(shading_segments) = self.shading_segments.as_ref() {
+            for segment in shading_segments {
+                if let Some(previous_segment_end) = previous_segment_end {
+                    if previous_segment_end != segment.start {
+                        return Err(anyhow!("No gaps between shading segments allowed"));
+                    }
                 }
-            }
-            previous_segment_end = Some(segment.end);
-            if segment.end > segment.start {
-                return Err(anyhow!(
-                    "End orientation is less than the start orientation. Check shading inputs.",
-                ));
-            }
-            if azimuth < segment.start && azimuth > segment.end {
-                return Ok(segment.clone());
+                previous_segment_end = Some(segment.end);
+                if segment.end > segment.start {
+                    return Err(anyhow!(
+                        "End orientation is less than the start orientation. Check shading inputs.",
+                    ));
+                }
+                if azimuth < segment.start && azimuth > segment.end {
+                    return Ok(segment.clone());
+                }
             }
         }
 
@@ -1196,149 +1198,154 @@ impl ExternalConditions {
 
         let mut f_sky_new = 0.;
 
-        for segment in self.shading_segments.iter() {
-            let seg_srt = 180. - segment.start; // Segment start angle (clockwise)
-            let seg_fsh = 180. - segment.end; // Segment end angle (clockwise)
+        if let Some(shading_segments) = self.shading_segments.as_ref() {
+            for segment in shading_segments {
+                let seg_srt = 180. - segment.start; // Segment start angle (clockwise)
+                let seg_fsh = 180. - segment.end; // Segment end angle (clockwise)
 
-            // Define segment
-            let (seg_ang, deg_seg) = seg_angle(seg_srt, seg_fsh);
+                // Define segment
+                let (seg_ang, deg_seg) = seg_angle(seg_srt, seg_fsh);
 
-            // Compare sub-arcs and sub-segments for overlap - front
-            let ap00 = interval_intersect(arc_ang.0, seg_ang.0);
-            let ap11 = interval_intersect(arc_ang.1, seg_ang.1);
-            let ap01 = interval_intersect(arc_ang.0, seg_ang.1);
-            let ap10 = interval_intersect(arc_ang.1, seg_ang.0);
+                // Compare sub-arcs and sub-segments for overlap - front
+                let ap00 = interval_intersect(arc_ang.0, seg_ang.0);
+                let ap11 = interval_intersect(arc_ang.1, seg_ang.1);
+                let ap01 = interval_intersect(arc_ang.0, seg_ang.1);
+                let ap10 = interval_intersect(arc_ang.1, seg_ang.0);
 
-            // Proportion of front arc shaded by segment
-            let arc_prop = (ap00 + ap11 + ap01 + ap10) / deg_arc;
+                // Proportion of front arc shaded by segment
+                let arc_prop = (ap00 + ap11 + ap01 + ap10) / deg_arc;
 
-            // Compare sub-arcs and sub-segments for overlap - rear
-            let rap00 = interval_intersect(rarc_ang.0, seg_ang.0);
-            let rap11 = interval_intersect(rarc_ang.1, seg_ang.1);
-            let rap01 = interval_intersect(rarc_ang.0, seg_ang.1);
-            let rap10 = interval_intersect(rarc_ang.1, seg_ang.0);
+                // Compare sub-arcs and sub-segments for overlap - rear
+                let rap00 = interval_intersect(rarc_ang.0, seg_ang.0);
+                let rap11 = interval_intersect(rarc_ang.1, seg_ang.1);
+                let rap01 = interval_intersect(rarc_ang.0, seg_ang.1);
+                let rap10 = interval_intersect(rarc_ang.1, seg_ang.0);
 
-            // Proportion of rearward arc within segment
-            let rarc_prop = (rap00 + rap11 + rap01 + rap10) / deg_arc;
+                // Proportion of rearward arc within segment
+                let rarc_prop = (rap00 + rap11 + rap01 + rap10) / deg_arc;
 
-            // Segment f_sky contribution in forward direction
-            let f_sky_seg_front = if tilt == 0. {
-                f_sky * (deg_seg / 360.)
-            } else {
-                arc_prop * 0.5f64.min(f_sky)
-            };
+                // Segment f_sky contribution in forward direction
+                let f_sky_seg_front = if tilt == 0. {
+                    f_sky * (deg_seg / 360.)
+                } else {
+                    arc_prop * 0.5f64.min(f_sky)
+                };
 
-            // For tilted surface, segment f_sky contribution in rear direction
-            let f_sky_seg_rear = if tilt > 0. && tilt < 90. {
-                rarc_prop * 0.0f64.max(f_sky - 0.5)
-            } else {
-                0.
-            };
+                // For tilted surface, segment f_sky contribution in rear direction
+                let f_sky_seg_rear = if tilt > 0. && tilt < 90. {
+                    rarc_prop * 0.0f64.max(f_sky - 0.5)
+                } else {
+                    0.
+                };
 
-            let mut f_sky_ft = f_sky_seg_front;
-            let mut f_sky_rr = f_sky_seg_rear;
+                let mut f_sky_ft = f_sky_seg_front;
+                let mut f_sky_rr = f_sky_seg_rear;
 
-            if let Some(shading) = segment.shading_objects.as_ref() {
-                for shade_obj in shading {
-                    match shade_obj {
-                        ShadingObject {
-                            object_type: ShadingObjectType::Obstacle,
-                            height: shading_height,
-                            distance,
-                        } => {
-                            let h_shade = 0.0f64.max(*shading_height - base_height);
+                if let Some(shading) = segment.shading_objects.as_ref() {
+                    for shade_obj in shading {
+                        match shade_obj {
+                            ShadingObject {
+                                object_type: ShadingObjectType::Obstacle,
+                                height: shading_height,
+                                distance,
+                            } => {
+                                let h_shade = 0.0f64.max(*shading_height - base_height);
 
-                            if f_sky == 1. {
-                                let alpha_obst = (h_shade / *distance).atan().to_degrees();
-                                f_sky_ft =
-                                    f_sky_ft.min(f_sky_seg_front * alpha_obst.to_radians().cos());
-                            } else if f_sky > 0. {
-                                if f_sky_seg_front > 0. {
-                                    // height element is above obstacle (zero if not)
-                                    let h_above = 0.0f64.max(height - h_shade);
-                                    // proportion of element above obstacle
-                                    let p_above = h_above / height;
-                                    // angle between midpoint of shaded section and obstacle
-                                    let alpha_obst = ((h_shade - (height.min(h_shade) / 2.))
-                                        / *distance)
-                                        .atan()
-                                        .to_degrees();
-                                    // Determine if obstacle gives largest reduction to the segment f_sky contribution
-                                    f_sky_ft = f_sky_ft.min(0.0f64.max(
-                                        f_sky_seg_front
-                                            - 0.5
-                                                * arc_prop
-                                                * (1. - alpha_obst.to_radians().cos())
-                                                * (1. - p_above),
-                                    ));
-                                }
+                                if f_sky == 1. {
+                                    let alpha_obst = (h_shade / *distance).atan().to_degrees();
+                                    f_sky_ft = f_sky_ft
+                                        .min(f_sky_seg_front * alpha_obst.to_radians().cos());
+                                } else if f_sky > 0. {
+                                    if f_sky_seg_front > 0. {
+                                        // height element is above obstacle (zero if not)
+                                        let h_above = 0.0f64.max(height - h_shade);
+                                        // proportion of element above obstacle
+                                        let p_above = h_above / height;
+                                        // angle between midpoint of shaded section and obstacle
+                                        let alpha_obst = ((h_shade - (height.min(h_shade) / 2.))
+                                            / *distance)
+                                            .atan()
+                                            .to_degrees();
+                                        // Determine if obstacle gives largest reduction to the segment f_sky contribution
+                                        f_sky_ft = f_sky_ft.min(0.0f64.max(
+                                            f_sky_seg_front
+                                                - 0.5
+                                                    * arc_prop
+                                                    * (1. - alpha_obst.to_radians().cos())
+                                                    * (1. - p_above),
+                                        ));
+                                    }
 
-                                if f_sky_seg_rear > 0. {
-                                    // Determine if potential for shading from obstacles to rear of tilted surface exist
-                                    // Projected height of element at obstacle distance
-                                    let h_eff = height + (*distance * tilt.to_radians().tan());
-                                    if h_eff < h_shade {
-                                        // angle from element midpoint to top of obstacle
-                                        let alpha_obst = (h_shade / *distance).atan().to_degrees();
-                                        // Determine new rear sky view factor directly from shading angle (alpha_obst) using standard 0.5 x cos(angle) method
-                                        // as shading is now determined by this angle not the tilt angle which is smaller
-                                        f_sky_rr = f_sky_rr
-                                            .min(rarc_prop * 0.5 * alpha_obst.to_radians().cos());
+                                    if f_sky_seg_rear > 0. {
+                                        // Determine if potential for shading from obstacles to rear of tilted surface exist
+                                        // Projected height of element at obstacle distance
+                                        let h_eff = height + (*distance * tilt.to_radians().tan());
+                                        if h_eff < h_shade {
+                                            // angle from element midpoint to top of obstacle
+                                            let alpha_obst =
+                                                (h_shade / *distance).atan().to_degrees();
+                                            // Determine new rear sky view factor directly from shading angle (alpha_obst) using standard 0.5 x cos(angle) method
+                                            // as shading is now determined by this angle not the tilt angle which is smaller
+                                            f_sky_rr = f_sky_rr.min(
+                                                rarc_prop * 0.5 * alpha_obst.to_radians().cos(),
+                                            );
+                                        }
                                     }
                                 }
                             }
-                        }
-                        ShadingObject {
-                            object_type: ShadingObjectType::Overhang,
-                            height: shading_height,
-                            distance,
-                        } => {
-                            let h_shade = 0.0f64.max(*shading_height - base_height);
+                            ShadingObject {
+                                object_type: ShadingObjectType::Overhang,
+                                height: shading_height,
+                                distance,
+                            } => {
+                                let h_shade = 0.0f64.max(*shading_height - base_height);
 
-                            if f_sky == 1. {
-                                let alpha_ovh = (h_shade / *distance).atan().to_degrees();
-                                f_sky_ft = f_sky_ft
-                                    .min(f_sky_seg_front * (1. - alpha_ovh.to_radians().cos()));
-                            } else if f_sky > 0. {
-                                if f_sky_seg_front > 0. {
-                                    // height element is below overhang (zero if not)
-                                    let h_below = height.min(h_shade);
-                                    // proportion of element below overhang
-                                    let p_below = h_below / height;
-                                    let alpha_ovh = ((h_shade - (height.min(h_shade) / 2.))
-                                        / *distance)
-                                        .atan()
-                                        .to_degrees();
-                                    // determine if overhang gives largest reduction to the segment f_sky contribution
-                                    f_sky_ft = f_sky_ft.min(
-                                        0.5 * arc_prop
-                                            * (1. - alpha_ovh.to_radians().cos())
-                                            * p_below,
-                                    );
-                                }
-
-                                if f_sky_seg_rear > 0. {
-                                    // Determine if potential for shading from overhangs to rear of tilted surface exist
-                                    // Projected height of element at overhang distance
-                                    let h_eff = height + (*distance * tilt.to_radians().tan());
-                                    if h_eff < h_shade {
-                                        // angle from element midpoint to top of obstacle
-                                        let alpha_ovh = (h_shade / *distance).atan().to_degrees();
-                                        f_sky_rr = f_sky_rr.min(
-                                            rarc_prop * 0.5 * tilt.to_radians().cos()
-                                                - alpha_ovh.to_radians().cos(),
+                                if f_sky == 1. {
+                                    let alpha_ovh = (h_shade / *distance).atan().to_degrees();
+                                    f_sky_ft = f_sky_ft
+                                        .min(f_sky_seg_front * (1. - alpha_ovh.to_radians().cos()));
+                                } else if f_sky > 0. {
+                                    if f_sky_seg_front > 0. {
+                                        // height element is below overhang (zero if not)
+                                        let h_below = height.min(h_shade);
+                                        // proportion of element below overhang
+                                        let p_below = h_below / height;
+                                        let alpha_ovh = ((h_shade - (height.min(h_shade) / 2.))
+                                            / *distance)
+                                            .atan()
+                                            .to_degrees();
+                                        // determine if overhang gives largest reduction to the segment f_sky contribution
+                                        f_sky_ft = f_sky_ft.min(
+                                            0.5 * arc_prop
+                                                * (1. - alpha_ovh.to_radians().cos())
+                                                * p_below,
                                         );
-                                    } else {
-                                        f_sky_rr = 0.;
+                                    }
+
+                                    if f_sky_seg_rear > 0. {
+                                        // Determine if potential for shading from overhangs to rear of tilted surface exist
+                                        // Projected height of element at overhang distance
+                                        let h_eff = height + (*distance * tilt.to_radians().tan());
+                                        if h_eff < h_shade {
+                                            // angle from element midpoint to top of obstacle
+                                            let alpha_ovh =
+                                                (h_shade / *distance).atan().to_degrees();
+                                            f_sky_rr = f_sky_rr.min(
+                                                rarc_prop * 0.5 * tilt.to_radians().cos()
+                                                    - alpha_ovh.to_radians().cos(),
+                                            );
+                                        } else {
+                                            f_sky_rr = 0.;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            f_sky_new += f_sky_ft + f_sky_rr;
+                f_sky_new += f_sky_ft + f_sky_rr;
+            }
         }
 
         // Calculate Fdiff for remote obstacles
@@ -2684,7 +2691,7 @@ mod tests {
     }
 
     #[fixture]
-    fn shading_segments() -> Vec<ShadingSegment> {
+    fn shading_segments() -> Option<Vec<ShadingSegment>> {
         vec![
             ShadingSegment {
                 number: 1,
@@ -2740,6 +2747,7 @@ mod tests {
                 ..Default::default()
             },
         ]
+        .into()
     }
 
     #[fixture]
@@ -4367,7 +4375,8 @@ mod tests {
                 end: 45.,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
 
         assert!(external_conditions
             .get_segment(&simulation_time.iter().next().unwrap())
@@ -4393,14 +4402,15 @@ mod tests {
                 end: 45.,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
 
         assert!(external_conditions
             .get_segment(&simulation_time.iter().next().unwrap())
             .is_err());
 
         // Empty shading segment
-        external_conditions.shading_segments = vec![];
+        external_conditions.shading_segments = None;
 
         assert!(external_conditions
             .get_segment(&simulation_time.iter().next().unwrap())

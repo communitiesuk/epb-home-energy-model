@@ -450,7 +450,8 @@ mod tests {
                     shading_objects: None,
                     ..Default::default()
                 },
-            ],
+            ]
+            .into(),
         )
     }
 

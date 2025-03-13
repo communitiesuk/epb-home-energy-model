@@ -3508,7 +3508,7 @@ fn shading_factor(
         None,
         false,
         dir_beam_conversion,
-        input_external_conditions.shading_segments.to_vec(),
+        input_external_conditions.shading_segments.clone(),
     );
 
     time.iter()

@@ -5796,7 +5796,8 @@ mod tests {
                 shading_objects: None,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
         Arc::new(ExternalConditions::new(
             &simulation_time_iterator,
             air_temps,

@@ -3076,7 +3076,7 @@ mod tests {
             None,
             false,
             false,
-            vec![],
+            None,
         ))
     }
 
@@ -3765,7 +3765,7 @@ mod tests {
             Some(DaylightSavingsConfig::NotApplicable),
             false,
             false,
-            vec![],
+            None,
         ))
     }
 

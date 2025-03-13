@@ -437,7 +437,8 @@ mod tests {
                     end: -180.,
                     ..Default::default()
                 },
-            ],
+            ]
+            .into(),
         )
     }
 

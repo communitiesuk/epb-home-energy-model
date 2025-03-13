@@ -1997,9 +1997,7 @@
     },
     "ExternalConditionsInput": {
       "type": "object",
-      "required": [
-        "shading_segments"
-      ],
+      "required": [],
       "properties": {
         "air_temperatures": {
           "type": [

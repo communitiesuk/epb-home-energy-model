@@ -1948,7 +1948,8 @@ mod tests {
                 shading_objects: None,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
 
         Arc::new(ExternalConditions::new(
             &simulation_time_for_storage_tank.iter(),
@@ -2254,7 +2255,8 @@ mod tests {
                 shading_objects: None,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
 
         Arc::new(ExternalConditions::new(
             &simulation_time_for_storage_tank.iter(),
@@ -2459,7 +2461,8 @@ mod tests {
                 shading_objects: None,
                 ..Default::default()
             },
-        ];
+        ]
+        .into();
 
         Arc::new(ExternalConditions::new(
             &simulation_time_for_solar_thermal.iter(),

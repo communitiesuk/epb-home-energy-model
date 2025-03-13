@@ -150,7 +150,8 @@ pub struct ExternalConditionsInput {
     pub leap_day_included: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_beam_conversion_needed: Option<bool>,
-    pub shading_segments: Vec<ShadingSegment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shading_segments: Option<Vec<ShadingSegment>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
