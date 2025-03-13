@@ -1,6 +1,5 @@
 {
   "temp_internal_air_static_calcs": 20.0,
-  "PartGcompliance": true,
   "SimulationTime": {
     "start": 0,
     "end": 8,
@@ -97,21 +96,32 @@
       "fuel": "electricity",
       "is_export_capable": true
     },
-    "mains gas": {
-      "fuel": "mains_gas",
+    "mains elec1": {
+      "fuel": "electricity",
       "is_export_capable": true
     },
-    "heat network": {
-      "fuel": "custom",
-      "factor": {
-        "Emissions Factor kgCO2e/kWh": 0.041,
-        "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.041,
-        "Primary Energy Factor kWh/kWh delivered": 0.850
-      },
+    "mains gas": {
+      "fuel": "mains_gas",
       "is_export_capable": true
     }
   },
   "Control": {
+    "hw timer": {
+      "type": "OnOffTimeControl",
+      "start_day": 0,
+      "time_series_step": 1,
+      "schedule": {
+        "main": [
+          true,
+          true,
+          false,
+          {
+            "value": true,
+            "repeat": 5
+          }
+        ]
+      }
+    },
     "space heat timer": {
       "type": "OnOffTimeControl",
       "start_day": 0,
@@ -144,28 +154,29 @@
         ]
       }
     },
-    "min_temp": {
-      "type": "SetpointTimeControl",
+    "hb_charge_control": {
+      "type": "ChargeControl",
       "start_day": 0,
       "time_series_step": 1,
+      "logic_type": "heat_battery",
+      "charge_level": 1.0,
       "schedule": {
         "main": [
           {
-            "value": 52.0,
-            "repeat": 8
-          }
-        ]
-      }
-    },
-    "setpoint_temp_max": {
-      "type": "SetpointTimeControl",
-      "start_day": 0,
-      "time_series_step": 1,
-      "schedule": {
-        "main": [
+            "value": true,
+            "repeat": 4
+          },
           {
-            "value": 55.0,
-            "repeat": 8
+            "value": false,
+            "repeat": 7
+          },
+          {
+            "value": true,
+            "repeat": 6
+          },
+          {
+            "value": true,
+            "repeat": 7
           }
         ]
       }
@@ -173,45 +184,10 @@
   },
   "HotWaterSource": {
     "hw cylinder": {
-      "type": "StorageTank",
-      "volume": 80.0,
-      "daily_losses": 1.68,
-      "init_temp": 55.0,
+      "type": "HeatBattery",
       "ColdWaterSource": "mains water",
-      "HeatSource": {
-        "heat network": {
-          "type": "HeatSourceWet",
-          "name": "HeatNetwork",
-          "EnergySupply": "heat network",
-          "Controlmin": "min_temp",
-          "Controlmax": "setpoint_temp_max",
-          "ColdWaterSource": "mains water",
-          "heater_position": 0.0,
-          "thermostat_position": 0.3
-        }
-      },
-      "primary_pipework": [
-        {
-          "location": "internal",
-          "internal_diameter_mm": 24,
-          "external_diameter_mm": 27,
-          "length": 2.0,
-          "insulation_thermal_conductivity": 0.035,
-          "insulation_thickness_mm": 40,
-          "surface_reflectivity": false,
-          "pipe_contents": "water"
-        },
-        {
-          "location": "external",
-          "internal_diameter_mm": 25,
-          "external_diameter_mm": 27,
-          "length": 0.0,
-          "insulation_thermal_conductivity": 0.035,
-          "insulation_thickness_mm": 38,
-          "surface_reflectivity": false,
-          "pipe_contents": "water"
-        }
-      ]
+      "HeatSourceWet": "hb1",
+      "Control": "hw timer"
     }
   },
   "HotWaterDemand": {
@@ -225,7 +201,7 @@
         "type": "InstantElecShower",
         "rated_power": 9.0,
         "ColdWaterSource": "mains water",
-        "EnergySupply": "mains elec"
+        "EnergySupply": "mains elec1"
       }
     },
     "Bath": {},
@@ -255,7 +231,7 @@
   },
   "Events": {
     "Shower": {
-      "IES": [
+      "mixer": [
         {
           "start": 4.1,
           "duration": 6,
@@ -271,29 +247,52 @@
           "duration": 6,
           "temperature": 41.0
         }
-      ],
-      "mixer": [
-        {
-          "start": 7,
-          "duration": 6,
-          "temperature": 41.0
-        }
       ]
     }
   },
   "HeatSourceWet": {
-    "HeatNetwork": {
-      "type": "HIU",
-      "EnergySupply": "heat network",
-      "power_max": 3.0,
-      "HIU_daily_loss": 0.8,
-      "building_level_distribution_losses": 62
+    "boiler": {
+      "type": "Boiler",
+      "EnergySupply": "mains gas",
+      "EnergySupply_aux": "mains elec",
+      "rated_power": 24.0,
+      "efficiency_full_load": 0.891,
+      "efficiency_part_load": 0.991,
+      "boiler_location": "internal",
+      "modulation_load": 0.3,
+      "electricity_circ_pump": 0.0600,
+      "electricity_part_load": 0.0131,
+      "electricity_full_load": 0.0388,
+      "electricity_standby": 0.0244
+    },
+    "hb1": {
+      "type": "HeatBattery",
+      "EnergySupply": "mains elec",
+      "electricity_circ_pump": 0.0600,
+      "electricity_standby": 0.0244,
+      "rated_charge_power": 20.0,
+      "max_rated_losses": 0.1,
+      "number_of_units": 1,
+      "simultaneous_charging_and_discharging": false,
+      "ControlCharge": "hb_charge_control",
+      "heat_storage_zone_material_kJ_per_K_above_Phase_transition": 47.6875,
+      "heat_storage_zone_material_kJ_per_K_below_Phase_transition": 38.15,
+      "heat_storage_zone_material_kJ_per_K_during_Phase_transition": 1539.625,
+      "phase_transition_temperature_upper": 59,
+      "phase_transition_temperature_lower": 57,
+      "max_temperature": 80,
+      "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": 0.035,
+      "capillary_diameter_m": 0.0065,
+      "A": 19.744,
+      "B": -105.5,
+      "heat_exchanger_surface_area_m2": 8.83,
+      "flow_rate_l_per_min": 10
     }
   },
   "SpaceHeatSystem": {
     "main": {
       "type": "WetDistribution",
-      "wet_emitter_type": "radiator",
+      "wet_emitter_type": "radiators",
       "thermal_mass": 0.14,
       "emitters": [
         {
@@ -314,7 +313,7 @@
       "min_flow_rate": 3,
       "max_flow_rate": 18,
       "HeatSource": {
-        "name": "HeatNetwork"
+        "name": "boiler"
       },
       "Control": "main__space heat timer__converted_from_OnOffTimeControl",
       "ecodesign_controller": {

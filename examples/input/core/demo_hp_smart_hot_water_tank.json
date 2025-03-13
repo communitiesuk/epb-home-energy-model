@@ -27,7 +27,7 @@
 			"start_day": 0,
 			"time_series_step": 1,
 			"schedule": {
-				"main": [256, 368, 584, 416, 712, 448, 816, 648]
+				"main": [512, 736, 1168, 832, 1424, 896, 1632, 1296]
 			}
 		}
 	},
@@ -54,34 +54,44 @@
 				"main": [true, true, false, {"value": true, "repeat": 5}]
 			}
 		},
-		"min_temp":{
+		"temp_setpnt_max":{
 			"type": "SetpointTimeControl",
-			"start_day": 0,
+			"start_day": 1,
 			"time_series_step": 1,
-			"schedule":{
-				"main": [null, 52, null, 52, {"value": 52.0, "repeat": 4}] 
+			"schedule": {
+				"main": [60, null, null, {"value": 60, "repeat": 24}]
 			}
 		},
-		"setpoint_temp_max":{
+		"min_soc":{
 			"type": "SetpointTimeControl",
-			"start_day": 0,
-			"time_series_step": 1,
-			"schedule":{
-				"main": [null, 55, null, 55, {"value": 55.0, "repeat": 4}] 
-			}
-		},
-		"space heat timer": {
-			"type": "OnOffTimeControl",
 			"start_day": 0,
 			"time_series_step": 1,
 			"schedule": {
-				"main": [true, false, false, {"value": true, "repeat": 5}]
+				"main": [0.1, 0.1, 0.1, {"value": 0.85, "repeat": 24}]
 			}
 		},
-		"main__space heat timer__converted_from_OnOffTimeControl": {
+		"max_soc":{
 			"type": "SetpointTimeControl",
 			"start_day": 0,
 			"time_series_step": 1,
+			"schedule": {
+				"main": [0.5, 0.7, 0.9, {"value": 1, "repeat": 24}]
+			}
+		},
+		"zone 1 radiators timer": {
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"advanced_start": 1,
+			"schedule": {
+				"main": [21.0, null, null, {"value": 21.0, "repeat": 5}]
+			}
+		},
+		"zone 2 radiators timer": {
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"advanced_start": 1,
 			"schedule": {
 				"main": [21.0, null, null, {"value": 21.0, "repeat": 5}]
 			}
@@ -89,28 +99,32 @@
 	},
 	"HotWaterSource": {
 		"hw cylinder": {
-			"type": "StorageTank",
+			"type": "SmartHotWaterTank",
 			"volume": 80.0,
 			"daily_losses": 1.68,
 			"init_temp": 55.0,
 			"ColdWaterSource": "mains water",
+			"power_pump_kW": 5,
+			"max_flow_rate_pump_l_per_min":1000,
+			"temp_usable": 40,
+			"temp_setpnt_max": "temp_setpnt_max",
+			"EnergySupply_pump": "mains elec",
 			"HeatSource": {
 				"hp": {
 					"type": "HeatSourceWet",
 					"name": "hp",
 					"temp_flow_limit_upper": 65,
 					"EnergySupply": "mains elec",
-					"Controlmin": "min_temp",
-					"Controlmax": "setpoint_temp_max",
-					"heater_position": 0.1,
-					"thermostat_position": 0.33
+					"Controlmin": "min_soc",
+					"Controlmax": "max_soc",
+					"heater_position": 0.9
 				}
 			},
 			"primary_pipework": [
 				{
 					"location": "internal",
-					"internal_diameter_mm": 18,
-					"external_diameter_mm": 20,
+					"internal_diameter_mm": 25,
+					"external_diameter_mm": 27,
 					"length": 2.0,
 					"insulation_thermal_conductivity": 0.035,
 					"insulation_thickness_mm": 38,
@@ -121,7 +135,7 @@
 					"location": "external",
 					"internal_diameter_mm": 25,
 					"external_diameter_mm": 27,
-					"length": 6.0,
+					"length": 2.0,
 					"insulation_thermal_conductivity": 0.035,
 					"insulation_thickness_mm": 38,
 					"surface_reflectivity": false,
@@ -202,7 +216,7 @@
 			"power_standby": 0.015,
 			"power_crankcase_heater": 0.01,
 			"power_off": 0.015,
-			"power_max_backup": 6.0,
+			"power_max_backup": 3.0,
 			"test_data_EN14825": [
 				{
 					"test_letter": "A",
@@ -308,9 +322,8 @@
 		}
 	},
 	"SpaceHeatSystem": {
-		"main": {
+		"zone 1 radiators": {
 			"type": "WetDistribution",
-			"wet_emitter_type": "radiator",
 			"thermal_mass": 0.14,
 			"emitters":[
 				{
@@ -334,7 +347,7 @@
 				"name": "hp",
 				"temp_flow_limit_upper": 65.0
 			},
-			"Control": "main__space heat timer__converted_from_OnOffTimeControl",
+			"Control": "zone 1 radiators timer",
 			"ecodesign_controller": {
 				"ecodesign_control_class": 2,
 				"min_outdoor_temp": -4,
@@ -342,6 +355,42 @@
 				"min_flow_temp": 30},
 			"design_flow_temp": 55,
 			"Zone": "zone 1"
+		},
+		"zone 2 radiators": {
+			"type": "WetDistribution",
+			"thermal_mass": 0.14,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.08,
+					"n": 1.2,
+					"frac_convective": 0.4
+				},
+				{
+					"wet_emitter_type": "ufh",
+					"equivalent_specific_thermal_mass": 80,
+					"system_performance_factor": 5,
+					"emitter_floor_area": 40,
+					"frac_convective": 0.43
+				}
+			],
+			"temp_diff_emit_dsgn": 10.0,
+			"variable_flow": true,
+			"design_flow_rate": 12,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
+			"HeatSource": {
+				"name": "hp",
+				"temp_flow_limit_upper": 65.0
+			},
+			"Control": "zone 2 radiators timer",
+			"ecodesign_controller": {
+				"ecodesign_control_class": 2,
+				"min_outdoor_temp": -4,
+				"max_outdoor_temp": 20,
+				"min_flow_temp": 30},
+			"design_flow_temp": 55,
+			"Zone": "zone 2"
 		}
 	},
 	
@@ -353,8 +402,8 @@
 	"InfiltrationVentilation": {
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
+		"ventilation_zone_base_height": 2.5,
 		"terrain_class": "OpenField",
-        "ventilation_zone_base_height": 2.5,
 		"altitude": 30,
 		"Vents": {
 			"vent1": {
@@ -400,7 +449,7 @@
 	},
 	"Zone": {
 		"zone 1": {
-			"SpaceHeatSystem": "main",
+			"SpaceHeatSystem": "zone 1 radiators",
 			"area": 80.0,
 			"volume": 250.0,
 			"temp_setpnt_init": 21.0,
@@ -483,7 +532,129 @@
 				},
 				"ground":{
 					"type": "BuildingElementGround",
-					"total_area": 15.0,
+					"total_area": 30.0,
+					"area": 15.0,
+					"pitch": 180.0,
+					"u_value": 1.4,
+					"thermal_resistance_floor_construction": 0.2,
+					"areal_heat_capacity": 19300,
+					"mass_distribution_class": "D",
+					"floor_type": "Slab_no_edge_insulation",
+					"thickness_walls": 0.2,
+					"perimeter": 16.0,
+					"psi_wall_floor_junc": 0.5
+				},
+				"wall 4":{
+					"type": "BuildingElementAdjacentConditionedSpace",
+					"area": 20.0,
+					"pitch": 0.0,
+					"thermal_resistance_construction": 0.74,
+					"areal_heat_capacity": 19400,
+					"mass_distribution_class": "I"
+				}
+			},
+			"ThermalBridging": {
+				"TB1": {
+					"type": "ThermalBridgeLinear",
+					"linear_thermal_transmittance": 1.0,
+					"length": 3.0
+				},
+				"TB2": {
+					"type": "ThermalBridgeLinear",
+					"linear_thermal_transmittance": 0.1,
+					"length": 2.0
+				},
+				"TB3": {
+					"type": "ThermalBridgePoint",
+					"heat_transfer_coeff": 2.0
+				}
+			}
+		},
+		"zone 2": {
+			"SpaceHeatSystem": "zone 2 radiators",
+			"area": 80.0,
+			"volume": 250.0,
+			"temp_setpnt_init": 21.0,
+			"BuildingElement": {
+				"wall 0": {
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
+					"mass_distribution_class": "IE",
+					"pitch": 90,
+					"orientation360": 90,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 10,
+					"area": 20.0
+				},
+				"wall 1":{
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.61,
+					"thermal_resistance_construction": 0.71,
+					"areal_heat_capacity": 19100,
+					"mass_distribution_class": "M",
+					"pitch": 90,
+					"orientation360": 270,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 10,
+					"area": 25.0
+				},
+				"wall 2": {
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.62,
+					"thermal_resistance_construction": 0.72,
+					"areal_heat_capacity": 19200,
+					"mass_distribution_class": "E",
+					"pitch": 90,
+					"orientation360": 0,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 8,
+					"area": 20.0
+				},
+				"wall 3":{
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.63,
+					"thermal_resistance_construction": 0.73,
+					"areal_heat_capacity": 19300,
+					"mass_distribution_class": "I",
+					"pitch": 90,
+					"orientation360": 180,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 6,
+					"area": 15.0
+				},
+				"window 0":{
+					"type": "BuildingElementTransparent",
+					"thermal_resistance_construction": 0.4,
+					"pitch": 90,
+					"orientation360": 90,
+					"g_value": 0.75,
+					"frame_area_fraction": 0.25,
+					"base_height": 1,
+					"height": 1.25,
+					"width": 4,
+					"free_area_height": 1.6,
+					"mid_height": 1.5,
+					"max_window_open_area": 3,
+					"window_part_list": [
+						{
+						"mid_height_air_flow_path":1.5
+						}
+					],
+					"shading": [
+						{"type": "overhang", "depth": 0.5, "distance": 0.5},
+						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					]
+				},
+				"ground":{
+					"type": "BuildingElementGround",
+					"total_area": 30.0,
 					"area": 15.0,
 					"pitch": 180.0,
 					"u_value": 1.4,

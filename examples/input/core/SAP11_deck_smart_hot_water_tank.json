@@ -8823,22 +8823,6 @@
 		}
 	},
 	"Control": {
-		"min_temp":{
-			"type": "SetpointTimeControl",
-			"start_day": 0,
-			"time_series_step": 1,
-			"schedule":{
-				"main": [{"value": null, "repeat": 8760}]
-			}
-		},
-		"setpoint_temp_max":{
-			"type": "SetpointTimeControl",
-			"start_day": 0,
-			"time_series_step": 1,
-			"schedule":{
-				"main": [{"value": 55.0, "repeat": 8760}]
-			}
-		},
 		"heating timer": {
 			"type": "SetpointTimeControl",
 			"start_day": 0,
@@ -8875,24 +8859,62 @@
 			"schedule":{
 				"main": [{"value": 1.4, "repeat": 4380}, {"value": null, "repeat": 4380}]
 			}
+		},
+		"setpoint_temp_max":{
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": 50.0, "repeat": 8760}]
+			}
+		},
+		"min_soc": {
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule": {
+				"day": [
+					{"value": 0.1, "repeat": 3},  
+					{"value": 0.5, "repeat": 4},  
+					{"value": 0.1, "repeat": 17}
+				],
+				"main":[{"value": "day", "repeat": 365}]
+			}
+		},
+		"max_soc": {
+			"type": "SetpointTimeControl",
+			"start_day": 0,
+			"time_series_step": 1,
+			"schedule": {
+				"day": [
+					{"value": 0.6, "repeat": 3},
+					{"value": 0.5, "repeat": 4},
+					{"value": 0.6, "repeat": 17}
+				],
+				"main":[{"value": "day", "repeat": 365}]
+				}
 		}
 	},
 	"HotWaterSource": {
 		"hw cylinder": {
-			"type": "StorageTank",
+			"type": "SmartHotWaterTank",
 			"volume": 300.0,
+			"power_pump_kW": 0.005,
+			"max_flow_rate_pump_l_per_min":19,
+			"temp_usable": 40,
+			"temp_setpnt_max": "setpoint_temp_max",
 			"daily_losses": 1.68,
-			"init_temp": 55.0,
+			"init_temp": 50.0,
 			"ColdWaterSource": "mains water",
+			"EnergySupply_pump": "mains elec",
 			"HeatSource": {
 				"immersion": {
 					"type": "ImmersionHeater",
 					"power": 3.0,
 					"EnergySupply": "mains elec",
-					"Controlmin": "min_temp",
-					"Controlmax": "setpoint_temp_max",
-					"heater_position": 0.1,
-					"thermostat_position": 0.33
+					"Controlmin": "min_soc",
+					"Controlmax": "max_soc",
+					"heater_position": 0.9
 				}
 			}
 		}
@@ -8993,7 +9015,7 @@
 		"cross_vent_factor": true,
 		"shield_class": "Normal",
 		"terrain_class": "OpenField",
-        "ventilation_zone_base_height": 2.5,
+		"ventilation_zone_base_height": 2.5,
 		"altitude": 30,
 		"ach_min_static_calcs": 1.2,
 		"ach_max_static_calcs": 1.4,

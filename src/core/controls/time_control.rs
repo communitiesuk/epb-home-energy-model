@@ -251,6 +251,9 @@ impl ChargeControl {
 
                 // TODO (from Python) Consider adding solar data for HHRSH logic in addition to heating degree hours.
             }
+            ControlLogicType::HeatBattery => {
+                unimplemented!("HeatBattery ChargeControl logic is not implemented yet.");
+            }
         };
 
         Ok(Self {
@@ -349,6 +352,9 @@ impl ChargeControl {
                         }
                     }
                     ControlLogicType::Manual => unreachable!(),
+                    ControlLogicType::HeatBattery => {
+                        unimplemented!("HeatBattery ChargeControl logic is not implemented yet.");
+                    }
                 }
             }
         })

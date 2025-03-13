@@ -5892,7 +5892,7 @@ mod tests {
             "power_crankcase_heater": 0.01,
             "power_off": 0.015,
             "power_max_backup": 3,
-            "test_data": [
+            "test_data_EN14825": [
                 {
                     "test_letter": "A",
                     "capacity": 8.4,
@@ -6025,7 +6025,7 @@ mod tests {
             "power_max_backup": 3.0,
             "eahp_mixed_max_temp": 10,
             "eahp_mixed_min_temp": 0,
-            "test_data": [
+            "test_data_EN14825": [
                 {
                     "air_flow_rate": 100.0,
                     "test_letter": "A",
@@ -6115,7 +6115,7 @@ mod tests {
             "power_off": 0.015,
             "power_max_backup": 3.0,
             "min_modulation_rate_20": 20.0,
-            "test_data": [
+            "test_data_EN14825": [
                 {
                     "test_letter": "A",
                     "capacity": 8.4,
@@ -6194,7 +6194,7 @@ mod tests {
             "power_crankcase_heater": 0.01,
             "power_off": 0.015,
             "power_max_backup": 3.0,
-            "test_data": [
+            "test_data_EN14825": [
                 {
                     "test_letter": "A",
                     "capacity": 8.4,
@@ -7694,7 +7694,7 @@ mod tests {
                 "power_crankcase_heater": 0.01,
                 "power_off": 0.015,
                 "power_max_backup": 3.0,
-                "test_data": [{"test_letter": "A",
+                "test_data_EN14825": [{"test_letter": "A",
                                "capacity": 8.4,
                                "cop": 4.6,
                                "degradation_coeff": 0.9,
@@ -8088,7 +8088,7 @@ mod tests {
                                     "power_crankcase_heater": 0.01,
                                     "power_off": 0.015,
                                     "power_max_backup": 3.0,
-                                    "test_data": [{"test_letter": "A",
+                                    "test_data_EN14825": [{"test_letter": "A",
                                                    "capacity": 8.4,
                                                    "cop": 4.6,
                                                    "degradation_coeff": 0.9,

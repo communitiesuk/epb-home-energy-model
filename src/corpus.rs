@@ -414,29 +414,29 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
     let (r_c, u_value, pitch) = match element {
         BuildingElementInput::Opaque {
             u_value,
-            r_c,
+            thermal_resistance_construction,
             pitch,
             ..
-        } => (*r_c, *u_value, *pitch),
+        } => (*thermal_resistance_construction, *u_value, *pitch),
         BuildingElementInput::Transparent {
             u_value,
-            r_c,
+            thermal_resistance_construction,
             pitch,
             ..
-        } => (*r_c, *u_value, *pitch),
+        } => (*thermal_resistance_construction, *u_value, *pitch),
         BuildingElementInput::Ground { pitch, u_value, .. } => (None, Some(*u_value), *pitch),
-        BuildingElementInput::AdjacentZTC {
+        BuildingElementInput::AdjacentConditionedSpace {
             pitch,
             u_value,
-            r_c,
+            thermal_resistance_construction,
             ..
-        } => (*r_c, *u_value, *pitch),
-        BuildingElementInput::AdjacentZTUSimple {
+        } => (*thermal_resistance_construction, *u_value, *pitch),
+        BuildingElementInput::AdjacentUnconditionedSpace {
             pitch,
             u_value,
-            r_c,
+            thermal_resistance_construction,
             ..
-        } => (*r_c, *u_value, *pitch),
+        } => (*thermal_resistance_construction, *u_value, *pitch),
     };
     init_resistance_or_uvalue_from_data(r_c, u_value, pitch)
 }
@@ -499,8 +499,8 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
                 area * u_value
             }
             BuildingElementInput::Ground { area, u_value, .. } => *area * *u_value,
-            BuildingElementInput::AdjacentZTC { .. } => 0.,
-            BuildingElementInput::AdjacentZTUSimple { area, .. } => {
+            BuildingElementInput::AdjacentConditionedSpace { .. } => 0.,
+            BuildingElementInput::AdjacentUnconditionedSpace { area, .. } => {
                 let u_value = 1.0 / (r_c + r_se + r_si);
                 *area * u_value
             }
@@ -3717,9 +3717,9 @@ fn building_element_from_input(
             is_unheated_pitched_roof,
             area,
             pitch,
-            a_sol,
-            r_c,
-            k_m,
+            solar_absorption_coeff: a_sol,
+            thermal_resistance_construction,
+            areal_heat_capacity: k_m,
             mass_distribution_class,
             orientation,
             base_height,
@@ -3740,7 +3740,11 @@ fn building_element_from_input(
                 is_unheated_pitched_roof,
                 *pitch,
                 *a_sol,
-                init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
+                init_resistance_or_uvalue_from_data(
+                    *thermal_resistance_construction,
+                    *u_value,
+                    *pitch,
+                )?,
                 *k_m,
                 *mass_distribution_class,
                 *orientation,
@@ -3752,7 +3756,7 @@ fn building_element_from_input(
         }
         BuildingElementInput::Transparent {
             u_value,
-            r_c,
+            thermal_resistance_construction,
             pitch,
             orientation,
             g_value,
@@ -3765,7 +3769,11 @@ fn building_element_from_input(
             ..
         } => BuildingElement::Transparent(BuildingElementTransparent::new(
             *pitch,
-            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(
+                *thermal_resistance_construction,
+                *u_value,
+                *pitch,
+            )?,
             *orientation,
             *g_value,
             *frame_area_fraction,
@@ -3795,8 +3803,8 @@ fn building_element_from_input(
             total_area,
             pitch,
             u_value,
-            r_f,
-            k_m,
+            thermal_resistance_floor_construction: r_f,
+            areal_heat_capacity,
             mass_distribution_class,
             floor_data,
             thickness_walls,
@@ -3808,7 +3816,7 @@ fn building_element_from_input(
             *pitch,
             *u_value,
             *r_f,
-            *k_m,
+            *areal_heat_capacity,
             *mass_distribution_class,
             floor_data,
             *thickness_walls,
@@ -3816,33 +3824,41 @@ fn building_element_from_input(
             *psi_wall_floor_junc,
             external_conditions,
         )?),
-        BuildingElementInput::AdjacentZTC {
+        BuildingElementInput::AdjacentConditionedSpace {
             area,
             pitch,
             u_value,
-            r_c,
-            k_m,
+            thermal_resistance_construction,
+            areal_heat_capacity: k_m,
             mass_distribution_class,
         } => BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
             *area,
             *pitch,
-            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(
+                *thermal_resistance_construction,
+                *u_value,
+                *pitch,
+            )?,
             *k_m,
             *mass_distribution_class,
             external_conditions,
         )),
-        BuildingElementInput::AdjacentZTUSimple {
+        BuildingElementInput::AdjacentUnconditionedSpace {
             area,
             pitch,
             u_value,
-            r_c,
-            r_u,
-            k_m,
+            thermal_resistance_construction,
+            thermal_resistance_unconditioned_space: r_u,
+            areal_heat_capacity: k_m,
             mass_distribution_class,
         } => BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
             *area,
             *pitch,
-            init_resistance_or_uvalue_from_data(*r_c, *u_value, *pitch)?,
+            init_resistance_or_uvalue_from_data(
+                *thermal_resistance_construction,
+                *u_value,
+                *pitch,
+            )?,
             *r_u,
             *k_m,
             *mass_distribution_class,
@@ -4665,7 +4681,12 @@ fn hot_water_source_from_input(
             for (heat_source_name, hs) in heat_source {
                 let energy_supply_name = hs.energy_supply_name();
                 if let Some(diverter) = diverter_types.get(energy_supply_name) {
-                    if diverter.storage_tank.matches(&source_name)
+                    if diverter.storage_tank.is_some()
+                        && diverter
+                            .storage_tank
+                            .as_ref()
+                            .unwrap()
+                            .matches(&source_name)
                         && diverter.heat_source.matches(heat_source_name)
                     {
                         let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
@@ -4794,6 +4815,8 @@ fn hot_water_source_from_input(
                 cold_water_source,
             ))
         }
+        HotWaterSourceDetails::SmartHotWaterTank { .. } => todo!(),
+        HotWaterSourceDetails::HeatBattery { .. } => todo!(),
     };
 
     Ok((hot_water_source, energy_supply_conn_names))

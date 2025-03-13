@@ -772,6 +772,9 @@ impl ElecStorageHeater {
                     .target_charge(simulation_time_iteration, None)
                     .map(|tc| tc.min(target_charge_hhrsh))
             }
+            ControlLogicType::HeatBattery => {
+                unimplemented!("HeatBattery control logic not implemented for ESH")
+            }
         }
     }
 

@@ -43,6 +43,8 @@ pub struct Input {
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
     pub(crate) energy_supply: EnergySupplyInput,
     pub(crate) control: Control,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
@@ -78,7 +80,7 @@ pub struct Input {
     )]
     default_water_heating_schedule: Option<WaterHeatingSchedule>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub heat_source_wet: Option<HeatSourceWet>,
+    pub(crate) heat_source_wet: Option<HeatSourceWet>,
     #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
     pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,7 +229,7 @@ pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 pub struct EnergySupplyDetails {
     pub fuel: FuelType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub diverter: Option<EnergyDiverter>,
+    pub(crate) diverter: Option<EnergyDiverter>,
     #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
     pub electric_battery: Option<ElectricBattery>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -373,16 +375,19 @@ impl Display for EnergySupplyType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
-pub struct EnergyDiverter {
-    pub storage_tank: StorageTankType,
-    pub heat_source: DiverterHeatSourceType,
+pub(crate) struct EnergyDiverter {
+    pub(crate) storage_tank: Option<StorageTankType>,
+    pub(crate) heat_source: DiverterHeatSourceType,
+    #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
+    control_max: Option<String>,
 }
 
 impl Default for EnergyDiverter {
     fn default() -> Self {
         Self {
-            storage_tank: StorageTankType::HotWaterCylinder,
+            storage_tank: None,
             heat_source: DiverterHeatSourceType::Immersion,
+            control_max: None,
         }
     }
 }
@@ -723,6 +728,21 @@ pub enum ControlLogicType {
     // high heat retention storage heater
     #[serde(rename = "hhrsh")]
     Hhrsh,
+    #[serde(rename = "heat_battery")]
+    HeatBattery,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(deny_unknown_fields)]
+struct SmartApplianceControlDetails {
+    #[serde(rename = "Appliances")]
+    appliances: Vec<ApplianceKey>,
+    #[serde(rename = "battery24hr")]
+    battery_24hr: SmartApplianceBattery,
+    non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+    power_timeseries: IndexMap<String, Vec<f64>>,
+    time_series_step: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -831,6 +851,32 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
+    },
+    SmartHotWaterTank {
+        volume: f64,
+        #[serde(rename = "power_pump_kW")]
+        power_pump_kw: f64,
+        max_flow_rate_pump_l_per_min: f64,
+        temp_usable: f64,
+        temp_setpnt_max: String,
+        daily_losses: f64,
+        init_temp: f64,
+        #[serde(rename = "ColdWaterSource")]
+        cold_water_source: ColdWaterSourceType,
+        #[serde(rename = "EnergySupply_pump")]
+        energy_supply_pump: String,
+        #[serde(rename = "HeatSource")]
+        heat_source: IndexMap<String, HeatSource>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        primary_pipework: Option<Vec<WaterPipeworkSimple>>,
+    },
+    HeatBattery {
+        #[serde(rename = "ColdWaterSource")]
+        cold_water_source: ColdWaterSourceType,
+        #[serde(rename = "HeatSourceWet")]
+        heat_source_wet: String,
+        #[serde(rename = "Control")]
+        control: String,
     },
 }
 
@@ -957,6 +1003,8 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *source_setpoint_temp = Some(setpoint_temp);
             }
+            HotWaterSourceDetails::SmartHotWaterTank { .. } => todo!(),
+            HotWaterSourceDetails::HeatBattery { .. } => todo!(),
         }
     }
 }
@@ -1031,7 +1079,8 @@ pub enum HeatSource {
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
-        thermostat_position: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thermostat_position: Option<f64>,
     },
     SolarThermalSystem {
         #[serde(rename = "sol_loc")]
@@ -1076,7 +1125,8 @@ pub enum HeatSource {
         #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
         control: Option<HeatSourceControlType>,
         heater_position: f64,
-        thermostat_position: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thermostat_position: Option<f64>,
         #[serde(rename = "temp_return", skip_serializing_if = "Option::is_none")]
         temperature_return: Option<f64>,
     },
@@ -1123,7 +1173,7 @@ impl HeatSource {
             HeatSource::ImmersionHeater {
                 thermostat_position,
                 ..
-            } => *thermostat_position,
+            } => thermostat_position.expect("thermostat position not set"), // TODO clarify how to handle no thermostat_position being indicated
             HeatSource::SolarThermalSystem {
                 thermostat_position,
                 ..
@@ -1131,7 +1181,7 @@ impl HeatSource {
             HeatSource::Wet {
                 thermostat_position,
                 ..
-            } => *thermostat_position,
+            } => thermostat_position.expect("thermostat position not set"), // TODO clarify how to handle no thermostat_position being indicated,
             HeatSource::HeatPumpHotWaterOnly {
                 thermostat_position,
                 ..
@@ -1919,12 +1969,12 @@ pub(crate) enum BuildingElement {
     Opaque {
         #[serde(skip_serializing_if = "Option::is_none")]
         is_unheated_pitched_roof: Option<bool>,
-        a_sol: f64,
+        solar_absorption_coeff: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        r_c: Option<f64>,
-        k_m: f64,
+        thermal_resistance_construction: Option<f64>,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
         pitch: f64,
@@ -1960,7 +2010,7 @@ pub(crate) enum BuildingElement {
         )]
         window_openable_control: Option<String>, // unclear how this might be used
         #[serde(skip_serializing_if = "Option::is_none")]
-        r_c: Option<f64>,
+        thermal_resistance_construction: Option<f64>,
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -1995,8 +2045,8 @@ pub(crate) enum BuildingElement {
         total_area: f64,
         pitch: f64,
         u_value: f64,
-        r_f: f64,
-        k_m: f64,
+        thermal_resistance_floor_construction: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         perimeter: f64,
         psi_wall_floor_junc: f64,
@@ -2004,27 +2054,27 @@ pub(crate) enum BuildingElement {
         #[serde(flatten)]
         floor_data: FloorData,
     },
-    #[serde(rename = "BuildingElementAdjacentZTC")]
-    AdjacentZTC {
+    #[serde(rename = "BuildingElementAdjacentConditionedSpace")]
+    AdjacentConditionedSpace {
         area: f64,
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        r_c: Option<f64>,
-        k_m: f64,
+        thermal_resistance_construction: Option<f64>,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
     },
-    #[serde(rename = "BuildingElementAdjacentZTU_Simple")]
-    AdjacentZTUSimple {
+    #[serde(rename = "BuildingElementAdjacentUnconditionedSpace_Simple")]
+    AdjacentUnconditionedSpace {
         area: f64,
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        r_c: Option<f64>,
-        r_u: f64,
-        k_m: f64,
+        thermal_resistance_construction: Option<f64>,
+        thermal_resistance_unconditioned_space: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
     },
 }
@@ -2035,8 +2085,8 @@ impl BuildingElement {
             BuildingElement::Opaque { pitch, .. } => pitch,
             BuildingElement::Transparent { pitch, .. } => pitch,
             BuildingElement::Ground { pitch, .. } => pitch,
-            BuildingElement::AdjacentZTC { pitch, .. } => pitch,
-            BuildingElement::AdjacentZTUSimple { pitch, .. } => pitch,
+            BuildingElement::AdjacentConditionedSpace { pitch, .. } => pitch,
+            BuildingElement::AdjacentUnconditionedSpace { pitch, .. } => pitch,
         }
     }
 
@@ -2061,8 +2111,8 @@ impl BuildingElement {
             BuildingElement::Opaque { u_value, .. } => *u_value,
             BuildingElement::Transparent { u_value, .. } => *u_value,
             BuildingElement::Ground { u_value, .. } => Some(*u_value),
-            BuildingElement::AdjacentZTC { u_value, .. } => *u_value,
-            BuildingElement::AdjacentZTUSimple { u_value, .. } => *u_value,
+            BuildingElement::AdjacentConditionedSpace { u_value, .. } => *u_value,
+            BuildingElement::AdjacentUnconditionedSpace { u_value, .. } => *u_value,
         }
     }
 
@@ -2127,7 +2177,10 @@ impl GroundBuildingElement for BuildingElement {
 
     fn set_r_f(&mut self, new_r_f: f64) {
         match self {
-            Self::Ground { r_f, .. } => {
+            Self::Ground {
+                thermal_resistance_floor_construction: r_f,
+                ..
+            } => {
                 *r_f = new_r_f;
             }
             _ => unreachable!(),
@@ -2169,10 +2222,10 @@ impl UValueEditableBuildingElement for BuildingElement {
             BuildingElement::Ground { u_value, .. } => {
                 *u_value = new_u_value;
             }
-            BuildingElement::AdjacentZTC { u_value, .. } => {
+            BuildingElement::AdjacentConditionedSpace { u_value, .. } => {
                 *u_value = Some(new_u_value);
             }
-            BuildingElement::AdjacentZTUSimple { u_value, .. } => {
+            BuildingElement::AdjacentUnconditionedSpace { u_value, .. } => {
                 *u_value = Some(new_u_value);
             }
         }
@@ -2199,17 +2252,29 @@ impl UValueEditableBuildingElement for BuildingElement {
 
     fn remove_r_c(&mut self) {
         match self {
-            BuildingElement::Opaque { r_c, .. } => {
-                *r_c = None;
+            BuildingElement::Opaque {
+                thermal_resistance_construction,
+                ..
+            } => {
+                *thermal_resistance_construction = None;
             }
-            BuildingElement::Transparent { r_c, .. } => {
-                *r_c = None;
+            BuildingElement::Transparent {
+                thermal_resistance_construction,
+                ..
+            } => {
+                *thermal_resistance_construction = None;
             }
-            BuildingElement::AdjacentZTC { r_c, .. } => {
-                *r_c = None;
+            BuildingElement::AdjacentConditionedSpace {
+                thermal_resistance_construction,
+                ..
+            } => {
+                *thermal_resistance_construction = None;
             }
-            BuildingElement::AdjacentZTUSimple { r_c, .. } => {
-                *r_c = None;
+            BuildingElement::AdjacentUnconditionedSpace {
+                thermal_resistance_construction,
+                ..
+            } => {
+                *thermal_resistance_construction = None;
             }
             _ => {}
         }
@@ -2559,13 +2624,13 @@ pub enum WaterHeatingSchedule {
     HeatingHours,
 }
 
-pub type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
+pub(crate) type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
 #[derive(Clone, Debug, Deserialize, Validate, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum HeatSourceWetDetails {
+pub(crate) enum HeatSourceWetDetails {
     HeatPump {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -2614,6 +2679,7 @@ pub enum HeatSourceWetDetails {
         mechanical_ventilation: Option<String>,
         #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
+        #[serde(rename = "test_data_EN14825")]
         test_data: Vec<HeatPumpTestDatum>,
         boiler: Option<Box<HeatPumpBoiler>>,
     },
@@ -2636,24 +2702,36 @@ pub enum HeatSourceWetDetails {
     HeatBattery {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        heat_battery_location: HeatSourceLocation,
+        heat_battery_location: Option<HeatSourceLocation>,
         electricity_circ_pump: f64,
         electricity_standby: f64,
         // in kW (Charging)
         rated_charge_power: f64,
-        // in kWh
-        heat_storage_capacity: f64,
-        // in kW (Output to hot water and space heat services)
-        max_rated_heat_output: f64,
         // in kW (Losses to internal or external)
         max_rated_losses: f64,
         // number of units installed in zone
         number_of_units: usize,
+        simultaneous_charging_and_discharging: bool,
         #[serde(rename = "ControlCharge")]
         control_charge: String,
-        labs_tests_rated_output: Vec<(f64, f64)>,
-        labs_tests_rated_output_enhanced: Vec<(f64, f64)>,
-        labs_tests_losses: Vec<(f64, f64)>,
+        #[serde(rename = "heat_storage_zone_material_kJ_per_K_above_Phase_transition")]
+        heat_storage_kj_per_k_above: f64,
+        #[serde(rename = "heat_storage_zone_material_kJ_per_K_below_Phase_transition")]
+        heat_storage_kj_per_k_below: f64,
+        #[serde(rename = "heat_storage_zone_material_kJ_per_K_during_Phase_transition")]
+        heat_storage_kj_per_k_during: f64,
+        phase_transition_temperature_upper: f64,
+        phase_transition_temperature_lower: f64,
+        max_temperature: f64,
+        #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
+        velocity_in_hex_tube: f64,
+        capillary_diameter_m: f64,
+        #[serde(rename = "A")]
+        a: f64,
+        #[serde(rename = "B")]
+        b: f64,
+        heat_exchanger_surface_area_m2: f64,
+        flow_rate_l_per_min: f64,
     },
     #[serde(rename = "HIU")]
     Hiu {
@@ -2686,7 +2764,7 @@ impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatPumpSourceType {
+pub(crate) enum HeatPumpSourceType {
     Ground,
     OutsideAir,
     ExhaustAirMEV,
@@ -2699,7 +2777,7 @@ pub enum HeatPumpSourceType {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatPumpSinkType {
+pub(crate) enum HeatPumpSinkType {
     Water,
     Air,
     Glycol25,
@@ -2707,7 +2785,7 @@ pub enum HeatPumpSinkType {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatPumpBackupControlType {
+pub(crate) enum HeatPumpBackupControlType {
     None,
     TopUp,
     Substitute,
@@ -3225,6 +3303,8 @@ pub(crate) enum ApplianceKey {
     Hobs,
     Microwave,
     Kettle,
+    #[serde(rename = "lighting")]
+    Lighting,
 }
 
 impl ApplianceKey {
@@ -3348,11 +3428,14 @@ impl Appliance {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
+    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
+    control: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
     pub(crate) max_shift_hrs: f64,
     pub(crate) demand_limit_weighted: f64,
-    pub(crate) weight: WeightLabel,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) weight: Option<WeightLabel>,
     // In Python these are set from the FHS wrapper
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) weight_timeseries: Option<Vec<f64>>,
@@ -4504,7 +4587,8 @@ impl InputForProcessing {
             .filter(|el| {
                 matches!(
                     el,
-                    BuildingElement::Opaque { .. } | BuildingElement::AdjacentZTUSimple { .. }
+                    BuildingElement::Opaque { .. }
+                        | BuildingElement::AdjacentUnconditionedSpace { .. }
                 )
             })
             .collect()

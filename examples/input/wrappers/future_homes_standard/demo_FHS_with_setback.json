@@ -4,7 +4,7 @@
 	"GroundFloorArea" : 50,
 	"NumberOfBedrooms": 2,
 	"NumberOfWetRooms": 2,
-	"HeatingControlType": "SeparateTempControl",
+	"HeatingControlType": "SeparateTimeAndTempControl",
 	"SimulationTime": {
 		"start": 0,
 		"end": 8,
@@ -97,6 +97,7 @@
 	},
 	"SpaceCoolSystem": {
 		"cooling system 1": {
+			"advanced_start": 1.0,
 			"temp_setback": 28.0,
 			"type": "AirConditioning",
 			"cooling_capacity": 3.0,
@@ -104,9 +105,26 @@
 			"frac_convective": 0.95,
 			"EnergySupply": "mains elec"
 		},
+		"cooling system 1 backup": {
+			"type": "AirConditioning",
+			"temp_setback": 25.0,
+			"cooling_capacity": 3.0,
+			"efficiency": 4.3,
+			"frac_convective": 0.95,
+			"EnergySupply": "mains elec"
+		},
 		"cooling system 2": {
+			"advanced_start": 1.0,
 			"temp_setback": 28.0,
 			"type": "AirConditioning",
+			"cooling_capacity": 3.0,
+			"efficiency": 4.3,
+			"frac_convective": 0.95,
+			"EnergySupply": "mains elec"
+		},
+		"cooling system 2 backup": {
+			"type": "AirConditioning",
+			"temp_setback": 25.0,
 			"cooling_capacity": 3.0,
 			"efficiency": 4.3,
 			"frac_convective": 0.95,
@@ -206,15 +224,31 @@
 	},
 	"SpaceHeatSystem": {
 		"main 1": {
+			"advanced_start": 1.0,
 			"temp_setback": 16.0,
 			"type": "InstantElecHeater",
+			"rated_power": 1.0,
+			"frac_convective": 0.4,
+			"EnergySupply": "mains elec"
+		},
+		"main 1 backup": {
+			"type": "InstantElecHeater",
+			"temp_setback": 20.0,
 			"rated_power": 6.0,
 			"frac_convective": 0.4,
 			"EnergySupply": "mains elec"
 		},
 		"main 2": {
+			"advanced_start": 1.0,
 			"temp_setback": 16.0,
 			"type": "InstantElecHeater",
+			"rated_power": 1.0,
+			"frac_convective": 0.4,
+			"EnergySupply": "mains elec"
+		},
+		"main 2 backup": {
+			"type": "InstantElecHeater",
+			"temp_setback": 20.0,
 			"rated_power": 6.0,
 			"frac_convective": 0.4,
 			"EnergySupply": "mains elec"
@@ -290,8 +324,8 @@
 	
 	"Zone": {
 		"zone 1": {
-			"SpaceHeatSystem": "main 1",
-			"SpaceCoolSystem": "cooling system 1",
+			"SpaceHeatSystem": ["main 1", "main 1 backup"],
+			"SpaceCoolSystem": ["cooling system 1", "cooling system 1 backup"],
 			"SpaceHeatControl":"livingroom",
 			"area": 80.0,
 			"volume": 250.0,
@@ -314,9 +348,9 @@
 				"roof 0": {
 					"type": "BuildingElementOpaque",
 					"is_unheated_pitched_roof": true,
-					"a_sol": 0.6,
-					"r_c": 0.7,
-					"k_m": 19000,
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 45,
 					"orientation360": 90,
@@ -327,9 +361,9 @@
 				},
 				"wall 0": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.6,
-					"r_c": 0.7,
-					"k_m": 19000,
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
 					"is_external_door": false,
@@ -341,9 +375,9 @@
 				},
 				"wall 1":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.61,
-					"r_c": 0.71,
-					"k_m": 19100,
+					"solar_absorption_coeff": 0.61,
+					"thermal_resistance_construction": 0.71,
+					"areal_heat_capacity": 19100,
 					"mass_distribution_class": "M",
 					"pitch": 90,
 					"is_external_door": true,
@@ -355,9 +389,9 @@
 				},
 				"wall 2": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.62,
-					"r_c": 0.72,
-					"k_m": 19200,
+					"solar_absorption_coeff": 0.62,
+					"thermal_resistance_construction": 0.72,
+					"areal_heat_capacity": 19200,
 					"mass_distribution_class": "E",
 					"pitch": 90,
 					"is_external_door": false,
@@ -369,9 +403,9 @@
 				},
 				"wall 3":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.63,
-					"r_c": 0.73,
-					"k_m": 19300,
+					"solar_absorption_coeff": 0.63,
+					"thermal_resistance_construction": 0.73,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "I",
 					"pitch": 90,
 					"is_external_door": false,
@@ -383,7 +417,7 @@
 				},
 				"window 0":{
 					"type": "BuildingElementTransparent",
-					"r_c": 0.4,
+					"thermal_resistance_construction": 0.4,
 					"pitch": 90,
 					"orientation360": 90,
 					"g_value": 0.75,
@@ -412,8 +446,8 @@
 					"area": 15.0,
 					"pitch": 180.0,
 					"u_value": 1.4,
-					"r_f": 0.2,
-					"k_m": 19300,
+					"thermal_resistance_floor_construction": 0.2,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "D",
 					"floor_type": "Slab_no_edge_insulation",
 					"thickness_walls": 0.2,
@@ -421,11 +455,11 @@
 					"psi_wall_floor_junc": 0.5
 				},
 				"wall 4":{
-					"type": "BuildingElementAdjacentZTC",
+					"type": "BuildingElementAdjacentConditionedSpace",
 					"area": 20.0,
 					"pitch": 0.0,
-					"r_c": 0.74,
-					"k_m": 19400,
+					"thermal_resistance_construction": 0.74,
+					"areal_heat_capacity": 19400,
 					"mass_distribution_class": "I"
 				}
 			},
@@ -449,8 +483,8 @@
 			}
 		},
 		"zone 2": {
-			"SpaceHeatSystem": "main 2",
-			"SpaceCoolSystem": "cooling system 2",
+			"SpaceHeatSystem": ["main 2", "main 2 backup"],
+			"SpaceCoolSystem": ["cooling system 2", "cooling system 2 backup"],
 			"SpaceHeatControl":"restofdwelling",
 			"area": 80.0,
 			"volume": 250.0,
@@ -472,9 +506,9 @@
 			"BuildingElement": {
 				"wall 0": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.6,
-					"r_c": 0.7,
-					"k_m": 19000,
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
 					"is_external_door": false,
 					"mass_distribution_class": "IE",
 					"pitch": 90,

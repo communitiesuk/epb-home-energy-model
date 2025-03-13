@@ -1,641 +1,649 @@
 {
-    "temp_internal_air_static_calcs": 20.0,
-    "SimulationTime": {
-        "start": 5088,
-        "end": 5112,
-        "step": 1
-    },
-    "ExternalConditions": {
-        "air_temperatures": [19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0],
-        "wind_speeds": [3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-        "ground_temperatures": [8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7],
-        "diffuse_horizontal_radiation": [0, 0, 0, 0, 35, 73, 139, 244, 320, 361, 369, 348, 318, 249, 225, 198, 121, 68, 19, 0, 0, 0, 0, 0],
-        "direct_beam_radiation": [0, 0, 0, 0, 0, 0, 7, 53, 63, 164, 339, 242, 315, 577, 385, 285, 332, 126, 7, 0, 0, 0, 0, 0],
-        "solar_reflectivity_of_ground": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
-        "latitude": 51.383,
-        "longitude": -0.783,
-        "timezone": 0,
-        "start_day": 212,
-        "end_day": 212,
-        "time_series_step": 1,
-        "january_first": 1,
-        "daylight_savings": "not applicable",
-        "leap_day_included": false,
-        "direct_beam_conversion_needed": false,
-        "shading_segments": [
-            {"number": 1, "start360": 0, "end360": 45},
-            {"number": 2, "start360": 45, "end360": 90},
-            {"number": 3, "start360": 90, "end360": 135},
-            {"number": 4, "start360": 135, "end360": 180, 
-                "shading": [
-                    {"type": "obstacle", "height": 10.5, "distance": 12}
-                ]
-            },
-            {"number": 5, "start360": 180, "end360": 225},
-            {"number": 6, "start360": 225, "end360": 270},
-            {"number": 7, "start360": 270, "end360": 315},
-            {"number": 8, "start360": 315, "end360": 360}
-        ]
-        
-    },
-    "InternalGains": {
-        "metabolic gains":{
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule": {
-                "main": [256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648]
-            }
-        },
-        "other": {
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule": {
-                "main": [88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608]
-            }
-        }
-    },
-    "ApplianceGains": {
-        "lighting": {
-            "start_day": 212,
-            "time_series_step": 1,
-            "gains_fraction": 0.5,
-            "EnergySupply": "mains elec",
-            "schedule": {
-                "8hrs": [32.0, 46.0, 33.0, 21.0, 12.0, 17.0, 25.0, 46.0],
-                "main": [{"value": "8hrs", "repeat": 3}]
-            }
-        },
-        "cooking": {
-            "start_day": 212,
-            "time_series_step": 1,
-            "gains_fraction": 1,
-            "EnergySupply": "mains elec",
-            "schedule": {
-                "8hrs": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0],
-                "main": [{"value": "8hrs", "repeat": 3}]
-            }
-        }
-    },
-    "ColdWaterSource": {
-        "mains water": {
-            "start_day": 212,
-            "temperatures": [17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3,
-                             17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7],
-            "time_series_step": 1
-        }
-    },
-    "EnergySupply": {
-        "mains elec": {
-            "fuel": "electricity",
-            "diverter": {
-                "StorageTank": "hw cylinder",
-                "HeatSource": "immersion"
-            },
-            "ElectricBattery": {
-                "capacity": 2,
-                "charge_discharge_efficiency_round_trip": 0.8,
-                "battery_age": 5,
-                "minimum_charge_rate_one_way_trip": 0.001,
-                "maximum_charge_rate_one_way_trip": 1.5,
-                "maximum_discharge_rate_one_way_trip": 1.25,
-                "battery_location": "inside",
-                "grid_charging_possible": false
-            },
-            "priority":["ElectricBattery","diverter"],
-            "is_export_capable": true
-        }
-    },
-    "Control": {
-        "space heat main ctrl": {
-            "type": "SetpointTimeControl",
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule": {
-                "main": [{"value": 21.0, "repeat": 24}]
-            }
-        },
-        "cooling system 1 ctrl": {
-            "type": "SetpointTimeControl",
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule": {
-                "main": [{"value": 25.0, "repeat": 24}]
-            }
-        },
-        "always_off":{
-            "type": "SetpointTimeControl",
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule":{
-                "main": [{"value": null, "repeat": 24}]
-            }
-        },
-        "min_temp":{
-            "type": "SetpointTimeControl",
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule":{
-                "main": [{"value": 52.0, "repeat": 24}]
-            }
-        },
-        "setpoint_temp_max":{
-            "type": "SetpointTimeControl",
-            "start_day": 212,
-            "time_series_step": 1,
-            "schedule":{
-                "main": [{"value": 55.0, "repeat": 24}]
-            }
-        }
-    },
-    "HeatSourceWet": {
-        "hp": {
-            "type": "HeatPump",
-            "EnergySupply": "mains elec",
-            "source_type": "OutsideAir",
-            "sink_type": "Water",
-            "backup_ctrl_type": "TopUp",
-            "time_delay_backup": 2.0,
-            "modulating_control": true,
-            "min_modulation_rate_35": 0.35,
-            "min_modulation_rate_55": 0.4,
-            "time_constant_onoff_operation": 140,
-            "temp_return_feed_max": 70.0,
-            "temp_lower_operating_limit": -5.0,
-            "min_temp_diff_flow_return_for_hp_to_operate": 0.0,
-            "var_flow_temp_ctrl_during_test": true,
-            "power_heating_circ_pump": 0.015,
-            "power_source_circ_pump": 0.010,
-            "power_standby": 0.015,
-            "power_crankcase_heater": 0.01,
-            "power_off": 0.015,
-            "power_max_backup": 3.0,
-            "test_data": [
-                {
-                    "test_letter": "A",
-                    "capacity": 8.4,
-                    "cop": 4.6,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 35,
-                    "temp_outlet": 34,
-                    "temp_source": 0,
-                    "temp_test": -7
-                },
-                {
-                    "test_letter": "B",
-                    "capacity": 8.3,
-                    "cop": 4.9,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 35,
-                    "temp_outlet": 30,
-                    "temp_source": 0,
-                    "temp_test": 2
-                },
-                {
-                    "test_letter": "C",
-                    "capacity": 8.3,
-                    "cop": 5.1,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 35,
-                    "temp_outlet": 27,
-                    "temp_source": 0,
-                    "temp_test": 7
-                },
-                {
-                    "test_letter": "D",
-                    "capacity": 8.2,
-                    "cop": 5.4,
-                    "degradation_coeff": 0.95,
-                    "design_flow_temp": 35,
-                    "temp_outlet": 24,
-                    "temp_source": 0,
-                    "temp_test": 12
-                },
-                {
-                    "test_letter": "F",
-                    "capacity": 8.4,
-                    "cop": 4.6,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 35,
-                    "temp_outlet": 34,
-                    "temp_source": 0,
-                    "temp_test": -7
-                },
-                {
-                    "test_letter": "A",
-                    "capacity": 8.8,
-                    "cop": 3.2,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 55,
-                    "temp_outlet": 52,
-                    "temp_source": 0,
-                    "temp_test": -7
-                },
-                {
-                    "test_letter": "B",
-                    "capacity": 8.6,
-                    "cop": 3.6,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 55,
-                    "temp_outlet": 42,
-                    "temp_source": 0,
-                    "temp_test": 2
-                },
-                {
-                    "test_letter": "C",
-                    "capacity": 8.5,
-                    "cop": 3.9,
-                    "degradation_coeff": 0.98,
-                    "design_flow_temp": 55,
-                    "temp_outlet": 36,
-                    "temp_source": 0,
-                    "temp_test": 7
-                },
-                {
-                    "test_letter": "D",
-                    "capacity": 8.5,
-                    "cop": 4.3,
-                    "degradation_coeff": 0.98,
-                    "design_flow_temp": 55,
-                    "temp_outlet": 30,
-                    "temp_source": 0,
-                    "temp_test": 12
-                },
-                {
-                    "test_letter": "F",
-                    "capacity": 8.8,
-                    "cop": 3.2,
-                    "degradation_coeff": 0.90,
-                    "design_flow_temp": 55,
-                    "temp_outlet": 52,
-                    "temp_source": 0,
-                    "temp_test": -7
-                }
-            ]
-        }
-    },
-    "HotWaterSource": {
-        "hw cylinder": {
-            "type": "StorageTank",
-            "volume": 80.0,
-            "daily_losses": 1.68,
-            "init_temp": 55.0,
-            "ColdWaterSource": "mains water",
-            "HeatSource": {
-                "immersion": {
-                    "type": "ImmersionHeater",
-                    "power": 3.0,
-                    "EnergySupply": "mains elec",
-                    "Controlmin": "always_off",
-                    "Controlmax": "setpoint_temp_max",
-                    "heater_position": 0.0,
-                    "thermostat_position": 0.0
-                },
-                "hp": {
-                    "type": "HeatSourceWet",
-                    "name": "hp",
-                    "temp_flow_limit_upper": 65,
-                    "EnergySupply": "mains elec",
-                    "Controlmin": "min_temp",
-                    "Controlmax": "setpoint_temp_max",
-                    "heater_position": 0.5,
-                    "thermostat_position": 0.66
-                }
-            },
-            "primary_pipework": [
-                {
-                    "location": "internal",
-                    "internal_diameter_mm": 20,
-                    "external_diameter_mm": 30,
-                    "length": 10.0,
-                    "insulation_thermal_conductivity": 0.035,
-                    "insulation_thickness_mm": 35,
-                    "surface_reflectivity": false,
-                    "pipe_contents": "water"
-                },
-                {
-                    "location": "external",
-                    "internal_diameter_mm": 25,
-                    "external_diameter_mm": 27,
-                    "length": 2.0,
-                    "insulation_thermal_conductivity": 0.035,
-                    "insulation_thickness_mm": 38,
-                    "surface_reflectivity": false,
-                    "pipe_contents": "water"
-                }
-            ]
-        }
-    },
-    "HotWaterDemand": {
-        "Shower": {
-            "mixer": {
-                "type": "MixerShower",
-                "flowrate": 8.0,
-                "ColdWaterSource": "mains water"
-            },
-            "IES": {
-                "type": "InstantElecShower",
-                "rated_power": 9.0,
-                "ColdWaterSource": "mains water",
-                "EnergySupply": "mains elec"
-            }
-        },
-        "Bath": {
-            "medium": {
-                "size": 100,
-                "ColdWaterSource": "mains water",
-                "flowrate": 8.0
-            }
-        },
-        "Other": {
-            "other": {
-                "flowrate": 8.0,
-                "ColdWaterSource": "mains water"
-            }
-        },
-        "Distribution": [
-            {
-                "location": "internal",
-                "internal_diameter_mm": 30,
-                "length": 8.0
-            },
-            {
-                "location": "internal",
-                "internal_diameter_mm": 25,
-                "length": 8.0
-            },
-            {
-                "location": "external",
-                "internal_diameter_mm": 25,
-                "length": 8.0
-            },
-            {
-                "location": "external",
-                "internal_diameter_mm": 25,
-                "length": 8.0
-            }
-        ]
-    },
-    "Events": {
-        "Shower": {
-            "IES": [
-                {"start": 4.1, "duration": 6, "temperature": 41.0},
-                {"start": 4.5, "duration": 6, "temperature": 41.0},
-                {"start": 6, "duration": 6, "temperature": 41.0}
-            ],
-            "mixer": [
-                {"start": 7, "duration": 6, "temperature": 41.0}
-            ]
-        },
-        "Bath":{
-            "medium": [
-                {"start": 6, "temperature": 41.0, "volume":73, "duration":9}
-            ]
-        },
-        "Other": {
-            "other": [
-                {"start": 7, "duration": 1, "temperature": 41.0}
-            ]
-        }
-    },
-    "SpaceHeatSystem": {
-        "main": {
-            "type": "WetDistribution",
-            "wet_emitter_type": "radiator",
-            "thermal_mass": 0.14,
-            "emitters":[
-                {
-                    "wet_emitter_type": "radiator",
-                    "c": 0.08,
-                    "n": 1.2,
-                    "frac_convective": 0.4
-                }
-            ],
-            "temp_diff_emit_dsgn": 10.0,
-            "variable_flow": true,
-            "min_flow_rate": 3,
-            "max_flow_rate": 18,
-            "HeatSource": {
-                "name": "hp",
-                "temp_flow_limit_upper": 65.0
-            },
-            "Control": "space heat main ctrl",
-            "ecodesign_controller": {
-                "ecodesign_control_class": 2,
-                "min_outdoor_temp": -4,
-                "max_outdoor_temp": 20,
-                "min_flow_temp": 30},
-            "design_flow_temp": 55,
-            "Zone": "zone 1"
-        }
-    },
-    "SpaceCoolSystem": {
-        "cooling system 1": {
-            "type": "AirConditioning",
-            "cooling_capacity": 3.0,
-            "efficiency": 4.3,
-            "frac_convective": 0.95,
-            "EnergySupply": "mains elec",
-            "Control": "cooling system 1 ctrl"
-        }
-    },
-    "General": {
-        "storeys_in_building": 1,
-        "build_type": "house"
-    },
-    
-    "InfiltrationVentilation": {
-        "cross_vent_factor": true,
-        "shield_class": "Normal",
-        "terrain_class": "OpenField",
-        "ventilation_zone_base_height": 2.5,
-        "altitude": 30,
-        "Vents": {
-            "vent1": {
-                "mid_height_air_flow_path": 1.5,
-                "area_cm2": 100,
-                "pressure_difference_ref": 20,
-                "orientation360": 180,
-                "pitch": 60
-            }
-        },
-        "Leaks" : {
-            "ventilation_zone_height" : 6,
-            "test_pressure": 50,
-            "test_result": 1.2,
-            "area_roof": 100,
-            "area_facades":50,
-            "env_area":220
-        },
-        "MechanicalVentilation": {
-            "mechvent1":{
-                "sup_air_flw_ctrl": "ODA",
-                "sup_air_temp_ctrl": "CONST",
-                "design_zone_cooling_covered_by_mech_vent": 3.4,
-                "design_zone_heating_covered_by_mech_vent": 1,
-                "vent_type": "Centralised continuous MEV",
-                "SFP":1.5,
-                "EnergySupply": "mains elec",
-                "design_outdoor_air_flow_rate": 80
-            }
-        },
-        "PDUs": {
-        },
-        "Cowls": {
-        },
-        "CombustionAppliances":{
-            "Fireplace":{
-                "supply_situation":"room_air",
-                "exhaust_situation": "into_separate_duct",
-                "fuel_type": "wood",
-                "appliance_type": "open_fireplace"
-            }
-        }
-    },
-    "Zone": {
-        "zone 1": {
-            "SpaceHeatSystem": "main",
-            "SpaceCoolSystem": "cooling system 1",
-            "area": 80.0,
-            "volume": 250.0,
-            "temp_setpnt_init": 21.0,
-            "BuildingElement": {
-                "wall 0": {
-                    "type": "BuildingElementOpaque",
-                    "a_sol": 0.6,
-                    "r_c": 0.7,
-                    "k_m": 19000,
-                    "mass_distribution_class": "IE",
-                    "pitch": 90,
-                    "orientation360": 90,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 10,
-                    "area": 20.0
-                },
-                "wall 1":{
-                    "type": "BuildingElementOpaque",
-                    "a_sol": 0.61,
-                    "r_c": 0.71,
-                    "k_m": 19100,
-                    "mass_distribution_class": "M",
-                    "pitch": 90,
-                    "orientation360": 270,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 10,
-                    "area": 25.0
-                },
-                "wall 2": {
-                    "type": "BuildingElementOpaque",
-                    "a_sol": 0.62,
-                    "r_c": 0.72,
-                    "k_m": 19200,
-                    "mass_distribution_class": "E",
-                    "pitch": 90,
-                    "orientation360": 0,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 8,
-                    "area": 20.0
-                },
-                "wall 3":{
-                    "type": "BuildingElementOpaque",
-                    "a_sol": 0.63,
-                    "r_c": 0.73,
-                    "k_m": 19300,
-                    "mass_distribution_class": "I",
-                    "pitch": 90,
-                    "orientation360": 180,
-                    "base_height": 0,
-                    "height": 2.5,
-                    "width": 6,
-                    "area": 15.0
-                },
-                "window 0":{
-                    "type": "BuildingElementTransparent",
-                    "r_c": 0.4,
-                    "pitch": 90,
-                    "orientation360": 90,
-                    "g_value": 0.75,
-                    "frame_area_fraction": 0.25,
-                    "base_height": 1,
-                    "height": 1.25,
-                    "width": 4,
-                    "free_area_height": 1.6,
-                    "mid_height": 1.5,
-                    "max_window_open_area": 3,
-                    "window_part_list": [
-                        {
-                        "mid_height_air_flow_path":1.5
-                        }
-                    ],
-                    "shading": [
-                        {"type": "overhang", "depth": 0.5, "distance": 0.5},
-                        {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
-                        {"type": "sidefinright", "depth":0.25, "distance":0.1}
-                    ]
-                },
-                "ground":{
-                    "type": "BuildingElementGround",
-                    "total_area": 15.0,
-                    "area": 15.0,
-                    "pitch": 180.0,
-                    "u_value": 1.4,
-                    "r_f": 0.2,
-                    "k_m": 19300,
-                    "mass_distribution_class": "D",
-                    "floor_type": "Slab_no_edge_insulation",
-                    "thickness_walls": 0.2,
-                    "perimeter": 16.0,
-                    "psi_wall_floor_junc": 0.5
-                },
-                "wall 4":{
-                    "type": "BuildingElementAdjacentZTC",
-                    "area": 20.0,
-                    "pitch": 0.0,
-                    "r_c": 0.74,
-                    "k_m": 19400,
-                    "mass_distribution_class": "I"
-                }
-            },
-            "ThermalBridging": {
-                "TB1": {
-                    "type": "ThermalBridgeLinear",
-                    "linear_thermal_transmittance": 1.0,
-                    "length": 3.0
-                },
-                "TB2": {
-                    "type": "ThermalBridgeLinear",
-                    "linear_thermal_transmittance": 0.1,
-                    "length": 2.0
-                },
-                "TB3": {
-                    "type": "ThermalBridgePoint",
-                    "heat_transfer_coeff": 2.0
-                }
-            }
-        }
-    },
-    "OnSiteGeneration": {
-        "PV 1": {
-            "type": "PhotovoltaicSystem",
-            "peak_power": 4.5,
-            "ventilation_strategy": "moderately_ventilated",
-            "pitch": 30,
-            "orientation360": 180,
-            "EnergySupply": "mains elec",
-            "base_height": 4.5,
-            "height": 2.0,
-            "width": 1.0,
-            "shading": [
-                {"type": "overhang", "depth": 0.5, "distance": 0.5},
-                {"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
-                {"type": "sidefinright", "depth":0.25, "distance":0.1}
-            ],
-            "inverter_peak_power_dc": 2,
-            "inverter_peak_power_ac": 1.4,
-            "inverter_is_inside": false,
-            "inverter_type": "optimised_inverter"
-        }
-    }
+	"temp_internal_air_static_calcs": 20.0,
+	"SimulationTime": {
+		"start": 5088,
+		"end": 5112,
+		"step": 1
+	},
+	"ExternalConditions": {
+		"air_temperatures": [19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0],
+		"wind_speeds": [3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
+		"ground_temperatures": [8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7],
+		"diffuse_horizontal_radiation": [0, 0, 0, 0, 35, 73, 139, 244, 320, 361, 369, 348, 318, 249, 225, 198, 121, 68, 19, 0, 0, 0, 0, 0],
+		"direct_beam_radiation": [0, 0, 0, 0, 0, 0, 7, 53, 63, 164, 339, 242, 315, 577, 385, 285, 332, 126, 7, 0, 0, 0, 0, 0],
+		"solar_reflectivity_of_ground": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+		"latitude": 51.383,
+		"longitude": -0.783,
+		"timezone": 0,
+		"start_day": 212,
+		"end_day": 212,
+		"time_series_step": 1,
+		"january_first": 1,
+		"daylight_savings": "not applicable",
+		"leap_day_included": false,
+		"direct_beam_conversion_needed": false,
+		"shading_segments": [
+			{"number": 1, "start360": 0, "end360": 45},
+			{"number": 2, "start360": 45, "end360": 90},
+			{"number": 3, "start360": 90, "end360": 135},
+			{"number": 4, "start360": 135, "end360": 180, 
+				"shading": [
+					{"type": "obstacle", "height": 10.5, "distance": 12}
+				]
+			},
+			{"number": 5, "start360": 180, "end360": 225},
+			{"number": 6, "start360": 225, "end360": 270},
+			{"number": 7, "start360": 270, "end360": 315},
+			{"number": 8, "start360": 315, "end360": 360}
+		]
+		
+	},
+	"InternalGains": {
+		"metabolic gains":{
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule": {
+				"main": [256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648, 256, 368, 584, 416, 712, 448, 816, 648]
+			}
+		},
+		"other": {
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule": {
+				"main": [88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608, 88, 200, 184, 376, 576, 544, 728, 608]
+			}
+		}
+	},
+	"ApplianceGains": {
+		"lighting": {
+			"start_day": 212,
+			"time_series_step": 1,
+			"gains_fraction": 0.5,
+			"EnergySupply": "mains elec",
+			"schedule": {
+				"8hrs": [32.0, 46.0, 33.0, 21.0, 12.0, 17.0, 25.0, 46.0],
+				"main": [{"value": "8hrs", "repeat": 3}]
+			}
+		},
+		"cooking": {
+			"start_day": 212,
+			"time_series_step": 1,
+			"gains_fraction": 1,
+			"EnergySupply": "mains elec",
+			"schedule": {
+				"8hrs": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0],
+				"main": [{"value": "8hrs", "repeat": 3}]
+			}
+		}
+	},
+	"ColdWaterSource": {
+		"mains water": {
+			"start_day": 212,
+			"temperatures": [17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3,
+							 17.4, 17.5, 17.6, 17.7, 17.0, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7],
+			"time_series_step": 1
+		}
+	},
+	"EnergySupply": {
+		"mains elec": {
+			"fuel": "electricity",
+			"diverter": {
+				"HeatSource": "immersion",
+				"Controlmax": "controlmax_diverter"
+			},
+			"ElectricBattery": {
+				"capacity": 2,
+				"charge_discharge_efficiency_round_trip": 0.8,
+				"battery_age": 5,
+				"minimum_charge_rate_one_way_trip": 0.001,
+				"maximum_charge_rate_one_way_trip": 1.5,
+				"maximum_discharge_rate_one_way_trip": 1.25,
+				"battery_location": "inside",
+				"grid_charging_possible": false
+			},
+			"priority":["ElectricBattery","diverter"],
+			"is_export_capable": true
+		}
+	},
+	"Control": {
+		"space heat main ctrl": {
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule": {
+				"main": [{"value": 21.0, "repeat": 24}]
+			}
+		},
+		"cooling system 1 ctrl": {
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule": {
+				"main": [{"value": 25.0, "repeat": 24}]
+			}
+		},
+		"always_off":{
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [{"value": null, "repeat": 24}]
+			}
+		},
+		"min_temp":{
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [null, 52, null, 52, {"value": 52.0, "repeat": 20}] 
+			}
+		},
+		"setpoint_temp_max":{
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [null, 55, null, 55, {"value": 55.0, "repeat": 20}] 
+			}
+		},
+		"controlmax_diverter" : {
+			"type": "SetpointTimeControl",
+			"start_day": 212,
+			"time_series_step": 1,
+			"schedule":{
+				"main": [60, 60, 60, 60, {"value": 55, "repeat": 20}]
+			}
+		}
+	},
+	"HeatSourceWet": {
+		"hp": {
+			"type": "HeatPump",
+			"EnergySupply": "mains elec",
+			"source_type": "OutsideAir",
+			"sink_type": "Water",
+			"backup_ctrl_type": "TopUp",
+			"time_delay_backup": 2.0,
+			"modulating_control": true,
+			"min_modulation_rate_35": 0.35,
+			"min_modulation_rate_55": 0.4,
+			"time_constant_onoff_operation": 140,
+			"temp_return_feed_max": 70.0,
+			"temp_lower_operating_limit": -5.0,
+			"min_temp_diff_flow_return_for_hp_to_operate": 0.0,
+			"var_flow_temp_ctrl_during_test": true,
+			"power_heating_circ_pump": 0.015,
+			"power_source_circ_pump": 0.010,
+			"power_standby": 0.015,
+			"power_crankcase_heater": 0.01,
+			"power_off": 0.015,
+			"power_max_backup": 3.0,
+            "test_data_EN14825": [
+				{
+					"test_letter": "A",
+					"capacity": 8.4,
+					"cop": 4.6,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 35,
+					"temp_outlet": 34,
+					"temp_source": 0,
+					"temp_test": -7
+				},
+				{
+					"test_letter": "B",
+					"capacity": 8.3,
+					"cop": 4.9,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 35,
+					"temp_outlet": 30,
+					"temp_source": 0,
+					"temp_test": 2
+				},
+				{
+					"test_letter": "C",
+					"capacity": 8.3,
+					"cop": 5.1,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 35,
+					"temp_outlet": 27,
+					"temp_source": 0,
+					"temp_test": 7
+				},
+				{
+					"test_letter": "D",
+					"capacity": 8.2,
+					"cop": 5.4,
+					"degradation_coeff": 0.95,
+					"design_flow_temp": 35,
+					"temp_outlet": 24,
+					"temp_source": 0,
+					"temp_test": 12
+				},
+				{
+					"test_letter": "F",
+					"capacity": 8.4,
+					"cop": 4.6,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 35,
+					"temp_outlet": 34,
+					"temp_source": 0,
+					"temp_test": -7
+				},
+				{
+					"test_letter": "A",
+					"capacity": 8.8,
+					"cop": 3.2,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 55,
+					"temp_outlet": 52,
+					"temp_source": 0,
+					"temp_test": -7
+				},
+				{
+					"test_letter": "B",
+					"capacity": 8.6,
+					"cop": 3.6,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 55,
+					"temp_outlet": 42,
+					"temp_source": 0,
+					"temp_test": 2
+				},
+				{
+					"test_letter": "C",
+					"capacity": 8.5,
+					"cop": 3.9,
+					"degradation_coeff": 0.98,
+					"design_flow_temp": 55,
+					"temp_outlet": 36,
+					"temp_source": 0,
+					"temp_test": 7
+				},
+				{
+					"test_letter": "D",
+					"capacity": 8.5,
+					"cop": 4.3,
+					"degradation_coeff": 0.98,
+					"design_flow_temp": 55,
+					"temp_outlet": 30,
+					"temp_source": 0,
+					"temp_test": 12
+				},
+				{
+					"test_letter": "F",
+					"capacity": 8.8,
+					"cop": 3.2,
+					"degradation_coeff": 0.90,
+					"design_flow_temp": 55,
+					"temp_outlet": 52,
+					"temp_source": 0,
+					"temp_test": -7
+				}
+			]
+		}
+	},
+	"HotWaterSource": {
+		"hw cylinder": {
+			"type": "StorageTank",
+			"volume": 80.0,
+			"daily_losses": 1.68,
+			"init_temp": 55.0,
+			"ColdWaterSource": "mains water",
+			"HeatSource": {
+				"immersion": {
+					"type": "ImmersionHeater",
+					"power": 3.0,
+					"EnergySupply": "mains elec",
+					"Controlmin": "always_off",
+					"Controlmax": "setpoint_temp_max",
+					"heater_position": 0.0,
+					"thermostat_position": 0.0
+				},
+				"hp": {
+					"type": "HeatSourceWet",
+					"name": "hp",
+					"temp_flow_limit_upper": 65,
+					"EnergySupply": "mains elec",
+					"Controlmin": "min_temp",
+					"Controlmax": "setpoint_temp_max",
+					"heater_position": 0.5,
+					"thermostat_position": 0.66
+				}
+			},
+			"primary_pipework": [
+				{
+					"location": "internal",
+					"internal_diameter_mm": 20,
+					"external_diameter_mm": 30,
+					"length": 10.0,
+					"insulation_thermal_conductivity": 0.035,
+					"insulation_thickness_mm": 35,
+					"surface_reflectivity": false,
+					"pipe_contents": "water"
+				},
+				{
+					"location": "external",
+					"internal_diameter_mm": 25,
+					"external_diameter_mm": 27,
+					"length": 2.0,
+					"insulation_thermal_conductivity": 0.035,
+					"insulation_thickness_mm": 38,
+					"surface_reflectivity": false,
+					"pipe_contents": "water"
+				}
+			]
+		}
+	},
+	"HotWaterDemand": {
+		"Shower": {
+			"mixer": {
+				"type": "MixerShower",
+				"flowrate": 8.0,
+				"ColdWaterSource": "mains water"
+			},
+			"IES": {
+				"type": "InstantElecShower",
+				"rated_power": 9.0,
+				"ColdWaterSource": "mains water",
+				"EnergySupply": "mains elec"
+			}
+		},
+		"Bath": {
+			"medium": {
+				"size": 100,
+				"ColdWaterSource": "mains water",
+				"flowrate": 8.0
+			}
+		},
+		"Other": {
+			"other": {
+				"flowrate": 8.0,
+				"ColdWaterSource": "mains water"
+			}
+		},
+		"Distribution": [
+			{
+				"location": "internal",
+				"internal_diameter_mm": 30,
+				"length": 8.0
+			},
+			{
+				"location": "internal",
+				"internal_diameter_mm": 25,
+				"length": 8.0
+			},
+			{
+				"location": "external",
+				"internal_diameter_mm": 25,
+				"length": 8.0
+			},
+			{
+				"location": "external",
+				"internal_diameter_mm": 25,
+				"length": 8.0
+			}
+		]
+	},
+	"Events": {
+		"Shower": {
+			"IES": [
+				{"start": 4.1, "duration": 6, "temperature": 41.0},
+				{"start": 4.5, "duration": 6, "temperature": 41.0},
+				{"start": 6, "duration": 6, "temperature": 41.0}
+			],
+			"mixer": [
+				{"start": 7, "duration": 6, "temperature": 41.0}
+			]
+		},
+		"Bath":{
+			"medium": [
+				{"start": 6, "temperature": 41.0, "volume":73, "duration":9}
+			]
+		},
+		"Other": {
+			"other": [
+				{"start": 7, "duration": 1, "temperature": 41.0}
+			]
+		}
+	},
+	"SpaceHeatSystem": {
+		"main": {
+			"type": "WetDistribution",
+			"wet_emitter_type": "radiator",
+			"thermal_mass": 0.14,
+			"emitters":[
+				{
+					"wet_emitter_type": "radiator",
+					"c": 0.08,
+					"n": 1.2,
+					"frac_convective": 0.4
+				}
+			],
+			"temp_diff_emit_dsgn": 10.0,
+			"variable_flow": true,
+			"min_flow_rate": 3,
+			"max_flow_rate": 18,
+			"HeatSource": {
+				"name": "hp",
+				"temp_flow_limit_upper": 65.0
+			},
+			"Control": "space heat main ctrl",
+			"ecodesign_controller": {
+				"ecodesign_control_class": 2,
+				"min_outdoor_temp": -4,
+				"max_outdoor_temp": 20,
+				"min_flow_temp": 30},
+			"design_flow_temp": 55,
+			"Zone": "zone 1"
+		}
+	},
+	"SpaceCoolSystem": {
+		"cooling system 1": {
+			"type": "AirConditioning",
+			"cooling_capacity": 3.0,
+			"efficiency": 4.3,
+			"frac_convective": 0.95,
+			"EnergySupply": "mains elec",
+			"Control": "cooling system 1 ctrl"
+		}
+	},
+	"General": {
+		"storeys_in_building": 1,
+		"build_type": "house"
+	},
+	
+	"InfiltrationVentilation": {
+		"cross_vent_factor": true,
+		"shield_class": "Normal",
+		"terrain_class": "OpenField",
+		"ventilation_zone_base_height": 2.5,
+		"altitude": 30,
+		"Vents": {
+			"vent1": {
+				"mid_height_air_flow_path": 1.5,
+				"area_cm2": 100,
+				"pressure_difference_ref": 20,
+				"orientation360": 180,
+				"pitch": 60
+			}
+		},
+		"Leaks" : {
+			"ventilation_zone_height" : 6,
+			"test_pressure": 50,
+			"test_result": 1.2,
+			"area_roof": 100,
+			"area_facades":50,
+			"env_area":220
+		},
+		"MechanicalVentilation": {
+			"mechvent1":{
+				"sup_air_flw_ctrl": "ODA",
+				"sup_air_temp_ctrl": "CONST",
+				"design_zone_cooling_covered_by_mech_vent": 3.4,
+				"design_zone_heating_covered_by_mech_vent": 1,
+				"vent_type": "Centralised continuous MEV",
+				"SFP":1.5,
+				"EnergySupply": "mains elec",
+				"design_outdoor_air_flow_rate": 80
+			}
+		},
+		"PDUs": {
+		},
+		"Cowls": {
+		},
+		"CombustionAppliances":{
+			"Fireplace":{
+				"supply_situation":"room_air",
+				"exhaust_situation": "into_separate_duct",
+				"fuel_type": "wood",
+				"appliance_type": "open_fireplace"
+			}
+		}
+	},
+	"Zone": {
+		"zone 1": {
+			"SpaceHeatSystem": "main",
+			"SpaceCoolSystem": "cooling system 1",
+			"area": 80.0,
+			"volume": 250.0,
+			"temp_setpnt_init": 21.0,
+			"BuildingElement": {
+				"wall 0": {
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
+					"mass_distribution_class": "IE",
+					"pitch": 90,
+					"orientation360": 90,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 10,
+					"area": 20.0
+				},
+				"wall 1":{
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.61,
+					"thermal_resistance_construction": 0.71,
+					"areal_heat_capacity": 19100,
+					"mass_distribution_class": "M",
+					"pitch": 90,
+					"orientation360": 270,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 10,
+					"area": 25.0
+				},
+				"wall 2": {
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.62,
+					"thermal_resistance_construction": 0.72,
+					"areal_heat_capacity": 19200,
+					"mass_distribution_class": "E",
+					"pitch": 90,
+					"orientation360": 0,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 8,
+					"area": 20.0
+				},
+				"wall 3":{
+					"type": "BuildingElementOpaque",
+					"solar_absorption_coeff": 0.63,
+					"thermal_resistance_construction": 0.73,
+					"areal_heat_capacity": 19300,
+					"mass_distribution_class": "I",
+					"pitch": 90,
+					"orientation360": 180,
+					"base_height": 0,
+					"height": 2.5,
+					"width": 6,
+					"area": 15.0
+				},
+				"window 0":{
+					"type": "BuildingElementTransparent",
+					"thermal_resistance_construction": 0.4,
+					"pitch": 90,
+					"orientation360": 90,
+					"g_value": 0.75,
+					"frame_area_fraction": 0.25,
+					"base_height": 1,
+					"height": 1.25,
+					"width": 4,
+					"free_area_height": 1.6,
+					"mid_height": 1.5,
+					"max_window_open_area": 3,
+					"window_part_list": [
+						{
+						"mid_height_air_flow_path":1.5
+						}
+					],
+					"shading": [
+						{"type": "overhang", "depth": 0.5, "distance": 0.5},
+						{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+						{"type": "sidefinright", "depth":0.25, "distance":0.1}
+					]
+				},
+				"ground":{
+					"type": "BuildingElementGround",
+					"total_area": 15.0,
+					"area": 15.0,
+					"pitch": 180.0,
+					"u_value": 1.4,
+					"thermal_resistance_floor_construction": 0.2,
+					"areal_heat_capacity": 19300,
+					"mass_distribution_class": "D",
+					"floor_type": "Slab_no_edge_insulation",
+					"thickness_walls": 0.2,
+					"perimeter": 16.0,
+					"psi_wall_floor_junc": 0.5
+				},
+				"wall 4":{
+					"type": "BuildingElementAdjacentConditionedSpace",
+					"area": 20.0,
+					"pitch": 0.0,
+					"thermal_resistance_construction": 0.74,
+					"areal_heat_capacity": 19400,
+					"mass_distribution_class": "I"
+				}
+			},
+			"ThermalBridging": {
+				"TB1": {
+					"type": "ThermalBridgeLinear",
+					"linear_thermal_transmittance": 1.0,
+					"length": 3.0
+				},
+				"TB2": {
+					"type": "ThermalBridgeLinear",
+					"linear_thermal_transmittance": 0.1,
+					"length": 2.0
+				},
+				"TB3": {
+					"type": "ThermalBridgePoint",
+					"heat_transfer_coeff": 2.0
+				}
+			}
+		}
+	},
+	"OnSiteGeneration": {
+		"PV 1": {
+			"type": "PhotovoltaicSystem",
+			"peak_power": 4.5,
+			"ventilation_strategy": "moderately_ventilated",
+			"pitch": 30,
+			"orientation360": 180,
+			"EnergySupply": "mains elec",
+			"base_height": 4.5,
+			"height": 2.0,
+			"width": 1.0,
+			"shading": [
+				{"type": "overhang", "depth": 0.5, "distance": 0.5},
+				{"type": "sidefinleft", "depth": 0.25, "distance": 0.1},
+				{"type": "sidefinright", "depth":0.25, "distance":0.1}
+			],
+			"inverter_peak_power_dc": 2,
+			"inverter_peak_power_ac": 1.4,
+			"inverter_is_inside": false,
+			"inverter_type": "optimised_inverter"
+		}
+	}
 }

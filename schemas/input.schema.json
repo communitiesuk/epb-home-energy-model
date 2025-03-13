@@ -145,6 +145,12 @@
     "SimulationTime": {
       "$ref": "#/$defs/SimulationTime"
     },
+    "SmartApplianceControls": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/SmartApplianceControlDetails"
+      }
+    },
     "SpaceCoolSystem": {
       "type": [
         "object",
@@ -411,14 +417,33 @@
       },
       "additionalProperties": false
     },
+    "ApplianceKey": {
+      "type": "string",
+      "enum": [
+        "Clothes_drying",
+        "Clothes_washing",
+        "Dishwasher",
+        "Fridge",
+        "Fridge-Freezer",
+        "Freezer",
+        "Hobs",
+        "Kettle",
+        "Microwave",
+        "Otherdevices",
+        "Oven",
+        "lighting"
+      ]
+    },
     "ApplianceLoadShifting": {
       "type": "object",
       "required": [
         "demand_limit_weighted",
-        "max_shift_hrs",
-        "weight"
+        "max_shift_hrs"
       ],
       "properties": {
+        "Control": {
+          "type": "string"
+        },
         "demand_limit_weighted": {
           "type": "number",
           "format": "double"
@@ -555,11 +580,11 @@
           "type": "object",
           "title": "BuildingElementOpaque",
           "required": [
-            "a_sol",
+            "solar_absorption_coeff",
             "area",
+            "areal_heat_capacity",
             "base_height",
             "height",
-            "k_m",
             "mass_distribution_class",
             "orientation360",
             "pitch",
@@ -567,15 +592,15 @@
             "width"
           ],
           "properties": {
-            "a_sol": {
-              "type": "number",
-              "format": "double",
-              "description": "Solar absorption coefficient at the external surface (dimensionless)"
-            },
             "area": {
               "type": "number",
               "format": "double",
               "description": "Net area of the opaque building element (i.e. minus any windows / doors / etc.) (unit: m²)"
+            },
+            "areal_heat_capacity": {
+              "type": "number",
+              "format": "double",
+              "description": "Areal heat capacity (unit: J/m².K)"
             },
             "base_height": {
               "type": "number",
@@ -627,11 +652,6 @@
                 "null"
               ]
             },
-            "k_m": {
-              "type": "number",
-              "format": "double",
-              "description": "Areal heat capacity (unit: J/m².K)"
-            },
             "mass_distribution_class": {
               "$ref": "#/$defs/MassDistributionClass"
             },
@@ -645,7 +665,12 @@
               "format": "double",
               "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)"
             },
-            "r_c": {
+            "solar_absorption_coeff": {
+              "type": "number",
+              "format": "double",
+              "description": "Solar absorption coefficient at the external surface (dimensionless)"
+            },
+            "thermal_resistance_construction": {
               "type": [
                 "number",
                 "null"
@@ -753,14 +778,6 @@
               "format": "double",
               "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)"
             },
-            "r_c": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double",
-              "description": "Thermal resistance (unit: m².K/W)"
-            },
             "security_risk": {
               "type": [
                 "boolean",
@@ -772,6 +789,14 @@
               "items": {
                 "$ref": "#/$defs/WindowShadingObject"
               }
+            },
+            "thermal_resistance_construction": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double",
+              "description": "Thermal resistance (unit: m².K/W)"
             },
             "treatment": {
               "anyOf": [
@@ -821,13 +846,13 @@
           "title": "BuildingElementGround",
           "required": [
             "area",
+            "areal_heat_capacity",
             "floor_type",
-            "k_m",
             "mass_distribution_class",
             "perimeter",
             "pitch",
             "psi_wall_floor_junc",
-            "r_f",
+            "thermal_resistance_floor_construction",
             "thickness_walls",
             "total_area",
             "type",
@@ -846,6 +871,11 @@
               ],
               "format": "double",
               "description": "Area of ventilation openings per perimeter (unit: m²/m)"
+            },
+            "areal_heat_capacity": {
+              "type": "number",
+              "format": "double",
+              "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)"
             },
             "depth_basement_floor": {
               "type": [
@@ -882,11 +912,6 @@
               ],
               "format": "double"
             },
-            "k_m": {
-              "type": "number",
-              "format": "double",
-              "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)"
-            },
             "mass_distribution_class": {
               "$ref": "#/$defs/MassDistributionClass"
             },
@@ -905,11 +930,6 @@
               "format": "double",
               "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)"
             },
-            "r_f": {
-              "type": "number",
-              "format": "double",
-              "description": "Total thermal resistance of all layers in the floor construction (unit: m².K/W)"
-            },
             "shield_fact_location": {
               "anyOf": [
                 {
@@ -920,6 +940,11 @@
                 }
               ],
               "description": "Wind shielding factor"
+            },
+            "thermal_resistance_floor_construction": {
+              "type": "number",
+              "format": "double",
+              "description": "Total thermal resistance of all layers in the floor construction (unit: m².K/W)"
             },
             "thermal_resist_insul": {
               "type": [
@@ -979,10 +1004,10 @@
         },
         {
           "type": "object",
-          "title": "BuildingElementAdjacentZTC",
+          "title": "BuildingElementAdjacentConditionedSpace",
           "required": [
             "area",
-            "k_m",
+            "areal_heat_capacity",
             "mass_distribution_class",
             "pitch",
             "type"
@@ -992,7 +1017,7 @@
               "type": "number",
               "format": "double"
             },
-            "k_m": {
+            "areal_heat_capacity": {
               "type": "number",
               "format": "double",
               "description": "Areal heat capacity (unit: J/m².K)"
@@ -1005,7 +1030,7 @@
               "format": "double",
               "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)"
             },
-            "r_c": {
+            "thermal_resistance_construction": {
               "type": [
                 "number",
                 "null"
@@ -1016,7 +1041,7 @@
             "type": {
               "type": "string",
               "enum": [
-                "BuildingElementAdjacentZTC"
+                "BuildingElementAdjacentConditionedSpace"
               ]
             },
             "u_value": {
@@ -1031,13 +1056,13 @@
         },
         {
           "type": "object",
-          "title": "BuildingElementAdjacentZTU_Simple",
+          "title": "BuildingElementAdjacentUnconditionedSpace_Simple",
           "required": [
             "area",
-            "k_m",
+            "areal_heat_capacity",
             "mass_distribution_class",
             "pitch",
-            "r_u",
+            "thermal_resistance_unconditioned_space",
             "type"
           ],
           "properties": {
@@ -1046,7 +1071,7 @@
               "format": "double",
               "description": "Area of this building element (unit: m²)"
             },
-            "k_m": {
+            "areal_heat_capacity": {
               "type": "number",
               "format": "double",
               "description": "Areal heat capacity (unit: J/m2.K)"
@@ -1059,7 +1084,7 @@
               "format": "double",
               "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)"
             },
-            "r_c": {
+            "thermal_resistance_construction": {
               "type": [
                 "number",
                 "null"
@@ -1067,7 +1092,7 @@
               "format": "double",
               "description": "Thermal resistance (unit: m2.K/W)"
             },
-            "r_u": {
+            "thermal_resistance_unconditioned_space": {
               "type": "number",
               "format": "double",
               "description": "Effective thermal resistance of unheated space (unit: m².K/W)"
@@ -1075,7 +1100,7 @@
             "type": {
               "type": "string",
               "enum": [
-                "BuildingElementAdjacentZTU_Simple"
+                "BuildingElementAdjacentUnconditionedSpace_Simple"
               ]
             },
             "u_value": {
@@ -1652,6 +1677,7 @@
       "type": "string",
       "enum": [
         "celect",
+        "heat_battery",
         "hhrsh",
         "Automatic",
         "Manual"
@@ -1851,15 +1877,24 @@
     "EnergyDiverter": {
       "type": "object",
       "required": [
-        "HeatSource",
-        "StorageTank"
+        "HeatSource"
       ],
       "properties": {
+        "Controlmax": {
+          "type": "string"
+        },
         "HeatSource": {
           "$ref": "#/$defs/DiverterHeatSourceType"
         },
         "StorageTank": {
-          "$ref": "#/$defs/StorageTankType"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StorageTankType"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -2521,7 +2556,6 @@
             "EnergySupply",
             "heater_position",
             "power",
-            "thermostat_position",
             "type"
           ],
           "properties": {
@@ -2695,7 +2729,6 @@
             "EnergySupply",
             "heater_position",
             "name",
-            "thermostat_position",
             "type"
           ],
           "properties": {
@@ -2888,7 +2921,7 @@
             "source_type",
             "temp_lower_operating_limit",
             "temp_return_feed_max",
-            "test_data",
+            "test_data_EN14825",
             "time_constant_onoff_operation",
             "time_delay_backup",
             "type",
@@ -3030,7 +3063,7 @@
               "type": "number",
               "format": "double"
             },
-            "test_data": {
+            "test_data_EN14825": {
               "type": "array",
               "items": {
                 "$ref": "#/$defs/HeatPumpTestDatum"
@@ -3128,27 +3161,46 @@
           "type": "object",
           "title": "HeatBattery",
           "required": [
+            "A",
+            "B",
             "ControlCharge",
             "EnergySupply",
+            "capillary_diameter_m",
             "electricity_circ_pump",
             "electricity_standby",
-            "heat_battery_location",
-            "heat_storage_capacity",
-            "labs_tests_losses",
-            "labs_tests_rated_output",
-            "labs_tests_rated_output_enhanced",
-            "max_rated_heat_output",
+            "flow_rate_l_per_min",
+            "heat_exchanger_surface_area_m2",
+            "heat_storage_zone_material_kJ_per_K_above_Phase_transition",
+            "heat_storage_zone_material_kJ_per_K_below_Phase_transition",
+            "heat_storage_zone_material_kJ_per_K_during_Phase_transition",
             "max_rated_losses",
+            "max_temperature",
             "number_of_units",
+            "phase_transition_temperature_upper",
+            "phase_transition_temperature_lower",
             "rated_charge_power",
-            "type"
+            "simultaneous_charging_and_discharging",
+            "type",
+            "velocity_in_HEX_tube_at_1_l_per_min_m_per_s"
           ],
           "properties": {
+            "A": {
+              "type": "number",
+              "format": "double"
+            },
+            "B": {
+              "type": "number",
+              "format": "double"
+            },
             "ControlCharge": {
               "type": "string"
             },
             "EnergySupply": {
               "type": "string"
+            },
+            "capillary_diameter_m": {
+              "type": "number",
+              "format": "double"
             },
             "electricity_circ_pump": {
               "type": "number",
@@ -3158,54 +3210,34 @@
               "type": "number",
               "format": "double"
             },
+            "flow_rate_l_per_min": {
+              "type": "number",
+              "float": "double"
+            },
             "heat_battery_location": {
               "$ref": "#/$defs/HeatSourceLocation"
             },
-            "heat_storage_capacity": {
+            "heat_exchanger_surface_area_m2": {
               "type": "number",
               "format": "double"
             },
-            "labs_tests_losses": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                },
-                "minLength": 2,
-                "maxLength": 2
-              }
+            "heat_storage_zone_material_kJ_per_K_above_Phase_transition": {
+              "type": "number",
+              "format": "double"
             },
-            "labs_tests_rated_output": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                },
-                "minLength": 2,
-                "maxLength": 2
-              }
+            "heat_storage_zone_material_kJ_per_K_below_Phase_transition": {
+              "type": "number",
+              "format": "double"
             },
-            "labs_tests_rated_output_enhanced": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                },
-                "minLength": 2,
-                "maxLength": 2
-              }
-            },
-            "max_rated_heat_output": {
+            "heat_storage_zone_material_kJ_per_K_during_Phase_transition": {
               "type": "number",
               "format": "double"
             },
             "max_rated_losses": {
+              "type": "number",
+              "format": "double"
+            },
+            "max_temperature": {
               "type": "number",
               "format": "double"
             },
@@ -3214,15 +3246,30 @@
               "format": "uint",
               "minimum": 0.0
             },
+            "phase_transition_temperature_upper": {
+              "type": "number",
+              "format": "double"
+            },
+            "phase_transition_temperature_lower": {
+              "type": "number",
+              "format": "double"
+            },
             "rated_charge_power": {
               "type": "number",
               "format": "double"
+            },
+            "simultaneous_charging_and_discharging": {
+              "type": "boolean"
             },
             "type": {
               "type": "string",
               "enum": [
                 "HeatBattery"
               ]
+            },
+            "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": {
+              "type": "number",
+              "format": "double"
             }
           },
           "additionalProperties": false
@@ -3505,11 +3552,94 @@
         },
         {
           "type": "object",
+          "title": "SmartHotWaterTank",
+          "required": [
+            "ColdWaterSource",
+            "EnergySupply_pump",
+            "HeatSource",
+            "daily_losses",
+            "init_temp",
+            "max_flow_rate_pump_l_per_min",
+            "power_pump_kW",
+            "temp_usable",
+            "temp_setpnt_max",
+            "type",
+            "volume"
+          ],
+          "properties": {
+            "ColdWaterSource": {
+              "$ref": "#/$defs/ColdWaterSourceType"
+            },
+            "EnergySupply_pump": {
+              "type": "string"
+            },
+            "HeatSource": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/HeatSource"
+              }
+            },
+            "daily_losses": {
+              "type": "number",
+              "format": "double"
+            },
+            "init_temp": {
+              "type": "number",
+              "format": "double"
+            },
+            "max_flow_rate_pump_l_per_min": {
+              "type": "number",
+              "format": "double"
+            },
+            "power_pump_kW": {
+              "type": "number",
+              "format": "double"
+            },
+            "primary_pipework": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WaterPipeworkSimple"
+              }
+            },
+            "temp_setpnt_max": {
+              "type": "string"
+            },
+            "temp_usable": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "SmartHotWaterTank"
+              ]
+            },
+            "volume": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "title": "HeatBattery",
           "required": [
+            "ColdWaterSource",
+            "Control",
+            "HeatSourceWet",
             "type"
           ],
           "properties": {
+            "ColdWaterSource": {
+              "$ref": "#/$defs/ColdWaterSourceType"
+            },
+            "Control": {
+              "type": "string"
+            },
+            "HeatSourceWet": {
+              "type": "string"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -4440,6 +4570,53 @@
       },
       "additionalProperties": false
     },
+    "SmartApplianceControlDetails": {
+      "type": "object",
+      "required": [
+        "Appliances",
+        "battery24hr",
+        "non_appliance_demand_24hr",
+        "power_timeseries",
+        "time_series_step"
+      ],
+      "properties": {
+        "Appliances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApplianceKey"
+          }
+        },
+        "battery24hr": {
+          "type": "object",
+          "$ref": "#/$defs/SmartApplianceBattery"
+        },
+        "non_appliance_demand_24hr": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        "power_timeseries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        "time_series_step": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false
+    },
     "SolarCellLocation": {
       "type": "string",
       "enum": [
@@ -4466,6 +4643,10 @@
         },
         "EnergySupply": {
           "type": "string"
+        },
+        "advanced_start": {
+          "type": "number",
+          "float": "double"
         },
         "cooling_capacity": {
           "type": "number",

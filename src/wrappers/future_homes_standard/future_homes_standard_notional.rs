@@ -691,7 +691,7 @@ fn edit_add_default_space_heating_system(
             "source_type": "OutsideAir",
             "temp_lower_operating_limit": -10,
             "temp_return_feed_max": 60,
-            "test_data": [
+            "test_data_EN14825": [
                 {
                     "capacity": capacity_results_dict_35["A"],
                     "cop": 2.79,
@@ -1671,7 +1671,7 @@ mod tests {
 
         for building_element in test_input.all_building_elements() {
             if let input::BuildingElement::Opaque { .. }
-            | input::BuildingElement::AdjacentZTUSimple { .. } = building_element
+            | input::BuildingElement::AdjacentUnconditionedSpace { .. } = building_element
             {
                 if let Some(u_value) = building_element.u_value() {
                     match pitch_class(building_element.pitch()) {
@@ -1705,23 +1705,29 @@ mod tests {
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
 
-        let BuildingElement::Transparent { u_value, r_c, .. } =
-            test_input.building_element_by_key("zone 1", "window 0")
+        let BuildingElement::Transparent {
+            u_value,
+            thermal_resistance_construction,
+            ..
+        } = test_input.building_element_by_key("zone 1", "window 0")
         else {
             panic!("Window 0 in Zone 1 should be set up as a transparent building element")
         };
 
         assert_eq!(*u_value, Some(1.2));
-        assert_eq!(*r_c, None);
+        assert_eq!(*thermal_resistance_construction, None);
 
-        let BuildingElement::Transparent { u_value, r_c, .. } =
-            test_input.building_element_by_key("zone 2", "window 0")
+        let BuildingElement::Transparent {
+            u_value,
+            thermal_resistance_construction,
+            ..
+        } = test_input.building_element_by_key("zone 2", "window 0")
         else {
             panic!("Window 0 in Zone 2 should be set up as a transparent building element")
         };
 
         assert_eq!(*u_value, Some(1.2));
-        assert_eq!(*r_c, None);
+        assert_eq!(*thermal_resistance_construction, None);
     }
 
     #[rstest]
@@ -1732,7 +1738,7 @@ mod tests {
 
         let BuildingElement::Ground {
             u_value,
-            r_f,
+            thermal_resistance_floor_construction: r_f,
             psi_wall_floor_junc,
             ..
         } = test_input.building_element_by_key("zone 1", "ground")
@@ -1745,7 +1751,7 @@ mod tests {
 
         let BuildingElement::Ground {
             u_value,
-            r_f,
+            thermal_resistance_floor_construction: r_f,
             psi_wall_floor_junc,
             ..
         } = test_input.building_element_by_key("zone 2", "ground")
@@ -2665,7 +2671,7 @@ mod tests {
                 "source_type": "OutsideAir",
                 "temp_lower_operating_limit": -10,
                 "temp_return_feed_max": 60,
-                "test_data": [
+                "test_data_EN14825": [
                  {
                      "capacity": 7.4,
                      "cop": 2.79,

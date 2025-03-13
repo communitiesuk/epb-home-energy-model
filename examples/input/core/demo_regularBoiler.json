@@ -55,7 +55,7 @@
 			"start_day": 0,
 			"time_series_step": 1,
 			"schedule":{
-				"main": [52.0, 52.0, 52.0, {"value": 52.0, "repeat": 5}]
+				"main": [null, 52, null, 52, {"value": 52.0, "repeat": 4}]
 			}
 		},
 		"setpoint_temp_max":{
@@ -63,7 +63,7 @@
 			"start_day": 0,
 			"time_series_step": 1,
 			"schedule":{
-				"main": [{"value": 55.0, "repeat": 8}]
+				"main": [null, 55, null, 55, {"value": 55.0, "repeat": 4}]
 			}
 		},
 		"space heat timer": {
@@ -331,9 +331,9 @@
 			"BuildingElement": {
 				"wall 0": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.6,
-					"r_c": 0.7,
-					"k_m": 19000,
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
 					"orientation360": 90,
@@ -344,9 +344,9 @@
 				},
 				"wall 1":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.61,
-					"r_c": 0.71,
-					"k_m": 19100,
+					"solar_absorption_coeff": 0.61,
+					"thermal_resistance_construction": 0.71,
+					"areal_heat_capacity": 19100,
 					"mass_distribution_class": "M",
 					"pitch": 90,
 					"orientation360": 270,
@@ -357,9 +357,9 @@
 				},
 				"wall 2": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.62,
-					"r_c": 0.72,
-					"k_m": 19200,
+					"solar_absorption_coeff": 0.62,
+					"thermal_resistance_construction": 0.72,
+					"areal_heat_capacity": 19200,
 					"mass_distribution_class": "E",
 					"pitch": 90,
 					"orientation360": 0,
@@ -370,9 +370,9 @@
 				},
 				"wall 3":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.63,
-					"r_c": 0.73,
-					"k_m": 19300,
+					"solar_absorption_coeff": 0.63,
+					"thermal_resistance_construction": 0.73,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "I",
 					"pitch": 90,
 					"orientation360": 180,
@@ -383,7 +383,7 @@
 				},
 				"window 0":{
 					"type": "BuildingElementTransparent",
-					"r_c": 0.4,
+					"thermal_resistance_construction": 0.4,
 					"pitch": 90,
 					"orientation360": 90,
 					"g_value": 0.75,
@@ -411,8 +411,8 @@
 					"area": 15.0,
 					"pitch": 180.0,
 					"u_value": 1.4,
-					"r_f": 0.2,
-					"k_m": 19300,
+					"thermal_resistance_floor_construction": 0.2,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "D",
 					"floor_type": "Slab_edge_insulation",
 					"thickness_walls": 0.2,
@@ -425,11 +425,11 @@
 					]
 				},
 				"wall 4":{
-					"type": "BuildingElementAdjacentZTC",
+					"type": "BuildingElementAdjacentConditionedSpace",
 					"area": 20.0,
 					"pitch": 0.0,
-					"r_c": 0.74,
-					"k_m": 19400,
+					"thermal_resistance_construction": 0.74,
+					"areal_heat_capacity": 19400,
 					"mass_distribution_class": "I"
 				}
 			},
@@ -458,9 +458,9 @@
 			"BuildingElement": {
 				"wall 0": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.6,
-					"r_c": 0.7,
-					"k_m": 19000,
+					"solar_absorption_coeff": 0.6,
+					"thermal_resistance_construction": 0.7,
+					"areal_heat_capacity": 19000,
 					"mass_distribution_class": "IE",
 					"pitch": 90,
 					"orientation360": 90,
@@ -471,9 +471,9 @@
 				},
 				"wall 1":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.61,
-					"r_c": 0.71,
-					"k_m": 19100,
+					"solar_absorption_coeff": 0.61,
+					"thermal_resistance_construction": 0.71,
+					"areal_heat_capacity": 19100,
 					"mass_distribution_class": "M",
 					"pitch": 90,
 					"orientation360": 270,
@@ -484,9 +484,9 @@
 				},
 				"wall 2": {
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.62,
-					"r_c": 0.72,
-					"k_m": 19200,
+					"solar_absorption_coeff": 0.62,
+					"thermal_resistance_construction": 0.72,
+					"areal_heat_capacity": 19200,
 					"mass_distribution_class": "E",
 					"pitch": 90,
 					"orientation360": 0,
@@ -497,9 +497,9 @@
 				},
 				"wall 3":{
 					"type": "BuildingElementOpaque",
-					"a_sol": 0.63,
-					"r_c": 0.73,
-					"k_m": 19300,
+					"solar_absorption_coeff": 0.63,
+					"thermal_resistance_construction": 0.73,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "I",
 					"pitch": 90,
 					"orientation360": 180,
@@ -510,7 +510,7 @@
 				},
 				"window 0":{
 					"type": "BuildingElementTransparent",
-					"r_c": 0.4,
+					"thermal_resistance_construction": 0.4,
 					"pitch": 90,
 					"orientation360": 90,
 					"g_value": 0.75,
@@ -538,8 +538,8 @@
 					"area": 15.0,
 					"pitch": 180.0,
 					"u_value": 1.4,
-					"r_f": 0.2,
-					"k_m": 19300,
+					"thermal_resistance_floor_construction": 0.2,
+					"areal_heat_capacity": 19300,
 					"mass_distribution_class": "D",
 					"floor_type": "Slab_edge_insulation",
 					"thickness_walls": 0.2,
@@ -552,11 +552,11 @@
 					]
 				},
 				"wall 4":{
-					"type": "BuildingElementAdjacentZTC",
+					"type": "BuildingElementAdjacentConditionedSpace",
 					"area": 20.0,
 					"pitch": 0.0,
-					"r_c": 0.74,
-					"k_m": 19400,
+					"thermal_resistance_construction": 0.74,
+					"areal_heat_capacity": 19400,
 					"mass_distribution_class": "I"
 				}
 			},
