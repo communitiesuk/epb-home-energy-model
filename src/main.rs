@@ -180,7 +180,7 @@ fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
     } else if wrapper_choice.future_homes_standard_not_b {
         "FHS_notB"
     } else if wrapper_choice.future_homes_standard_fee_not_a {
-        "FHS_FEE_notB"
+        "FHS_FEE_notA"
     } else if wrapper_choice.future_homes_standard_fee_not_b {
         "FHS_FEE_notB"
     } else {
