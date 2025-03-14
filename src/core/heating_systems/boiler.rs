@@ -21,7 +21,7 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ServiceType {
     WaterCombi,
     WaterRegular,
@@ -142,7 +142,7 @@ impl BoilerServiceWaterCombi {
                 &self.service_name,
                 ServiceType::WaterCombi,
                 energy_demand,
-                return_temperature,
+                Some(return_temperature),
                 None,
                 None,
                 None,
@@ -223,9 +223,7 @@ impl BoilerServiceWaterCombi {
     }
 
     pub fn energy_output_max(&self) -> f64 {
-        self.boiler
-            .read()
-            .energy_output_max(Some(self.temperature_hot_water_in_c), None, None)
+        self.boiler.read().energy_output_max(None, None)
     }
 }
 
@@ -235,7 +233,6 @@ pub struct BoilerServiceWaterRegular {
     service_name: String,
     control_min: Arc<Control>,
     _control_max: Arc<Control>,
-    temperature_hot_water_in_c: Option<f64>,
 }
 
 impl BoilerServiceWaterRegular {
@@ -251,14 +248,11 @@ impl BoilerServiceWaterRegular {
             service_name,
             control_min,
             _control_max: control_max.clone(),
-            temperature_hot_water_in_c: control_max.setpnt(&simulation_time.current_iteration()),
         })
     }
 
-    pub(crate) fn temp_setpnt(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
+    /// Return setpoint (not necessarily temperature)
+    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simtime),
             self._control_max.setpnt(&simtime),
@@ -268,7 +262,8 @@ impl BoilerServiceWaterRegular {
     pub fn demand_energy(
         &mut self,
         mut energy_demand: f64,
-        temp_return: f64,
+        _temp_flow: f64,
+        temp_return: Option<f64>,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
@@ -278,6 +273,10 @@ impl BoilerServiceWaterRegular {
 
         if !self.is_on(simtime) {
             energy_demand = 0.;
+        }
+
+        if temp_return.is_none() && energy_demand != 0. {
+            bail!("temp_return is None and energy_demand is not 0.0");
         }
 
         self.boiler.write().demand_energy(
@@ -295,6 +294,7 @@ impl BoilerServiceWaterRegular {
 
     pub fn energy_output_max(
         &self,
+        _temp_flow: f64,
         _temp_return: f64,
         time_elapsed_hp: Option<f64>,
         simtime: SimulationTimeIteration,
@@ -303,9 +303,7 @@ impl BoilerServiceWaterRegular {
             return 0.;
         }
 
-        self.boiler
-            .read()
-            .energy_output_max(self.temperature_hot_water_in_c, None, time_elapsed_hp)
+        self.boiler.read().energy_output_max(None, time_elapsed_hp)
     }
 
     fn is_on(&self, simtime: SimulationTimeIteration) -> bool {
@@ -346,7 +344,7 @@ impl BoilerServiceSpace {
         &mut self,
         energy_demand: f64,
         _temp_flow: f64,
-        temp_return: f64,
+        temp_return: Option<f64>,
         time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
@@ -357,13 +355,11 @@ impl BoilerServiceSpace {
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
-        if !self.is_on(simtime) {
-            return Ok(if !hybrid_service_bool {
-                (0.0, None)
-            } else {
-                (0.0, Some(0.0))
-            });
-        }
+        let energy_demand = if !self.is_on(simtime) {
+            0.0
+        } else {
+            energy_demand
+        };
 
         self.boiler.write().demand_energy(
             &self.service_name,
@@ -380,7 +376,7 @@ impl BoilerServiceSpace {
 
     pub fn energy_output_max(
         &self,
-        temp_output: f64,
+        _temp_output: f64,
         _temp_return_feed: f64,
         time_start: Option<f64>,
         time_elapsed_hp: Option<f64>,
@@ -391,7 +387,7 @@ impl BoilerServiceSpace {
         } else {
             self.boiler
                 .read()
-                .energy_output_max(Some(temp_output), time_start, time_elapsed_hp)
+                .energy_output_max(time_start, time_elapsed_hp)
         }
     }
 
@@ -705,7 +701,7 @@ impl Boiler {
         max_of_2(energy_output_provided / time_available, min_power)
     }
 
-    pub fn calc_boiler_eff(
+    pub(crate) fn calc_boiler_eff(
         &self,
         service_type_is_water_combi: bool,
         temp_return_feed: f64,
@@ -716,6 +712,24 @@ impl Boiler {
     ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.0);
         let time_available = self.time_available(time_start, time_elapsed_hp);
+
+        self.calc_boiler_eff_internal(
+            service_type_is_water_combi,
+            temp_return_feed,
+            energy_output_required,
+            time_available,
+            simtime,
+        )
+    }
+
+    fn calc_boiler_eff_internal(
+        &self,
+        service_type_is_water_combi: bool,
+        temp_return_feed: f64,
+        energy_output_required: f64,
+        time_available: f64,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
         let energy_output_provided =
             self.calc_energy_output_provided(energy_output_required, time_available);
 
@@ -825,13 +839,24 @@ impl Boiler {
         (timestep - total_time_running_current_timestep) * (1.0 - time_start / timestep)
     }
 
+    /// Calculate running time of Boiler
+    fn time_running(&self, energy_output_provided: f64, time_available: f64) -> f64 {
+        let current_boiler_power =
+            self.calc_current_boiler_power(energy_output_provided, time_available);
+        if current_boiler_power <= 0.0 {
+            0.0
+        } else {
+            time_available.min(energy_output_provided / current_boiler_power)
+        }
+    }
+
     /// Calculate energy required by boiler to satisfy demand for the service indicated.
-    pub fn demand_energy(
+    pub(crate) fn demand_energy(
         &self,
         service_name: &str,
         service_type: ServiceType,
         energy_output_required: f64,
-        temperature_return_feed: f64,
+        temp_return_feed: Option<f64>,
         time_start: Option<f64>,
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
@@ -847,46 +872,16 @@ impl Boiler {
         // is implicit in demand calculation).
         let time_available = self.time_available(time_start, time_elapsed_hp);
 
-        // If there is no demand on the boiler or no remaining time then no energy should be provided
-        if energy_output_required <= 0.0 || time_available <= 0.0 {
-            self.energy_supply_connections
-                .get(service_name)
-                .unwrap()
-                .demand_energy(0.0, simtime.index)?;
-        }
-
-        let blr_eff_final = self.calc_boiler_eff(
-            service_type == ServiceType::WaterCombi,
-            temperature_return_feed,
-            energy_output_required,
-            Some(time_start),
-            time_elapsed_hp,
-            simtime,
-        )?;
-
         let energy_output_provided =
             self.calc_energy_output_provided(energy_output_required, time_available);
-        let current_boiler_power =
-            self.calc_current_boiler_power(energy_output_provided, time_available);
 
-        let fuel_demand = energy_output_provided / blr_eff_final;
-
-        if update_heat_source_state {
-            self.energy_supply_connections
-                .get(service_name)
-                .unwrap()
-                .demand_energy(fuel_demand, simtime.index)?;
-        }
-
-        // Calculate running time of boiler
-        let time_running_current_service = if current_boiler_power <= 0.0 {
-            0.0
-        } else {
-            min_of_2(
-                energy_output_provided / current_boiler_power,
-                time_available,
-            )
-        };
+        // TODO (from Python) Ideally, the boiler power used for the running time calculation
+        //      would account for space heating demand for all zones, but the
+        //      calculation flow does not allow for this without circularity.
+        //      Therefore, the value for time running returned from this function
+        //      (used in the hybrid HP calculation) will be slightly inaccurate.
+        let time_running_current_service =
+            self.time_running(energy_output_provided, time_available);
 
         if update_heat_source_state {
             self.total_time_running_current_timestep
@@ -897,8 +892,13 @@ impl Boiler {
             result_service_name.push_str(service_name);
             self.service_results.write().push(ServiceResult {
                 service_name: result_service_name,
-                time_running: time_running_current_service,
-                current_boiler_power,
+                service_type,
+                temp_return_feed,
+                energy_output_required,
+                energy_output_provided,
+                time_available,
+                time_start,
+                time_elapsed_hp,
             });
         }
 
@@ -907,6 +907,84 @@ impl Boiler {
         } else {
             (energy_output_provided, None)
         })
+    }
+
+    fn sum_space_heating_service_results_energy_output_required(&self) -> f64 {
+        self.service_results
+            .read()
+            .iter()
+            .map(|r| r.energy_output_required)
+            .sum()
+    }
+
+    fn sum_space_heating_service_results_energy_output_provided(&self) -> f64 {
+        self.service_results
+            .read()
+            .iter()
+            .map(|r| r.energy_output_provided)
+            .sum()
+    }
+
+    /// Calculate boiler fuel demand for all services (excl. auxiliary),
+    /// and request this from relevant EnergySupplyConnection
+    fn fuel_demand(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        // pre-calc max time available outside the loop
+        // (Get max time available from all space heating services to use
+        // as overall time available for all space heating services. Note
+        // that for this assumption to be valid, the space heating
+        // services must be called consecutively, with no services of
+        // another type called in between.)
+        let max_time_available = self
+            .service_results
+            .read()
+            .iter()
+            .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
+            .sum::<f64>();
+
+        for service_data in self.service_results.read().iter() {
+            let service_name = service_data.service_name.as_str();
+            let service_type = service_data.service_type;
+            let temp_return_feed = service_data.temp_return_feed;
+            let energy_output_provided = service_data.energy_output_provided;
+
+            // Aggregate space heating services
+            // TODO (from Python) This is only necessary because the model cannot handle an
+            //                    emitter circuit that serves more than one zone. If/when this
+            //                    capability is added, there will no longer be separate space
+            //                    heating services for each zone and this aggregation can be
+            //                    removed as it will not be necessary. At that point, the other
+            //                    contents of this function could also be moved back to their
+            //                    original locations
+            let (combined_energy_output_required, time_available) =
+                if service_type == ServiceType::Space {
+                    (
+                        self.sum_space_heating_service_results_energy_output_required(),
+                        max_time_available,
+                    )
+                } else {
+                    (
+                        service_data.energy_output_required,
+                        service_data.time_available,
+                    )
+                };
+
+            let fuel_demand = if let Some(temp_return_feed) = temp_return_feed {
+                let blr_eff_final = self.calc_boiler_eff_internal(
+                    service_type == ServiceType::WaterCombi,
+                    temp_return_feed,
+                    combined_energy_output_required,
+                    time_available,
+                    simtime,
+                )?;
+                energy_output_provided / blr_eff_final
+            } else {
+                0.0
+            };
+            self.energy_supply_connections[service_name]
+                .demand_energy(fuel_demand, simtime.index)?;
+        }
+
+        Ok(())
     }
 
     /// Calculation of boiler electrical consumption
@@ -926,16 +1004,61 @@ impl Boiler {
             .load(Ordering::SeqCst)
             * self.power_full_load;
 
-        // Overwrite (sic from Python - no overwrite actually happens with current logic) flue fan if boiler modulates
-        for service_data in self.service_results.read().iter() {
-            let modulation_ratio =
-                min_of_2(service_data.current_boiler_power / self.boiler_power, 1.);
+        // Overwrite flue fan electricity if boiler modulates
+        let mut space_heat_services_processed = false;
+
+        // pre-calc max time available outside the loop
+        // (Get max time available from all space heating services to use
+        // as overall time available for all space heating services. Note
+        // that for this assumption to be valid, the space heating
+        // services must be called consecutively, with no services of
+        // another type called in between.)
+        let max_time_available = self
+            .service_results
+            .read()
+            .iter()
+            .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
+            .sum::<f64>();
+
+        for (service_no, service_data) in self.service_results.read().iter().enumerate() {
+            // Aggregate space heating services
+            // TODO (from Python) This is only necessary because the model cannot handle an
+            //                    emitter circuit that serves more than one zone. If/when this
+            //                    capability is added, there will no longer be separate space
+            //                    heating services for each zone and this aggregation can be
+            //                    removed as it will not be necessary. At that point, the other
+            //                    contents of this function could also be moved back to their
+            //                    original locations
+            let (combined_energy_output_required, time_available) =
+                if service_data.service_type == ServiceType::Space {
+                    if space_heat_services_processed {
+                        continue;
+                    }
+
+                    space_heat_services_processed = true;
+
+                    (
+                        self.sum_space_heating_service_results_energy_output_provided(),
+                        max_time_available,
+                    )
+                } else {
+                    (
+                        service_data.energy_output_provided,
+                        service_data.time_available,
+                    )
+                };
+
+            let current_boiler_power =
+                self.calc_current_boiler_power(combined_energy_output_required, time_available);
+            let modulation_ratio = (current_boiler_power / self.boiler_power).min(1.0);
             if self.min_modulation_load < 1. {
-                let x_axis = [0.3, 1.0];
+                let x_axis = [self.min_modulation_load, 1.];
                 let y_axis = [self.power_part_load, self.power_full_load];
 
                 let flue_fan_el = np_interp(modulation_ratio, &x_axis, &y_axis);
-                let elec_energy_flue_fan = service_data.time_running * flue_fan_el;
+                let time_running =
+                    self.time_running(combined_energy_output_required, time_available);
+                let elec_energy_flue_fan = time_running * flue_fan_el;
                 energy_aux += elec_energy_flue_fan;
             }
         }
@@ -946,7 +1069,9 @@ impl Boiler {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self, simtime: SimulationTimeIteration) {
+    pub(crate) fn timestep_end(&mut self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
+        self.fuel_demand(simtime)?;
+
         let timestep = simtime.timestep;
         let time_remaining_current_timestep = timestep
             - self
@@ -957,14 +1082,11 @@ impl Boiler {
 
         self.total_time_running_current_timestep = Default::default();
         self.service_results = Default::default();
+
+        Ok(())
     }
 
-    pub fn energy_output_max(
-        &self,
-        _temp_output: Option<f64>,
-        time_start: Option<f64>,
-        time_elapsed_hp: Option<f64>,
-    ) -> f64 {
+    pub fn energy_output_max(&self, time_start: Option<f64>, time_elapsed_hp: Option<f64>) -> f64 {
         let time_start = time_start.unwrap_or(0.0);
         let time_available = self.time_available(time_start, time_elapsed_hp);
 
@@ -975,8 +1097,13 @@ impl Boiler {
 #[derive(Copy, Clone, Debug)]
 struct ServiceResult {
     service_name: ArrayString<64>,
-    time_running: f64,
-    current_boiler_power: f64,
+    service_type: ServiceType,
+    temp_return_feed: Option<f64>,
+    energy_output_required: f64,
+    energy_output_provided: f64,
+    time_available: f64,
+    time_start: f64,
+    time_elapsed_hp: Option<f64>,
 }
 
 #[cfg(test)]
@@ -1406,7 +1533,8 @@ mod tests {
                 regular_boiler
                     .demand_energy(
                         [0.7241412, 0.1748878][idx],
-                        temp_return_feed[idx],
+                        Default::default(),
+                        Some(temp_return_feed[idx]),
                         None,
                         None,
                         None,
@@ -1426,7 +1554,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         for t_it in simulation_time.iter() {
-            assert_eq!(regular_boiler.temp_setpnt(t_it), (Some(52.), Some(60.)));
+            assert_eq!(regular_boiler.setpnt(t_it), (Some(52.), Some(60.)));
         }
     }
 
@@ -1533,7 +1661,7 @@ mod tests {
                     .demand_energy(
                         energy_demanded[idx],
                         temp_flow[idx],
-                        temp_return_feed[idx],
+                        Some(temp_return_feed[idx]),
                         None,
                         None,
                         None,
@@ -1839,7 +1967,7 @@ mod tests {
                         "boiler_demand_energy",
                         ServiceType::WaterCombi,
                         10.,
-                        37.,
+                        Some(37.),
                         None,
                         Some(false),
                         None,
@@ -1863,7 +1991,7 @@ mod tests {
                         "boiler_demand_energy_with_hybrid",
                         ServiceType::Space,
                         100.,
-                        37.,
+                        Some(37.),
                         None,
                         Some(true),
                         Some(0.),
@@ -1887,7 +2015,7 @@ mod tests {
                         "boiler_demand_energy_hybrid_time_elapsed",
                         ServiceType::Space,
                         100.,
-                        37.,
+                        Some(37.),
                         None,
                         Some(true),
                         Some(0.5),
@@ -1913,11 +2041,12 @@ mod tests {
         assert!(required_services
             .iter()
             .all(|&service| service_names_in_list.iter().any(|x| x.as_str() == service)));
-
-        // Python contains some further assertions using mocked boiler methods, which is difficult to do in Rust
-        // without littering the implementation with test-specific overrides - deciding that this isn't worth
-        // the trade-off here, at least for now
     }
+
+    // Python contains some further assertions using mocked boiler methods, which is difficult to do in Rust
+    // without littering the implementation with test-specific overrides - deciding that this isn't worth
+    // the trade-off here, at least for now
+    // the Python method is called test_fuel_demand
 
     #[rstest]
     fn test_calc_auxiliary_energy(
@@ -1964,7 +2093,7 @@ mod tests {
                 "boiler_demand_energy",
                 ServiceType::WaterCombi,
                 10.,
-                60.,
+                Some(60.),
                 None,
                 Some(false),
                 None,
@@ -1985,7 +2114,9 @@ mod tests {
         );
 
         // Call the method under test
-        boiler.timestep_end(simulation_time.iter().next().unwrap());
+        boiler
+            .timestep_end(simulation_time.iter().next().unwrap())
+            .unwrap();
 
         // Assertions to check if the internal state was updated correctly
         assert_eq!(
@@ -1999,8 +2130,8 @@ mod tests {
 
     #[rstest]
     fn test_energy_output_max(#[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>)) {
-        assert_eq!(boiler.energy_output_max(Some(30.), None, Some(0.)), 24.0);
-        assert_eq!(boiler.energy_output_max(Some(30.), None, Some(0.5)), 12.0);
+        assert_eq!(boiler.energy_output_max(None, Some(0.)), 24.0);
+        assert_eq!(boiler.energy_output_max(None, Some(0.5)), 12.0);
     }
 
     #[rstest]

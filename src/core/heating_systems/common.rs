@@ -40,7 +40,7 @@ impl HeatSourceWet {
         match self {
             HeatSourceWet::WaterCombi(combi) => Ok(combi.energy_output_max()),
             HeatSourceWet::WaterRegular(regular) => {
-                Ok(regular.energy_output_max(temperature, None, simtime))
+                Ok(regular.energy_output_max(temperature, Default::default(), None, simtime))
             }
             HeatSourceWet::Space(space) => {
                 Ok(space.energy_output_max(temperature, Default::default(), None, None, simtime))
@@ -71,13 +71,21 @@ impl HeatSourceWet {
                 bail!("BoilerServiceWaterCombi does not implement demand_energy")
             }
             HeatSourceWet::WaterRegular(regular) => regular
-                .demand_energy(energy_demand, temperature, None, None, None, simtime)
+                .demand_energy(
+                    energy_demand,
+                    Default::default(),
+                    Some(temperature),
+                    None,
+                    None,
+                    None,
+                    simtime,
+                )
                 .map(|x| x.0),
             HeatSourceWet::Space(space) => space
                 .demand_energy(
                     energy_demand,
                     Default::default(),
-                    temperature,
+                    Some(temperature),
                     None,
                     None,
                     None,
@@ -108,7 +116,7 @@ impl HeatSourceWet {
             HeatSourceWet::WaterCombi(_) => {
                 bail!("BoilerServiceWaterCombi does not implement temp_setpnt")
             }
-            HeatSourceWet::WaterRegular(regular) => regular.temp_setpnt(simtime),
+            HeatSourceWet::WaterRegular(regular) => regular.setpnt(simtime),
             HeatSourceWet::Space(space) => {
                 let minmax = space.temp_setpnt(simtime);
                 (minmax, minmax)
@@ -331,7 +339,7 @@ impl SpaceHeatingService {
                 .demand_energy(
                     energy_demand,
                     temp_flow,
-                    temp_return,
+                    Some(temp_return),
                     time_start,
                     None,
                     None,

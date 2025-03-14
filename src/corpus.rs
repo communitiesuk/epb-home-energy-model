@@ -4044,7 +4044,7 @@ impl WetHeatSource {
     pub fn timestep_end(&self, simtime: SimulationTimeIteration) -> anyhow::Result<()> {
         match self {
             WetHeatSource::HeatPump(heat_pump) => heat_pump.lock().timestep_end(simtime.index),
-            WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime),
+            WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime)?,
             WetHeatSource::Hiu(heat_network) => heat_network.lock().timestep_end(simtime.index),
             WetHeatSource::HeatBattery(heat_battery) => {
                 heat_battery.lock().timestep_end(simtime.index)?

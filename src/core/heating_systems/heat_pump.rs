@@ -2549,6 +2549,7 @@ impl HeatPump {
         Ok(match hybrid_boiler_service {
             Some(HybridBoilerService::Regular(service_water_regular)) => {
                 service_water_regular.lock().energy_output_max(
+                    kelvin_to_celsius(temp_output)?,
                     kelvin_to_celsius(temp_return_feed)?,
                     time_elapsed_hp,
                     simtime,
@@ -3420,7 +3421,8 @@ impl HeatPump {
                 HybridBoilerService::Regular(boiler_regular) => {
                     boiler_regular.lock().demand_energy(
                         service_results.energy_output_required_boiler,
-                        kelvin_to_celsius(temp_return_feed)?,
+                        kelvin_to_celsius(temp_output)?,
+                        Some(kelvin_to_celsius(temp_return_feed)?),
                         Some(hybrid_service_bool),
                         time_elapsed_hp,
                         Some(update_heat_source_state),
@@ -3430,7 +3432,7 @@ impl HeatPump {
                 HybridBoilerService::Space(boiler_space) => boiler_space.lock().demand_energy(
                     service_results.energy_output_required_boiler,
                     kelvin_to_celsius(temp_output)?,
-                    kelvin_to_celsius(temp_return_feed)?,
+                    Some(kelvin_to_celsius(temp_return_feed)?),
                     time_start,
                     Some(hybrid_service_bool),
                     time_elapsed_hp,
