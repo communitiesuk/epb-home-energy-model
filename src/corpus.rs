@@ -241,13 +241,13 @@ fn single_control_from_details(
                     }
                     ChargeLevel::Schedule(schedule) => expand_numeric_schedule(schedule),
                 };
-                let shortfall = required_length - charge_level_vec.len();
-                if shortfall > 0 {
+                // Ensure charge_level has the required length by appending the last value as many times as necessary
+                if charge_level_vec.len() < required_length {
                     let extension = vec![
                         charge_level_vec.iter().copied().last().ok_or_else(
                             || anyhow!("Provided charge level data was empty.")
                         )?;
-                        shortfall
+                        required_length - charge_level_vec.len()
                     ];
                     charge_level_vec.extend(extension);
                 }
@@ -865,7 +865,8 @@ impl Corpus {
             Default::default();
 
         // processing pre-heated sources
-        let mut pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> = Default::default();
+        let mut pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> =
+            Default::default();
 
         for (source_name, source_details) in &input.pre_heated_water_source {
             let (heat_source, energy_conn_names) = hot_water_source_from_input(
