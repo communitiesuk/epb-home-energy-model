@@ -899,7 +899,7 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                             "week": [{"repeat": 5, "value": "weekday"},
                                     {"repeat": 2, "value": "weekend"}],
                             "weekday": match control_type {
-                                ControlType::Type2 => heating_fhs_weekend,
+                                ControlType::Type2 => heating_fhs_weekday,
                                 ControlType::Type3 => heating_nonlivingarea_fhs_weekday,
                             }.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
                             "weekend": heating_fhs_weekend.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),

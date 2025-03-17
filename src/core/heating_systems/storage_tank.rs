@@ -1307,62 +1307,61 @@ impl StorageTank {
     ) -> (f64, f64) {
         let mut primary_pipework_losses_kwh = Default::default();
         let mut primary_gains_w = Default::default();
-        let primary_pipework_lst = self.primary_pipework_lst.as_ref().expect(
-            "primary pipeworks are expected to have been set on the storage tank at this point",
-        );
-
-        // start of heating event
-        if input_energy_adj > 0. && self.input_energy_adj_prev_timestep == 0. {
-            for pipework_data in primary_pipework_lst {
-                primary_pipework_losses_kwh += pipework_data.cool_down_loss(
-                    setpnt_max,
-                    self.temp_surrounding_primary_pipework(
-                        pipework_data,
-                        simulation_time_iteration,
-                    ),
-                )
-            }
-        }
-
-        // during heating event
-        if input_energy_adj > 0. {
-            for pipework_data in primary_pipework_lst {
-                // Primary losses for the timestep calculated from temperature difference
-                let primary_pipework_losses_w = pipework_data.heat_loss(
-                    setpnt_max,
-                    self.temp_surrounding_primary_pipework(
-                        pipework_data,
-                        simulation_time_iteration,
-                    ),
-                );
-
-                // Check if pipework location is internal
-                let location = pipework_data.location();
-
-                if matches!(location, PipeworkLocation::Internal) {
-                    primary_gains_w += primary_pipework_losses_w
+        if let Some(primary_pipework_lst) = self.primary_pipework_lst.as_ref() {
+            // start of heating event
+            if input_energy_adj > 0. && self.input_energy_adj_prev_timestep == 0. {
+                for pipework_data in primary_pipework_lst {
+                    primary_pipework_losses_kwh += pipework_data.cool_down_loss(
+                        setpnt_max,
+                        self.temp_surrounding_primary_pipework(
+                            pipework_data,
+                            simulation_time_iteration,
+                        ),
+                    )
                 }
-
-                primary_pipework_losses_kwh +=
-                    primary_pipework_losses_w * self.simulation_timestep / WATTS_PER_KILOWATT as f64
             }
-        }
 
-        // end of heating event
-        if input_energy_adj == 0. && self.input_energy_adj_prev_timestep > 0. {
-            for pipework_data in primary_pipework_lst {
-                let location = pipework_data.location();
-                match location {
-                    PipeworkLocation::External => {}
-                    PipeworkLocation::Internal => {
-                        primary_gains_w += pipework_data.cool_down_loss(
-                            setpnt_max,
-                            self.temp_surrounding_primary_pipework(
-                                pipework_data,
-                                simulation_time_iteration,
-                            ),
-                        ) * WATTS_PER_KILOWATT as f64
-                            / self.simulation_timestep
+            // during heating event
+            if input_energy_adj > 0. {
+                for pipework_data in primary_pipework_lst {
+                    // Primary losses for the timestep calculated from temperature difference
+                    let primary_pipework_losses_w = pipework_data.heat_loss(
+                        setpnt_max,
+                        self.temp_surrounding_primary_pipework(
+                            pipework_data,
+                            simulation_time_iteration,
+                        ),
+                    );
+
+                    // Check if pipework location is internal
+                    let location = pipework_data.location();
+
+                    if matches!(location, PipeworkLocation::Internal) {
+                        primary_gains_w += primary_pipework_losses_w
+                    }
+
+                    primary_pipework_losses_kwh += primary_pipework_losses_w
+                        * self.simulation_timestep
+                        / WATTS_PER_KILOWATT as f64
+                }
+            }
+
+            // end of heating event
+            if input_energy_adj == 0. && self.input_energy_adj_prev_timestep > 0. {
+                for pipework_data in primary_pipework_lst {
+                    let location = pipework_data.location();
+                    match location {
+                        PipeworkLocation::External => {}
+                        PipeworkLocation::Internal => {
+                            primary_gains_w += pipework_data.cool_down_loss(
+                                setpnt_max,
+                                self.temp_surrounding_primary_pipework(
+                                    pipework_data,
+                                    simulation_time_iteration,
+                                ),
+                            ) * WATTS_PER_KILOWATT as f64
+                                / self.simulation_timestep
+                        }
                     }
                 }
             }

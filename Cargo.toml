@@ -18,10 +18,10 @@ clap = { version = "4.5.31", features = ["derive"], optional = true }
 convert_case = "0.8.0"
 csv = "1.3.1"
 derivative = "2.2.0"
-erased-serde = "0.4.5"
+erased-serde = "0.4.6"
 field_types = "1.1.0"
 formatx = "0.2.3"
-indexmap = { version = "2.7.1", features = ["serde", "arbitrary"] }
+indexmap = { version = "2.8.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.9", optional = true }
 interp = "2.0.2"
 is_close = "0.1.3"
@@ -40,13 +40,13 @@ rayon = "1.10.0"
 roots = "0.0.8"
 serde = { version = "1.0.218", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.139"
+serde_json = "1.0.140"
 serde_repr = "0.1.20"
 serde_valid = "1.0.4"
 statrs = "0.18.0"
 strum = { version = "0.27.1", features = ["derive"] }
 strum_macros = "0.27.0"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 
