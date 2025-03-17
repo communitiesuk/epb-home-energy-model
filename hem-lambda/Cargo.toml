@@ -8,6 +8,6 @@ anyhow = "1.0.97"
 hem = { path = ".." }
 lambda_http = "0.14.0"
 parking_lot = "0.12.3"
-serde_json = "1.0.139"
+serde_json = "1.0.140"
 tokio = { version = "1", features = ["macros"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
