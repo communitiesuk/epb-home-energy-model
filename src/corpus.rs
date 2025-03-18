@@ -2574,22 +2574,23 @@ impl Corpus {
                 diverter.write().timestep_end();
             }
 
-            if self
-                .controls
-                .extra
-                .keys()
-                .contains(&"SmartApplianceControl".to_string())
-            {
-                if let Control::SmartAppliance(ctrl) = self
-                    .controls
-                    .extra
-                    .get("SmartApplianceControl")
-                    .unwrap()
-                    .as_ref()
-                {
-                    ctrl.update_demand_buffer(t_it)
-                };
-            }
+            // TODO update for migration to 0.34
+            // if self
+            //     .controls
+            //     .extra
+            //     .keys()
+            //     .contains(&"SmartApplianceControl".to_string())
+            // {
+            //     if let Control::SmartAppliance(ctrl) = self
+            //         .controls
+            //         .extra
+            //         .get("SmartApplianceControl")
+            //         .unwrap()
+            //         .as_ref()
+            //     {
+            //         ctrl.update_demand_buffer(t_it)
+            //     };
+            // }
         }
 
         // Return results from all energy supplies

@@ -26,7 +26,6 @@ pub(crate) enum Control {
     Charge(ChargeControl),
     OnOffMinimisingTime(OnOffMinimisingTimeControl),
     SetpointTime(SetpointTimeControl),
-    SmartAppliance(Box<SmartApplianceControl>),
     CombinationTime(CombinationTimeControl),
 }
 
@@ -42,7 +41,6 @@ macro_rules! per_control {
             Control::OnOffMinimisingTime($pattern) => $res,
             #[allow(noop_method_call)]
             Control::SetpointTime($pattern) => $res,
-            Control::SmartAppliance($pattern) => $res,
             #[allow(noop_method_call)]
             Control::CombinationTime($pattern) => $res,
         }
