@@ -1477,7 +1477,12 @@ impl Corpus {
         let hc_output_radiative = h_name_list_sorted_zone[z_name]
             .iter()
             .chain(c_name_list_sorted_zone[z_name].iter())
-            .map(|hc_name| (hc_name.clone(), 0.0))
+            .map(|hc_name| {
+                (
+                    hc_name.clone(),
+                    hc_output_min[hc_name] - hc_output_convective[hc_name],
+                )
+            })
             .collect::<IndexMap<_, _>>();
 
         Ok(HeatCoolOutputs {
