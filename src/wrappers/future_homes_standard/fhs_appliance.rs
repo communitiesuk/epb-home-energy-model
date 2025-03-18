@@ -111,6 +111,11 @@ impl FhsAppliance {
             }
         }
 
+        // TODO (from Python) - analytical method is simpler than the above:
+        //             P_e = self.op_kWh * W_per_kW /(self.event_duration)
+        //             Fappliance = ((P_e - self.standby_W)* self.event_duration * norm_events/ W_per_kW)\
+        //                         / (self.annual_expected_demand - hours_per_day * days_per_year * self.standby_W / W_per_kW)
+
         let expected_demand_w_event = op_kwh * WATTS_PER_KILOWATT as f64 / event_duration;
         let mut eventlist: Vec<ApplianceGainsDetailsEvent> = vec![];
         let mut sched = vec![standby_w; flat_profile.len()];
