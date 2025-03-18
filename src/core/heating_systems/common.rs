@@ -46,7 +46,7 @@ impl HeatSourceWet {
                 Ok(space.energy_output_max(temperature, Default::default(), None, None, simtime))
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => {
-                Ok(storage.energy_output_max(temperature, &simtime))
+                Ok(storage.energy_output_max(Default::default(), temperature, &simtime))
             }
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.energy_output_max(temperature, simtime)
@@ -93,9 +93,8 @@ impl HeatSourceWet {
                     simtime,
                 )
                 .map(|x| x.0),
-            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => {
-                Ok(water_storage.demand_energy(energy_demand, temperature, &simtime))
-            }
+            HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
+                .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.demand_energy(energy_demand, temperature, simtime)
             }
@@ -121,7 +120,7 @@ impl HeatSourceWet {
                 let minmax = space.temp_setpnt(simtime);
                 (minmax, minmax)
             }
-            HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.temp_setpnt(simtime),
+            HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.setpnt(simtime),
             HeatSourceWet::HeatBatteryHotWater(battery) => battery.temp_setpnt(simtime),
             HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.temp_setpnt(simtime),
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {

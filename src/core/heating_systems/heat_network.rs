@@ -116,7 +116,8 @@ impl HeatNetworkServiceWaterStorage {
         }
     }
 
-    pub(crate) fn temp_setpnt(
+    /// Return setpoint (not necessarily temperature)
+    pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -129,6 +130,7 @@ impl HeatNetworkServiceWaterStorage {
     pub fn demand_energy(
         &mut self,
         energy_demand: f64,
+        _temp_flow: f64,
         _temp_return: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
@@ -147,6 +149,7 @@ impl HeatNetworkServiceWaterStorage {
 
     pub fn energy_output_max(
         &self,
+        _temp_flow: f64,
         _temp_return: f64,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> f64 {
@@ -156,9 +159,7 @@ impl HeatNetworkServiceWaterStorage {
 
         let control_max_setpnt = self.control_max.setpnt(simulation_time_iteration);
 
-        self.heat_network
-            .lock()
-            .energy_output_max(control_max_setpnt, None)
+        self.heat_network.lock().energy_output_max(None)
     }
 
     fn is_on(&self, simulation_time_iteration: &SimulationTimeIteration) -> bool {
@@ -213,7 +214,7 @@ impl HeatNetworkServiceSpace {
 
     pub fn energy_output_max(
         &self,
-        temp_output: f64,
+        _temp_output: f64,
         _temp_return_feed: f64,
         time_start: Option<f64>,
         simulation_time_iteration: &SimulationTimeIteration,
@@ -224,9 +225,7 @@ impl HeatNetworkServiceSpace {
             return 0.;
         }
 
-        self.heat_network
-            .lock()
-            .energy_output_max(Some(temp_output), Some(time_start))
+        self.heat_network.lock().energy_output_max(Some(time_start))
     }
 
     pub fn temperature_setpnt(
@@ -354,7 +353,7 @@ impl HeatNetwork {
 
     /// Calculate the maximum energy output of the heat network, accounting
     /// for time spent on higher-priority services.
-    fn energy_output_max(&self, _temp_output: Option<f64>, time_start: Option<f64>) -> f64 {
+    fn energy_output_max(&self, time_start: Option<f64>) -> f64 {
         let time_start = time_start.unwrap_or(0.);
 
         let time_available = self.time_available(time_start, self.simulation_timestep);
@@ -381,7 +380,7 @@ impl HeatNetwork {
     ) -> f64 {
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
-        let energy_output_max = self.energy_output_max(None, None);
+        let energy_output_max = self.energy_output_max(None);
         if energy_output_max == 0. {
             return energy_output_max;
         }
@@ -693,6 +692,7 @@ mod tests {
                 heat_network_service_water_storage.demand_energy(
                     energy_demanded[t_idx],
                     60.,
+                    60.,
                     &t_it
                 ),
                 [7.0, 2.0][t_idx]
@@ -708,10 +708,15 @@ mod tests {
         heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
     ) {
         let heat_network = heat_network_for_water_storage.clone();
+        let temp_flow = [15.0, 20.0];
         let temp_return = [10.0, 15.0];
         for (t_idx, t_it) in two_len_simulation_time.iter().enumerate() {
             assert_eq!(
-                heat_network_service_water_storage.energy_output_max(temp_return[t_idx], &t_it),
+                heat_network_service_water_storage.energy_output_max(
+                    temp_flow[t_idx],
+                    temp_return[t_idx],
+                    &t_it
+                ),
                 [7.0, 7.0][t_idx]
             );
             heat_network.lock().timestep_end(t_idx);
