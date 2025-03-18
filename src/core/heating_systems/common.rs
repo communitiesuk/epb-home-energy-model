@@ -96,7 +96,8 @@ impl HeatSourceWet {
             HeatSourceWet::HeatNetworkWaterStorage(water_storage) => Ok(water_storage
                 .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
-                battery.demand_energy(energy_demand, temperature, simtime)
+                battery.demand_energy(energy_demand, temperature, None, simtime)
+                // TODO 0.34 passing in None here during heat_battery update
             }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temperature, simtime)
@@ -121,7 +122,7 @@ impl HeatSourceWet {
                 (minmax, minmax)
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => storage.setpnt(simtime),
-            HeatSourceWet::HeatBatteryHotWater(battery) => battery.temp_setpnt(simtime),
+            HeatSourceWet::HeatBatteryHotWater(battery) => battery.setpnt(simtime),
             HeatSourceWet::HeatPumpWater(heat_pump_water) => heat_pump_water.temp_setpnt(simtime),
             HeatSourceWet::HeatPumpWaterOnly(heat_pump_water_only) => {
                 heat_pump_water_only.temp_setpnt(simtime)

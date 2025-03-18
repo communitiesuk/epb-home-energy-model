@@ -4465,6 +4465,7 @@ fn heat_source_from_input(
                             HeatBattery::create_service_hot_water_regular(
                                 battery,
                                 &energy_supply_conn_name,
+                                cold_water_source.clone(),
                                 control_min,
                                 control_max,
                             ),

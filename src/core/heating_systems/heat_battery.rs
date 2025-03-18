@@ -1,5 +1,6 @@
 /// This module provides object(s) to model the behaviour of heat batteries.
 use crate::compare_floats::min_of_2;
+use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::input::HeatSourceWetDetails;
@@ -15,6 +16,12 @@ pub enum ServiceType {
     Space,
 }
 
+pub enum OperationMode {
+    Normal,
+    OnlyCharging,
+    Losses,
+}
+
 /// An object to represent a water heating service provided by a regular heat battery.
 ///
 /// This object contains the parts of the heat battery calculation that are
@@ -23,6 +30,7 @@ pub enum ServiceType {
 pub struct HeatBatteryServiceWaterRegular {
     heat_battery: Arc<Mutex<HeatBattery>>,
     service_name: String,
+    cold_feed: WaterSourceWithTemperature,
     control: Arc<Control>,
     _control_min: Arc<Control>,
     control_max: Arc<Control>,
@@ -37,6 +45,7 @@ impl HeatBatteryServiceWaterRegular {
     pub(crate) fn new(
         heat_battery: Arc<Mutex<HeatBattery>>,
         service_name: String,
+        cold_feed: WaterSourceWithTemperature,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> Self {
@@ -45,13 +54,15 @@ impl HeatBatteryServiceWaterRegular {
         Self {
             heat_battery,
             service_name,
+            cold_feed,
             control,
             _control_min: control_min,
             control_max,
         }
     }
 
-    pub(crate) fn temp_setpnt(
+    /// Return setpoint (not necessarily temperature)
+    pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -66,6 +77,7 @@ impl HeatBatteryServiceWaterRegular {
         &self,
         energy_demand: f64,
         temp_return: f64,
+        time_start: Option<f64>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
@@ -310,13 +322,13 @@ impl HeatBattery {
     /// Arguments:
     /// * `heat_battery` - reference to heat battery
     /// * `service_name` - name of the service demanding energy from the heat battery
-    /// * `temp_hot_water` - temperature of the hot water to be provided, in deg C
-    /// * `temp_limit_upper` - upper operating limit for temperature, in deg C
     /// * `cold_feed` - reference to ColdWaterSource object
-    /// * `control` - reference to a control object
+    /// * `control_min` - reference to a control object which must select current the minimum timestep temperature
+    /// * `control_max` - reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn create_service_hot_water_regular(
         heat_battery: Arc<Mutex<Self>>,
         service_name: &str,
+        cold_feed: WaterSourceWithTemperature,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
     ) -> HeatBatteryServiceWaterRegular {
@@ -324,6 +336,7 @@ impl HeatBattery {
         HeatBatteryServiceWaterRegular::new(
             heat_battery,
             service_name.to_string(),
+            cold_feed,
             control_min,
             control_max,
         )
@@ -657,6 +670,7 @@ impl HeatBattery {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::common::WaterSourceWithTemperature;
     use crate::core::controls::time_control::SetpointTimeControl;
     use crate::core::controls::time_control::{ChargeControl, Control};
     use crate::core::energy_supply::energy_supply::{
@@ -666,6 +680,7 @@ mod tests {
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceSpace;
     use crate::core::heating_systems::heat_battery::HeatBatteryServiceWaterRegular;
     use crate::core::heating_systems::heat_battery::ServiceType;
+    use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::HeatSourceWetDetails;
     use crate::input::{ControlLogicType, HeatSourceLocation};
@@ -970,11 +985,12 @@ mod tests {
             Some(55.),
             Some(55.),
         ]);
-
+        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 Arc::new(control_min),
                 Arc::new(control_max),
             );
@@ -1014,16 +1030,18 @@ mod tests {
         ]);
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 Arc::new(control_min),
                 Arc::new(control_max),
             );
 
         let result = heat_battery_service
-            .demand_energy(energy_demand, temp_return, simulation_time_iteration)
+            .demand_energy(energy_demand, temp_return, None, simulation_time_iteration)
             .unwrap();
 
         assert_relative_eq!(result, 4.358566028225806);
@@ -1043,16 +1061,18 @@ mod tests {
         let service_control_off = Arc::new(create_setpoint_time_control(vec![None]));
 
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 service_control_off.clone(),
                 service_control_off,
             );
 
         let result = heat_battery_service
-            .demand_energy(energy_demand, temp_return, simulation_time_iteration)
+            .demand_energy(energy_demand, temp_return, None, simulation_time_iteration)
             .unwrap();
 
         assert_eq!(result, 0.);
@@ -1106,10 +1126,12 @@ mod tests {
             Some(55.),
         ]);
         let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
+        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 Arc::new(control_min),
                 Arc::new(control_max),
             );
@@ -1151,10 +1173,12 @@ mod tests {
             Some(55.),
         ]);
 
+        let cold_water_source = ColdWaterSource::new(vec![1.0, 1.2], 0, 1.);
         let heat_battery_service: HeatBatteryServiceWaterRegular =
             HeatBatteryServiceWaterRegular::new(
                 heat_battery,
                 SERVICE_NAME.into(),
+                WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
                 Arc::new(control_min),
                 Arc::new(control_max),
             );
