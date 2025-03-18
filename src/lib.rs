@@ -549,7 +549,7 @@ fn external_conditions_from_input(
             None,
             false,
             input.direct_beam_conversion_needed.unwrap_or(false),
-            input.shading_segments.clone(), //imperfect but this should be quite small...
+            input.shading_segments.clone(),
         ),
     }
 }
@@ -1503,6 +1503,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     }
 
     // Delivered energy by end-use and by fuel
+    // TODO (from Python) Ensure end_uses not consuming fuel directly are filtered out on this report
     let mut delivered_energy_map: IndexMap<KeyString, IndexMap<KeyString, f64>> =
         IndexMap::from([(KeyString::from("total").unwrap(), Default::default())]);
     for (fuel, end_uses) in results_end_user {
