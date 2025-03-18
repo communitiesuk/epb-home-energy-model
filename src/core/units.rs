@@ -6,6 +6,7 @@ pub const KILOJOULES_PER_KILOWATT_HOUR: u32 = 3_600;
 pub const JOULES_PER_KILOJOULE: u32 = 1_000;
 pub const WATTS_PER_KILOWATT: u32 = 1_000;
 pub const LITRES_PER_CUBIC_METRE: u32 = 1_000;
+pub(crate) const M3_PER_S_TO_L_PER_MIN: f64 = 60_000.;
 pub const MINUTES_PER_HOUR: u32 = 60;
 pub const SECONDS_PER_MINUTE: u32 = 60;
 pub const SECONDS_PER_HOUR: u32 = 3_600;
@@ -36,6 +37,8 @@ pub fn convert_profile_to_daily(timestep_totals: &[f64], timestep: f64) -> Vec<f
         .collect()
 }
 
+// Python equivalent of this has an allow_none parameter. We know when we have Options in Rust so we
+// can check for Some value in calling code - no need to have defensive code/ extra params here.
 pub(crate) fn kelvin_to_celsius(temp_k: f64) -> Result<f64, BelowAbsoluteZeroError> {
     if temp_k < 0.0 {
         Err(BelowAbsoluteZeroError::from_k(temp_k))
