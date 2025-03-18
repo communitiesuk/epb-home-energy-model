@@ -19,3 +19,4 @@ biogas,biogas (including anaerobic digestion),0.02863,0.02863,1.442038473
 ,wood pellets (bulk supply for main heating),0.04818,0.04818,1.306131621
 ,wood chips,0.01866,0.01866,1.068975518
 unmet_demand,energy supply shortfall,0.086962732,0.086962732,2.04350289
+energy_from_environment,energy from environment,0,0,0
