@@ -262,18 +262,14 @@ impl BuildingElement {
         }
     }
 
-    fn external_conditions(&self) -> &ExternalConditions {
-        match self {
-            BuildingElement::Opaque(el) => el.external_conditions(),
-            BuildingElement::AdjacentZTC(el) => el.external_conditions(),
-            BuildingElement::AdjacentZTUSimple(el) => el.external_conditions(),
-            BuildingElement::Ground(el) => el.external_conditions(),
-            BuildingElement::Transparent(el) => el.external_conditions(),
-        }
-    }
-
     pub(crate) fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
-        self.external_conditions().air_temp(&simtime)
+        match self {
+            BuildingElement::Opaque(el) => el.temp_ext(simtime),
+            BuildingElement::AdjacentZTC(el) => el.temp_ext(simtime),
+            BuildingElement::AdjacentZTUSimple(el) => el.temp_ext(simtime),
+            BuildingElement::Ground(el) => el.temp_ext(simtime),
+            BuildingElement::Transparent(el) => el.temp_ext(simtime),
+        }
     }
 
     /// Return number of nodes excluding external and internal layers
@@ -2154,7 +2150,6 @@ impl BuildingElementGround {
         HeatTransferInternal::r_si(self)
     }
 
-    #[cfg(test)]
     fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
         HeatTransferOtherSideGround::temp_ext(self, simtime)
     }
