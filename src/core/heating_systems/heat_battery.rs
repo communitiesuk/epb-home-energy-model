@@ -1,19 +1,20 @@
 /// This module provides object(s) to model the behaviour of heat batteries.
-use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
 use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
-use crate::core::units::{SECONDS_PER_HOUR, SECONDS_PER_MINUTE};
+use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE};
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[derive(Clone, Debug)]
 pub enum ServiceType {
     WaterRegular,
     Space,
@@ -280,7 +281,20 @@ const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
 #[allow(dead_code)]
 struct HeatBatteryResult {
     service_name: String,
+    service_type: ServiceType,
+    service_on: bool,
+    energy_output_required: f64,
+    temp_output: Option<f64>,
+    temp_inlet: f64,
     time_running: f64,
+    energy_left_in_pipe: f64,
+    temperature_left_in_pipe: f64,
+    energy_delivered_hb: f64,
+    energy_delivered_backup: f64,
+    energy_delivered_total: f64,
+    energy_delivered_low_temp: f64,
+    energy_charged_during_service: f64,
+    hb_zone_temperatures: Vec<f64>,
     current_hb_power: f64,
 }
 
@@ -307,13 +321,17 @@ pub struct HeatBattery {
     _labs_tests_rated_output: Vec<(f64, f64)>,
     labs_tests_rated_output_enhanced: Vec<(f64, f64)>,
     labs_tests_losses: Vec<(f64, f64)>,
-    hb_time_step: usize,
+    hb_time_step: f64,
     initial_inlet_temp: f64,
     estimated_outlet_temp: f64,
     velocity_in_hex_tube: f64,
     capillary_diameter_m: f64,
     flow_rate_l_per_min: f64,
-    zone_temp_c_dist_initial: f64,
+    zone_temp_c_dist_initial: Vec<f64>,
+    simultaneous_charging_and_discharging: bool,
+    pipe_energy: IndexMap<String, IndexMap<String, f64>>,
+    energy_charged: f64,
+    minimum_time_required_to_run: f64,
 }
 
 impl HeatBattery {
@@ -334,6 +352,7 @@ impl HeatBattery {
             capillary_diameter_m,
             flow_rate_l_per_min,
             max_temp_of_charge,
+            simultaneous_charging_and_discharging,
             ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
             rated_charge_power: pwr_in,
@@ -345,6 +364,7 @@ impl HeatBattery {
             capillary_diameter_m,
             flow_rate_l_per_min,
             max_temperature,
+            simultaneous_charging_and_discharging,
             ..
         } = heat_battery_details
         {
@@ -358,6 +378,7 @@ impl HeatBattery {
                 *capillary_diameter_m,
                 *flow_rate_l_per_min,
                 *max_temperature,
+                *simultaneous_charging_and_discharging,
             )
         } else {
             unreachable!()
@@ -384,13 +405,17 @@ impl HeatBattery {
             _labs_tests_rated_output: Default::default(),
             labs_tests_rated_output_enhanced: Default::default(),
             labs_tests_losses: Default::default(),
-            hb_time_step: 20,
+            hb_time_step: 20.,
             initial_inlet_temp: 10.,
             estimated_outlet_temp: 53.,
             velocity_in_hex_tube,
             capillary_diameter_m,
             flow_rate_l_per_min,
-            zone_temp_c_dist_initial: N_ZONES as f64 * max_temp_of_charge,
+            zone_temp_c_dist_initial: vec![max_temp_of_charge; N_ZONES],
+            simultaneous_charging_and_discharging,
+            pipe_energy: Default::default(),
+            energy_charged: Default::default(),
+            minimum_time_required_to_run: 120.,
         }
     }
 
@@ -508,83 +533,248 @@ impl HeatBattery {
     pub fn demand_energy(
         &mut self,
         service_name: &str,
-        _service_type: ServiceType,
-        energy_output_required: f64,
-        _temp_return_feed: f64,
-        _temp_output: Option<f64>,
+        service_type: ServiceType,
+        mut energy_output_required: f64,
+        temp_return_feed: f64,
+        temp_output: Option<f64>,
         service_on: bool,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         timestep_idx: usize,
     ) -> anyhow::Result<f64> {
+        // Return the energy provided by the HB during a HEM time step (assuming
+        // an inlet temperature constant) and update the HB state (zones distribution temperatures)
+        // The HEM time step is divided into sub-timesteps. For each sub-timestep the zones temperature are
+        // calculated (loop through zones).
         let time_start = time_start.unwrap_or(0.);
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
         let timestep = self.simulation_time.step_in_hours();
         let time_available = self.time_available(time_start, timestep);
-        let mut charge_level = self.charge_level;
 
-        // Picking target charge level from control
-        let target_charge = self.target_charge()?;
-        // __demand_energy is called for each service in each timestep
+        // demand_energy is called for each service in each timestep
         // Some calculations are only required once per timestep
-        // For example the amount of charge added to the system
         // Perform these calculations here
         if self.flag_first_call {
             self.first_call();
         }
 
+        let pwr_in = if self.simultaneous_charging_and_discharging {
+            self.electric_charge()
+        } else {
+            0.
+        };
+
+        // TODO 0.34 do we need a new type for pipe_energy?
+        if temp_output.is_none()
+            || temp_output.unwrap() <= self.pipe_energy[service_name]["temperature"]
+        {
+            if energy_output_required > self.pipe_energy[service_name]["energy"] {
+                energy_output_required -= self.pipe_energy[service_name]["energy"];
+                self.pipe_energy[service_name]["energy"] = 0.;
+                self.pipe_energy[service_name]["temperature"] = 0.;
+            } else {
+                self.pipe_energy[service_name]["energy"] -= energy_output_required;
+                energy_output_required = 0.;
+            }
+        }
+
         // Distributing energy demand through all units
         let energy_demand = energy_output_required / self.n_units as f64;
 
-        let q_out_ts = self.q_out_ts.unwrap();
+        // Initial Reynold number
+        let water_kinematic_viscosity_m2_per_s = self.calculate_water_kinematic_viscosity_m2_per_s(
+            self.initial_inlet_temp,
+            self.estimated_outlet_temp,
+        );
+        let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+            water_kinematic_viscosity_m2_per_s,
+            self.velocity_in_hex_tube,
+            self.capillary_diameter_m,
+        );
 
-        // Create power variables and assign the values just calculated at average of timestep
-        let e_out = min_of_2(energy_demand, q_out_ts * time_available);
-        let time_running_current_service = if q_out_ts > 0. { e_out / q_out_ts } else { 0. };
+        let flow_rate_kg_per_s =
+            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
 
-        let q_loss_ts = self.q_loss_ts.unwrap();
-        let q_in_ts = self.q_in_ts.unwrap();
+        let mut energy_delivered_hb = 0.;
+        let mut total_energy_low_temp = 0.;
+        let inlet_temp_c = temp_return_feed;
+        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
 
-        let e_loss = q_loss_ts * time_running_current_service;
-        let mut e_in = q_in_ts * time_running_current_service;
+        if energy_output_required <= 0. {
+            if update_heat_source_state {
+                self.service_results.push(HeatBatteryResult {
+                    service_name: service_name.to_string(),
+                    service_type,
+                    service_on,
+                    energy_output_required,
+                    temp_output,
+                    temp_inlet: temp_return_feed,
+                    time_running: 0.,
+                    energy_left_in_pipe: self.pipe_energy[service_name]["energy"],
+                    temperature_left_in_pipe: self.pipe_energy[service_name]["temperature"],
+                    energy_delivered_hb: 0.,
+                    energy_delivered_backup: 0.,
+                    energy_delivered_total: 0.,
+                    energy_delivered_low_temp: 0.,
+                    energy_charged_during_service: 0.,
+                    hb_zone_temperatures: zone_temp_c_dist,
+                    current_hb_power: Default::default(),
+                });
+            }
+            return Ok(energy_delivered_hb);
+        }
 
-        // Calculate new charge level after accounting for energy in and out and cap at target_charge
-        // TODO 0.34
-        // if charge_level > target_charge {
-        //     e_in -= (charge_level - target_charge) * self.heat_storage_capacity;
-        //     if e_in < 0.0 {
-        //         e_in = 0.;
-        //         charge_level -= delta_charge_level;
-        //         delta_charge_level = -(e_out + e_loss) / self.heat_storage_capacity;
-        //         charge_level += delta_charge_level;
-        //     } else {
-        //         charge_level = target_charge;
-        //     }
-        // }
+        let mut time_step_s = 1.;
+        let mut time_running_current_service = 0.;
 
-        let energy_output_provided = e_out;
+        let mut flag_minimum_run = false; // False: supply energy to emitter; True: running water to complete loop
+        let mut energy_charged = 0.;
+
+        while time_step_s > 0. {
+            // Processing HB zones
+            let (
+                outlet_temp_c,
+                zone_temp_c_dist,
+                energy_transf_delivered,
+                energy_charged_during_battery_time_step,
+            ) = self.process_heat_battery_zones(
+                inlet_temp_c,
+                &zone_temp_c_dist,
+                flow_rate_kg_per_s,
+                time_step_s,
+                reynold_number_at_1_l_per_min,
+                Some(pwr_in),
+            );
+
+            if update_heat_source_state {
+                self.energy_charged += energy_charged_during_battery_time_step;
+            }
+            energy_charged += energy_charged_during_battery_time_step;
+
+            time_running_current_service += time_step_s as f64;
+
+            // RN for next time step
+            let water_kinematic_viscosity_m2_per_s =
+                self.calculate_water_kinematic_viscosity_m2_per_s(temp_return_feed, outlet_temp_c);
+            let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+                water_kinematic_viscosity_m2_per_s,
+                self.velocity_in_hex_tube,
+                self.capillary_diameter_m,
+            );
+
+            let energy_delivered_ts =
+                energy_transf_delivered.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64;
+
+            if temp_output.is_none() || outlet_temp_c > temp_output.unwrap() {
+                if !flag_minimum_run {
+                    energy_delivered_hb += energy_delivered_ts; // demand_per_time_step_kwh
+                    let max_instant_power = energy_delivered_ts / time_step_s;
+
+                    if max_instant_power > 0. {
+                        time_step_s = (energy_demand - energy_delivered_hb) / max_instant_power;
+                    }
+                } else {
+                    if energy_delivered_ts != 0. {
+                        let current_energy = self.pipe_energy[service_name]["energy"];
+                        let current_temperature = self.pipe_energy[service_name]["temperature"];
+                        let new_temperature = ((current_temperature * current_energy)
+                            + (outlet_temp_c * energy_delivered_ts))
+                            / (current_energy + energy_delivered_ts);
+
+                        self.pipe_energy[service_name]["energy"] += energy_delivered_ts;
+                        self.pipe_energy[service_name]["temperature"] = new_temperature;
+                    }
+                }
+
+                if time_step_s > self.hb_time_step {
+                    time_step_s = self.hb_time_step;
+                }
+
+                if (energy_demand - energy_delivered_hb) < 0.0001 {
+                    // Energy supplied, run to complete water loop
+                    if time_running_current_service > self.minimum_time_required_to_run {
+                        break;
+                    }
+
+                    if !flag_minimum_run {
+                        let time_extra =
+                            self.minimum_time_required_to_run - time_running_current_service;
+                        flag_minimum_run = true;
+                    } // TODO 0.34 Python has logic below which erroneously refers to time_extra in the first else block (not previously declared)
+                      // else:
+                      //     time_extra -= time_step_s
+                      //
+                      // if time_extra > self.__hb_time_step:
+                      //     time_step_s = self.__hb_time_step
+                      // else:
+                      //     time_step_s = time_extra
+                }
+
+                if time_running_current_service + time_step_s
+                    > time_available * SECONDS_PER_HOUR as f64
+                {
+                    time_step_s =
+                        time_available * SECONDS_PER_HOUR as f64 - time_running_current_service
+                }
+            } else {
+                // outlet_temp_c is below required temperature
+                total_energy_low_temp += energy_delivered_ts;
+
+                if energy_delivered_hb > 0. {
+                    if time_running_current_service > self.minimum_time_required_to_run {
+                        break;
+                    }
+
+                    // TODO 0.34 Python has logic below which erroneously refers to time_extra in the first else block (not previously declared)
+                    // if not flag_minimum_run:
+                    //     time_extra = self.__minimum_time_required_to_run - time_running_current_service
+                    //     flag_minimum_run = True
+                    // else:
+                    //     time_extra -= time_step_s
+                    //
+                    // if time_extra > self.__hb_time_step:
+                    //     time_step_s = self.__hb_time_step
+                    // else:
+                    //     time_step_s = time_extra
+                } else {
+                    break;
+                }
+            }
+        }
 
         if update_heat_source_state {
-            self.charge_level = charge_level;
+            self.zone_temp_c_dist_initial = zone_temp_c_dist.clone();
 
-            self.energy_supply_connection
-                .demand_energy(e_in * self.n_units as f64, timestep_idx)
-                .unwrap();
-            self.energy_supply_connections[service_name]
-                .energy_out(e_out * self.n_units as f64, timestep_idx)
-                .unwrap();
+            self.total_time_running_current_timestep +=
+                time_running_current_service / SECONDS_PER_HOUR as f64;
 
-            self.total_time_running_current_timestep += time_running_current_service;
-
-            // Save results that are needed later (in the timestep_end function)
+            let current_hb_power = if time_running_current_service > 0. {
+                energy_delivered_hb * SECONDS_PER_HOUR as f64 / time_running_current_service
+            } else {
+                Default::default()
+            };
+            // TODO (from Python) Clarify whether Heat Batteries can have direct electric backup if depleted
             self.service_results.push(HeatBatteryResult {
                 service_name: service_name.to_string(),
+                service_type,
+                service_on,
+                energy_output_required,
+                temp_output,
+                temp_inlet: temp_return_feed,
                 time_running: time_running_current_service,
-                current_hb_power: q_out_ts,
+                energy_left_in_pipe: self.pipe_energy[service_name]["energy"],
+                temperature_left_in_pipe: self.pipe_energy[service_name]["temperature"],
+                energy_delivered_hb: energy_delivered_hb * self.n_units as f64,
+                energy_delivered_backup: 0.,
+                energy_delivered_total: energy_delivered_hb * self.n_units as f64 + 0.,
+                energy_delivered_low_temp: total_energy_low_temp * self.n_units as f64,
+                energy_charged_during_service: energy_charged * self.n_units as f64,
+                hb_zone_temperatures: zone_temp_c_dist,
+                current_hb_power,
             });
         }
 
-        Ok(energy_output_provided)
+        Ok(energy_delivered_hb * self.n_units as f64)
     }
 
     /// Calculation of heat battery auxilary energy consumption
@@ -687,10 +877,11 @@ impl HeatBattery {
     fn process_heat_battery_zones(
         &self,
         inlet_temp_c: f64,
-        zone_temp_c_dist: f64,
+        zone_temp_c_dist: &Vec<f64>,
         flow_rate_kg_per_s: f64,
-        time_step_s: usize,
+        time_step_s: f64,
         reynold_number: f64,
+        pwr_in: Option<f64>,
     ) -> (f64, f64, Vec<f64>, f64) {
         todo!()
     }
@@ -718,7 +909,7 @@ impl HeatBattery {
         // with a longer time step that reduces the calculation time, which is a critical factor for HEM.
         // However, from current testing, time_step_s longer than 100 might cause instabilities in the calculation
         // leading to failure to complete. Thus, we are capping the max timestep to 100 seconds.
-        let time_step_s = (self.hb_time_step * 5).min(100);
+        let time_step_s = (self.hb_time_step * 5.).min(100.);
 
         let pwr_in = self.electric_charge();
 
@@ -739,17 +930,18 @@ impl HeatBattery {
         let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
         let mut energy_delivered_hb = 0.;
         let inlet_temp_c = temp_output;
-        let n_time_steps = total_time_s as usize / time_step_s;
+        let n_time_steps = (total_time_s / time_step_s) as usize;
 
         for _ in 0..n_time_steps {
             // Processing HB zones
             let (outlet_temp_c, zone_temp_c_dist, energy_transf_delivered, _) = self
                 .process_heat_battery_zones(
                     inlet_temp_c,
-                    zone_temp_c_dist,
+                    &zone_temp_c_dist,
                     flow_rate_kg_per_s,
                     time_step_s,
                     reynold_number_at_1_l_per_min,
+                    None,
                 );
 
             // RN for next time step
