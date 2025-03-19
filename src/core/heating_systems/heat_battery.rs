@@ -3,10 +3,13 @@ use crate::compare_floats::min_of_2;
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::material_properties::WATER;
+use crate::core::schedule::TypedScheduleEvent;
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::statistics::np_interp;
 use anyhow::bail;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -72,30 +75,99 @@ impl HeatBatteryServiceWaterRegular {
         )
     }
 
+    fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+        &self.cold_feed
+    }
+
+    fn get_temp_hot_water(&self, simulation_time_iteration: SimulationTimeIteration) -> f64 {
+        let volume = 20.; // Nominal volumen to calculate water temperature from battery
+        let inlet_temp = self.cold_feed.temperature(simulation_time_iteration, None);
+
+        self.heat_battery
+            .lock()
+            .get_temp_hot_water(inlet_temp, volume)
+    }
+
+    fn demand_hot_water(
+        &self,
+        usage_events: Option<Vec<TypedScheduleEvent>>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
+        let mut energy_demand = 0.;
+        let mut temp_hot_water = 0.;
+
+        // Filtering out IES events that don't get added a 'warm_volume' when processing
+        // the dhw_demand calculation
+        let filtered_events = usage_events
+            .clone()
+            .into_iter()
+            .flatten()
+            .filter(|e| e.warm_volume.is_some())
+            .collect_vec();
+
+        for event in filtered_events {
+            let warm_temp = event.temperature;
+            let warm_volume = event.warm_volume;
+
+            if warm_temp > temp_hot_water {
+                temp_hot_water = warm_temp;
+            }
+
+            let energy_content_kwh_per_litre = WATER.volumetric_energy_content_kwh_per_litre(
+                warm_temp,
+                self.cold_feed.temperature(simulation_time_iteration, None),
+            );
+
+            energy_demand += warm_volume.unwrap() * energy_content_kwh_per_litre;
+        }
+
+        let service_on = self.is_on(simulation_time_iteration);
+
+        if !service_on {
+            energy_demand = 0.;
+        }
+
+        self.heat_battery.lock().demand_energy(
+            &*self.service_name,
+            ServiceType::WaterRegular,
+            energy_demand,
+            self.cold_feed.temperature(simulation_time_iteration, None),
+            Some(temp_hot_water),
+            service_on,
+            None,
+            Some(true),
+            simulation_time_iteration.index,
+        )
+    }
+
     /// Demand energy (in kWh) from the heat_battery
     pub fn demand_energy(
         &self,
         energy_demand: f64,
         temp_return: f64,
-        time_start: Option<f64>,
+        update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
+        let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
         self.heat_battery.lock().demand_energy(
             &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
             temp_return,
+            self.control_max.setpnt(&simulation_time_iteration),
+            service_on,
             None,
-            None,
+            Some(update_heat_source_state),
             simulation_time_iteration.index,
         )
     }
 
     pub fn energy_output_max(
         &self,
+        temp_flow: f64,
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -108,7 +180,7 @@ impl HeatBatteryServiceWaterRegular {
 
         self.heat_battery
             .lock()
-            .energy_output_max(control_max_setpnt, None)
+            .energy_output_max(Some(temp_flow), None)
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
@@ -155,7 +227,7 @@ impl HeatBatteryServiceSpace {
     pub fn demand_energy(
         &self,
         energy_demand: f64,
-        _temp_flow: f64,
+        temp_flow: f64,
         temp_return: f64,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
@@ -173,6 +245,8 @@ impl HeatBatteryServiceSpace {
             ServiceType::Space,
             energy_demand,
             temp_return,
+            Some(temp_flow),
+            self.is_on(simulation_time_iteration),
             None,
             Some(update_heat_source_state),
             simulation_time_iteration.index,
@@ -452,6 +526,8 @@ impl HeatBattery {
         _service_type: ServiceType,
         energy_output_required: f64,
         _temp_return_feed: f64,
+        _temp_output: Option<f64>,
+        service_on: bool,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
         timestep_idx: usize,
@@ -623,6 +699,10 @@ impl HeatBattery {
         self.service_results = Default::default();
 
         Ok(())
+    }
+
+    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64) -> f64 {
+        todo!("0.34 migration")
     }
 
     /// Calculate the maximum energy output of the heat battery, accounting
@@ -1137,7 +1217,7 @@ mod tests {
             );
 
         let result = heat_battery_service
-            .energy_output_max(temp_return, simulation_time_iteration)
+            .energy_output_max(Default::default(), temp_return, simulation_time_iteration)
             .unwrap();
 
         assert_relative_eq!(result, 5.637774816176471);
@@ -1185,7 +1265,7 @@ mod tests {
 
         let temp_return = 40.;
         let result = heat_battery_service
-            .energy_output_max(temp_return, simulation_time_iteration)
+            .energy_output_max(Default::default(), temp_return, simulation_time_iteration)
             .unwrap();
 
         assert_eq!(result, 0.);
@@ -1409,6 +1489,8 @@ mod tests {
                     5.,
                     40.,
                     None,
+                    false, // TODO 0.34 passed in to get it compiling, check if value is correct
+                    None,
                     None,
                     t_idx,
                 )
@@ -1502,6 +1584,8 @@ mod tests {
                 ServiceType::WaterRegular,
                 5.0,
                 40.,
+                None,
+                false, // TODO 0.34 passed in to get it compiling, check if value is correct
                 None,
                 None,
                 t_idx,
