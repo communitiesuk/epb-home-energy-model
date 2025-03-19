@@ -291,8 +291,10 @@ impl Emitters {
                 bail!("Both min_flow_rate and max_flow_rate are required if variable_flow is true")
             }
         } else if let Some(design_flow_rate) = design_flow_rate {
+            let design_flow_rate = design_flow_rate / SECONDS_PER_MINUTE as f64;  // l/min in input file, here converted to l/s
             (
                 VariableFlowData::No { design_flow_rate },
+                // For buffer tank calculations
                 design_flow_rate,
                 design_flow_rate,
             )
