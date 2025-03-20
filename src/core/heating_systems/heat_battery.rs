@@ -5,7 +5,9 @@ use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnec
 use crate::core::heating_systems::heat_pump::ServiceResult;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
-use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE};
+use crate::core::units::{
+    KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
+};
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::bail;
@@ -514,17 +516,6 @@ impl HeatBattery {
         HeatBatteryServiceSpace::new(heat_battery, service_name.to_string(), control)
     }
 
-    /// Converts power value supplied to the correct units
-    ///
-    /// Arguments:
-    /// * `power` - Power in watts
-    /// * `timestep` - length of the timestep
-    ///
-    /// returns  -- Energy in kWH
-    pub fn convert_to_energy(&self, power: f64, timestep: f64) -> f64 {
-        power * timestep * self.n_units as f64
-    }
-
     /// Calculates power required for unit
     ///
     /// Arguments
@@ -549,22 +540,150 @@ impl HeatBattery {
         (timestep - self.total_time_running_current_timestep) * (1. - time_start / timestep)
     }
 
-    fn calculate_water_kinematic_viscosity_m2_per_s(
-        &self,
-        inlet_temp_c: f64,
-        outlet_temp_c: f64,
+    fn calculate_heat_transfer_coeff(
+        a: f64,
+        b: f64,
+        flow_rate_l_per_min: f64,
+        reynold_number_at_1_l_per_min: f64,
     ) -> f64 {
-        todo!("0.34")
+        // Equations parameters A and B are based on test data
+        // Consider adding further documentation and evidence for this in future updates
+        a * (reynold_number_at_1_l_per_min * flow_rate_l_per_min).ln() + b
+    }
+
+    fn calculate_heat_transfer_kw_per_k(heat_transfer_coeff: f64, surface_area_m2: f64) -> f64 {
+        (heat_transfer_coeff * surface_area_m2) / WATTS_PER_KILOWATT as f64
+    }
+
+    /// Heat transfer from heat battery zone to water flowing through it.
+    ///     UAZ(n) = UA1Z(n) ------- (a) When the heat battery is discharging e.g. hot water heating mode.
+    ///     UAZ(n) = UA2Z(n) ------- (b) When the heat battery is charging via external heat source
+    ///     Q3Z(n) = mWCW(twoZ(n) – twiZ(n) )= UAZ(n)(TZ(n) – (twiZ(n) + twoZ(n) )/2) ----- (1)
+    ///     Q3Z(n) = Heat transfer rate between PCM and the water flowing through it, (W)
+    ///     mW = water mass flow rate, (kg/s)
+    ///     CW = Specific heat of water, (J/(kg.K)
+    ///     twoZ(n) = Water outlet temperature from zone, n, (oC)
+    ///     twiZ(n) = Water inlet temperature from zone, n, (oC)
+    ///     UAZ(n) = Overall heat transfer coefficient of heat exchanger in zone, n, (W/k)
+    ///     TZ(n) = Heat battery zone temperature, (oC)
+    /// Outlet temperature twoZ is calculated by resolving the equation (1)
+    fn calculate_outlet_temp_c(
+        heat_transfer_kw_per_k: f64,
+        zone_temp_c: f64,
+        inlet_temp_c: f64,
+        flow_rate_kg_per_s: f64,
+    ) -> f64 {
+        (2. * heat_transfer_kw_per_k * zone_temp_c - heat_transfer_kw_per_k * inlet_temp_c
+            + 2. * flow_rate_kg_per_s
+                * WATER.specific_heat_capacity_kwh()
+                * KILOJOULES_PER_KILOWATT_HOUR as f64
+                * inlet_temp_c)
+            / (2.
+                * flow_rate_kg_per_s
+                * WATER.specific_heat_capacity_kwh()
+                * KILOJOULES_PER_KILOWATT_HOUR as f64
+                + heat_transfer_kw_per_k)
+    }
+
+    /// Calculate the kinematic viscosity of water (m²/s) based on average circuit temperature.
+    /// This method uses a quadratic approximation to estimate the kinematic viscosity
+    /// of water as a function of the average temperature of the secondary circuit.
+    /// The equation used is:
+    ///     ν = a * T_avg² + b * T_avg + c
+    /// where:
+    ///     - ν is the kinematic viscosity in m²/s
+    ///     - T_avg is the average of the inlet and outlet temperatures in °C
+    ///     - a, b, c are experimentally determined coefficients:
+    ///         a = 0.000000000145238
+    ///         b = -0.0000000248238
+    ///         c = 0.000001432
+    /// These coefficients are likely derived from experimental test data or
+    /// thermodynamic property tables for water within a specific temperature range
+    /// relevant to secondary circuit operation.
+    /// Parameters:
+    ///     inlet_temp_C (float): The inlet temperature of the circuit in °C.
+    ///     outlet_temp_C (float): The outlet temperature of the circuit in °C.
+    /// Returns:
+    ///     float: The kinematic viscosity of water in m²/s.
+    /// Notes:
+    ///     - This approximation is valid for the expected operating range of secondary
+    ///       circuits (e.g., HVAC or hydronic systems) and may lose accuracy outside
+    ///       typical temperature ranges (e.g., 0–100 °C).
+    ///     - The coefficients are fixed constants based on empirical data and are not
+    ///       variables in this implementation.
+    fn calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c: f64, outlet_temp_c: f64) -> f64 {
+        let average_temp = (inlet_temp_c + outlet_temp_c) / 2.;
+
+        0.000000000145238 * average_temp.powf(2.) - 0.0000000248238 * average_temp + 0.000001432
     }
 
     fn calculate_reynold_number_at_1_l_per_min(
-        &self,
         water_kinematic_viscosity_m2_per_s: f64,
         velocity_in_hex_tube: f64,
         diameter_m: f64,
     ) -> f64 {
-        todo!("0.34")
+        (velocity_in_hex_tube * diameter_m) / water_kinematic_viscosity_m2_per_s
     }
+
+    fn get_zone_properties(
+        &self,
+        index: usize,
+        mode: OperationMode,
+        zone_temp_c_dist: Vec<f64>,
+        inlet_temp_c: f64,
+        inlet_temp_c_zone: f64,
+        q_max_kj: f64,
+        reynold_number_at_1_l_per_min: f64,
+        flow_rate_kg_per_s: f64,
+        time_step_s: f64,
+    ) -> (f64, usize, f64, f64) {
+        match mode {
+            OperationMode::OnlyCharging => {
+                let zone_index = zone_temp_c_dist.iter().len() - index - 1;
+                let zone_temp_c_start = zone_temp_c_dist[zone_index];
+                (0., zone_index, zone_temp_c_start, 0.)
+            }
+            OperationMode::Losses => {
+                let zone_temp_c_start = zone_temp_c_dist[index];
+                let energy_transf = if zone_temp_c_start > inlet_temp_c {
+                    q_max_kj / zone_temp_c_dist.len() as f64
+                } else {
+                    0.
+                };
+                (energy_transf, index, zone_temp_c_start, 0.)
+            }
+            OperationMode::Normal => {
+                // NORMAL mode include battery primarily hydraulic charging or discharging with or without simultaneous electric charging
+                let zone_temp_c_start = zone_temp_c_dist[index];
+                let heat_transfer_coeff = Self::calculate_heat_transfer_coeff(
+                    self.a,
+                    self.b,
+                    self.flow_rate_l_per_min,
+                    reynold_number_at_1_l_per_min,
+                );
+                let heat_transfer_kw_per_k = Self::calculate_heat_transfer_kw_per_k(
+                    heat_transfer_coeff,
+                    self.heat_exchanger_surface_area_m2,
+                );
+
+                // Calculate outlet temperature and heat exchange for this zone
+                let outlet_temp_c = Self::calculate_outlet_temp_c(
+                    heat_transfer_kw_per_k,
+                    zone_temp_c_start,
+                    inlet_temp_c_zone,
+                    flow_rate_kg_per_s,
+                );
+                let energy_transf = WATER.specific_heat_capacity_kwh()
+                    * KILOJOULES_PER_KILOWATT_HOUR as f64
+                    * flow_rate_kg_per_s
+                    * (outlet_temp_c - inlet_temp_c_zone)
+                    * time_step_s;
+
+                (energy_transf, index, zone_temp_c_start, outlet_temp_c)
+            }
+        }
+    }
+
     fn first_call(&self) {
         todo!("0.34")
     }
@@ -621,11 +740,11 @@ impl HeatBattery {
         let energy_demand = energy_output_required / self.n_units as f64;
 
         // Initial Reynold number
-        let water_kinematic_viscosity_m2_per_s = self.calculate_water_kinematic_viscosity_m2_per_s(
+        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
             INITIAL_INLET_TEMP,
             ESTIMATED_OUTLET_TEMP,
         );
-        let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
             self.velocity_in_hex_tube,
             self.capillary_diameter_m,
@@ -695,8 +814,8 @@ impl HeatBattery {
 
             // RN for next time step
             let water_kinematic_viscosity_m2_per_s =
-                self.calculate_water_kinematic_viscosity_m2_per_s(temp_return_feed, outlet_temp_c);
-            let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+                Self::calculate_water_kinematic_viscosity_m2_per_s(temp_return_feed, outlet_temp_c);
+            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
                 water_kinematic_viscosity_m2_per_s,
                 self.velocity_in_hex_tube,
                 self.capillary_diameter_m,
@@ -945,11 +1064,11 @@ impl HeatBattery {
         let pwr_in = self.electric_charge();
 
         // Initial Reynold number
-        let water_kinematic_viscosity_m2_per_s = self.calculate_water_kinematic_viscosity_m2_per_s(
+        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
             INITIAL_INLET_TEMP,
             ESTIMATED_OUTLET_TEMP,
         );
-        let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
             self.velocity_in_hex_tube,
             self.capillary_diameter_m,
@@ -977,8 +1096,8 @@ impl HeatBattery {
 
             // RN for next time step
             let water_kinematic_viscosity_m2_per_s =
-                self.calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
-            let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
+                Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
+            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
                 water_kinematic_viscosity_m2_per_s,
                 self.velocity_in_hex_tube,
                 self.capillary_diameter_m,
@@ -1674,19 +1793,6 @@ mod tests {
         let create_connection_result =
             HeatBattery::create_service_connection(heat_battery, "new service");
         assert!(create_connection_result.is_err()) // second attempt to create a service connection with same name should error
-    }
-
-    #[rstest]
-    fn test_convert_to_energy(
-        simulation_time_iterator: Arc<SimulationTimeIterator>,
-        battery_control_on: Control,
-    ) {
-        let power = 10.;
-        let timestep = 0.25;
-
-        let heat_battery = create_heat_battery(simulation_time_iterator, battery_control_on);
-        let result = heat_battery.lock().convert_to_energy(power, timestep);
-        assert_relative_eq!(result, 2.5);
     }
 
     #[rstest]
