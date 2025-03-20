@@ -684,6 +684,244 @@ impl HeatBattery {
         }
     }
 
+    fn calculate_zone_energy_required(&self, zone_temp_c_start: f64, target_temp: f64) -> f64 {
+        if zone_temp_c_start >= self.phase_transition_temperature_upper {
+            self.heat_storage_kj_per_k_above * (zone_temp_c_start - target_temp)
+        } else if zone_temp_c_start >= self.phase_transition_temperature_lower {
+            if target_temp > self.phase_transition_temperature_upper {
+                self.heat_storage_kj_per_k_above
+                    * (self.phase_transition_temperature_upper - target_temp)
+                    + self.heat_storage_kj_per_k_during
+                        * (zone_temp_c_start - self.phase_transition_temperature_upper)
+            } else {
+                self.heat_storage_kj_per_k_during * (zone_temp_c_start - target_temp)
+            }
+        } else {
+            if target_temp > self.phase_transition_temperature_upper {
+                self.heat_storage_kj_per_k_above
+                    * (self.phase_transition_temperature_upper - target_temp)
+                    + self.heat_storage_kj_per_k_during
+                        * (self.phase_transition_temperature_lower
+                            - self.phase_transition_temperature_upper)
+                    + self.heat_storage_kj_per_k_below
+                        * (zone_temp_c_start - self.phase_transition_temperature_lower)
+            } else if target_temp > self.phase_transition_temperature_lower {
+                self.heat_storage_kj_per_k_during
+                    * (self.phase_transition_temperature_lower - target_temp)
+                    + self.heat_storage_kj_per_k_below
+                        * (zone_temp_c_start - self.phase_transition_temperature_lower)
+            } else {
+                self.heat_storage_kj_per_k_below * (zone_temp_c_start - target_temp)
+            }
+        }
+    }
+
+    fn process_zone_simultaneous_charging(
+        &self,
+        zone_temp_c_start: f64,
+        target_temp: f64,
+        q_max_kj: f64,
+        energy_transf: f64,
+        energy_charged: f64,
+    ) -> (f64, f64, f64) {
+        let mut q_max_kj = q_max_kj;
+        let mut energy_charged = energy_charged;
+        let mut energy_transf = energy_transf;
+
+        if zone_temp_c_start < target_temp {
+            // zone initially below full charge
+            let mut q_required =
+                self.calculate_zone_energy_required(zone_temp_c_start, target_temp);
+
+            if energy_transf >= 0. {
+                // inlet water withdraws energy from battery
+                if -q_max_kj >= energy_transf {
+                    // Charging is enough to recover energy withdrawn and possibly more
+                    q_max_kj += energy_transf;
+                    energy_charged += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_transf = 0.;
+
+                    if q_max_kj > q_required {
+                        // Charging is not enough to push zone temperature to target
+                        q_required = q_max_kj;
+                        energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                        q_max_kj = 0.;
+                    } else {
+                        // Charging is enough to push zone temperature to target temperature
+                        q_max_kj -= q_required;
+                        energy_charged += -q_required / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    }
+                    // Update zone temperature with energy from charging
+                    energy_transf += q_required;
+                } else {
+                    // Charging can only recover partially the energy withdrawn
+                    energy_transf += q_max_kj;
+                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    q_max_kj = 0.;
+                }
+            } else {
+                // inlet water adds energy to battery
+                if q_max_kj + energy_transf > q_required {
+                    // inlet water + charging is not enough to push zone temperature to target
+                    q_required = q_max_kj + energy_transf;
+                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    q_max_kj = 0.;
+
+                    energy_transf = q_required;
+                } else {
+                    // inlet temperature + charging can take zone temperature to target temp
+                    if !(energy_transf < q_required) {
+                        //
+                        if q_max_kj > q_required - energy_transf {
+                            // Charging cannot take zone temperature to target after zone warmed by inlet water...
+                            q_required = q_max_kj + energy_transf;
+                            energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                            q_max_kj = 0.;
+
+                            energy_transf += q_required;
+                        } else {
+                            // There is plenty of charging after taking zone temperature to target
+                            q_max_kj -= q_required - energy_transf;
+                            energy_charged +=
+                                -(q_required - energy_transf) / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                            energy_transf = q_required;
+                        }
+                    }
+                }
+            }
+        } else {
+            // zone initially fully charged
+            if energy_transf >= 0. {
+                // inlet water withdraws energy from battery
+                if -q_max_kj > energy_transf {
+                    // Charging is enough to recover energy withdrawn
+                    q_max_kj += energy_transf;
+                    energy_charged += energy_transf / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    energy_transf = 0.;
+                } else {
+                    // Charging can only recover partially the energy withdrawn
+                    energy_transf += q_max_kj;
+                    energy_charged += -q_max_kj / KILOJOULES_PER_KILOWATT_HOUR as f64;
+                    q_max_kj = 0.;
+                }
+            }
+        }
+
+        (q_max_kj, energy_charged, energy_transf)
+    }
+
+    fn calculate_new_zone_temperature(&self) {
+        todo!("0.34")
+    }
+
+    fn process_heat_battery_zones(
+        &self,
+        inlet_temp_c: f64,
+        zone_temp_c_dist: &Vec<f64>,
+        flow_rate_kg_per_s: f64,
+        time_step_s: f64,
+        reynold_number: f64,
+        pwr_in: Option<f64>,
+    ) -> (f64, f64, Vec<f64>, f64) {
+        todo!()
+    }
+
+    fn charge_battery_hydraulic(&self) {
+        todo!("0.34")
+    }
+
+    fn charge_battery(&self) {
+        todo!("0.34")
+    }
+
+    fn battery_heat_loss(&self) {
+        todo!("0.34")
+    }
+
+    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64) -> f64 {
+        todo!("0.34 migration")
+    }
+
+    /// Calculate the maximum energy output of the heat battery, accounting
+    /// for time spent on higher-priority services.
+    pub fn energy_output_max(&mut self, temp_output: f64, time_start: Option<f64>) -> f64 {
+        // Return the energy the battery can provide assuming the HB temperature inlet
+        // is constant during HEM time step equal to the required emitter temperature (temp_output)
+        // Maximum energy for a given HB zones temperature distribution and inlet temperature.
+        // The calculation methodology is the same as described in the demand_energy function.
+        let time_start = time_start.unwrap_or(0.);
+        let timestep = self.simulation_time.step_in_hours();
+        let total_time_s = timestep * SECONDS_PER_HOUR as f64;
+
+        // time_step_s for HB calculation is a sensitive inputs for the process as, the longer it is, the
+        // lower the accuracy due to maintaining Reynolds number working in intervals where the properties
+        // of the fluid have changed sufficiently to degrade the accuracy of the calculation.
+        // This is critical for the demand_energy function but less so for the energy_output_max as this
+        // only provides an estimation of the heat capacity of the battery and can be slightly overestitmated
+        // with a longer time step that reduces the calculation time, which is a critical factor for HEM.
+        // However, from current testing, time_step_s longer than 100 might cause instabilities in the calculation
+        // leading to failure to complete. Thus, we are capping the max timestep to 100 seconds.
+        let time_step_s = (HB_TIME_STEP * 5.).min(100.);
+
+        let pwr_in = self.electric_charge();
+
+        // Initial Reynold number
+        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
+            INITIAL_INLET_TEMP,
+            ESTIMATED_OUTLET_TEMP,
+        );
+        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+            water_kinematic_viscosity_m2_per_s,
+            self.velocity_in_hex_tube,
+            self.capillary_diameter_m,
+        );
+
+        let flow_rate_kg_per_s =
+            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
+
+        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
+        let mut energy_delivered_hb = 0.;
+        let inlet_temp_c = temp_output;
+        let n_time_steps = (total_time_s / time_step_s) as usize;
+
+        for _ in 0..n_time_steps {
+            // Processing HB zones
+            let (outlet_temp_c, zone_temp_c_dist, energy_transf_delivered, _) = self
+                .process_heat_battery_zones(
+                    inlet_temp_c,
+                    &zone_temp_c_dist,
+                    flow_rate_kg_per_s,
+                    time_step_s,
+                    reynold_number_at_1_l_per_min,
+                    None,
+                );
+
+            // RN for next time step
+            let water_kinematic_viscosity_m2_per_s =
+                Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
+            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+                water_kinematic_viscosity_m2_per_s,
+                self.velocity_in_hex_tube,
+                self.capillary_diameter_m,
+            );
+
+            let energy_delivered_ts: f64 = energy_transf_delivered.iter().sum();
+
+            if outlet_temp_c > temp_output {
+                // In this new method, adjust total energy to make more real with the 6 ts we have configured
+                energy_delivered_hb += energy_delivered_ts
+            } else {
+                break;
+            }
+        }
+
+        if energy_delivered_hb < 0. {
+            energy_delivered_hb = 0.
+        }
+
+        energy_delivered_hb * self.n_units as f64
+    }
+
     fn first_call(&self) {
         todo!("0.34")
     }
@@ -1024,100 +1262,8 @@ impl HeatBattery {
         Ok(())
     }
 
-    fn process_heat_battery_zones(
-        &self,
-        inlet_temp_c: f64,
-        zone_temp_c_dist: &Vec<f64>,
-        flow_rate_kg_per_s: f64,
-        time_step_s: f64,
-        reynold_number: f64,
-        pwr_in: Option<f64>,
-    ) -> (f64, f64, Vec<f64>, f64) {
-        todo!()
-    }
-
-    fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64) -> f64 {
-        todo!("0.34 migration")
-    }
-
-    /// Calculate the maximum energy output of the heat battery, accounting
-    /// for time spent on higher-priority services.
-    pub fn energy_output_max(&mut self, temp_output: f64, time_start: Option<f64>) -> f64 {
-        // Return the energy the battery can provide assuming the HB temperature inlet
-        // is constant during HEM time step equal to the required emitter temperature (temp_output)
-        // Maximum energy for a given HB zones temperature distribution and inlet temperature.
-        // The calculation methodology is the same as described in the demand_energy function.
-        let time_start = time_start.unwrap_or(0.);
-        let timestep = self.simulation_time.step_in_hours();
-        let total_time_s = timestep * SECONDS_PER_HOUR as f64;
-
-        // time_step_s for HB calculation is a sensitive inputs for the process as, the longer it is, the
-        // lower the accuracy due to maintaining Reynolds number working in intervals where the properties
-        // of the fluid have changed sufficiently to degrade the accuracy of the calculation.
-        // This is critical for the demand_energy function but less so for the energy_output_max as this
-        // only provides an estimation of the heat capacity of the battery and can be slightly overestitmated
-        // with a longer time step that reduces the calculation time, which is a critical factor for HEM.
-        // However, from current testing, time_step_s longer than 100 might cause instabilities in the calculation
-        // leading to failure to complete. Thus, we are capping the max timestep to 100 seconds.
-        let time_step_s = (HB_TIME_STEP * 5.).min(100.);
-
-        let pwr_in = self.electric_charge();
-
-        // Initial Reynold number
-        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
-            INITIAL_INLET_TEMP,
-            ESTIMATED_OUTLET_TEMP,
-        );
-        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
-            water_kinematic_viscosity_m2_per_s,
-            self.velocity_in_hex_tube,
-            self.capillary_diameter_m,
-        );
-
-        let flow_rate_kg_per_s =
-            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
-
-        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
-        let mut energy_delivered_hb = 0.;
-        let inlet_temp_c = temp_output;
-        let n_time_steps = (total_time_s / time_step_s) as usize;
-
-        for _ in 0..n_time_steps {
-            // Processing HB zones
-            let (outlet_temp_c, zone_temp_c_dist, energy_transf_delivered, _) = self
-                .process_heat_battery_zones(
-                    inlet_temp_c,
-                    &zone_temp_c_dist,
-                    flow_rate_kg_per_s,
-                    time_step_s,
-                    reynold_number_at_1_l_per_min,
-                    None,
-                );
-
-            // RN for next time step
-            let water_kinematic_viscosity_m2_per_s =
-                Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
-            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
-                water_kinematic_viscosity_m2_per_s,
-                self.velocity_in_hex_tube,
-                self.capillary_diameter_m,
-            );
-
-            let energy_delivered_ts: f64 = energy_transf_delivered.iter().sum();
-
-            if outlet_temp_c > temp_output {
-                // In this new method, adjust total energy to make more real with the 6 ts we have configured
-                energy_delivered_hb += energy_delivered_ts
-            } else {
-                break;
-            }
-        }
-
-        if energy_delivered_hb < 0. {
-            energy_delivered_hb = 0.
-        }
-
-        energy_delivered_hb * self.n_units as f64
+    fn output_detailed_results() {
+        todo!("0.34")
     }
 
     fn target_charge(&self) -> anyhow::Result<f64> {
