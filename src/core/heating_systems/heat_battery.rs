@@ -836,7 +836,8 @@ impl HeatBattery {
         time_step_s: f64,
         reynold_number: f64,
         pwr_in: Option<f64>,
-    ) -> (f64, f64, Vec<f64>, f64) {
+        mode: Option<OperationMode>,
+    ) -> (f64, Vec<f64>, Vec<f64>, f64) {
         todo!()
     }
 
@@ -848,8 +849,30 @@ impl HeatBattery {
         todo!("0.34")
     }
 
-    fn battery_heat_loss(&self) {
-        todo!("0.34")
+    fn battery_heat_loss(&mut self) -> (f64, Vec<f64>) {
+        // Battery losses
+        let timestep = self.simulation_time.step_in_hours();
+        let time_step_s = timestep * SECONDS_PER_HOUR as f64;
+
+        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
+
+        // Processing HB zones
+        let (_, zone_temp_c_dist, energy_loss, _) = self.process_heat_battery_zones(
+            22.,
+            &zone_temp_c_dist,
+            0.,
+            time_step_s,
+            0.,
+            Some(-self.max_rated_losses),
+            Some(OperationMode::Losses),
+        );
+
+        self.zone_temp_c_dist_initial = zone_temp_c_dist.clone();
+
+        (
+            energy_loss.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64,
+            zone_temp_c_dist,
+        )
     }
 
     fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64) -> f64 {
@@ -907,6 +930,7 @@ impl HeatBattery {
                     flow_rate_kg_per_s,
                     time_step_s,
                     reynold_number_at_1_l_per_min,
+                    None,
                     None,
                 );
 
@@ -1055,6 +1079,7 @@ impl HeatBattery {
                 time_step_s,
                 reynold_number_at_1_l_per_min,
                 Some(pwr_in),
+                None,
             );
 
             if update_heat_source_state {
