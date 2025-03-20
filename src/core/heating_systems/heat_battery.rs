@@ -338,7 +338,6 @@ pub struct HeatBattery {
     heat_exchanger_surface_area_m2: f64,
     flow_rate_l_per_min: f64,
     detailed_results: Option<Vec<Arc<RwLock<Vec<ServiceResult>>>>>,
-    flag_1_warning: [bool; 2],
 }
 
 impl HeatBattery {
@@ -456,7 +455,6 @@ impl HeatBattery {
             heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
             detailed_results,
-            flag_1_warning: [true, true],
         }
     }
 
