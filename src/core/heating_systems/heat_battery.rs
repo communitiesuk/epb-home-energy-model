@@ -998,7 +998,6 @@ impl HeatBattery {
             0.
         };
 
-        // TODO 0.34 do we need a new type for pipe_energy?
         if temp_output.is_none()
             || temp_output.unwrap() <= self.pipe_energy[service_name].temperature
         {
