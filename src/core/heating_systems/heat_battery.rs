@@ -305,6 +305,12 @@ struct HeatBatteryResult {
 }
 
 #[derive(Clone, Debug)]
+struct PipeEnergy {
+    energy: f64,
+    temperature: f64,
+}
+
+#[derive(Clone, Debug)]
 pub struct HeatBattery {
     simulation_time: Arc<SimulationTimeIterator>,
     energy_supply: Arc<RwLock<EnergySupply>>,
@@ -321,7 +327,7 @@ pub struct HeatBattery {
     total_time_running_current_timestep: f64,
     flag_first_call: bool,
     charge_level: f64,
-    pipe_energy: IndexMap<String, IndexMap<String, f64>>,
+    pipe_energy: IndexMap<String, PipeEnergy>,
     energy_charged: f64,
     simultaneous_charging_and_discharging: bool,
     max_temp_of_charge: f64,
@@ -475,6 +481,16 @@ impl HeatBattery {
         heat_battery.lock().energy_supply_connections.insert(
             service_name.to_string(),
             EnergySupply::connection(energy_supply, service_name).unwrap(),
+        );
+
+        // Set up PipeEnergy for this service to store extra
+        // energy pushed into the pipe to run the battery and temperature
+        heat_battery.lock().pipe_energy.insert(
+            service_name.to_string(),
+            PipeEnergy {
+                energy: 0.,
+                temperature: 0.,
+            },
         );
 
         Ok(())
@@ -920,8 +936,8 @@ impl HeatBattery {
         energy_delivered_hb * self.n_units as f64
     }
 
-    fn first_call(&self) {
-        todo!("0.34")
+    fn first_call(&mut self) {
+        self.flag_first_call = false;
     }
 
     pub fn demand_energy(
@@ -960,14 +976,14 @@ impl HeatBattery {
 
         // TODO 0.34 do we need a new type for pipe_energy?
         if temp_output.is_none()
-            || temp_output.unwrap() <= self.pipe_energy[service_name]["temperature"]
+            || temp_output.unwrap() <= self.pipe_energy[service_name].temperature
         {
-            if energy_output_required > self.pipe_energy[service_name]["energy"] {
-                energy_output_required -= self.pipe_energy[service_name]["energy"];
-                self.pipe_energy[service_name]["energy"] = 0.;
-                self.pipe_energy[service_name]["temperature"] = 0.;
+            if energy_output_required > self.pipe_energy[service_name].energy {
+                energy_output_required -= self.pipe_energy[service_name].energy;
+                self.pipe_energy[service_name].energy = 0.;
+                self.pipe_energy[service_name].temperature = 0.;
             } else {
-                self.pipe_energy[service_name]["energy"] -= energy_output_required;
+                self.pipe_energy[service_name].energy -= energy_output_required;
                 energy_output_required = 0.;
             }
         }
@@ -1004,8 +1020,8 @@ impl HeatBattery {
                     temp_output,
                     temp_inlet: temp_return_feed,
                     time_running: 0.,
-                    energy_left_in_pipe: self.pipe_energy[service_name]["energy"],
-                    temperature_left_in_pipe: self.pipe_energy[service_name]["temperature"],
+                    energy_left_in_pipe: self.pipe_energy[service_name].energy,
+                    temperature_left_in_pipe: self.pipe_energy[service_name].temperature,
                     energy_delivered_hb: 0.,
                     energy_delivered_backup: 0.,
                     energy_delivered_total: 0.,
@@ -1070,14 +1086,14 @@ impl HeatBattery {
                     }
                 } else {
                     if energy_delivered_ts != 0. {
-                        let current_energy = self.pipe_energy[service_name]["energy"];
-                        let current_temperature = self.pipe_energy[service_name]["temperature"];
+                        let current_energy = self.pipe_energy[service_name].energy;
+                        let current_temperature = self.pipe_energy[service_name].temperature;
                         let new_temperature = ((current_temperature * current_energy)
                             + (outlet_temp_c * energy_delivered_ts))
                             / (current_energy + energy_delivered_ts);
 
-                        self.pipe_energy[service_name]["energy"] += energy_delivered_ts;
-                        self.pipe_energy[service_name]["temperature"] = new_temperature;
+                        self.pipe_energy[service_name].energy += energy_delivered_ts;
+                        self.pipe_energy[service_name].temperature = new_temperature;
                     }
                 }
 
@@ -1158,8 +1174,8 @@ impl HeatBattery {
                 temp_output,
                 temp_inlet: temp_return_feed,
                 time_running: time_running_current_service,
-                energy_left_in_pipe: self.pipe_energy[service_name]["energy"],
-                temperature_left_in_pipe: self.pipe_energy[service_name]["temperature"],
+                energy_left_in_pipe: self.pipe_energy[service_name].energy,
+                temperature_left_in_pipe: self.pipe_energy[service_name].temperature,
                 energy_delivered_hb: energy_delivered_hb * self.n_units as f64,
                 energy_delivered_backup: 0.,
                 energy_delivered_total: energy_delivered_hb * self.n_units as f64 + 0.,
