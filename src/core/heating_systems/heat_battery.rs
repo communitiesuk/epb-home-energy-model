@@ -2,6 +2,7 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
+use crate::core::heating_systems::heat_pump::ServiceResult;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE};
@@ -25,8 +26,6 @@ pub enum OperationMode {
     OnlyCharging,
     Losses,
 }
-
-const N_ZONES: usize = 8;
 
 /// An object to represent a water heating service provided by a regular heat battery.
 ///
@@ -274,7 +273,12 @@ impl HeatBatteryServiceSpace {
     }
 }
 
-const HEAT_BATTERY_TIME_UNIT: u32 = 3_600;
+const HEAT_BATTERY_TIME_UNIT: u32 = SECONDS_PER_HOUR;
+const N_ZONES: usize = 8;
+const HB_TIME_STEP: f64 = 20.;
+const MINIMUM_TIME_REQUIRED_TO_RUN: f64 = 120.;
+const INITIAL_INLET_TEMP: f64 = 10.;
+const ESTIMATED_OUTLET_TEMP: f64 = 53.;
 
 // nothing seems to read this - check upstream whether service_results field is necessary
 #[derive(Clone, Debug)]
@@ -315,23 +319,24 @@ pub struct HeatBattery {
     total_time_running_current_timestep: f64,
     flag_first_call: bool,
     charge_level: f64,
-    q_in_ts: Option<f64>,
-    q_out_ts: Option<f64>,
-    q_loss_ts: Option<f64>,
-    _labs_tests_rated_output: Vec<(f64, f64)>,
-    labs_tests_rated_output_enhanced: Vec<(f64, f64)>,
-    labs_tests_losses: Vec<(f64, f64)>,
-    hb_time_step: f64,
-    initial_inlet_temp: f64,
-    estimated_outlet_temp: f64,
-    velocity_in_hex_tube: f64,
-    capillary_diameter_m: f64,
-    flow_rate_l_per_min: f64,
-    zone_temp_c_dist_initial: Vec<f64>,
-    simultaneous_charging_and_discharging: bool,
     pipe_energy: IndexMap<String, IndexMap<String, f64>>,
     energy_charged: f64,
-    minimum_time_required_to_run: f64,
+    simultaneous_charging_and_discharging: bool,
+    max_temp_of_charge: f64,
+    zone_temp_c_dist_initial: Vec<f64>,
+    heat_storage_kj_per_k_above: f64,
+    heat_storage_kj_per_k_below: f64,
+    heat_storage_kj_per_k_during: f64,
+    phase_transition_temperature_upper: f64,
+    phase_transition_temperature_lower: f64,
+    velocity_in_hex_tube: f64,
+    capillary_diameter_m: f64,
+    a: f64,
+    b: f64,
+    heat_exchanger_surface_area_m2: f64,
+    flow_rate_l_per_min: f64,
+    detailed_results: Option<Vec<Arc<RwLock<Vec<ServiceResult>>>>>,
+    flag_1_warning: [bool; 2],
 }
 
 impl HeatBattery {
@@ -341,18 +346,29 @@ impl HeatBattery {
         energy_supply: Arc<RwLock<EnergySupply>>,
         energy_supply_connection: EnergySupplyConnection,
         simulation_time: Arc<SimulationTimeIterator>,
+        output_detailed_results: Option<bool>,
     ) -> Self {
+        let output_detailed_results = output_detailed_results.unwrap_or(false);
+
         let (
             pwr_in,
             max_rated_losses,
             power_circ_pump,
             power_standby,
             n_units,
+            simultaneous_charging_and_discharging,
+            max_temp_of_charge,
+            heat_storage_kj_per_k_above,
+            heat_storage_kj_per_k_below,
+            heat_storage_kj_per_k_during,
+            phase_transition_temperature_upper,
+            phase_transition_temperature_lower,
             velocity_in_hex_tube,
             capillary_diameter_m,
+            a,
+            b,
+            heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
-            max_temp_of_charge,
-            simultaneous_charging_and_discharging,
             ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
             rated_charge_power: pwr_in,
@@ -360,11 +376,19 @@ impl HeatBattery {
             electricity_circ_pump: power_circ_pump,
             electricity_standby: power_standby,
             number_of_units: n_units,
+            simultaneous_charging_and_discharging,
+            max_temperature,
+            heat_storage_kj_per_k_above,
+            heat_storage_kj_per_k_below,
+            heat_storage_kj_per_k_during,
+            phase_transition_temperature_upper,
+            phase_transition_temperature_lower,
             velocity_in_hex_tube,
             capillary_diameter_m,
+            a,
+            b,
+            heat_exchanger_surface_area_m2,
             flow_rate_l_per_min,
-            max_temperature,
-            simultaneous_charging_and_discharging,
             ..
         } = heat_battery_details
         {
@@ -374,14 +398,28 @@ impl HeatBattery {
                 *power_circ_pump,
                 *power_standby,
                 *n_units,
+                *simultaneous_charging_and_discharging,
+                *max_temperature,
+                *heat_storage_kj_per_k_above,
+                *heat_storage_kj_per_k_below,
+                *heat_storage_kj_per_k_during,
+                *phase_transition_temperature_upper,
+                *phase_transition_temperature_lower,
                 *velocity_in_hex_tube,
                 *capillary_diameter_m,
+                *a,
+                *b,
+                *heat_exchanger_surface_area_m2,
                 *flow_rate_l_per_min,
-                *max_temperature,
-                *simultaneous_charging_and_discharging,
             )
         } else {
             unreachable!()
+        };
+
+        let detailed_results = if output_detailed_results {
+            Some(vec![])
+        } else {
+            None
         };
 
         Self {
@@ -399,23 +437,24 @@ impl HeatBattery {
             total_time_running_current_timestep: Default::default(),
             flag_first_call: true,
             charge_level: Default::default(),
-            q_in_ts: Default::default(),
-            q_out_ts: Default::default(),
-            q_loss_ts: Default::default(),
-            _labs_tests_rated_output: Default::default(),
-            labs_tests_rated_output_enhanced: Default::default(),
-            labs_tests_losses: Default::default(),
-            hb_time_step: 20.,
-            initial_inlet_temp: 10.,
-            estimated_outlet_temp: 53.,
-            velocity_in_hex_tube,
-            capillary_diameter_m,
-            flow_rate_l_per_min,
-            zone_temp_c_dist_initial: vec![max_temp_of_charge; N_ZONES],
-            simultaneous_charging_and_discharging,
             pipe_energy: Default::default(),
             energy_charged: Default::default(),
-            minimum_time_required_to_run: 120.,
+            simultaneous_charging_and_discharging,
+            max_temp_of_charge,
+            zone_temp_c_dist_initial: vec![max_temp_of_charge; N_ZONES],
+            heat_storage_kj_per_k_above,
+            heat_storage_kj_per_k_below,
+            heat_storage_kj_per_k_during,
+            phase_transition_temperature_upper,
+            phase_transition_temperature_lower,
+            velocity_in_hex_tube,
+            capillary_diameter_m,
+            a,
+            b,
+            heat_exchanger_surface_area_m2,
+            flow_rate_l_per_min,
+            detailed_results,
+            flag_1_warning: [true, true],
         }
     }
 
@@ -583,8 +622,8 @@ impl HeatBattery {
 
         // Initial Reynold number
         let water_kinematic_viscosity_m2_per_s = self.calculate_water_kinematic_viscosity_m2_per_s(
-            self.initial_inlet_temp,
-            self.estimated_outlet_temp,
+            INITIAL_INLET_TEMP,
+            ESTIMATED_OUTLET_TEMP,
         );
         let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
@@ -687,26 +726,25 @@ impl HeatBattery {
                     }
                 }
 
-                if time_step_s > self.hb_time_step {
-                    time_step_s = self.hb_time_step;
+                if time_step_s > HB_TIME_STEP {
+                    time_step_s = HB_TIME_STEP;
                 }
 
                 if (energy_demand - energy_delivered_hb) < 0.0001 {
                     // Energy supplied, run to complete water loop
-                    if time_running_current_service > self.minimum_time_required_to_run {
+                    if time_running_current_service > MINIMUM_TIME_REQUIRED_TO_RUN {
                         break;
                     }
 
                     if !flag_minimum_run {
-                        time_extra =
-                            self.minimum_time_required_to_run - time_running_current_service;
+                        time_extra = MINIMUM_TIME_REQUIRED_TO_RUN - time_running_current_service;
                         flag_minimum_run = true;
                     } else {
                         time_extra -= time_step_s;
                     }
 
-                    if time_extra > self.hb_time_step {
-                        time_step_s = self.hb_time_step
+                    if time_extra > HB_TIME_STEP {
+                        time_step_s = HB_TIME_STEP
                     } else {
                         time_step_s = time_extra
                     }
@@ -723,20 +761,19 @@ impl HeatBattery {
                 total_energy_low_temp += energy_delivered_ts;
 
                 if energy_delivered_hb > 0. {
-                    if time_running_current_service > self.minimum_time_required_to_run {
+                    if time_running_current_service > MINIMUM_TIME_REQUIRED_TO_RUN {
                         break;
                     }
 
                     if !flag_minimum_run {
-                        time_extra =
-                            self.minimum_time_required_to_run - time_running_current_service;
+                        time_extra = MINIMUM_TIME_REQUIRED_TO_RUN - time_running_current_service;
                         flag_minimum_run = true;
                     } else {
                         time_extra -= time_step_s;
                     }
 
-                    if time_extra > self.hb_time_step {
-                        time_step_s = self.hb_time_step
+                    if time_extra > HB_TIME_STEP {
+                        time_step_s = HB_TIME_STEP
                     } else {
                         time_step_s = time_extra
                     }
@@ -816,11 +853,6 @@ impl HeatBattery {
         // Calculating heat battery losses in timestep to correct charge level
         // Currently assumed all losses are to the exterior independently of the
         // heat battery location
-        let q_loss_ts = self.q_loss_ts.unwrap();
-        let q_in_ts = self.q_in_ts.unwrap();
-
-        let e_loss = q_loss_ts * time_remaining_current_timestep;
-        let e_in = q_in_ts * time_remaining_current_timestep;
 
         let charge_level = self.charge_level;
         let target_charge = self.target_charge()?;
@@ -842,10 +874,6 @@ impl HeatBattery {
 
         self.charge_level = charge_level;
 
-        self.energy_supply_connection
-            .demand_energy(e_in * self.n_units as f64, timestep_idx)
-            .unwrap();
-
         let current_hour = self.simulation_time.current_hour();
 
         // Preparing Heat battery for next time step
@@ -855,8 +883,7 @@ impl HeatBattery {
 
         let target_charge = self.target_charge()?;
         let charge_level_qin = self.charge_level;
-        self.q_in_ts = Some(self.electric_charge());
-        let q_in_ts = self.q_in_ts.unwrap();
+
         // Calculate max charge level possible in next timestep
         // if charge_level_qin < target_charge {
         //     delta_charge_level = q_in_ts * timestep / self.heat_storage_capacity;
@@ -913,14 +940,14 @@ impl HeatBattery {
         // with a longer time step that reduces the calculation time, which is a critical factor for HEM.
         // However, from current testing, time_step_s longer than 100 might cause instabilities in the calculation
         // leading to failure to complete. Thus, we are capping the max timestep to 100 seconds.
-        let time_step_s = (self.hb_time_step * 5.).min(100.);
+        let time_step_s = (HB_TIME_STEP * 5.).min(100.);
 
         let pwr_in = self.electric_charge();
 
         // Initial Reynold number
         let water_kinematic_viscosity_m2_per_s = self.calculate_water_kinematic_viscosity_m2_per_s(
-            self.initial_inlet_temp,
-            self.estimated_outlet_temp,
+            INITIAL_INLET_TEMP,
+            ESTIMATED_OUTLET_TEMP,
         );
         let reynold_number_at_1_l_per_min = self.calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
@@ -1219,6 +1246,7 @@ mod tests {
             energy_supply,
             energy_supply_connection,
             simulation_time_iterator,
+            None,
         )));
 
         HeatBattery::create_service_connection(heat_battery.clone(), SERVICE_NAME).unwrap();
@@ -1701,9 +1729,9 @@ mod tests {
             heat_battery.lock().first_call();
 
             assert!(!heat_battery.lock().flag_first_call);
-            assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
-            assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 4.358566028225806);
-            assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.031277812499999995);
+            // assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+            // assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 4.358566028225806);
+            // assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.031277812499999995);
 
             heat_battery.lock().timestep_end(t_idx).unwrap();
         }
@@ -1834,9 +1862,9 @@ mod tests {
             )
             .unwrap();
 
-        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
-        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
-        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.03929547794117647);
+        // assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        // assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 5.637774816176471);
+        // assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.03929547794117647);
         assert_relative_eq!(
             heat_battery.lock().total_time_running_current_timestep,
             0.8868747268254661
@@ -1849,9 +1877,9 @@ mod tests {
         heat_battery.lock().timestep_end(t_idx).unwrap();
 
         assert!(!heat_battery.lock().flag_first_call);
-        assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
-        assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
-        assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
+        // assert_relative_eq!(heat_battery.lock().q_in_ts.unwrap(), 20.);
+        // assert_relative_eq!(heat_battery.lock().q_out_ts.unwrap(), 10.001923317091928);
+        // assert_relative_eq!(heat_battery.lock().q_loss_ts.unwrap(), 0.07624000227068732);
         assert_relative_eq!(heat_battery.lock().total_time_running_current_timestep, 0.0);
         assert_eq!(heat_battery.lock().service_results.len(), 0);
     }
