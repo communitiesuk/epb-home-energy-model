@@ -629,6 +629,7 @@ impl HeatBattery {
 
         let mut flag_minimum_run = false; // False: supply energy to emitter; True: running water to complete loop
         let mut energy_charged = 0.;
+        let mut time_extra = Default::default();
 
         while time_step_s > 0. {
             // Processing HB zones
@@ -651,7 +652,7 @@ impl HeatBattery {
             }
             energy_charged += energy_charged_during_battery_time_step;
 
-            time_running_current_service += time_step_s as f64;
+            time_running_current_service += time_step_s;
 
             // RN for next time step
             let water_kinematic_viscosity_m2_per_s =
@@ -697,17 +698,18 @@ impl HeatBattery {
                     }
 
                     if !flag_minimum_run {
-                        let time_extra =
+                        time_extra =
                             self.minimum_time_required_to_run - time_running_current_service;
                         flag_minimum_run = true;
-                    } // TODO 0.34 Python has logic below which erroneously refers to time_extra in the first else block (not previously declared)
-                      // else:
-                      //     time_extra -= time_step_s
-                      //
-                      // if time_extra > self.__hb_time_step:
-                      //     time_step_s = self.__hb_time_step
-                      // else:
-                      //     time_step_s = time_extra
+                    } else {
+                        time_extra -= time_step_s;
+                    }
+
+                    if time_extra > self.hb_time_step {
+                        time_step_s = self.hb_time_step
+                    } else {
+                        time_step_s = time_extra
+                    }
                 }
 
                 if time_running_current_service + time_step_s
@@ -725,17 +727,19 @@ impl HeatBattery {
                         break;
                     }
 
-                    // TODO 0.34 Python has logic below which erroneously refers to time_extra in the first else block (not previously declared)
-                    // if not flag_minimum_run:
-                    //     time_extra = self.__minimum_time_required_to_run - time_running_current_service
-                    //     flag_minimum_run = True
-                    // else:
-                    //     time_extra -= time_step_s
-                    //
-                    // if time_extra > self.__hb_time_step:
-                    //     time_step_s = self.__hb_time_step
-                    // else:
-                    //     time_step_s = time_extra
+                    if !flag_minimum_run {
+                        time_extra =
+                            self.minimum_time_required_to_run - time_running_current_service;
+                        flag_minimum_run = true;
+                    } else {
+                        time_extra -= time_step_s;
+                    }
+
+                    if time_extra > self.hb_time_step {
+                        time_step_s = self.hb_time_step
+                    } else {
+                        time_step_s = time_extra
+                    }
                 } else {
                     break;
                 }
@@ -816,9 +820,9 @@ impl HeatBattery {
         let q_in_ts = self.q_in_ts.unwrap();
 
         let e_loss = q_loss_ts * time_remaining_current_timestep;
-        let mut e_in = q_in_ts * time_remaining_current_timestep;
+        let e_in = q_in_ts * time_remaining_current_timestep;
 
-        let mut charge_level = self.charge_level;
+        let charge_level = self.charge_level;
         let target_charge = self.target_charge()?;
 
         // Calculate new charge level after accounting for energy in and out and cap at target_charge
@@ -850,7 +854,7 @@ impl HeatBattery {
         let time_range = (current_hour + 1) * HEAT_BATTERY_TIME_UNIT;
 
         let target_charge = self.target_charge()?;
-        let mut charge_level_qin = self.charge_level;
+        let charge_level_qin = self.charge_level;
         self.q_in_ts = Some(self.electric_charge());
         let q_in_ts = self.q_in_ts.unwrap();
         // Calculate max charge level possible in next timestep
