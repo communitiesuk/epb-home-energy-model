@@ -1195,7 +1195,7 @@ impl HeatBattery {
         _timestep: f64,
         time_remaining_current_timestep: f64,
         timestep_idx: usize,
-    ) {
+    ) -> anyhow::Result<f64> {
         // Energy used by circulation pump
         let mut energy_aux = self.total_time_running_current_timestep * self.power_circ_pump;
 
@@ -1205,6 +1205,8 @@ impl HeatBattery {
         self.energy_supply_connection
             .demand_energy(energy_aux, timestep_idx)
             .unwrap();
+
+        Ok(energy_aux)
     }
 
     /// Calculations to be done at the end of each timestep
@@ -1218,7 +1220,8 @@ impl HeatBattery {
         }
 
         // Calculating auxiliary energy to provide services during timestep
-        self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
+        let energy_aux =
+            self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
         // Completing any charging left in the timestep and removing all losses from the charge level
         // Calculating heat battery losses in timestep to correct charge level
@@ -2058,11 +2061,10 @@ mod tests {
         let heat_battery =
             create_heat_battery(simulation_time_iterator.clone(), battery_control_on);
 
-        heat_battery.lock().calc_auxiliary_energy(
-            1.0,
-            0.5,
-            simulation_time_iterator.current_index(),
-        );
+        heat_battery
+            .lock()
+            .calc_auxiliary_energy(1.0, 0.5, simulation_time_iterator.current_index())
+            .unwrap();
 
         let results_by_end_user = heat_battery
             .lock()
