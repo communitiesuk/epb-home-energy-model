@@ -2,7 +2,6 @@
 use crate::core::common::WaterSourceWithTemperature;
 use crate::core::controls::time_control::{per_control, Control, ControlBehaviour};
 use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyConnection};
-use crate::core::heating_systems::heat_pump::ServiceResult;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
@@ -343,7 +342,7 @@ pub struct HeatBattery {
     b: f64,
     heat_exchanger_surface_area_m2: f64,
     flow_rate_l_per_min: f64,
-    detailed_results: Option<Vec<Arc<RwLock<Vec<ServiceResult>>>>>,
+    detailed_results: Option<Vec<Arc<RwLock<Vec<HeatBatteryResult>>>>>,
 }
 
 impl HeatBattery {
@@ -1465,70 +1464,43 @@ impl HeatBattery {
 
     /// Calculations to be done at the end of each timestep
     pub fn timestep_end(&mut self, timestep_idx: usize) -> anyhow::Result<()> {
-        // TODO 0.34 - commented out/deleted code in this method when updating methods above, this method still needs to be updated
         let timestep = self.simulation_time.step_in_hours();
         let time_remaining_current_timestep = timestep - self.total_time_running_current_timestep;
 
         if self.flag_first_call {
             self.first_call();
         }
+        self.flag_first_call = true;
 
         // Calculating auxiliary energy to provide services during timestep
         let energy_aux =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
-        // Completing any charging left in the timestep and removing all losses from the charge level
         // Calculating heat battery losses in timestep to correct charge level
         // Currently assumed all losses are to the exterior independently of the
         // heat battery location
+        // TODO (from Python): Assign thermal losses to relevant zone if heat battery is not outdoors.
+        let (battery_losses, zone_temp_c_after_losses) = self.battery_heat_loss()?;
 
-        let charge_level = self.charge_level;
-        let target_charge = self.target_charge()?;
+        // Charging battery for the remaining of the timestep
+        let (end_of_ts_charge, zone_temp_c_after_charging) = if self
+            .charge_control
+            .is_on(self.simulation_time.current_iteration())
+        {
+            self.charge_battery()?
+        } else {
+            (0., self.zone_temp_c_dist_initial.clone())
+        };
 
-        // Calculate new charge level after accounting for energy in and out and cap at target_charge
+        self.energy_supply_connection
+            .demand_energy(self.energy_charged * self.n_units as f64, timestep_idx)?;
 
-        // charge_level += delta_charge_level;
-        // if charge_level > target_charge {
-        //     e_in -= (charge_level - target_charge) * self.heat_storage_capacity;
-        //     if e_in < 0.0 {
-        //         e_in = 0.;
-        //         charge_level -= delta_charge_level;
-        //         delta_charge_level = -e_loss / self.heat_storage_capacity;
-        //         charge_level += delta_charge_level;
-        //     } else {
-        //         charge_level = target_charge;
-        //     }
-        // }
-
-        self.charge_level = charge_level;
-
-        let current_hour = self.simulation_time.current_hour();
-
-        // Preparing Heat battery for next time step
-        // Variables below need to be reset at the end of each timestep
-        // Picking target charge level from control
-        let time_range = (current_hour + 1) * HEAT_BATTERY_TIME_UNIT;
-
-        let target_charge = self.target_charge()?;
-        let charge_level_qin = self.charge_level;
-
-        // Calculate max charge level possible in next timestep
-        // if charge_level_qin < target_charge {
-        //     delta_charge_level = q_in_ts * timestep / self.heat_storage_capacity;
-        //     charge_level_qin += delta_charge_level;
-        //     if charge_level_qin > target_charge {
-        //         charge_level_qin = target_charge;
-        //     }
-        // }
-
-        // Estimating output rate at average of capacity in timestep
-        // let delta_charge_level = max_output * timestep / self.heat_storage_capacity;
-        // self.q_out_ts =
-        //     Some(self.lab_test_rated_output(charge_level_qin - delta_charge_level / 2.));
-        // self.q_loss_ts = Some(self.lab_test_losses(charge_level_qin - delta_charge_level / 2.));
+        // If detailed results are to be output, save the results from the current timestep
+        // TODO 0.34 migration
 
         self.total_time_running_current_timestep = Default::default();
         self.service_results = Default::default();
+        self.energy_charged = Default::default();
 
         Ok(())
     }
