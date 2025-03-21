@@ -990,9 +990,9 @@ impl HeatBattery {
         ))
     }
 
+    /// Charge the battery (update the zones temperature)
+    /// It follows the same methodology as energy_demand function
     fn charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
-        // Charge the battery (update the zones temperature)
-        // It follows the same methodology as energy_demand function
         let total_time_s = self.simulation_time.step_in_hours() * SECONDS_PER_HOUR as f64;
         let time_step_s = HB_TIME_STEP;
 
@@ -1049,8 +1049,32 @@ impl HeatBattery {
         Ok(total_charge)
     }
 
-    fn charge_battery(&self) {
-        todo!("0.34")
+    /// Charge the battery (update the zones temperature)
+    /// It follows the same methodology as energy_demand function
+    fn charge_battery(&mut self) -> anyhow::Result<(f64, Vec<f64>)> {
+        let timestep = self.simulation_time.step_in_hours();
+        let time_available = self.time_available(0., timestep);
+
+        let pwr_in = self.electric_charge();
+        let time_step_s = time_available * SECONDS_PER_HOUR as f64;
+        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
+
+        // Processing HB zones
+        let (_, zone_temp_c_dist, _, energy_charged_during_battery_time_step) = self
+            .process_heat_battery_zones(
+                0.,
+                &zone_temp_c_dist,
+                0.,
+                time_step_s,
+                0.,
+                Some(pwr_in),
+                Some(OperationMode::OnlyCharging),
+            )?;
+
+        self.energy_charged += energy_charged_during_battery_time_step;
+        self.zone_temp_c_dist_initial = zone_temp_c_dist.clone();
+
+        Ok((energy_charged_during_battery_time_step, zone_temp_c_dist))
     }
 
     fn battery_heat_loss(&mut self) -> anyhow::Result<(f64, Vec<f64>)> {
