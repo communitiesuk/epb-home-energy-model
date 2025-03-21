@@ -990,8 +990,63 @@ impl HeatBattery {
         ))
     }
 
-    fn charge_battery_hydraulic(&self) {
-        todo!("0.34")
+    fn charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
+        // Charge the battery (update the zones temperature)
+        // It follows the same methodology as energy_demand function
+        let total_time_s = self.simulation_time.step_in_hours() * SECONDS_PER_HOUR as f64;
+        let time_step_s = HB_TIME_STEP;
+
+        // Initial Reynold number
+        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
+            INITIAL_INLET_TEMP,
+            ESTIMATED_OUTLET_TEMP,
+        );
+        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+            water_kinematic_viscosity_m2_per_s,
+            self.velocity_in_hex_tube,
+            self.capillary_diameter_m,
+        );
+
+        let flow_rate_kg_per_s =
+            (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
+        let n_time_steps = (total_time_s / time_step_s) as usize;
+        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
+        let mut total_charge = 0.;
+
+        for _ in 0..n_time_steps {
+            // Processing HB zones
+            let (outlet_temp_c, zone_temp_c_dist, energy_transf_charged, _) = self
+                .process_heat_battery_zones(
+                    inlet_temp_c,
+                    &zone_temp_c_dist,
+                    flow_rate_kg_per_s,
+                    time_step_s,
+                    reynold_number_at_1_l_per_min,
+                    Some(0.),
+                    None,
+                )?;
+
+            // RN for next time step
+            let water_kinematic_viscosity_m2_per_s =
+                Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
+            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+                water_kinematic_viscosity_m2_per_s,
+                self.velocity_in_hex_tube,
+                self.capillary_diameter_m,
+            );
+
+            let energy_charged_during_battery_time_step = energy_transf_charged.iter().sum::<f64>();
+
+            if outlet_temp_c < inlet_temp_c {
+                total_charge += energy_charged_during_battery_time_step;
+            } else {
+                break;
+            }
+        }
+
+        self.zone_temp_c_dist_initial = zone_temp_c_dist;
+
+        Ok(total_charge)
     }
 
     fn charge_battery(&self) {
