@@ -824,8 +824,102 @@ impl HeatBattery {
         (q_max_kj, energy_charged, energy_transf)
     }
 
-    fn calculate_new_zone_temperature(&self) {
-        todo!("0.34")
+    /// ranges _1, _2, and _3 refer to:
+    /// _1: temperature of PCM above transition phase
+    /// _2: temperature of PCM within transition phase
+    /// _3: temperature of PCM below transition phase
+    fn calculate_new_zone_temperature(
+        &self,
+        zone_temp_c_start: f64,
+        mut energy_transf: f64,
+    ) -> f64 {
+        let mut delta_temp_1 = 0.;
+        let mut delta_temp_2 = 0.;
+        let mut delta_temp_3 = 0.;
+
+        if energy_transf > 0. {
+            // zone delivering energy to water
+            if zone_temp_c_start >= self.phase_transition_temperature_upper {
+                let heat_range_1 = (zone_temp_c_start - self.phase_transition_temperature_upper)
+                    * self.heat_storage_kj_per_k_above;
+                let heat_range_2 = (self.phase_transition_temperature_upper
+                    - self.phase_transition_temperature_lower)
+                    * self.heat_storage_kj_per_k_during;
+
+                if energy_transf <= heat_range_1 {
+                    delta_temp_1 = energy_transf / self.heat_storage_kj_per_k_above;
+                } else {
+                    delta_temp_1 = zone_temp_c_start - self.phase_transition_temperature_upper;
+
+                    energy_transf -= heat_range_1;
+                    if energy_transf <= heat_range_2 {
+                        delta_temp_2 = energy_transf / self.heat_storage_kj_per_k_during;
+                    } else {
+                        delta_temp_2 = self.phase_transition_temperature_upper
+                            - self.phase_transition_temperature_lower;
+                        energy_transf -= heat_range_2;
+                        delta_temp_3 = energy_transf / self.heat_storage_kj_per_k_below;
+                    }
+                }
+            } else if self.phase_transition_temperature_lower <= zone_temp_c_start
+                && zone_temp_c_start < self.phase_transition_temperature_upper
+            {
+                let heat_range_2 = (zone_temp_c_start - self.phase_transition_temperature_lower)
+                    * self.heat_storage_kj_per_k_during;
+
+                if energy_transf <= heat_range_2 {
+                    delta_temp_2 = energy_transf / self.heat_storage_kj_per_k_during;
+                } else {
+                    delta_temp_2 = zone_temp_c_start - self.phase_transition_temperature_lower;
+                    energy_transf -= heat_range_2;
+                    delta_temp_3 = energy_transf / self.heat_storage_kj_per_k_below
+                }
+            } else {
+                delta_temp_3 = energy_transf / self.heat_storage_kj_per_k_below;
+            }
+        } else if energy_transf < 0. {
+            // zone retrieving energy from water
+            if zone_temp_c_start <= self.phase_transition_temperature_lower {
+                let heat_range_3 = (zone_temp_c_start - self.phase_transition_temperature_lower)
+                    * self.heat_storage_kj_per_k_below;
+                let heat_range_2 = (self.phase_transition_temperature_lower
+                    - self.phase_transition_temperature_upper)
+                    * self.heat_storage_kj_per_k_during;
+
+                if energy_transf >= heat_range_3 {
+                    delta_temp_3 = energy_transf / self.heat_storage_kj_per_k_below;
+                } else {
+                    delta_temp_3 = zone_temp_c_start - self.phase_transition_temperature_lower;
+
+                    energy_transf -= heat_range_3;
+                    if energy_transf >= heat_range_2 {
+                        delta_temp_2 = energy_transf / self.heat_storage_kj_per_k_during;
+                    } else {
+                        delta_temp_2 = self.phase_transition_temperature_lower
+                            - self.phase_transition_temperature_upper;
+
+                        energy_transf -= heat_range_2;
+                        delta_temp_1 = energy_transf / self.heat_storage_kj_per_k_above;
+                    }
+                }
+            } else if self.phase_transition_temperature_lower < zone_temp_c_start
+                && zone_temp_c_start <= self.phase_transition_temperature_upper
+            {
+                let heat_range_2 = (zone_temp_c_start - self.phase_transition_temperature_upper)
+                    * self.heat_storage_kj_per_k_during;
+
+                if energy_transf >= heat_range_2 {
+                    delta_temp_2 = energy_transf / self.heat_storage_kj_per_k_during;
+                } else {
+                    delta_temp_2 = zone_temp_c_start - self.phase_transition_temperature_upper;
+                    energy_transf -= heat_range_2;
+                    delta_temp_1 = energy_transf / self.heat_storage_kj_per_k_above;
+                }
+            } else {
+                delta_temp_1 = energy_transf / self.heat_storage_kj_per_k_above;
+            }
+        }
+        zone_temp_c_start - (delta_temp_1 + delta_temp_2 + delta_temp_3)
     }
 
     fn process_heat_battery_zones(
