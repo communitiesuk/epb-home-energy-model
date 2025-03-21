@@ -132,7 +132,7 @@ impl HeatBatteryServiceWaterRegular {
         }
 
         self.heat_battery.lock().demand_energy(
-            &*self.service_name,
+            &self.service_name,
             ServiceType::WaterRegular,
             energy_demand,
             self.cold_feed.temperature(simulation_time_iteration, None),
@@ -180,10 +180,7 @@ impl HeatBatteryServiceWaterRegular {
             return Ok(0.);
         }
 
-        Ok(self
-            .heat_battery
-            .lock()
-            .energy_output_max(temp_flow, None)?)
+        self.heat_battery.lock().energy_output_max(temp_flow, None)
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
@@ -272,10 +269,9 @@ impl HeatBatteryServiceSpace {
             return Ok(0.);
         }
 
-        Ok(self
-            .heat_battery
+        self.heat_battery
             .lock()
-            .energy_output_max(temp_output, Some(time_start))?)
+            .energy_output_max(temp_output, Some(time_start))
     }
 }
 
@@ -647,7 +643,7 @@ impl HeatBattery {
         &self,
         index: usize,
         mode: &OperationMode,
-        zone_temp_c_dist: &Vec<f64>,
+        zone_temp_c_dist: &[f64],
         inlet_temp_c: f64,
         inlet_temp_c_zone: f64,
         q_max_kj: f64,
@@ -714,23 +710,21 @@ impl HeatBattery {
             } else {
                 self.heat_storage_kj_per_k_during * (zone_temp_c_start - target_temp)
             }
+        } else if target_temp > self.phase_transition_temperature_upper {
+            self.heat_storage_kj_per_k_above
+                * (self.phase_transition_temperature_upper - target_temp)
+                + self.heat_storage_kj_per_k_during
+                    * (self.phase_transition_temperature_lower
+                        - self.phase_transition_temperature_upper)
+                + self.heat_storage_kj_per_k_below
+                    * (zone_temp_c_start - self.phase_transition_temperature_lower)
+        } else if target_temp > self.phase_transition_temperature_lower {
+            self.heat_storage_kj_per_k_during
+                * (self.phase_transition_temperature_lower - target_temp)
+                + self.heat_storage_kj_per_k_below
+                    * (zone_temp_c_start - self.phase_transition_temperature_lower)
         } else {
-            if target_temp > self.phase_transition_temperature_upper {
-                self.heat_storage_kj_per_k_above
-                    * (self.phase_transition_temperature_upper - target_temp)
-                    + self.heat_storage_kj_per_k_during
-                        * (self.phase_transition_temperature_lower
-                            - self.phase_transition_temperature_upper)
-                    + self.heat_storage_kj_per_k_below
-                        * (zone_temp_c_start - self.phase_transition_temperature_lower)
-            } else if target_temp > self.phase_transition_temperature_lower {
-                self.heat_storage_kj_per_k_during
-                    * (self.phase_transition_temperature_lower - target_temp)
-                    + self.heat_storage_kj_per_k_below
-                        * (zone_temp_c_start - self.phase_transition_temperature_lower)
-            } else {
-                self.heat_storage_kj_per_k_below * (zone_temp_c_start - target_temp)
-            }
+            self.heat_storage_kj_per_k_below * (zone_temp_c_start - target_temp)
         }
     }
 
@@ -788,8 +782,7 @@ impl HeatBattery {
                     energy_transf = q_required;
                 } else {
                     // inlet temperature + charging can take zone temperature to target temp
-                    if !(energy_transf < q_required) {
-                        //
+                    if energy_transf >= q_required {
                         if q_max_kj > q_required - energy_transf {
                             // Charging cannot take zone temperature to target after zone warmed by inlet water...
                             q_required = q_max_kj + energy_transf;
@@ -929,7 +922,7 @@ impl HeatBattery {
     fn process_heat_battery_zones(
         &self,
         inlet_temp_c: f64,
-        zone_temp_c_dist: &Vec<f64>,
+        zone_temp_c_dist: &[f64],
         flow_rate_kg_per_s: f64,
         time_step_s: f64,
         reynold_number_at_1_l_per_min: f64,
@@ -944,7 +937,7 @@ impl HeatBattery {
         let q_max_kj =
             -pwr_in * time_step_s / SECONDS_PER_HOUR as f64 * KILOJOULES_PER_KILOWATT_HOUR as f64;
 
-        let mut zone_temp_c_dist = zone_temp_c_dist.clone();
+        let mut zone_temp_c_dist = zone_temp_c_dist.to_owned();
         let mut energy_transf_delivered = vec![0.; N_ZONES];
         let mut inlet_temp_c_zone = inlet_temp_c;
         let mut energy_transf;
@@ -1268,17 +1261,15 @@ impl HeatBattery {
                     if max_instant_power > 0. {
                         time_step_s = (energy_demand - energy_delivered_hb) / max_instant_power;
                     }
-                } else {
-                    if energy_delivered_ts != 0. {
-                        let current_energy = self.pipe_energy[service_name].energy;
-                        let current_temperature = self.pipe_energy[service_name].temperature;
-                        let new_temperature = ((current_temperature * current_energy)
-                            + (outlet_temp_c * energy_delivered_ts))
-                            / (current_energy + energy_delivered_ts);
+                } else if energy_delivered_ts != 0. {
+                    let current_energy = self.pipe_energy[service_name].energy;
+                    let current_temperature = self.pipe_energy[service_name].temperature;
+                    let new_temperature = ((current_temperature * current_energy)
+                        + (outlet_temp_c * energy_delivered_ts))
+                        / (current_energy + energy_delivered_ts);
 
-                        self.pipe_energy[service_name].energy += energy_delivered_ts;
-                        self.pipe_energy[service_name].temperature = new_temperature;
-                    }
+                    self.pipe_energy[service_name].energy += energy_delivered_ts;
+                    self.pipe_energy[service_name].temperature = new_temperature;
                 }
 
                 if time_step_s > HB_TIME_STEP {
