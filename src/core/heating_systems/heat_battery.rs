@@ -174,13 +174,16 @@ impl HeatBatteryServiceWaterRegular {
         temp_flow: f64,
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
         if !service_on {
-            return 0.;
+            return Ok(0.);
         }
 
-        self.heat_battery.lock().energy_output_max(temp_flow, None)
+        Ok(self
+            .heat_battery
+            .lock()
+            .energy_output_max(temp_flow, None)?)
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
@@ -262,16 +265,17 @@ impl HeatBatteryServiceSpace {
         _temp_return_feed: f64,
         time_start: Option<f64>,
         simtime: SimulationTimeIteration,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let time_start = time_start.unwrap_or(0.);
 
         if !self.is_on(simtime) {
-            return 0.;
+            return Ok(0.);
         }
 
-        self.heat_battery
+        Ok(self
+            .heat_battery
             .lock()
-            .energy_output_max(temp_output, Some(time_start))
+            .energy_output_max(temp_output, Some(time_start))?)
     }
 }
 
@@ -642,8 +646,8 @@ impl HeatBattery {
     fn get_zone_properties(
         &self,
         index: usize,
-        mode: OperationMode,
-        zone_temp_c_dist: Vec<f64>,
+        mode: &OperationMode,
+        zone_temp_c_dist: &Vec<f64>,
         inlet_temp_c: f64,
         inlet_temp_c_zone: f64,
         q_max_kj: f64,
@@ -928,11 +932,69 @@ impl HeatBattery {
         zone_temp_c_dist: &Vec<f64>,
         flow_rate_kg_per_s: f64,
         time_step_s: f64,
-        reynold_number: f64,
+        reynold_number_at_1_l_per_min: f64,
         pwr_in: Option<f64>,
         mode: Option<OperationMode>,
-    ) -> (f64, Vec<f64>, Vec<f64>, f64) {
-        todo!()
+    ) -> anyhow::Result<(f64, Vec<f64>, Vec<f64>, f64)> {
+        let pwr_in = pwr_in.unwrap_or(0.);
+        let mode = mode.unwrap_or(OperationMode::Normal);
+        let target_temp = self.max_temp_of_charge * self.target_charge()?;
+        let energy_charged = 0.;
+
+        let q_max_kj =
+            -pwr_in * time_step_s / SECONDS_PER_HOUR as f64 * KILOJOULES_PER_KILOWATT_HOUR as f64;
+
+        let mut zone_temp_c_dist = zone_temp_c_dist.clone();
+        let mut energy_transf_delivered = vec![0.; N_ZONES];
+        let mut inlet_temp_c_zone = inlet_temp_c;
+        let mut energy_transf;
+        let mut zone_index;
+        let mut zone_temp_c_start;
+        let mut outlet_temp_c = Default::default();
+
+        for index in 0..zone_temp_c_dist.iter().len() {
+            // Get zone index, starting temperature, outlet temperature and energy_transfer based on operation mode
+            (energy_transf, zone_index, zone_temp_c_start, outlet_temp_c) = self
+                .get_zone_properties(
+                    index,
+                    &mode,
+                    &zone_temp_c_dist,
+                    inlet_temp_c,
+                    inlet_temp_c_zone,
+                    q_max_kj,
+                    reynold_number_at_1_l_per_min,
+                    flow_rate_kg_per_s,
+                    time_step_s,
+                );
+
+            energy_transf_delivered[zone_index] += energy_transf;
+
+            // Process energy transfer in zone with simultaneous charging
+            if q_max_kj < 0. {
+                let (q_max_kj, energy_charged, energy_transf) = self
+                    .process_zone_simultaneous_charging(
+                        zone_temp_c_start,
+                        target_temp,
+                        q_max_kj,
+                        energy_transf,
+                        energy_charged,
+                    );
+            };
+
+            // Recalculate zone temperatures after energy transfer
+            zone_temp_c_dist[zone_index] =
+                self.calculate_new_zone_temperature(zone_temp_c_start, energy_transf);
+
+            // Update values for the next iteration
+            inlet_temp_c_zone = outlet_temp_c
+        }
+
+        Ok((
+            outlet_temp_c,
+            zone_temp_c_dist,
+            energy_transf_delivered,
+            energy_charged,
+        ))
     }
 
     fn charge_battery_hydraulic(&self) {
@@ -943,7 +1005,7 @@ impl HeatBattery {
         todo!("0.34")
     }
 
-    fn battery_heat_loss(&mut self) -> (f64, Vec<f64>) {
+    fn battery_heat_loss(&mut self) -> anyhow::Result<(f64, Vec<f64>)> {
         // Battery losses
         let timestep = self.simulation_time.step_in_hours();
         let time_step_s = timestep * SECONDS_PER_HOUR as f64;
@@ -959,14 +1021,14 @@ impl HeatBattery {
             0.,
             Some(-self.max_rated_losses),
             Some(OperationMode::Losses),
-        );
+        )?;
 
         self.zone_temp_c_dist_initial = zone_temp_c_dist.clone();
 
-        (
+        Ok((
             energy_loss.iter().sum::<f64>() / KILOJOULES_PER_KILOWATT_HOUR as f64,
             zone_temp_c_dist,
-        )
+        ))
     }
 
     fn get_temp_hot_water(&self, inlet_temp: f64, volume: f64) -> f64 {
@@ -975,7 +1037,11 @@ impl HeatBattery {
 
     /// Calculate the maximum energy output of the heat battery, accounting
     /// for time spent on higher-priority services.
-    pub fn energy_output_max(&mut self, temp_output: f64, time_start: Option<f64>) -> f64 {
+    pub fn energy_output_max(
+        &mut self,
+        temp_output: f64,
+        time_start: Option<f64>,
+    ) -> anyhow::Result<f64> {
         // Return the energy the battery can provide assuming the HB temperature inlet
         // is constant during HEM time step equal to the required emitter temperature (temp_output)
         // Maximum energy for a given HB zones temperature distribution and inlet temperature.
@@ -1026,7 +1092,7 @@ impl HeatBattery {
                     reynold_number_at_1_l_per_min,
                     None,
                     None,
-                );
+                )?;
 
             // RN for next time step
             let water_kinematic_viscosity_m2_per_s =
@@ -1051,7 +1117,7 @@ impl HeatBattery {
             energy_delivered_hb = 0.
         }
 
-        energy_delivered_hb * self.n_units as f64
+        Ok(energy_delivered_hb * self.n_units as f64)
     }
 
     fn first_call(&mut self) {
@@ -1173,7 +1239,7 @@ impl HeatBattery {
                 reynold_number_at_1_l_per_min,
                 Some(pwr_in),
                 None,
-            );
+            )?;
 
             if update_heat_source_state {
                 self.energy_charged += energy_charged_during_battery_time_step;
@@ -1880,11 +1946,9 @@ mod tests {
                 Arc::new(control_max),
             );
 
-        let result = heat_battery_service.energy_output_max(
-            Default::default(),
-            temp_return,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(Default::default(), temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_relative_eq!(result, 5.637774816176471);
     }
@@ -1930,11 +1994,9 @@ mod tests {
             );
 
         let temp_return = 40.;
-        let result = heat_battery_service.energy_output_max(
-            Default::default(),
-            temp_return,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(Default::default(), temp_return, simulation_time_iteration)
+            .unwrap();
 
         assert_eq!(result, 0.);
     }
@@ -2024,12 +2086,14 @@ mod tests {
             service_control_on.into(),
         );
 
-        let result = heat_battery_service.energy_output_max(
-            temp_output,
-            temp_return,
-            Some(time_start),
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(
+                temp_output,
+                temp_return,
+                Some(time_start),
+                simulation_time_iteration,
+            )
+            .unwrap();
 
         assert_relative_eq!(result, 4.037907837701614);
     }
@@ -2052,12 +2116,9 @@ mod tests {
             service_control_off.into(),
         );
 
-        let result = heat_battery_service.energy_output_max(
-            temp_output,
-            temp_return,
-            None,
-            simulation_time_iteration,
-        );
+        let result = heat_battery_service
+            .energy_output_max(temp_output, temp_return, None, simulation_time_iteration)
+            .unwrap();
 
         assert_relative_eq!(result, 0.);
     }
@@ -2302,7 +2363,7 @@ mod tests {
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_relative_eq!(
-                heat_battery.lock().energy_output_max(0., None),
+                heat_battery.lock().energy_output_max(0., None).unwrap(),
                 [5.637774816176471, 11.13482970854502][t_idx]
             );
 
