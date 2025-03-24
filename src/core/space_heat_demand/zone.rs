@@ -43,8 +43,6 @@ pub struct Zone {
     useful_area: f64,
     volume: f64,
     building_elements: Vec<NamedBuildingElement>,
-    _ventilation: Arc<InfiltrationVentilation>,
-    control: Option<Arc<Control>>,
     tb_heat_trans_coeff: f64,
     /// total area of all building elements associated with this zone, in m2
     area_el_total: f64,
@@ -69,13 +67,15 @@ pub struct Zone {
     ///                      building element + 1 for internal air) to be
     ///                      solved for
     no_of_temps: usize,
+    temp_prev: Arc<RwLock<Vec<f64>>>,
     print_heat_balance: bool,
     // Python has a use_fast_solver field that we don't need because we always use the equivalent fast solver in Rust
+    ventilation: Arc<InfiltrationVentilation>,
+    control: Option<Arc<Control>>,
     temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
     ///                      previous timestep. Positions in list defined in
     ///                      element_positions and zone_idx
-    temp_prev: Arc<RwLock<Vec<f64>>>,
     temp_setpnt_init: f64,
 }
 
@@ -144,17 +144,17 @@ impl Zone {
             useful_area: area,
             volume,
             building_elements: named_building_elements,
-            _ventilation: ventilation,
-            control,
             tb_heat_trans_coeff,
             area_el_total,
             c_int,
             element_positions,
             zone_idx,
             no_of_temps,
-            print_heat_balance,
-            temp_setpnt_basis,
             temp_prev: Arc::new(RwLock::new(Vec::new())),
+            print_heat_balance,
+            ventilation: ventilation,
+            control,
+            temp_setpnt_basis,
             temp_setpnt_init,
         };
 
@@ -356,7 +356,7 @@ impl Zone {
             let mut i = 0usize;
 
             // load in k_pli, h_ce and h_re for this element
-            let (k_pli, h_ce, h_re, h_ri, a_sol, therm_rad_to_sky) = (
+            let (k_pli, h_ce, h_re, h_ri, solar_absorption_coeff, therm_rad_to_sky) = (
                 eli.k_pli(),
                 eli.h_ce(),
                 eli.h_re(),
@@ -376,7 +376,7 @@ impl Zone {
             let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime).unwrap();
             vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx]
                 + (h_ce + h_re) * eli.temp_ext(simtime)
-                + a_sol * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+                + solar_absorption_coeff * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                 - therm_rad_to_sky;
 
             // Inside node(s), if any (eqn 40)
@@ -564,14 +564,17 @@ impl Zone {
                     eli.area() * (eli.h_ce() * (eli.temp_ext(simtime) - temp_ext_surface));
                 hb_fabric_ext_air_radiative +=
                     eli.area() * eli.h_re() * (eli.temp_ext(simtime) - temp_ext_surface);
-                hb_fabric_ext_sol +=
-                    eli.area() * eli.solar_absorption_coeff() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
+                hb_fabric_ext_sol += eli.area()
+                    * eli.solar_absorption_coeff()
+                    * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
                 hb_fabric_ext_sky += eli.area() * (-eli.therm_rad_to_sky());
                 // fabric heat loss per building element type
                 let hb_fabric_ext = eli.area()
                     * ((eli.h_ce()) * (eli.temp_ext(simtime) - temp_ext_surface))
                     + eli.area() * (eli.h_re()) * (eli.temp_ext(simtime) - temp_ext_surface)
-                    + eli.area() * eli.solar_absorption_coeff() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+                    + eli.area()
+                        * eli.solar_absorption_coeff()
+                        * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                     + eli.area() * (-eli.therm_rad_to_sky());
                 match eli.as_ref() {
                     BuildingElement::Opaque(_) => {
@@ -1674,8 +1677,8 @@ impl HeatBalance {
 mod tests {
     use super::*;
     use crate::core::space_heat_demand::building_element::{
-        BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround,
-        BuildingElementOpaque, BuildingElementTransparent,
+        BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple,
+        BuildingElementGround, BuildingElementOpaque, BuildingElementTransparent,
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
     use crate::core::space_heat_demand::ventilation::{Vent, Window};
@@ -1887,14 +1890,16 @@ mod tests {
             10.,
             external_conditions.clone(),
         ));
-        let be_ztc = BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
-            22.5,
-            135.,
-            0.50,
-            18000.0,
-            MassDistributionClass::E,
-            external_conditions.clone(),
-        ));
+        let be_ztc = BuildingElement::AdjacentConditionedSpace(
+            BuildingElementAdjacentConditionedSpace::new(
+                22.5,
+                135.,
+                0.50,
+                18000.0,
+                MassDistributionClass::E,
+                external_conditions.clone(),
+            ),
+        );
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
             thermal_transmission_walls: 0.5,
@@ -1932,15 +1937,17 @@ mod tests {
             Default::default(),
             external_conditions.clone(),
         ));
-        let be_ztu = BuildingElement::AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple::new(
-            30.,
-            130.,
-            0.50,
-            0.6,
-            18000.0,
-            MassDistributionClass::E,
-            external_conditions.clone(),
-        ));
+        let be_ztu = BuildingElement::AdjacentUnconditionedSpaceSimple(
+            BuildingElementAdjacentUnconditionedSpaceSimple::new(
+                30.,
+                130.,
+                0.50,
+                0.6,
+                18000.0,
+                MassDistributionClass::E,
+                external_conditions.clone(),
+            ),
+        );
 
         // Put building element objects in a list that can be iterated over
         let be_objs = IndexMap::from([
