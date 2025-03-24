@@ -9,7 +9,8 @@ use crate::core::material_properties::WATER;
 use crate::core::solvers::{fsolve, root};
 use crate::core::space_heat_demand::zone::SimpleZone;
 use crate::core::units::{
-    JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, WATTS_PER_KILOWATT,
+    JOULES_PER_KILOJOULE, KILOJOULES_PER_KILOWATT_HOUR, LITRES_PER_CUBIC_METRE, SECONDS_PER_MINUTE,
+    WATTS_PER_KILOWATT,
 };
 use crate::corpus::KeyString;
 use crate::external_conditions::ExternalConditions;
@@ -281,13 +282,19 @@ impl Emitters {
         let with_buffer_tank = with_buffer_tank.unwrap_or(false);
         let (variable_flow_data, min_flow_rate, max_flow_rate) = if variable_flow {
             if let (Some(min_flow_rate), Some(max_flow_rate)) = (min_flow_rate, max_flow_rate) {
-                (VariableFlowData::Yes, min_flow_rate, max_flow_rate)
+                (
+                    VariableFlowData::Yes,
+                    min_flow_rate / SECONDS_PER_MINUTE as f64,
+                    max_flow_rate / SECONDS_PER_MINUTE as f64,
+                )
             } else {
                 bail!("Both min_flow_rate and max_flow_rate are required if variable_flow is true")
             }
         } else if let Some(design_flow_rate) = design_flow_rate {
+            let design_flow_rate = design_flow_rate / SECONDS_PER_MINUTE as f64;  // l/min in input file, here converted to l/s
             (
                 VariableFlowData::No { design_flow_rate },
+                // For buffer tank calculations
                 design_flow_rate,
                 design_flow_rate,
             )
