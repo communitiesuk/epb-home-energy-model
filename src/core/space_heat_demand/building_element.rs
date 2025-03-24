@@ -74,8 +74,8 @@ pub enum HeatFlowDirection {
 // The different building element types are composed of the following combinations:
 // - BuildingElementOpaque: Common, 5 nodes, Outside, Absorbed
 // - BuildingElementTransparent: Common, 2 nodes, Outside, Transmitted
-// - BuildingElementAdjacentZTC: Common, 5 nodes, Conditioned space, Not exposed
-// - BuildingElementAdjacentZTU_Simple: Common, 5 nodes, Unconditioned space, Not exposed
+// - BuildingElementAdjacentConditionedSpace: Common, 5 nodes, Conditioned space, Not exposed
+// - BuildingElementAdjacentUnconditionedSpaceSimple: Common, 5 nodes, Unconditioned space, Not exposed
 // - BuildingElementGround: Common, 3+2 nodes, Ground, Not exposed
 //
 // BuildingElementTransparent also has the functions projected_height, mid_height and orientation, which I think are now
@@ -133,8 +133,8 @@ pub(crate) const PITCH_LIMIT_HORIZ_FLOOR: f64 = 120.0;
 #[derive(Debug)]
 pub(crate) enum BuildingElement {
     Opaque(BuildingElementOpaque),
-    AdjacentZTC(BuildingElementAdjacentZTC),
-    AdjacentZTUSimple(BuildingElementAdjacentZTUSimple),
+    AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace),
+    AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple),
     Ground(BuildingElementGround),
     Transparent(BuildingElementTransparent),
 }
@@ -143,8 +143,8 @@ impl BuildingElement {
     pub(crate) fn area(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.area(),
-            BuildingElement::AdjacentZTC(el) => el.area(),
-            BuildingElement::AdjacentZTUSimple(el) => el.area(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.area(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.area(),
             BuildingElement::Ground(el) => el.area(),
             BuildingElement::Transparent(el) => el.area(),
         }
@@ -153,8 +153,8 @@ impl BuildingElement {
     fn as_heat_transfer_through(&self) -> &dyn HeatTransferThrough {
         match self {
             BuildingElement::Opaque(el) => el,
-            BuildingElement::AdjacentZTC(el) => el,
-            BuildingElement::AdjacentZTUSimple(el) => el,
+            BuildingElement::AdjacentConditionedSpace(el) => el,
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el,
             BuildingElement::Ground(el) => el,
             BuildingElement::Transparent(el) => el,
         }
@@ -172,8 +172,8 @@ impl BuildingElement {
     pub(crate) fn solar_gains(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
         match self {
             BuildingElement::Opaque(el) => Ok(el.solar_gains()),
-            BuildingElement::AdjacentZTC(el) => Ok(el.solar_gains()),
-            BuildingElement::AdjacentZTUSimple(el) => Ok(el.solar_gains()),
+            BuildingElement::AdjacentConditionedSpace(el) => Ok(el.solar_gains()),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.solar_gains()),
             BuildingElement::Ground(el) => Ok(el.solar_gains()),
             BuildingElement::Transparent(el) => el.solar_gains(simtime),
         }
@@ -182,8 +182,8 @@ impl BuildingElement {
     pub(crate) fn h_ce(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.h_ce(),
-            BuildingElement::AdjacentZTC(el) => el.h_ce(),
-            BuildingElement::AdjacentZTUSimple(el) => el.h_ce(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.h_ce(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ce(),
             BuildingElement::Ground(el) => el.h_ce(),
             BuildingElement::Transparent(el) => el.h_ce(),
         }
@@ -192,8 +192,8 @@ impl BuildingElement {
     pub(crate) fn h_re(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.h_re(),
-            BuildingElement::AdjacentZTC(el) => el.h_re(),
-            BuildingElement::AdjacentZTUSimple(el) => el.h_re(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.h_re(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_re(),
             BuildingElement::Ground(el) => el.h_re(),
             BuildingElement::Transparent(el) => el.h_re(),
         }
@@ -202,28 +202,28 @@ impl BuildingElement {
     pub(crate) fn h_ri(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.h_ri(),
-            BuildingElement::AdjacentZTC(el) => el.h_ri(),
-            BuildingElement::AdjacentZTUSimple(el) => el.h_ri(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.h_ri(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ri(),
             BuildingElement::Ground(el) => el.h_ri(),
             BuildingElement::Transparent(el) => el.h_ri(),
         }
     }
 
-    pub(crate) fn a_sol(&self) -> f64 {
+    pub(crate) fn solar_absorption_coeff(&self) -> f64 {
         match self {
-            BuildingElement::Opaque(el) => el.a_sol(),
-            BuildingElement::AdjacentZTC(el) => el.a_sol(),
-            BuildingElement::AdjacentZTUSimple(el) => el.a_sol(),
-            BuildingElement::Ground(el) => el.a_sol(),
-            BuildingElement::Transparent(el) => el.a_sol(),
+            BuildingElement::Opaque(el) => el.solar_absorption_coeff(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.solar_absorption_coeff(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.solar_absorption_coeff(),
+            BuildingElement::Ground(el) => el.solar_absorption_coeff(),
+            BuildingElement::Transparent(el) => el.solar_absorption_coeff(),
         }
     }
 
     pub(crate) fn therm_rad_to_sky(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.therm_rad_to_sky(),
-            BuildingElement::AdjacentZTC(el) => el.therm_rad_to_sky(),
-            BuildingElement::AdjacentZTUSimple(el) => el.therm_rad_to_sky(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.therm_rad_to_sky(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.therm_rad_to_sky(),
             BuildingElement::Ground(el) => el.therm_rad_to_sky(),
             BuildingElement::Transparent(el) => el.therm_rad_to_sky(),
         }
@@ -240,8 +240,8 @@ impl BuildingElement {
     pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
         match self {
             BuildingElement::Opaque(el) => el.i_sol_dir_dif(simtime),
-            BuildingElement::AdjacentZTC(el) => el.i_sol_dir_dif(simtime),
-            BuildingElement::AdjacentZTUSimple(el) => el.i_sol_dir_dif(simtime),
+            BuildingElement::AdjacentConditionedSpace(el) => el.i_sol_dir_dif(simtime),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Ground(el) => el.i_sol_dir_dif(simtime),
             BuildingElement::Transparent(el) => el.i_sol_dir_dif(simtime),
         }
@@ -253,8 +253,8 @@ impl BuildingElement {
     ) -> anyhow::Result<(f64, f64)> {
         match self {
             BuildingElement::Opaque(el) => el.shading_factors_direct_diffuse(simtime),
-            BuildingElement::AdjacentZTC(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
-            BuildingElement::AdjacentZTUSimple(el) => {
+            BuildingElement::AdjacentConditionedSpace(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => {
                 Ok(el.shading_factors_direct_diffuse(simtime))
             }
             BuildingElement::Ground(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
@@ -265,8 +265,8 @@ impl BuildingElement {
     pub(crate) fn temp_ext(&self, simtime: SimulationTimeIteration) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.temp_ext(simtime),
-            BuildingElement::AdjacentZTC(el) => el.temp_ext(simtime),
-            BuildingElement::AdjacentZTUSimple(el) => el.temp_ext(simtime),
+            BuildingElement::AdjacentConditionedSpace(el) => el.temp_ext(simtime),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.temp_ext(simtime),
             BuildingElement::Ground(el) => el.temp_ext(simtime),
             BuildingElement::Transparent(el) => el.temp_ext(simtime),
         }
@@ -280,8 +280,8 @@ impl BuildingElement {
     pub(crate) fn h_ci(&self, temp_int_air: f64, temp_int_surface: f64) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.h_ci(temp_int_air, temp_int_surface),
-            BuildingElement::AdjacentZTC(el) => el.h_ci(temp_int_air, temp_int_surface),
-            BuildingElement::AdjacentZTUSimple(el) => el.h_ci(temp_int_air, temp_int_surface),
+            BuildingElement::AdjacentConditionedSpace(el) => el.h_ci(temp_int_air, temp_int_surface),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ci(temp_int_air, temp_int_surface),
             BuildingElement::Ground(el) => el.h_ci(temp_int_air, temp_int_surface),
             BuildingElement::Transparent(el) => el.h_ci(temp_int_air, temp_int_surface),
         }
@@ -290,8 +290,8 @@ impl BuildingElement {
     pub(crate) fn fabric_heat_loss(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.fabric_heat_loss(),
-            BuildingElement::AdjacentZTC(el) => el.fabric_heat_loss(),
-            BuildingElement::AdjacentZTUSimple(el) => el.fabric_heat_loss(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.fabric_heat_loss(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.fabric_heat_loss(),
             BuildingElement::Ground(el) => el.fabric_heat_loss(),
             BuildingElement::Transparent(el) => el.fabric_heat_loss(),
         }
@@ -300,8 +300,8 @@ impl BuildingElement {
     pub(crate) fn heat_capacity(&self) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.heat_capacity(),
-            BuildingElement::AdjacentZTC(el) => el.heat_capacity(),
-            BuildingElement::AdjacentZTUSimple(el) => el.heat_capacity(),
+            BuildingElement::AdjacentConditionedSpace(el) => el.heat_capacity(),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.heat_capacity(),
             BuildingElement::Ground(el) => el.heat_capacity(),
             BuildingElement::Transparent(el) => el.heat_capacity(),
         }
@@ -380,15 +380,15 @@ pub(crate) trait HeatTransferInternal {
 pub(crate) trait HeatTransferInternalCommon: HeatTransferInternal {}
 
 pub(crate) trait HeatTransferThrough {
-    fn init_heat_transfer_through(&mut self, r_c: f64, k_m: f64) {
-        self.set_r_c(r_c);
-        self.set_k_m(k_m);
+    fn init_heat_transfer_through(&mut self, thermal_resistance_construction: f64, areal_heat_capacity: f64) {
+        self.set_r_c(thermal_resistance_construction);
+        self.set_km(areal_heat_capacity);
     }
 
-    fn set_r_c(&mut self, r_c: f64);
+    fn set_r_c(&mut self, thermal_resistance_construction: f64);
     fn r_c(&self) -> f64;
     fn k_m(&self) -> f64;
-    fn set_k_m(&mut self, k_m: f64);
+    fn set_km(&mut self, areal_heat_capacity: f64);
     fn k_pli(&self) -> &[f64];
 
     fn number_of_nodes(&self) -> usize {
@@ -434,24 +434,20 @@ pub(crate) trait HeatTransferThrough {
 }
 
 pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
-    fn init_heat_transfer_through_2_nodes(&mut self, r_c: f64) {
-        self.init_heat_transfer_through(r_c, 0.);
-        self.set_h_pli(self.init_h_pli(r_c));
+    fn init_heat_transfer_through_2_nodes(&mut self, thermal_resistance_construction: f64) {
+        self.init_heat_transfer_through(thermal_resistance_construction, 0.);
+        self.set_h_pli(self.init_h_pli(thermal_resistance_construction));
         self.set_k_pli(self.init_k_pli());
     }
 
     fn set_h_pli(&mut self, h_pli: [f64; 1]);
     fn set_k_pli(&mut self, k_pli: [f64; 2]);
 
-    fn init_k_m(&self) -> f64 {
-        0.
-    }
-
     // Calculate node conductances (h_pli) and node heat capacities (k_pli)
     // according to BS EN ISO 52016-1:2017, section 6.5.7.4
 
-    fn init_h_pli(&self, r_c: f64) -> [f64; 1] {
-        [1.0 / r_c]
+    fn init_h_pli(&self, thermal_resistance_construction: f64) -> [f64; 1] {
+        [1.0 / thermal_resistance_construction]
     }
 
     fn init_k_pli(&self) -> [f64; 2] {
@@ -462,39 +458,39 @@ pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {
 pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
     fn init_heat_transfer_through_5_nodes(
         &mut self,
-        r_c: f64,
+        thermal_resistance_construction: f64,
         mass_distribution: MassDistributionClass,
-        k_m: f64,
+        areal_heat_capacity: f64,
     ) {
-        self.set_r_c(r_c);
-        self.set_k_m(k_m);
-        self.set_h_pli(self.init_h_pli(r_c));
-        self.set_k_pli(self.init_k_pli(mass_distribution, k_m));
+        self.set_r_c(thermal_resistance_construction);
+        self.set_km(areal_heat_capacity);
+        self.set_h_pli(self.init_h_pli(thermal_resistance_construction));
+        self.set_k_pli(self.init_k_pli(mass_distribution, areal_heat_capacity));
     }
 
     fn set_h_pli(&mut self, h_pli: [f64; 4]);
     fn set_k_pli(&mut self, k_pli: [f64; 5]);
 
-    fn init_h_pli(&self, r_c: f64) -> [f64; 4] {
-        let h_outer = 6.0 / r_c;
-        let h_inner = 3.0 / r_c;
+    fn init_h_pli(&self, thermal_resistance_construction: f64) -> [f64; 4] {
+        let h_outer = 6.0 / thermal_resistance_construction;
+        let h_inner = 3.0 / thermal_resistance_construction;
         [h_outer, h_inner, h_inner, h_outer]
     }
 
-    fn init_k_pli(&self, mass_distribution: MassDistributionClass, k_m: f64) -> [f64; 5] {
+    fn init_k_pli(&self, mass_distribution: MassDistributionClass, areal_heat_capacity: f64) -> [f64; 5] {
         match mass_distribution {
-            MassDistributionClass::I => [0.0, 0.0, 0.0, 0.0, k_m],
-            MassDistributionClass::E => [k_m, 0.0, 0.0, 0.0, 0.0],
+            MassDistributionClass::I => [0.0, 0.0, 0.0, 0.0, areal_heat_capacity],
+            MassDistributionClass::E => [areal_heat_capacity, 0.0, 0.0, 0.0, 0.0],
             MassDistributionClass::IE => {
-                let k_ie = k_m / 2.0;
+                let k_ie = areal_heat_capacity / 2.0;
                 [k_ie, 0.0, 0.0, 0.0, k_ie]
             }
             MassDistributionClass::D => {
-                let k_inner = k_m / 4.0;
-                let k_outer = k_m / 8.0;
+                let k_inner = areal_heat_capacity / 4.0;
+                let k_outer = areal_heat_capacity / 8.0;
                 [k_outer, k_inner, k_inner, k_inner, k_outer]
             }
-            MassDistributionClass::M => [0.0, 0.0, k_m, 0.0, 0.0],
+            MassDistributionClass::M => [0.0, 0.0, areal_heat_capacity, 0.0, 0.0],
         }
     }
 }
@@ -502,31 +498,31 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
 pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
     fn init_heat_transfer_through_3_plus_2_nodes(
         &mut self,
-        r_f: f64,
+        thermal_resistance_floor_construction: f64,
         r_gr: f64,
         mass_distribution: MassDistributionClass,
         k_gr: f64,
-        k_m: f64,
+        areal_heat_capacity: f64,
     ) {
-        self.set_k_m(k_m);
+        self.set_km(areal_heat_capacity);
         // Calculate node conductances (h_pli) and node heat capacities (k_pli)
         // according to BS EN ISO 52016-1:2017, section 6.5.7.4
-        self.set_h_pli(self.init_h_pli(r_f, r_gr));
-        self.set_k_pli(self.init_k_pli(mass_distribution, k_gr, k_m));
+        self.set_h_pli(self.init_h_pli(thermal_resistance_floor_construction, r_gr));
+        self.set_k_pli(self.init_k_pli(mass_distribution, k_gr, areal_heat_capacity));
     }
 
     fn set_h_pli(&mut self, h_pli: [f64; 4]);
     fn set_k_pli(&mut self, k_pli: [f64; 5]);
 
-    fn init_h_pli(&self, r_f: f64, r_gr: f64) -> [f64; 4] {
-        // BS EN ISO 52016:2017 states that the r_c (resistance including the
+    fn init_h_pli(&self, thermal_resistance_floor_construction: f64, r_gr: f64) -> [f64; 4] {
+        // BS EN ISO 52016:2017 states that the thermal_resistance_construction (resistance including the
         //         effect of the ground) should be used in the equations below. However,
         //         this leads to double-counting of r_si, r_gr and r_vi as these are already
-        //         accounted for separately, so we have used r_f (resistance of the floor
+        //         accounted for separately, so we have used thermal_resistance_floor_construction (resistance of the floor
         //         construction only) here instead
-        let h_4 = 4.0 / r_f;
-        let h_3 = 2.0 / r_f;
-        let h_2 = 1.0 / (r_f / 4. + r_gr / 2.);
+        let h_4 = 4.0 / thermal_resistance_floor_construction;
+        let h_3 = 2.0 / thermal_resistance_floor_construction;
+        let h_2 = 1.0 / (thermal_resistance_floor_construction / 4. + r_gr / 2.);
         let h_1 = 2.0 / r_gr;
         [h_1, h_2, h_3, h_4]
     }
@@ -535,21 +531,21 @@ pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
         &self,
         mass_distribution: MassDistributionClass,
         k_gr: f64,
-        k_m: f64,
+        areal_heat_capacity: f64,
     ) -> [f64; 5] {
         match mass_distribution {
-            MassDistributionClass::I => [0.0, k_gr, 0.0, 0.0, k_m],
-            MassDistributionClass::E => [0.0, k_gr, k_m, 0.0, 0.0],
+            MassDistributionClass::I => [0.0, k_gr, 0.0, 0.0, areal_heat_capacity],
+            MassDistributionClass::E => [0.0, k_gr, areal_heat_capacity, 0.0, 0.0],
             MassDistributionClass::IE => {
-                let k_ie = k_m / 2.0;
+                let k_ie = areal_heat_capacity / 2.0;
                 [0.0, k_gr, k_ie, 0.0, k_ie]
             }
             MassDistributionClass::D => {
-                let k_inner = k_m / 2.0;
-                let k_outer = k_m / 4.0;
+                let k_inner = areal_heat_capacity / 2.0;
+                let k_outer = areal_heat_capacity / 4.0;
                 [0.0, k_gr, k_outer, k_inner, k_outer]
             }
-            MassDistributionClass::M => [0.0, k_gr, 0.0, k_m, 0.0],
+            MassDistributionClass::M => [0.0, k_gr, 0.0, areal_heat_capacity, 0.0],
         }
     }
 }
@@ -635,7 +631,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         d_we: f64,
         thermal_conductivity: f64,
         r_si: f64,
-        r_f: f64,
+        thermal_resistance_floor_construction: f64,
         floor_data: &FloorData,
         periodic_penetration_depth: f64,
         total_area: f64,
@@ -652,7 +648,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         // as we are using closures which cannot be hoisted
 
         let total_equiv_thickness =
-            || -> f64 { d_we + thermal_conductivity * (r_si + r_f + self.r_se()) };
+            || -> f64 { d_we + thermal_conductivity * (r_si + thermal_resistance_floor_construction + self.r_se()) };
 
         let d_eq = total_equiv_thickness();
 
@@ -762,7 +758,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
 
             // thermal transmittance of suspended part of floor
-            let thermal_transmittance_sus_floor = || -> f64 { 1. / (r_f + 2. * r_si) };
+            let thermal_transmittance_sus_floor = || -> f64 { 1. / (thermal_resistance_floor_construction + 2. * r_si) };
 
             // Suspended floor periodic coefficients
             let init_suspended_floor = |h_upper,
@@ -1030,12 +1026,12 @@ pub(crate) trait HeatTransferOtherSideConditionedSpace: HeatTransferOtherSide {
 }
 
 pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide {
-    fn init_heat_transfer_other_side_unconditioned_space(&mut self, r_u: f64) {
-        self.set_r_u(r_u);
+    fn init_heat_transfer_other_side_unconditioned_space(&mut self, thermal_resistance_unconditioned_space: f64) {
+        self.set_r_u(thermal_resistance_unconditioned_space);
         self.init_super(None);
     }
 
-    fn set_r_u(&mut self, r_u: f64);
+    fn set_r_u(&mut self, thermal_resistance_unconditioned_space: f64);
     fn r_u(&self) -> f64;
 
     /// Return external convective heat transfer coefficient, in W / (m2.K)
@@ -1072,6 +1068,8 @@ pub(crate) trait HeatTransferOtherSideOutside: HeatTransferOtherSide {
 }
 
 pub(crate) trait SolarRadiationInteraction {
+    /// solar_absorption_coeff -- solar absorption coefficient at the external surface (dimensionless)
+    /// according to BS EN ISO 52016-1:2017, section 6.5.7.3
     fn init_solar_radiation_interaction(
         &mut self,
         pitch: f64,
@@ -1080,7 +1078,7 @@ pub(crate) trait SolarRadiationInteraction {
         base_height: f64,
         projected_height: f64,
         width: f64,
-        a_sol: f64,
+        solar_absorption_coeff: f64,
     ) {
         self.set_external_pitch(pitch);
         if let Some(orientation) = orientation {
@@ -1090,7 +1088,7 @@ pub(crate) trait SolarRadiationInteraction {
         self.set_base_height(base_height);
         self.set_projected_height(projected_height);
         self.set_width(width);
-        self.set_a_sol(a_sol);
+        self.set_solar_absorption_coeff(solar_absorption_coeff);
     }
 
     fn set_external_pitch(&mut self, pitch: f64);
@@ -1105,8 +1103,8 @@ pub(crate) trait SolarRadiationInteraction {
     fn projected_height(&self) -> f64;
     fn set_width(&mut self, width: f64);
     fn width(&self) -> f64;
-    fn set_a_sol(&mut self, a_sol: f64);
-    fn a_sol(&self) -> f64;
+    fn set_solar_absorption_coeff(&mut self, solar_absorption_coeff: f64);
+    fn solar_absorption_coeff(&self) -> f64;
 
     fn i_sol_dir_dif(&self, _simtime: SimulationTimeIteration) -> (f64, f64) {
         // Return default of zero for i_sol_dir and i_sol_dif
@@ -1133,7 +1131,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
         base_height: f64,
         projected_height: f64,
         width: f64,
-        a_sol: f64,
+        solar_absorption_coeff: f64,
     ) {
         self.init_solar_radiation_interaction(
             pitch,
@@ -1142,7 +1140,7 @@ pub(crate) trait SolarRadiationInteractionAbsorbed: SolarRadiationInteraction {
             base_height,
             projected_height,
             width,
-            a_sol,
+            solar_absorption_coeff,
         );
     }
 
@@ -1253,12 +1251,13 @@ pub(crate) struct BuildingElementOpaque {
     r_c: f64,
     _internal_pitch: f64,
     external_pitch: f64,
-    a_sol: f64,
+    solar_absorption_coeff: f64,
     base_height: f64,
     projected_height: f64,
     width: f64,
     orientation: f64,
-    k_m: f64,
+    areal_heat_capacity: f64,
+    k_m: f64, // In Python Opaque elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
     k_pli: [f64; 5],
     h_pli: [f64; 4],
     f_sky: f64,
@@ -1272,9 +1271,9 @@ impl BuildingElementOpaque {
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `a_sol`    - solar absorption coefficient at the external surface (dimensionless)
-    /// * `r_c`      - thermal resistance, in m2.K / W
-    /// * `k_m`      - areal heat capacity, in J / (m2.K)
+    /// * `solar_absorption_coeff`    - solar absorption coefficient at the external surface (dimensionless)
+    /// * `thermal_resistance_construction`      - thermal resistance, in m2.K / W
+    /// * `areal_heat_capacity`      - areal heat capacity, in J / (m2.K)
     /// * `mass_distribution_class`
     ///          - distribution of mass in building element, one of:
     ///             - 'I':  mass concentrated on internal side
@@ -1293,9 +1292,9 @@ impl BuildingElementOpaque {
         area: f64,
         is_unheated_pitched_roof: bool,
         pitch: f64,
-        a_sol: f64,
-        r_c: f64,
-        k_m: f64,
+        solar_absorption_coeff: f64,
+        thermal_resistance_construction: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         orientation: f64,
         base_height: f64,
@@ -1310,11 +1309,12 @@ impl BuildingElementOpaque {
             r_c: Default::default(),
             _internal_pitch: if is_unheated_pitched_roof { 0. } else { pitch },
             external_pitch: pitch,
-            a_sol,
+            solar_absorption_coeff,
             base_height,
             projected_height: Default::default(),
             width,
             orientation,
+            areal_heat_capacity,
             k_m: Default::default(),
             k_pli: Default::default(),
             h_pli: Default::default(),
@@ -1322,7 +1322,7 @@ impl BuildingElementOpaque {
             therm_rad_to_sky: Default::default(),
         };
 
-        new_opaque.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
+        new_opaque.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
         new_opaque.init_heat_transfer_other_side_outside(pitch);
         // shading is None because the model ignores nearby shading on opaque elements
         new_opaque.init_solar_radiation_interaction_absorbed(
@@ -1332,14 +1332,14 @@ impl BuildingElementOpaque {
             base_height,
             projected_height(pitch, height),
             width,
-            a_sol,
+            solar_absorption_coeff,
         );
 
         new_opaque
     }
 
-    pub(crate) fn a_sol(&self) -> f64 {
-        self.a_sol
+    pub(crate) fn solar_absorption_coeff(&self) -> f64 {
+        self.solar_absorption_coeff
     }
 
     pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
@@ -1371,8 +1371,8 @@ impl HeatTransferInternal for BuildingElementOpaque {
 impl HeatTransferInternalCommon for BuildingElementOpaque {}
 
 impl HeatTransferThrough for BuildingElementOpaque {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
     }
 
     fn r_c(&self) -> f64 {
@@ -1380,11 +1380,11 @@ impl HeatTransferThrough for BuildingElementOpaque {
     }
 
     fn k_m(&self) -> f64 {
-        self.k_m
+        self.areal_heat_capacity
     }
 
-    fn set_k_m(&mut self, k_m: f64) {
-        self.k_m = k_m;
+    fn set_km(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
     }
 
     fn k_pli(&self) -> &[f64] {
@@ -1495,12 +1495,12 @@ impl SolarRadiationInteraction for BuildingElementOpaque {
         self.width
     }
 
-    fn set_a_sol(&mut self, a_sol: f64) {
-        self.a_sol = a_sol;
+    fn set_solar_absorption_coeff(&mut self, solar_absorption_coeff: f64) {
+        self.solar_absorption_coeff = solar_absorption_coeff;
     }
 
-    fn a_sol(&self) -> f64 {
-        self.a_sol
+    fn solar_absorption_coeff(&self) -> f64 {
+        self.solar_absorption_coeff
     }
 }
 
@@ -1511,14 +1511,15 @@ impl SolarRadiationInteractionAbsorbed for BuildingElementOpaque {
 }
 
 #[derive(Debug)]
-pub(crate) struct BuildingElementAdjacentZTC {
+pub(crate) struct BuildingElementAdjacentConditionedSpace {
     area: f64,
     pitch: f64,
     external_conditions: Arc<ExternalConditions>,
     r_c: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    k_m: f64,
+    areal_heat_capacity: f64,
+    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
     f_sky: f64,
     therm_rad_to_sky: f64,
     external_pitch: f64,
@@ -1526,14 +1527,14 @@ pub(crate) struct BuildingElementAdjacentZTC {
 }
 
 /// A type to represent building elements adjacent to a thermally conditioned zone (ZTC)
-impl BuildingElementAdjacentZTC {
+impl BuildingElementAdjacentConditionedSpace {
     /// Arguments (names based on those in BS EN ISO 52016-1:2017):
     /// * `area`     - area (in m2) of this building element
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `r_c`      - thermal resistance, in m2.K / W
-    /// * `k_m`      - areal heat capacity, in J / (m2.K)
+    /// * `thermal_resistance_construction`      - thermal resistance, in m2.K / W
+    /// * `areal_heat_capacity`      - areal heat capacity, in J / (m2.K)
     /// * `mass_distribution_class`
     ///          - distribution of mass in building element, one of:
     ///             - 'I':  mass concentrated on internal side
@@ -1542,19 +1543,26 @@ impl BuildingElementAdjacentZTC {
     ///             - 'D':  mass equally distributed
     ///             - 'M':  mass concentrated inside
     /// * `external_conditions` - reference to ExternalConditions object
+    ///
+    /// Other variables:
+    /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce`     -- external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re`     -- external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff`    -- solar absorption coefficient at the external surface (dimensionless)
     pub(crate) fn new(
         area: f64,
         pitch: f64,
-        r_c: f64,
-        k_m: f64,
+        thermal_resistance_construction: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
-        let mut new_ztc = Self {
+        let mut building_element = Self {
             area,
             pitch,
             external_conditions,
             r_c: Default::default(),
+            areal_heat_capacity,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -1564,11 +1572,11 @@ impl BuildingElementAdjacentZTC {
             orientation: Default::default(),
         };
 
-        new_ztc.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
-        new_ztc.init_heat_transfer_other_side(None);
-        new_ztc.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
+        building_element.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
+        building_element.init_heat_transfer_other_side(None);
+        building_element.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
-        new_ztc
+        building_element
     }
 
     pub(crate) fn fabric_heat_loss(&self) -> f64 {
@@ -1589,9 +1597,9 @@ impl BuildingElementAdjacentZTC {
     }
 }
 
-impl HeatTransferThrough for BuildingElementAdjacentZTC {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
+impl HeatTransferThrough for BuildingElementAdjacentConditionedSpace {
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
     }
 
     fn r_c(&self) -> f64 {
@@ -1602,8 +1610,8 @@ impl HeatTransferThrough for BuildingElementAdjacentZTC {
         self.k_m
     }
 
-    fn set_k_m(&mut self, k_m: f64) {
-        self.k_m = k_m;
+    fn set_km(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
     }
 
     fn k_pli(&self) -> &[f64] {
@@ -1628,7 +1636,7 @@ impl HeatTransferThrough for BuildingElementAdjacentZTC {
     }
 }
 
-impl HeatTransferThrough5Nodes for BuildingElementAdjacentZTC {
+impl HeatTransferThrough5Nodes for BuildingElementAdjacentConditionedSpace {
     fn set_h_pli(&mut self, h_pli: [f64; 4]) {
         self.h_pli = h_pli;
     }
@@ -1638,13 +1646,13 @@ impl HeatTransferThrough5Nodes for BuildingElementAdjacentZTC {
     }
 }
 
-impl HeatTransferInternal for BuildingElementAdjacentZTC {
+impl HeatTransferInternal for BuildingElementAdjacentConditionedSpace {
     fn pitch(&self) -> f64 {
         self.pitch
     }
 }
 
-impl HeatTransferOtherSide for BuildingElementAdjacentZTC {
+impl HeatTransferOtherSide for BuildingElementAdjacentConditionedSpace {
     fn set_f_sky(&mut self, f_sky: f64) {
         self.f_sky = f_sky;
     }
@@ -1666,11 +1674,11 @@ impl HeatTransferOtherSide for BuildingElementAdjacentZTC {
     }
 }
 
-impl HeatTransferOtherSideConditionedSpace for BuildingElementAdjacentZTC {}
+impl HeatTransferOtherSideConditionedSpace for BuildingElementAdjacentConditionedSpace {}
 
-impl HeatTransferInternalCommon for BuildingElementAdjacentZTC {}
+impl HeatTransferInternalCommon for BuildingElementAdjacentConditionedSpace {}
 
-impl SolarRadiationInteraction for BuildingElementAdjacentZTC {
+impl SolarRadiationInteraction for BuildingElementAdjacentConditionedSpace {
     fn set_external_pitch(&mut self, pitch: f64) {
         self.external_pitch = pitch;
     }
@@ -1719,16 +1727,16 @@ impl SolarRadiationInteraction for BuildingElementAdjacentZTC {
         0.0
     }
 
-    fn set_a_sol(&mut self, _a_sol: f64) {
+    fn set_solar_absorption_coeff(&mut self, _solar_absorption_coeff: f64) {
         // do nothing
     }
 
-    fn a_sol(&self) -> f64 {
+    fn solar_absorption_coeff(&self) -> f64 {
         0.0
     }
 }
 
-impl SolarRadiationInteractionNotExposed for BuildingElementAdjacentZTC {}
+impl SolarRadiationInteractionNotExposed for BuildingElementAdjacentConditionedSpace {}
 
 /// A type to represent building elements adjacent to a thermally unconditioned zone (ZTU)
 ///
@@ -1738,7 +1746,7 @@ impl SolarRadiationInteractionNotExposed for BuildingElementAdjacentZTC {}
 /// of the approaches (internal and external) in BS EN ISO 52016-1:2017 which
 /// require detailed inputs for the unconditioned zone.
 #[derive(Debug)]
-pub(crate) struct BuildingElementAdjacentZTUSimple {
+pub(crate) struct BuildingElementAdjacentUnconditionedSpaceSimple {
     area: f64,
     pitch: f64,
     external_pitch: f64,
@@ -1746,22 +1754,23 @@ pub(crate) struct BuildingElementAdjacentZTUSimple {
     r_u: f64,
     f_sky: f64,
     therm_rad_to_sky: f64,
-    k_m: f64,
+    areal_heat_capacity: f64,
+    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
     h_pli: [f64; 4],
     k_pli: [f64; 5],
     r_c: f64,
 }
 
-impl BuildingElementAdjacentZTUSimple {
+impl BuildingElementAdjacentUnconditionedSpaceSimple {
     /// Arguments (names based on those in BS EN ISO 52016-1:2017):
     /// * `area`     - area (in m2) of this building element
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `r_c`      - thermal resistance, in m2.K / W
-    /// * `r_u`      - effective thermal resistance of unheated space, in m2.K / W;
+    /// * `thermal_resistance_construction`      - thermal resistance, in m2.K / W
+    /// * `thermal_resistance_unconditioned_space`      - effective thermal resistance of unheated space, in m2.K / W;
     ///             see SAP 10.2 section 3.3 for suggested values
-    /// * `k_m`      - areal heat capacity, in J / (m2.K)
+    /// * `areal_heat_capacity`      - areal heat capacity, in J / (m2.K)
     /// * `mass_distribution_class`
     ///          - distribution of mass in building element, one of:
     ///             - 'I':  mass concentrated on internal side
@@ -1770,16 +1779,21 @@ impl BuildingElementAdjacentZTUSimple {
     ///             - 'D':  mass equally distributed
     ///             - 'M':  mass concentrated inside
     /// * `external_conditions` - reference to ExternalConditions object
+    ///      Other variables:
+    /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.13.3)
+    /// * `h_ce`     -- external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re`     -- external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `solar_absorption_coeff`    -- solar absorption coefficient at the external surface (dimensionless)
     pub(crate) fn new(
         area: f64,
         pitch: f64,
-        r_c: f64,
-        r_u: f64,
-        k_m: f64,
+        thermal_resistance_construction: f64,
+        thermal_resistance_unconditioned_space: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
-        let mut new_ztu = Self {
+        let mut building_element = Self {
             area,
             pitch,
             external_pitch: 0.0,
@@ -1787,16 +1801,18 @@ impl BuildingElementAdjacentZTUSimple {
             r_u: Default::default(),
             f_sky: Default::default(),
             therm_rad_to_sky: Default::default(),
-            k_m,
+            areal_heat_capacity,
+            k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
-            r_c,
+            r_c: thermal_resistance_construction,
         };
-        new_ztu.init_heat_transfer_through_5_nodes(r_c, mass_distribution_class, k_m);
-        new_ztu.init_heat_transfer_other_side_unconditioned_space(r_u);
-        new_ztu.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
+        building_element.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
+        building_element.init_heat_transfer_other_side_unconditioned_space(thermal_resistance_unconditioned_space);
+        //  Solar absorption coefficient at the external surface is zero         
+        building_element.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
-        new_ztu
+        building_element
     }
 
     pub(crate) fn h_ce(&self) -> f64 {
@@ -1808,17 +1824,17 @@ impl BuildingElementAdjacentZTUSimple {
     }
 }
 
-impl HeatTransferInternal for BuildingElementAdjacentZTUSimple {
+impl HeatTransferInternal for BuildingElementAdjacentUnconditionedSpaceSimple {
     fn pitch(&self) -> f64 {
         self.pitch
     }
 }
 
-impl HeatTransferInternalCommon for BuildingElementAdjacentZTUSimple {}
+impl HeatTransferInternalCommon for BuildingElementAdjacentUnconditionedSpaceSimple {}
 
-impl HeatTransferThrough for BuildingElementAdjacentZTUSimple {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
+impl HeatTransferThrough for BuildingElementAdjacentUnconditionedSpaceSimple {
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
     }
 
     fn r_c(&self) -> f64 {
@@ -1829,8 +1845,8 @@ impl HeatTransferThrough for BuildingElementAdjacentZTUSimple {
         self.k_m
     }
 
-    fn set_k_m(&mut self, k_m: f64) {
-        self.k_m = k_m;
+    fn set_km(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
     }
 
     fn k_pli(&self) -> &[f64] {
@@ -1855,7 +1871,7 @@ impl HeatTransferThrough for BuildingElementAdjacentZTUSimple {
     }
 }
 
-impl HeatTransferThrough5Nodes for BuildingElementAdjacentZTUSimple {
+impl HeatTransferThrough5Nodes for BuildingElementAdjacentUnconditionedSpaceSimple {
     fn set_h_pli(&mut self, h_pli: [f64; 4]) {
         self.h_pli = h_pli;
     }
@@ -1865,7 +1881,7 @@ impl HeatTransferThrough5Nodes for BuildingElementAdjacentZTUSimple {
     }
 }
 
-impl HeatTransferOtherSide for BuildingElementAdjacentZTUSimple {
+impl HeatTransferOtherSide for BuildingElementAdjacentUnconditionedSpaceSimple {
     fn set_f_sky(&mut self, f_sky: f64) {
         self.f_sky = f_sky;
     }
@@ -1887,9 +1903,9 @@ impl HeatTransferOtherSide for BuildingElementAdjacentZTUSimple {
     }
 }
 
-impl HeatTransferOtherSideUnconditionedSpace for BuildingElementAdjacentZTUSimple {
-    fn set_r_u(&mut self, r_u: f64) {
-        self.r_u = r_u;
+impl HeatTransferOtherSideUnconditionedSpace for BuildingElementAdjacentUnconditionedSpaceSimple {
+    fn set_r_u(&mut self, thermal_resistance_unconditioned_space: f64) {
+        self.r_u = thermal_resistance_unconditioned_space;
     }
 
     fn r_u(&self) -> f64 {
@@ -1897,7 +1913,7 @@ impl HeatTransferOtherSideUnconditionedSpace for BuildingElementAdjacentZTUSimpl
     }
 }
 
-impl SolarRadiationInteraction for BuildingElementAdjacentZTUSimple {
+impl SolarRadiationInteraction for BuildingElementAdjacentUnconditionedSpaceSimple {
     fn set_external_pitch(&mut self, pitch: f64) {
         self.external_pitch = pitch;
     }
@@ -1946,16 +1962,16 @@ impl SolarRadiationInteraction for BuildingElementAdjacentZTUSimple {
         0.0
     }
 
-    fn set_a_sol(&mut self, _a_sol: f64) {
+    fn set_solar_absorption_coeff(&mut self, _solar_absorption_coeff: f64) {
         // do nothing
     }
 
-    fn a_sol(&self) -> f64 {
+    fn solar_absorption_coeff(&self) -> f64 {
         0.0
     }
 }
 
-impl SolarRadiationInteractionNotExposed for BuildingElementAdjacentZTUSimple {}
+impl SolarRadiationInteractionNotExposed for BuildingElementAdjacentUnconditionedSpaceSimple {}
 
 /// A type to represent ground building elements
 ///
@@ -2006,7 +2022,8 @@ pub(crate) struct BuildingElementGround {
     therm_rad_to_sky: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    k_m: f64,
+    areal_heat_capacity: f64,
+    k_m: f64, // In Python Ground elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
     h_pi: f64,
     h_pe: f64,
     h_ce: f64,
@@ -2015,41 +2032,69 @@ pub(crate) struct BuildingElementGround {
 
 impl BuildingElementGround {
     /// Arguments (names based on those in BS EN ISO 52016-1:2017):
-    /// * `total_area` - total area (in m2) of the building element across entire dwelling.
-    ///                  If the Floor is divided among several zones,
-    ///                  this is the total area across all zones.
-    /// * `area`     - area (in m2) of this building element within the zone
-    /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
-    ///          where 0 means the external surface is facing up, 90 means the external
-    ///          surface is vertical and 180 means the external surface is facing down
-    /// * `u_value`  - steady-state thermal transmittance of floor, including the
-    ///             effect of the ground, in W / (m2.K)
-    ///             Calculated for the entire ground floor,
-    ///             even if it is distributed among several zones.
-    /// * `r_f`      - total thermal resistance of all layers in the floor construction, in (m2.K) / W
-    /// * `k_m`      - areal heat capacity of the ground floor element, in J / (m2.K)
-    /// * `mass_distribution_class`
-    ///          - distribution of mass in building element, one of:
-    ///             - 'I':  mass concentrated on internal side
-    ///             - 'E':  mass concentrated on external side
-    ///             - 'IE': mass divided over internal and external side
-    ///             - 'D':  mass equally distributed
-    ///             - 'M':  mass concentrated inside
-    /// * `floor_data` - enumerated struct that encapsulated a number of parameters that are particular
-    ///                  to each floor type
+    /// * `total_area` -- total area (in m2) of the building element across entire dwelling.
+    ///     If the Floor is devided among several zones,
+    ///     this is the total area across all zones.
+    /// * `area`     -- area (in m2) of this building element within the zone.
+    /// * `pitch` -- tilt angle of the surface from horizontal, in degrees between 0 and 180,
+    ///     where 0 means the external surface is facing up, 90 means the external
+    ///     surface is vertical and 180 means the external surface is facing down
+    /// * `u_value`  -- steady-state thermal transmittance of floor, including the effect of the ground, in W / (m2.K)
+    ///     Calculated for the entire ground floor, even if it is distributed among several zones.
+    /// * `thermal_resistance_floor_construction`      -- total thermal resistance of all layers in the floor construction, in (m2.K) / W
+    /// * `areal_heat_capacity`      -- areal heat capacity of the ground floor element, in J / (m2.K)
+    /// * `perimeter` -- perimeter of the floor, in metres. Calculated for the entire ground floor,
+    ///     even if it is distributed among several zones.
+    /// * `psi_wall_floor_junc` -- linear thermal transmittance of the junction between the floor and the walls, in W / (m.K)
+    /// * `ext_cond` -- reference to ExternalConditions object
+    /// * `simulation_time` -- reference to SimulationTime object
+    /// * `mass_distribution_class` -- distribution of mass in building element, one of:
+    ///         - 'I':  mass concentrated on internal side
+    ///         - 'E':  mass concentrated on external side
+    ///         - 'IE': mass divided over internal and external side
+    ///         - 'D':  mass equally distributed
+    ///         - 'M':  mass concentrated inside
+    /// * `floor_type`
+    ///         - Slab_no_edge_insulation
+    ///         - Slab_edge_insulation
+    ///         - Suspended_floor
+    ///         - Heated_basement
+    ///         - Unheated_basement
+    /// * `edge_insulation`
+    ///         - horizontal edge insulation
+    ///         - vertical or external edge insulation
+    /// * `h_upper` - height of the floor upper surface, in m
+    ///     average value is used if h varies
+    /// * `u_w` - thermal transmittance of walls above ground, in W/(m2·K)
+    ///     in accordance with ISO 6946
+    /// * `u_f_s` - thermal transmittance of floor above basement), in W/(m2·K)
+    ///     in accordance with ISO 6946
+    /// * `area_per_perimeter_vent` -  area of ventilation openings per perimeter, in m2/m
+    /// * `shield_fact_location` - wind shielding factor
+    ///         - Sheltered
+    ///         - Average
+    ///         - Exposed
     /// * `d_we` - thickness of the walls, in m
-    /// * `perimeter` - perimeter of the floor, in metres. Calculated for the entire ground floor,
-    ///                 even if it is distributed among several zones.
-    /// * `psi_wall_floor_junc` - linear thermal transmittance of the junction
-    ///                        between the floor and the walls, in W / (m.K)
-    /// * `external_conditions` - reference to ExternalConditions object
+    /// * `r_f_ins` - thermal resistance of insulation on base of underfloor space, in m2·K/W
+    /// * `z_b` - depth of basement floor below ground level, in m
+    /// * `r_w_b` - thermal resistance of walls of the basement, in m2·K/W
+    /// * `h_w` - height of the basement walls above ground level, in m
+    ///
+    /// Other variables:
+    /// * `f_sky` -- view factor to the sky (see BS EN ISO 52016-1:2017, section 6.5.6.3.6)
+    /// * `h_ce`     -- external convective heat transfer coefficient, in W / (m2.K)
+    /// * `h_re`     -- external radiative heat transfer coefficient, in W / (m2.K)
+    /// * `thermal_resistance_construction`      -- thermal resistance of the ground floor element including the
+    ///     effect of the ground, in m2.K / W
+    /// * `r_gr`     -- thermal resistance of the fixed ground layer, in m2.K / W
+    /// * `k_gr`     -- areal heat capacity of the fixed ground layer, in J / (m2.K)
     pub(crate) fn new(
         total_area: f64,
         area: f64,
         pitch: f64,
         u_value: f64,
-        r_f: f64,
-        k_m: f64,
+        thermal_resistance_floor_construction: f64,
+        areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
         floor_data: &FloorData,
         d_we: f64,
@@ -2073,6 +2118,7 @@ impl BuildingElementGround {
             therm_rad_to_sky: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
+            areal_heat_capacity,
             k_m: Default::default(),
             h_pi: Default::default(),
             h_pe: Default::default(),
@@ -2100,27 +2146,27 @@ impl BuildingElementGround {
 
         // Calculate thermal resistance of virtual layer using BS EN ISO 13370:2017 Equation (F1)
         let r_si = 0.17; // ISO 6946 - internal surface resistance
-        let r_vi = (1.0 / u_value) - r_si - r_f - r_gr; // in m2.K/W
+        let r_vi = (1.0 / u_value) - r_si - thermal_resistance_floor_construction - r_gr; // in m2.K/W
 
         // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
         debug_assert!(
             r_vi > 0.,
-            "r_vi should be greater than zero. check u-value and r_f inputs for floors"
+            "r_vi should be greater than zero. check u-value and thermal_resistance_floor_construction inputs for floors"
         );
 
         new_ground.init_heat_transfer_through_3_plus_2_nodes(
-            r_f,
+            thermal_resistance_floor_construction,
             r_gr,
             mass_distribution_class,
             k_gr,
-            k_m,
+            areal_heat_capacity,
         );
         new_ground.init_heat_transfer_other_side_ground(
             r_vi,
             d_we,
             thermal_conductivity,
             r_si,
-            r_f,
+            thermal_resistance_floor_construction,
             floor_data,
             periodic_penetration_depth,
             total_area,
@@ -2164,8 +2210,8 @@ impl HeatTransferInternal for BuildingElementGround {
 impl HeatTransferInternalCommon for BuildingElementGround {}
 
 impl HeatTransferThrough for BuildingElementGround {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
     }
 
     fn r_c(&self) -> f64 {
@@ -2176,8 +2222,8 @@ impl HeatTransferThrough for BuildingElementGround {
         self.k_m
     }
 
-    fn set_k_m(&mut self, k_m: f64) {
-        self.k_m = k_m;
+    fn set_km(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
     }
 
     fn k_pli(&self) -> &[f64] {
@@ -2357,11 +2403,11 @@ impl SolarRadiationInteraction for BuildingElementGround {
         0.0
     }
 
-    fn set_a_sol(&mut self, _a_sol: f64) {
+    fn set_solar_absorption_coeff(&mut self, _solar_absorption_coeff: f64) {
         // do nothing
     }
 
-    fn a_sol(&self) -> f64 {
+    fn solar_absorption_coeff(&self) -> f64 {
         0.0
     }
 }
@@ -2479,7 +2525,7 @@ impl BuildingElementTransparent {
     /// * `pitch` - tilt angle of the surface from horizontal, in degrees between 0 and 180,
     ///          where 0 means the external surface is facing up, 90 means the external
     ///          surface is vertical and 180 means the external surface is facing down
-    /// * `r_c` - thermal resistance, in m2.K / W
+    /// * `thermal_resistance_construction` - thermal resistance, in m2.K / W
     /// * `orientation` - is the orientation angle of the inclined surface, expressed
     ///                as the geographical azimuth angle of the horizontal projection
     ///                of the inclined surface normal, -180 to 180, in degrees
@@ -2494,7 +2540,7 @@ impl BuildingElementTransparent {
     /// * `external_conditions` -- reference to ExternalConditions object
     pub(crate) fn new(
         pitch: f64,
-        r_c: f64,
+        thermal_resistance_construction: f64,
         orientation: f64,
         g_value: f64,
         frame_area_fraction: f64,
@@ -2517,7 +2563,7 @@ impl BuildingElementTransparent {
             base_height,
             projected_height: Default::default(),
             width,
-            r_c,
+            r_c: thermal_resistance_construction,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -2527,7 +2573,7 @@ impl BuildingElementTransparent {
             treatment,
         };
 
-        new_trans.init_heat_transfer_through_2_nodes(r_c);
+        new_trans.init_heat_transfer_through_2_nodes(thermal_resistance_construction);
         new_trans.init_heat_transfer_other_side_outside(pitch);
         new_trans.init_solar_radiation_interaction(
             pitch,
@@ -2653,18 +2699,18 @@ impl BuildingElementTransparent {
     ) -> anyhow::Result<f64> {
         // Account for resistance of window treatment in heat transfer coefficient
         // TODO (from Python) Check that idx refers to inside surface?
-        let mut r_c = 1.0
+        let mut thermal_resistance_construction = 1.0
             / self.h_pli.get(idx).ok_or_else(|| {
                 anyhow!("Could not get h_pli value in transparent building element for index {idx}")
             })?;
         for treatment in self.treatment.iter() {
             self.adjust_treatment(simtime)?;
             if !treatment.is_open.load(Ordering::SeqCst) {
-                r_c += treatment.delta_r;
+                thermal_resistance_construction += treatment.delta_r;
             }
         }
 
-        Ok(1.0 / r_c)
+        Ok(1.0 / thermal_resistance_construction)
     }
 
     pub(crate) fn r_se(&self) -> f64 {
@@ -2700,8 +2746,8 @@ impl HeatTransferInternal for BuildingElementTransparent {
 impl HeatTransferInternalCommon for BuildingElementTransparent {}
 
 impl HeatTransferThrough for BuildingElementTransparent {
-    fn set_r_c(&mut self, r_c: f64) {
-        self.r_c = r_c;
+    fn set_r_c(&mut self, thermal_resistance_construction: f64) {
+        self.r_c = thermal_resistance_construction;
     }
 
     fn r_c(&self) -> f64 {
@@ -2712,8 +2758,8 @@ impl HeatTransferThrough for BuildingElementTransparent {
         self.k_m
     }
 
-    fn set_k_m(&mut self, k_m: f64) {
-        self.k_m = k_m;
+    fn set_km(&mut self, areal_heat_capacity: f64) {
+        self.k_m = areal_heat_capacity;
     }
 
     fn k_pli(&self) -> &[f64] {
@@ -2821,11 +2867,11 @@ impl SolarRadiationInteraction for BuildingElementTransparent {
         self.width
     }
 
-    fn set_a_sol(&mut self, _a_sol: f64) {
+    fn set_solar_absorption_coeff(&mut self, _solar_absorption_coeff: f64) {
         // do nothing
     }
 
-    fn a_sol(&self) -> f64 {
+    fn solar_absorption_coeff(&self) -> f64 {
         0.0
     }
 }
@@ -3267,12 +3313,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_a_sol_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_solar_absorption_coeff_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
         // Define increment between test cases
-        let a_sol_inc = 0.01;
+        let solar_absorption_coeff_inc = 0.01;
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_relative_eq!(be.a_sol(), 0.6 + i as f64 * a_sol_inc,);
+            assert_relative_eq!(be.solar_absorption_coeff(), 0.6 + i as f64 * solar_absorption_coeff_inc,);
         }
     }
 
@@ -3354,10 +3400,10 @@ mod tests {
     }
 
     #[fixture]
-    fn adjacent_ztc_building_elements(
+    fn conditioned_space_adjacent_building_elements(
         external_conditions: Arc<ExternalConditions>,
-    ) -> [BuildingElementAdjacentZTC; 5] {
-        let be_i = BuildingElementAdjacentZTC::new(
+    ) -> [BuildingElementAdjacentConditionedSpace; 5] {
+        let be_i = BuildingElementAdjacentConditionedSpace::new(
             20.0,
             180.,
             0.25,
@@ -3365,7 +3411,7 @@ mod tests {
             MassDistributionClass::I,
             external_conditions.clone(),
         );
-        let be_e = BuildingElementAdjacentZTC::new(
+        let be_e = BuildingElementAdjacentConditionedSpace::new(
             22.5,
             135.,
             0.50,
@@ -3373,7 +3419,7 @@ mod tests {
             MassDistributionClass::E,
             external_conditions.clone(),
         );
-        let be_ie = BuildingElementAdjacentZTC::new(
+        let be_ie = BuildingElementAdjacentConditionedSpace::new(
             25.0,
             90.,
             0.75,
@@ -3381,7 +3427,7 @@ mod tests {
             MassDistributionClass::IE,
             external_conditions.clone(),
         );
-        let be_d = BuildingElementAdjacentZTC::new(
+        let be_d = BuildingElementAdjacentConditionedSpace::new(
             27.5,
             45.,
             0.80,
@@ -3389,7 +3435,7 @@ mod tests {
             MassDistributionClass::D,
             external_conditions.clone(),
         );
-        let be_m = BuildingElementAdjacentZTC::new(
+        let be_m = BuildingElementAdjacentConditionedSpace::new(
             30.0,
             0.,
             0.40,
@@ -3401,10 +3447,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_no_of_nodes_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_no_of_nodes_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
-        for be in adjacent_ztc_building_elements {
+        for be in conditioned_space_adjacent_building_elements {
             assert_eq!(be.number_of_nodes(), 5, "incorrect number of nodes");
             assert_eq!(
                 be.number_of_inside_nodes(),
@@ -3415,18 +3461,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_area_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_area_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
         // Define increment between test cases
         let area_inc = 2.5;
 
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(be.area(), 20.0 + i as f64 * area_inc,);
         }
     }
 
     #[rstest]
-    fn test_heat_flow_direction_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_heat_flow_direction_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
@@ -3438,7 +3484,7 @@ mod tests {
             HeatFlowDirection::Upwards,
         ];
 
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_eq!(
                 be.heat_flow_direction(temp_int_air, temp_int_surface[i]),
                 results[i],
@@ -3448,67 +3494,67 @@ mod tests {
     }
 
     #[rstest]
-    fn test_r_si_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_r_si_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(be.r_si(), results[i], max_relative = 0.05);
         }
     }
 
     #[rstest]
-    fn test_h_ci_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
+    fn test_h_ci_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(be.h_ci(temp_int_air, temp_int_surface[i]), results[i],);
         }
     }
 
     #[rstest]
-    fn test_h_ri_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
-        for be in adjacent_ztc_building_elements {
+    fn test_h_ri_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+        for be in conditioned_space_adjacent_building_elements {
             assert_relative_eq!(be.h_ri(), 5.13,);
         }
     }
 
     #[rstest]
-    fn test_h_ce_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
-        for be in adjacent_ztc_building_elements {
+    fn test_h_ce_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+        for be in conditioned_space_adjacent_building_elements {
             assert_relative_eq!(be.h_ce(), 0.0,);
         }
     }
 
     #[rstest]
-    fn test_h_re_for_adjacent_ztc(adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5]) {
-        for be in adjacent_ztc_building_elements {
+    fn test_h_re_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+        for be in conditioned_space_adjacent_building_elements {
             assert_eq!(be.h_re(), 0.0, "incorrect h_re returned");
         }
     }
 
     #[rstest]
-    fn test_a_sol_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_solar_absorption_coeff_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
-        for be in adjacent_ztc_building_elements {
-            assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
+        for be in conditioned_space_adjacent_building_elements {
+            assert_eq!(be.solar_absorption_coeff(), 0.0, "incorrect solar_absorption_coeff returned");
         }
     }
 
     #[rstest]
-    fn test_therm_rad_to_sky_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_therm_rad_to_sky_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
-        for be in adjacent_ztc_building_elements {
-            assert_eq!(be.therm_rad_to_sky(), 0.0, "incorrect a_sol returned");
+        for be in conditioned_space_adjacent_building_elements {
+            assert_eq!(be.therm_rad_to_sky(), 0.0, "incorrect therm_rad_to_sky returned");
         }
     }
 
     #[rstest]
-    fn test_h_pli_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_h_pli_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         let results = [
             [24.0, 12.0, 12.0, 24.0],
@@ -3517,14 +3563,14 @@ mod tests {
             [7.5, 3.75, 3.75, 7.5],
             [15.0, 7.5, 7.5, 15.0],
         ];
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_eq!(be.h_pli(), &results[i], "incorrect h_pli list returned");
         }
     }
 
     #[rstest]
-    fn test_k_pli_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_k_pli_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         let results = [
             [0.0, 0.0, 0.0, 0.0, 19000.0],
@@ -3533,16 +3579,16 @@ mod tests {
             [2000.0, 4000.0, 4000.0, 4000.0, 2000.0],
             [0.0, 0.0, 15000.0, 0.0, 0.0],
         ];
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_eq!(be.k_pli(), &results[i], "incorrect k_pli list returned");
         }
     }
 
     #[rstest]
-    fn test_fabric_heat_loss_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_fabric_heat_loss_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
-        for be in adjacent_ztc_building_elements {
+        for be in conditioned_space_adjacent_building_elements {
             assert_eq!(
                 be.fabric_heat_loss(),
                 0.0,
@@ -3552,12 +3598,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_capacity_for_adjacent_ztc(
-        adjacent_ztc_building_elements: [BuildingElementAdjacentZTC; 5],
+    fn test_heat_capacity_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         let results = [380., 405., 425., 440., 450.];
 
-        for (i, be) in adjacent_ztc_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_eq!(
                 be.heat_capacity(),
                 results[i],
@@ -3857,9 +3903,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_a_sol_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    fn test_solar_absorption_coeff_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
         for be in ground_building_elements.iter() {
-            assert_eq!(be.a_sol(), 0.0, "incorrect a_sol returned");
+            assert_eq!(be.solar_absorption_coeff(), 0.0, "incorrect solar_absorption_coeff returned");
         }
     }
 
@@ -4077,11 +4123,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_a_sol_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    fn test_solar_absorption_coeff_for_transparent(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
-            transparent_building_element.a_sol(),
+            transparent_building_element.solar_absorption_coeff(),
             0.0,
-            "incorrect a_sol returned"
+            "incorrect solar_absorption_coeff returned"
         );
     }
 
@@ -4149,10 +4195,10 @@ mod tests {
     }
 
     #[fixture]
-    fn ztu_building_elements(
+    fn unconditioned_space_adjacent_building_elements(
         external_conditions: Arc<ExternalConditions>,
-    ) -> [BuildingElementAdjacentZTUSimple; 5] {
-        let be_i = BuildingElementAdjacentZTUSimple::new(
+    ) -> [BuildingElementAdjacentUnconditionedSpaceSimple; 5] {
+        let be_i = BuildingElementAdjacentUnconditionedSpaceSimple::new(
             20.0,
             180.,
             0.25,
@@ -4161,7 +4207,7 @@ mod tests {
             MassDistributionClass::I,
             external_conditions.clone(),
         );
-        let be_e = BuildingElementAdjacentZTUSimple::new(
+        let be_e = BuildingElementAdjacentUnconditionedSpaceSimple::new(
             22.5,
             135.,
             0.50,
@@ -4170,7 +4216,7 @@ mod tests {
             MassDistributionClass::E,
             external_conditions.clone(),
         );
-        let be_ie = BuildingElementAdjacentZTUSimple::new(
+        let be_ie = BuildingElementAdjacentUnconditionedSpaceSimple::new(
             25.0,
             90.,
             0.75,
@@ -4179,7 +4225,7 @@ mod tests {
             MassDistributionClass::IE,
             external_conditions.clone(),
         );
-        let be_d = BuildingElementAdjacentZTUSimple::new(
+        let be_d = BuildingElementAdjacentUnconditionedSpaceSimple::new(
             27.5,
             45.,
             0.80,
@@ -4188,7 +4234,7 @@ mod tests {
             MassDistributionClass::D,
             external_conditions.clone(),
         );
-        let be_m = BuildingElementAdjacentZTUSimple::new(
+        let be_m = BuildingElementAdjacentUnconditionedSpaceSimple::new(
             30.0,
             0.,
             0.40,
@@ -4201,8 +4247,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_ce_for_ztu(ztu_building_elements: [BuildingElementAdjacentZTUSimple; 5]) {
-        for (i, be) in ztu_building_elements.iter().enumerate() {
+    fn test_h_ce_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
+        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(
                 be.h_ce(),
                 [
@@ -4218,8 +4264,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_re_for_ztu(ztu_building_elements: [BuildingElementAdjacentZTUSimple; 5]) {
-        for (i, be) in ztu_building_elements.iter().enumerate() {
+    fn test_h_re_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
+        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(
                 be.h_re(),
                 [0.0, 0.0, 0.0, 0.0, 0.0,][i],
@@ -4229,8 +4275,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_temp_ext_for_ztu(
-        ztu_building_elements: [BuildingElementAdjacentZTUSimple; 5],
+    fn test_temp_ext_for_for_unconditioned_space_adjacent_elements(
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5],
         simulation_time: SimulationTimeIterator,
     ) {
         let results = [
@@ -4241,15 +4287,15 @@ mod tests {
             [0.0, 5.0, 10.0, 15.0],
         ];
         for (t_idx, t_it) in simulation_time.enumerate() {
-            for (i, be) in ztu_building_elements.iter().enumerate() {
+            for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
                 assert_eq!(be.temp_ext(t_it), results[i][t_idx]);
             }
         }
     }
 
     #[rstest]
-    fn test_fabric_heat_loss_for_ztu(ztu_building_elements: [BuildingElementAdjacentZTUSimple; 5]) {
-        for (i, be) in ztu_building_elements.iter().enumerate() {
+    fn test_fabric_heat_loss_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
+        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_relative_eq!(
                 be.fabric_heat_loss(),
                 [43.20, 31.56, 27.10, 29.25, 55.54][i],
@@ -4259,9 +4305,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_capacity_for_ztu(ztu_building_elements: [BuildingElementAdjacentZTUSimple; 5]) {
+    fn test_heat_capacity_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
         let results = [380., 405., 425., 440., 450.];
-        for (i, be) in ztu_building_elements.iter().enumerate() {
+        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
             assert_eq!(be.heat_capacity(), results[i]);
         }
     }

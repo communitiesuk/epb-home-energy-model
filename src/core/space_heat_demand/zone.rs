@@ -361,7 +361,7 @@ impl Zone {
                 eli.h_ce(),
                 eli.h_re(),
                 eli.h_ri(),
-                eli.a_sol(),
+                eli.solar_absorption_coeff(),
                 eli.therm_rad_to_sky(),
             );
 
@@ -565,13 +565,13 @@ impl Zone {
                 hb_fabric_ext_air_radiative +=
                     eli.area() * eli.h_re() * (eli.temp_ext(simtime) - temp_ext_surface);
                 hb_fabric_ext_sol +=
-                    eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
+                    eli.area() * eli.solar_absorption_coeff() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir);
                 hb_fabric_ext_sky += eli.area() * (-eli.therm_rad_to_sky());
                 // fabric heat loss per building element type
                 let hb_fabric_ext = eli.area()
                     * ((eli.h_ce()) * (eli.temp_ext(simtime) - temp_ext_surface))
                     + eli.area() * (eli.h_re()) * (eli.temp_ext(simtime) - temp_ext_surface)
-                    + eli.area() * eli.a_sol() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+                    + eli.area() * eli.solar_absorption_coeff() * (i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
                     + eli.area() * (-eli.therm_rad_to_sky());
                 match eli.as_ref() {
                     BuildingElement::Opaque(_) => {
@@ -583,10 +583,10 @@ impl Zone {
                     BuildingElement::Ground(_) => {
                         hb_fabric_ext_ground += hb_fabric_ext;
                     }
-                    BuildingElement::AdjacentZTC(_) => {
+                    BuildingElement::AdjacentConditionedSpace(_) => {
                         hb_fabric_ext_ztc += hb_fabric_ext;
                     }
-                    BuildingElement::AdjacentZTUSimple(_) => {
+                    BuildingElement::AdjacentUnconditionedSpaceSimple(_) => {
                         hb_fabric_ext_ztu += hb_fabric_ext;
                     }
                 };
@@ -1280,7 +1280,7 @@ impl Zone {
                     BuildingElement::Opaque { .. }
                         | BuildingElement::Transparent { .. }
                         | BuildingElement::Ground { .. }
-                        | BuildingElement::AdjacentZTUSimple { .. }
+                        | BuildingElement::AdjacentUnconditionedSpaceSimple { .. }
                 ) {
                     Some(el.element.area())
                 } else {
@@ -1674,7 +1674,7 @@ impl HeatBalance {
 mod tests {
     use super::*;
     use crate::core::space_heat_demand::building_element::{
-        BuildingElementAdjacentZTC, BuildingElementAdjacentZTUSimple, BuildingElementGround,
+        BuildingElementAdjacentConditionedSpace, BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround,
         BuildingElementOpaque, BuildingElementTransparent,
     };
     use crate::core::space_heat_demand::thermal_bridge::ThermalBridge;
@@ -1887,7 +1887,7 @@ mod tests {
             10.,
             external_conditions.clone(),
         ));
-        let be_ztc = BuildingElement::AdjacentZTC(BuildingElementAdjacentZTC::new(
+        let be_ztc = BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
             22.5,
             135.,
             0.50,
@@ -1932,7 +1932,7 @@ mod tests {
             Default::default(),
             external_conditions.clone(),
         ));
-        let be_ztu = BuildingElement::AdjacentZTUSimple(BuildingElementAdjacentZTUSimple::new(
+        let be_ztu = BuildingElement::AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple::new(
             30.,
             130.,
             0.50,
