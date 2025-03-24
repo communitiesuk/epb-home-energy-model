@@ -253,7 +253,9 @@ impl BuildingElement {
     ) -> anyhow::Result<(f64, f64)> {
         match self {
             BuildingElement::Opaque(el) => el.shading_factors_direct_diffuse(simtime),
-            BuildingElement::AdjacentConditionedSpace(el) => Ok(el.shading_factors_direct_diffuse(simtime)),
+            BuildingElement::AdjacentConditionedSpace(el) => {
+                Ok(el.shading_factors_direct_diffuse(simtime))
+            }
             BuildingElement::AdjacentUnconditionedSpaceSimple(el) => {
                 Ok(el.shading_factors_direct_diffuse(simtime))
             }
@@ -280,8 +282,12 @@ impl BuildingElement {
     pub(crate) fn h_ci(&self, temp_int_air: f64, temp_int_surface: f64) -> f64 {
         match self {
             BuildingElement::Opaque(el) => el.h_ci(temp_int_air, temp_int_surface),
-            BuildingElement::AdjacentConditionedSpace(el) => el.h_ci(temp_int_air, temp_int_surface),
-            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => el.h_ci(temp_int_air, temp_int_surface),
+            BuildingElement::AdjacentConditionedSpace(el) => {
+                el.h_ci(temp_int_air, temp_int_surface)
+            }
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => {
+                el.h_ci(temp_int_air, temp_int_surface)
+            }
             BuildingElement::Ground(el) => el.h_ci(temp_int_air, temp_int_surface),
             BuildingElement::Transparent(el) => el.h_ci(temp_int_air, temp_int_surface),
         }
@@ -380,15 +386,19 @@ pub(crate) trait HeatTransferInternal {
 pub(crate) trait HeatTransferInternalCommon: HeatTransferInternal {}
 
 pub(crate) trait HeatTransferThrough {
-    fn init_heat_transfer_through(&mut self, thermal_resistance_construction: f64, areal_heat_capacity: f64) {
+    fn init_heat_transfer_through(
+        &mut self,
+        thermal_resistance_construction: f64,
+        areal_heat_capacity: f64,
+    ) {
         self.set_r_c(thermal_resistance_construction);
-        self.set_km(areal_heat_capacity);
+        self.set_k_m(areal_heat_capacity);
     }
 
     fn set_r_c(&mut self, thermal_resistance_construction: f64);
     fn r_c(&self) -> f64;
     fn k_m(&self) -> f64;
-    fn set_km(&mut self, areal_heat_capacity: f64);
+    fn set_k_m(&mut self, areal_heat_capacity: f64);
     fn k_pli(&self) -> &[f64];
 
     fn number_of_nodes(&self) -> usize {
@@ -463,7 +473,7 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
         areal_heat_capacity: f64,
     ) {
         self.set_r_c(thermal_resistance_construction);
-        self.set_km(areal_heat_capacity);
+        self.set_k_m(areal_heat_capacity);
         self.set_h_pli(self.init_h_pli(thermal_resistance_construction));
         self.set_k_pli(self.init_k_pli(mass_distribution, areal_heat_capacity));
     }
@@ -477,7 +487,11 @@ pub(crate) trait HeatTransferThrough5Nodes: HeatTransferThrough {
         [h_outer, h_inner, h_inner, h_outer]
     }
 
-    fn init_k_pli(&self, mass_distribution: MassDistributionClass, areal_heat_capacity: f64) -> [f64; 5] {
+    fn init_k_pli(
+        &self,
+        mass_distribution: MassDistributionClass,
+        areal_heat_capacity: f64,
+    ) -> [f64; 5] {
         match mass_distribution {
             MassDistributionClass::I => [0.0, 0.0, 0.0, 0.0, areal_heat_capacity],
             MassDistributionClass::E => [areal_heat_capacity, 0.0, 0.0, 0.0, 0.0],
@@ -504,7 +518,7 @@ pub(crate) trait HeatTransferThrough3Plus2Nodes: HeatTransferThrough {
         k_gr: f64,
         areal_heat_capacity: f64,
     ) {
-        self.set_km(areal_heat_capacity);
+        self.set_k_m(areal_heat_capacity);
         // Calculate node conductances (h_pli) and node heat capacities (k_pli)
         // according to BS EN ISO 52016-1:2017, section 6.5.7.4
         self.set_h_pli(self.init_h_pli(thermal_resistance_floor_construction, r_gr));
@@ -647,8 +661,10 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
         // defining following closures out of order from the Python
         // as we are using closures which cannot be hoisted
 
-        let total_equiv_thickness =
-            || -> f64 { d_we + thermal_conductivity * (r_si + thermal_resistance_floor_construction + self.r_se()) };
+        let total_equiv_thickness = || -> f64 {
+            d_we + thermal_conductivity
+                * (r_si + thermal_resistance_floor_construction + self.r_se())
+        };
 
         let d_eq = total_equiv_thickness();
 
@@ -758,7 +774,8 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                 |r_f_ins| -> f64 { d_we + thermal_conductivity * (r_si + r_f_ins + self.r_se()) };
 
             // thermal transmittance of suspended part of floor
-            let thermal_transmittance_sus_floor = || -> f64 { 1. / (thermal_resistance_floor_construction + 2. * r_si) };
+            let thermal_transmittance_sus_floor =
+                || -> f64 { 1. / (thermal_resistance_floor_construction + 2. * r_si) };
 
             // Suspended floor periodic coefficients
             let init_suspended_floor = |h_upper,
@@ -1026,7 +1043,10 @@ pub(crate) trait HeatTransferOtherSideConditionedSpace: HeatTransferOtherSide {
 }
 
 pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide {
-    fn init_heat_transfer_other_side_unconditioned_space(&mut self, thermal_resistance_unconditioned_space: f64) {
+    fn init_heat_transfer_other_side_unconditioned_space(
+        &mut self,
+        thermal_resistance_unconditioned_space: f64,
+    ) {
         self.set_r_u(thermal_resistance_unconditioned_space);
         self.init_super(None);
     }
@@ -1322,7 +1342,11 @@ impl BuildingElementOpaque {
             therm_rad_to_sky: Default::default(),
         };
 
-        new_opaque.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
+        new_opaque.init_heat_transfer_through_5_nodes(
+            thermal_resistance_construction,
+            mass_distribution_class,
+            areal_heat_capacity,
+        );
         new_opaque.init_heat_transfer_other_side_outside(pitch);
         // shading is None because the model ignores nearby shading on opaque elements
         new_opaque.init_solar_radiation_interaction_absorbed(
@@ -1383,7 +1407,7 @@ impl HeatTransferThrough for BuildingElementOpaque {
         self.areal_heat_capacity
     }
 
-    fn set_km(&mut self, areal_heat_capacity: f64) {
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
         self.k_m = areal_heat_capacity;
     }
 
@@ -1572,7 +1596,11 @@ impl BuildingElementAdjacentConditionedSpace {
             orientation: Default::default(),
         };
 
-        building_element.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
+        building_element.init_heat_transfer_through_5_nodes(
+            thermal_resistance_construction,
+            mass_distribution_class,
+            areal_heat_capacity,
+        );
         building_element.init_heat_transfer_other_side(None);
         building_element.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
@@ -1610,7 +1638,7 @@ impl HeatTransferThrough for BuildingElementAdjacentConditionedSpace {
         self.k_m
     }
 
-    fn set_km(&mut self, areal_heat_capacity: f64) {
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
         self.k_m = areal_heat_capacity;
     }
 
@@ -1807,9 +1835,15 @@ impl BuildingElementAdjacentUnconditionedSpaceSimple {
             k_pli: Default::default(),
             r_c: thermal_resistance_construction,
         };
-        building_element.init_heat_transfer_through_5_nodes(thermal_resistance_construction, mass_distribution_class, areal_heat_capacity);
-        building_element.init_heat_transfer_other_side_unconditioned_space(thermal_resistance_unconditioned_space);
-        //  Solar absorption coefficient at the external surface is zero         
+        building_element.init_heat_transfer_through_5_nodes(
+            thermal_resistance_construction,
+            mass_distribution_class,
+            areal_heat_capacity,
+        );
+        building_element.init_heat_transfer_other_side_unconditioned_space(
+            thermal_resistance_unconditioned_space,
+        );
+        //  Solar absorption coefficient at the external surface is zero
         building_element.init_solar_radiation_interaction(pitch, None, None, 0.0, 0.0, 0.0, 0.0);
 
         building_element
@@ -1845,7 +1879,7 @@ impl HeatTransferThrough for BuildingElementAdjacentUnconditionedSpaceSimple {
         self.k_m
     }
 
-    fn set_km(&mut self, areal_heat_capacity: f64) {
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
         self.k_m = areal_heat_capacity;
     }
 
@@ -2222,7 +2256,7 @@ impl HeatTransferThrough for BuildingElementGround {
         self.k_m
     }
 
-    fn set_km(&mut self, areal_heat_capacity: f64) {
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
         self.k_m = areal_heat_capacity;
     }
 
@@ -2758,7 +2792,7 @@ impl HeatTransferThrough for BuildingElementTransparent {
         self.k_m
     }
 
-    fn set_km(&mut self, areal_heat_capacity: f64) {
+    fn set_k_m(&mut self, areal_heat_capacity: f64) {
         self.k_m = areal_heat_capacity;
     }
 
@@ -3313,12 +3347,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_solar_absorption_coeff_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
+    fn test_solar_absorption_coeff_for_opaque(
+        opaque_building_elements: [BuildingElementOpaque; 5],
+    ) {
         // Define increment between test cases
         let solar_absorption_coeff_inc = 0.01;
 
         for (i, be) in opaque_building_elements.iter().enumerate() {
-            assert_relative_eq!(be.solar_absorption_coeff(), 0.6 + i as f64 * solar_absorption_coeff_inc,);
+            assert_relative_eq!(
+                be.solar_absorption_coeff(),
+                0.6 + i as f64 * solar_absorption_coeff_inc,
+            );
         }
     }
 
@@ -3461,11 +3500,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_area_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_area_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         // Define increment between test cases
         let area_inc = 2.5;
 
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(be.area(), 20.0 + i as f64 * area_inc,);
         }
     }
@@ -3484,7 +3528,10 @@ mod tests {
             HeatFlowDirection::Upwards,
         ];
 
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_eq!(
                 be.heat_flow_direction(temp_int_air, temp_int_surface[i]),
                 results[i],
@@ -3494,41 +3541,57 @@ mod tests {
     }
 
     #[rstest]
-    fn test_r_si_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_r_si_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         let results = [0.17, 0.17, 0.13, 0.10, 0.10];
 
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(be.r_si(), results[i], max_relative = 0.05);
         }
     }
 
     #[rstest]
-    fn test_h_ci_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_h_ci_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         let temp_int_air = 20.0;
         let temp_int_surface = [19.0, 21.0, 22.0, 21.0, 19.0];
         let results = [0.7, 5.0, 2.5, 0.7, 5.0];
 
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(be.h_ci(temp_int_air, temp_int_surface[i]), results[i],);
         }
     }
 
     #[rstest]
-    fn test_h_ri_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_h_ri_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         for be in conditioned_space_adjacent_building_elements {
             assert_relative_eq!(be.h_ri(), 5.13,);
         }
     }
 
     #[rstest]
-    fn test_h_ce_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_h_ce_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         for be in conditioned_space_adjacent_building_elements {
             assert_relative_eq!(be.h_ce(), 0.0,);
         }
     }
 
     #[rstest]
-    fn test_h_re_for_conditioned_space_adjacent_elements(conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5]) {
+    fn test_h_re_for_conditioned_space_adjacent_elements(
+        conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
+    ) {
         for be in conditioned_space_adjacent_building_elements {
             assert_eq!(be.h_re(), 0.0, "incorrect h_re returned");
         }
@@ -3539,7 +3602,11 @@ mod tests {
         conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         for be in conditioned_space_adjacent_building_elements {
-            assert_eq!(be.solar_absorption_coeff(), 0.0, "incorrect solar_absorption_coeff returned");
+            assert_eq!(
+                be.solar_absorption_coeff(),
+                0.0,
+                "incorrect solar_absorption_coeff returned"
+            );
         }
     }
 
@@ -3548,7 +3615,11 @@ mod tests {
         conditioned_space_adjacent_building_elements: [BuildingElementAdjacentConditionedSpace; 5],
     ) {
         for be in conditioned_space_adjacent_building_elements {
-            assert_eq!(be.therm_rad_to_sky(), 0.0, "incorrect therm_rad_to_sky returned");
+            assert_eq!(
+                be.therm_rad_to_sky(),
+                0.0,
+                "incorrect therm_rad_to_sky returned"
+            );
         }
     }
 
@@ -3563,7 +3634,10 @@ mod tests {
             [7.5, 3.75, 3.75, 7.5],
             [15.0, 7.5, 7.5, 15.0],
         ];
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_eq!(be.h_pli(), &results[i], "incorrect h_pli list returned");
         }
     }
@@ -3579,7 +3653,10 @@ mod tests {
             [2000.0, 4000.0, 4000.0, 4000.0, 2000.0],
             [0.0, 0.0, 15000.0, 0.0, 0.0],
         ];
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_eq!(be.k_pli(), &results[i], "incorrect k_pli list returned");
         }
     }
@@ -3603,7 +3680,10 @@ mod tests {
     ) {
         let results = [380., 405., 425., 440., 450.];
 
-        for (i, be) in conditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in conditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_eq!(
                 be.heat_capacity(),
                 results[i],
@@ -3903,9 +3983,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_solar_absorption_coeff_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
+    fn test_solar_absorption_coeff_for_ground(
+        ground_building_elements: [BuildingElementGround; 5],
+    ) {
         for be in ground_building_elements.iter() {
-            assert_eq!(be.solar_absorption_coeff(), 0.0, "incorrect solar_absorption_coeff returned");
+            assert_eq!(
+                be.solar_absorption_coeff(),
+                0.0,
+                "incorrect solar_absorption_coeff returned"
+            );
         }
     }
 
@@ -4123,7 +4209,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_solar_absorption_coeff_for_transparent(transparent_building_element: BuildingElementTransparent) {
+    fn test_solar_absorption_coeff_for_transparent(
+        transparent_building_element: BuildingElementTransparent,
+    ) {
         assert_eq!(
             transparent_building_element.solar_absorption_coeff(),
             0.0,
@@ -4247,8 +4335,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_ce_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
-        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
+    fn test_h_ce_for_unconditioned_space_adjacent_elements(
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple;
+            5],
+    ) {
+        for (i, be) in unconditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(
                 be.h_ce(),
                 [
@@ -4264,8 +4358,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_h_re_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
-        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
+    fn test_h_re_for_for_unconditioned_space_adjacent_elements(
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple;
+            5],
+    ) {
+        for (i, be) in unconditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(
                 be.h_re(),
                 [0.0, 0.0, 0.0, 0.0, 0.0,][i],
@@ -4276,7 +4376,8 @@ mod tests {
 
     #[rstest]
     fn test_temp_ext_for_for_unconditioned_space_adjacent_elements(
-        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5],
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple;
+            5],
         simulation_time: SimulationTimeIterator,
     ) {
         let results = [
@@ -4287,15 +4388,24 @@ mod tests {
             [0.0, 5.0, 10.0, 15.0],
         ];
         for (t_idx, t_it) in simulation_time.enumerate() {
-            for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
+            for (i, be) in unconditioned_space_adjacent_building_elements
+                .iter()
+                .enumerate()
+            {
                 assert_eq!(be.temp_ext(t_it), results[i][t_idx]);
             }
         }
     }
 
     #[rstest]
-    fn test_fabric_heat_loss_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
-        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
+    fn test_fabric_heat_loss_for_for_unconditioned_space_adjacent_elements(
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple;
+            5],
+    ) {
+        for (i, be) in unconditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_relative_eq!(
                 be.fabric_heat_loss(),
                 [43.20, 31.56, 27.10, 29.25, 55.54][i],
@@ -4305,9 +4415,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_heat_capacity_for_for_unconditioned_space_adjacent_elements(unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple; 5]) {
+    fn test_heat_capacity_for_for_unconditioned_space_adjacent_elements(
+        unconditioned_space_adjacent_building_elements: [BuildingElementAdjacentUnconditionedSpaceSimple;
+            5],
+    ) {
         let results = [380., 405., 425., 440., 450.];
-        for (i, be) in unconditioned_space_adjacent_building_elements.iter().enumerate() {
+        for (i, be) in unconditioned_space_adjacent_building_elements
+            .iter()
+            .enumerate()
+        {
             assert_eq!(be.heat_capacity(), results[i]);
         }
     }
