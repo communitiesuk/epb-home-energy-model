@@ -2015,19 +2015,30 @@ impl From<&str> for StringOrNumber {
     }
 }
 
+impl From<String> for StringOrNumber {
+    fn from(value: String) -> Self {
+        StringOrNumber::String(KeyString::from(value.as_str()).unwrap())
+    }
+}
+
 impl From<f64> for StringOrNumber {
     fn from(value: f64) -> Self {
         StringOrNumber::Float(value)
     }
 }
 
-impl TryFrom<StringOrNumber> for f64 {
-    type Error = anyhow::Error;
+impl From<&f64> for StringOrNumber {
+    fn from(value: &f64) -> Self {
+        StringOrNumber::Float(*value)
+    }
+}
 
-    fn try_from(value: StringOrNumber) -> Result<Self, Self::Error> {
+impl From<StringOrNumber> for f64 {
+    fn from(value: StringOrNumber) -> Self {
         match value {
-            StringOrNumber::Float(number) => Ok(number),
-            _ => Err(anyhow!("Cannot convert {} to f64", value)),
+            StringOrNumber::Float(number) => number,
+            StringOrNumber::Integer(number) => number as f64,
+            StringOrNumber::String(_) => 0.,
         }
     }
 }

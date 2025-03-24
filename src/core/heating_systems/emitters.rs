@@ -957,9 +957,7 @@ impl Emitters {
         let delta_t_values = temperature_data.iter().map(|row| row[0]).collect_vec();
         let _min_delta_t = delta_t_values.iter().min_by(|a, b| a.total_cmp(b));
 
-        let fan_power_values = fan_power_data[1..].iter().map(|&f| {
-            <f64>::try_from(f).expect("fan power data is not a number when expected to be")
-        });
+        let fan_power_values = fan_power_data[1..].iter().map(|&f| <f64>::from(f));
 
         // Parsing product data to get outputs and fan speeds
         let interpolated_outputs: Vec<_> = (1..temperature_data[1].len())
