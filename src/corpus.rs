@@ -393,10 +393,11 @@ fn init_resistance_or_uvalue_from_data(
     u_value: Option<f64>,
     pitch: f64,
 ) -> anyhow::Result<f64> {
-    Ok(if let Some(thermal_resistance_construction) = thermal_resistance_construction {
-        thermal_resistance_construction
-    } else {
-        convert_uvalue_to_resistance(
+    Ok(
+        if let Some(thermal_resistance_construction) = thermal_resistance_construction {
+            thermal_resistance_construction
+        } else {
+            convert_uvalue_to_resistance(
             u_value.ok_or_else(|| {
                 anyhow!(
                     "Neither thermal_resistance_construction nor u_value were provided for one of the building element inputs."
@@ -404,7 +405,8 @@ fn init_resistance_or_uvalue_from_data(
             })?,
             pitch,
         )
-    })
+        },
+    )
 }
 
 /// Return thermal resistance of construction (thermal_resistance_construction) based on alternative inputs
@@ -494,7 +496,8 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
             }
             BuildingElementInput::Transparent { height, width, .. } => {
                 let r_curtains_blinds = 0.04;
-                let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si + r_curtains_blinds);
+                let u_value =
+                    1.0 / (thermal_resistance_construction + r_se + r_si + r_curtains_blinds);
                 let area = *height * *width;
                 area * u_value
             }
@@ -3833,18 +3836,20 @@ fn building_element_from_input(
             thermal_resistance_construction,
             areal_heat_capacity,
             mass_distribution_class,
-        } => BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
-            *area,
-            *pitch,
-            init_resistance_or_uvalue_from_data(
-                *thermal_resistance_construction,
-                *u_value,
+        } => {
+            BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
+                *area,
                 *pitch,
-            )?,
-            *areal_heat_capacity,
-            *mass_distribution_class,
-            external_conditions,
-        )),
+                init_resistance_or_uvalue_from_data(
+                    *thermal_resistance_construction,
+                    *u_value,
+                    *pitch,
+                )?,
+                *areal_heat_capacity,
+                *mass_distribution_class,
+                external_conditions,
+            ))
+        }
         BuildingElementInput::AdjacentUnconditionedSpace {
             area,
             pitch,
@@ -3853,19 +3858,21 @@ fn building_element_from_input(
             thermal_resistance_unconditioned_space,
             areal_heat_capacity,
             mass_distribution_class,
-        } => BuildingElement::AdjacentUnconditionedSpaceSimple(BuildingElementAdjacentUnconditionedSpaceSimple::new(
-            *area,
-            *pitch,
-            init_resistance_or_uvalue_from_data(
-                *thermal_resistance_construction,
-                *u_value,
+        } => BuildingElement::AdjacentUnconditionedSpaceSimple(
+            BuildingElementAdjacentUnconditionedSpaceSimple::new(
+                *area,
                 *pitch,
-            )?,
-            *thermal_resistance_unconditioned_space,
-            *areal_heat_capacity,
-            *mass_distribution_class,
-            external_conditions,
-        )),
+                init_resistance_or_uvalue_from_data(
+                    *thermal_resistance_construction,
+                    *u_value,
+                    *pitch,
+                )?,
+                *thermal_resistance_unconditioned_space,
+                *areal_heat_capacity,
+                *mass_distribution_class,
+                external_conditions,
+            ),
+        ),
     }))
 }
 
