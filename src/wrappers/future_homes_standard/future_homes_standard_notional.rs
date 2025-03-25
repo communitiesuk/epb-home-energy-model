@@ -2812,16 +2812,12 @@ mod tests {
                     "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
                     "Zone": "zone 1",
                     "advanced_start": 1,
-                    // TODO 0.32 removed fields (redo this properly)
-                    // "c": 0.0,
                     "design_flow_temp": 45,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
                         "min_flow_temp": 21,
                         "min_outdoor_temp": 0},
-                    // "frac_convective": 0.7,
-                    // "n": 1.34,
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,
@@ -2833,16 +2829,12 @@ mod tests {
                     "HeatSource": {"name": "hp", "temp_flow_limit_upper": 65.0},
                     "Zone": "zone 2",
                     "advanced_start": 1,
-                    // TODO 0.32 removed fields (redo this properly)
-                    // "c": 0.0,
                     "design_flow_temp": 45,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
                         "min_flow_temp": 21,
                         "min_outdoor_temp": 0},
-                    // "frac_convective": 0.7,
-                    // "n": 1.34,
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,
