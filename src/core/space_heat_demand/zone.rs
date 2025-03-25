@@ -152,7 +152,7 @@ impl Zone {
             no_of_temps,
             temp_prev: Arc::new(RwLock::new(Vec::new())),
             print_heat_balance,
-            ventilation: ventilation,
+            ventilation,
             control,
             temp_setpnt_basis,
             temp_setpnt_init,
