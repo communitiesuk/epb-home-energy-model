@@ -1404,7 +1404,7 @@ impl HeatTransferThrough for BuildingElementOpaque {
     }
 
     fn k_m(&self) -> f64 {
-        self.areal_heat_capacity
+        self.k_m
     }
 
     fn set_k_m(&mut self, areal_heat_capacity: f64) {
