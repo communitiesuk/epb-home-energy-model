@@ -4058,7 +4058,7 @@ pub(crate) enum WetHeatSource {
     HeatPump(Arc<Mutex<HeatPump>>),
     Boiler(Arc<RwLock<Boiler>>),
     Hiu(Arc<Mutex<HeatNetwork>>),
-    HeatBattery(Arc<Mutex<HeatBattery>>),
+    HeatBattery(Arc<RwLock<HeatBattery>>),
 }
 
 impl WetHeatSource {
@@ -4068,7 +4068,7 @@ impl WetHeatSource {
             WetHeatSource::Boiler(boiler) => boiler.write().timestep_end(simtime)?,
             WetHeatSource::Hiu(heat_network) => heat_network.lock().timestep_end(simtime.index),
             WetHeatSource::HeatBattery(heat_battery) => {
-                heat_battery.lock().timestep_end(simtime.index)?
+                heat_battery.read().timestep_end(simtime.index)?
             }
         }
 
@@ -4306,9 +4306,9 @@ fn heat_source_wet_from_input(
                 })?
                 .clone();
             let energy_supply_conn =
-                EnergySupply::connection(energy_supply.clone(), energy_supply_name).unwrap();
+                EnergySupply::connection(energy_supply.clone(), energy_supply_name)?;
 
-            let heat_source = WetHeatSource::HeatBattery(Arc::new(Mutex::new(HeatBattery::new(
+            let heat_source = WetHeatSource::HeatBattery(Arc::new(RwLock::new(HeatBattery::new(
                 &input,
                 controls
                     .get_with_string(control_charge)
