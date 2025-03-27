@@ -791,6 +791,11 @@ impl Corpus {
 
         let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
 
+
+        // Internal gains is an ordered IndexMap. This is because load shifting behaviours
+        // of appliance gains depend on other energy demand in the dwelling at any given time,
+        // so depend on the order in which gains are considered by the engine.
+        // See check_priority() in apply_appliance_gains_from_input()
         let mut internal_gains =
             internal_gains_from_input(&input.internal_gains, total_floor_area)?;
 
