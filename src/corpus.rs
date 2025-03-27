@@ -7,7 +7,7 @@ use crate::core::cooling_systems::air_conditioning::AirConditioning;
 use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::energy_supply::{
     EnergySupply, EnergySupplyBuilder, EnergySupplyConnection, EnergySupplyTariffInput,
-    UNMET_DEMAND_SUPPLY_NAME,
+    ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME, UNMET_DEMAND_SUPPLY_NAME,
 };
 use crate::core::energy_supply::pv::PhotovoltaicSystem;
 use crate::core::heating_systems::boiler::{Boiler, BoilerServiceWaterCombi};
@@ -3012,7 +3012,13 @@ fn energy_supplies_from_input(
             .build(),
         )),
     );
-
+    supplies.insert(
+        ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.to_string(),
+        Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::EnergyFromEnvironment, simulation_time_iterator.total_steps())
+                .build(),
+        )),
+    );
     Ok(supplies)
 }
 
