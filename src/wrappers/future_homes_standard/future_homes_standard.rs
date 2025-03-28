@@ -126,7 +126,10 @@ pub fn apply_fhs_preprocessing(
     for source_key in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(&source_key);
         if source.is_storage_tank() {
-            source.set_init_temp_if_storage_tank(HW_SETPOINT_MAX);
+            source.set_init_temp(HW_SETPOINT_MAX);
+        } else if source.is_smart_hot_water_tank() {
+            source.set_init_temp(HW_SETPOINT_MAX);
+            source.set_temp_usable(HW_TEMPERATURE);
         } else {
             source.set_setpoint_temp(HW_TEMPERATURE);
         }
@@ -147,9 +150,13 @@ pub fn apply_fhs_preprocessing(
 
     set_temp_internal_static_calcs(input);
 
-    if input.clone().has_control_for_loadshifting() {
+    if input
+        .smart_appliance_control_by_name("SmartApplianceControl")
+        .is_some()
+    {
         // run project for 24 hours to obtain initial estimate for daily heating demand
-        sim_24h(input, sim_settings)?;
+        let mut input_for_sim_24h = input.clone();
+        sim_24h(&mut input_for_sim_24h, sim_settings)?;
     }
 
     Ok(())
@@ -856,72 +863,66 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
         ) {
             (Some(SpaceHeatControlType::LivingRoom), _) => {
                 input.set_init_temp_setpoint_for_zone(zone.as_str(), LIVING_ROOM_SETPOINT_FHS)?;
-                let mut living_room_control = json!(
-                    {
-                        "type": "SetpointTimeControl",
-                        "start_day": 0,
-                        "time_series_step": 0.5,
-                        "schedule": {
-                            "main": [{"repeat": 53, "value": "week"}],
-                            "week": [{"repeat": 5, "value": "weekday"},
-                                    {"repeat": 2, "value": "weekend"}],
-                            "weekday": heating_fhs_weekday.iter().map(|on| on.then_some(LIVING_ROOM_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
-                            "weekend": heating_fhs_weekend.iter().map(|on| on.then_some(LIVING_ROOM_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
+                for space_heat_system in space_heat_system_references {
+                    let ctrlname = format!("HeatingPattern_{space_heat_system}");
+                    input.set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
+                    let mut living_room_control = json!(
+                        {
+                            "type": "SetpointTimeControl",
+                            "start_day": 0,
+                            "time_series_step": 0.5,
+                            "schedule": {
+                                "main": [{"repeat": 53, "value": "week"}],
+                                "week": [{"repeat": 5, "value": "weekday"},
+                                        {"repeat": 2, "value": "weekend"}],
+                                "weekday": heating_fhs_weekday.iter().map(|on| on.then_some(LIVING_ROOM_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                                "weekend": heating_fhs_weekend.iter().map(|on| on.then_some(LIVING_ROOM_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                            }
                         }
+                    );
+                    let control_json = living_room_control.as_object_mut().unwrap();
+                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                        control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                );
-                let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                match space_heat_system {
-                    SystemReference::Single(space_heat_system) => {
-                        input.set_control_string_for_space_heat_system(space_heat_system.as_str(), living_room_space_heat_system_name)?;
-                        let control_schedule = living_room_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
-                        if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
-                            control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
-                        }
-                        if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
-                            control_schedule.insert("advanced_start".to_string(), advanced_start.into());
-                        }
+                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                        control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
-                    SystemReference::Multiple(_) => bail!("Multiple space heat system references under zone not currently supported for FHS inputs"),
-                    SystemReference::None(_) => {}
+                    input.add_control(&ctrlname, living_room_control)?;
                 }
-                input.add_control(living_room_space_heat_system_name, living_room_control)?;
             }
             (Some(SpaceHeatControlType::RestOfDwelling), control_type) => {
                 input.set_init_temp_setpoint_for_zone(zone.as_str(), REST_OF_DWELLING_SETPOINT_FHS)?;
-                let mut rest_of_dwelling_control = json!(
-                    {
-                        "type": "SetpointTimeControl",
-                        "start_day": 0,
-                        "time_series_step": 0.5,
-                        "schedule": {
-                            "main": [{"repeat": 53, "value": "week"}],
-                            "week": [{"repeat": 5, "value": "weekday"},
-                                    {"repeat": 2, "value": "weekend"}],
-                            "weekday": match control_type {
-                                ControlType::Type2 => heating_fhs_weekday,
-                                ControlType::Type3 => heating_nonlivingarea_fhs_weekday,
-                            }.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
-                            "weekend": heating_fhs_weekend.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
+                for space_heat_system in space_heat_system_references {
+                    let ctrlname = format!("HeatingPattern_{space_heat_system}");
+                    input.set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
+                    let mut rest_of_dwelling_control = json!(
+                        {
+                            "type": "SetpointTimeControl",
+                            "start_day": 0,
+                            "time_series_step": 0.5,
+                            "schedule": {
+                                "main": [{"repeat": 53, "value": "week"}],
+                                "week": [{"repeat": 5, "value": "weekday"},
+                                        {"repeat": 2, "value": "weekend"}],
+                                "weekday": match control_type {
+                                    ControlType::Type2 => heating_fhs_weekday,
+                                    ControlType::Type3 => heating_nonlivingarea_fhs_weekday,
+                                }.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                                "weekend": heating_fhs_weekend.iter().map(|on| on.then_some(REST_OF_DWELLING_SETPOINT_FHS)).collect::<Vec<Option<f64>>>(),
+                            }
                         }
+                    );
+                    let control_json = rest_of_dwelling_control.as_object_mut().unwrap();
+                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                        control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                );
-                let space_heat_system = input.space_heat_system_for_zone(zone.as_str())?;
-                match space_heat_system {
-                    SystemReference::Single(space_heat_system) => {
-                        input.set_control_string_for_space_heat_system(space_heat_system.as_str(), rest_of_dwelling_space_heat_system_name)?;
-                        let control_schedule = rest_of_dwelling_control.as_object_mut().unwrap().get_mut("schedule").unwrap().as_object_mut().unwrap();
-                        if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
-                            control_schedule.insert("setpoint_min".to_string(), temp_setback.into());
-                        }
-                        if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
-                            control_schedule.insert("advanced_start".to_string(), advanced_start.into());
-                        }
+                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                        control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
-                    SystemReference::Multiple(_) => bail!("Multiple space heat systems defined on a zone are not currently supported for FHS inputs"),
-                    SystemReference::None(_) => {}
+                    input.add_control(space_heat_system, rest_of_dwelling_control)?;
                 }
-                input.add_control(rest_of_dwelling_space_heat_system_name, rest_of_dwelling_control)?;
             }
             (None, _) => bail!("FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"),
         }

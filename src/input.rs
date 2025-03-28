@@ -896,6 +896,7 @@ pub trait HotWaterSourceDetailsForProcessing {
     fn is_combi_boiler(&self) -> bool;
     fn is_hiu(&self) -> bool;
     fn is_point_of_use(&self) -> bool;
+    fn is_smart_hot_water_tank(&self) -> bool;
     fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
     fn set_control_min_name_for_storage_tank_heat_sources(
         &mut self,
@@ -905,8 +906,9 @@ pub trait HotWaterSourceDetailsForProcessing {
         &mut self,
         control_name: &str,
     ) -> anyhow::Result<()>;
-    fn set_init_temp_if_storage_tank(&mut self, init_temp: f64);
+    fn set_init_temp(&mut self, init_temp: f64);
     fn set_setpoint_temp(&mut self, setpoint_temp: f64);
+    fn set_temp_usable(&mut self, temp_usable: f64);
 }
 
 impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
@@ -924,6 +926,10 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
 
     fn is_point_of_use(&self) -> bool {
         matches!(self, Self::PointOfUse { .. })
+    }
+
+    fn is_smart_hot_water_tank(&self) -> bool {
+        matches!(self, Self::SmartHotWaterTank { .. })
     }
 
     fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
@@ -968,13 +974,21 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         Ok(())
     }
 
-    fn set_init_temp_if_storage_tank(&mut self, init_temp: f64) {
-        if let HotWaterSourceDetails::StorageTank {
-            init_temp: ref mut init_temp_store,
-            ..
-        } = self
-        {
-            *init_temp_store = Some(init_temp);
+    fn set_init_temp(&mut self, init_temp: f64) {
+        match self {
+            HotWaterSourceDetails::StorageTank {
+                init_temp: ref mut init_temp_store,
+                ..
+            } => {
+                *init_temp_store = Some(init_temp);
+            }
+            HotWaterSourceDetails::SmartHotWaterTank {
+                init_temp: ref mut init_temp_store,
+                ..
+            } => {
+                *init_temp_store = init_temp;
+            }
+            _ => {}
         }
     }
 
@@ -1006,6 +1020,16 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             }
             HotWaterSourceDetails::SmartHotWaterTank { .. } => todo!(),
             HotWaterSourceDetails::HeatBattery { .. } => todo!(),
+        }
+    }
+
+    fn set_temp_usable(&mut self, temp_usable: f64) {
+        if let HotWaterSourceDetails::SmartHotWaterTank {
+            temp_usable: temp_usable_store,
+            ..
+        } = self
+        {
+            *temp_usable_store = temp_usable;
         }
     }
 }
@@ -1914,6 +1938,19 @@ impl SystemReference {
 impl Default for SystemReference {
     fn default() -> Self {
         Self::None(())
+    }
+}
+
+impl IntoIterator for SystemReference {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::None(_) => vec![].into_iter(),
+            Self::Single(s) => vec![s].into_iter(),
+            Self::Multiple(v) => v.into_iter(),
+        }
     }
 }
 
@@ -3873,6 +3910,13 @@ impl InputForProcessing {
             ))?
             .set_control(control_string)?;
         Ok(self)
+    }
+
+    pub(crate) fn smart_appliance_control_by_name(
+        &self,
+        name: &str,
+    ) -> Option<&SmartApplianceControlDetails> {
+        self.input.smart_appliance_controls.get(name)
     }
 
     pub(crate) fn set_efficiency_for_all_space_cool_systems(
