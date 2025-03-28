@@ -44,7 +44,7 @@ pub struct Input {
     pub(crate) energy_supply: EnergySupplyInput,
     pub(crate) control: Control,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
+    pub(crate) smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
     pub hot_water_source: HotWaterSource,
     pub hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
@@ -736,14 +736,14 @@ pub enum ControlLogicType {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-struct SmartApplianceControlDetails {
+pub(crate) struct SmartApplianceControlDetails {
     #[serde(rename = "Appliances")]
-    appliances: Vec<ApplianceKey>,
+    pub(crate) appliances: Vec<ApplianceKey>,
     #[serde(rename = "battery24hr")]
-    battery_24hr: SmartApplianceBattery,
-    non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
-    power_timeseries: IndexMap<String, Vec<f64>>,
-    time_series_step: f64,
+    pub(crate) battery_24hr: SmartApplianceBattery,
+    pub(crate) non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+    pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
+    pub(crate) time_series_step: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -3430,7 +3430,7 @@ impl Appliance {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceLoadShifting {
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-    control: Option<String>,
+    pub(crate) control: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
     pub(crate) max_shift_hrs: f64,

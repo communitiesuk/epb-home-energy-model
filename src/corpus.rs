@@ -791,7 +791,6 @@ impl Corpus {
 
         let total_floor_area = zones.values().fold(0., |acc, zone| zone.area() + acc);
 
-
         // Internal gains is an ordered IndexMap. This is because load shifting behaviours
         // of appliance gains depend on other energy demand in the dwelling at any given time,
         // so depend on the order in which gains are considered by the engine.
@@ -800,35 +799,39 @@ impl Corpus {
             internal_gains_from_input(&input.internal_gains, total_floor_area)?;
 
         // setup smart control for loadshifting
-        let smart_control = if let Some(control) = input.control.extra.get("loadshifting") {
-            match control {
-                ControlDetails::SmartAppliance {
-                    battery_24hr,
-                    non_appliance_demand_24hr,
-                    power_timeseries,
-                    time_series_step,
-                    ..
-                } => Some(Arc::new(SmartApplianceControl::new(
-                    power_timeseries,
-                    *time_series_step,
+        let mut smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>> =
+            Default::default();
+        for (smart_appliance_name, smart_appliance_data) in &input.smart_appliance_controls {
+            // TODO (from Python) - power_timeseries is a redundant input,
+            // we could obtain power_timeseries here from the list smartappctrldata['Appliances'],
+            // by looking up each string in the list in proj_dict['ApplianceGains'], and
+            // summing together the demand schedules of listed items
+            // this will require the use of EventApplianceGains.__event_to_schedule()
+            // for event based appliance use
+            smart_appliance_controls.insert(
+                smart_appliance_name.clone(),
+                SmartApplianceControl::new(
+                    &smart_appliance_data.power_timeseries,
+                    smart_appliance_data.time_series_step,
                     &simulation_time_iterator,
-                    non_appliance_demand_24hr.clone(),
-                    battery_24hr.as_deref(),
+                    Some(smart_appliance_data.non_appliance_demand_24hr.clone()),
+                    Some(&smart_appliance_data.battery_24hr),
                     &energy_supplies,
-                    input.appliance_gains.keys().cloned().collect::<Vec<_>>(),
-                )?)),
-                _ => None,
-            }
-        } else {
-            None
-        };
+                    smart_appliance_data.appliances.iter().map_into().collect(),
+                )?
+                .into(),
+            );
+        }
 
+        //  Add internal gains from applicances to the internal gains dictionary and
+        //  create an energy supply connection for appliances
+        // work out order in which to process loadshifting appliances
         apply_appliance_gains_from_input(
             &mut internal_gains,
             &input.appliance_gains,
             &mut energy_supplies,
             total_floor_area,
-            smart_control,
+            smart_appliance_controls,
             simulation_time_iterator.as_ref(),
         )?;
 
@@ -3020,8 +3023,11 @@ fn energy_supplies_from_input(
     supplies.insert(
         ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME.to_string(),
         Arc::new(RwLock::new(
-            EnergySupplyBuilder::new(FuelType::EnergyFromEnvironment, simulation_time_iterator.total_steps())
-                .build(),
+            EnergySupplyBuilder::new(
+                FuelType::EnergyFromEnvironment,
+                simulation_time_iterator.total_steps(),
+            )
+            .build(),
         )),
     );
     Ok(supplies)
@@ -3908,7 +3914,7 @@ fn apply_appliance_gains_from_input(
     input: &ApplianceGainsInput,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     total_floor_area: f64,
-    smart_control: Option<Arc<SmartApplianceControl>>,
+    smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     fn check_priority(appliance_gains: &ApplianceGainsInput) -> ApplianceGainsInput {
@@ -3956,13 +3962,25 @@ fn apply_appliance_gains_from_input(
             name.as_str(),
         )?;
 
+        let smart_control = gains_details
+            .load_shifting
+            .as_ref()
+            .and_then(|load_shifting| {
+                load_shifting
+                    .control
+                    .as_ref()
+                    .and_then(|load_shifting_control| {
+                        smart_appliance_controls.get(load_shifting_control)
+                    })
+            });
+
         let gains = if gains_details.events.is_some() && gains_details.standby.is_some() {
             Gains::Event(EventApplianceGains::new(
                 energy_supply_conn,
                 simulation_time,
                 &gains_details,
                 total_floor_area,
-                smart_control.clone(),
+                smart_control.cloned(),
             )?)
         } else {
             Gains::Appliance(appliance_gains_from_single_input(

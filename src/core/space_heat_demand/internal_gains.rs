@@ -681,14 +681,15 @@ mod tests {
             &IndexMap::from([("mains elec".into(), energy_supply)]),
             vec!["Clothes_drying".into()],
         )
-        .unwrap();
+        .unwrap()
+        .into();
 
         EventApplianceGains::new(
             energy_supply_connection,
             &simulation_time_for_event_appliance_gains.iter(),
             &appliance_data,
             total_floor_area,
-            Some(Arc::new(smart_control)),
+            Some(smart_control),
         )
         .unwrap()
     }
