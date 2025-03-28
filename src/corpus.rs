@@ -4342,12 +4342,12 @@ fn heat_source_wet_from_input(
                 energy_supply,
                 energy_supply_conn,
                 simulation_time,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // TODO 0.34 check if this is correct for 'output_detailed_results', added as part of heat_battery migration
+                Some(8),
+                Some(20.),
+                Some(120.),
+                Some(10.),
+                Some(53.),
+                Some(detailed_output_heating_cooling),
             ))));
             Ok(heat_source)
         }
