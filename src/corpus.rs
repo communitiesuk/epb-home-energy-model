@@ -4183,11 +4183,14 @@ fn heat_source_wet_from_input(
                 None
             };
 
-            let energy_supply_hn = if matches!(source_type, HeatPumpSourceType::HeatNetwork) {
+            let energy_supply_heat_source = if matches!(
+                source_type,
+                HeatPumpSourceType::HeatNetwork
+            ) {
                 let energy_supply_heat_network = energy_supply_heat_network.as_ref().ok_or_else(|| anyhow!("A heat pump with a heat network source is expected to reference an energy supply for the heat network."))?;
                 Some(energy_supplies.get(energy_supply_heat_network).ok_or_else(|| anyhow!("A heat network with a heat network source references an undeclared energy supply '{energy_supply_heat_network}'."))?.clone())
             } else {
-                None
+                Some(energy_supplies.get("_energy_from_environment").ok_or_else(|| anyhow!("A heat pump with a '{source_type:?}' source is expected to have an energy supply of '_energy_from_environment'."))?.clone())
             };
 
             let (boiler, cost_schedule_hybrid_hp) = if let Some(boiler) = boiler {
@@ -4247,7 +4250,7 @@ fn heat_source_wet_from_input(
                     external_conditions.clone(),
                     number_of_zones,
                     throughput_exhaust_air,
-                    energy_supply_hn,
+                    energy_supply_heat_source,
                     detailed_output_heating_cooling,
                     boiler.map(|boiler: Boiler| Arc::new(RwLock::new(boiler))),
                     cost_schedule_hybrid_hp,
