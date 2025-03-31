@@ -52,7 +52,7 @@ tracing-subscriber = "0.3.19"
 
 [dev-dependencies]
 approx = "0.5.1"
-jsonschema = "0.29.0"
+jsonschema = "0.29.1"
 pretty_assertions = "1.4.1"
 rstest = "0.25.0"
 walkdir = "2.5.0"
