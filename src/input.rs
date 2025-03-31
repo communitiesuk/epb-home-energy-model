@@ -381,7 +381,7 @@ pub(crate) struct EnergyDiverter {
     pub(crate) storage_tank: Option<StorageTankType>,
     pub(crate) heat_source: DiverterHeatSourceType,
     #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
-    control_max: Option<String>,
+    pub(crate) control_max: Option<String>,
 }
 
 impl Default for EnergyDiverter {

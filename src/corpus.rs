@@ -25,7 +25,7 @@ use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, PositionedHeatSource,
-    SolarThermalSystem, StorageTank, StorageTankDetailedResult,
+    SmartHotWaterTank, SolarThermalSystem, StorageTank, StorageTankDetailedResult,
 };
 use crate::core::heating_systems::wwhrs::{
     WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
@@ -4772,14 +4772,7 @@ fn hot_water_source_from_input(
             for (heat_source_name, hs) in heat_source {
                 let energy_supply_name = hs.energy_supply_name();
                 if let Some(diverter) = diverter_types.get(energy_supply_name) {
-                    if diverter.storage_tank.is_some()
-                        && diverter
-                            .storage_tank
-                            .as_ref()
-                            .unwrap()
-                            .matches(&source_name)
-                        && diverter.heat_source.matches(heat_source_name)
-                    {
+                    if diverter.heat_source.matches(heat_source_name) {
                         let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
 
                         let positioned_heat_source =
@@ -4791,8 +4784,14 @@ fn hot_water_source_from_input(
                             .as_immersion_heater();
 
                         if let Some(im) = immersion_heater {
-                            let pv_diverter =
-                                PVDiverter::new(storage_tank.clone(), im, heat_source_name.clone());
+                            let control_max =
+                                controls.get_with_string(&diverter.control_max.as_ref().unwrap());
+                            let pv_diverter = PVDiverter::new(
+                                storage_tank.clone(),
+                                im,
+                                heat_source_name.clone(),
+                                control_max,
+                            );
                             energy_supply
                                 .write()
                                 .connect_diverter(pv_diverter.clone())

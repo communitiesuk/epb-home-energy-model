@@ -1527,18 +1527,21 @@ pub struct PVDiverter {
     storage_tank: Arc<RwLock<StorageTank>>,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
+    control_max: Option<Arc<Control>>,
     capacity_already_in_use: AtomicF64,
 }
 
 impl PVDiverter {
-    pub fn new(
+    pub(crate) fn new(
         storage_tank: Arc<RwLock<StorageTank>>,
         heat_source: Arc<Mutex<ImmersionHeater>>,
         heat_source_name: String,
+        control_max: Option<Arc<Control>>,
     ) -> Arc<RwLock<Self>> {
         let diverter = Arc::new(RwLock::new(Self {
             storage_tank,
             heat_source_name,
+            control_max,
             immersion_heater: heat_source.clone(),
             capacity_already_in_use: Default::default(),
         }));
@@ -2338,6 +2341,7 @@ mod tests {
             Arc::new(RwLock::new(storage_tank_for_pv_diverter)),
             Arc::new(Mutex::new(immersion_heater)),
             "imheater".to_string(),
+            None, // TODO (migration 0.34)
         );
         let sim_time = SimulationTime::new(0., 4., 1.);
 
