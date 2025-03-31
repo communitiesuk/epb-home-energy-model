@@ -1319,32 +1319,6 @@ impl HeatSource {
         }
         Ok(())
     }
-
-    pub(crate) fn set_temp_setpnt_max(&mut self, temp_setpnt_max_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::SolarThermalSystem {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::Wet {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-        }
-        Ok(())
-    }
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2067,12 +2041,6 @@ pub(crate) struct ZoneLightingBulbs {
     pub(crate) count: usize,
     pub(crate) power: f64,
     pub(crate) efficacy: f64,
-}
-
-impl ZoneLightingBulbs {
-    pub(crate) fn capacity(&self) -> f64 {
-        self.count as f64 * self.power * self.efficacy
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -3764,60 +3732,48 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(super) fn has_control_for_loadshifting(self) -> bool {
-        self.input.control.extra.get("loadshifting").is_some() // TODO: the "type" of these is "smartappliance" - should we be relying on that instead of the key loadshifting?
+    pub(crate) fn remove_all_smart_appliance_controls(&mut self) {
+        self.input.smart_appliance_controls.clear();
     }
 
-    pub(super) fn set_loadshifting_control(&mut self, smart_control: ControlDetails) -> &Self {
+    pub(crate) fn add_smart_appliance_control(
+        &mut self,
+        smart_control_name: &str,
+        control: Value,
+    ) -> anyhow::Result<()> {
         self.input
-            .control
-            .extra
-            .insert("loadshifting".to_string(), smart_control);
-        self
+            .smart_appliance_controls
+            .insert(smart_control_name.into(), serde_json::from_value(control)?);
+
+        Ok(())
     }
 
-    pub(super) fn set_non_appliance_demand_24hr(
+    pub(super) fn set_non_appliance_demand_24hr_on_smart_appliance_control(
         &mut self,
+        smart_control_name: &str,
         non_appliance_demand_24hr_input: IndexMap<String, Vec<f64>>,
-    ) -> anyhow::Result<()> {
-        let control = self
+    ) {
+        if let Some(ref mut control) = self
             .input
-            .control
-            .extra
-            .get_mut("loadshifting")
-            .ok_or_else(|| anyhow!("Expected control to have 'loadshifting' as key"))?;
-
-        if let ControlDetails::SmartAppliance {
-            ref mut non_appliance_demand_24hr,
-            ..
-        } = control
+            .smart_appliance_controls
+            .get_mut(smart_control_name)
         {
-            *non_appliance_demand_24hr = Some(non_appliance_demand_24hr_input);
+            control.non_appliance_demand_24hr = non_appliance_demand_24hr_input;
         }
-
-        Ok(())
     }
 
-    pub(super) fn set_battery24hr(
+    pub(super) fn set_battery24hr_on_smart_appliance_control(
         &mut self,
+        smart_control_name: &str,
         battery24hr_input: SmartApplianceBattery,
-    ) -> anyhow::Result<()> {
-        let control = self
+    ) {
+        if let Some(ref mut control) = self
             .input
-            .control
-            .extra
-            .get_mut("loadshifting")
-            .ok_or_else(|| anyhow!("Expected control to have 'loadshifting' as key"))?;
-
-        if let ControlDetails::SmartAppliance {
-            ref mut battery_24hr,
-            ..
-        } = control
+            .smart_appliance_controls
+            .get_mut(smart_control_name)
         {
-            *battery_24hr = Some(Box::new(battery24hr_input));
+            control.battery_24hr = battery24hr_input;
         }
-
-        Ok(())
     }
 
     pub fn zone_keys(&self) -> Vec<String> {
@@ -3935,17 +3891,6 @@ impl InputForProcessing {
                 .as_ref()
                 .is_some_and(|lighting| lighting.bulbs.is_some())
         })
-    }
-
-    pub(crate) fn light_bulbs_for_all_zones(&self) -> Vec<ZoneLightingBulbs> {
-        self.input
-            .zone
-            .values()
-            .filter_map(|zone| zone.lighting.as_ref())
-            .filter_map(|lighting| lighting.bulbs.as_ref())
-            .flat_map(|bulbs| bulbs.values())
-            .copied()
-            .collect_vec()
     }
 
     pub(crate) fn light_bulbs_for_each_zone(&self) -> IndexMap<String, Vec<ZoneLightingBulbs>> {
@@ -4873,6 +4818,15 @@ impl InputForProcessing {
                 }
             })
         })
+    }
+
+    pub(crate) fn appliance_keys(&self) -> Vec<ApplianceKey> {
+        self.input
+            .appliances
+            .iter()
+            .flat_map(|appliances| appliances.keys())
+            .copied()
+            .collect()
     }
 
     pub(crate) fn appliance_with_key(&self, key: &ApplianceKey) -> Option<&ApplianceEntry> {

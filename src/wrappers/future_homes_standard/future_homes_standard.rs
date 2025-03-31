@@ -9,11 +9,11 @@ use crate::external_conditions::{
 };
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
-    ControlDetails, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+    EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
     MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
-    SystemReference, TransparentBuildingElement, VentType, WaterHeatingEvent,
-    WaterHeatingEventType, WindowTreatmentType, ZoneLightingBulbs,
+    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
+    WindowTreatmentType, ZoneLightingBulbs,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -28,7 +28,7 @@ use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
-use serde_json::{json, Number, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
 use std::iter::repeat;
@@ -68,6 +68,8 @@ pub(crate) struct SimSettings {
     _use_fast_solver: bool,
     tariff_data_filename: Option<String>,
 }
+
+const SMART_APPLIANCE_CONTROL_NAME: &str = "SmartApplianceControl";
 
 pub fn apply_fhs_preprocessing(
     input: &mut InputForProcessing,
@@ -151,7 +153,7 @@ pub fn apply_fhs_preprocessing(
     set_temp_internal_static_calcs(input);
 
     if input
-        .smart_appliance_control_by_name("SmartApplianceControl")
+        .smart_appliance_control_by_name(SMART_APPLIANCE_CONTROL_NAME)
         .is_some()
     {
         // run project for 24 hours to obtain initial estimate for daily heating demand
@@ -852,9 +854,6 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
             bail!("missing HeatingControlType (SeparateTempControl or SeparateTimeAndTempControl)")
         }
     };
-
-    let living_room_space_heat_system_name = "HeatingPattern_LivingRoom";
-    let rest_of_dwelling_space_heat_system_name = "HeatingPattern_RestOfDwelling";
 
     for zone in input.zone_keys() {
         match (
@@ -1694,14 +1693,7 @@ fn create_appliance_gains(
     number_of_occupants: f64,
     appliance_propensities: &AppliancePropensities<Normalised>,
 ) -> anyhow::Result<()> {
-    // create flattened year-long versions of energy use profiles
-    let flat_efus_profile: Vec<f64> = DAYS_IN_MONTH
-        .iter()
-        .enumerate()
-        .flat_map(|(month, days)| (0..*days).map(move |_| month))
-        .flat_map(|month| AVERAGE_MONTHLY_APPLIANCES_HOURLY_PROFILES[month])
-        .collect();
-
+    // take daily appliance use propensities and repeat them for one entire year
     let flat_annual_propensities: FlatAnnualPropensities = appliance_propensities.into();
 
     // add any missing required appliances to the assessment,
@@ -1715,15 +1707,30 @@ fn create_appliance_gains(
     let appliance_map: IndexMap<ApplianceKey, ApplianceUseProfile> = IndexMap::from([
         (
             ApplianceKey::Fridge,
-            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+            ApplianceUseProfile::simple(
+                1.,
+                0.,
+                1.0,
+                vec![1. / HOURS_PER_DAY as f64; (HOURS_PER_DAY * DAYS_PER_YEAR) as usize],
+            ),
         ),
         (
             ApplianceKey::Freezer,
-            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+            ApplianceUseProfile::simple(
+                1.,
+                0.,
+                1.0,
+                vec![1. / HOURS_PER_DAY as f64; (HOURS_PER_DAY * DAYS_PER_YEAR) as usize],
+            ),
         ),
         (
             ApplianceKey::FridgeFreezer,
-            ApplianceUseProfile::simple(1., 0., 1.0, flat_efus_profile.clone()),
+            ApplianceUseProfile::simple(
+                1.,
+                0.,
+                1.0,
+                vec![1. / HOURS_PER_DAY as f64; (HOURS_PER_DAY * DAYS_PER_YEAR) as usize],
+            ),
         ),
         (
             ApplianceKey::OtherDevices,
@@ -1837,6 +1844,7 @@ fn create_appliance_gains(
     let mut priority: IndexMap<ApplianceKey, (Option<isize>, f64)> = Default::default();
     let mut power_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
     let mut weight_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
+    let mut loadshifting_flag = false;
     // loop through appliances in the assessment.
     let input_appliances = input.clone_appliances();
 
@@ -1877,6 +1885,8 @@ fn create_appliance_gains(
                 ..
             }) = &appliance
             {
+                loadshifting_flag = true;
+
                 if load_shifting.max_shift_hrs >= 24. {
                     // could instead change length of buffers/initial simulation match this, but unclear what benefit this would have
                     bail!("{} max_shift_hrs too high, FHS wrapper cannot handle max shift >= 24 hours", appliance_key);
@@ -1887,6 +1897,10 @@ fn create_appliance_gains(
                 priority.insert(appliance_key, (load_shifting.priority, kwhcycle));
 
                 let mut load_shifting = load_shifting.clone();
+                load_shifting
+                    .control
+                    .replace(SMART_APPLIANCE_CONTROL_NAME.into());
+
                 // create year long cost profile
                 // loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
                 // so the weight timeseries is generic.
@@ -1937,8 +1951,9 @@ fn create_appliance_gains(
             } else {
                 continue;
             };
-            // TODO (from Python) - check normalisation of flat profile here
-            let flat_schedule: Vec<f64> = flat_efus_profile
+
+            let flat_schedule: Vec<f64> = appliance_map[&appliance_key]
+                .prof
                 .iter()
                 .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
                 .collect();
@@ -2043,14 +2058,18 @@ fn create_appliance_gains(
         );
     }
 
-    let smart_control: ControlDetails = ControlDetails::SmartAppliance {
-        battery_24hr: None,
-        non_appliance_demand_24hr: None,
-        power_timeseries: main_power_sched,
-        time_series_step: 1.,
-    };
-
-    input.set_loadshifting_control(smart_control);
+    if loadshifting_flag {
+        input.remove_all_smart_appliance_controls();
+        let appliance_keys = input.appliance_keys();
+        input.add_smart_appliance_control(
+            SMART_APPLIANCE_CONTROL_NAME,
+            json!({
+                "power_timeseries": main_power_sched,
+                "time_series_step": 1.,
+                "Appliances": appliance_keys,
+            }),
+        )?;
+    }
 
     // work out order in which to process loadshifting appliances
     let defined_priority = priority
@@ -2511,14 +2530,20 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
     ]);
 
-    input_24h.set_non_appliance_demand_24hr(zeros_24h_by_supply.clone())?;
+    input_24h.set_non_appliance_demand_24hr_on_smart_appliance_control(
+        SMART_APPLIANCE_CONTROL_NAME,
+        zeros_24h_by_supply.clone(),
+    );
 
-    input_24h.set_battery24hr(SmartApplianceBattery {
-        energy_into_battery_from_generation: zeros_24h_by_supply.clone(),
-        energy_out_of_battery: zeros_24h_by_supply.clone(),
-        energy_into_battery_from_grid: zeros_24h_by_supply.clone(),
-        battery_state_of_charge: zeros_24h_by_supply.clone(),
-    })?;
+    input_24h.set_battery24hr_on_smart_appliance_control(
+        SMART_APPLIANCE_CONTROL_NAME,
+        SmartApplianceBattery {
+            energy_into_battery_from_generation: zeros_24h_by_supply.clone(),
+            energy_out_of_battery: zeros_24h_by_supply.clone(),
+            energy_into_battery_from_grid: zeros_24h_by_supply.clone(),
+            battery_state_of_charge: zeros_24h_by_supply.clone(),
+        },
+    );
 
     input_24h.set_simulation_time(SimulationTime::new(
         SIMTIME_START,
@@ -2578,7 +2603,10 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         ),
         (ENERGY_SUPPLY_NAME_GAS.to_string(), vec![0.; range]),
     ]);
-    input.set_non_appliance_demand_24hr(non_appliance_demand_24hr)?;
+    input.set_non_appliance_demand_24hr_on_smart_appliance_control(
+        SMART_APPLIANCE_CONTROL_NAME,
+        non_appliance_demand_24hr,
+    );
 
     let energy_into_battery_from_generation = results
         .energy_to_storage
@@ -2601,12 +2629,15 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         .map(|(key, value)| (key.to_string(), value.clone()))
         .collect::<IndexMap<String, Vec<f64>>>();
 
-    input.set_battery24hr(SmartApplianceBattery {
-        energy_into_battery_from_generation,
-        energy_out_of_battery,
-        energy_into_battery_from_grid,
-        battery_state_of_charge,
-    })?;
+    input.set_battery24hr_on_smart_appliance_control(
+        SMART_APPLIANCE_CONTROL_NAME,
+        SmartApplianceBattery {
+            energy_into_battery_from_generation,
+            energy_out_of_battery,
+            energy_into_battery_from_grid,
+            battery_state_of_charge,
+        },
+    );
 
     Ok(())
 }
@@ -3014,13 +3045,7 @@ pub(crate) fn minimum_air_change_rate(
 
 /// Set min and max vent opening thresholds
 fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let tfa = calc_tfa(input);
-    let number_of_bedrooms = input
-        .number_of_bedrooms()
-        .ok_or_else(|| anyhow!("Expected number of bedrooms to be indicated."))?;
-    let total_volume = input.total_zone_volume();
-
-    let vent_adjust_min_ach = minimum_air_change_rate(input, tfa, total_volume, number_of_bedrooms);
+    let vent_adjust_min_ach = 1.9;
     let vent_adjust_max_ach = 2.;
 
     input.add_control(
@@ -3210,103 +3235,68 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
         if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
             match space_heat_control {
                 SpaceHeatControlType::LivingRoom => {
-                    match input.space_cool_system_for_zone(zone_key)? {
-                        SystemReference::Single(space_cool_system) => {
-                            let mut living_room_control = json!({
-                                "type": "SetpointTimeControl",
-                                "start_day": 0,
-                                "time_series_step": 0.5,
-                                "schedule": {
-                                    "main": [{"repeat": 53, "value": "week"}],
-                                    "week": [{"repeat": 5, "value": "weekday"},
+                    for space_cool_system in input.space_cool_system_for_zone(zone_key)? {
+                        let ctrl_name = format!("Cooling_{space_cool_system}");
+                        input.set_control_string_for_space_cool_system(
+                            &space_cool_system,
+                            &ctrl_name,
+                        )?;
+                        let mut living_room_control = json!({
+                            "type": "SetpointTimeControl",
+                            "start_day" : 0,
+                            "time_series_step":0.5,
+                            "schedule": {
+                                "main": [{"repeat": 53, "value": "week"}],
+                                "week": [{"repeat": 5, "value": "weekday"},
                                             {"repeat": 2, "value": "weekend"}],
-                                    "weekday": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKDAY.to_vec(),
-                                    "weekend": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKEND.to_vec(),
-                                }
-                            });
-                            input.set_control_string_for_space_cool_system(
-                                &space_cool_system,
-                                "Cooling_LivingRoom",
-                            )?;
-                            if let Some(temp_setback) =
-                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
-                            {
-                                match living_room_control {
-                                    Value::Object(ref mut control_map) => {
-                                        control_map.insert(
-                                            "setpoint_max".into(),
-                                            Value::Number(Number::from_f64(temp_setback).unwrap()),
-                                        );
-                                    }
-                                    _ => unreachable!(),
-                                }
+                                "weekday": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKDAY.to_vec(),
+                                "weekend": COOLING_SUBSCHEDULE_LIVINGROOM_WEEKEND.to_vec(),
                             }
-                            if let Some(advanced_start) =
-                                input.advanced_start_for_space_cool_system(&space_cool_system)?
-                            {
-                                match living_room_control {
-                                    Value::Object(ref mut control_map) => {
-                                        control_map.insert(
-                                            "advanced_start".into(),
-                                            Value::Number(Number::from_f64(advanced_start).unwrap()),
-                                        );
-                                    }
-                                    _ => unreachable!(),
-                                }
-                            }
-                            input.add_control("Cooling_LivingRoom", living_room_control)?;
+                        });
+                        let control_json = living_room_control.as_object_mut().unwrap();
+                        if let Some(temp_setback) = input
+                            .temperature_setback_for_space_cool_system(space_cool_system.as_str())?
+                        {
+                            control_json.insert("setpoint_max".to_string(), temp_setback.into());
                         }
-                        SystemReference::Multiple(_) => bail!("Multiple space heat systems references in zones not currently supported for FHS inputs"),
-                        SystemReference::None(_) => {}
+                        if let Some(advanced_start) = input
+                            .advanced_start_for_space_cool_system(space_cool_system.as_str())?
+                        {
+                            control_json
+                                .insert("advanced_start".to_string(), advanced_start.into());
+                        }
+                        input.add_control(&ctrl_name, living_room_control)?;
                     }
                 }
                 SpaceHeatControlType::RestOfDwelling => {
-                    match input.space_cool_system_for_zone(zone_key)? {
-                        SystemReference::Single(space_cool_system) => {
-                            let mut rest_of_dwelling_control = json!({
-                                "type": "SetpointTimeControl",
-                                "start_day": 0,
-                                "time_series_step": 0.5,
-                                "schedule": {
-                                    "main": [{"repeat": 365, "value": "day"}],
-                                    "day": COOLING_SUBSCHEDULE_RESTOFDWELLING.to_vec(),
-                                }
-                            });
-                            input.set_control_string_for_space_cool_system(
-                                &space_cool_system,
-                                "Cooling_RestOfDwelling",
-                            )?;
-                            if let Some(temp_setback) =
-                                input.temperature_setback_for_space_cool_system(&space_cool_system)?
-                            {
-                                match rest_of_dwelling_control {
-                                    Value::Object(ref mut control_map) => {
-                                        control_map.insert(
-                                            "setpoint_max".into(),
-                                            Value::Number(Number::from_f64(temp_setback).unwrap()),
-                                        );
-                                    }
-                                    _ => unreachable!(),
-                                }
+                    for space_cool_system in input.space_cool_system_for_zone(zone_key)? {
+                        let ctrl_name = format!("Cooling_{space_cool_system}");
+                        input.set_control_string_for_space_cool_system(
+                            space_cool_system.as_str(),
+                            &ctrl_name,
+                        )?;
+                        let mut rest_of_dwelling_control = json!({
+                            "type": "SetpointTimeControl",
+                            "start_day": 0,
+                            "time_series_step": 0.5,
+                            "schedule": {
+                                "main": [{"repeat": 365, "value": "day"}],
+                                "day": COOLING_SUBSCHEDULE_RESTOFDWELLING.to_vec(),
                             }
-
-                            if let Some(advanced_start) =
-                                input.advanced_start_for_space_cool_system(&space_cool_system)?
-                            {
-                                match rest_of_dwelling_control {
-                                    Value::Object(ref mut control_map) => {
-                                        control_map.insert(
-                                            "advanced_start".into(),
-                                            Value::Number(Number::from_f64(advanced_start).unwrap()),
-                                        );
-                                    }
-                                    _ => unreachable!(),
-                                }
-                            }
-                            input.add_control("Cooling_RestOfDwelling", rest_of_dwelling_control)?;
+                        });
+                        let control_json = rest_of_dwelling_control.as_object_mut().unwrap();
+                        if let Some(temp_setback) = input
+                            .temperature_setback_for_space_cool_system(space_cool_system.as_str())?
+                        {
+                            control_json.insert("setpoint_max".to_string(), temp_setback.into());
                         }
-                        SystemReference::Multiple(_) => bail!("Multiple space cool systems references in zones not currently supported for FHS inputs"),
-                        SystemReference::None(_) => {}
+                        if let Some(advanced_start) = input
+                            .advanced_start_for_space_cool_system(space_cool_system.as_str())?
+                        {
+                            control_json
+                                .insert("advanced_start".to_string(), advanced_start.into());
+                        }
+                        input.add_control(ctrl_name.to_owned(), rest_of_dwelling_control)?;
                     }
                 }
             }
@@ -4315,321 +4305,6 @@ const AVERAGE_MONTHLY_LIGHTING_HALF_HOUR_PROFILES: [[f64; 48]; 12] = [
         0.059952377,
         0.0510938,
         0.041481111,
-    ],
-];
-
-const AVERAGE_MONTHLY_APPLIANCES_HOURLY_PROFILES: [[f64; 24]; 12] = [
-    [
-        0.025995114,
-        0.023395603,
-        0.022095847,
-        0.020796091,
-        0.019496336,
-        0.022095847,
-        0.02729487,
-        0.040292427,
-        0.048090962,
-        0.049390717,
-        0.050690473,
-        0.049390717,
-        0.053289984,
-        0.049390717,
-        0.050690473,
-        0.053289984,
-        0.074086076,
-        0.087083633,
-        0.08188461,
-        0.070186809,
-        0.064987786,
-        0.057189252,
-        0.046791206,
-        0.033793649,
-    ],
-    [
-        0.025995114,
-        0.023395603,
-        0.022095847,
-        0.020796091,
-        0.019496336,
-        0.022095847,
-        0.02729487,
-        0.032493893,
-        0.046791206,
-        0.051990229,
-        0.049390717,
-        0.046791206,
-        0.048090962,
-        0.046791206,
-        0.04549145,
-        0.049390717,
-        0.062388274,
-        0.074086076,
-        0.080584854,
-        0.067587297,
-        0.059788763,
-        0.050690473,
-        0.044191694,
-        0.032493893,
-    ],
-    [
-        0.024695359,
-        0.020796091,
-        0.020796091,
-        0.019496336,
-        0.020796091,
-        0.022095847,
-        0.029894381,
-        0.041592183,
-        0.04549145,
-        0.048090962,
-        0.04549145,
-        0.04549145,
-        0.049390717,
-        0.048090962,
-        0.048090962,
-        0.049390717,
-        0.057189252,
-        0.070186809,
-        0.07278632,
-        0.067587297,
-        0.061088519,
-        0.051990229,
-        0.041592183,
-        0.029894381,
-    ],
-    [
-        0.022095847,
-        0.022095847,
-        0.022095847,
-        0.022095847,
-        0.023395603,
-        0.029894381,
-        0.038992672,
-        0.046791206,
-        0.046791206,
-        0.044191694,
-        0.046791206,
-        0.048090962,
-        0.044191694,
-        0.042891939,
-        0.044191694,
-        0.051990229,
-        0.062388274,
-        0.061088519,
-        0.058489007,
-        0.057189252,
-        0.050690473,
-        0.041592183,
-        0.033793649,
-        0.024695359,
-    ],
-    [
-        0.024695359,
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.023395603,
-        0.031194137,
-        0.038992672,
-        0.044191694,
-        0.048090962,
-        0.046791206,
-        0.044191694,
-        0.04549145,
-        0.041592183,
-        0.037692916,
-        0.038992672,
-        0.049390717,
-        0.05458974,
-        0.058489007,
-        0.051990229,
-        0.055889496,
-        0.050690473,
-        0.041592183,
-        0.031194137,
-        0.024695359,
-    ],
-    [
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.019496336,
-        0.020796091,
-        0.024695359,
-        0.032493893,
-        0.042891939,
-        0.044191694,
-        0.041592183,
-        0.040292427,
-        0.042891939,
-        0.040292427,
-        0.038992672,
-        0.040292427,
-        0.044191694,
-        0.053289984,
-        0.057189252,
-        0.048090962,
-        0.048090962,
-        0.04549145,
-        0.041592183,
-        0.031194137,
-        0.024695359,
-    ],
-    [
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.019496336,
-        0.020796091,
-        0.024695359,
-        0.032493893,
-        0.041592183,
-        0.042891939,
-        0.042891939,
-        0.041592183,
-        0.041592183,
-        0.040292427,
-        0.037692916,
-        0.037692916,
-        0.044191694,
-        0.051990229,
-        0.05458974,
-        0.046791206,
-        0.046791206,
-        0.04549145,
-        0.042891939,
-        0.031194137,
-        0.024695359,
-    ],
-    [
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.019496336,
-        0.020796091,
-        0.024695359,
-        0.032493893,
-        0.044191694,
-        0.044191694,
-        0.044191694,
-        0.044191694,
-        0.044191694,
-        0.042891939,
-        0.040292427,
-        0.041592183,
-        0.044191694,
-        0.051990229,
-        0.055889496,
-        0.050690473,
-        0.051990229,
-        0.049390717,
-        0.042891939,
-        0.031194137,
-        0.024695359,
-    ],
-    [
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.019496336,
-        0.023395603,
-        0.029894381,
-        0.040292427,
-        0.041592183,
-        0.044191694,
-        0.044191694,
-        0.04549145,
-        0.044191694,
-        0.042891939,
-        0.042891939,
-        0.042891939,
-        0.051990229,
-        0.059788763,
-        0.064987786,
-        0.061088519,
-        0.058489007,
-        0.051990229,
-        0.038992672,
-        0.031194137,
-        0.023395603,
-    ],
-    [
-        0.022095847,
-        0.020796091,
-        0.019496336,
-        0.022095847,
-        0.023395603,
-        0.029894381,
-        0.040292427,
-        0.046791206,
-        0.049390717,
-        0.04549145,
-        0.046791206,
-        0.049390717,
-        0.04549145,
-        0.044191694,
-        0.04549145,
-        0.053289984,
-        0.067587297,
-        0.07278632,
-        0.066287542,
-        0.059788763,
-        0.053289984,
-        0.042891939,
-        0.031194137,
-        0.023395603,
-    ],
-    [
-        0.024695359,
-        0.022095847,
-        0.020796091,
-        0.020796091,
-        0.020796091,
-        0.024695359,
-        0.029894381,
-        0.042891939,
-        0.048090962,
-        0.049390717,
-        0.04549145,
-        0.04549145,
-        0.046791206,
-        0.046791206,
-        0.044191694,
-        0.051990229,
-        0.064987786,
-        0.08188461,
-        0.076685587,
-        0.067587297,
-        0.061088519,
-        0.05458974,
-        0.04549145,
-        0.032493893,
-    ],
-    [
-        0.025995114,
-        0.023395603,
-        0.022095847,
-        0.020796091,
-        0.019496336,
-        0.022095847,
-        0.02729487,
-        0.032493893,
-        0.048090962,
-        0.053289984,
-        0.051990229,
-        0.05458974,
-        0.057189252,
-        0.051990229,
-        0.055889496,
-        0.058489007,
-        0.075385832,
-        0.083184366,
-        0.08188461,
-        0.068887053,
-        0.062388274,
-        0.055889496,
-        0.046791206,
-        0.033793649,
     ],
 ];
 
