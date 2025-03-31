@@ -4645,18 +4645,11 @@ fn hot_water_source_from_input(
 ) -> anyhow::Result<(HotWaterSource, Vec<String>)> {
     let mut energy_supply_conn_names = vec![];
     let cloned_input = input.clone();
-    let hot_water_source = match input {
-        HotWaterSourceDetails::StorageTank {
-            volume,
-            daily_losses,
-            heat_exchanger_surface_area,
-            init_temp,
-            cold_water_source: cold_water_source_type,
-            primary_pipework,
-            heat_source,
-            ..
-        } => {
-            let cold_water_source: WaterSourceWithTemperature = match cold_water_source_type {
+
+    let cold_water_source_for_storage_tank_and_smart_hot_water_tank =
+        |cold_water_source_type: &ColdWaterSourceReference|
+         -> anyhow::Result<WaterSourceWithTemperature> {
+            let cold_water_source = match cold_water_source_type {
                 ColdWaterSourceReference::Type(source_type) => {
                     cold_water_source_for_type(source_type, cold_water_sources)?
                 }
@@ -4668,10 +4661,16 @@ fn hot_water_source_from_input(
                     }
                 }
             };
+            Ok(cold_water_source)
+        };
 
-            // At this point in the Python, the internal_diameter and external_diameter fields on
-            // primary_pipework are updated, this is done in Pipework.rs in the Rust
-            let primary_pipework_lst = primary_pipework.as_ref();
+    let mut heat_sources_for_storage_tank_and_smart_hot_water_tank =
+        |cold_water_source: WaterSourceWithTemperature,
+         heat_exchanger_surface_area: &Option<f64>,
+         heat_source: &IndexMap<String, HeatSourceInput>,
+         volume: &f64,
+         daily_losses: &f64|
+         -> anyhow::Result<IndexMap<String, PositionedHeatSource>> {
             let mut heat_sources: IndexMap<String, PositionedHeatSource> = Default::default();
 
             let heat_exchanger_surface_area =
@@ -4705,6 +4704,7 @@ fn hot_water_source_from_input(
                     external_conditions.clone(),
                 )?;
                 let heat_source = Arc::new(Mutex::new(heat_source));
+
                 heat_sources.insert(
                     name.clone(),
                     PositionedHeatSource {
@@ -4715,6 +4715,34 @@ fn hot_water_source_from_input(
                 );
                 energy_supply_conn_names.push(energy_supply_conn_name);
             }
+
+            Ok(heat_sources)
+        };
+
+    let hot_water_source = match input {
+        HotWaterSourceDetails::StorageTank {
+            volume,
+            daily_losses,
+            heat_exchanger_surface_area,
+            init_temp,
+            cold_water_source: cold_water_source_type,
+            primary_pipework,
+            heat_source,
+            ..
+        } => {
+            let cold_water_source = cold_water_source_for_storage_tank_and_smart_hot_water_tank(
+                cold_water_source_type,
+            )?;
+            // At this point in the Python, the internal_diameter and external_diameter fields on
+            // primary_pipework are updated, this is done in Pipework.rs in the Rust
+            let primary_pipework_lst = primary_pipework.as_ref();
+            let heat_sources = heat_sources_for_storage_tank_and_smart_hot_water_tank(
+                cold_water_source.clone(),
+                heat_exchanger_surface_area,
+                heat_source,
+                volume,
+                daily_losses,
+            )?;
 
             let storage_tank = Arc::new(RwLock::new(StorageTank::new(
                 *volume,
@@ -4734,6 +4762,7 @@ fn hot_water_source_from_input(
                 *WATER,
                 detailed_output_heating_cooling,
             )));
+
             for (heat_source_name, hs) in heat_source {
                 let energy_supply_name = hs.energy_supply_name();
                 if let Some(diverter) = diverter_types.get(energy_supply_name) {
