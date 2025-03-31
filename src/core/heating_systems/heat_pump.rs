@@ -21,7 +21,7 @@ use crate::input::{
     HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
     HeatSourceWetDetails, HotWaterSourceDetails,
 };
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use arrayvec::ArrayString;
@@ -2348,7 +2348,6 @@ impl HeatPump {
         cold_feed: Arc<WaterSourceWithTemperature>,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-        simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<HeatPumpServiceWater> {
         Self::create_service_connection(heat_pump.clone(), service_name).unwrap();
         let boiler_service = heat_pump
@@ -2362,7 +2361,6 @@ impl HeatPump {
                         service_name,
                         control_min.clone(),
                         control_max.clone(),
-                        simulation_time,
                     )?,
                 )))
             })
@@ -6564,7 +6562,6 @@ mod tests {
             cold_feed.clone().into(),
             control.clone(),
             control.clone(),
-            &simulation_time_for_heat_pump.iter(),
         )
         .unwrap();
 
@@ -6590,7 +6587,6 @@ mod tests {
             cold_feed.into(),
             control.clone(),
             control,
-            &simulation_time_for_heat_pump.iter(),
         )
         .unwrap();
 

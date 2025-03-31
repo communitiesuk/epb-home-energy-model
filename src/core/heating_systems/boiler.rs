@@ -8,7 +8,7 @@ use crate::core::water_heat_demand::dhw_demand::{DemandVolTargetKey, VolumeRefer
 use crate::external_conditions::ExternalConditions;
 use crate::input::{BoilerHotWaterTest, FuelType, HotWaterSourceDetails};
 use crate::input::{HeatSourceLocation, HeatSourceWetDetails};
-use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
+use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::bail;
 use arrayvec::ArrayString;
@@ -147,7 +147,6 @@ impl BoilerServiceWaterCombi {
                 None,
                 None,
                 None,
-                simtime,
             )
             .map(|res| res.0)
     }
@@ -241,7 +240,6 @@ impl BoilerServiceWaterRegular {
         service_name: String,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-        simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             boiler,
@@ -288,7 +286,6 @@ impl BoilerServiceWaterRegular {
             Some(hybrid_service_bool),
             time_elapsed_hp,
             Some(update_heat_source_state.unwrap_or(true)),
-            simtime,
         )
     }
 
@@ -370,7 +367,6 @@ impl BoilerServiceSpace {
             Some(hybrid_service_bool),
             time_elapsed_hp,
             Some(update_heat_source_state),
-            simtime,
         )
     }
 
@@ -635,7 +631,6 @@ impl Boiler {
         service_name: &str,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-        simulation_time: &SimulationTimeIterator,
     ) -> anyhow::Result<BoilerServiceWaterRegular> {
         boiler
             .write()
@@ -646,7 +641,6 @@ impl Boiler {
             service_name.into(),
             control_min,
             control_max,
-            simulation_time,
         )
     }
 
@@ -861,7 +855,6 @@ impl Boiler {
         hybrid_service_bool: Option<bool>,
         time_elapsed_hp: Option<f64>,
         update_heat_source_state: Option<bool>,
-        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<f64>)> {
         let time_start = time_start.unwrap_or(0.0);
         let hybrid_service_bool = hybrid_service_bool.unwrap_or(false);
@@ -1020,7 +1013,7 @@ impl Boiler {
             .filter_map(|x| (x.service_type == ServiceType::Space).then_some(x.time_available))
             .sum::<f64>();
 
-        for (service_no, service_data) in self.service_results.read().iter().enumerate() {
+        for service_data in self.service_results.read().iter() {
             // Aggregate space heating services
             // TODO (from Python) This is only necessary because the model cannot handle an
             //                    emitter circuit that serves more than one zone. If/when this
@@ -1510,14 +1503,12 @@ mod tests {
         boiler_for_regular: Boiler,
         control_min: Arc<Control>,
         control_max: Arc<Control>,
-        simulation_time: SimulationTime,
     ) -> BoilerServiceWaterRegular {
         BoilerServiceWaterRegular::new(
             Arc::new(RwLock::new(boiler_for_regular)),
             "boiler_test".to_string(),
             control_min,
             control_max,
-            &simulation_time.iter(),
         )
         .unwrap()
     }
@@ -1732,7 +1723,6 @@ mod tests {
     #[rstest]
     fn test_create_service_hot_water_regular(
         #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
-        simulation_time: SimulationTime,
     ) {
         let service_name = "service_hot_water_regular";
         let control_min = Arc::new(Control::SetpointTime(
@@ -1769,7 +1759,6 @@ mod tests {
             service_name,
             control_min,
             control_max,
-            &simulation_time.iter(),
         );
         assert!(boiler_hotwater_regular_result.is_ok());
     }
@@ -1960,7 +1949,7 @@ mod tests {
             .create_service_connection("boiler_demand_energy".into())
             .unwrap();
 
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
                 boiler
                     .demand_energy(
@@ -1972,7 +1961,6 @@ mod tests {
                         Some(false),
                         None,
                         None,
-                        t_it
                     )
                     .unwrap()
                     .0,
@@ -1984,7 +1972,7 @@ mod tests {
             .create_service_connection("boiler_demand_energy_with_hybrid".into())
             .unwrap();
 
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
                 boiler
                     .demand_energy(
@@ -1996,7 +1984,6 @@ mod tests {
                         Some(true),
                         Some(0.),
                         None,
-                        t_it
                     )
                     .unwrap(),
                 [(24.0, Some(1.0)), (24.0, Some(1.0))][t_idx]
@@ -2008,7 +1995,7 @@ mod tests {
             .create_service_connection("boiler_demand_energy_hybrid_time_elapsed".into())
             .unwrap();
 
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
             assert_eq!(
                 boiler
                     .demand_energy(
@@ -2020,7 +2007,6 @@ mod tests {
                         Some(true),
                         Some(0.5),
                         None,
-                        t_it
                     )
                     .unwrap(),
                 [(12.0, Some(0.5)), (12.0, Some(0.5))][t_idx]
@@ -2098,7 +2084,6 @@ mod tests {
                 Some(false),
                 None,
                 None,
-                simulation_time.iter().next().unwrap(),
             )
             .unwrap();
 

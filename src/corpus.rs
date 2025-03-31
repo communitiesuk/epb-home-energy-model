@@ -4491,7 +4491,6 @@ fn heat_source_from_input(
                             Arc::new(cold_water_source.clone()),
                             control_min,
                             control_max,
-                            simulation_time,
                         )?),
                     )),
                     WetHeatSource::Boiler(ref mut boiler) => HeatSource::Wet(Box::new(
@@ -4500,7 +4499,6 @@ fn heat_source_from_input(
                             energy_supply_conn_name.as_str(),
                             control_min,
                             control_max,
-                            simulation_time,
                         )?),
                     )),
                     WetHeatSource::Hiu(heat_network) => {
