@@ -4791,7 +4791,7 @@ fn hot_water_source_from_input(
 
                         if let Some(im) = immersion_heater {
                             let control_max =
-                                controls.get_with_string(&diverter.control_max.as_ref().unwrap());
+                                controls.get_with_string(diverter.control_max.as_ref().unwrap());
                             let pv_diverter = PVDiverter::new(
                                 storage_tank.clone(),
                                 im,

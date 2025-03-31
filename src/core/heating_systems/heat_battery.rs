@@ -147,7 +147,6 @@ impl HeatBatteryServiceWaterRegular {
             service_on,
             None,
             Some(true),
-            simulation_time_iteration.index,
         )
     }
 
@@ -172,7 +171,6 @@ impl HeatBatteryServiceWaterRegular {
             service_on,
             None,
             Some(update_heat_source_state),
-            simulation_time_iteration.index,
         )
     }
 
@@ -255,7 +253,6 @@ impl HeatBatteryServiceSpace {
             service_on,
             None,
             Some(update_heat_source_state),
-            simulation_time_iteration.index,
         )
     }
 
@@ -1071,11 +1068,12 @@ impl HeatBattery {
         let time_step_s = self.hb_time_step;
 
         // Initial Reynold number
-        let water_kinematic_viscosity_m2_per_s = Self::calculate_water_kinematic_viscosity_m2_per_s(
-            self.initial_inlet_temp,
-            self.estimated_outlet_temp,
-        );
-        let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+        let mut water_kinematic_viscosity_m2_per_s =
+            Self::calculate_water_kinematic_viscosity_m2_per_s(
+                self.initial_inlet_temp,
+                self.estimated_outlet_temp,
+            );
+        let mut reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
             water_kinematic_viscosity_m2_per_s,
             self.velocity_in_hex_tube,
             self.capillary_diameter_m,
@@ -1084,15 +1082,15 @@ impl HeatBattery {
         let flow_rate_kg_per_s =
             (self.flow_rate_l_per_min / SECONDS_PER_MINUTE as f64) * WATER.density();
         let n_time_steps = (total_time_s / time_step_s) as usize;
-        let zone_temp_c_dist = self.zone_temp_c_dist_initial.clone();
+        let mut zone_temp_c_dist = self.zone_temp_c_dist_initial.read().clone();
         let mut total_charge = 0.;
 
         for _ in 0..n_time_steps {
             // Processing HB zones
-            let (outlet_temp_c, zone_temp_c_dist, energy_transf_charged, _) = self
+            let (outlet_temp_c, zone_temp_c_dist_new, energy_transf_charged, _) = self
                 .process_heat_battery_zones(
                     inlet_temp_c,
-                    &mut zone_temp_c_dist.write(),
+                    &mut zone_temp_c_dist,
                     flow_rate_kg_per_s,
                     time_step_s,
                     reynold_number_at_1_l_per_min,
@@ -1100,10 +1098,12 @@ impl HeatBattery {
                     None,
                 )?;
 
+            zone_temp_c_dist = zone_temp_c_dist_new;
+
             // RN for next time step
-            let water_kinematic_viscosity_m2_per_s =
+            water_kinematic_viscosity_m2_per_s =
                 Self::calculate_water_kinematic_viscosity_m2_per_s(inlet_temp_c, outlet_temp_c);
-            let reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
+            reynold_number_at_1_l_per_min = Self::calculate_reynold_number_at_1_l_per_min(
                 water_kinematic_viscosity_m2_per_s,
                 self.velocity_in_hex_tube,
                 self.capillary_diameter_m,
@@ -1118,7 +1118,7 @@ impl HeatBattery {
             }
         }
 
-        self.zone_temp_c_dist_initial = zone_temp_c_dist;
+        *self.zone_temp_c_dist_initial.write() = zone_temp_c_dist;
 
         Ok(total_charge)
     }
@@ -1242,13 +1242,12 @@ impl HeatBattery {
     pub(crate) fn energy_output_max(
         &self,
         temp_output: f64,
-        time_start: Option<f64>,
+        _time_start: Option<f64>,
     ) -> anyhow::Result<f64> {
         // Return the energy the battery can provide assuming the HB temperature inlet
         // is constant during HEM time step equal to the required emitter temperature (temp_output)
         // Maximum energy for a given HB zones temperature distribution and inlet temperature.
         // The calculation methodology is the same as described in the demand_energy function.
-        let time_start = time_start.unwrap_or(0.);
         let timestep = self.simulation_time.step_in_hours();
         let total_time_s = timestep * SECONDS_PER_HOUR as f64;
 
@@ -1339,7 +1338,6 @@ impl HeatBattery {
         service_on: bool,
         time_start: Option<f64>,
         update_heat_source_state: Option<bool>,
-        timestep_idx: usize,
     ) -> anyhow::Result<f64> {
         let mut energy_output_required = energy_output_required;
 
@@ -2291,8 +2289,6 @@ mod tests {
     // In Python this is test_energy_output_max_service_on
     #[rstest]
     fn test_energy_output_max_when_service_control_on_for_water_regular(
-        external_conditions: ExternalConditions,
-        external_sensor: ExternalSensor,
         simulation_time_iteration: SimulationTimeIteration,
         simulation_time_iterator: Arc<SimulationTimeIterator>,
         battery_control_on: Control,
@@ -2599,7 +2595,6 @@ mod tests {
                     true,
                     Some(1.), // the Python here erroneously uses too many arguments to demand_energy so this is to fake the equivalent in the Rust, for example the Python True is understood as the number 1
                     None,
-                    t_idx,
                 )
                 .unwrap();
 
@@ -2704,7 +2699,6 @@ mod tests {
                 true,
                 None,
                 None,
-                t_idx,
             )
             .unwrap();
 
