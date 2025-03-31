@@ -4804,6 +4804,36 @@ fn hot_water_source_from_input(
             }
             HotWaterSource::StorageTank(storage_tank)
         }
+        HotWaterSourceDetails::SmartHotWaterTank {
+            volume,
+            daily_losses,
+            init_temp,
+            cold_water_source,
+            primary_pipework,
+            heat_source,
+            ..
+        } => {
+            let cold_water_source_type = ColdWaterSourceReference::Type(*cold_water_source);
+            let cold_water_source = cold_water_source_for_storage_tank_and_smart_hot_water_tank(
+                &cold_water_source_type,
+            )?;
+
+            // At this point in the Python, the internal_diameter and external_diameter fields on
+            // primary_pipework are updated, this is done in Pipework.rs in the Rust
+            let primary_pipework_lst = primary_pipework.as_ref();
+            let heat_sources = heat_sources_for_storage_tank_and_smart_hot_water_tank(
+                cold_water_source.clone(),
+                &None,
+                heat_source,
+                volume,
+                daily_losses,
+            )?;
+
+            if heat_sources.values().map(|source|source.heater_position).all_equal() {
+                return Err(anyhow!("For SmartHotWaterTank, heater position must be the same for all heat sources"));
+            }
+            todo!()
+        }
         HotWaterSourceDetails::CombiBoiler {
             cold_water_source: cold_water_source_type,
             heat_source_wet: heat_source_wet_type,
@@ -4906,7 +4936,6 @@ fn hot_water_source_from_input(
                 cold_water_source,
             ))
         }
-        HotWaterSourceDetails::SmartHotWaterTank { .. } => todo!(),
         HotWaterSourceDetails::HeatBattery { .. } => todo!(),
     };
 
