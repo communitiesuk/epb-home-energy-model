@@ -23,7 +23,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
-use crate::core::heating_systems::storage_tank::PreHeatedTank;
+use crate::core::heating_systems::storage_tank::PreHeatedWaterSource;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, PositionedHeatSource,
     SmartHotWaterTank, SolarThermalSystem, StorageTank, StorageTankDetailedResult,
@@ -637,7 +637,7 @@ pub struct Corpus {
     pub(crate) simulation_time: Arc<SimulationTimeIterator>,
     pub(crate) external_conditions: Arc<ExternalConditions>,
     pub(crate) cold_water_sources: ColdWaterSources,
-    pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>>,
+    pre_heated_water_sources: IndexMap<String, PreHeatedWaterSource>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
     pub(crate) controls: Controls,
@@ -876,7 +876,7 @@ impl Corpus {
             Default::default();
 
         // processing pre-heated sources
-        let mut pre_heated_water_sources: IndexMap<String, Arc<RwLock<StorageTank>>> =
+        let mut pre_heated_water_sources: IndexMap<String, PreHeatedWaterSource> =
             Default::default();
 
         for (source_name, source_details) in &input.pre_heated_water_source {
@@ -898,8 +898,8 @@ impl Corpus {
             )?;
             energy_supply_conn_names_for_hot_water_source
                 .insert(source_name.to_owned(), energy_conn_names);
-            if let HotWaterSource::StorageTank(storage_tank) = heat_source {
-                pre_heated_water_sources.insert(source_name.to_owned(), storage_tank);
+            if let HotWaterSource::PreHeatedTank(source) = heat_source {
+                pre_heated_water_sources.insert(source_name.to_owned(), source);
             } else {
                 bail!("Pre-heated water sources must be storage tanks");
             }
@@ -2345,12 +2345,19 @@ impl Corpus {
                 .hot_water_demand(t_it, temp_hot_water)?;
 
             // Running heat sources of pre-heated tanks and updating thermal losses, etc.
-            for storage_tank in self.pre_heated_water_sources.values() {
-                storage_tank.write().demand_hot_water(None, t_it)?;
+            for source in self.pre_heated_water_sources.values() {
+                match source {
+                    PreHeatedWaterSource::StorageTank(storage_tank) => {
+                        storage_tank.write().demand_hot_water(None, t_it)?;
+                    }
+                    PreHeatedWaterSource::SmartHotWaterTank(smart_storage_tank) => {
+                        todo!("migration of storage tank module to 0.34")
+                    }
+                }
             }
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
-                if let HotWaterSource::StorageTank(storage_tank) =
+                if let HotWaterSource::PreHeatedTank(source) =
                     &self.hot_water_sources["hw cylinder"]
                 {
                     let (
@@ -2359,7 +2366,14 @@ impl Corpus {
                         temp_final_drawoff,
                         temp_average_drawoff,
                         volume_water_remove_from_tank,
-                    ) = storage_tank.write().demand_hot_water(usage_events, t_it)?;
+                    ) = match source {
+                        PreHeatedWaterSource::StorageTank(storage_tank) => {
+                            storage_tank.write().demand_hot_water(usage_events, t_it)?
+                        }
+                        PreHeatedWaterSource::SmartHotWaterTank(smart_storage_tank) => {
+                            todo!("migration of storage tank module to 0.34")
+                        }
+                    };
 
                     let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
                         .pipework_losses_and_internal_gains_from_hw_storage_tank(
@@ -2411,9 +2425,14 @@ impl Corpus {
                 * WATTS_PER_KILOWATT as f64
                 / t_it.timestep;
             match self.hot_water_sources.get("hw cylinder").unwrap() {
-                HotWaterSource::StorageTank(ref source) => {
-                    gains_internal_dhw += source.read().internal_gains();
-                }
+                HotWaterSource::PreHeatedTank(ref source) => match source {
+                    PreHeatedWaterSource::StorageTank(storage_tank) => {
+                        gains_internal_dhw += storage_tank.read().internal_gains();
+                    }
+                    PreHeatedWaterSource::SmartHotWaterTank(_) => {
+                        todo!("migration of storage tank module to 0.34")
+                    }
+                },
                 HotWaterSource::CombiBoiler(ref source) => {
                     gains_internal_dhw += source.internal_gains();
                 }
@@ -2431,14 +2450,20 @@ impl Corpus {
             }
 
             // Addition of primary_pipework_losses_kWh for reporting as part of investigation of (upstream BRE) issue #31225: FDEV A082
-            let (primary_pw_losses, storage_losses) =
-                if let HotWaterSource::StorageTank(storage_tank) =
-                    &self.hot_water_sources["hw cylinder"]
-                {
-                    storage_tank.read().to_report()
-                } else {
-                    (0.0, 0.0)
-                };
+            let (primary_pw_losses, storage_losses) = if let HotWaterSource::PreHeatedTank(source) =
+                &self.hot_water_sources["hw cylinder"]
+            {
+                match source {
+                    PreHeatedWaterSource::StorageTank(storage_tank) => {
+                        storage_tank.read().to_report()
+                    }
+                    PreHeatedWaterSource::SmartHotWaterTank(_) => {
+                        todo!("migration of storage tank module to 0.34")
+                    }
+                }
+            } else {
+                (0.0, 0.0)
+            };
 
             let SpaceHeatingCalculation {
                 gains_internal_zone,
@@ -2764,10 +2789,19 @@ impl Corpus {
 
             // Detailed output results collected from storage tank class function
             for (name, hot_water_source) in self.hot_water_sources.iter() {
-                if let HotWaterSource::StorageTank(storage_tank) = hot_water_source {
-                    if let Some(hot_water_source_output) = storage_tank.read().output_results() {
-                        hot_water_source_results_dict
-                            .insert(name.to_owned(), hot_water_source_output);
+                if let HotWaterSource::PreHeatedTank(source) = hot_water_source {
+                    match source {
+                        PreHeatedWaterSource::StorageTank(storage_tank) => {
+                            if let Some(hot_water_source_output) =
+                                storage_tank.read().output_results()
+                            {
+                                hot_water_source_results_dict
+                                    .insert(name.to_owned(), hot_water_source_output);
+                            }
+                        }
+                        PreHeatedWaterSource::SmartHotWaterTank(smart_storage_tank) => {
+                            todo!("migration of storage tank module to 0.34")
+                        }
                     }
                 }
             }
@@ -4578,7 +4612,7 @@ fn heat_source_from_input(
 
 #[derive(Debug)]
 pub(crate) enum HotWaterSource {
-    StorageTank(Arc<RwLock<StorageTank>>),
+    PreHeatedTank(PreHeatedWaterSource),
     CombiBoiler(BoilerServiceWaterCombi),
     PointOfUse(PointOfUse),
     HeatNetwork(HeatNetworkServiceWaterDirect),
@@ -4587,7 +4621,14 @@ pub(crate) enum HotWaterSource {
 impl HotWaterSource {
     pub fn get_cold_water_source(&self) -> WaterSourceWithTemperature {
         match self {
-            HotWaterSource::StorageTank(source) => source.read().get_cold_water_source().clone(),
+            HotWaterSource::PreHeatedTank(source) => match source {
+                PreHeatedWaterSource::StorageTank(storage_tank) => {
+                    storage_tank.read().get_cold_water_source().clone()
+                }
+                PreHeatedWaterSource::SmartHotWaterTank(smart_storage_tank) => {
+                    todo!("migration of storage tank module to 0.34")
+                }
+            },
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
             HotWaterSource::PointOfUse(source) => source.get_cold_water_source().clone(),
             HotWaterSource::HeatNetwork(source) => source.get_cold_water_source().clone(),
@@ -4596,7 +4637,14 @@ impl HotWaterSource {
 
     pub(crate) fn temp_hot_water(&self) -> f64 {
         match self {
-            HotWaterSource::StorageTank(storage_tank) => storage_tank.read().get_temp_hot_water(),
+            HotWaterSource::PreHeatedTank(source) => match source {
+                PreHeatedWaterSource::StorageTank(storage_tank) => {
+                    storage_tank.read().get_temp_hot_water()
+                }
+                PreHeatedWaterSource::SmartHotWaterTank(smart_storage_tank) => {
+                    todo!("migration of storage tank module to 0.34")
+                }
+            },
             HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
             HotWaterSource::PointOfUse(point_of_use) => point_of_use.get_temp_hot_water(),
             HotWaterSource::HeatNetwork(heat_network) => heat_network.temp_hot_water(),
@@ -4609,7 +4657,7 @@ impl HotWaterSource {
         simulation_time_iteration: SimulationTimeIteration,
     ) -> f64 {
         match self {
-            HotWaterSource::StorageTank(_) => {
+            HotWaterSource::PreHeatedTank(_) => {
                 // StorageTank does not match the same method signature or return type as all other Hot Water sources
                 panic!("demand_hot_water for HotWaterSource::StorageTank should be called directly on the HotWaterSource::StorageTank");
             }
@@ -4630,7 +4678,7 @@ fn hot_water_source_from_input(
     source_name: String,
     input: &HotWaterSourceDetails,
     cold_water_sources: &ColdWaterSources,
-    pre_heated_water_sources: &IndexMap<String, Arc<RwLock<StorageTank>>>,
+    pre_heated_water_sources: &IndexMap<String, PreHeatedWaterSource>,
     wet_heat_sources: &mut IndexMap<String, WetHeatSource>,
     wwhrs: &IndexMap<String, Arc<Mutex<Wwhrs>>>,
     controls: &Controls,
@@ -4733,7 +4781,7 @@ fn hot_water_source_from_input(
     let mut connect_diverters = |energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
                                  heat_source: &IndexMap<String, HeatSourceInput>,
                                  heat_sources: &IndexMap<String, PositionedHeatSource>,
-                                 storage_tank: &Arc<RwLock<StorageTank>>|
+                                 pre_heated_tank: PreHeatedWaterSource|
      -> anyhow::Result<()> {
         for (heat_source_name, hs) in heat_source {
             let energy_supply_name = hs.energy_supply_name();
@@ -4752,7 +4800,7 @@ fn hot_water_source_from_input(
                         let control_max =
                             controls.get_with_string(&diverter.control_max.as_ref().unwrap());
                         let pv_diverter = PVDiverter::new(
-                            PreHeatedTank::StorageTank(storage_tank.clone()),
+                            &pre_heated_tank,
                             im,
                             heat_source_name.clone(),
                             control_max,
@@ -4817,9 +4865,10 @@ fn hot_water_source_from_input(
                 energy_supplies.clone(),
                 heat_source,
                 &heat_sources,
-                &storage_tank,
+                PreHeatedWaterSource::StorageTank(storage_tank.clone()),
             )?;
-            HotWaterSource::StorageTank(storage_tank)
+
+            HotWaterSource::PreHeatedTank(PreHeatedWaterSource::StorageTank(storage_tank))
         }
         HotWaterSourceDetails::SmartHotWaterTank {
             volume,
@@ -4856,8 +4905,18 @@ fn hot_water_source_from_input(
                 ));
             }
 
-            let hw_source = SmartHotWaterTank::new(); // TODO (migration 0.34)
-            todo!()
+            let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new())); // TODO (migration 0.34)
+
+            connect_diverters(
+                energy_supplies.clone(),
+                heat_source,
+                &heat_sources,
+                PreHeatedWaterSource::SmartHotWaterTank(smart_hot_water_tank.clone()),
+            )?;
+
+            HotWaterSource::PreHeatedTank(PreHeatedWaterSource::SmartHotWaterTank(
+                smart_hot_water_tank,
+            ))
         }
         HotWaterSourceDetails::CombiBoiler {
             cold_water_source: cold_water_source_type,

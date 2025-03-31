@@ -1,17 +1,17 @@
 // location for defining common traits and enums defined across submodules
 
-use crate::core::heating_systems::storage_tank::StorageTank;
+use crate::core::heating_systems::storage_tank::PreHeatedWaterSource;
 use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
 use crate::simulation_time::SimulationTimeIteration;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub enum WaterSourceWithTemperature {
+pub(crate) enum WaterSourceWithTemperature {
     ColdWaterSource(Arc<ColdWaterSource>),
     Wwhrs(Arc<Mutex<Wwhrs>>),
-    Preheated(Arc<RwLock<StorageTank>>),
+    Preheated(PreHeatedWaterSource),
 }
 
 impl WaterSourceWithTemperature {
@@ -25,9 +25,14 @@ impl WaterSourceWithTemperature {
                 cold_water_source.temperature(simtime)
             }
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
-            WaterSourceWithTemperature::Preheated(storage_tank) => {
-                storage_tank.write().temperature(volume_needed, simtime)
-            }
+            WaterSourceWithTemperature::Preheated(source) => match source {
+                PreHeatedWaterSource::StorageTank(storage_tank) => {
+                    storage_tank.write().temperature(volume_needed, simtime)
+                }
+                PreHeatedWaterSource::SmartHotWaterTank(_) => {
+                    todo!("migration of storage tank module to 0.34")
+                }
+            },
         }
     }
 }

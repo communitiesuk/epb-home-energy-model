@@ -45,7 +45,7 @@ impl HeatNetworkServiceWaterDirect {
         }
     }
 
-    pub fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
 
