@@ -1410,6 +1410,7 @@ struct TemperatureCalculation {
     q_ls_n: Vec<f64>,
 }
 
+#[derive(Debug)]
 pub(crate) struct SmartHotWaterTank {}
 
 impl SmartHotWaterTank {
@@ -1531,8 +1532,13 @@ pub(crate) trait SurplusDiverting: Send + Sync {
 }
 
 #[derive(Debug)]
+pub(crate) enum PreHeatedTank {
+    StorageTank(Arc<RwLock<StorageTank>>),
+    SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
+}
+#[derive(Debug)]
 pub struct PVDiverter {
-    storage_tank: Arc<RwLock<StorageTank>>,
+    storage_tank: PreHeatedTank,
     immersion_heater: Arc<Mutex<ImmersionHeater>>,
     heat_source_name: String,
     control_max: Option<Arc<Control>>,
@@ -1541,7 +1547,7 @@ pub struct PVDiverter {
 
 impl PVDiverter {
     pub(crate) fn new(
-        storage_tank: Arc<RwLock<StorageTank>>,
+        storage_tank: PreHeatedTank,
         heat_source: Arc<Mutex<ImmersionHeater>>,
         heat_source_name: String,
         control_max: Option<Arc<Control>>,
@@ -1592,15 +1598,18 @@ impl SurplusDiverting for PVDiverter {
         let energy_diverted_max = min_of_2(imm_heater_max_capacity_spare, -supply_surplus);
 
         // Add additional energy to storage tank and calculate how much energy was accepted
-        let energy_diverted = self.storage_tank.write().additional_energy_input(
-            Arc::new(Mutex::new(HeatSource::Storage(
-                HeatSourceWithStorageTank::Immersion(self.immersion_heater.clone()),
-            ))),
-            &self.heat_source_name,
-            energy_diverted_max,
-            simulation_time_iteration,
-        )?;
 
+        let energy_diverted = match &self.storage_tank {
+            PreHeatedTank::StorageTank(storage_tank) => {storage_tank.write().additional_energy_input(
+                Arc::new(Mutex::new(HeatSource::Storage(
+                    HeatSourceWithStorageTank::Immersion(self.immersion_heater.clone()),
+                ))),
+                &self.heat_source_name,
+                energy_diverted_max,
+                simulation_time_iteration,
+            )?},
+            PreHeatedTank::SmartHotWaterTank(_) => todo!("as part of migration 0.34")
+        };
         Ok(energy_diverted)
     }
 }
@@ -2346,7 +2355,7 @@ mod tests {
 
         storage_tank_for_pv_diverter.q_ls_n_prev_heat_source = vec![0.0, 0.1, 0.2, 0.3];
         let pvdiverter = PVDiverter::new(
-            Arc::new(RwLock::new(storage_tank_for_pv_diverter)),
+            PreHeatedTank::StorageTank(Arc::new(RwLock::new(storage_tank_for_pv_diverter))),
             Arc::new(Mutex::new(immersion_heater)),
             "imheater".to_string(),
             None, // TODO (migration 0.34)

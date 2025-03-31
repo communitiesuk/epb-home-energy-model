@@ -23,6 +23,7 @@ use crate::core::heating_systems::heat_pump::{
 };
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
+use crate::core::heating_systems::storage_tank::PreHeatedTank;
 use crate::core::heating_systems::storage_tank::{
     HeatSourceWithStorageTank, ImmersionHeater, PVDiverter, PositionedHeatSource,
     SmartHotWaterTank, SolarThermalSystem, StorageTank, StorageTankDetailedResult,
@@ -4729,6 +4730,45 @@ fn hot_water_source_from_input(
             Ok(heat_sources)
         };
 
+    let mut connect_diverters = |energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
+                                 heat_source: &IndexMap<String, HeatSourceInput>,
+                                 heat_sources: &IndexMap<String, PositionedHeatSource>,
+                                 storage_tank: &Arc<RwLock<StorageTank>>|
+     -> anyhow::Result<()> {
+        for (heat_source_name, hs) in heat_source {
+            let energy_supply_name = hs.energy_supply_name();
+            if let Some(diverter) = diverter_types.get(energy_supply_name) {
+                if diverter.heat_source.matches(heat_source_name) {
+                    let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
+
+                    let positioned_heat_source = &heat_sources.get(&heat_source_name.to_owned());
+                    let immersion_heater = positioned_heat_source
+                        .unwrap()
+                        .heat_source
+                        .lock()
+                        .as_immersion_heater();
+
+                    if let Some(im) = immersion_heater {
+                        let control_max =
+                            controls.get_with_string(&diverter.control_max.as_ref().unwrap());
+                        let pv_diverter = PVDiverter::new(
+                            PreHeatedTank::StorageTank(storage_tank.clone()),
+                            im,
+                            heat_source_name.clone(),
+                            control_max,
+                        );
+                        energy_supply
+                            .write()
+                            .connect_diverter(pv_diverter.clone())
+                            .unwrap();
+                        diverters.push(pv_diverter);
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+
     let hot_water_source = match input {
         HotWaterSourceDetails::StorageTank {
             volume,
@@ -4773,38 +4813,12 @@ fn hot_water_source_from_input(
                 detailed_output_heating_cooling,
             )));
 
-            for (heat_source_name, hs) in heat_source {
-                let energy_supply_name = hs.energy_supply_name();
-                if let Some(diverter) = diverter_types.get(energy_supply_name) {
-                    if diverter.heat_source.matches(heat_source_name) {
-                        let energy_supply = energy_supplies.get(energy_supply_name).ok_or_else(|| anyhow!("Heat source references an undeclared energy supply '{energy_supply_name}'."))?.clone();
-
-                        let positioned_heat_source =
-                            &heat_sources.get(&heat_source_name.to_owned());
-                        let immersion_heater = positioned_heat_source
-                            .unwrap()
-                            .heat_source
-                            .lock()
-                            .as_immersion_heater();
-
-                        if let Some(im) = immersion_heater {
-                            let control_max =
-                                controls.get_with_string(diverter.control_max.as_ref().unwrap());
-                            let pv_diverter = PVDiverter::new(
-                                storage_tank.clone(),
-                                im,
-                                heat_source_name.clone(),
-                                control_max,
-                            );
-                            energy_supply
-                                .write()
-                                .connect_diverter(pv_diverter.clone())
-                                .unwrap();
-                            diverters.push(pv_diverter);
-                        }
-                    }
-                }
-            }
+            connect_diverters(
+                energy_supplies.clone(),
+                heat_source,
+                &heat_sources,
+                &storage_tank,
+            )?;
             HotWaterSource::StorageTank(storage_tank)
         }
         HotWaterSourceDetails::SmartHotWaterTank {
