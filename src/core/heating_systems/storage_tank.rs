@@ -1673,6 +1673,7 @@ impl SolarThermalSystem {
         simulation_timestep: f64,
         control_max: Arc<Control>,
         contents: MaterialProperties,
+        energy_supply_from_environment_conn: Option<EnergySupplyConnection>,
     ) -> Self {
         Self {
             sol_loc,
@@ -2568,6 +2569,7 @@ mod tests {
             simulation_time_for_solar_thermal.step,
             Arc::new(Control::SetpointTime(control_max.unwrap())),
             *WATER,
+            None, // TODO (migration 0.34) check if this is correct
         )));
 
         let storage_tank = StorageTank::new(

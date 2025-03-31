@@ -4422,6 +4422,13 @@ fn heat_source_from_input(
                 .get_with_string(control_max)
                 .ok_or_else(|| anyhow!("A control indicated by `control_max` is needed for a SolarThermalSystem object."))?;
 
+            let energy_supply_from_environment = energy_supplies
+                .get("_energy_from_environment")
+                .ok_or_else(|| anyhow!(""))?;
+            let energy_supply_from_environment_conn =
+                EnergySupply::connection(energy_supply_from_environment.clone(), name)?;
+            let contents = &WATER;
+
             Ok((
                 HeatSource::Storage(HeatSourceWithStorageTank::Solar(Arc::new(Mutex::new(
                     SolarThermalSystem::new(
@@ -4443,7 +4450,8 @@ fn heat_source_from_input(
                         temp_internal_air_fn,
                         simulation_time.step_in_hours(),
                         control_max,
-                        *WATER,
+                        **contents,
+                        Some(energy_supply_from_environment_conn),
                     ),
                 )))),
                 name.into(),
