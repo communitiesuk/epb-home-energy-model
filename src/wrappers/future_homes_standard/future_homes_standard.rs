@@ -949,6 +949,61 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     let hw_min_temp = "_HW_min_temp";
     let hw_max_temp = "_HW_max_temp";
 
+    let hw_pv_diverter_max_temp_base_name = "_HW_pv_diverter_max_temp";
+    let hw_pv_diverter_smart_hw_tank_ctrl_base_name = "_HW_pv_diverter_smart_hw_tank_ctrl";
+
+    for energy_supply_name in input.names_of_energy_supplies_with_diverters() {
+        for (hw_source_name, hw_source) in input.hot_water_source().as_index_map() {
+            match hw_source {
+                crate::input::HotWaterSourceDetails::StorageTank { .. } => {
+                    let control_name =
+                        format!("{hw_pv_diverter_max_temp_base_name}_{hw_source_name}");
+                    input.set_control_max_name_for_energy_supply_diverter(
+                        &energy_supply_name,
+                        &control_name,
+                    );
+                    input.add_control(
+                        control_name,
+                        json!({
+                            "type": "SetpointTimeControl",
+                            "start_day": 0,
+                            "time_series_step": 0.5,
+                            "schedule": {
+                                "main": [{"value": "day", "repeat": 365}],
+                                "day": [
+                                    {"value": HW_SETPOINT_MAX, "repeat": 48}
+                                ]
+                            }
+                        }),
+                    )?;
+                }
+                crate::input::HotWaterSourceDetails::SmartHotWaterTank { .. } => {
+                    let control_name =
+                        format!("{hw_pv_diverter_smart_hw_tank_ctrl_base_name}_{hw_source_name}");
+                    input.set_control_max_name_for_energy_supply_diverter(
+                        &energy_supply_name,
+                        &control_name,
+                    );
+                    input.add_control(
+                        control_name,
+                        json!({
+                            "type": "SetpointTimeControl",
+                            "start_day": 0,
+                            "time_series_step": 0.5,
+                            "schedule": {
+                                "main": [{"value": "day", "repeat": 365}],
+                                "day": [
+                                    {"value": 1.0, "repeat": 48}
+                                ]
+                            }
+                        }),
+                    )?;
+                }
+                _ => {}
+            }
+        }
+    }
+
     input.add_control(
         hw_min_temp,
         json!({
@@ -974,13 +1029,75 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         }),
     )?;
 
+    let hw_smart_hot_water_tank_max_soc_name = "_HW_smart_hot_water_tank_max_soc";
+    input.add_control(
+        hw_smart_hot_water_tank_max_soc_name,
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "day": [
+                    {"value": 1.0, "repeat": 2},
+                    {"value": 0.6, "repeat": 1},
+                    {"value": 0.5, "repeat": 4},
+                    {"value": 0.6, "repeat": 17}
+                ],
+                "main":[{"value": "day", "repeat": 365}]
+                }
+        }),
+    )?;
+
+    let hw_smart_hot_water_tank_min_soc_name = "_HW_smart_hot_water_tank_min_soc";
+    input.add_control(
+        hw_smart_hot_water_tank_min_soc_name,
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule": {
+                "day": [
+                    {"value": 1.0, "repeat": 2},
+                    {"value": 0.1, "repeat": 1},
+                    {"value": 0.5, "repeat": 4},
+                    {"value": 0.1, "repeat": 17}
+                ],
+                "main":[{"value": "day", "repeat": 365}]
+            }
+        }),
+    )?;
+
+    let hw_smart_hot_water_tank_temp_max_name = "_HW_smart_hot_water_tank_temp_max";
+    input.add_control(
+        hw_smart_hot_water_tank_temp_max_name,
+        json!({
+            "type": "SetpointTimeControl",
+            "start_day": 0,
+            "time_series_step": 1,
+            "schedule":{
+                "main": [{"value": HW_SETPOINT_MAX, "repeat": 8760}]
+            }
+        }),
+    )?;
+
     for hwsource in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(hwsource.as_str());
         if source.is_storage_tank() {
             source.set_control_min_name_for_storage_tank_heat_sources(hw_min_temp)?;
             source.set_control_max_name_for_storage_tank_heat_sources(hw_max_temp)?;
+        } else if source.is_smart_hot_water_tank() {
+            source.set_control_max_name_for_smart_hot_water_tank_heat_sources(
+                hw_smart_hot_water_tank_max_soc_name,
+            )?;
+            source.set_control_min_name_for_smart_hot_water_tank_heat_sources(
+                hw_smart_hot_water_tank_min_soc_name,
+            )?;
+            source.set_temp_setpoint_max_for_smart_hot_water_tank_heat_sources(
+                hw_smart_hot_water_tank_temp_max_name,
+            )?;
         } else if source.is_combi_boiler() || source.is_point_of_use() || source.is_hiu() {
-            // do nothing
+            // Instantaneous water heating systems must be available 24 hours a day
+            // so do nothing
         } else {
             bail!("Standard water heating schedule not defined for HotWaterSource type")
         }
@@ -1451,24 +1568,66 @@ fn create_lighting_gains(
     // here we calculate an overall lighting efficacy as
     // the average of zone lighting efficacies weighted by zone
     // floor area.
-    let mut lighting_efficacy = 0.;
-    for zone_key in input.zone_keys() {
-        let zone_lighting_efficacy =
-            input
-                .lighting_efficacy_for_zone(zone_key.as_str())?
-                .ok_or(anyhow!(
-                    "Lighting efficacy for zone {zone_key} not provided"
-                ))?;
-        lighting_efficacy +=
-            zone_lighting_efficacy * input.area_for_zone(zone_key.as_str())? / total_floor_area;
+
+    // Initialise variables for overall calculations
+    let mut total_weighted_efficacy = 0.;
+    let mut total_capacity = 0.;
+    let mut total_area = 0.;
+
+    if !input.all_zones_have_bulbs() {
+        bail!("At least one zone does not have lighting bulbs defined.");
     }
+    for (zone_name, bulbs) in input.light_bulbs_for_each_zone() {
+        let mut zone_total_lumens = 0.0;
+        let mut zone_total_wattage = 0.0;
+        let mut zone_capacity = 0.0;
+
+        for bulb in bulbs {
+            let ZoneLightingBulbs {
+                efficacy: bulb_efficacy,
+                power: bulb_power,
+                count: bulb_count,
+            } = bulb;
+
+            // Calculate total lumens and wattage for the bulb
+            let bulb_lumens = bulb_efficacy * bulb_power * bulb_count as f64;
+            let bulb_wattage = bulb_power * bulb_count as f64;
+            let bulb_capacity = bulb_lumens;
+
+            // Accumulate totals for the zone
+            zone_total_lumens += bulb_lumens;
+            zone_total_wattage += bulb_wattage;
+            zone_capacity += bulb_capacity;
+        }
+
+        if zone_total_wattage == 0. {
+            bail!("Total wattage is zero in zone {zone_name}");
+        }
+
+        // Calculate zone efficacy
+        let zone_efficacy = zone_total_lumens / zone_total_wattage;
+        let zone_area = input.area_for_zone(&zone_name)?;
+
+        // Accumulated weighted efficacy and capacities
+        total_weighted_efficacy += zone_efficacy * zone_area;
+        total_capacity += zone_capacity;
+        total_area += zone_area;
+    }
+
+    if total_area == 0. {
+        bail!("Total area is zero");
+    }
+
+    // Calculate overall lighting efficacy as area-weighted average
+    let lighting_efficacy = total_weighted_efficacy / total_area;
+
     if lighting_efficacy == 0. {
-        bail!("invalid/missing lighting efficacy for all zones");
+        bail!("Invalid/missing lighting efficacy calculated from bulb details for all zones");
     }
 
     // from analysis of EFUS 2017 data (updated to derive from harmonic mean)
     let lumens = 1_139. * (total_floor_area * number_of_occupants).powf(0.39);
-    let mut topup = top_up_lighting(input, lumens)?;
+    let mut topup = top_up_lighting(input, lumens, total_capacity)?;
     topup /= 21.3; // assumed efficacy of top up lighting
     let topup_per_day = topup / 365_f64;
 
@@ -3526,21 +3685,19 @@ fn shading_factor(
         .collect()
 }
 
-fn top_up_lighting(input: &InputForProcessing, l_req: f64) -> anyhow::Result<f64> {
+fn top_up_lighting(
+    input: &InputForProcessing,
+    l_req: f64,
+    total_capacity: f64,
+) -> anyhow::Result<f64> {
     if !input.all_zones_have_bulbs() {
         bail!("At least one zone has lighting that does not have bulbs defined.");
     }
 
-    let capacity_tot = input
-        .light_bulbs_for_all_zones()
-        .iter()
-        .map(ZoneLightingBulbs::capacity)
-        .sum::<f64>();
-
     let tfa = calc_tfa(input);
     let capacity_ref = 330. * tfa;
 
-    let l_prov = l_req * (capacity_tot / capacity_ref);
+    let l_prov = l_req * (total_capacity / capacity_ref);
 
     let l_topup = if l_prov < (l_req / 3.) {
         (l_req / 3.) - l_prov

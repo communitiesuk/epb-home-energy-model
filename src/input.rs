@@ -769,7 +769,7 @@ impl HotWaterSource {
         }
     }
 
-    pub fn as_index_map(&self) -> IndexMap<String, HotWaterSourceDetails> {
+    pub(crate) fn as_index_map(&self) -> IndexMap<String, HotWaterSourceDetails> {
         IndexMap::from([("hw cylinder".to_string(), self.hot_water_cylinder.clone())])
     }
 }
@@ -906,6 +906,18 @@ pub trait HotWaterSourceDetailsForProcessing {
         &mut self,
         control_name: &str,
     ) -> anyhow::Result<()>;
+    fn set_control_min_name_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        control_name: &str,
+    ) -> anyhow::Result<()>;
+    fn set_control_max_name_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        control_name: &str,
+    ) -> anyhow::Result<()>;
+    fn set_temp_setpoint_max_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        temp_setpoint_max_name: &str,
+    ) -> anyhow::Result<()>;
     fn set_init_temp(&mut self, init_temp: f64);
     fn set_setpoint_temp(&mut self, setpoint_temp: f64);
     fn set_temp_usable(&mut self, temp_usable: f64);
@@ -1032,6 +1044,45 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             *temp_usable_store = temp_usable;
         }
     }
+
+    fn set_control_min_name_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        control_name: &str,
+    ) -> anyhow::Result<()> {
+        if let Self::SmartHotWaterTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_control_min(control_name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn set_control_max_name_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        control_name: &str,
+    ) -> anyhow::Result<()> {
+        if let Self::SmartHotWaterTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_control_max(control_name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn set_temp_setpoint_max_for_smart_hot_water_tank_heat_sources(
+        &mut self,
+        temp_setpoint_max_name: &str,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -1106,6 +1157,10 @@ pub enum HeatSource {
         heater_position: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         thermostat_position: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        solar_cell_location: Option<SolarCellLocation>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_setpnt_max: Option<String>,
     },
     SolarThermalSystem {
         #[serde(rename = "sol_loc")]
@@ -1133,6 +1188,8 @@ pub enum HeatSource {
         thermostat_position: f64,
         #[serde(rename = "Controlmax")]
         control_max: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_setpnt_max: Option<String>,
     },
     #[serde(rename = "HeatSourceWet")]
     Wet {
@@ -1154,6 +1211,8 @@ pub enum HeatSource {
         thermostat_position: Option<f64>,
         #[serde(rename = "temp_return", skip_serializing_if = "Option::is_none")]
         temperature_return: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_setpnt_max: Option<String>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
@@ -1172,6 +1231,8 @@ pub enum HeatSource {
         control_max: String,
         heater_position: f64,
         thermostat_position: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_setpnt_max: Option<String>,
     },
 }
 
@@ -1254,6 +1315,32 @@ impl HeatSource {
             }
             HeatSource::HeatPumpHotWaterOnly { control_max, .. } => {
                 *control_max = control_max_name.into();
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_temp_setpnt_max(&mut self, temp_setpnt_max_name: &str) -> anyhow::Result<()> {
+        match self {
+            HeatSource::ImmersionHeater {
+                temp_setpnt_max, ..
+            } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::SolarThermalSystem {
+                temp_setpnt_max, ..
+            } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::Wet {
+                temp_setpnt_max, ..
+            } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::HeatPumpHotWaterOnly {
+                temp_setpnt_max, ..
+            } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
         }
         Ok(())
@@ -1977,9 +2064,9 @@ pub struct ZoneLighting {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ZoneLightingBulbs {
-    count: usize,
-    power: f64,
-    efficacy: f64,
+    pub(crate) count: usize,
+    pub(crate) power: f64,
+    pub(crate) efficacy: f64,
 }
 
 impl ZoneLightingBulbs {
@@ -3861,6 +3948,23 @@ impl InputForProcessing {
             .collect_vec()
     }
 
+    pub(crate) fn light_bulbs_for_each_zone(&self) -> IndexMap<String, Vec<ZoneLightingBulbs>> {
+        self.input
+            .zone
+            .iter()
+            .map(|(zone_name, zone)| {
+                let bulbs = zone
+                    .lighting
+                    .as_ref()
+                    .and_then(|lighting| lighting.bulbs.as_ref());
+                (
+                    zone_name.clone(),
+                    bulbs.map_or(vec![], |bulbs| bulbs.values().copied().collect()),
+                )
+            })
+            .collect()
+    }
+
     pub fn set_control_window_opening_for_zone(
         &mut self,
         zone: &str,
@@ -4136,7 +4240,6 @@ impl InputForProcessing {
         self.input.hot_water_source = hot_water_source;
     }
 
-    #[cfg(test)]
     pub(crate) fn hot_water_source(&self) -> &HotWaterSource {
         &self.input.hot_water_source
     }
@@ -4152,6 +4255,32 @@ impl InputForProcessing {
         self.input
             .hot_water_source
             .hot_water_source_for_processing(source_key)
+    }
+
+    pub(crate) fn names_of_energy_supplies_with_diverters(&self) -> Vec<String> {
+        self.input
+            .energy_supply
+            .iter()
+            .filter_map(|(energy_supply_name, energy_supply)| {
+                energy_supply.diverter.as_ref().map(|_| energy_supply_name)
+            })
+            .cloned()
+            .collect_vec()
+    }
+
+    pub(crate) fn set_control_max_name_for_energy_supply_diverter(
+        &mut self,
+        energy_supply_name: &str,
+        control_max_name: &str,
+    ) {
+        self.input
+            .energy_supply
+            .get_mut(energy_supply_name)
+            .map(|energy_supply| {
+                energy_supply.diverter.as_mut().map(|diverter| {
+                    diverter.control_max.replace(control_max_name.into());
+                })
+            });
     }
 
     pub fn set_lighting_gains(&mut self, gains_details: Value) -> anyhow::Result<&Self> {
