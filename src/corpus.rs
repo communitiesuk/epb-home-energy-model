@@ -4828,9 +4828,17 @@ fn hot_water_source_from_input(
                 daily_losses,
             )?;
 
-            if heat_sources.values().map(|source|source.heater_position).all_equal() {
-                return Err(anyhow!("For SmartHotWaterTank, heater position must be the same for all heat sources"));
+            if heat_sources
+                .values()
+                .map(|source| source.heater_position)
+                .all_equal()
+            {
+                return Err(anyhow!(
+                    "For SmartHotWaterTank, heater position must be the same for all heat sources"
+                ));
             }
+
+            let hw_source = SmartHotWaterTank::new(); // TODO (migration 0.34)
             todo!()
         }
         HotWaterSourceDetails::CombiBoiler {

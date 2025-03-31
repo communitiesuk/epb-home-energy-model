@@ -1410,6 +1410,14 @@ struct TemperatureCalculation {
     q_ls_n: Vec<f64>,
 }
 
+pub(crate) struct SmartHotWaterTank {}
+
+impl SmartHotWaterTank {
+    pub(crate) fn new() -> Self {
+        todo!()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ImmersionHeater {
     pwr: f64, // rated power
