@@ -4685,7 +4685,13 @@ fn hot_water_source_from_input(
 
             // With pre-heated tanks we allow now tanks not to have a heat source as the 'cold' feed
             // could be a pre-heated source or wwhr that might be enough
+            let mut used_heat_source_names: Vec<&String> = Default::default();
             for (name, hs) in heat_source {
+                if used_heat_source_names.contains(&name) {
+                    return Err(anyhow!("Duplicate heat source name detected: {name}"));
+                }
+                used_heat_source_names.push(name);
+
                 let heater_position = hs.heater_position();
                 let thermostat_position = match input {
                     HotWaterSourceDetails::StorageTank { .. } => hs.thermostat_position(),
