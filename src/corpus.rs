@@ -4687,7 +4687,13 @@ fn hot_water_source_from_input(
             // could be a pre-heated source or wwhr that might be enough
             for (name, hs) in heat_source {
                 let heater_position = hs.heater_position();
-                let thermostat_position = hs.thermostat_position();
+                let thermostat_position = match input {
+                    HotWaterSourceDetails::StorageTank { .. } => hs.thermostat_position(),
+                    HotWaterSourceDetails::SmartHotWaterTank { .. } => None,
+                    _ => {
+                        unreachable!()
+                    }
+                };
 
                 let (heat_source, energy_supply_conn_name) = heat_source_from_input(
                     name.as_str(),

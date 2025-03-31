@@ -1254,24 +1254,24 @@ impl HeatSource {
         }
     }
 
-    pub fn thermostat_position(&self) -> f64 {
+    pub fn thermostat_position(&self) -> Option<f64> {
         match self {
             HeatSource::ImmersionHeater {
                 thermostat_position,
                 ..
-            } => thermostat_position.expect("thermostat position not set"), // TODO clarify how to handle no thermostat_position being indicated
+            } => *thermostat_position,
             HeatSource::SolarThermalSystem {
                 thermostat_position,
                 ..
-            } => *thermostat_position,
+            } => Some(*thermostat_position),
             HeatSource::Wet {
                 thermostat_position,
                 ..
-            } => thermostat_position.expect("thermostat position not set"), // TODO clarify how to handle no thermostat_position being indicated,
+            } => *thermostat_position,
             HeatSource::HeatPumpHotWaterOnly {
                 thermostat_position,
                 ..
-            } => *thermostat_position,
+            } => Some(*thermostat_position),
         }
     }
 

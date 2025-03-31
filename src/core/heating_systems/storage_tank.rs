@@ -41,7 +41,7 @@ const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 pub(crate) struct PositionedHeatSource {
     pub heat_source: Arc<Mutex<HeatSource>>,
     pub heater_position: f64,
-    pub thermostat_position: f64,
+    pub thermostat_position: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -325,7 +325,9 @@ impl StorageTank {
             let heater_layer =
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
-                (positioned_heat_source.thermostat_position * self.nb_vol as f64) as usize;
+                (positioned_heat_source.thermostat_position.ok_or_else(|| {
+                    anyhow!("expected thermostat position on storage tank heat source")
+                })? * self.nb_vol as f64) as usize;
             let TemperatureCalculation {
                 temp_s8_n: temp_s8_n_step,
                 q_ls: q_ls_this_heat_source,
@@ -2036,7 +2038,7 @@ mod tests {
                 HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
             ))),
             heater_position,
-            thermostat_position,
+            thermostat_position: Some(thermostat_position),
         }
     }
 
@@ -2294,7 +2296,7 @@ mod tests {
                 HeatSourceWithStorageTank::Immersion(Arc::new(Mutex::new(immersion_heater))),
             ))),
             heater_position,
-            thermostat_position,
+            thermostat_position: Some(thermostat_position),
         };
         let start_day = 0;
         let time_series_step = 1.;
@@ -2585,7 +2587,7 @@ mod tests {
                         HeatSourceWithStorageTank::Solar(solar_thermal.clone()),
                     ))),
                     heater_position: 0.1,
-                    thermostat_position: 0.33,
+                    thermostat_position: Some(0.33),
                 },
             )]),
             temp_internal_air_fn,
