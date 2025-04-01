@@ -4693,7 +4693,7 @@ fn hot_water_source_from_input(
     let mut energy_supply_conn_names = vec![];
     let cloned_input = input.clone();
 
-    let cold_water_source_for_storage_tank_and_smart_hot_water_tank =
+    let cold_water_source_for_hot_water_tank =
         |cold_water_source_type: &ColdWaterSourceReference|
          -> anyhow::Result<WaterSourceWithTemperature> {
             let cold_water_source = match cold_water_source_type {
@@ -4711,7 +4711,7 @@ fn hot_water_source_from_input(
             Ok(cold_water_source)
         };
 
-    let mut heat_sources_for_storage_tank_and_smart_hot_water_tank =
+    let mut heat_sources_for_hot_water_tank =
         |cold_water_source: WaterSourceWithTemperature,
          heat_exchanger_surface_area: &Option<f64>,
          heat_source: &IndexMap<String, HeatSourceInput>,
@@ -4778,11 +4778,11 @@ fn hot_water_source_from_input(
             Ok(heat_sources)
         };
 
-    let mut connect_diverters = |energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
-                                 heat_source: &IndexMap<String, HeatSourceInput>,
-                                 heat_sources: &IndexMap<String, PositionedHeatSource>,
-                                 pre_heated_tank: HotWaterStorageTank|
-     -> anyhow::Result<()> {
+    let mut connect_diverter_for_hot_water_tank = |energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
+                                                   heat_source: &IndexMap<String, HeatSourceInput>,
+                                                   heat_sources: &IndexMap<String, PositionedHeatSource>,
+                                                   pre_heated_tank: HotWaterStorageTank|
+                                                   -> anyhow::Result<()> {
         for (heat_source_name, hs) in heat_source {
             let energy_supply_name = hs.energy_supply_name();
             if let Some(diverter) = diverter_types.get(energy_supply_name) {
@@ -4828,13 +4828,13 @@ fn hot_water_source_from_input(
             heat_source,
             ..
         } => {
-            let cold_water_source = cold_water_source_for_storage_tank_and_smart_hot_water_tank(
+            let cold_water_source = cold_water_source_for_hot_water_tank(
                 cold_water_source_type,
             )?;
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
             let primary_pipework_lst = primary_pipework.as_ref();
-            let heat_sources = heat_sources_for_storage_tank_and_smart_hot_water_tank(
+            let heat_sources = heat_sources_for_hot_water_tank(
                 cold_water_source.clone(),
                 heat_exchanger_surface_area,
                 heat_source,
@@ -4861,7 +4861,7 @@ fn hot_water_source_from_input(
                 detailed_output_heating_cooling,
             )));
 
-            connect_diverters(
+            connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
                 heat_source,
                 &heat_sources,
@@ -4880,14 +4880,14 @@ fn hot_water_source_from_input(
             ..
         } => {
             let cold_water_source_type = ColdWaterSourceReference::Type(*cold_water_source);
-            let cold_water_source = cold_water_source_for_storage_tank_and_smart_hot_water_tank(
+            let cold_water_source = cold_water_source_for_hot_water_tank(
                 &cold_water_source_type,
             )?;
 
             // At this point in the Python, the internal_diameter and external_diameter fields on
             // primary_pipework are updated, this is done in Pipework.rs in the Rust
             let primary_pipework_lst = primary_pipework.as_ref();
-            let heat_sources = heat_sources_for_storage_tank_and_smart_hot_water_tank(
+            let heat_sources = heat_sources_for_hot_water_tank(
                 cold_water_source.clone(),
                 &None,
                 heat_source,
@@ -4907,7 +4907,7 @@ fn hot_water_source_from_input(
 
             let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new())); // TODO (migration 0.34)
 
-            connect_diverters(
+            connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
                 heat_source,
                 &heat_sources,
