@@ -60,23 +60,6 @@ this) deploy to AWS using e.g.:
 cargo lambda deploy --binary-name {YOUR_BINARY_NAME}
 ```
 
-## Other tasks
-
-### Reverse-engineering JSON schema from input definition
-
-There is currently a package in the project that is able to reverse-engineer a(n incomplete) JSON Schema document from
-the HEM input as currently mapped in the Rust code.
-
-Running the following will output this JSON Schema document to stdout:
-
-```bash
-cargo run -p schema-gen --release
-```
-
-It is expected that a canonical JSON Schema document representing inputs (and outputs) will be published in the near
-future, at which point this package will become redundant,
-and will be removed.
-
 ## Contributing
 
 ### Using the commit template
