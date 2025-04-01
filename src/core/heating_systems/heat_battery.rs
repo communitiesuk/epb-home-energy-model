@@ -10,6 +10,7 @@ use crate::core::units::{
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
+use anyhow::anyhow;
 use anyhow::bail;
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -42,9 +43,9 @@ pub struct HeatBatteryServiceWaterRegular {
     heat_battery: Arc<RwLock<HeatBattery>>,
     service_name: String,
     cold_feed: WaterSourceWithTemperature,
-    control: Arc<Control>,
-    _control_min: Arc<Control>,
-    control_max: Arc<Control>,
+    control: Option<Arc<Control>>,
+    _control_min: Option<Arc<Control>>,
+    control_max: Option<Arc<Control>>,
 }
 
 impl HeatBatteryServiceWaterRegular {
@@ -57,8 +58,8 @@ impl HeatBatteryServiceWaterRegular {
         heat_battery: Arc<RwLock<HeatBattery>>,
         service_name: String,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> Self {
         let control = control_min.clone();
 
@@ -76,18 +77,28 @@ impl HeatBatteryServiceWaterRegular {
     pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
-        (
-            self._control_min.setpnt(&simulation_time_iteration),
-            self.control_max.setpnt(&simulation_time_iteration),
-        )
+    ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        Ok((
+            self._control_min
+                .as_ref()
+                .ok_or_else(|| {
+                    anyhow!("control min expected on heat battery when setpnt is called")
+                })?
+                .setpnt(&simulation_time_iteration),
+            self.control_max
+                .as_ref()
+                .ok_or_else(|| {
+                    anyhow!("control max expected on heat battery when setpnt is called")
+                })?
+                .setpnt(&simulation_time_iteration),
+        ))
     }
 
-    fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
         &self.cold_feed
     }
 
-    fn get_temp_hot_water(
+    pub(crate) fn get_temp_hot_water(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -99,7 +110,7 @@ impl HeatBatteryServiceWaterRegular {
             .get_temp_hot_water(inlet_temp, volume)
     }
 
-    fn demand_hot_water(
+    pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<TypedScheduleEvent>>,
         simulation_time_iteration: SimulationTimeIteration,
@@ -132,7 +143,7 @@ impl HeatBatteryServiceWaterRegular {
             energy_demand += warm_volume.unwrap() * energy_content_kwh_per_litre;
         }
 
-        let service_on = self.is_on(simulation_time_iteration);
+        let service_on = self.is_on(simulation_time_iteration)?;
 
         if !service_on {
             energy_demand = 0.;
@@ -158,7 +169,7 @@ impl HeatBatteryServiceWaterRegular {
         update_heat_source_state: Option<bool>,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simulation_time_iteration);
+        let service_on = self.is_on(simulation_time_iteration)?;
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
         let update_heat_source_state = update_heat_source_state.unwrap_or(true);
 
@@ -167,7 +178,12 @@ impl HeatBatteryServiceWaterRegular {
             ServiceType::WaterRegular,
             energy_demand,
             temp_return,
-            self.control_max.setpnt(&simulation_time_iteration),
+            self.control_max
+                .as_ref()
+                .ok_or_else(|| {
+                    anyhow!("control max expected on heat battery when setpnt is called")
+                })?
+                .setpnt(&simulation_time_iteration),
             service_on,
             None,
             Some(update_heat_source_state),
@@ -180,7 +196,7 @@ impl HeatBatteryServiceWaterRegular {
         _temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
-        let service_on = self.is_on(simulation_time_iteration);
+        let service_on = self.is_on(simulation_time_iteration)?;
         if !service_on {
             return Ok(0.);
         }
@@ -188,8 +204,10 @@ impl HeatBatteryServiceWaterRegular {
         self.heat_battery.read().energy_output_max(temp_flow, None)
     }
 
-    fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> bool {
-        per_control!(self.control.as_ref(), ctrl => { ctrl.is_on(&simulation_time_iteration) })
+    fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> anyhow::Result<bool> {
+        Ok(
+            per_control!(&**self.control.as_ref().ok_or_else(|| anyhow!("control expected on heat battery service water regular"))?, ctrl => { ctrl.is_on(&simulation_time_iteration) }),
+        )
     }
 }
 
@@ -576,8 +594,8 @@ impl HeatBattery {
         heat_battery: Arc<RwLock<Self>>,
         service_name: &str,
         cold_feed: WaterSourceWithTemperature,
-        control_min: Arc<Control>,
-        control_max: Arc<Control>,
+        control_min: Option<Arc<Control>>,
+        control_max: Option<Arc<Control>>,
     ) -> HeatBatteryServiceWaterRegular {
         Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
         HeatBatteryServiceWaterRegular::new(
@@ -2201,11 +2219,13 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Arc::new(control_min),
-                Arc::new(control_max),
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
-        assert!(heat_battery_service.is_on(simulation_time_iteration));
+        assert!(heat_battery_service
+            .is_on(simulation_time_iteration)
+            .unwrap());
     }
 
     #[rstest]
@@ -2245,8 +2265,8 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Arc::new(control_min),
-                Arc::new(control_max),
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         let result = heat_battery_service
@@ -2275,8 +2295,8 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                service_control_off.clone(),
-                service_control_off,
+                Some(service_control_off.clone()),
+                Some(service_control_off),
             );
 
         let result = heat_battery_service
@@ -2320,8 +2340,8 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Arc::new(control_min),
-                Arc::new(control_max),
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         let temp_flow = 50.0;
@@ -2368,8 +2388,8 @@ mod tests {
                 heat_battery,
                 SERVICE_NAME.into(),
                 WaterSourceWithTemperature::ColdWaterSource(Arc::new(cold_water_source)),
-                Arc::new(control_min),
-                Arc::new(control_max),
+                Some(Arc::new(control_min)),
+                Some(Arc::new(control_max)),
             );
 
         let temp_flow = 50.0;
