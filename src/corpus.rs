@@ -2410,7 +2410,7 @@ impl Corpus {
                             hw_duration,
                             no_events,
                             temp_hot_water,
-                            t_it
+                            t_it,
                         );
                     (
                         hw_energy_output,
@@ -4820,7 +4820,7 @@ fn hot_water_source_from_input(
 
                     if let Some(im) = immersion_heater {
                         let control_max =
-                            controls.get_with_string(&diverter.control_max.as_ref().unwrap());
+                            controls.get_with_string(diverter.control_max.as_ref().unwrap());
                         let pv_diverter = PVDiverter::new(
                             &pre_heated_tank,
                             im,
