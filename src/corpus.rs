@@ -668,6 +668,7 @@ pub struct Corpus {
     vent_adjust_min_control: Option<Arc<Control>>,
     vent_adjust_max_control: Option<Arc<Control>>,
     temp_internal_air_prev: Arc<RwLock<f64>>,
+    smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
 }
 
 impl Corpus {
@@ -832,7 +833,7 @@ impl Corpus {
             &input.appliance_gains,
             &mut energy_supplies,
             total_floor_area,
-            smart_appliance_controls,
+            &smart_appliance_controls,
             simulation_time_iterator.as_ref(),
         )?;
 
@@ -1023,6 +1024,7 @@ impl Corpus {
             vent_adjust_min_control,
             vent_adjust_max_control,
             temp_internal_air_prev,
+            smart_appliance_controls,
         })
     }
 
@@ -2355,6 +2357,11 @@ impl Corpus {
                     }
                 }
             }
+            // TODO (Python) Remove hard-coding of hot water source name
+            // TODO (Python) Reporting of the hot water energy output assumes that there
+            //      is only one water heating system. If the model changes in
+            //      future to allow more than one hot water system, this code may
+            //      need to be revised to handle that scenario.
 
             let (hw_energy_output, pw_losses_internal, pw_losses_external, gains_internal_dhw_use) =
                 if let HotWaterSource::PreHeated(source) = &self.hot_water_sources["hw cylinder"] {
@@ -2386,6 +2393,25 @@ impl Corpus {
                             t_it,
                         );
 
+                    (
+                        hw_energy_output,
+                        pw_losses_internal,
+                        pw_losses_external,
+                        gains_internal_dhw_use,
+                    )
+                } else if let HotWaterSource::HeatBattery(source) =
+                    &self.hot_water_sources["hw cylinder"]
+                {
+                    let hw_energy_output = source.demand_hot_water(usage_events, t_it)?;
+                    let (pw_losses_internal, pw_losses_external, gains_internal_dhw_use) = self
+                        .pipework_losses_and_internal_gains_from_hw(
+                            delta_t_h,
+                            hw_vol_at_tapping_points,
+                            hw_duration,
+                            no_events,
+                            temp_hot_water,
+                            t_it
+                        );
                     (
                         hw_energy_output,
                         pw_losses_internal,
@@ -2613,23 +2639,9 @@ impl Corpus {
                 diverter.write().timestep_end();
             }
 
-            // TODO update for migration to 0.34
-            // if self
-            //     .controls
-            //     .extra
-            //     .keys()
-            //     .contains(&"SmartApplianceControl".to_string())
-            // {
-            //     if let Control::SmartAppliance(ctrl) = self
-            //         .controls
-            //         .extra
-            //         .get("SmartApplianceControl")
-            //         .unwrap()
-            //         .as_ref()
-            //     {
-            //         ctrl.update_demand_buffer(t_it)
-            //     };
-            // }
+            for (_, control) in &self.smart_appliance_controls {
+                control.update_demand_buffer(t_it);
+            }
         }
 
         // Return results from all energy supplies
@@ -2854,7 +2866,7 @@ impl Corpus {
                     None => vec![],
                 };
             for (fuel_name, fuel_summary) in results_end_user {
-                if fuel_name == "_unmet_demand" {
+                if fuel_name == "_unmet_demand" || fuel_name == "_energy_from_environment" {
                     continue;
                 }
                 for (conn_name, energy_cons) in fuel_summary {
@@ -3946,7 +3958,7 @@ fn apply_appliance_gains_from_input(
     input: &ApplianceGainsInput,
     energy_supplies: &mut IndexMap<String, Arc<RwLock<EnergySupply>>>,
     total_floor_area: f64,
-    smart_appliance_controls: IndexMap<String, Arc<SmartApplianceControl>>,
+    smart_appliance_controls: &IndexMap<String, Arc<SmartApplianceControl>>,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<()> {
     fn check_priority(appliance_gains: &ApplianceGainsInput) -> ApplianceGainsInput {
