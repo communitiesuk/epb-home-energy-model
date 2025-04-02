@@ -1367,7 +1367,7 @@ impl HeatPumpServiceWater {
         self.control.is_on(simtime)
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -4282,6 +4282,7 @@ impl TryFrom<&BoilerCostScheduleHybrid> for CostScheduleMetadata {
     }
 }
 
+// In Python this is HeatPump_HWOnly
 /// An object to represent an electric hot-water-only heat pump, tested to EN 16147
 #[derive(Clone, Debug)]
 pub struct HeatPumpHotWaterOnly {
@@ -4427,7 +4428,7 @@ impl HeatPumpHotWaterOnly {
         self.initial_efficiency * in_use_factor_mismatch
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {

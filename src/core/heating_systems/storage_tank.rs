@@ -288,7 +288,7 @@ impl StorageTank {
             // only happen before after the input from heat sources, could be required after the displacement
             // of water bringing new water from the 'cold' feed that could be warmer than the existing one. 
             // flag is calculated for that purpose. 
-            let (temp_s3_n, rearrange) = self.calc_temps_after_extraction(remaining_vols);
+            let (mut temp_s3_n, rearrange) = self.calc_temps_after_extraction(remaining_vols, simulation_time);
 
             if rearrange {
                 // Re-arrange the temperatures in the storage after energy input from pre-heated tank
@@ -337,7 +337,7 @@ impl StorageTank {
             let (_, _setpntmax) = positioned_heat_source
                 .heat_source
                 .lock()
-                .temp_setpnt(simulation_time)?;
+                .setpnt(simulation_time)?;
             let heater_layer =
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
@@ -835,7 +835,7 @@ impl StorageTank {
             q_h_sto_s7,
             heater_layer,
             q_ls_n_prev_heat_source,
-            setpntmax,
+            setpntmax
         );
 
         // TODO (from Python) 6.4.3.11 Heat exchanger
@@ -1059,7 +1059,7 @@ impl StorageTank {
         heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
-        let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration);
+        let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration)?;
 
         if setpntmax.is_none() && setpntmin.is_some() {
             anyhow!("setpntmin must be None if setpntmax is None");
@@ -1526,7 +1526,7 @@ impl ImmersionHeater {
             diverter: None,
         }
     }
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn setpnt(
         &self,
         simtime: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
@@ -1796,7 +1796,7 @@ impl SolarThermalSystem {
         }
     }
 
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn setpnt(
         &self,
         simtime: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {

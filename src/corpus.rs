@@ -4071,18 +4071,18 @@ pub(crate) enum HeatSource {
 }
 
 impl HeatSource {
-    pub(crate) fn temp_setpnt(
+    pub(crate) fn setpnt(
         &self,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         match self {
             HeatSource::Storage(ref storage) => match storage {
-                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().temp_setpnt(simtime)),
+                HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().setpnt(simtime)),
                 HeatSourceWithStorageTank::Solar(ref solar) => {
-                    Ok(solar.lock().temp_setpnt(simtime))
+                    Ok(solar.lock().setpnt(simtime))
                 }
             },
-            HeatSource::Wet(ref heat_source) => heat_source.temp_setpnt(simtime),
+            HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
     }
     pub(crate) fn _demand_energy(
