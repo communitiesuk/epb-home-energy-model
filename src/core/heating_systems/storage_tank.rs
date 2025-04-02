@@ -38,7 +38,7 @@ const STORAGE_TANK_F_STO_M: f64 = 0.75;
 const STORAGE_TANK_TEMP_AMB: f64 = 16.;
 
 // utility method to check if an array is sorted
-fn is_sorted(vec: Vec<f64>) -> bool {
+fn is_sorted(vec: &Vec<f64>) -> bool {
     vec.windows(2).all(|w| w[0] <= w[1])
 }
 
@@ -240,7 +240,7 @@ impl StorageTank {
     pub(crate) fn demand_hot_water(
         &mut self,
         mut usage_events: Option<Vec<TypedScheduleEvent>>,
-        simulation_time: SimulationTimeIteration,
+        simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         let mut q_use_w = 0.;
         let mut q_unmet_w = 0.;
@@ -281,14 +281,17 @@ impl StorageTank {
             // 0.0 can be modified for additional minutes when pipework could be considered still warm/hot
             // self.__time_end_previous_event = deepcopy(time_start_current_event + (event['duration'] + 0.0) / 60.0)
 
-            let (volume_used, energy_withdrawn, energy_unmet, remaining_vols) = self.extract_hot_water(event.clone(), simulation_time);
+            let (volume_used, energy_withdrawn, energy_unmet, remaining_vols) =
+                self.extract_hot_water(event.clone(), simtime);
 
             // Determine the new temperature distribution after displacement
             // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
             // only happen before after the input from heat sources, could be required after the displacement
-            // of water bringing new water from the 'cold' feed that could be warmer than the existing one. 
-            // flag is calculated for that purpose. 
-            let (mut temp_s3_n, rearrange) = self.calc_temps_after_extraction(remaining_vols, simulation_time);
+            // of water bringing new water from the 'cold' feed that could be warmer than the existing one.
+            // flag is calculated for that purpose.
+            let (temp_s3_n_new, rearrange) =
+                self.calc_temps_after_extraction(remaining_vols, simtime);
+            temp_s3_n = temp_s3_n_new;
 
             if rearrange {
                 // Re-arrange the temperatures in the storage after energy input from pre-heated tank
@@ -307,7 +310,7 @@ impl StorageTank {
             self.energy_supply_conn_unmet_demand
                 .as_ref()
                 .unwrap()
-                .demand_energy(q_unmet_w, simulation_time.index)
+                .demand_energy(q_unmet_w, simtime.index)
                 .expect("expected to be able to demand energy");
         }
 
@@ -334,10 +337,7 @@ impl StorageTank {
         let mut temp_s8_n = vec![0.; self.nb_vol];
 
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
-            let (_, _setpntmax) = positioned_heat_source
-                .heat_source
-                .lock()
-                .setpnt(simulation_time)?;
+            let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
             let heater_layer =
                 (positioned_heat_source.heater_position * self.nb_vol as f64) as usize;
             let thermostat_layer =
@@ -356,7 +356,7 @@ impl StorageTank {
                 heater_layer,
                 thermostat_layer,
                 &self.q_ls_n_prev_heat_source.clone(),
-                simulation_time,
+                simtime,
             )?;
 
             temp_after_prev_heat_source = temp_s8_n_step.clone();
@@ -375,7 +375,7 @@ impl StorageTank {
                 positioned_heat_source,
                 heater_layer,
                 thermostat_layer,
-                simulation_time,
+                simtime,
             )?;
         }
 
@@ -546,12 +546,7 @@ impl StorageTank {
             self.calc_temps_after_extraction(remaining_vols.clone(), simulation_time);
 
         // Return the remaining storage volumes, volume used, new temperature distribution, the met/unmet targets, and flag to rearrange layers
-        (
-            volume_used,
-            energy_withdrawn,
-            energy_unmet,
-            remaining_vols
-        )
+        (volume_used, energy_withdrawn, energy_unmet, remaining_vols)
     }
 
     /// Calculate the new temperature distribution after displacement.
@@ -676,7 +671,7 @@ impl StorageTank {
                 }
             }
 
-            if is_sorted(temp_s7_n) {
+            if is_sorted(&temp_s7_n) {
                 break;
             }
         }
@@ -716,6 +711,7 @@ impl StorageTank {
             heater_layer,
             q_ls_prev_heat_source,
             simulation_time,
+            None,
         )
     }
 
@@ -733,13 +729,11 @@ impl StorageTank {
         simulation_time: SimulationTimeIteration,
     ) -> anyhow::Result<Vec<f64>> {
         // initialise list of potential energy input for each layer
-        let mut q_x_in_n = iter::repeat(0.).take(self.nb_vol).collect_vec();
+        let mut q_x_in_n = vec![0.; self.nb_vol];
         let expect_message = format!(
             "Expected temp flow to be set for storage tank with heat source: {heat_source_name}"
         );
-        let temp_flow = self
-            .temp_flow(heat_source.clone(), simulation_time)?
-            .expect(&expect_message);
+        let temp_flow = self.temp_flow(heat_source.clone(), simulation_time)?;
 
         let heat_source = &mut *(heat_source.lock()); // TODO: can we refactor this? use a RwLock?
 
@@ -808,20 +802,17 @@ impl StorageTank {
         q_x_in_n: Vec<f64>,
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
-        simulation_time_iteration: SimulationTimeIteration,
-        // TODO control_max_diverter: // ?
+        simtime: SimulationTimeIteration,
+        control_max_diverter: Option<&Control>,
     ) -> anyhow::Result<TemperatureCalculation> {
-        let temp_flow = self
-            .temp_flow(heat_source.clone(), simulation_time_iteration)?
-            .expect("Expected temp flow to be set for storage tank with heat source");
+        let temp_flow = self.temp_flow(heat_source.clone(), simtime)?;
 
-        // TODO uncomment
-        // let setpntmax = if control_max_diverted.is_some() {
-        //     controlmax_diverter.setpnt()
-        // } else {
-        //     let (_, setpntmax) = self.retrieve_setpnt(heat_source,simulation_time_iteration)?;
-        //     setpntmax
-        // };
+        let setpntmax = if let Some(control_max_diverter) = control_max_diverter {
+            control_max_diverter.setpnt(&simtime)
+        } else {
+            let (_, setpntmax) = self.retrieve_setpnt(&heat_source.lock(), simtime)?;
+            setpntmax
+        };
 
         let (q_s6, temp_s6_n) = self.calc_temps_with_energy_input(temp_s3_n, &q_x_in_n);
 
@@ -835,7 +826,7 @@ impl StorageTank {
             q_h_sto_s7,
             heater_layer,
             q_ls_n_prev_heat_source,
-            setpntmax
+            setpntmax,
         );
 
         // TODO (from Python) 6.4.3.11 Heat exchanger
@@ -848,8 +839,7 @@ impl StorageTank {
             self.energy_demand_test = input_energy_adj;
         }
 
-        let _heat_source_output =
-            self.heat_source_output(heat_source, input_energy_adj, simulation_time_iteration);
+        let _heat_source_output = self.heat_source_output(heat_source, input_energy_adj, simtime);
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
@@ -955,7 +945,10 @@ impl StorageTank {
             // setting is lower in the current timestep than the previous timestep, or if
             // another heat source has a higher setpntmax (and therefore heated the tank to a
             // higher temperature) than the heat source currently being considered
-            let temp_s8_n_step = if q_x_in_adj > 0.0 && temp_setpntmax.is_some() && temp_s7_n[i] > temp_setpntmax.unwrap() {
+            let temp_s8_n_step = if q_x_in_adj > 0.0
+                && temp_setpntmax.is_some()
+                && temp_s7_n[i] > temp_setpntmax.unwrap()
+            {
                 // Case 2 - Temperature exceeding the set point
                 temp_setpntmax.unwrap()
             } else {
@@ -1001,7 +994,7 @@ impl StorageTank {
         (q_in_h_w, q_ls, temp_s8_n, q_ls_n)
     }
 
-    /// function that also calculates pipework loss before sending on the demand energy 
+    /// function that also calculates pipework loss before sending on the demand energy
     /// if immersion heater, no pipework losses
     fn heat_source_output(
         &mut self,
@@ -1011,11 +1004,9 @@ impl StorageTank {
     ) -> anyhow::Result<f64> {
         let expect_message =
             "Expected set point max to be set for storage tank with this heat source".to_string();
-        let temp_flow = self
-            .temp_flow(heat_source.clone(), simulation_time_iteration)?
-            .expect(&expect_message);
+        let temp_flow = self.temp_flow(heat_source.clone(), simulation_time_iteration)?;
 
-        // Input energy rounded so that almost zero negative numbers (caused by 
+        // Input energy rounded so that almost zero negative numbers (caused by
         // floating point error) do not cause errors in subsequent code
 
         let input_energy_adj = round_by_precision(input_energy_adj, 1e10);
@@ -1061,12 +1052,14 @@ impl StorageTank {
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
         let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration)?;
 
-        if setpntmax.is_none() && setpntmin.is_some() {
-            anyhow!("setpntmin must be None if setpntmax is None");
-        }
-
-        if setpntmin.is_some() && setpointmax.is_some() && setpointmin.unwrap() > setpointmax.unwrap() {
-            anyhow!("setpntmin must not be greater than setpntmax");
+        match (setpntmax, setpntmin) {
+            (None, None) => bail!("setpntmin must be None if setpntmax is None"),
+            (Some(setpointmax), Some(setpointmin)) => {
+                if setpointmin > setpointmax {
+                    bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
+                }
+            }
+            _ => {}
         }
 
         Ok((setpntmin, setpntmax))
@@ -1081,7 +1074,6 @@ impl StorageTank {
         thermostat_layer: usize,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
-        
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
         if setpntmin.is_some() && temp_s3_n[thermostat_layer] <= setpntmin.unwrap() {
             self.heating_active.insert(heat_source_name, true);
@@ -1101,7 +1093,7 @@ impl StorageTank {
         let heat_source = heat_source.heat_source;
         let (_, setpntmax) =
             self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
-        
+
         if setpntmax.is_none() || temp_s8_n[thermostat_layer] >= setpntmax.unwrap() {
             self.heating_active.insert(heat_source_name, false);
         };
@@ -1110,18 +1102,22 @@ impl StorageTank {
     }
 
     fn temp_flow(
-        mut self,
+        &mut self,
         heat_source: Arc<Mutex<HeatSource>>,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<Option<f64>> {
-        let (_, mut setpntmax) =
+    ) -> anyhow::Result<f64> {
+        let (_, setpntmax) =
             self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
 
-        if setpntmax.is_none() {
-            setpntmax = self.temp_flow_prev
-        }
+        let setpntmax = if let Some(setpntmax) = setpntmax {
+            setpntmax
+        } else {
+            self.temp_flow_prev.ok_or_else(|| {
+                anyhow!("Expected temp flow to be set for storage tank with heat source")
+            })?
+        };
 
-        self.temp_flow_prev = setpntmax;
+        self.temp_flow_prev = Some(setpntmax);
 
         Ok(setpntmax)
     }
@@ -1311,8 +1307,8 @@ impl StorageTank {
         heat_source: Arc<Mutex<HeatSource>>,
         heat_source_name: &str,
         energy_input: f64,
+        control_max_diverter: Option<&Control>,
         simulation_time_iteration: SimulationTimeIteration,
-        // TODO uncomment controlmax_diverter: ?
     ) -> anyhow::Result<f64> {
         if energy_input == 0. {
             return Ok(0.);
@@ -1336,7 +1332,7 @@ impl StorageTank {
             heater_layer,
             &self.q_ls_n_prev_heat_source.clone(),
             simulation_time_iteration,
-            // TODO uncomment controlmax_diverter
+            control_max_diverter,
         )?;
 
         for (i, q_ls_n) in q_ls_n_this_heat_source.iter().enumerate() {
@@ -1463,10 +1459,6 @@ impl StorageTank {
     }
 }
 
-pub struct SmartHotWaterTank {
-
-}
-
 #[derive(Debug, PartialEq)]
 struct TemperatureCalculation {
     temp_s8_n: Vec<f64>,
@@ -1526,10 +1518,7 @@ impl ImmersionHeater {
             diverter: None,
         }
     }
-    pub(crate) fn setpnt(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simtime),
             self.control_max.setpnt(&simtime),
@@ -1676,6 +1665,7 @@ impl SurplusDiverting for PVDiverter {
                     ))),
                     &self.heat_source_name,
                     energy_diverted_max,
+                    self.control_max.as_ref().map(|control| control.as_ref()),
                     simulation_time_iteration,
                 )?
             }
@@ -1796,10 +1786,7 @@ impl SolarThermalSystem {
         }
     }
 
-    pub(crate) fn setpnt(
-        &self,
-        simtime: SimulationTimeIteration,
-    ) -> (Option<f64>, Option<f64>) {
+    pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         let temp_setpnt = self.control_max.setpnt(&simtime);
         (temp_setpnt, temp_setpnt)
     }
