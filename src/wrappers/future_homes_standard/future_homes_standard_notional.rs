@@ -1475,7 +1475,7 @@ mod tests {
     use crate::input::{
         self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, InfiltrationVentilation,
         OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource, SystemReference,
-        WaterPipeworkSimple,
+        WaterPipeworkLoose,
     };
     use crate::input::{
         Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
@@ -2495,7 +2495,7 @@ mod tests {
         let tfa = calc_tfa(&test_input);
         edit_hot_water_distribution(&mut test_input, tfa).unwrap();
 
-        let expected_hot_water_distribution_inner: WaterPipeworkSimple =
+        let expected_hot_water_distribution_inner: WaterPipeworkLoose =
             serde_json::from_value(json!(
                     {
                         "location": "internal",

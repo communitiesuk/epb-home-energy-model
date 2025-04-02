@@ -12,7 +12,7 @@ use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
     BathDetails, Baths as BathInput, OtherWaterUseDetails, OtherWaterUses as OtherWaterUseInput,
     Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput,
-    WaterPipeContentsType, WaterPipeworkSimple,
+    WaterPipeContentsType, WaterPipeworkLoose,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -454,7 +454,7 @@ fn input_to_other_water_events(
 }
 
 fn input_to_water_distribution_pipework(
-    input: &WaterPipeworkSimple,
+    input: &WaterPipeworkLoose,
     total_number_tapping_points: usize,
 ) -> anyhow::Result<PipeworkSimple> {
     // Calculate average length of pipework between HW system and tapping point
@@ -555,7 +555,7 @@ mod tests {
         )]));
 
         let hw_pipework = Some(vec![
-            WaterPipeworkSimple {
+            WaterPipeworkLoose {
                 location: WaterPipeworkLocation::Internal,
                 internal_diameter_mm: Some(30.),
                 length: 10.0,
@@ -565,7 +565,7 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkSimple {
+            WaterPipeworkLoose {
                 location: WaterPipeworkLocation::Internal,
                 internal_diameter_mm: Some(28.),
                 length: 9.0,
@@ -575,7 +575,7 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkSimple {
+            WaterPipeworkLoose {
                 location: WaterPipeworkLocation::External,
                 internal_diameter_mm: Some(32.),
                 length: 5.0,
@@ -585,7 +585,7 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkSimple {
+            WaterPipeworkLoose {
                 location: WaterPipeworkLocation::External,
                 internal_diameter_mm: Some(31.),
                 length: 8.0,

@@ -1515,7 +1515,7 @@ mod tests {
 
     #[rstest]
     fn regular_boiler_should_provide_demand_hot_water(
-        mut regular_boiler: BoilerServiceWaterRegular,
+        regular_boiler: BoilerServiceWaterRegular,
         simulation_time: SimulationTime,
     ) {
         let temp_return_feed = [51.05, 60.00];
@@ -1640,7 +1640,7 @@ mod tests {
 
     #[rstest]
     fn service_space_boiler_should_provide_demand_hot_water(
-        mut service_space_boiler: BoilerServiceSpace,
+        service_space_boiler: BoilerServiceSpace,
         simulation_time_for_service_space: SimulationTime,
     ) {
         let energy_demanded = [10.0, 2.0, 2.0];

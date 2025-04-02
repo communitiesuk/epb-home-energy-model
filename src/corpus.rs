@@ -73,7 +73,7 @@ use crate::input::{
     SpaceCoolSystemType, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentType,
     VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
-    WaterHeatingEventType, WaterHeatingEvents, WwhrsType, ZoneDictionary, ZoneInput,
+    WaterHeatingEventType, WaterHeatingEvents, WaterPipework, WwhrsType, ZoneDictionary, ZoneInput,
     ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
@@ -4078,9 +4078,7 @@ impl HeatSource {
         match self {
             HeatSource::Storage(ref storage) => match storage {
                 HeatSourceWithStorageTank::Immersion(imm) => Ok(imm.lock().setpnt(simtime)),
-                HeatSourceWithStorageTank::Solar(ref solar) => {
-                    Ok(solar.lock().setpnt(simtime))
-                }
+                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar.lock().setpnt(simtime)),
             },
             HeatSource::Wet(ref heat_source) => heat_source.setpnt(simtime),
         }
@@ -4894,9 +4892,14 @@ fn hot_water_source_from_input(
             volume,
             daily_losses,
             init_temp,
+            power_pump_kw,
+            max_flow_rate_pump_l_per_min,
+            temp_usable,
+            temp_setpnt_max,
             cold_water_source,
             primary_pipework,
             heat_source,
+            energy_supply_pump,
             ..
         } => {
             let cold_water_source_type = ColdWaterSourceReference::Type(*cold_water_source);
@@ -4923,7 +4926,45 @@ fn hot_water_source_from_input(
                 ));
             }
 
-            let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new())); // TODO (migration 0.34)
+            let energy_supply_pump = energy_supplies[energy_supply_pump].clone();
+            let pump_source_name = format!("Smart_hot_water_tank_pump: {source_name}");
+            let energy_supply_conn_pump =
+                EnergySupply::connection(energy_supply_pump, &pump_source_name)?;
+            let smart_hot_water_tank = Arc::new(RwLock::new(SmartHotWaterTank::new(
+                *volume,
+                *daily_losses,
+                *init_temp,
+                *power_pump_kw,
+                *max_flow_rate_pump_l_per_min,
+                *temp_usable,
+                controls.get_with_string(temp_setpnt_max).ok_or_else(|| anyhow!("A control indicated by `temp_setpnt_max` is needed for a SmartHotWaterTank object."))?,
+                cold_water_source.clone(),
+                simulation_time.step_in_hours(),
+                heat_sources.clone(),
+                temp_internal_air_fn,
+                external_conditions,
+                detailed_output_heating_cooling.into(),
+                100.into(),
+                primary_pipework_lst
+                    .map(|primary_pipework| {
+                        anyhow::Ok(
+                            primary_pipework
+                                .iter()
+                                .copied()
+                                .map(WaterPipework::try_from)
+                                .collect::<Result<Vec<_>, _>>()?,
+                        )
+                    })
+                    .transpose()?
+                    .as_ref(),
+                EnergySupply::connection(
+                    energy_supplies[UNMET_DEMAND_SUPPLY_NAME].clone(),
+                    &source_name,
+                )?
+                .into(),
+                energy_supply_conn_pump,
+                None,
+            ))); // TODO (migration 0.34)
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),

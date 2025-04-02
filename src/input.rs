@@ -869,7 +869,7 @@ pub enum HotWaterSourceDetails {
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        primary_pipework: Option<Vec<WaterPipeworkSimple>>,
+        primary_pipework: Option<Vec<WaterPipeworkLoose>>,
     },
     HeatBattery {
         #[serde(rename = "ColdWaterSource")]
@@ -1363,10 +1363,10 @@ pub struct HeatPumpHotWaterOnlyTestDatum {
     pub hw_vessel_loss_daily: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct WaterPipeworkSimple {
+pub struct WaterPipeworkLoose {
     pub location: WaterPipeworkLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_diameter_mm: Option<f64>,
@@ -1383,7 +1383,7 @@ pub struct WaterPipeworkSimple {
     pub pipe_contents: Option<WaterPipeContentsType>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
@@ -1395,6 +1395,35 @@ pub struct WaterPipework {
     pub insulation_thickness_mm: f64,
     pub surface_reflectivity: bool,
     pub pipe_contents: WaterPipeContentsType,
+}
+
+impl TryFrom<WaterPipeworkLoose> for WaterPipework {
+    type Error = anyhow::Error;
+
+    fn try_from(loose: WaterPipeworkLoose) -> Result<Self, Self::Error> {
+        Ok(Self {
+            location: loose.location,
+            internal_diameter_mm: loose
+                .internal_diameter_mm
+                .ok_or_else(|| anyhow!("Missing internal_diameter_mm value in water pipework."))?,
+            external_diameter_mm: loose
+                .external_diameter_mm
+                .ok_or_else(|| anyhow!("Missing external_diameter_mm value in water pipework."))?,
+            length: loose.length,
+            insulation_thermal_conductivity: loose.insulation_thermal_conductivity.ok_or_else(
+                || anyhow!("Missing insulation_thermal_conductivity value in water pipework."),
+            )?,
+            insulation_thickness_mm: loose.insulation_thickness_mm.ok_or_else(|| {
+                anyhow!("Missing insulation_thickness_mm value in water pipework.")
+            })?,
+            surface_reflectivity: loose
+                .surface_reflectivity
+                .ok_or_else(|| anyhow!("Missing surface_reflectivity value in water pipework."))?,
+            pipe_contents: loose
+                .pipe_contents
+                .ok_or_else(|| anyhow!("Missing pipe_contents value in water pipework."))?,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -1525,7 +1554,7 @@ pub struct OtherWaterUseDetails {
     pub cold_water_source: ColdWaterSourceType,
 }
 
-pub type WaterDistribution = Vec<WaterPipeworkSimple>;
+pub type WaterDistribution = Vec<WaterPipeworkLoose>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

@@ -682,7 +682,7 @@ mod tests {
     #[rstest]
     fn test_heat_network_service_water_storage(
         two_len_simulation_time: SimulationTime,
-        mut heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
+        heat_network_service_water_storage: HeatNetworkServiceWaterStorage,
         heat_network_for_water_storage: &Arc<Mutex<HeatNetwork>>,
     ) {
         let heat_network = heat_network_for_water_storage.clone();
