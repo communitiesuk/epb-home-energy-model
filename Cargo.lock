@@ -130,6 +130,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
+
+[[package]]
 name = "argmin"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -796,6 +802,7 @@ dependencies = [
  "anyhow",
  "approx",
  "arbitrary",
+ "arc-swap",
  "argmin",
  "arrayvec",
  "atomic_float",
