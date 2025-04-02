@@ -21,7 +21,7 @@ use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::iter;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // BS EN 15316-5:2017 Appendix B default input data
@@ -92,7 +92,7 @@ pub struct StorageTank {
     primary_pipework_losses_kwh: AtomicF64,
     storage_losses_kwh: AtomicF64,
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
-    heating_active: HashMap<String, bool>,
+    heating_active: HashMap<String, AtomicBool>,
     q_ls_n_prev_heat_source: Vec<f64>,
     q_sto_h_ls_rbl: Option<f64>, // total recoverable heat losses for heating in kWh, memoised between steps
     primary_gains: AtomicF64,    // primary pipework gains for a timestep (mutates over lifetime)
@@ -192,9 +192,9 @@ impl StorageTank {
                 .collect();
         }
 
-        let heating_active: HashMap<String, bool> = heat_sources
+        let heating_active = heat_sources
             .iter()
-            .map(|(name, _heat_source)| ((*name).clone(), false))
+            .map(|(name, _heat_source)| ((*name).clone(), false.into()))
             .collect();
 
         Self {
@@ -372,7 +372,7 @@ impl StorageTank {
             // Trigger heating to stop
             self.determine_heat_source_switch_off(
                 &temp_s8_n,
-                heat_source_name,
+                &heat_source_name,
                 positioned_heat_source,
                 heater_layer,
                 thermostat_layer,
@@ -751,14 +751,14 @@ impl StorageTank {
             } else {
                 self.determine_heat_source_switch_on(
                     temp_s3_n,
-                    heat_source_name.to_string(),
+                    heat_source_name,
                     heat_source,
                     heater_layer,
                     thermostat_layer,
                     simulation_time,
                 )?;
 
-                if self.heating_active[heat_source_name] {
+                if self.heating_active[heat_source_name].load(Ordering::SeqCst) {
                     // upstream Python uses duck-typing/ polymorphism here, but we need to be more explicit
                     let mut energy_potential = match heat_source {
                         HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
@@ -1072,9 +1072,9 @@ impl StorageTank {
     }
 
     fn determine_heat_source_switch_on(
-        &mut self,
+        &self,
         temp_s3_n: &[f64],
-        heat_source_name: String,
+        heat_source_name: &str,
         heat_source: &mut HeatSource,
         _heater_layer: usize,
         thermostat_layer: usize,
@@ -1082,15 +1082,15 @@ impl StorageTank {
     ) -> anyhow::Result<()> {
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simulation_time_iteration)?;
         if setpntmin.is_some() && temp_s3_n[thermostat_layer] <= setpntmin.unwrap() {
-            self.heating_active.insert(heat_source_name, true);
+            self.heating_active[heat_source_name].store(true, Ordering::SeqCst);
         };
         Ok(())
     }
 
     fn determine_heat_source_switch_off(
-        &mut self,
+        &self,
         temp_s8_n: &[f64],
-        heat_source_name: String,
+        heat_source_name: &str,
         heat_source: PositionedHeatSource,
         _heater_layer: usize,
         thermostat_layer: usize,
@@ -1101,7 +1101,7 @@ impl StorageTank {
             self.retrieve_setpnt(&(heat_source.lock()), simulation_time_iteration)?;
 
         if setpntmax.is_none() || temp_s8_n[thermostat_layer] >= setpntmax.unwrap() {
-            self.heating_active.insert(heat_source_name, false);
+            self.heating_active[heat_source_name].store(false, Ordering::SeqCst);
         };
 
         Ok(())
