@@ -61,7 +61,7 @@ impl HeatSourceWet {
     }
 
     pub(crate) fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         temperature: f64,
         simtime: SimulationTimeIteration,

@@ -258,7 +258,7 @@ impl BoilerServiceWaterRegular {
     }
 
     pub fn demand_energy(
-        &mut self,
+        &self,
         mut energy_demand: f64,
         _temp_flow: f64,
         temp_return: Option<f64>,
@@ -338,7 +338,7 @@ impl BoilerServiceSpace {
     }
 
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         _temp_flow: f64,
         temp_return: Option<f64>,

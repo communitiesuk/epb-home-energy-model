@@ -128,7 +128,7 @@ impl HeatNetworkServiceWaterStorage {
     }
 
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         _temp_flow: f64,
         _temp_return: f64,

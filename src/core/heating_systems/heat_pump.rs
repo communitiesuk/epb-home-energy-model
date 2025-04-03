@@ -1413,7 +1413,7 @@ impl HeatPumpServiceWater {
 
     /// Demand energy (in kWh) from the heat pump
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
@@ -4440,7 +4440,7 @@ impl HeatPumpHotWaterOnly {
 
     /// Demand energy (in kWh) from the heat pump
     pub fn demand_energy(
-        &mut self,
+        &self,
         energy_demand: f64,
         _temp_return: f64,
         simtime: SimulationTimeIteration,
