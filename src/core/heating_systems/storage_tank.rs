@@ -1982,8 +1982,7 @@ impl SolarThermalSystem {
             .unwrap();
 
         if self.energy_supply_from_environment_conn.is_some() {
-            // TODO: replace 0.0 with self.energy_supplied as part of migration to 0.34
-            self.energy_supply_from_environment_conn.clone().unwrap().demand_energy(0.0, timestep_idx)?;
+            self.energy_supply_from_environment_conn.clone().unwrap().demand_energy(self.energy_supplied.load(Ordering::SeqCst), timestep_idx)?;
         }
 
         Ok(self.energy_supplied.load(Ordering::SeqCst))
@@ -3756,7 +3755,7 @@ mod tests {
         );
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            assert_eq!(solar_thermal.lock().demand_energy(100., t_idx), 0.);
+            assert_eq!(solar_thermal.lock().demand_energy(100., t_idx).unwrap(), 0.);
         }
     }
 
