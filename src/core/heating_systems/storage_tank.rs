@@ -1035,7 +1035,7 @@ impl StorageTank {
                 .demand_energy(input_energy_adj, simulation_time_iteration),
             HeatSource::Storage(HeatSourceWithStorageTank::Solar(solar)) => Ok(solar
                 .lock()
-                .demand_energy(input_energy_adj, simulation_time_iteration.index)),
+                .demand_energy(input_energy_adj, simulation_time_iteration.index)?),
             HeatSource::Wet(ref mut wet_heat_source) => {
                 let (primary_pipework_losses_kwh, primary_gains) = self.primary_pipework_losses(
                     input_energy_adj,
@@ -1757,6 +1757,7 @@ pub struct SolarThermalSystem {
     cp: f64,
     air_temp_coll_loop: AtomicF64,
     inlet_temp: AtomicF64,
+    energy_supply_from_environment_conn: Option<EnergySupplyConnection>,
 }
 
 impl SolarThermalSystem {
@@ -1836,9 +1837,12 @@ impl SolarThermalSystem {
             cp: contents.specific_heat_capacity(),
             air_temp_coll_loop: Default::default(),
             inlet_temp: Default::default(),
+            energy_supply_from_environment_conn,
+
         }
     }
 
+    /// Return setpoint (not necessarily temperature)
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         let temp_setpnt = self.control_max.setpnt(&simtime);
         (temp_setpnt, temp_setpnt)
@@ -1956,7 +1960,7 @@ impl SolarThermalSystem {
         self.heat_output_collector_loop.load(Ordering::SeqCst)
     }
 
-    pub fn demand_energy(&self, energy_demand: f64, timestep_idx: usize) -> f64 {
+    pub fn demand_energy(&self, energy_demand: f64, timestep_idx: usize) -> anyhow::Result<f64> {
         self.energy_supplied.store(
             min_of_2(
                 energy_demand,
@@ -1977,7 +1981,12 @@ impl SolarThermalSystem {
             .demand_energy(auxiliary_energy_consumption, timestep_idx)
             .unwrap();
 
-        self.energy_supplied.load(Ordering::SeqCst)
+        if self.energy_supply_from_environment_conn.is_some() {
+            // TODO: replace 0.0 with self.energy_supplied as part of migration to 0.34
+            self.energy_supply_from_environment_conn.clone().unwrap().demand_energy(0.0, timestep_idx)?;
+        }
+
+        Ok(self.energy_supplied.load(Ordering::SeqCst))
     }
 
     #[cfg(test)]

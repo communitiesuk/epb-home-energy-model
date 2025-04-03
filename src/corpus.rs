@@ -4096,9 +4096,9 @@ impl HeatSource {
                 HeatSourceWithStorageTank::Immersion(imm) => imm
                     .lock()
                     .demand_energy(energy_demand, simulation_time_iteration),
-                HeatSourceWithStorageTank::Solar(ref solar) => Ok(solar
+                HeatSourceWithStorageTank::Solar(ref solar) => solar
                     .lock()
-                    .demand_energy(energy_demand, simulation_time_iteration.index)),
+                    .demand_energy(energy_demand, simulation_time_iteration.index),
             },
             HeatSource::Wet(ref mut wet) => {
                 wet.demand_energy(energy_demand, temp_return, simulation_time_iteration)
