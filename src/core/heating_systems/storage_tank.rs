@@ -1558,6 +1558,8 @@ impl ImmersionHeater {
             diverter: Default::default(),
         }
     }
+    
+    /// Return setpoint (not necessarily temperature)
     pub(crate) fn setpnt(&self, simtime: SimulationTimeIteration) -> (Option<f64>, Option<f64>) {
         (
             self.control_min.setpnt(&simtime),
