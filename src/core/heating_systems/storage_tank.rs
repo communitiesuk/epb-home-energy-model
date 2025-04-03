@@ -1997,6 +1997,10 @@ impl SolarThermalSystem {
     fn test_energy_supplied(&self) -> f64 {
         self.energy_supplied.load(Ordering::SeqCst)
     }
+
+    fn summarise_events() {
+        todo!("NB. this is only called from the testoutput() function in the Python which we decided not to implement (for now)")
+    }
 }
 
 #[cfg(test)]
