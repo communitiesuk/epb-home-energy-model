@@ -1645,6 +1645,17 @@ pub struct PVDiverter {
 }
 
 impl PVDiverter {
+    /// Construct a PVDiverter object
+
+    /// Arguments:
+    /// - `storage_tank` -- reference to the StorageTank or SmartHotWaterTank object fed by the diverter
+    /// - `immersion_heater` -- reference to the ImmersionHeater object fed by the diverter
+    /// - `controlmax` -- reference to a control object which must select current
+    ///     the maximum timestep temperature for the diverter
+
+    ///Other variables:
+    /// - capacity_already_in_use -- variable to track heater output that would
+    ///     happen anyway, to avoid double-counting
     pub(crate) fn new(
         storage_tank: &HotWaterStorageTank,
         heat_source: Arc<Mutex<ImmersionHeater>>,
