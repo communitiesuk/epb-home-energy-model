@@ -96,8 +96,8 @@ pub struct StorageTank {
     heat_source_data: IndexMap<String, PositionedHeatSource>, // heat sources, sorted by heater position
     heating_active: HashMap<String, AtomicBool>,
     q_ls_n_prev_heat_source: Arc<RwLock<Vec<f64>>>,
-    q_sto_h_ls_rbl: Option<f64>, // total recoverable heat losses for heating in kWh, memoised between steps
-    primary_gains: AtomicF64,    // primary pipework gains for a timestep (mutates over lifetime)
+    q_sto_h_ls_rbl: AtomicF64, // total recoverable heat losses for heating in kWh, memoised between steps
+    primary_gains: AtomicF64,  // primary pipework gains for a timestep (mutates over lifetime)
     #[cfg(test)]
     energy_demand_test: AtomicF64,
     temp_final_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
@@ -241,7 +241,7 @@ impl StorageTank {
     /// Arguments:
     /// * `usage_events` -- All draw off events for the timestep
     pub(crate) fn demand_hot_water(
-        &mut self,
+        &self,
         mut usage_events: Option<Vec<TypedScheduleEvent>>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
@@ -404,7 +404,8 @@ impl StorageTank {
         // recoverable heat losses (storage) - kWh
         let q_sto_h_rbl_env = q_ls * STORAGE_TANK_F_STO_M;
         // total recoverable heat losses for heating - kWh
-        self.q_sto_h_ls_rbl = Some(q_sto_h_rbl_env + q_sto_h_rbl_aux);
+        self.q_sto_h_ls_rbl
+            .store(q_sto_h_rbl_env + q_sto_h_rbl_aux, Ordering::SeqCst);
 
         // set temperatures calculated to be initial temperatures of volumes for the next timestep
         *self.temp_n.write() = temp_s8_n;
@@ -429,7 +430,7 @@ impl StorageTank {
     /// * `event` -- Dictionary containing information about the draw-off event
     ///              (e.g. {'start': 18, 'duration': 1, 'temperature': 41.0, 'type': 'Other', 'name': 'other', 'warm_volume': 8.0})
     fn extract_hot_water(
-        &mut self,
+        &self,
         event: TypedScheduleEvent,
         simulation_time: SimulationTimeIteration,
     ) -> (f64, f64, f64, Vec<f64>) {
@@ -1389,9 +1390,7 @@ impl StorageTank {
         self.primary_gains
             .store(Default::default(), Ordering::SeqCst);
 
-        (self.q_sto_h_ls_rbl.expect(
-            "storage tank logic expects q_sto_h_ls_rbl to have been set internally at this point",
-        ) * WATTS_PER_KILOWATT as f64
+        (self.q_sto_h_ls_rbl.load(Ordering::SeqCst) * WATTS_PER_KILOWATT as f64
             / self.simulation_timestep)
             + primary_gains_timestep
     }
@@ -3417,8 +3416,8 @@ mod tests {
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         storage_tank2: (StorageTank, Arc<RwLock<EnergySupply>>),
     ) {
-        let (mut storage_tank1, energy_supply1) = storage_tank1;
-        let (mut storage_tank2, energy_supply2) = storage_tank2;
+        let (storage_tank1, energy_supply1) = storage_tank1;
+        let (storage_tank2, energy_supply2) = storage_tank2;
         let usage_events = [
             vec![
                 TypedScheduleEvent {
@@ -3956,7 +3955,7 @@ mod tests {
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
     ) {
-        let (mut storage_tank1, _) = storage_tank1;
+        let (storage_tank1, _) = storage_tank1;
         storage_tank1
             .temp_average_drawoff_volweighted
             .store(0.0, Ordering::SeqCst);
@@ -4076,8 +4075,8 @@ mod tests {
 
     #[rstest]
     fn test_internal_gains(storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>)) {
-        let (mut storage_tank1, _) = storage_tank1;
-        storage_tank1.q_sto_h_ls_rbl = Some(0.05);
+        let (storage_tank1, _) = storage_tank1;
+        storage_tank1.q_sto_h_ls_rbl.store(0.05, Ordering::SeqCst);
 
         assert_eq!(storage_tank1.internal_gains(), 50.);
     }
@@ -4419,7 +4418,7 @@ mod tests {
             Arc<RwLock<EnergySupply>>,
         ),
     ) {
-        let (mut storage_tank, solar_thermal, simulation_time, energy_supply) =
+        let (storage_tank, solar_thermal, simulation_time, energy_supply) =
             storage_tank_with_solar_thermal;
 
         let expected_energy_demands = [
