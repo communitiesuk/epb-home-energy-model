@@ -572,14 +572,6 @@ pub(crate) enum ControlDetails {
         time_series_step: f64,
         combination: ControlCombinations,
     },
-    #[serde(rename = "smartappliance")]
-    SmartAppliance {
-        #[serde(rename = "battery24hr")]
-        battery_24hr: Option<Box<SmartApplianceBattery>>,
-        non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
-        power_timeseries: IndexMap<String, Vec<f64>>,
-        time_series_step: f64,
-    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -680,9 +672,6 @@ impl ControlDetails {
             ControlDetails::SetpointTime { start_day, .. } => *start_day,
             ControlDetails::Charge { start_day, .. } => *start_day,
             ControlDetails::CombinationTime { start_day, .. } => *start_day,
-            ControlDetails::SmartAppliance { .. } => {
-                unreachable!("Smart appliance has no start day")
-            }
         }
     }
 
@@ -701,9 +690,6 @@ impl ControlDetails {
                 time_series_step, ..
             } => *time_series_step,
             ControlDetails::CombinationTime {
-                time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::SmartAppliance {
                 time_series_step, ..
             } => *time_series_step,
         }

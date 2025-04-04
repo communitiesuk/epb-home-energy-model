@@ -1614,62 +1614,6 @@
               ]
             }
           }
-        },
-        {
-          "type": "object",
-          "title": "smartappliance",
-          "required": [
-            "battery24hr",
-            "non_appliance_demand_24hr",
-            "power_timeseries",
-            "time_series_step",
-            "weight_timeseries"
-          ],
-          "properties": {
-            "battery24hr": {
-              "$ref": "#/$defs/SmartApplianceBattery"
-            },
-            "non_appliance_demand_24hr": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                }
-              }
-            },
-            "power_timeseries": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                }
-              }
-            },
-            "time_series_step": {
-              "type": "number",
-              "format": "double"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "smartappliance"
-              ]
-            },
-            "weight_timeseries": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "number",
-                  "format": "double"
-                }
-              }
-            }
-          }
         }
       ]
     },

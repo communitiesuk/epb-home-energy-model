@@ -287,7 +287,6 @@ fn single_control_from_details(
             time_on_daily.unwrap_or_default(),
         ))
         .into(),
-        ControlDetails::SmartAppliance { .. } => None, // TODO (0.34 migration) check if this can be removed later to match the Python
         ControlDetails::CombinationTime {
             start_day,
             time_series_step,
