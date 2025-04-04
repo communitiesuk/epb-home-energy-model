@@ -1485,7 +1485,7 @@ impl StorageTank {
     }
 
     pub(crate) fn output_results(&self) -> Option<Vec<StorageTankDetailedResult>> {
-        todo!("Will be completed after 0.32 migration")
+        None // TODO implement this
     }
 }
 
@@ -1611,12 +1611,45 @@ impl SmartHotWaterTank {
         Ok((setpntmin, setpntmax))
     }
 
+    // Inherited methods from StorageTank (NB. in Python, SmartHotWaterTank inherits from StorageTank)
+
     pub(crate) fn demand_hot_water(
         &self,
         usage_events: Option<Vec<TypedScheduleEvent>>,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
         self.storage_tank.demand_hot_water(usage_events, simtime)
+    }
+
+    /// Return the pre-heated water temperature for the current timestep
+    pub(crate) fn temperature(
+        &self,
+        volume_needed: Option<f64>,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> f64 {
+        self.storage_tank
+            .temperature(volume_needed, simulation_time_iteration)
+    }
+
+    /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
+    pub(crate) fn internal_gains(&self) -> f64 {
+        self.storage_tank.internal_gains()
+    }
+
+    pub(crate) fn to_report(&self) -> (f64, f64) {
+        self.storage_tank.to_report()
+    }
+
+    pub(crate) fn output_results(&self) -> Option<Vec<StorageTankDetailedResult>> {
+        self.storage_tank.output_results()
+    }
+
+    pub(crate) fn get_cold_water_source(&self) -> &WaterSourceWithTemperature {
+        self.storage_tank.get_cold_water_source()
+    }
+
+    pub(crate) fn get_temp_hot_water(&self) -> f64 {
+        self.storage_tank.get_temp_hot_water()
     }
 
     fn determine_heat_source_switch_on(

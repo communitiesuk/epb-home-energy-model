@@ -27,10 +27,12 @@ impl WaterSourceWithTemperature {
             WaterSourceWithTemperature::Wwhrs(w) => w.lock().temperature(),
             WaterSourceWithTemperature::Preheated(source) => match source {
                 HotWaterStorageTank::StorageTank(storage_tank) => {
-                    storage_tank.write().temperature(volume_needed, simtime)
+                    storage_tank.read().temperature(volume_needed, simtime)
                 }
-                HotWaterStorageTank::SmartHotWaterTank(_) => {
-                    todo!("migration of storage tank module to 0.34")
+                HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                    smart_hot_water_tank
+                        .read()
+                        .temperature(volume_needed, simtime)
                 }
             },
         }

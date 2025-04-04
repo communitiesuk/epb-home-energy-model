@@ -2349,10 +2349,10 @@ impl Corpus {
             for source in self.pre_heated_water_sources.values() {
                 match source {
                     HotWaterStorageTank::StorageTank(storage_tank) => {
-                        storage_tank.write().demand_hot_water(None, t_it)?;
+                        storage_tank.read().demand_hot_water(None, t_it)?;
                     }
                     HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                        todo!("migration of storage tank module to 0.34")
+                        smart_storage_tank.read().demand_hot_water(None, t_it)?;
                     }
                 }
             }
@@ -2454,8 +2454,8 @@ impl Corpus {
                     HotWaterStorageTank::StorageTank(storage_tank) => {
                         gains_internal_dhw += storage_tank.read().internal_gains();
                     }
-                    HotWaterStorageTank::SmartHotWaterTank(_) => {
-                        todo!("migration of storage tank module to 0.34")
+                    HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                        gains_internal_dhw += smart_hot_water_tank.read().internal_gains();
                     }
                 },
                 HotWaterSource::CombiBoiler(ref source) => {
@@ -2481,8 +2481,8 @@ impl Corpus {
                         HotWaterStorageTank::StorageTank(storage_tank) => {
                             storage_tank.read().to_report()
                         }
-                        HotWaterStorageTank::SmartHotWaterTank(_) => {
-                            todo!("migration of storage tank module to 0.34")
+                        HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => {
+                            smart_hot_water_tank.read().to_report()
                         }
                     }
                 } else {
@@ -2810,7 +2810,12 @@ impl Corpus {
                             }
                         }
                         HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                            todo!("migration of storage tank module to 0.34")
+                            if let Some(hot_water_source_output) =
+                                smart_storage_tank.read().output_results()
+                            {
+                                hot_water_source_results_dict
+                                    .insert(name.to_owned(), hot_water_source_output);
+                            }
                         }
                     }
                 }
@@ -4635,7 +4640,7 @@ impl HotWaterSource {
                     storage_tank.read().get_cold_water_source().clone()
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                    todo!("migration of storage tank module to 0.34")
+                    smart_storage_tank.read().get_cold_water_source().clone()
                 }
             },
             HotWaterSource::CombiBoiler(source) => source.get_cold_water_source().clone(),
@@ -4652,7 +4657,7 @@ impl HotWaterSource {
                     storage_tank.read().get_temp_hot_water()
                 }
                 HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                    todo!("migration of storage tank module to 0.34")
+                    smart_storage_tank.read().get_temp_hot_water()
                 }
             },
             HotWaterSource::CombiBoiler(combi) => combi.temperature_hot_water_in_c(),
