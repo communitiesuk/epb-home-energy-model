@@ -4963,7 +4963,7 @@ fn hot_water_source_from_input(
                 .into(),
                 energy_supply_conn_pump,
                 None,
-            ))); // TODO (migration 0.34)
+            )));
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
