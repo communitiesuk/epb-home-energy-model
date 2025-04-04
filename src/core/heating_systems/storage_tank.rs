@@ -2295,6 +2295,7 @@ pub(crate) enum HotWaterStorageTank {
     StorageTank(Arc<RwLock<StorageTank>>),
     SmartHotWaterTank(Arc<RwLock<SmartHotWaterTank>>),
 }
+
 #[derive(Debug)]
 pub struct PVDiverter {
     pre_heated_water_source: HotWaterStorageTank,
