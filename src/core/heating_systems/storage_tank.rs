@@ -1611,6 +1611,14 @@ impl SmartHotWaterTank {
         Ok((setpntmin, setpntmax))
     }
 
+    pub(crate) fn demand_hot_water(
+        &self,
+        usage_events: Option<Vec<TypedScheduleEvent>>,
+        simtime: SimulationTimeIteration,
+    ) -> anyhow::Result<(f64, f64, f64, f64, f64)> {
+        self.storage_tank.demand_hot_water(usage_events, simtime)
+    }
+
     fn determine_heat_source_switch_on(
         &self,
         temp_s3_n: &[f64],

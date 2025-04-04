@@ -2372,10 +2372,12 @@ impl Corpus {
                         volume_water_remove_from_tank,
                     ) = match source {
                         HotWaterStorageTank::StorageTank(storage_tank) => {
-                            storage_tank.write().demand_hot_water(usage_events, t_it)?
+                            storage_tank.read().demand_hot_water(usage_events, t_it)?
                         }
                         HotWaterStorageTank::SmartHotWaterTank(smart_storage_tank) => {
-                            todo!("migration of storage tank module to 0.34")
+                            smart_storage_tank
+                                .read()
+                                .demand_hot_water(usage_events, t_it)?
                         }
                     };
 
