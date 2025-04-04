@@ -97,7 +97,6 @@ impl HeatSourceWet {
                 .demand_energy(energy_demand, Default::default(), temperature, &simtime)),
             HeatSourceWet::HeatBatteryHotWater(battery) => {
                 battery.demand_energy(energy_demand, temperature, None, simtime)
-                // TODO 0.34 passing in None here during heat_battery update
             }
             HeatSourceWet::HeatPumpWater(water) => {
                 water.demand_energy(energy_demand, temperature, simtime)
