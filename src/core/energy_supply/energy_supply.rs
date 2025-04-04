@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub(crate) const UNMET_DEMAND_SUPPLY_NAME: &str = "_unmet_demand";
-pub(crate) const ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME: &str = "energy_from_environment";
+pub(crate) const ENERGY_FROM_ENVIRONMENT_SUPPLY_NAME: &str = "_energy_from_environment";
 /// An object to represent the connection of a system that consumes energy to the energy supply
 ///
 /// This object encapsulates the name of the connection, meaning that the
