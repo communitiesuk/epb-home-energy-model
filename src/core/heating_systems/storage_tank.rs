@@ -551,17 +551,6 @@ impl StorageTank {
         //  Calculate the total volume used
         let volume_used = self.volume_total_in_litres - remaining_total_volume;
 
-        // Determine the new temperature distribution after displacement
-        // Now that pre-heated sources can be the 'cold' feed, rearrangement of temperaturs, that used to
-        // only happen before after the input from heat sources, could be required after the displacement
-        // of water bringing new water from the 'cold' feed that could be warmer than the existing one.
-        // flag is calculated for that purpose.
-
-        // TODO can this be removed now? (0.34) - no longer returning the result
-        let (new_temp_distribution, flag_rearrange_layers) =
-            self.calc_temps_after_extraction(remaining_vols.clone(), simulation_time);
-
-        // Return the remaining storage volumes, volume used, new temperature distribution, the met/unmet targets, and flag to rearrange layers
         (volume_used, energy_withdrawn, energy_unmet, remaining_vols)
     }
 
@@ -2372,7 +2361,7 @@ impl SurplusDiverting for PVDiverter {
 
         let energy_diverted = match &self.pre_heated_water_source {
             HotWaterStorageTank::StorageTank(storage_tank) => {
-                storage_tank.write().additional_energy_input(
+                storage_tank.read().additional_energy_input(
                     &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
                         self.immersion_heater.clone(),
                     )),
@@ -2382,7 +2371,18 @@ impl SurplusDiverting for PVDiverter {
                     simulation_time_iteration,
                 )?
             }
-            HotWaterStorageTank::SmartHotWaterTank(_) => todo!("as part of migration 0.34"),
+            HotWaterStorageTank::SmartHotWaterTank(smart_hot_water_tank) => smart_hot_water_tank
+                .read()
+                .storage_tank
+                .additional_energy_input(
+                    &HeatSource::Storage(HeatSourceWithStorageTank::Immersion(
+                        self.immersion_heater.clone(),
+                    )),
+                    &self.heat_source_name,
+                    energy_diverted_max,
+                    self.control_max.as_ref().map(|control| control.as_ref()),
+                    simulation_time_iteration,
+                )?,
         };
         Ok(energy_diverted)
     }
@@ -3129,10 +3129,29 @@ mod tests {
         )
     }
 
+    #[fixture]
+    fn diverter_control() -> Arc<Control> {
+        Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                Default::default(),
+                1.,
+            )
+            .unwrap(),
+        )
+        .into()
+    }
+
     #[rstest]
     fn test_divert_surplus(
         mut storage_tank_for_pv_diverter: StorageTank,
         immersion_heater: ImmersionHeater,
+        diverter_control: Arc<Control>,
     ) {
         // _StorageTank__Q_ls_n_prev_heat_source is needed for the functions to
         // run the test but have no bearing in the results
@@ -3143,7 +3162,7 @@ mod tests {
             &HotWaterStorageTank::StorageTank(Arc::new(RwLock::new(storage_tank_for_pv_diverter))),
             Arc::new(Mutex::new(immersion_heater)),
             "imheater".to_string(),
-            None, // TODO (migration 0.34)
+            diverter_control.into(),
         );
         let sim_time = SimulationTime::new(0., 4., 1.);
 
@@ -3377,7 +3396,7 @@ mod tests {
             simulation_time_for_solar_thermal.step,
             Arc::new(Control::SetpointTime(control_max.unwrap())),
             *WATER,
-            None, // TODO (migration 0.34) check if this is correct
+            None,
         )));
 
         let storage_tank = StorageTank::new(
