@@ -4714,6 +4714,15 @@ mod tests {
     }
 
     #[fixture]
+    fn simulation_time_iteration_for_smart_hot_water_tank(
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) -> SimulationTimeIteration {
+        simulation_time_for_smart_hot_water_tank
+            .iter()
+            .current_iteration()
+    }
+
+    #[fixture]
     fn external_conditions_for_smart_hot_water_tank(
         external_conditions_for_pv_diverter: Arc<ExternalConditions>,
     ) -> Arc<ExternalConditions> {
@@ -4855,7 +4864,7 @@ mod tests {
     #[rstest]
     fn test_calc_state_of_charge_for_smart_hot_water_tank(
         smart_hot_water_tank: SmartHotWaterTank,
-        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
     ) {
         let t_h = [
             43.984858220267675,
@@ -4867,33 +4876,23 @@ mod tests {
             43.984858220267775,
             43.984858220267775,
         ];
-        let soc = smart_hot_water_tank.calc_state_of_charge(
-            &t_h,
-            simulation_time_for_smart_hot_water_tank
-                .iter()
-                .current_iteration(),
-        );
+        let soc = smart_hot_water_tank
+            .calc_state_of_charge(&t_h, simulation_time_iteration_for_smart_hot_water_tank);
         assert_relative_eq!(soc.unwrap(), 0.850, max_relative = TWO_DECIMAL_PLACES);
     }
 
     #[rstest]
     fn test_calc_state_of_charge_low_high_for_smart_hot_water_tank(
         smart_hot_water_tank: SmartHotWaterTank,
-        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
     ) {
         let t_h_low = [10., 20., 25., 30., 35., 35., 35., 35.];
         let t_h_high = [50., 50., 50., 50., 50., 50., 50., 50.];
-        let soc_low = smart_hot_water_tank.calc_state_of_charge(
-            &t_h_low,
-            simulation_time_for_smart_hot_water_tank
-                .iter()
-                .current_iteration(),
-        );
+        let soc_low = smart_hot_water_tank
+            .calc_state_of_charge(&t_h_low, simulation_time_iteration_for_smart_hot_water_tank);
         let soc_high = smart_hot_water_tank.calc_state_of_charge(
             &t_h_high,
-            simulation_time_for_smart_hot_water_tank
-                .iter()
-                .current_iteration(),
+            simulation_time_iteration_for_smart_hot_water_tank,
         );
 
         assert_eq!(soc_low.unwrap(), 0.0);
