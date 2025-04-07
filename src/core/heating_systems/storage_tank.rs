@@ -4705,4 +4705,174 @@ mod tests {
             );
         }
     }
+
+    #[fixture]
+    fn simulation_time_for_smart_hot_water_tank(
+        simulation_time_for_storage_tank: SimulationTime,
+    ) -> SimulationTime {
+        simulation_time_for_storage_tank // simulation_time_for_storage_tank has the same data & set up as what we need for smart hot water tank
+    }
+
+    #[fixture]
+    fn external_conditions_for_smart_hot_water_tank(
+        external_conditions_for_pv_diverter: Arc<ExternalConditions>,
+    ) -> Arc<ExternalConditions> {
+        external_conditions_for_pv_diverter // external_conditions_for_pv_diverter has the same data & set up as what we need for smart hot water tank
+    }
+    #[fixture]
+    fn smart_hot_water_tank(
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
+    ) -> SmartHotWaterTank {
+        let volume = 300.;
+        let losses = 1.68;
+        let init_temp = 50.;
+        let power_pump_kw = 5.;
+        let max_flow_rate_pump_l_per_min = 1000.;
+        let temp_usable = 40.;
+        let temp_setpnt_max = Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(50.0),
+                    Some(40.0),
+                    Some(30.0),
+                    Some(20.0),
+                    Some(50.0),
+                    Some(50.0),
+                    Some(50.0),
+                    Some(50.0),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                0.,
+                1.,
+            )
+            .unwrap(),
+        ));
+        let cold_water_temps = vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
+        let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
+            ColdWaterSource::new(cold_water_temps, 0, 1.),
+        ));
+        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(FuelType::Electricity, 1).build(),
+        ));
+        let energy_supply_connection =
+            EnergySupplyConnection::new(energy_supply.clone(), "imheater".into()).into();
+        let control_min = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(0.5),
+                    None,
+                    None,
+                    None,
+                    Some(0.5),
+                    Some(0.5),
+                    Some(0.5),
+                    Some(0.5),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                0.,
+                1.,
+            )
+            .unwrap(),
+        );
+        let control_max = Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![
+                    Some(1.0),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(1.0),
+                    Some(0.9),
+                    Some(0.8),
+                ],
+                0,
+                1.,
+                None,
+                None,
+                None,
+                0.,
+                1.,
+            )
+            .unwrap(),
+        );
+        let immersion_heater = ImmersionHeater::new(
+            5.,
+            energy_supply_connection,
+            1.,
+            control_min.into(),
+            control_max.into(),
+        );
+        let heat_source = HeatSource::Storage(HeatSourceWithStorageTank::Immersion(Arc::new(
+            Mutex::new(immersion_heater),
+        )));
+        let heat_sources = IndexMap::from([(
+            "imheater".into(),
+            PositionedHeatSource {
+                heat_source: Arc::new(Mutex::new(heat_source)),
+                heater_position: 0.6,
+                thermostat_position: None,
+            },
+        )]);
+        let energy_supply_conn_pump =
+            EnergySupplyConnection::new(energy_supply, "pump".into()).into(); // N.B. this is a MagicMock in Python
+
+        SmartHotWaterTank::new(
+            volume,
+            losses,
+            init_temp,
+            power_pump_kw,
+            max_flow_rate_pump_l_per_min,
+            temp_usable,
+            temp_setpnt_max,
+            cold_feed,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .step_in_hours(),
+            heat_sources,
+            temp_internal_air_fn,
+            external_conditions_for_smart_hot_water_tank,
+            None,
+            Some(4),
+            None,
+            None,
+            energy_supply_conn_pump,
+            None,
+        )
+    }
+    const TWO_DECIMAL_PLACES: f64 = 1e-3;
+
+    #[rstest]
+    fn test_calc_state_of_charge_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) {
+        let t_h = [
+            43.984858220267675,
+            43.984858220267675,
+            43.984858220267675,
+            43.984858220267725,
+            43.984858220267725,
+            43.98485822026773,
+            43.984858220267775,
+            43.984858220267775,
+        ];
+        let soc = smart_hot_water_tank.calc_state_of_charge(
+            &t_h,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
+        );
+        assert_relative_eq!(soc.unwrap(), 0.850, max_relative = TWO_DECIMAL_PLACES);
+    }
 }
