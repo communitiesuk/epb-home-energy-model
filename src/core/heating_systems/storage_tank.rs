@@ -4875,4 +4875,28 @@ mod tests {
         );
         assert_relative_eq!(soc.unwrap(), 0.850, max_relative = TWO_DECIMAL_PLACES);
     }
+
+    #[rstest]
+    fn test_calc_state_of_charge_low_high_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) {
+        let t_h_low = [10., 20., 25., 30., 35., 35., 35., 35.];
+        let t_h_high = [50., 50., 50., 50., 50., 50., 50., 50.];
+        let soc_low = smart_hot_water_tank.calc_state_of_charge(
+            &t_h_low,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
+        );
+        let soc_high = smart_hot_water_tank.calc_state_of_charge(
+            &t_h_high,
+            simulation_time_for_smart_hot_water_tank
+                .iter()
+                .current_iteration(),
+        );
+
+        assert_eq!(soc_low.unwrap(), 0.0);
+        assert_eq!(soc_high.unwrap(), 1.0);
+    }
 }
