@@ -4898,4 +4898,36 @@ mod tests {
         assert_eq!(soc_low.unwrap(), 0.0);
         assert_eq!(soc_high.unwrap(), 1.0);
     }
+
+    #[rstest]
+    fn test_calc_state_of_charge_varied_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let t_h_high = [50., 40., 30., 20., 50., 50., 50., 50.];
+        let soc_high = smart_hot_water_tank.calc_state_of_charge(
+            &t_h_high,
+            simulation_time_iteration_for_smart_hot_water_tank,
+        );
+        assert_eq!(soc_high.unwrap(), 0.71875);
+    }
+
+    #[rstest]
+    fn test_bottom_to_top_pump_volume_no_pumping_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let temp_s6_n = &[10., 20., 25., 30., 35., 35., 35., 35.];
+        let qin = 0.;
+        let heater_layer = 7;
+        let volumes = &[10., 10., 10., 10., 10., 10., 10., 10.];
+        let volume_pumped = smart_hot_water_tank.bottom_to_top_pump_volume(
+            temp_s6_n,
+            qin,
+            heater_layer,
+            volumes,
+            simulation_time_iteration_for_smart_hot_water_tank,
+        );
+        assert_eq!(volume_pumped.unwrap(), 0.);
+    }
 }
