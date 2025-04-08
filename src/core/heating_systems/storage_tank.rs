@@ -1065,7 +1065,7 @@ impl StorageTank {
         let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration)?;
 
         match (setpntmax, setpntmin) {
-            (None, None) => bail!("setpntmin must be None if setpntmax is None"),
+            (None, Some(setpointmax)) => bail!("setpntmin must be None if setpntmax is None"),
             (Some(setpointmax), Some(setpointmin)) => {
                 if setpointmin > setpointmax {
                     bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
@@ -5079,7 +5079,9 @@ mod tests {
         ];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
-            let _ = smart_hot_water_tank.demand_hot_water(usage_events[t_idx].clone(), t_it).unwrap();
+            let _ = smart_hot_water_tank
+                .demand_hot_water(usage_events[t_idx].clone(), t_it)
+                .unwrap();
             let temp_n = smart_hot_water_tank.storage_tank.temp_n.read();
             for (i, expected_temp) in expected_temperatures_1[t_idx].iter().enumerate() {
                 assert_eq!(
