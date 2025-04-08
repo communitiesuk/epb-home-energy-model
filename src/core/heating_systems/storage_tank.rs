@@ -4952,6 +4952,143 @@ mod tests {
         }
     }
 
+    #[ignore]
+    #[rstest]
+    fn test_demand_hot_water_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) {
+        let usage_events: &[Option<Vec<TypedScheduleEvent>>] = &[
+            Some(vec![
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.,
+                    name: "IES".into(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: None,
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(6.),
+                    temperature: 41.,
+                    name: "mixer".into(),
+                    event_type: WaterScheduleEventType::Shower,
+                    volume: None,
+                    warm_volume: Some(48.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(20.),
+                    temperature: 43.,
+                    name: "medium".into(),
+                    event_type: WaterScheduleEventType::Bath,
+                    volume: None,
+                    warm_volume: Some(100.),
+                    pipework_volume: None,
+                },
+                TypedScheduleEvent {
+                    start: 6.,
+                    duration: Some(1.),
+                    temperature: 40.,
+                    name: "other".into(),
+                    event_type: WaterScheduleEventType::Other,
+                    volume: None,
+                    warm_volume: Some(8.),
+                    pipework_volume: None,
+                },
+            ]),
+            Some(vec![TypedScheduleEvent {
+                start: 7.,
+                duration: Some(6.),
+                temperature: 41.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }]),
+            None,
+            Some(vec![TypedScheduleEvent {
+                start: 9.,
+                duration: Some(6.),
+                temperature: 45.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(48.),
+                pipework_volume: None,
+            }]),
+            None,
+            Some(vec![TypedScheduleEvent {
+                start: 11.,
+                duration: Some(6.5),
+                temperature: 41.,
+                name: "mixer".into(),
+                event_type: WaterScheduleEventType::Shower,
+                volume: None,
+                warm_volume: Some(52.),
+                pipework_volume: None,
+            }]),
+            None,
+            None,
+        ];
+
+        let expected_temperatures_1 = &[
+            vec![42.06224020071341, 50.0, 50.0, 50.0],
+            vec![
+                26.167007407407407,
+                45.94555555555556,
+                49.87555555555556,
+                49.87555555555556,
+            ],
+            vec![
+                26.11428959122085,
+                45.872962962962966,
+                49.802962962962965,
+                49.802962962962965,
+            ],
+            vec![
+                17.333051851851852,
+                34.74925925925926,
+                47.57925925925926,
+                49.779259259259256,
+            ],
+            vec![31.873616537191992, 50.0, 50.0, 50.0],
+            vec![
+                20.71542222222222,
+                40.20384444444444,
+                49.82370370370371,
+                49.82370370370371,
+            ],
+            vec![
+                20.69097188477366,
+                40.07834302880658,
+                49.64832153635117,
+                49.64832153635117,
+            ],
+            vec![
+                20.666648326852613,
+                39.9534923612498,
+                49.47384875801453,
+                49.47384875801453,
+            ],
+        ];
+
+        for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
+            let _ = smart_hot_water_tank.demand_hot_water(usage_events[t_idx].clone(), t_it).unwrap();
+            let temp_n = smart_hot_water_tank.storage_tank.temp_n.read();
+            for (i, expected_temp) in expected_temperatures_1[t_idx].iter().enumerate() {
+                assert_eq!(
+                    temp_n[i],
+                    *expected_temp, "\n\nExpected tem_n[{i}] to be {} at timestep {}, but got {:?}\ntemp_n is: {:?}", expected_temp, t_idx, temp_n[i], temp_n);
+            }
+        }
+        todo!();
+    }
     #[rstest]
     fn test_calc_temps_after_extraction(
         smart_hot_water_tank: SmartHotWaterTank,
