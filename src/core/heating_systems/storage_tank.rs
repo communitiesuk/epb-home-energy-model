@@ -1041,6 +1041,7 @@ impl StorageTank {
                 // heat_source.demand_energy below
                 let heat_source_output = wet_heat_source.demand_energy(
                     input_energy_adj,
+                    Some(temp_flow),
                     temp_flow,
                     simulation_time_iteration,
                 )? - primary_pipework_losses_kwh;

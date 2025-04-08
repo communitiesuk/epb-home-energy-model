@@ -1415,25 +1415,28 @@ impl HeatPumpServiceWater {
     pub fn demand_energy(
         &self,
         energy_demand: f64,
+        temp_flow: Option<f64>,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        let service_on = self.is_on(simulation_time_iteration);
+        let energy_demand = if !service_on { 0.0 } else { energy_demand };
+
         let temp_cold_water =
             celsius_to_kelvin(self.cold_feed.temperature(simulation_time_iteration, None))?;
         let temp_return_k = celsius_to_kelvin(temp_return)?;
-        let temp_hot_water = celsius_to_kelvin(
-            self.control_max
-                .setpnt(&simulation_time_iteration)
-                .expect("A setpoint was expected to be derivable for a control"),
-        )?;
-        let service_on = self.is_on(simulation_time_iteration);
-        let energy_demand = if !service_on { 0.0 } else { energy_demand };
+
+        if temp_flow.is_none() && energy_demand != 0. {
+            bail!("temp_flow is None and energy_demand is not 0")
+        };
+        let temp_flow = temp_flow.ok_or_else(|| anyhow!("Expected temp_flow to be set"))?;
+        let temp_flow_k = celsius_to_kelvin(temp_flow)?;
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
             &Self::SERVICE_TYPE,
             energy_demand,
-            temp_hot_water,
+            temp_flow_k,
             temp_return_k,
             self.temp_limit_upper_in_k,
             TIME_CONSTANT_WATER,

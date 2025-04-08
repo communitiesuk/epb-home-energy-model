@@ -4107,7 +4107,7 @@ impl HeatSource {
                     .demand_energy(energy_demand, simulation_time_iteration.index)),
             },
             HeatSource::Wet(ref mut wet) => {
-                wet.demand_energy(energy_demand, temp_return, simulation_time_iteration)
+                wet.demand_energy(energy_demand, None, temp_return, simulation_time_iteration)
             }
         }
     }

@@ -63,6 +63,7 @@ impl HeatSourceWet {
     pub(crate) fn demand_energy(
         &self,
         energy_demand: f64,
+        temp_flow: Option<f64>,
         temperature: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -99,7 +100,7 @@ impl HeatSourceWet {
                 battery.demand_energy(energy_demand, temperature, None, simtime)
             }
             HeatSourceWet::HeatPumpWater(water) => {
-                water.demand_energy(energy_demand, temperature, simtime)
+                water.demand_energy(energy_demand, temp_flow, temperature, simtime)
             }
             HeatSourceWet::HeatPumpWaterOnly(water_only) => {
                 Ok(water_only.demand_energy(energy_demand, temperature, simtime))
