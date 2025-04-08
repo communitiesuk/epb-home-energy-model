@@ -456,7 +456,7 @@ impl StorageTank {
         let mut total_volume_drawoff: f64 = self.total_volume_drawoff.load(Ordering::SeqCst);
         let mut last_layer_index: usize = Default::default();
         //  Loop through storage layers (starting from the top)
-        for (layer_index, &layer_temp) in self.temp_n.read().iter().rev().enumerate() {
+        for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
             last_layer_index = layer_index;
             let layer_vol = remaining_vols[layer_index];
 
