@@ -4860,6 +4860,7 @@ mod tests {
         )
     }
     const TWO_DECIMAL_PLACES: f64 = 1e-3;
+    const FIVE_DECIMAL_PLACES: f64 = 1e-6;
 
     #[rstest]
     fn test_calc_state_of_charge_for_smart_hot_water_tank(
@@ -4929,5 +4930,40 @@ mod tests {
             simulation_time_iteration_for_smart_hot_water_tank,
         );
         assert_eq!(volume_pumped.unwrap(), 0.);
+    }
+
+    #[rstest]
+    fn test_soc_over_time_for_smart_hot_water_tank(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) {
+        let expected_soc = &[
+            0.5625, 0.75042, 1.13005, 2.33553, 0.56155, 0.5609, 0.56006, 0.55904,
+        ];
+        let t_h_high = &[50., 40., 30., 20., 30., 40., 50., 50.];
+
+        for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
+            let soc = smart_hot_water_tank.calc_state_of_charge(t_h_high, t_it);
+            assert_relative_eq!(
+                soc.unwrap(),
+                expected_soc[t_idx],
+                max_relative = FIVE_DECIMAL_PLACES
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calc_temps_after_extraction(
+        smart_hot_water_tank: SmartHotWaterTank,
+        simulation_time_iteration_for_smart_hot_water_tank: SimulationTimeIteration,
+    ) {
+        let remaining_vol = vec![0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4.];
+        let actual_remaining_vol = smart_hot_water_tank
+            .storage_tank
+            .calc_temps_after_extraction(
+                remaining_vol,
+                simulation_time_iteration_for_smart_hot_water_tank,
+            );
+        assert_eq!(actual_remaining_vol, (vec![10.0, 10.0, 10.0, 12.67], false));
     }
 }
