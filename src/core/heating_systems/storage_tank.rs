@@ -1065,7 +1065,7 @@ impl StorageTank {
         let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration)?;
 
         match (setpntmax, setpntmin) {
-            (None, Some(setpointmax)) => bail!("setpntmin must be None if setpntmax is None"),
+            (None, Some(setpointmin)) => bail!("setpntmin must be None if setpntmax is None"),
             (Some(setpointmax), Some(setpointmin)) => {
                 if setpointmin > setpointmax {
                     bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
