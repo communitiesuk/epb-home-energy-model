@@ -2205,21 +2205,21 @@ impl SmartHotWaterTank {
 
     fn calc_final_temps(
         &self,
-        temp_s3_n: &[f64],
+        temp_s3_n: Vec<f64>,
         heat_source: &HeatSource,
-        q_x_in_n: &[f64],
+        q_x_in_n: Vec<f64>,
         heater_layer: usize,
         q_ls_n_prev_heat_source: &[f64],
         control_max_diverter: Option<&Control>,
         simtime: SimulationTimeIteration,
-    ) -> anyhow::Result<FinalTemps> {
+    ) -> anyhow::Result<TemperatureCalculation> {
         let temp_setpntmax = self.temp_setpnt_max.setpnt(&simtime);
 
         // Tank with energy required for state of charge
         let (energy_req_for_soc, q_in_h_w_n) = self.calculate_energy_for_state_of_charge(
             heat_source,
-            temp_s3_n,
-            q_x_in_n,
+            temp_s3_n.as_slice(),
+            q_x_in_n.as_slice(),
             heater_layer,
             q_ls_n_prev_heat_source,
             control_max_diverter,
@@ -2229,7 +2229,7 @@ impl SmartHotWaterTank {
         // Calculate temperatures after energy required to hit state of charge input
         let (q_s6, temp_s6_n) = self
             .storage_tank
-            .calc_temps_with_energy_input(temp_s3_n, &q_in_h_w_n);
+            .calc_temps_with_energy_input(temp_s3_n.as_slice(), &q_in_h_w_n);
 
         // Rearrange tank
         let (q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
@@ -2272,7 +2272,7 @@ impl SmartHotWaterTank {
         // calculate volume pumped using actual heat source output
         let volumes = self.storage_tank.vol_n.clone();
         let volume_pumped = self.bottom_to_top_pump_volume(
-            temp_s3_n,
+            temp_s3_n.as_slice(),
             heat_source_output,
             heater_layer,
             &volumes,
@@ -2286,17 +2286,16 @@ impl SmartHotWaterTank {
 
         self.energy_supply_connection_pump
             .demand_energy(pump_energy_kwh, simtime.index)?;
-
-        Ok((
+        Ok(TemperatureCalculation {
             temp_s8_n,
-            q_x_in_n.to_vec(),
+            q_x_in_n: q_x_in_n.to_vec(),
             q_s6,
             temp_s6_n,
             temp_s7_n,
             q_in_h_w,
             q_ls,
             q_ls_n,
-        ))
+        })
     }
 
     /// Calculate new temperatures after top up pump of Smart hot water tank
@@ -2522,17 +2521,6 @@ impl SmartHotWaterTank {
         Ok(volume_pumped)
     }
 }
-
-type FinalTemps = (
-    Vec<f64>,
-    Vec<f64>,
-    f64,
-    Vec<f64>,
-    Vec<f64>,
-    f64,
-    f64,
-    Vec<f64>,
-);
 
 #[derive(Debug)]
 pub struct ImmersionHeater {
