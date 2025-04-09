@@ -5068,8 +5068,7 @@ mod tests {
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(FuelType::Electricity, 1).build(),
         ));
-        let energy_supply_connection =
-            EnergySupplyConnection::new(energy_supply.clone(), "imheater".into()).into();
+        let energy_supply_connection = EnergySupply::connection(energy_supply.clone(), "imheater".into()).unwrap();
         let control_min = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![
@@ -5132,8 +5131,7 @@ mod tests {
                 thermostat_position: None,
             },
         )]);
-        let energy_supply_conn_pump =
-            EnergySupplyConnection::new(energy_supply, "pump".into()).into(); // N.B. this is a MagicMock in Python
+        let energy_supply_conn_pump = EnergySupply::connection(energy_supply.clone(), "pump".into()).unwrap(); // N.B. this is a MagicMock in Python
 
         SmartHotWaterTank::new(
             volume,
