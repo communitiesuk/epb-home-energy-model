@@ -5013,7 +5013,7 @@ mod tests {
     fn simulation_time_for_smart_hot_water_tank(
         simulation_time_for_storage_tank: SimulationTime,
     ) -> SimulationTime {
-        simulation_time_for_storage_tank // simulation_time_for_storage_tank has the same data & set up as what we need for smart hot water tank
+        SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
