@@ -773,7 +773,11 @@ impl StorageTank {
                         HeatSource::Wet(heat_source_wet) => {
                             // TODO Use different temperatures for flow and return in the call to
                             // heat_source.energy_output_max below
-                            heat_source_wet.energy_output_max(temp_flow, simulation_time)?
+                            heat_source_wet.energy_output_max(
+                                Some(temp_flow),
+                                temp_flow,
+                                simulation_time,
+                            )?
                         }
                     };
 

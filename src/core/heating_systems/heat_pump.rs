@@ -1331,7 +1331,7 @@ pub struct HeatPumpServiceWater {
     heat_pump: Arc<Mutex<HeatPump>>,
     service_name: String,
     control: Arc<Control>,
-    _control_min: Arc<Control>,
+    control_min: Arc<Control>,
     control_max: Arc<Control>,
     temp_limit_upper_in_k: f64,
     cold_feed: Arc<WaterSourceWithTemperature>,
@@ -1353,7 +1353,7 @@ impl HeatPumpServiceWater {
             heat_pump,
             service_name,
             control,
-            _control_min: control_min,
+            control_min,
             control_max,
             temp_limit_upper_in_k: celsius_to_kelvin(temp_limit_upper_in_c).expect(
                 "Upper temp limit for heat pump is never expected to be below absolute zero.",
@@ -1367,12 +1367,13 @@ impl HeatPumpServiceWater {
         self.control.is_on(simtime)
     }
 
+    /// Return water heating setpoint (not necessarily temperature)
     pub(crate) fn setpnt(
         &self,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> (Option<f64>, Option<f64>) {
         (
-            self._control_min.setpnt(&simulation_time_iteration),
+            self.control_min.setpnt(&simulation_time_iteration),
             self.control_max.setpnt(&simulation_time_iteration),
         )
     }
@@ -1383,6 +1384,7 @@ impl HeatPumpServiceWater {
     /// spent on higher-priority services
     pub fn energy_output_max(
         &self,
+        temp_flow: f64,
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
@@ -1390,14 +1392,10 @@ impl HeatPumpServiceWater {
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
         }
-        let temp_hot_water = celsius_to_kelvin(
-            self.control_max
-                .setpnt(&simulation_time_iteration)
-                .expect("A setpoint was expected to be derivable for a control"),
-        )?;
+        let temp_flow_k = celsius_to_kelvin(temp_flow)?;
 
         self.heat_pump.lock().energy_output_max(
-            temp_hot_water,
+            temp_flow_k,
             temp_return_k,
             self.hybrid_boiler_service
                 .as_ref()
@@ -1416,7 +1414,7 @@ impl HeatPumpServiceWater {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64,
+        temp_return: f64, //TODO update to option
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
@@ -1429,8 +1427,12 @@ impl HeatPumpServiceWater {
         if temp_flow.is_none() && energy_demand != 0. {
             bail!("temp_flow is None and energy_demand is not 0")
         };
-        let temp_flow = temp_flow.ok_or_else(|| anyhow!("Expected temp_flow to be set"))?;
-        let temp_flow_k = celsius_to_kelvin(temp_flow)?;
+
+        let temp_flow_k = if temp_flow.is_some() {
+            Some(celsius_to_kelvin(temp_flow.unwrap())?)
+        } else {
+            None
+        };
 
         self.heat_pump.lock().demand_energy(
             &self.service_name,
@@ -1588,7 +1590,7 @@ impl HeatPumpServiceSpace {
             &self.service_name,
             &Self::SERVICE_TYPE,
             energy_demand,
-            celsius_to_kelvin(temp_flow)?,
+            Some(celsius_to_kelvin(temp_flow)?),
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
@@ -1766,7 +1768,7 @@ impl HeatPumpServiceSpaceWarmAir {
             &self.service_name,
             &ServiceType::Space,
             energy_demand,
-            celsius_to_kelvin(temp_flow)?,
+            Some(celsius_to_kelvin(temp_flow)?),
             celsius_to_kelvin(temp_return)?,
             self.temp_limit_upper_in_k,
             time_constant_for_service,
@@ -1911,7 +1913,7 @@ pub struct HeatPump {
     power_max_backup: f64,
     temp_distribution_heat_network: Option<f64>,
     // energy supply for heat networks
-    heat_network: Option<Arc<RwLock<EnergySupply>>>,
+    energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
     boiler: Option<Arc<RwLock<Boiler>>>,
     cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
     cost_schedule_metadata: Option<CostScheduleMetadata>,
@@ -1922,7 +1924,7 @@ pub struct HeatPump {
     buffer_tank: Option<BufferTank>,
     #[derivative(Debug = "ignore")]
     temp_internal_air_fn: TempInternalAirFn,
-    energy_supply_hn_connections: HashMap<String, Arc<EnergySupplyConnection>>,
+    energy_supply_heat_source_connections: HashMap<String, Arc<EnergySupplyConnection>>,
     overvent_ratio: f64,
     test_data: HeatPumpTestData,
     temp_min_modulation_rate_low: Option<f64>,
@@ -1946,8 +1948,8 @@ impl HeatPump {
     /// * `external_conditions` - reference to ExternalConditions object
     /// * `number_of_zones` - number of zones in the project
     /// * `throughput_exhaust_air` - throughput (litres / second) of exhaust air
-    /// * `heat_network` - reference to EnergySupply object representing heat network
-    ///                        (for HPs that use heat network as heat source)
+    /// * `energy_supply_heat_source` - reference to EnergySupply object representing heat network
+    ///                        (for HPs that use heat network as heat source) / other heat source
     /// * `output_detailed_results` - if true, save detailed results from each timestep
     ///                                   for later reporting
     /// * `boiler` - reference to Boiler object representing boiler (for hybrid heat pumps)
@@ -1967,7 +1969,7 @@ impl HeatPump {
         external_conditions: Arc<ExternalConditions>,
         number_of_zones: usize,
         throughput_exhaust_air: Option<f64>,
-        heat_network: Option<Arc<RwLock<EnergySupply>>>,
+        energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
         output_detailed_results: bool,
         boiler: Option<Arc<RwLock<Boiler>>>,
         cost_schedule_hybrid_hp: Option<BoilerCostScheduleHybrid>,
@@ -2244,7 +2246,7 @@ impl HeatPump {
             power_max_backup: power_max_backup
                 .expect("A power_max_backup value was expected but not provided."),
             temp_distribution_heat_network,
-            heat_network,
+            energy_supply_heat_source,
             boiler,
             cost_schedule_hybrid_hp,
             cost_schedule_metadata,
@@ -2254,7 +2256,7 @@ impl HeatPump {
             ext_air_ratio,
             buffer_tank,
             temp_internal_air_fn,
-            energy_supply_hn_connections: Default::default(),
+            energy_supply_heat_source_connections: Default::default(),
             overvent_ratio,
             test_data,
             temp_min_modulation_rate_low,
@@ -2295,29 +2297,28 @@ impl HeatPump {
         // Set up energy supply connection for this service
         {
             let mut heat_pump = heat_pump.lock();
-            let connection = Arc::new(
-                EnergySupply::connection(heat_pump.energy_supply.clone(), service_name).unwrap(),
-            );
+            let connection = Arc::new(EnergySupply::connection(
+                heat_pump.energy_supply.clone(),
+                service_name,
+            )?);
             heat_pump
                 .energy_supply_connections
                 .insert(service_name.to_string(), connection);
         }
 
-        // if heat pump uses heat network as source, then set up connection
-        let is_heat_network = matches!(
-            heat_pump.lock().source_type,
-            HeatPumpSourceType::HeatNetwork
-        );
-        let heat_network = heat_pump.lock().heat_network.clone();
-        if is_heat_network {
-            if let Some(energy_supply_hn) = heat_network {
-                heat_pump.lock().energy_supply_hn_connections.insert(
+        let energy_supply_heat_source = heat_pump.lock().energy_supply_heat_source.clone();
+
+        if let Some(energy_supply_heat_source) = energy_supply_heat_source {
+            heat_pump
+                .lock()
+                .energy_supply_heat_source_connections
+                .insert(
                     service_name.to_string(),
-                    Arc::new(
-                        EnergySupply::connection(energy_supply_hn.clone(), service_name).unwrap(),
-                    ),
+                    Arc::new(EnergySupply::connection(
+                        energy_supply_heat_source.clone(),
+                        service_name,
+                    )?),
                 );
-            }
         }
 
         Ok(())
@@ -2809,11 +2810,12 @@ impl HeatPump {
     fn energy_output_limited(
         &self,
         energy_output_required: f64,
-        temp_output: f64,
+        temp_output: Option<f64>,
         temp_used_for_scaling: f64,
         temp_limit_upper: f64,
     ) -> f64 {
-        if temp_output > temp_limit_upper {
+        if temp_output.is_some() && temp_output.unwrap() > temp_limit_upper {
+            let temp_output = temp_output.unwrap();
             if temp_output == temp_used_for_scaling {
                 energy_output_required
             } else if (temp_limit_upper - temp_used_for_scaling) >= self.temp_diff_flow_return_min {
@@ -3015,7 +3017,7 @@ impl HeatPump {
         service_name: &str,
         service_type: &ServiceType,
         energy_output_required: f64,
-        temp_output: f64,
+        temp_output: Option<f64>,
         temp_return_feed: f64,
         temp_limit_upper: f64,
         time_constant_for_service: f64,
@@ -3060,7 +3062,9 @@ impl HeatPump {
         energy_output_required += heat_loss_buffer_kwh;
 
         let mut temp_output = temp_output;
-        temp_output += flow_temp_increase_due_to_buffer;
+        if temp_output.is_some() {
+            temp_output = Some(temp_output.unwrap() + flow_temp_increase_due_to_buffer);
+        }
 
         let temp_spread_correction =
             temp_spread_correction.unwrap_or(TempSpreadCorrectionArg::Float(1.0));
@@ -3078,20 +3082,35 @@ impl HeatPump {
 
         let temp_source = self.get_temp_source(simtime);
         // From here onwards, output temp to be used is subject to the upper limit
-        let temp_output = min_of_2(temp_output, temp_limit_upper);
+        if temp_output.is_some() {
+            temp_output = Some(min_of_2(temp_output.unwrap(), temp_limit_upper));
+        };
 
         // Get thermal capacity, CoP and degradation coeff at operating conditions
-        let thermal_capacity_op_cond = self.thermal_capacity_op_cond(temp_output, temp_source)?;
-        let (cop_op_cond, deg_coeff_op_cond) = self.cop_deg_coeff_op_cond(
-            service_type,
-            temp_output,
-            temp_source,
-            temp_spread_correction,
-            simtime,
-        )?;
-
+        let (thermal_capacity_op_cond, cop_op_cond, deg_coeff_op_cond) = if temp_output.is_some() {
+            let thermal_capacity_op_cond =
+                self.thermal_capacity_op_cond(temp_output.unwrap(), temp_source)?;
+            let (cop_op_cond, deg_coeff_op_cond) = self.cop_deg_coeff_op_cond(
+                service_type,
+                temp_output.unwrap(),
+                temp_source,
+                temp_spread_correction,
+                simtime,
+            )?;
+            (
+                Some(thermal_capacity_op_cond),
+                Some(cop_op_cond),
+                Some(deg_coeff_op_cond),
+            )
+        } else {
+            (None, None, None)
+        };
         // Calculate running time of HP
-        let time_required = energy_output_limited / thermal_capacity_op_cond;
+        let time_required = if thermal_capacity_op_cond.is_none() {
+            0.
+        } else {
+            energy_output_limited / thermal_capacity_op_cond.unwrap()
+        };
         let time_available =
             self.time_available(time_start, timestep, Some(additional_time_unavailable));
         let mut time_running_current_service = min_of_2(time_required, time_available);
@@ -3116,18 +3135,22 @@ impl HeatPump {
             );
         }
 
-        let use_backup_heater_only = self.use_backup_heater_only(
-            cop_op_cond,
-            energy_output_required,
-            thermal_capacity_op_cond,
-            temp_output,
-            time_available,
-            time_start,
-            temp_return_feed,
-            hybrid_boiler_service.clone(),
-            boiler_eff,
-            simtime,
-        )?;
+        let use_backup_heater_only = if temp_output.is_some() {
+            self.use_backup_heater_only(
+                cop_op_cond.unwrap(),
+                energy_output_required,
+                thermal_capacity_op_cond.unwrap(),
+                temp_output.unwrap(),
+                time_available,
+                time_start,
+                temp_return_feed,
+                hybrid_boiler_service.clone(),
+                boiler_eff,
+                simtime,
+            )?
+        } else {
+            false
+        };
 
         // Calculate energy delivered by HP
         let energy_delivered_hp = if !self.compressor_is_running(service_on, use_backup_heater_only)
@@ -3139,7 +3162,9 @@ impl HeatPump {
             0.
         } else {
             // Backup heater not providing entire energy requirement
-            thermal_capacity_op_cond * time_running_current_service
+            thermal_capacity_op_cond
+                .ok_or_else(|| anyhow!("Expected thermal_capacity_op_cond to be set"))?
+                * time_running_current_service
         };
 
         // Calculate energy delivered by backup heater
@@ -3153,7 +3178,7 @@ impl HeatPump {
             (HeatPumpBackupControlType::None, _) | (_, true) => 0.0,
             (HeatPumpBackupControlType::TopUp | HeatPumpBackupControlType::Substitute, _) => {
                 let energy_max_backup = self.backup_energy_output_max(
-                    temp_output,
+                    temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
                     temp_return_feed,
                     time_available,
                     time_start,
@@ -3305,7 +3330,7 @@ impl HeatPump {
         use_backup_heater_only: bool,
         hp_operating_in_onoff_mode: bool,
         energy_delivered_hp: f64,
-        thermal_capacity_op_cond: f64,
+        thermal_capacity_op_cond: Option<f64>,
         cop_op_cond: f64,
         deg_coeff_op_cond: f64,
         time_running_current_service: f64,
@@ -3314,7 +3339,11 @@ impl HeatPump {
         time_constant_for_service: f64,
         service_type: ServiceType,
     ) -> (f64, Option<f64>, f64) {
-        let compressor_power_full_load = thermal_capacity_op_cond / cop_op_cond;
+        if thermal_capacity_op_cond.is_none() {
+            return (0., Some(1.), 0.);
+        }
+
+        let compressor_power_full_load = thermal_capacity_op_cond.unwrap() / cop_op_cond;
 
         // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.10, step 1:
         let compressor_power_min_load = compressor_power_full_load * load_ratio_continuous_min;
@@ -3371,7 +3400,7 @@ impl HeatPump {
         service_name: &str,
         service_type: &ServiceType,
         energy_output_required: f64,
-        temp_output: f64,
+        temp_output: Option<f64>,
         temp_return_feed: f64,
         temp_limit_upper: f64,
         time_constant_for_service: f64,
@@ -3422,7 +3451,9 @@ impl HeatPump {
                 HybridBoilerService::Regular(boiler_regular) => {
                     boiler_regular.lock().demand_energy(
                         service_results.energy_output_required_boiler,
-                        kelvin_to_celsius(temp_output)?,
+                        kelvin_to_celsius(
+                            temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
+                        )?,
                         Some(kelvin_to_celsius(temp_return_feed)?),
                         Some(hybrid_service_bool),
                         time_elapsed_hp,
@@ -3432,7 +3463,9 @@ impl HeatPump {
                 }
                 HybridBoilerService::Space(boiler_space) => boiler_space.lock().demand_energy(
                     service_results.energy_output_required_boiler,
-                    kelvin_to_celsius(temp_output)?,
+                    kelvin_to_celsius(
+                        temp_output.ok_or_else(|| anyhow!("Expected temp_output to be set"))?,
+                    )?,
                     Some(kelvin_to_celsius(temp_return_feed)?),
                     time_start,
                     Some(hybrid_service_bool),
@@ -3487,7 +3520,7 @@ impl HeatPump {
             service_name,
             service_type,
             energy_output_required,
-            temp_output,
+            Some(temp_output),
             temp_return_feed,
             temp_limit_upper,
             time_constant_for_service,
@@ -3544,7 +3577,9 @@ impl HeatPump {
 
         for service_data in self.service_results.write().iter_mut() {
             if let ServiceResult::Full(service_data) = service_data {
-                let temp_output = service_data.temp_output;
+                let temp_output = service_data
+                    .temp_output
+                    .ok_or_else(|| anyhow!("Expected temp_output to be set"))?;
                 let energy_input_backup = service_data.energy_input_backup;
                 let energy_heating_circ_pump = service_data.energy_heating_circ_pump;
                 let energy_source_circ_pump = service_data.energy_source_circ_pump;
@@ -3574,8 +3609,12 @@ impl HeatPump {
                         hp_operating_in_onoff_mode,
                         service_data.energy_delivered_hp,
                         service_data.thermal_capacity_op_cond,
-                        service_data.cop_op_cond,
-                        service_data.deg_coeff_op_cond,
+                        service_data
+                            .cop_op_cond
+                            .ok_or_else(|| anyhow::anyhow!("Expected cop_op_cond to be set"))?,
+                        service_data.deg_coeff_op_cond.ok_or_else(|| {
+                            anyhow::anyhow!("Expected deg_coeff_op_cond to be set")
+                        })?,
                         service_data.time_running,
                         load_ratio,
                         load_ratio_continuous_min,
@@ -3611,7 +3650,7 @@ impl HeatPump {
         timestep: f64,
         time_remaining_current_timestep: f64,
         timestep_index: usize,
-    ) {
+    ) -> anyhow::Result<()> {
         // we need to collect times running separately before the main iteration as we cannot look into the service
         // results while iterating over mutable values
         let mut service_results = self.service_results.write();
@@ -3642,7 +3681,9 @@ impl HeatPump {
                 let service_type = service_data.service_type;
                 let service_on = service_data.service_on;
                 let time_running_current_service = service_data.time_running;
-                let deg_coeff_op_cond = service_data.deg_coeff_op_cond;
+                let deg_coeff_op_cond = service_data
+                    .deg_coeff_op_cond
+                    .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?;
                 let compressor_power_min_load = service_data.compressor_power_min_load;
                 let load_ratio_continuous_min = service_data.load_ratio_continuous_min;
                 let load_ratio = service_data.load_ratio;
@@ -3686,6 +3727,8 @@ impl HeatPump {
                 service_data.energy_input_total += energy_input_hp;
             }
         }
+
+        Ok(())
     }
 
     /// Calculate auxiliary energy according to CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.7
@@ -3752,7 +3795,7 @@ impl HeatPump {
                     ..
                 } = service_data.as_ref();
                 let energy_extracted_hp = energy_delivered_hp - energy_input_hp;
-                self.energy_supply_hn_connections[service_name.as_str()]
+                self.energy_supply_heat_source_connections[service_name.as_str()]
                     .demand_energy(energy_extracted_hp, timestep_idx)
                     .unwrap();
             }
@@ -3760,7 +3803,7 @@ impl HeatPump {
     }
 
     /// Calculations to be done at the end of each timestep
-    pub fn timestep_end(&mut self, timestep_idx: usize) {
+    pub fn timestep_end(&mut self, timestep_idx: usize) -> anyhow::Result<()> {
         self.calc_energy_input(timestep_idx).unwrap();
 
         let timestep = self.simulation_timestep;
@@ -3772,7 +3815,7 @@ impl HeatPump {
             self.time_running_continuous = 0.;
         }
 
-        self.calc_ancillary_energy(timestep, time_remaining_current_timestep, timestep_idx);
+        self.calc_ancillary_energy(timestep, time_remaining_current_timestep, timestep_idx)?;
         let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
@@ -3795,6 +3838,8 @@ impl HeatPump {
         // Variables below need to be reset at the end of each timestep.
         self.total_time_running_current_timestep = Default::default();
         self.service_results = Default::default();
+
+        Ok(())
     }
 
     pub fn output_detailed_results(
@@ -4112,13 +4157,13 @@ pub struct HeatPumpEnergyCalculation {
     service_type: ServiceType,
     service_on: bool,
     energy_output_required: f64,
-    temp_output: f64,
+    temp_output: Option<f64>,
     temp_source: f64,
-    cop_op_cond: f64,
-    thermal_capacity_op_cond: f64,
+    cop_op_cond: Option<f64>,
+    thermal_capacity_op_cond: Option<f64>,
     time_running: f64,
     time_constant_for_service: f64,
-    deg_coeff_op_cond: f64,
+    deg_coeff_op_cond: Option<f64>,
     compressor_power_min_load: f64,
     load_ratio_continuous_min: f64,
     load_ratio: f64,
@@ -4150,10 +4195,19 @@ impl HeatPumpEnergyCalculation {
             )),
             "service_on" => ResultParamValue::Boolean(self.service_on),
             "energy_output_required" => ResultParamValue::Number(self.energy_output_required),
-            "temp_output" => ResultParamValue::Number(self.temp_output),
+            "temp_output" => ResultParamValue::Number(
+                self.temp_output
+                    .expect("The temp output value is expected to have been calculated."),
+            ),
             "temp_source" => ResultParamValue::Number(self.temp_source),
-            "thermal_capacity_op_cond" => ResultParamValue::Number(self.thermal_capacity_op_cond),
-            "cop_op_cond" => ResultParamValue::Number(self.cop_op_cond),
+            "thermal_capacity_op_cond" => ResultParamValue::Number(
+                self.thermal_capacity_op_cond
+                    .expect("The thermal capacity op cond is expected to have been calculated."),
+            ),
+            "cop_op_cond" => ResultParamValue::Number(
+                self.cop_op_cond
+                    .expect("The cop op cond value is expected to have been calculated."),
+            ),
             "time_running" => ResultParamValue::Number(self.time_running),
             "load_ratio" => ResultParamValue::Number(self.load_ratio),
             "hp_operating_in_onoff_mode" => {
@@ -6465,7 +6519,7 @@ mod tests {
 
         assert!(heat_pump_nw
             .lock()
-            .energy_supply_hn_connections
+            .energy_supply_heat_source_connections
             .contains_key("new_service_nw"));
     }
 
@@ -7034,7 +7088,7 @@ mod tests {
 
         let result = heat_pump.energy_output_limited(
             energy_output_required,
-            temp_output,
+            Some(temp_output),
             temp_used_for_scaling,
             temp_limit_upper,
         );
@@ -7048,7 +7102,7 @@ mod tests {
 
         let result = heat_pump.energy_output_limited(
             energy_output_required,
-            temp_output,
+            Some(temp_output),
             temp_used_for_scaling,
             temp_limit_upper,
         );
@@ -7078,7 +7132,7 @@ mod tests {
                 service_name,
                 &ServiceType::Water,
                 500.,
-                330.,
+                Some(330.),
                 330.,
                 340.,
                 1560.,
@@ -7096,7 +7150,7 @@ mod tests {
 
             assert_eq!(result, [false, true][t_idx]);
 
-            heat_pump.lock().timestep_end(t_idx);
+            heat_pump.lock().timestep_end(t_idx).unwrap();
         }
     }
 
@@ -7497,13 +7551,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 320.0,
+                temp_output: Some(320.0),
                 temp_source: 273.15,
-                cop_op_cond: 3.4215259607351367, // 3.421525960735136 in Python
-                thermal_capacity_op_cond: 8.496784419801095,
+                cop_op_cond: Some(3.4215259607351367), // 3.421525960735136 in Python
+                thermal_capacity_op_cond: Some(8.496784419801095),
                 time_running: 0.11769158196712368,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7527,13 +7581,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 320.0,
+                temp_output: Some(320.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.566917590730003, // 3.566917590730002 in Python
-                thermal_capacity_op_cond: 8.73222616402377, // 8.732226164023768 in Python
-                time_running: 0.1145183348685972, // 0.11451833486859722 in Python
+                cop_op_cond: Some(3.566917590730003), // 3.566917590730002 in Python
+                thermal_capacity_op_cond: Some(8.73222616402377), // 8.732226164023768 in Python
+                time_running: 0.1145183348685972,     // 0.11451833486859722 in Python
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7561,7 +7615,7 @@ mod tests {
                         "service_boilerspace",
                         &ServiceType::Water,
                         1.,
-                        320.,
+                        Some(320.),
                         310.,
                         340.,
                         1560.,
@@ -7594,13 +7648,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.9706605881515196,
-                thermal_capacity_op_cond: 8.417674488123662,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7624,13 +7678,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.107305509409639,
-                thermal_capacity_op_cond: 8.650924134797519,
+                cop_op_cond: Some(3.107305509409639),
+                thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.11559458670751663,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7658,7 +7712,7 @@ mod tests {
                         "service_no_boiler",
                         &ServiceType::Water,
                         1.,
-                        330.,
+                        Some(330.),
                         330.,
                         340.,
                         1560.,
@@ -7764,13 +7818,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.955763623095467,
-                thermal_capacity_op_cond: 8.857000000000003,
+                cop_op_cond: Some(2.955763623095467),
+                thermal_capacity_op_cond: Some(8.857000000000003),
                 time_running: 0.11290504685559441,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7794,13 +7848,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 8.807000000000002,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(8.807000000000002),
                 time_running: 0.1135460429204042,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7828,7 +7882,7 @@ mod tests {
                         "service_backup_modctrl",
                         &ServiceType::Water,
                         1.0,
-                        330.0,
+                        Some(330.0),
                         330.0,
                         340.0,
                         1560.,
@@ -7854,13 +7908,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 50.,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.9706605881515196,
-                thermal_capacity_op_cond: 8.417674488123662,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7884,13 +7938,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 50.,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.107305509409639,
-                thermal_capacity_op_cond: 8.650924134797519,
+                cop_op_cond: Some(3.107305509409639),
+                thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7918,7 +7972,7 @@ mod tests {
                         "service_energy_output_required",
                         &ServiceType::Water,
                         50.,
-                        330.,
+                        Some(330.),
                         330.,
                         340.,
                         1560.,
@@ -7988,13 +8042,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.9706605881515196,
-                thermal_capacity_op_cond: 8.417674488123662,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8018,13 +8072,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.107305509409639,
-                thermal_capacity_op_cond: 8.650924134797519,
+                cop_op_cond: Some(3.107305509409639),
+                thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8052,7 +8106,7 @@ mod tests {
                         "service_boilerspace_service_off",
                         &ServiceType::Water,
                         1.0,
-                        330.0,
+                        Some(330.0),
                         330.0,
                         340.0,
                         1560.,
@@ -8158,13 +8212,13 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.955763623095467,
-                thermal_capacity_op_cond: 6.773123981338176,
+                cop_op_cond: Some(2.955763623095467),
+                thermal_capacity_op_cond: Some(6.773123981338176),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8188,13 +8242,13 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 6.9608039370972525,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8222,7 +8276,7 @@ mod tests {
                         "service_backup_substitute",
                         &ServiceType::Space,
                         1.0,
-                        330.0,
+                        Some(330.0),
                         330.0,
                         340.0,
                         1560.,
@@ -8306,7 +8360,7 @@ mod tests {
                         "service_boiler_demand_energy",
                         &ServiceType::Water,
                         1.0,
-                        330.0,
+                        Some(330.0),
                         330.0,
                         340.0,
                         1560.,
@@ -8332,13 +8386,13 @@ mod tests {
                     service_type: ServiceType::Water,
                     service_on: true,
                     energy_output_required: 1.0,
-                    temp_output: 330.0,
+                    temp_output: Some(330.0),
                     temp_source: 273.15,
-                    cop_op_cond: 2.9706605881515196,
-                    thermal_capacity_op_cond: 8.417674488123662,
+                    cop_op_cond: Some(2.9706605881515196),
+                    thermal_capacity_op_cond: Some(8.417674488123662),
                     time_running: 0.11879765621857688,
                     time_constant_for_service: 1560.,
-                    deg_coeff_op_cond: 0.9,
+                    deg_coeff_op_cond: Some(0.9),
                     compressor_power_min_load: Default::default(),
                     load_ratio_continuous_min: Default::default(),
                     load_ratio: Default::default(),
@@ -8362,13 +8416,13 @@ mod tests {
                     service_type: ServiceType::Water,
                     service_on: true,
                     energy_output_required: 1.0,
-                    temp_output: 330.0,
+                    temp_output: Some(330.0),
                     temp_source: 275.65,
-                    cop_op_cond: 3.107305509409639,
-                    thermal_capacity_op_cond: 8.650924134797519,
+                    cop_op_cond: Some(3.107305509409639),
+                    thermal_capacity_op_cond: Some(8.650924134797519),
                     time_running: 0.11559458670751663,
                     time_constant_for_service: 1560.,
-                    deg_coeff_op_cond: 0.9,
+                    deg_coeff_op_cond: Some(0.9),
                     compressor_power_min_load: Default::default(),
                     load_ratio_continuous_min: Default::default(),
                     load_ratio: Default::default(),
@@ -8570,13 +8624,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.9706605881515196,
-                thermal_capacity_op_cond: 8.417674488123662,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8600,13 +8654,13 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 6.9608039370972525,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8630,12 +8684,12 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 0.97,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 6.9608039370972525,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8665,13 +8719,13 @@ mod tests {
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 273.15,
-                cop_op_cond: 2.9706605881515196,
-                thermal_capacity_op_cond: 8.417674488123662,
+                cop_op_cond: Some(2.9706605881515196),
+                thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 1.133441433423604,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.11879765621857688,
@@ -8695,13 +8749,13 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 6.9608039370972525,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.29130392547505757,
@@ -8725,12 +8779,12 @@ mod tests {
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 0.97,
-                temp_output: 330.0,
+                temp_output: Some(330.0),
                 temp_source: 275.65,
-                cop_op_cond: 3.091723311370327,
-                thermal_capacity_op_cond: 6.9608039370972525,
+                cop_op_cond: Some(3.091723311370327),
+                thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
-                deg_coeff_op_cond: 0.9,
+                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.29130392547505757,
@@ -8780,7 +8834,7 @@ mod tests {
                 "service_anc_energy",
                 &ServiceType::Water,
                 1.0,
-                330.0,
+                Some(330.0),
                 330.0,
                 340.0,
                 1560.,
@@ -8812,7 +8866,7 @@ mod tests {
         assert_eq!(energy_input_hp, 0.33789047423833063);
         assert_eq!(energy_input_total, 0.34086041564379504);
 
-        heat_pump.calc_ancillary_energy(1., 0.5, 0);
+        heat_pump.calc_ancillary_energy(1., 0.5, 0).unwrap();
 
         // Check if the energy_input_HP and energy_input_total were updated correctly
         let (energy_input_hp, energy_input_total) =
@@ -8877,7 +8931,7 @@ mod tests {
                 "service_extract_energy",
                 &ServiceType::Water,
                 1.0,
-                330.0,
+                Some(330.0),
                 330.0,
                 340.0,
                 1560.,
@@ -8926,7 +8980,7 @@ mod tests {
                 "servicetimestep_demand_energy",
                 &ServiceType::Water,
                 5.0,
-                330.0,
+                Some(330.0),
                 330.0,
                 340.0,
                 1560.,
@@ -8951,13 +9005,13 @@ mod tests {
             service_type: ServiceType::Water,
             service_on: true,
             energy_output_required: 5.0,
-            temp_output: 330.0,
+            temp_output: Some(330.0),
             temp_source: 273.15,
-            cop_op_cond: 2.9706605881515196,
-            thermal_capacity_op_cond: 8.417674488123662,
+            cop_op_cond: Some(2.9706605881515196),
+            thermal_capacity_op_cond: Some(8.417674488123662),
             time_running: 0.5939882810928845,
             time_constant_for_service: 1560.,
-            deg_coeff_op_cond: 0.9,
+            deg_coeff_op_cond: Some(0.9),
             compressor_power_min_load: Default::default(),
             load_ratio_continuous_min: Default::default(),
             load_ratio: Default::default(),
@@ -8983,7 +9037,7 @@ mod tests {
         );
 
         // Call the method under test
-        heat_pump.timestep_end(0);
+        heat_pump.timestep_end(0).unwrap();
 
         assert_eq!(heat_pump.total_time_running_current_timestep, 0.);
         assert_eq!(*heat_pump.service_results.read().deref(), []);

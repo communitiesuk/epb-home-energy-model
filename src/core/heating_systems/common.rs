@@ -34,6 +34,7 @@ impl HeatSourceWet {
     /// Common way of calling energy_output_max() on heat sources, implementing equivalent of duck-typing happening in upstream Python.
     pub(crate) fn energy_output_max(
         &self,
+        temp_flow: Option<f64>,
         temperature: f64,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
@@ -52,7 +53,13 @@ impl HeatSourceWet {
                 battery.energy_output_max(Default::default(), temperature, simtime)
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
-                .energy_output_max(temperature, simtime)
+                .energy_output_max(
+                    temp_flow.expect(
+                        "HeatPumpWater requires a temp_flow when calling energy_output_max",
+                    ),
+                    temperature,
+                    simtime,
+                )
                 .map(|x| x.0),
             HeatSourceWet::HeatPumpWaterOnly(hp_water_only) => {
                 Ok(hp_water_only.energy_output_max(temperature, simtime))
