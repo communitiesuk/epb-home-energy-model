@@ -1597,18 +1597,20 @@ impl SmartHotWaterTank {
         heat_source: &HeatSource,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(Option<f64>, Option<f64>)> {
+        // N.B. implementation from StorageTank:
         let (setpntmin, setpntmax) = self
             .storage_tank
             .retrieve_setpnt(heat_source, simulation_time_iteration)?;
 
+        // N.B. extra checks specific to SmartHotWaterTank
         if let Some(setpntmin) = setpntmin {
-            if !(0. ..=1.).contains(&setpntmin) {
+            if setpntmin < 0. || setpntmin > 1. {
                 bail!(">= 0. and <= 1. required for setpoints");
             }
         }
 
         if let Some(setpntmax) = setpntmax {
-            if !(0. ..=1.).contains(&setpntmax) {
+            if setpntmax < 0. || setpntmax > 1. {
                 bail!(">= 0. and <= 1. required for setpoints");
             }
         }
