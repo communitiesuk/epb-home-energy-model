@@ -3110,9 +3110,9 @@ impl HeatPump {
         };
         // Calculate running time of HP
         let time_required = if let Some(thermal_capacity_op_cond) = thermal_capacity_op_cond {
-            0.
+            energy_output_limited / thermal_capacity_op_cond
         } else {
-            energy_output_limited / thermal_capacity_op_cond.unwrap()
+            0.
         };
         let time_available =
             self.time_available(time_start, timestep, Some(additional_time_unavailable));
