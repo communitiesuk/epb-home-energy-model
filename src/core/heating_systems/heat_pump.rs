@@ -1415,9 +1415,11 @@ impl HeatPumpServiceWater {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64, //TODO update to option? Python now checks if it's None but it always appears to be set when this function is called, it's also passed into through to other methods which treat it as non optional
+        temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
+        // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
+        // (it's passed from here through methods to run_demand_energy_calc, where it is treated as non-optional and will cause an error if none
         let service_on = self.is_on(simulation_time_iteration);
         let energy_demand = if !service_on { 0.0 } else { energy_demand };
 
@@ -3107,7 +3109,7 @@ impl HeatPump {
             (None, None, None)
         };
         // Calculate running time of HP
-        let time_required = if thermal_capacity_op_cond.is_none() {
+        let time_required = if let Some(thermal_capacity_op_cond) = thermal_capacity_op_cond {
             0.
         } else {
             energy_output_limited / thermal_capacity_op_cond.unwrap()
