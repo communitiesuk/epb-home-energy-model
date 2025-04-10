@@ -1415,7 +1415,7 @@ impl HeatPumpServiceWater {
         &self,
         energy_demand: f64,
         temp_flow: Option<f64>,
-        temp_return: f64, //TODO update to option
+        temp_return: f64, //TODO update to option? Python now checks if it's None but it always appears to be set when this function is called, it's also passed into through to other methods which treat it as non optional
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<f64> {
         let service_on = self.is_on(simulation_time_iteration);
@@ -3682,9 +3682,7 @@ impl HeatPump {
                 let service_type = service_data.service_type;
                 let service_on = service_data.service_on;
                 let time_running_current_service = service_data.time_running;
-                let deg_coeff_op_cond = service_data
-                    .deg_coeff_op_cond
-                    .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?;
+                let deg_coeff_op_cond = service_data.deg_coeff_op_cond;
                 let compressor_power_min_load = service_data.compressor_power_min_load;
                 let load_ratio_continuous_min = service_data.load_ratio_continuous_min;
                 let load_ratio = service_data.load_ratio;
@@ -3702,7 +3700,8 @@ impl HeatPump {
                     && !(matches!(self.sink_type, HeatPumpSinkType::Air)
                         && matches!(service_type, ServiceType::Water))
                 {
-                    (1. - deg_coeff_op_cond)
+                    (1. - deg_coeff_op_cond
+                        .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?)
                         * (compressor_power_min_load / load_ratio_continuous_min)
                         * max_of_2(
                             time_remaining_current_timestep
@@ -6316,7 +6315,7 @@ mod tests {
     fn create_heat_pump(
         heat_pump_input: HeatSourceWetDetails,
         energy_supply_conn_name_auxiliary: &str,
-        heat_network: Option<Arc<RwLock<EnergySupply>>>,
+        energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
         boiler: Option<Arc<RwLock<Boiler>>>,
         throughput_exhaust_air: Option<f64>,
         temp_internal_air: Option<f64>,
@@ -6337,7 +6336,7 @@ mod tests {
             external_conditions,
             number_of_zones,
             throughput_exhaust_air,
-            heat_network,
+            energy_supply_heat_source,
             false,
             boiler,
             cost_schedule_hybrid_hp,
@@ -6360,7 +6359,7 @@ mod tests {
         create_heat_pump(
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
-            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
             None, // boiler: Option<Arc<Mutex<Boiler>>>,
             None, // throughput_exhaust_air: Option<f64>,
             None, // temp_internal_air: Option<f64>,
@@ -6441,12 +6440,12 @@ mod tests {
         )
     }
 
-    fn create_heat_pump_with_heat_network(
+    fn create_heat_pump_with_energy_supply_heat_source(
         energy_supply_conn_name_auxiliary: &str,
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
     ) -> HeatPump {
-        let heat_network = RwLock::from(
+        let energy_supply_heat_source = RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Custom,
                 simulation_time_for_heat_pump.iter().total_steps(),
@@ -6458,7 +6457,7 @@ mod tests {
         create_heat_pump(
             input,
             energy_supply_conn_name_auxiliary,
-            Some(heat_network.into()),
+            Some(energy_supply_heat_source.into()),
             None,
             None,
             None,
@@ -6512,7 +6511,7 @@ mod tests {
         // Check with heat_network
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
 
-        let heat_pump_nw = create_heat_pump_with_heat_network(
+        let heat_pump_nw = create_heat_pump_with_energy_supply_heat_source(
             energy_supply_conn_name_auxiliary,
             external_conditions,
             simulation_time_for_heat_pump,
@@ -6603,27 +6602,26 @@ mod tests {
             ColdWaterSource::new(vec![1.0, 1.2], 0, simulation_time_for_heat_pump.step).into(),
         );
 
-        let control = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(52.), Some(52.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.,
-            )
-            .unwrap(),
-        ));
+        let control_min = Arc::new(create_setpoint_time_control(vec![
+            Some(52.),
+            Some(52.),
+            None,
+            Some(52.),
+        ]));
+        let control_max = Arc::new(create_setpoint_time_control(vec![
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+        ]));
 
         let hot_water_service = HeatPump::create_service_hot_water(
             heat_pump.clone(),
             service_name,
             60.,
             cold_feed.clone().into(),
-            control.clone(),
-            control.clone(),
+            control_min.clone(),
+            control_max.clone(),
         )
         .unwrap();
 
@@ -6647,8 +6645,8 @@ mod tests {
             service_name,
             60.,
             cold_feed.into(),
-            control.clone(),
-            control,
+            control_min,
+            control_max,
         )
         .unwrap();
 
@@ -6863,7 +6861,7 @@ mod tests {
         // Check with heat_network
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: heat_nw";
 
-        let heat_pump_nw = create_heat_pump_with_heat_network(
+        let heat_pump_nw = create_heat_pump_with_energy_supply_heat_source(
             energy_supply_conn_name_auxiliary,
             external_conditions,
             simulation_time_for_heat_pump,
@@ -7400,7 +7398,7 @@ mod tests {
         let heat_pump_with_cost_schedule = create_heat_pump(
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
-            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
             None, // boiler: Option<Arc<Mutex<Boiler>>>,
             None, // throughput_exhaust_air: Option<f64>,
             None, // temp_internal_air: Option<f64>,
@@ -7479,7 +7477,7 @@ mod tests {
         let heat_pump_with_cost_schedule = create_heat_pump(
             heat_pump_input,
             energy_supply_conn_name_auxiliary,
-            None, // heat_network: Option<Arc<RwLock<EnergySupply>>>,
+            None, // energy_supply_heat_source: Option<Arc<RwLock<EnergySupply>>>,
             None, // boiler: Option<Arc<Mutex<Boiler>>>,
             None, // throughput_exhaust_air: Option<f64>,
             None, // temp_internal_air: Option<f64>,
@@ -8917,11 +8915,12 @@ mod tests {
     ) {
         let energy_supply_conn_name_auxiliary = "HeatPump_auxiliary: hp1";
 
-        let heat_pump_with_nw = Arc::new(Mutex::new(create_heat_pump_with_heat_network(
-            energy_supply_conn_name_auxiliary,
-            external_conditions,
-            simulation_time_for_heat_pump,
-        )));
+        let heat_pump_with_nw =
+            Arc::new(Mutex::new(create_heat_pump_with_energy_supply_heat_source(
+                energy_supply_conn_name_auxiliary,
+                external_conditions,
+                simulation_time_for_heat_pump,
+            )));
 
         HeatPump::create_service_connection(heat_pump_with_nw.clone(), "service_extract_energy")
             .unwrap();
@@ -9081,7 +9080,18 @@ mod tests {
             Arc::from(RwLock::from(energy_supply)),
             "HeatPump: hp".to_owned(),
         );
-        let ctrl = Arc::new(create_setpoint_time_control(vec![Some(21.)]));
+        let control_min = Arc::new(create_setpoint_time_control(vec![
+            Some(52.),
+            Some(52.),
+            None,
+            Some(52.),
+        ]));
+        let control_max = Arc::new(create_setpoint_time_control(vec![
+            Some(60.),
+            Some(60.),
+            Some(60.),
+            Some(60.),
+        ]));
 
         let heat_pump = HeatPumpHotWaterOnly::new(
             power_max,
@@ -9096,8 +9106,8 @@ mod tests {
             heat_exchanger_surface_area_declared,
             daily_losses_declared,
             1.,
-            ctrl.clone(),
-            ctrl,
+            control_min,
+            control_max,
         );
 
         assert_relative_eq!(
