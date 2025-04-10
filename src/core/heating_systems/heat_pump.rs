@@ -1388,6 +1388,7 @@ impl HeatPumpServiceWater {
         temp_return: f64,
         simulation_time_iteration: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, Option<BufferTankEmittersDataWithResult>)> {
+        // In the Python, temp_return has been updated to optional in 0.34 but update may be erroneous so leaving as non-optional for now
         let temp_return_k = celsius_to_kelvin(temp_return)?;
         if !self.is_on(simulation_time_iteration) {
             return Ok((0.0, None));
