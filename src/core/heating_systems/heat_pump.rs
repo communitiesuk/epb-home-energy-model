@@ -3819,7 +3819,7 @@ impl HeatPump {
         let (energy_standby, energy_crankcase_heater_mode, energy_off_mode) =
             self.calc_auxiliary_energy(timestep, time_remaining_current_timestep, timestep_idx);
 
-        if matches!(self.source_type, HeatPumpSourceType::HeatNetwork) {
+        if self.energy_supply_heat_source.is_some() {
             self.extract_energy_from_source(timestep_idx);
         }
 
