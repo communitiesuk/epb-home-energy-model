@@ -3712,7 +3712,10 @@ impl HeatPump {
                     0.
                 };
 
-                let energy_input_hp = if !use_backup_heater_only && hp_operating_in_onoff_mode {
+                let energy_input_hp = if self
+                    .compressor_is_running(service_on, use_backup_heater_only)
+                    && hp_operating_in_onoff_mode
+                {
                     energy_ancillary_when_off
                         / energy_input_hp_divisor
                             .expect("expected energy_input_hp_divisor to be set in a test record")
