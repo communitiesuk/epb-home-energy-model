@@ -5181,7 +5181,7 @@ fn space_heat_systems_from_input(
                         let zone_setpoint_init = zone.setpnt_init();
                         let control = control
                             .as_ref()
-                            .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control object was expected for a heat pump system"))?;
+                            .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
                         let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
                         SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, esh_min_output.clone(), esh_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
                     }
@@ -5197,7 +5197,7 @@ fn space_heat_systems_from_input(
 
                         let control = control
                             .as_ref()
-                            .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump system");
+                            .and_then(|ctrl| controls.get_with_string(ctrl)).ok_or_else(|| anyhow!("A control object was expected for wet heat source: '{heat_source_name}'"))?;
 
                         let heat_source_service: SpaceHeatingService =
                             match heat_source {
@@ -5242,7 +5242,8 @@ fn space_heat_systems_from_input(
                         let energy_supply_fc_conn  = if energy_supply.is_none() {
                             None
                         } else {
-                            let energy_supply = energy_supplies.get(&energy_supply.clone().unwrap()).ok_or_else(|| anyhow!(""))?.clone();
+                            let energy_supply_name = energy_supply.clone().unwrap();
+                            let energy_supply = energy_supplies.get(&energy_supply_name).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply_name}'."))?.clone();
                             let energy_supply_fc_conn_name = format!("FC_fan {system_name}");
                             energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_fc_conn_name.clone());
                             Some(Arc::new(EnergySupply::connection(energy_supply, energy_supply_fc_conn_name.as_str()).unwrap()))
