@@ -5026,16 +5026,44 @@ mod tests {
     }
 
     #[fixture]
+    fn energy_supply_for_smart_hot_water_tank_immersion(
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) -> Arc<RwLock<EnergySupply>> {
+        Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+            .build(),
+        ))
+    }
+
+    #[fixture]
+    fn energy_supply_for_smart_hot_water_tank_pump(
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+    ) -> Arc<RwLock<EnergySupply>> {
+        Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+            .build(),
+        ))
+    }
+
+    #[fixture]
     fn external_conditions_for_smart_hot_water_tank(
         external_conditions_for_pv_diverter: Arc<ExternalConditions>,
     ) -> Arc<ExternalConditions> {
         external_conditions_for_pv_diverter // external_conditions_for_pv_diverter has the same data & set up as what we need for smart hot water tank
     }
-    #[fixture]
-    fn smart_hot_water_tank(
+
+    fn create_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
+        energy_supply_for_smart_hot_water_tank_immersion: Arc<RwLock<EnergySupply>>,
+        energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
     ) -> SmartHotWaterTank {
         let volume = 300.;
         let losses = 1.68;
@@ -5069,10 +5097,11 @@ mod tests {
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps, 0, 1.),
         ));
-        let energy_supply: Arc<RwLock<EnergySupply>> = Arc::from(RwLock::from(
-            EnergySupplyBuilder::new(FuelType::Electricity, 1).build(),
-        ));
-        let energy_supply_connection = EnergySupply::connection(energy_supply.clone(), "imheater".into()).unwrap();
+        let energy_supply_connection = EnergySupply::connection(
+            energy_supply_for_smart_hot_water_tank_immersion.clone(),
+            "imheater".into(),
+        )
+        .unwrap();
         let control_min = Control::SetpointTime(
             SetpointTimeControl::new(
                 vec![
@@ -5135,7 +5164,12 @@ mod tests {
                 thermostat_position: None,
             },
         )]);
-        let energy_supply_conn_pump = EnergySupply::connection(energy_supply.clone(), "pump".into()).unwrap(); // N.B. this is a MagicMock in Python
+
+        let energy_supply_conn_pump = EnergySupply::connection(
+            energy_supply_for_smart_hot_water_tank_pump.clone(),
+            "pump".into(),
+        )
+        .unwrap(); // N.B. this is a MagicMock in Python
 
         SmartHotWaterTank::new(
             volume,
@@ -5160,6 +5194,24 @@ mod tests {
             None,
         )
     }
+
+    #[fixture]
+    fn smart_hot_water_tank(
+        simulation_time_for_smart_hot_water_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
+        energy_supply_for_smart_hot_water_tank_immersion: Arc<RwLock<EnergySupply>>,
+        energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
+    ) -> SmartHotWaterTank {
+        create_smart_hot_water_tank(
+            simulation_time_for_smart_hot_water_tank,
+            temp_internal_air_fn,
+            external_conditions_for_smart_hot_water_tank,
+            energy_supply_for_smart_hot_water_tank_immersion,
+            energy_supply_for_smart_hot_water_tank_pump,
+        )
+    }
+
     const TWO_DECIMAL_PLACES: f64 = 1e-3;
     const FIVE_DECIMAL_PLACES: f64 = 1e-6;
 
@@ -5253,12 +5305,36 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[rstest]
+    #[ignore = "not yet implemented"]
     fn test_demand_hot_water_for_smart_hot_water_tank(
-        smart_hot_water_tank: SmartHotWaterTank,
         simulation_time_for_smart_hot_water_tank: SimulationTime,
+        temp_internal_air_fn: TempInternalAirFn,
+        external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
     ) {
+        let energy_supply_for_smart_hot_water_tank_immersion = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+            .build(),
+        ));
+        let energy_supply_for_smart_hot_water_tank_pump = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+            .build(),
+        ));
+
+        let smart_hot_water_tank = create_smart_hot_water_tank(
+            simulation_time_for_smart_hot_water_tank,
+            temp_internal_air_fn,
+            external_conditions_for_smart_hot_water_tank,
+            energy_supply_for_smart_hot_water_tank_immersion.clone(),
+            energy_supply_for_smart_hot_water_tank_pump.clone(),
+        );
+
         let usage_events: &[Option<Vec<TypedScheduleEvent>>] = &[
             Some(vec![
                 TypedScheduleEvent {
@@ -5379,19 +5455,34 @@ mod tests {
             ],
         ];
 
+        let expected_results_by_end_user =
+            vec![2.2100280434, 0.0, 0.0, 0.0, 2.0949861665, 0.0, 0.0, 0.0];
+
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
             let _ = smart_hot_water_tank
                 .demand_hot_water(usage_events[t_idx].clone(), t_it)
                 .unwrap();
+
             let temp_n = smart_hot_water_tank.storage_tank.temp_n.read();
             for (i, expected_temp) in expected_temperatures_1[t_idx].iter().enumerate() {
-                assert_eq!(
-                    temp_n[i],
-                    *expected_temp, "\n\nExpected tem_n[{i}] to be {} at timestep {}, but got {:?}\ntemp_n is: {:?}", expected_temp, t_idx, temp_n[i], temp_n);
+                // note - high max_relative here. We expect differences due to Emitters
+                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = 0.03);
+                // 3% rel tolerance
             }
+
+            let results_by_end_user = energy_supply_for_smart_hot_water_tank_immersion
+                .read()
+                .results_by_end_user();
+            let actual_results_by_end_user = results_by_end_user.get("imheater").unwrap();
+            assert_relative_eq!(
+                actual_results_by_end_user[t_idx],
+                expected_results_by_end_user[t_idx],
+                max_relative = 0.05
+            ); // 5% rel tolerance
         }
         todo!();
     }
+
     #[rstest]
     fn test_calc_temps_after_extraction(
         smart_hot_water_tank: SmartHotWaterTank,
