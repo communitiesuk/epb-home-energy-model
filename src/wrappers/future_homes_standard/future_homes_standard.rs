@@ -920,7 +920,7 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                     if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
                         control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
-                    input.add_control(space_heat_system, rest_of_dwelling_control)?;
+                    input.add_control(ctrlname, rest_of_dwelling_control)?;
                 }
             }
             (None, _) => bail!("FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"),
