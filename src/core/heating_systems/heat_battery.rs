@@ -205,9 +205,11 @@ impl HeatBatteryServiceWaterRegular {
     }
 
     fn is_on(&self, simulation_time_iteration: SimulationTimeIteration) -> anyhow::Result<bool> {
-        Ok(
-            per_control!(&**self.control.as_ref().ok_or_else(|| anyhow!("control expected on heat battery service water regular"))?, ctrl => { ctrl.is_on(&simulation_time_iteration) }),
-        )
+        if let Some(control) = &self.control {
+            Ok(control.is_on(simulation_time_iteration))
+        } else {
+            Ok(true)
+        }
     }
 }
 
