@@ -6,7 +6,7 @@ use std::io::Read;
 /// This module contains data on the energy tariffs.
 
 #[derive(Clone, Debug)]
-pub(super) struct TariffData {
+pub(crate) struct TariffData {
     elec_prices: Vec<TariffRow>,
 }
 
@@ -34,7 +34,7 @@ impl TariffRow {
 }
 
 impl TariffData {
-    pub(super) fn new(csv: impl Read) -> anyhow::Result<Self> {
+    pub(crate) fn new(csv: impl Read) -> anyhow::Result<Self> {
         // we're making the assumption here that the timestep column will always start with zero and
         // increment by one on each row, so we can just infer the indexes for the row records
         Ok(Self {
@@ -44,7 +44,7 @@ impl TariffData {
         })
     }
 
-    pub(super) fn price(
+    pub(crate) fn price(
         &self,
         tariff: &EnergySupplyTariff,
         timestep_id: usize,
@@ -59,26 +59,5 @@ impl TariffData {
                 anyhow!("There were no tariff electricity prices for the timestep ID {timestep_id}")
             })?
             .get(tariff))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rstest::*;
-    use std::io::{BufReader, Cursor};
-
-    #[rstest]
-    fn test_parse_fixture_file() {
-        let data = BufReader::new(Cursor::new(include_str!(
-            "../../../examples/tariff_data/tariff_data_25-06-2024.csv"
-        )));
-        let tariff_data = TariffData::new(data).unwrap();
-        assert_eq!(
-            tariff_data
-                .price(&EnergySupplyTariff::VariableTimeOfDay, 10644)
-                .unwrap(),
-            22.92342657
-        );
     }
 }

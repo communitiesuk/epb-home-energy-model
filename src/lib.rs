@@ -17,6 +17,9 @@ mod simulation_time;
 mod statistics;
 mod wrappers;
 
+#[cfg(test)]
+mod tests;
+
 #[macro_use]
 extern crate is_close;
 
