@@ -812,6 +812,7 @@ fn edit_default_space_heating_distribution_system(
     let setpoint_for_sizing = max_of_2(LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS);
 
     let design_flow_temp = 45.;
+    let design_flow_rate = 12.; // TODO (from Python) what value should this be?
     let n: f64 = 1.34;
     let c_per_rad = 1.89 / (50_f64).powf(n);
     let power_output_per_rad = c_per_rad * (design_flow_temp - setpoint_for_sizing).powf(n);
@@ -843,14 +844,17 @@ fn edit_default_space_heating_distribution_system(
         let number_of_rads = (emitter_cap / power_output_per_rad).ceil();
 
         // Calculate c and thermal mass
-        // TODO 0.32 following was not needed - redo this method properly
-        let _c = number_of_rads * c_per_rad;
+        let c = number_of_rads * c_per_rad;
         let thermal_mass = number_of_rads * thermal_mass_per_rad;
 
         let space_heat_system_value = json!({
             "type": "WetDistribution",
             "advanced_start": 1,
             "thermal_mass": thermal_mass,
+            "emitters": [{"wet_emitter_type": "radiator",
+                          "frac_convective": 0.7,
+                          "c": c,
+                          "n": n}],
             "temp_diff_emit_dsgn": 5,
             "HeatSource": {
                 "name": heatsourcewet_name,
@@ -864,6 +868,7 @@ fn edit_default_space_heating_distribution_system(
                     },
             "Control": HEATING_PATTERN,
             "design_flow_temp": design_flow_temp as i32,
+            "design_flow_rate": design_flow_rate,
             "Zone": zone_name,
             "temp_setback" : 18
         });
@@ -1416,8 +1421,10 @@ fn add_solar_pv(
                 "EnergySupply": "mains elec",
                 "orientation360": 180.,
                 "peak_power": peak_kw,
-                "inverter_peak_power": peak_kw,
+                "inverter_peak_power_ac": peak_kw,
+                "inverter_peak_power_dc": peak_kw,
                 "inverter_is_inside": false,
+                "inverter_type": "optimised_inverter",
                 "pitch": 45.,
                 "type": "PhotovoltaicSystem",
                 "ventilation_strategy": "moderately_ventilated",
@@ -2628,8 +2635,10 @@ mod tests {
                 "EnergySupply": "mains elec",
                 "orientation360": 180,
                 "peak_power": 4.444444444444445,
-                "inverter_peak_power": 4.444444444444445,
+                "inverter_peak_power_ac": 4.444444444444445,
+                "inverter_peak_power_dc": 4.444444444444445,
                 "inverter_is_inside": false,
+                "inverter_type": "optimised_inverter",
                 "pitch": 45,
                 "type": "PhotovoltaicSystem",
                 "ventilation_strategy": "moderately_ventilated",
@@ -2819,6 +2828,7 @@ mod tests {
                     "Zone": "zone 1",
                     "advanced_start": 1,
                     "design_flow_temp": 45,
+                    "design_flow_rate": 12,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
@@ -2827,6 +2837,10 @@ mod tests {
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,
+                    "emitters": [{"wet_emitter_type": "radiator",
+                          "frac_convective": 0.7,
+                          "c": 0,
+                          "n": 1.34}],
                     "type": "WetDistribution"
                 },
                 "zone 2_SpaceHeatSystem_Notional":
@@ -2836,6 +2850,7 @@ mod tests {
                     "Zone": "zone 2",
                     "advanced_start": 1,
                     "design_flow_temp": 45,
+                    "design_flow_rate": 12,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
@@ -2844,6 +2859,10 @@ mod tests {
                     "temp_diff_emit_dsgn": 5,
                     "temp_setback": 18,
                     "thermal_mass": 0.0,
+                    "emitters": [{"wet_emitter_type": "radiator",
+                          "frac_convective": 0.7,
+                          "c": 0,
+                          "n": 1.34}],
                     "type": "WetDistribution"
                 }
             }
