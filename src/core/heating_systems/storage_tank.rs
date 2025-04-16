@@ -3778,7 +3778,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "to get working again after migration"]
     fn test_demand_hot_water(
         simulation_time_for_storage_tank: SimulationTime,
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
@@ -4319,7 +4318,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "to get working again after migration"]
     fn test_extract_hot_water(
         storage_tank1: (StorageTank, Arc<RwLock<EnergySupply>>),
         simulation_time_for_storage_tank: SimulationTime,
@@ -4778,7 +4776,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "to get working again after migration"]
     // in Python this test is called test_demand_hot_water and is from test_storage_tank_with_solar_thermal.py
     fn test_demand_hot_water_for_storage_tank_with_solar_thermal(
         storage_tank_with_solar_thermal: (
