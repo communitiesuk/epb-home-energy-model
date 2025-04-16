@@ -5060,10 +5060,11 @@ mod tests {
         external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
         energy_supply_for_smart_hot_water_tank_immersion: Arc<RwLock<EnergySupply>>,
         energy_supply_for_smart_hot_water_tank_pump: Arc<RwLock<EnergySupply>>,
+        heat_source_name: &str,
+        volume: f64,
+        losses: f64,
+        init_temp: f64,
     ) -> SmartHotWaterTank {
-        let volume = 300.;
-        let losses = 1.68;
-        let init_temp = 50.;
         let power_pump_kw = 5.;
         let max_flow_rate_pump_l_per_min = 1000.;
         let temp_usable = 40.;
@@ -5095,7 +5096,7 @@ mod tests {
         ));
         let energy_supply_connection = EnergySupply::connection(
             energy_supply_for_smart_hot_water_tank_immersion.clone(),
-            "imheater".into(),
+            heat_source_name,
         )
         .unwrap();
         let control_min = Control::SetpointTime(
@@ -5153,7 +5154,7 @@ mod tests {
             Mutex::new(immersion_heater),
         )));
         let heat_sources = IndexMap::from([(
-            "imheater".into(),
+            heat_source_name.to_string(),
             PositionedHeatSource {
                 heat_source: Arc::new(Mutex::new(heat_source)),
                 heater_position: 0.6,
@@ -5205,6 +5206,10 @@ mod tests {
             external_conditions_for_smart_hot_water_tank,
             energy_supply_for_smart_hot_water_tank_immersion,
             energy_supply_for_smart_hot_water_tank_pump,
+            "imheater".into(),
+            300.0,
+            1.68,
+            50.,
         )
     }
 
@@ -5302,20 +5307,34 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "not yet implemented"]
     fn test_demand_hot_water_for_smart_hot_water_tank(
         simulation_time_for_smart_hot_water_tank: SimulationTime,
         temp_internal_air_fn: TempInternalAirFn,
         external_conditions_for_smart_hot_water_tank: Arc<ExternalConditions>,
     ) {
-        let energy_supply_for_smart_hot_water_tank_immersion = Arc::from(RwLock::from(
+        let energy_supply_for_smart_hot_water_tank_immersion_1 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
                 simulation_time_for_smart_hot_water_tank.total_steps(),
             )
             .build(),
         ));
-        let energy_supply_for_smart_hot_water_tank_pump = Arc::from(RwLock::from(
+        let energy_supply_for_smart_hot_water_tank_pump_1 = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+            .build(),
+        ));
+
+        let energy_supply_for_smart_hot_water_tank_immersion_2 = Arc::from(RwLock::from(
+            EnergySupplyBuilder::new(
+                FuelType::Electricity,
+                simulation_time_for_smart_hot_water_tank.total_steps(),
+            )
+                .build(),
+        ));
+        let energy_supply_for_smart_hot_water_tank_pump_2 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
                 FuelType::Electricity,
                 simulation_time_for_smart_hot_water_tank.total_steps(),
@@ -5325,12 +5344,29 @@ mod tests {
 
         let smart_hot_water_tank = create_smart_hot_water_tank(
             simulation_time_for_smart_hot_water_tank,
-            temp_internal_air_fn,
-            external_conditions_for_smart_hot_water_tank,
-            energy_supply_for_smart_hot_water_tank_immersion.clone(),
-            energy_supply_for_smart_hot_water_tank_pump.clone(),
+            temp_internal_air_fn.clone(),
+            external_conditions_for_smart_hot_water_tank.clone(),
+            energy_supply_for_smart_hot_water_tank_immersion_1.clone(),
+            energy_supply_for_smart_hot_water_tank_pump_1.clone(),
+            "imheater".into(),
+            300.,
+            1.68,
+            50.,
         );
 
+        let smart_hot_water_tank_2 = create_smart_hot_water_tank(
+            simulation_time_for_smart_hot_water_tank,
+            temp_internal_air_fn,
+            external_conditions_for_smart_hot_water_tank,
+            energy_supply_for_smart_hot_water_tank_immersion_2.clone(),
+            energy_supply_for_smart_hot_water_tank_pump_2.clone(),
+            "immersion2".into(),
+            210.,
+            1.61,
+            60.,
+        );
+
+        // In Python the usage_events are stored under test_data_pairs, but the first values in the pairs are not used
         let usage_events: &[Option<Vec<TypedScheduleEvent>>] = &[
             Some(vec![
                 TypedScheduleEvent {
@@ -5451,8 +5487,52 @@ mod tests {
             ],
         ];
 
-        let expected_results_by_end_user =
+        let expected_temperatures_2 = [
+            vec![
+                10.0,
+                24.55880864197531,
+                50.03864197530864,
+                59.08864197530864,
+            ],
+            vec![
+                10.06,
+                16.158864197530864,
+                35.20270987654321,
+                53.69962962962963,
+            ],
+            vec![
+                10.06,
+                16.157736457857034,
+                35.103327160493826,
+                53.60024691358024,
+            ],
+            vec![10.38, 11.7, 21.211604938271602, 40.031604938271606],
+            vec![
+                11.525423857571475,
+                48.64021695897895,
+                48.64021695897895,
+                48.64021695897895,
+            ],
+            vec![50.0, 50.0, 50.0, 50.0],
+            vec![
+                49.75864197530864,
+                49.75864197530864,
+                49.75864197530864,
+                49.75864197530864,
+            ],
+            vec![
+                49.518997294619716,
+                49.518997294619716,
+                49.518997294619716,
+                49.518997294619716,
+            ],
+        ];
+
+        let expected_results_by_end_user_1 =
             vec![2.2100280434, 0.0, 0.0, 0.0, 2.0949861665, 0.0, 0.0, 0.0];
+
+        let expected_results_by_end_user_2 =
+            vec![0.0, 0.0, 0.0, 0.0, 4.5048003443, 0.1954190576, 0.0, 0.0];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
             let _ = smart_hot_water_tank
@@ -5466,17 +5546,37 @@ mod tests {
                 // 3% rel tolerance
             }
 
-            let results_by_end_user = energy_supply_for_smart_hot_water_tank_immersion
+            let results_by_end_user = energy_supply_for_smart_hot_water_tank_immersion_1
                 .read()
                 .results_by_end_user();
-            let actual_results_by_end_user = results_by_end_user.get("imheater").unwrap();
+            let actual_results_by_end_user_1 = results_by_end_user.get("imheater").unwrap();
             assert_relative_eq!(
-                actual_results_by_end_user[t_idx],
-                expected_results_by_end_user[t_idx],
+                actual_results_by_end_user_1[t_idx],
+                expected_results_by_end_user_1[t_idx],
                 max_relative = 0.05
             ); // 5% rel tolerance
+
+            // smart_hot_water_tank_2 tests for case where heater does not heat all layers
+            let _ = smart_hot_water_tank_2
+                .demand_hot_water(usage_events[t_idx].clone(), t_it)
+                .unwrap();
+
+            let temp_n = smart_hot_water_tank_2.storage_tank.temp_n.read();
+            for (i, expected_temp) in expected_temperatures_2[t_idx].iter().enumerate() {
+                assert_relative_eq!(temp_n[i], *expected_temp, max_relative = 0.0019);
+                // 0.19% rel tolerance
+            }
+
+            let results_by_end_user_2 = energy_supply_for_smart_hot_water_tank_immersion_2
+                .read()
+                .results_by_end_user();
+            let actual_results_by_end_user_2 = results_by_end_user_2.get("immersion2").unwrap();
+            assert_relative_eq!(
+                actual_results_by_end_user_2[t_idx],
+                expected_results_by_end_user_2[t_idx],
+                max_relative = 0.007
+            ); // 0.7% rel tolerance
         }
-        todo!();
     }
 
     #[rstest]
