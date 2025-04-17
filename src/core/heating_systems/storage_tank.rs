@@ -1914,7 +1914,11 @@ impl SmartHotWaterTank {
                         HeatSource::Wet(heat_source_wet) => {
                             // TODO Use different temperatures for flow and return in the call to
                             // heat_source.energy_output_max below
-                            heat_source_wet.energy_output_max(Some(temp_flow), temp_flow, simulation_time)?
+                            heat_source_wet.energy_output_max(
+                                Some(temp_flow),
+                                temp_flow,
+                                simulation_time,
+                            )?
                         }
                     };
 
@@ -2111,8 +2115,7 @@ impl SmartHotWaterTank {
         } else {
             let (_, soc_max) = self.retrieve_setpnt(heat_source, simtime)?;
             soc_max
-        }
-        .ok_or_else(|| anyhow!("Could not resolve a soc_max figure in smart hot water tank."))?;
+        };
 
         let mut temp_layers = initial_temps.to_vec();
         let mut energy_available = q_x_in_n.to_vec();
@@ -2148,7 +2151,9 @@ impl SmartHotWaterTank {
             // Calculate state of charge for usable and max temperatures
             let soc_temp_usable = self.calc_state_of_charge(&temp_simulation_usable, simtime)?;
             let soc_temp_max = self.calc_state_of_charge(&temp_simulation_max, simtime)?;
-
+            let soc_max = soc_max.ok_or_else(|| {
+                anyhow!("Could not resolve a soc_max figure in smart hot water tank.")
+            })?;
             if soc_temp_usable >= soc_max {
                 q_in_h_w[i] += energy_req_usable;
                 break;
@@ -5333,7 +5338,7 @@ mod tests {
                 FuelType::Electricity,
                 simulation_time_for_smart_hot_water_tank.total_steps(),
             )
-                .build(),
+            .build(),
         ));
         let energy_supply_for_smart_hot_water_tank_pump_2 = Arc::from(RwLock::from(
             EnergySupplyBuilder::new(
