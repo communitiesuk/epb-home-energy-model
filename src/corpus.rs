@@ -4924,7 +4924,7 @@ fn hot_water_source_from_input(
                 daily_losses,
             )?;
 
-            if heat_sources
+            if !heat_sources
                 .values()
                 .map(|source| source.heater_position)
                 .all_equal()
