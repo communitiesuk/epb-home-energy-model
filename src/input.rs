@@ -986,18 +986,12 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *init_temp_store = init_temp;
             }
-            _ => {}
+            _=> unreachable!()
         }
     }
 
     fn set_setpoint_temp(&mut self, setpoint_temp: f64) {
         match self {
-            HotWaterSourceDetails::StorageTank {
-                setpoint_temp: ref mut source_setpoint_temp,
-                ..
-            } => {
-                *source_setpoint_temp = Some(setpoint_temp);
-            }
             HotWaterSourceDetails::CombiBoiler {
                 setpoint_temp: ref mut source_setpoint_temp,
                 ..
@@ -1016,8 +1010,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *source_setpoint_temp = Some(setpoint_temp);
             }
-            HotWaterSourceDetails::SmartHotWaterTank { .. } => todo!(),
-            HotWaterSourceDetails::HeatBattery { .. } => todo!(),
+            _=> unreachable!()
         }
     }
 
