@@ -1067,7 +1067,16 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
         &mut self,
         temp_setpoint_max_name: &str,
     ) -> anyhow::Result<()> {
-        todo!()
+        if let Self::SmartHotWaterTank {
+            ref mut heat_source,
+            ..
+        } = self
+        {
+            for heat_source in heat_source.values_mut() {
+                heat_source.set_temp_setpnt_max(temp_setpoint_max_name)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1301,6 +1310,24 @@ impl HeatSource {
             }
             HeatSource::HeatPumpHotWaterOnly { control_max, .. } => {
                 *control_max = control_max_name.into();
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_temp_setpnt_max(&mut self, temp_setpnt_max_name: &str) -> anyhow::Result<()> {
+        match self {
+            HeatSource::ImmersionHeater { temp_setpnt_max, .. } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::SolarThermalSystem { temp_setpnt_max, .. } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::Wet { temp_setpnt_max, .. } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
+            }
+            HeatSource::HeatPumpHotWaterOnly { temp_setpnt_max, .. } => {
+                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
         }
         Ok(())
