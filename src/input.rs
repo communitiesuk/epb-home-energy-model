@@ -986,7 +986,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *init_temp_store = init_temp;
             }
-            _=> unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -1010,7 +1010,7 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
             } => {
                 *source_setpoint_temp = Some(setpoint_temp);
             }
-            _=> unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -1310,16 +1310,24 @@ impl HeatSource {
 
     pub(crate) fn set_temp_setpnt_max(&mut self, temp_setpnt_max_name: &str) -> anyhow::Result<()> {
         match self {
-            HeatSource::ImmersionHeater { temp_setpnt_max, .. } => {
+            HeatSource::ImmersionHeater {
+                temp_setpnt_max, ..
+            } => {
                 *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
-            HeatSource::SolarThermalSystem { temp_setpnt_max, .. } => {
+            HeatSource::SolarThermalSystem {
+                temp_setpnt_max, ..
+            } => {
                 *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
-            HeatSource::Wet { temp_setpnt_max, .. } => {
+            HeatSource::Wet {
+                temp_setpnt_max, ..
+            } => {
                 *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
-            HeatSource::HeatPumpHotWaterOnly { temp_setpnt_max, .. } => {
+            HeatSource::HeatPumpHotWaterOnly {
+                temp_setpnt_max, ..
+            } => {
                 *temp_setpnt_max = Some(temp_setpnt_max_name.into());
             }
         }

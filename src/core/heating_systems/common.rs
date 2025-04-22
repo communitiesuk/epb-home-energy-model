@@ -42,11 +42,24 @@ impl HeatSourceWet {
             HeatSourceWet::WaterCombi(combi) => Ok(combi.energy_output_max()),
             HeatSourceWet::WaterRegular(regular) => {
                 // passing default for _temp_flow and _temp_return as they are unused
-                Ok(regular.energy_output_max(Default::default(), Default::default(), None, simtime))
+                Ok(
+                    regular.energy_output_max(
+                        Default::default(),
+                        Default::default(),
+                        None,
+                        simtime,
+                    ),
+                )
             }
             HeatSourceWet::Space(space) => {
                 // passing default for _temp_output and _temp_return_feed as they are unused
-                Ok(space.energy_output_max(Default::default(), Default::default(), None, None, simtime))
+                Ok(space.energy_output_max(
+                    Default::default(),
+                    Default::default(),
+                    None,
+                    None,
+                    simtime,
+                ))
             }
             HeatSourceWet::HeatNetworkWaterStorage(storage) => {
                 // passing default for _temp_flow and _temp_return as they are unused
@@ -56,9 +69,10 @@ impl HeatSourceWet {
                 // passing default for _temp_return as it is unused
                 battery.energy_output_max(
                     temp_flow.expect(
-                        "HeatBatteryHotWater requires a temp_flow when calling energy_output_max"), 
-                    Default::default(), 
-                    simtime
+                        "HeatBatteryHotWater requires a temp_flow when calling energy_output_max",
+                    ),
+                    Default::default(),
+                    simtime,
                 )
             }
             HeatSourceWet::HeatPumpWater(hp_water) => hp_water
