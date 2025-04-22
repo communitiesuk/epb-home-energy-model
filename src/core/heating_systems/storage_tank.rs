@@ -1604,13 +1604,13 @@ impl SmartHotWaterTank {
 
         // N.B. extra checks specific to SmartHotWaterTank
         if let Some(setpntmin) = setpntmin {
-            if setpntmin < 0. || setpntmin > 1. {
+            if !(0. ..=1.).contains(&setpntmin) {
                 bail!(">= 0. and <= 1. required for setpoints");
             }
         }
 
         if let Some(setpntmax) = setpntmax {
-            if setpntmax < 0. || setpntmax > 1. {
+            if !(0. ..=1.).contains(&setpntmax) {
                 bail!(">= 0. and <= 1. required for setpoints");
             }
         }
@@ -5168,11 +5168,9 @@ mod tests {
             },
         )]);
 
-        let energy_supply_conn_pump = EnergySupply::connection(
-            energy_supply_for_smart_hot_water_tank_pump.clone(),
-            "pump".into(),
-        )
-        .unwrap(); // N.B. this is a MagicMock in Python
+        let energy_supply_conn_pump =
+            EnergySupply::connection(energy_supply_for_smart_hot_water_tank_pump.clone(), "pump")
+                .unwrap(); // N.B. this is a MagicMock in Python
 
         SmartHotWaterTank::new(
             volume,
@@ -5212,7 +5210,7 @@ mod tests {
             external_conditions_for_smart_hot_water_tank,
             energy_supply_for_smart_hot_water_tank_immersion,
             energy_supply_for_smart_hot_water_tank_pump,
-            "imheater".into(),
+            "imheater",
             300.0,
             1.68,
             50.,
@@ -5354,7 +5352,7 @@ mod tests {
             external_conditions_for_smart_hot_water_tank.clone(),
             energy_supply_for_smart_hot_water_tank_immersion_1.clone(),
             energy_supply_for_smart_hot_water_tank_pump_1.clone(),
-            "imheater".into(),
+            "imheater",
             300.,
             1.68,
             50.,
@@ -5366,7 +5364,7 @@ mod tests {
             external_conditions_for_smart_hot_water_tank,
             energy_supply_for_smart_hot_water_tank_immersion_2.clone(),
             energy_supply_for_smart_hot_water_tank_pump_2.clone(),
-            "immersion2".into(),
+            "immersion2",
             210.,
             1.61,
             60.,
@@ -5535,10 +5533,10 @@ mod tests {
         ];
 
         let expected_results_by_end_user_1 =
-            vec![2.2100280434, 0.0, 0.0, 0.0, 2.0949861665, 0.0, 0.0, 0.0];
+            [2.2100280434, 0.0, 0.0, 0.0, 2.0949861665, 0.0, 0.0, 0.0];
 
         let expected_results_by_end_user_2 =
-            vec![0.0, 0.0, 0.0, 0.0, 4.5048003443, 0.1954190576, 0.0, 0.0];
+            [0.0, 0.0, 0.0, 0.0, 4.5048003443, 0.1954190576, 0.0, 0.0];
 
         for (t_idx, t_it) in simulation_time_for_smart_hot_water_tank.iter().enumerate() {
             let _ = smart_hot_water_tank
