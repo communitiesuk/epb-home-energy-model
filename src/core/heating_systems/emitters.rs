@@ -1208,7 +1208,14 @@ impl Emitters {
             self.thermal_mass * (temp_emitter_prev - time_emitter_no_heat_input);
         let energy_demand_cooldown = energy_demand * time_cooldown / timestep;
 
-        energy_released_from_emitters - energy_demand_cooldown
+        let result = energy_released_from_emitters - energy_demand_cooldown;
+
+        // If within a "close enough" threshold, treat as 0 to avoid bracketing error when running locally
+        if result.abs() < 1e-15 {
+            return 0.;
+        }
+
+        result
     }
 
     /// Calculate emitter cooling time and emitter temperature at this time
