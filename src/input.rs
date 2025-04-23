@@ -2137,6 +2137,9 @@ pub(crate) enum BuildingElement {
     Transparent {
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        #[serde(rename = "area", skip_serializing_if = "Option::is_none")]
+        // area is sometimes present but not expected to be used
+        _area: Option<f64>,
         #[serde(
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
