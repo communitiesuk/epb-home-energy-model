@@ -2141,7 +2141,7 @@ pub(crate) enum BuildingElement {
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
         )]
-        window_openable_control: Option<String>, // unclear how this might be used
+        window_openable_control: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
         pitch: f64,
