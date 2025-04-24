@@ -3047,20 +3047,8 @@ fn energy_supplies_from_input(
     tariff_data_file: Option<&str>,
     external_conditions: Arc<ExternalConditions>,
 ) -> anyhow::Result<IndexMap<String, Arc<RwLock<EnergySupply>>>> {
-    let mut supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = input
-        .iter()
-        .map(|(name, supply)| {
-            anyhow::Ok((
-                name.to_owned(),
-                energy_supply_from_input(
-                    supply,
-                    simulation_time_iterator,
-                    tariff_data_file,
-                    external_conditions.clone(),
-                )?,
-            ))
-        })
-        .try_collect()?;
+    let mut supplies: IndexMap<String, Arc<RwLock<EnergySupply>>> = IndexMap::new();
+
     // set up supply representing unmet demand
     supplies.insert(
         UNMET_DEMAND_SUPPLY_NAME.to_string(),
@@ -3082,6 +3070,16 @@ fn energy_supplies_from_input(
             .build(),
         )),
     );
+    for (name, supply) in input {
+        let energy_supply = energy_supply_from_input(
+            supply,
+            simulation_time_iterator,
+            tariff_data_file,
+            external_conditions.clone(),
+        )?;
+        supplies.insert(name.to_owned(), energy_supply);
+    }
+
     Ok(supplies)
 }
 
