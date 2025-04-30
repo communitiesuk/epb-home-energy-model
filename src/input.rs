@@ -4937,14 +4937,9 @@ impl InputForProcessing {
         appliance_key: &ApplianceKey,
         new_load_shifting: ApplianceLoadShifting,
     ) {
-        // TODO: review with others
-        let appliance = self.appliance_with_key_mut(appliance_key);
-        if let Some(ApplianceEntry::Object(Appliance {
-            load_shifting: Some(ref mut load_shifting),
-            ..
-        })) = appliance
+        if let Some(ApplianceEntry::Object(appliance)) = self.appliance_with_key_mut(appliance_key)
         {
-            *load_shifting = new_load_shifting;
+            appliance.load_shifting = Some(new_load_shifting);
         }
     }
 
