@@ -1848,6 +1848,9 @@ fn create_appliance_gains(
     // loop through appliances in the assessment.
     let input_appliances = input.clone_appliances();
 
+    let mut kwhcycle: f64 = Default::default();
+    let mut loadingfactor;
+
     for (appliance_key, appliance) in input_appliances {
         // if it needs to be modelled per use
         let map_appliance = appliance_map
@@ -1857,7 +1860,7 @@ fn create_appliance_gains(
         if let Some(use_data) = map_appliance.use_data {
             // value on energy label is defined differently between appliance types
             // TODO (from Python) - translation of efficiencies should be its own function
-            let (kwhcycle, loadingfactor) =
+            (kwhcycle, loadingfactor) =
                 appliance_kwh_cycle_loading_factor(input, &appliance_key, &appliance_map)?;
 
             let app = FhsAppliance::new(
@@ -1959,7 +1962,7 @@ fn create_appliance_gains(
                 .collect();
             power_scheds.insert(appliance_key, flat_schedule.clone());
 
-            priority.insert(appliance_key, (None, 1.)); // Python passes in kwhcycle here instead of 1. but kwhcycle hasn't been assigned at this point, may be erroneous.
+            priority.insert(appliance_key, (None, kwhcycle));
 
             let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
@@ -2089,9 +2092,8 @@ fn create_appliance_gains(
 
     let priority_kwhcycle: Vec<ApplianceKey> = priority
         .clone()
-        .sorted_by(|_, (_, kwhcycle1), _, (_, kwhcycle2)| kwhcycle1.total_cmp(kwhcycle2))
+        .sorted_by(|_, (_, kwhcycle1), _, (_, kwhcycle2)| kwhcycle2.total_cmp(kwhcycle1))
         .filter(|(_, (priority, _))| priority.is_none())
-        .rev()
         .map(|x| x.0)
         .collect();
 
