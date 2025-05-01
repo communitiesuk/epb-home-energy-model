@@ -726,8 +726,8 @@ pub(crate) struct SmartApplianceControlDetails {
     #[serde(rename = "Appliances")]
     pub(crate) appliances: Vec<ApplianceKey>,
     #[serde(rename = "battery24hr")]
-    pub(crate) battery_24hr: SmartApplianceBattery,
-    pub(crate) non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+    pub(crate) battery_24hr: Option<SmartApplianceBattery>,
+    pub(crate) non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
     pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
     pub(crate) time_series_step: f64,
 }
@@ -3801,7 +3801,7 @@ impl InputForProcessing {
             .smart_appliance_controls
             .get_mut(smart_control_name)
         {
-            control.non_appliance_demand_24hr = non_appliance_demand_24hr_input;
+            control.non_appliance_demand_24hr = Some(non_appliance_demand_24hr_input);
         }
     }
 
@@ -3815,7 +3815,7 @@ impl InputForProcessing {
             .smart_appliance_controls
             .get_mut(smart_control_name)
         {
-            control.battery_24hr = battery24hr_input;
+            control.battery_24hr = Some(battery24hr_input);
         }
     }
 

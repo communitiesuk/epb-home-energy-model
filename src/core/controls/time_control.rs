@@ -719,7 +719,7 @@ impl SmartApplianceControl {
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
         non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
-        battery_24hr: Option<&SmartApplianceBattery>,
+        battery_24hr: Option<SmartApplianceBattery>,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         appliance_names: Vec<String>,
     ) -> anyhow::Result<Self> {

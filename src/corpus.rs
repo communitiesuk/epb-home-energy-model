@@ -815,8 +815,8 @@ impl Corpus {
                     &smart_appliance_data.power_timeseries,
                     smart_appliance_data.time_series_step,
                     &simulation_time_iterator,
-                    Some(smart_appliance_data.non_appliance_demand_24hr.clone()),
-                    Some(&smart_appliance_data.battery_24hr),
+                    smart_appliance_data.non_appliance_demand_24hr.clone(),
+                    smart_appliance_data.battery_24hr.clone(),
                     &energy_supplies,
                     smart_appliance_data.appliances.iter().map_into().collect(),
                 )?
