@@ -327,7 +327,7 @@ impl EventApplianceGains {
                     })?
                     .weight_timeseries;
 
-                if self.total_power_supply[t_idx].load(Ordering::SeqCst) >= event.duration {
+                if self.total_power_supply[t_idx].load(Ordering::SeqCst) >= event.demand_w {
                     // the appliance is already turned on for the entire timestep
                     // cannot put an event here
                     // put arbitrarily high demand at this position so it is not picked

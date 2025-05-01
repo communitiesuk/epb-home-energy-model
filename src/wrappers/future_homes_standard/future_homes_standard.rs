@@ -157,8 +157,7 @@ pub fn apply_fhs_preprocessing(
         .is_some()
     {
         // run project for 24 hours to obtain initial estimate for daily heating demand
-        let mut input_for_sim_24h = input.clone();
-        sim_24h(&mut input_for_sim_24h, sim_settings)?;
+        sim_24h(input, sim_settings)?;
     }
 
     Ok(())
