@@ -235,10 +235,7 @@ impl EventApplianceGains {
         let usage_event_count = self.usage_events.read().len();
         for _event_idx in 0..usage_event_count {
             let event = if self.usage_events.read()[0].start <= simtime.current_hour() as f64 {
-                self.usage_events
-                    .write()
-                    .pop()
-                    .expect("An event was expected to be available to be popped while processing appliance gains events.")
+                self.usage_events.write().remove(0)
             } else {
                 // no events to process yet
                 break;
