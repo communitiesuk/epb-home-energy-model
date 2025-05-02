@@ -2589,10 +2589,11 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
                 Err(_) => true,
             };
             if do_increment {
-                non_appliance_electricity_demand.insert(
-                    i,
-                    *non_appliance_electricity_demand.get(i).unwrap_or(&0.) + user[i],
-                );
+                if i >= non_appliance_electricity_demand.len() {
+                    non_appliance_electricity_demand.resize(i + 1, 0.0);
+                }
+
+                non_appliance_electricity_demand[i] += user[i];
             }
         }
     }
