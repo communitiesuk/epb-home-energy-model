@@ -21,7 +21,7 @@ csv = "1.3.1"
 derivative = "2.2.0"
 erased-serde = "0.4.6"
 field_types = "1.1.0"
-formatx = "0.2.3"
+formatx = "0.2.4"
 indexmap = { version = "2.9.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.9", optional = true }
 interp = "2.0.2"
