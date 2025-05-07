@@ -2450,7 +2450,15 @@ impl SmartHotWaterTank {
         let temp_diff_losses = *q_ls_n
             .iter()
             .last()
-            .expect("q_ls_n was not expected to be empty");
+            .expect("q_ls_n was not expected to be empty")
+            / (self.storage_tank.rho
+                * self.storage_tank.cp
+                * self
+                    .storage_tank
+                    .vol_n
+                    .iter()
+                    .last()
+                    .expect("vol_n was not expected to be empty"));
 
         // Top layer temperature
         let top_layer_temp = *temp_s7_n
