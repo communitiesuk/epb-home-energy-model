@@ -29,6 +29,7 @@ pub(crate) fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<
 pub(crate) struct ScheduleEvent {
     pub(crate) start: f64,
     pub(crate) duration: Option<f64>,
+    pub(crate) volume: Option<f64>,
     pub(crate) temperature: Option<f64>,
 }
 
@@ -70,6 +71,7 @@ impl TypedScheduleEvent {
         let ScheduleEvent {
             start,
             duration,
+            volume,
             temperature,
         } = event;
         Ok(Self {
@@ -79,7 +81,7 @@ impl TypedScheduleEvent {
                 .ok_or_else(|| anyhow!("Temperature was expected to be set on a water event."))?,
             name,
             event_type,
-            volume: None,
+            volume,
             warm_volume: None,
             pipework_volume: None,
         })
@@ -101,6 +103,7 @@ impl TryFrom<&Value> for ScheduleEvent {
                     .as_f64()
                     .ok_or_else(|| anyhow!("Start value in event was expected to be numeric"))?,
                 duration: event_map.get("duration").map(|d| d.as_f64().unwrap()),
+                volume: event_map.get("volume").map(|v| v.as_f64().unwrap()),
                 temperature: event_map.get("temperature").map(|t| t.as_f64().unwrap()),
             }),
             _ => bail!("Expected a JSON object when transforming into a schedule event"),
@@ -196,6 +199,7 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
             start: event.start,
             duration: event.duration,
             temperature: Some(event.temperature),
+            volume: event.volume,
         }
     }
 }
