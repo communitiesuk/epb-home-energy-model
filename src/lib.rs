@@ -43,7 +43,8 @@ use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 #[cfg(feature = "fhs")]
 use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-use crate::wrappers::{ChosenWrapper, HemResponse, HemWrapper, PassthroughHemWrapper};
+use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
+pub use crate::wrappers::HemResponse;
 use anyhow::anyhow;
 use bitflags::bitflags;
 use chrono::prelude::*;
