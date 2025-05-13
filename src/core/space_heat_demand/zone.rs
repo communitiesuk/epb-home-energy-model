@@ -367,10 +367,10 @@ impl Zone {
 
             // Coeff for temperature of this node
             matrix_a[(idx, idx)] =
-                (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i);
+                (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i, simtime);
 
             // Coeff for temperature of next node
-            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
+            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime);
             // RHS of heat balance eqn for this node
             let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
             let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime).unwrap();
@@ -384,13 +384,13 @@ impl Zone {
                 i += 1;
                 idx += 1;
                 // Coeff for temperature of prev node
-                matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
+                matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime);
                 // Coeff for temperature of this node
                 matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
-                    + eli.h_pli_by_index_unchecked(i)
-                    + eli.h_pli_by_index_unchecked(i - 1);
+                    + eli.h_pli_by_index_unchecked(i, simtime)
+                    + eli.h_pli_by_index_unchecked(i - 1, simtime);
                 // Coeff for temperature of next node
-                matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i);
+                matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime);
                 // RHS of heat balance eqn for this node
                 vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx];
             }
@@ -405,12 +405,12 @@ impl Zone {
             // zone and internal surface
             let h_ci = eli.h_ci(temp_prev[self.zone_idx], temp_prev[idx]);
             // Coeff for temperature of prev node
-            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1);
+            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime);
             // Coeff for temperature of this node
             matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
                 + h_ci
                 + h_ri * sum_area_frac
-                + eli.h_pli_by_index_unchecked(i - 1);
+                + eli.h_pli_by_index_unchecked(i - 1, simtime);
             // Add final sum term for LHS of eqn 39 in loop below.
             // These are coeffs for temperatures of internal surface nodes of
             // all building elements in the zone

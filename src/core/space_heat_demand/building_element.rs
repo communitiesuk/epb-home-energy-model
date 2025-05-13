@@ -228,13 +228,16 @@ impl BuildingElement {
             BuildingElement::Transparent(el) => el.therm_rad_to_sky(),
         }
     }
-
-    fn h_pli(&self) -> &[f64] {
-        self.as_heat_transfer_through().h_pli()
-    }
-
-    pub(crate) fn h_pli_by_index_unchecked(&self, idx: usize) -> f64 {
-        self.h_pli()[idx]
+    
+    pub(crate) fn h_pli_by_index_unchecked(&self, idx: usize, simulation_time_iteration: SimulationTimeIteration) -> f64 {
+        // todo: have this return a Result
+        match self {
+            BuildingElement::Opaque(_) => self.as_heat_transfer_through().h_pli()[idx],
+            BuildingElement::AdjacentConditionedSpace(_) => self.as_heat_transfer_through().h_pli()[idx],
+            BuildingElement::AdjacentUnconditionedSpaceSimple(_) => self.as_heat_transfer_through().h_pli()[idx],
+            BuildingElement::Ground(_) => self.as_heat_transfer_through().h_pli()[idx],
+            BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration).expect("Could not get h_pli value in transparent building element for index {idx}"),
+        }
     }
 
     pub(crate) fn i_sol_dir_dif(&self, simtime: SimulationTimeIteration) -> (f64, f64) {
