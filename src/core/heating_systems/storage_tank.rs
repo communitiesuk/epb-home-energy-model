@@ -2777,6 +2777,7 @@ pub struct SolarThermalSystem {
     cp: f64,
     air_temp_coll_loop: AtomicF64,
     inlet_temp: AtomicF64,
+    energy_supply_from_environment_conn: Option<EnergySupplyConnection>,
 }
 
 impl SolarThermalSystem {
@@ -2856,6 +2857,7 @@ impl SolarThermalSystem {
             cp: contents.specific_heat_capacity(),
             air_temp_coll_loop: Default::default(),
             inlet_temp: Default::default(),
+            energy_supply_from_environment_conn,
         }
     }
 
@@ -2996,6 +2998,15 @@ impl SolarThermalSystem {
         self.energy_supply_connection
             .demand_energy(auxiliary_energy_consumption, timestep_idx)
             .unwrap();
+
+        match &self.energy_supply_from_environment_conn {
+            Some(supply) => {
+                supply
+                    .demand_energy(self.energy_supplied.load(Ordering::SeqCst), timestep_idx)
+                    .unwrap();
+            }
+            None => {}
+        }
 
         self.energy_supplied.load(Ordering::SeqCst)
     }
