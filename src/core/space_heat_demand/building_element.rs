@@ -228,15 +228,18 @@ impl BuildingElement {
             BuildingElement::Transparent(el) => el.therm_rad_to_sky(),
         }
     }
-    
-    pub(crate) fn h_pli_by_index_unchecked(&self, idx: usize, simulation_time_iteration: SimulationTimeIteration) -> f64 {
-        // todo: have this return a Result
+
+    pub(crate) fn h_pli_by_index_unchecked(
+        &self,
+        idx: usize,
+        simulation_time_iteration: SimulationTimeIteration,
+    ) -> anyhow::Result<f64> {
         match self {
-            BuildingElement::Opaque(_) => self.as_heat_transfer_through().h_pli()[idx],
-            BuildingElement::AdjacentConditionedSpace(_) => self.as_heat_transfer_through().h_pli()[idx],
-            BuildingElement::AdjacentUnconditionedSpaceSimple(_) => self.as_heat_transfer_through().h_pli()[idx],
-            BuildingElement::Ground(_) => self.as_heat_transfer_through().h_pli()[idx],
-            BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration).expect("Could not get h_pli value in transparent building element for index {idx}"),
+            BuildingElement::Opaque(el) => Ok(el.h_pli()[idx]),
+            BuildingElement::AdjacentConditionedSpace(el) => Ok(el.h_pli()[idx]),
+            BuildingElement::AdjacentUnconditionedSpaceSimple(el) => Ok(el.h_pli()[idx]),
+            BuildingElement::Ground(el) => Ok(el.h_pli()[idx]),
+            BuildingElement::Transparent(el) => el.h_pli_by_index(idx, simulation_time_iteration),
         }
     }
 
@@ -440,10 +443,6 @@ pub(crate) trait HeatTransferThrough {
     }
 
     fn h_pli(&self) -> &[f64];
-
-    fn _h_pli_by_idx(&self, idx: usize) -> Option<f64> {
-        self.h_pli().get(idx).copied()
-    }
 }
 
 pub(crate) trait HeatTransferThrough2Nodes: HeatTransferThrough {

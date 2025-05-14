@@ -233,7 +233,7 @@ impl Zone {
                 temp_ext_air_init,
                 simtime,
                 self.print_heat_balance,
-            );
+            )?;
 
             if !isclose(
                 &temps_updated,
@@ -324,7 +324,7 @@ impl Zone {
         avg_supply_temp: f64,
         simtime: SimulationTimeIteration,
         print_heat_balance: bool,
-    ) -> (Vec<f64>, Option<HeatBalance>) {
+    ) -> anyhow::Result<(Vec<f64>, Option<HeatBalance>)> {
         let h_ve = self.calc_vent_heat_transfer_coeff(ach);
 
         // Init matrix with zeroes
@@ -367,10 +367,10 @@ impl Zone {
 
             // Coeff for temperature of this node
             matrix_a[(idx, idx)] =
-                (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i, simtime);
+                (k_pli[i] / delta_t) + h_ce + h_re + eli.h_pli_by_index_unchecked(i, simtime)?;
 
             // Coeff for temperature of next node
-            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime);
+            matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime)?;
             // RHS of heat balance eqn for this node
             let (i_sol_dir, i_sol_dif) = eli.i_sol_dir_dif(simtime);
             let (f_sh_dir, f_sh_dif) = eli.shading_factors_direct_diffuse(simtime).unwrap();
@@ -384,13 +384,13 @@ impl Zone {
                 i += 1;
                 idx += 1;
                 // Coeff for temperature of prev node
-                matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime);
+                matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime)?;
                 // Coeff for temperature of this node
                 matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
-                    + eli.h_pli_by_index_unchecked(i, simtime)
-                    + eli.h_pli_by_index_unchecked(i - 1, simtime);
+                    + eli.h_pli_by_index_unchecked(i, simtime)?
+                    + eli.h_pli_by_index_unchecked(i - 1, simtime)?;
                 // Coeff for temperature of next node
-                matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime);
+                matrix_a[(idx, idx + 1)] = -eli.h_pli_by_index_unchecked(i, simtime)?;
                 // RHS of heat balance eqn for this node
                 vector_b[idx] = (k_pli[i] / delta_t) * temp_prev[idx];
             }
@@ -405,12 +405,12 @@ impl Zone {
             // zone and internal surface
             let h_ci = eli.h_ci(temp_prev[self.zone_idx], temp_prev[idx]);
             // Coeff for temperature of prev node
-            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime);
+            matrix_a[(idx, idx - 1)] = -eli.h_pli_by_index_unchecked(i - 1, simtime)?;
             // Coeff for temperature of this node
             matrix_a[(idx, idx)] = (k_pli[i] / delta_t)
                 + h_ci
                 + h_ri * sum_area_frac
-                + eli.h_pli_by_index_unchecked(i - 1, simtime);
+                + eli.h_pli_by_index_unchecked(i - 1, simtime)?;
             // Add final sum term for LHS of eqn 39 in loop below.
             // These are coeffs for temperatures of internal surface nodes of
             // all building elements in the zone
@@ -618,7 +618,7 @@ impl Zone {
             }
         });
 
-        (vector_x, heat_balance) // pass empty heat balance map for now
+        Ok((vector_x, heat_balance)) // pass empty heat balance map for now
     }
 
     /// Optimised heat balance solver
@@ -910,7 +910,7 @@ impl Zone {
         ach_args: AirChangesPerHourArgument,
         avg_supply_temp: f64,
         simtime: SimulationTimeIteration,
-    ) -> (f64, f64, Option<f64>) {
+    ) -> anyhow::Result<(f64, f64, Option<f64>)> {
         let mut temp_operative_free = temp_operative_free;
 
         // If ach required for cooling has not been provided, check if the
@@ -933,7 +933,7 @@ impl Zone {
                     avg_supply_temp,
                     simtime,
                     self.print_heat_balance,
-                );
+                )?;
 
                 let temp_operative_vent_max =
                     self.temp_operative_by_temp_vector(&temp_vector_vent_max);
@@ -981,7 +981,7 @@ impl Zone {
                         avg_supply_temp,
                         simtime,
                         self.print_heat_balance,
-                    );
+                    )?;
 
                     // Calculate internal operative temperature at free-floating conditions
                     // i.e. with no heating/cooling
@@ -1014,7 +1014,7 @@ impl Zone {
             AirChangesPerHourArgument::Cooling { ach_cooling } => (None, ach_cooling),
         };
 
-        (temp_operative_free, ach_cooling, ach_to_trigger_heating)
+        Ok((temp_operative_free, ach_cooling, ach_to_trigger_heating))
     }
 
     fn interp_heat_cool_demand(
@@ -1132,7 +1132,7 @@ impl Zone {
             avg_air_supply_temp,
             simulation_time_iteration,
             self.print_heat_balance,
-        );
+        )?;
 
         // Calculate internal operative temperature at free-floating conditions
         // i.e. with no heating/cooling
@@ -1155,7 +1155,7 @@ impl Zone {
                 ach_args,
                 avg_air_supply_temp,
                 simulation_time_iteration,
-            );
+            )?;
 
         // Determine relevant setpoint (if neither, then return space heating/cooling demand of zero)
         // Determine maximum heating/cooling
@@ -1191,7 +1191,7 @@ impl Zone {
             avg_air_supply_temp,
             simulation_time_iteration,
             self.print_heat_balance,
-        );
+        )?;
 
         // Calculate internal operative temperature with maximum heating/cooling
         let temp_operative_upper = self.temp_operative_by_temp_vector(&temp_vector_upper_heat_cool);
@@ -1244,7 +1244,7 @@ impl Zone {
         ach: f64,
         avg_supply_temp: f64,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> Option<HeatBalance> {
+    ) -> anyhow::Result<Option<HeatBalance>> {
         let (temp_prev, heat_balance_map) = self.calc_temperatures(
             delta_t,
             &self.temp_prev.read(),
@@ -1257,11 +1257,11 @@ impl Zone {
             avg_supply_temp,
             simulation_time_iteration,
             self.print_heat_balance,
-        );
+        )?;
 
         let _ = mem::replace(&mut *self.temp_prev.write(), temp_prev);
 
-        heat_balance_map
+        Ok(heat_balance_map)
     }
     pub fn total_fabric_heat_loss(&self) -> f64 {
         self.building_elements

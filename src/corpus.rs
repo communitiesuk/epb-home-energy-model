@@ -2025,7 +2025,7 @@ impl Corpus {
                     ach_cooling,
                     avg_air_supply_temp,
                     simtime,
-                ),
+                )?,
             );
             internal_air_temp.insert(z_name.to_owned(), zone.temp_internal_air());
             operative_temp.insert(z_name.to_owned(), zone.temp_operative());
