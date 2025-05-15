@@ -1247,7 +1247,7 @@ impl StorageTank {
         let temp_s3_n = self.temp_n.clone();
 
         // Loop through storage layers (starting from the top)
-        for (layer_index, &layer_temp) in self.temp_n.read().iter().rev().enumerate() {
+        for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
             let layer_vol = remaining_vols[layer_index];
 
             //  This cannot happen in the preheated tank. Check!
