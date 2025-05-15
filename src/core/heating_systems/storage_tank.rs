@@ -345,7 +345,7 @@ impl StorageTank {
         // In Python extra variables initialized and assigned here
         // for the purpose of passing them to the testoutput method
         // which we have decided to port (for now)
-        let mut temp_s8_n = vec![0.; self.nb_vol];
+        let mut temp_s8_n = temp_s3_n;
 
         for (heat_source_name, positioned_heat_source) in self.heat_source_data.clone() {
             let (_, _setpntmax) = positioned_heat_source.heat_source.lock().setpnt(simtime)?;
