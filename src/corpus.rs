@@ -3205,6 +3205,15 @@ fn internal_gains_from_input(
             )?),
         );
     }
+    if let Some(internal_gains) = input.cold_water_losses.as_ref() {
+        gains_collection.insert(
+            "coldwaterlosses".to_string(),
+            Gains::Internal(internal_gains_from_details(
+                internal_gains,
+                total_floor_area,
+            )?),
+        );
+    }
     if let Some(internal_gains) = input.other.as_ref() {
         gains_collection.insert(
             "other".to_string(),
