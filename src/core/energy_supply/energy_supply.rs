@@ -548,6 +548,9 @@ impl EnergySupply {
                     .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
                 Ok(Some(energy_accepted))
             } else {
+                electric_battery.timestep_end();
+                self.battery_state_of_charge[t_idx]
+                    .store(electric_battery.get_state_of_charge(), Ordering::SeqCst);
                 Ok(None)
             }
         } else {
