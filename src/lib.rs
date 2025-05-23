@@ -43,8 +43,8 @@ use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 #[cfg(feature = "fhs")]
 use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 pub use crate::wrappers::HemResponse;
+use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
 use chrono::prelude::*;
@@ -1495,7 +1495,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let base_time = Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0).unwrap();
 
     let mut step = start_timestep as usize;
-    for (_, t) in timestep_array.iter().enumerate() {
+    for t in timestep_array.iter() {
         let current_time = base_time + TimeDelta::minutes((*t * 60.).round() as i64);
         timestep_to_date.insert(
             step,

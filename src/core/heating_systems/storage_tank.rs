@@ -2998,13 +2998,10 @@ impl SolarThermalSystem {
             .demand_energy(auxiliary_energy_consumption, timestep_idx)
             .unwrap();
 
-        match &self.energy_supply_from_environment_conn {
-            Some(supply) => {
-                supply
-                    .demand_energy(self.energy_supplied.load(Ordering::SeqCst), timestep_idx)
-                    .unwrap();
-            }
-            None => {}
+        if let Some(supply) = &self.energy_supply_from_environment_conn {
+            supply
+                .demand_energy(self.energy_supplied.load(Ordering::SeqCst), timestep_idx)
+                .unwrap();
         }
 
         self.energy_supplied.load(Ordering::SeqCst)
