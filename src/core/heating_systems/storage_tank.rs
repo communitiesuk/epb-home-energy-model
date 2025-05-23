@@ -453,7 +453,9 @@ impl StorageTank {
 
         let mut temp_average_drawoff_volweighted: f64 =
             self.temp_average_drawoff_volweighted.load(Ordering::SeqCst);
+        let mut total_volume_drawoff: f64 = self.total_volume_drawoff.load(Ordering::SeqCst);
         let mut last_layer_index: usize = Default::default();
+
         //  Loop through storage layers (starting from the top)
         for (layer_index, &layer_temp) in self.temp_n.read().iter().enumerate().rev() {
             last_layer_index = layer_index;
@@ -512,8 +514,7 @@ impl StorageTank {
             }
 
             temp_average_drawoff_volweighted += required_vol * layer_temp;
-            self.total_volume_drawoff
-                .fetch_add(required_vol, Ordering::SeqCst);
+            total_volume_drawoff += required_vol;
 
             // Record the met volume demand for the current temperature target
             // warm_vol_removed is the volume of warm water that has been satisfied from hot water in this layer
@@ -529,10 +530,8 @@ impl StorageTank {
 
         self.temp_average_drawoff_volweighted
             .store(temp_average_drawoff_volweighted, Ordering::SeqCst);
-        self.temp_average_drawoff.store(
-            self.total_volume_drawoff.load(Ordering::SeqCst),
-            Ordering::SeqCst,
-        );
+        self.total_volume_drawoff
+            .store(total_volume_drawoff, Ordering::SeqCst);
 
         // When the event has not been fully met or has been exactly met with the last of the hot water
         // in the tank, there's only cold water from the feed left to fill the pipework after the event.
