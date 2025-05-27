@@ -655,7 +655,7 @@ impl StorageTank {
             // #this is because the top layer has no upper layer to compare too
             // loop through layers from bottom to top, without including top layer;
             for i in 0..self.vol_n.len() - 1 {
-                if temp_s7_n[i] > temp_s7_n[i + 1] {
+                if temp_s7_n[i] >= temp_s7_n[i + 1] {
                     // set layers to mix
                     mix_layer_n[i] = 1;
                     mix_layer_n[i + 1] = 1;
