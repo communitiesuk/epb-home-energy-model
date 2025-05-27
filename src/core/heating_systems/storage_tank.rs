@@ -916,9 +916,9 @@ impl StorageTank {
         // note from Python code: "do not think these are applicable so used: f_sto_dis_ls = 1, f_sto_bac_acc = 1"
 
         // initialise list of thermal losses in kWh
-        let mut q_ls_n: Vec<f64> = Vec::with_capacity(self.vol_n.len());
+        let mut q_ls_n: Vec<f64> = Vec::with_capacity(self.nb_vol);
         // initialise list of final temperature of layers after thermal losses in degrees
-        let mut temp_s8_n: Vec<f64> = vec![];
+        let mut temp_s8_n: Vec<f64> = Vec::with_capacity(self.nb_vol);
 
         // Thermal losses
         // Note: Eqn 13 from BS EN 15316-5:2017 does not explicitly multiply by
