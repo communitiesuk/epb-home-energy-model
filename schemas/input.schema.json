@@ -680,9 +680,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "BuildingElementOpaque"
-              ]
+              "const": "BuildingElementOpaque"
             },
             "u_value": {
               "type": [
@@ -813,9 +811,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "BuildingElementTransparent"
-              ]
+              "const": "BuildingElementTransparent"
             },
             "u_value": {
               "type": [
@@ -990,9 +986,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "BuildingElementGround"
-              ]
+              "const": "BuildingElementGround"
             },
             "u_value": {
               "type": "number",
@@ -1040,9 +1034,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "BuildingElementAdjacentConditionedSpace"
-              ]
+              "const": "BuildingElementAdjacentConditionedSpace"
             },
             "u_value": {
               "type": [
@@ -1099,9 +1091,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "BuildingElementAdjacentUnconditionedSpace_Simple"
-              ]
+              "const": "BuildingElementAdjacentUnconditionedSpace_Simple"
             },
             "u_value": {
               "type": [
