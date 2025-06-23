@@ -1123,9 +1123,9 @@ dependencies = [
 
 [[package]]
 name = "interp"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6d0fa031a724e8c303d790fc88ad984f489238caead7c920bf4e16dea4c4983"
+checksum = "433698c934a80497f6a2c37d6ce8398e70e0a5b8a50335e75d45f79d22259c26"
 dependencies = [
  "itertools 0.14.0",
  "num-traits",
