@@ -5199,7 +5199,7 @@ fn space_heat_systems_from_input(
                         let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
 
-                        let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
+                        let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
                         let mut with_buffer_tank = false;
 
                         let control = control
@@ -5286,7 +5286,7 @@ fn space_heat_systems_from_input(
                         let heat_source_name = &heat_source.name;
                         let energy_supply_conn_name = format!("{heat_source_name}_space_heating: {system_name}");
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
-                        let heat_source = heat_sources_wet.get(&heat_source.name).unwrap_or_else(|| panic!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."));
+                        let heat_source = heat_sources_wet.get(&heat_source.name).ok_or_else(|| anyhow!("A heat source name provided under the name '{heat_source_name}' was expected when setting up space heat systems in the calculation corpus."))?;
                         let control = control
                             .as_ref()
                             .and_then(|ctrl| controls.get_with_string(ctrl)).expect("A control object was expected for a heat pump warm air system");
