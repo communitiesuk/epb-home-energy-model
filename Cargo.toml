@@ -22,7 +22,7 @@ derivative = "2.2.0"
 erased-serde = "0.4.6"
 field_types = "1.1.0"
 formatx = "0.2.3"
-indexmap = { version = "2.9.0", features = ["serde", "arbitrary"] }
+indexmap = { version = "2.10.0", features = ["serde", "arbitrary"] }
 indicatif = { version = "0.17.9", optional = true }
 interp = "2.1.1"
 is_close = "0.1.3"
