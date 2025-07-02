@@ -4015,15 +4015,13 @@ impl InputForProcessing {
         &mut self,
         efficiency: f64,
     ) -> anyhow::Result<()> {
-        let systems = self
-            .input
-            .space_cool_system
-            .as_mut()
-            .ok_or_else(|| anyhow!("Space cool system expected"))?;
-
-        for system in systems.values_mut() {
-            system.set_efficiency(efficiency);
+        let systems = self.input.space_cool_system.as_mut();
+        if let Some(systems) = systems {
+            for system in systems.values_mut() {
+                system.set_efficiency(efficiency);
+            }
         }
+
         Ok(())
     }
 
@@ -4031,15 +4029,13 @@ impl InputForProcessing {
         &mut self,
         frac_convective: f64,
     ) -> anyhow::Result<()> {
-        let systems = self
-            .input
-            .space_cool_system
-            .as_mut()
-            .ok_or_else(|| anyhow!("Space cool system expected"))?;
-
-        for system in systems.values_mut() {
-            system.set_frac_convective(frac_convective);
+        let systems = self.input.space_cool_system.as_mut();
+        if let Some(systems) = systems {
+            for system in systems.values_mut() {
+                system.set_frac_convective(frac_convective);
+            }
         }
+
         Ok(())
     }
 
@@ -4047,15 +4043,13 @@ impl InputForProcessing {
         &mut self,
         energy_supply_name: &str,
     ) -> anyhow::Result<()> {
-        let systems = self
-            .input
-            .space_cool_system
-            .as_mut()
-            .ok_or_else(|| anyhow!("Space cool system expected"))?;
-
-        for system in systems.values_mut() {
-            system.set_energy_supply(energy_supply_name);
+        let systems = self.input.space_cool_system.as_mut();
+        if let Some(systems) = systems {
+            for system in systems.values_mut() {
+                system.set_energy_supply(energy_supply_name);
+            }
         }
+
         Ok(())
     }
 
