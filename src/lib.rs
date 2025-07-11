@@ -73,7 +73,7 @@ pub const FHS_VERSION_DATE: &str = "2025-01-31";
 
 #[instrument(skip_all)]
 pub fn run_project(
-    input: impl Read + Debug,
+    input: impl Read,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
@@ -83,7 +83,7 @@ pub fn run_project(
         // 1. ingest/ parse input and enter preprocessing stage
         #[instrument(skip_all)]
         fn ingest_input_and_start_preprocessing(
-            input: impl Read + Debug,
+            input: impl Read,
             external_conditions_data: Option<&ExternalConditionsFromFile>,
         ) -> anyhow::Result<InputForProcessing> {
             let mut input_for_processing = ingest_for_processing(input)?;
