@@ -2644,7 +2644,7 @@ fn check_shower_flowrate(input: &InputForProcessing) -> anyhow::Result<()> {
     for (name, flowrate) in input.shower_flowrates() {
         if flowrate < min_flowrate {
             // only currently known shower name that can have a flowrate is "mixer"
-            bail!("Invalid flow rate: {flowrate} l/s in shower with name '{name}'");
+            bail!("Invalid flow rate: {flowrate} litres per minute in shower with name '{name}'");
         }
     }
 
