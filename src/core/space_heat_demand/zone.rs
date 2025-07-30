@@ -22,6 +22,7 @@ use smartstring::alias::String;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::Arc;
+use thiserror::Error;
 
 // Convective fractions
 // (default values from BS EN ISO 52016-1:2017, Table B.11)
@@ -484,7 +485,7 @@ impl Zone {
             + F_SOL_C * gains_solar
             + f_hc_c * gains_heat_cool;
 
-        let vector_x = self.fast_solver(matrix_a, vector_b);
+        let vector_x = self.fast_solver(matrix_a, vector_b)?;
 
         let heat_balance = print_heat_balance.then(|| {
             // Collect outputs, in W, for heat balance at air node
@@ -738,7 +739,11 @@ impl Zone {
     /// - Solve heat balance eqns for inside and air nodes using normal matrix solver
     /// - Loop over nodes, from internal inside node (i.e. inside node nearest to the internal surface) to
     ///   external surface, and calculate temperatures in sequence
-    fn fast_solver(&self, coeffs: DMatrix<f64>, rhs: DVector<f64>) -> Vec<f64> {
+    fn fast_solver(
+        &self,
+        coeffs: DMatrix<f64>,
+        rhs: DVector<f64>,
+    ) -> Result<Vec<f64>, SolverError> {
         // Init matrix with zeroes
         // Number of rows in matrix = number of columns
         // = total number of nodes + 1 for overall zone heat balance (and internal air temp)
@@ -807,6 +812,12 @@ impl Zone {
         // numerically stable - may be able to speed this up with static matrices
         let vector_x = matrix_a.lu().solve(&vector_b).unwrap();
 
+        if vector_x.iter().any(|&val| val.is_nan()) {
+            return Err(SolverError::SolverWillNotResolve(
+                "A NaN value was detected in the output of a linear algebra calculation.",
+            ));
+        }
+
         // Init temperature with zeroes (length = number of nodes + 1 for overall zone heat balance)
         let mut temperatures = vec![0.0; self.no_of_temps];
         temperatures[self.zone_idx] = vector_x[zone_idx];
@@ -826,7 +837,7 @@ impl Zone {
             }
         }
 
-        temperatures
+        Ok(temperatures)
     }
 
     // Calculate the operative temperature, in deg C
@@ -1367,6 +1378,12 @@ fn isclose(a: &Vec<f64>, b: &Vec<f64>, rtol: Option<f64>, atol: Option<f64>) -> 
         abs_tol = atol,
         method = is_close::ASYMMETRIC
     )
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum SolverError {
+    #[error("Detected that temperature calculation for a zone will not resolve: {}", .0)]
+    SolverWillNotResolve(&'static str),
 }
 
 #[derive(Clone, Debug)]
