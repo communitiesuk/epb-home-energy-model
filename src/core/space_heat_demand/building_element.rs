@@ -10,7 +10,7 @@ use crate::input::{
     WindowTreatmentType,
 };
 use crate::simulation_time::SimulationTimeIteration;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -2185,10 +2185,9 @@ impl BuildingElementGround {
         let r_vi = (1.0 / u_value) - r_si - thermal_resistance_floor_construction - r_gr; // in m2.K/W
 
         // BS EN ISO 13370:2017 Table 2 validity interval r_vi > 0
-        debug_assert!(
-            r_vi > 0.,
-            "r_vi should be greater than zero. check u-value and thermal_resistance_floor_construction inputs for floors"
-        );
+        if r_vi <= 0. {
+            bail!("r_vi should be greater than zero. Check u-value and thermal_resistance_floor_construction inputs for ground floors");
+        }
 
         new_ground.init_heat_transfer_through_3_plus_2_nodes(
             thermal_resistance_floor_construction,
