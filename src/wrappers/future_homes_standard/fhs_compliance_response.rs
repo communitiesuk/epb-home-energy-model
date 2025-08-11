@@ -5,7 +5,6 @@ use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabr
 use crate::{build_summary_data, CalculationKey, CalculationResultsWithContext, SummaryData};
 use anyhow::anyhow;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use serde::Serialize;
 use smartstring::alias::String;
 use std::collections::HashMap;
@@ -129,38 +128,25 @@ impl
         ),
     ) -> Self {
         let total = PerformanceValue {
-            actual: dwelling_energy_use
-                .values()
-                .map(|fuel_energy_use| fuel_energy_use["total"])
-                .sum::<f64>()
-                / total_floor_area,
-            notional: target_energy_use
-                .values()
-                .map(|fuel_energy_use| fuel_energy_use["total"])
-                .sum::<f64>()
-                / total_floor_area,
+            actual: dwelling_energy_use["total"]["total"] / total_floor_area,
+            notional: target_energy_use["total"]["total"] / total_floor_area,
         };
-        let by_system = dwelling_energy_use
+
+        let by_system = dwelling_energy_use["total"]
             .iter()
-            .flat_map(|(_, energy_use)| energy_use.keys())
-            .unique()
-            .map(|key| {
-                (key.clone(), {
-                    let dwelling_use = dwelling_energy_use
-                        .values()
-                        .map(|fuel_energy_use| fuel_energy_use.get(key).unwrap_or(&0.))
-                        .sum::<f64>()
-                        / total_floor_area;
-                    let target_use = target_energy_use
-                        .values()
-                        .map(|fuel_energy_use| fuel_energy_use.get(key).unwrap_or(&0.))
-                        .sum::<f64>()
-                        / total_floor_area;
+            .filter(|(key, _)| *key != "total")
+            .map(|(key, &value)| {
+                let dwelling_use = value / total_floor_area;
+                let target_use =
+                    target_energy_use["total"].get(key).copied().unwrap_or(0.) / total_floor_area;
+
+                (
+                    key.clone(),
                     PerformanceValue {
                         actual: dwelling_use,
                         notional: target_use,
-                    }
-                })
+                    },
+                )
             })
             .collect::<IndexMap<_, _>>();
 
@@ -288,8 +274,9 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
                 .keys()
                 .map(|fuel| {
                     (fuel.clone(), {
-                        let dwelling_fuel_total = dwelling_energy_use[fuel].values().sum::<f64>();
-                        let target_fuel_total = target_energy_use[fuel].values().sum::<f64>();
+                        let dwelling_fuel_total =
+                            dwelling_energy_use[fuel]["total"] / total_floor_area;
+                        let target_fuel_total = target_energy_use[fuel]["total"] / total_floor_area;
                         PerformanceValue {
                             actual: dwelling_fuel_total,
                             notional: target_fuel_total,
