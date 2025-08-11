@@ -132,13 +132,28 @@ impl
             notional: target_energy_use["total"]["total"] / total_floor_area,
         };
 
+        let mut remaining_target_energy_use = target_energy_use["total"].clone();
+
         let by_system = dwelling_energy_use["total"]
             .iter()
             .filter(|(key, _)| *key != "total")
             .map(|(key, &value)| {
                 let dwelling_use = value / total_floor_area;
-                let target_use =
-                    target_energy_use["total"].get(key).copied().unwrap_or(0.) / total_floor_area;
+
+                let target_use = remaining_target_energy_use
+                    .keys()
+                    .find(|&target_key| match () {
+                        _ if key.contains("water_heating") => target_key.contains("water_heating"),
+                        _ if key.contains("space_heating") => target_key.contains("space_heating"),
+                        _ if key.contains("HeatPump_auxiliary") => {
+                            target_key.contains("HeatPump_auxiliary")
+                        }
+                        _ => target_key.contains(key.as_str()),
+                    })
+                    .cloned()
+                    .and_then(|target_key| remaining_target_energy_use.shift_remove(&target_key))
+                    .unwrap_or(0.)
+                    / total_floor_area;
 
                 (
                     key.clone(),
@@ -148,7 +163,7 @@ impl
                     },
                 )
             })
-            .collect::<IndexMap<_, _>>();
+            .collect();
 
         DeliveredEnergyUse { total, by_system }
     }
