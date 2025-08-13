@@ -54,7 +54,6 @@ use csv::WriterBuilder;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use smartstring::alias::String;
-use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
