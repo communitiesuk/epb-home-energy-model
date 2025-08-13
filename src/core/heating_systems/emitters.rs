@@ -91,7 +91,7 @@ impl EmittersAndPowerInput<'_> {
         power_input: f64,
         temp_diff_max: Option<f64>,
         temp_diff_start: f64,
-    ) -> EmittersAndPowerInput {
+    ) -> EmittersAndPowerInput<'_> {
         let previous_difference_from_temp_diff_max = temp_diff_max.map(|max| temp_diff_start - max);
 
         EmittersAndPowerInput {
