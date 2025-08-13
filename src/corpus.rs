@@ -4890,7 +4890,7 @@ fn hot_water_source_from_input(
                 )?),
                 *WATER,
                 detailed_output_heating_cooling,
-            )));
+            )?));
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),
@@ -4977,7 +4977,7 @@ fn hot_water_source_from_input(
                 .into(),
                 energy_supply_conn_pump,
                 None,
-            )));
+            )?));
 
             connect_diverter_for_hot_water_tank(
                 energy_supplies.clone(),

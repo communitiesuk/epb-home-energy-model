@@ -1,8 +1,8 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
 use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
 use crate::input::{WaterPipeContentsType, WaterPipework, WaterPipeworkLocation};
-use anyhow::bail;
 use std::f64::consts::PI;
+use thiserror::Error;
 
 // Set default values for the heat transfer coefficients inside the pipe, in W / m^2 K
 const INTERNAL_HTC_AIR: f64 = 15.5; // CIBSE Guide C, Table 3.25, air flow rate approx 3 m/s
@@ -58,7 +58,7 @@ impl PipeworkSimple {
         internal_diameter: f64,
         length: f64,
         contents: WaterPipeContentsType,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, InvalidPipeworkInput> {
         let volume_litres = PI
             * (internal_diameter / 2.)
             * (internal_diameter / 2.)
@@ -67,7 +67,11 @@ impl PipeworkSimple {
         let contents_properties = match contents {
             WaterPipeContentsType::Water => *WATER,
             WaterPipeContentsType::Glycol25 => *GLYCOL25,
-            _ => bail!("No properties available for specified pipe content"),
+            content_type => {
+                return Err(InvalidPipeworkInput::IllegalWaterPipeContentsType(
+                    content_type,
+                ))
+            }
         };
         Ok(Self {
             location,
@@ -108,9 +112,9 @@ pub struct Pipework {
 }
 
 impl TryFrom<WaterPipework> for Pipework {
-    type Error = anyhow::Error;
+    type Error = InvalidPipeworkInput;
 
-    fn try_from(input: WaterPipework) -> anyhow::Result<Self> {
+    fn try_from(input: WaterPipework) -> Result<Self, InvalidPipeworkInput> {
         Self::new(
             input.location.into(),
             input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
@@ -122,6 +126,17 @@ impl TryFrom<WaterPipework> for Pipework {
             input.pipe_contents,
         )
     }
+}
+
+#[derive(Debug, Error)]
+pub enum InvalidPipeworkInput {
+    #[error("Pipework: external diameter {external_diameter_in_m}m was not greater than internal diameter {internal_diameter_in_m}m")]
+    ExternalNotMoreThanInternal {
+        external_diameter_in_m: f64,
+        internal_diameter_in_m: f64,
+    },
+    #[error("Pipework: {0:?} is not accepted as a valid pipework contents type")]
+    IllegalWaterPipeContentsType(WaterPipeContentsType),
 }
 
 impl Pipework {
@@ -142,9 +157,12 @@ impl Pipework {
         thickness_insulation: f64,
         reflective: bool,
         contents: WaterPipeContentsType,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, InvalidPipeworkInput> {
         if external_diameter_in_m <= internal_diameter_in_m {
-            bail!("Pipework: external diameter must be greater than internal diameter");
+            return Err(InvalidPipeworkInput::ExternalNotMoreThanInternal {
+                external_diameter_in_m,
+                internal_diameter_in_m,
+            });
         }
 
         let simple_pipework =

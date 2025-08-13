@@ -470,6 +470,7 @@ fn input_to_water_distribution_pipework(
         length_average,
         WaterPipeContentsType::Water,
     )
+    .map_err(anyhow::Error::msg)
 }
 
 #[cfg(test)]

@@ -143,7 +143,7 @@ impl StorageTank {
         energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
         contents: MaterialProperties,
         _detailed_output_heating_cooling: bool, // TODO implement logic for this to match Python 0.32
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let q_std_ls_ref = losses;
 
         let volume_total_in_litres = volume;
@@ -172,8 +172,8 @@ impl StorageTank {
             if let Some(primary_pipework_lst) = primary_pipework_lst {
                 primary_pipework_lst
                     .iter()
-                    .map(|pipework| pipework.to_owned().try_into().unwrap())
-                    .collect::<Vec<Pipework>>()
+                    .map(|pipework| pipework.to_owned().try_into().map_err(anyhow::Error::msg))
+                    .collect::<anyhow::Result<Vec<Pipework>>>()?
                     .into()
             } else {
                 None
@@ -200,7 +200,7 @@ impl StorageTank {
             .map(|(name, _heat_source)| ((*name).clone(), false.into()))
             .collect();
 
-        Self {
+        Ok(Self {
             init_temp,
             q_std_ls_ref,
             cold_feed,
@@ -230,7 +230,7 @@ impl StorageTank {
             temp_average_drawoff: Default::default(),
             temp_average_drawoff_volweighted: Default::default(),
             total_volume_drawoff: Default::default(),
-        }
+        })
     }
 
     /// Draw off hot water from the tank
@@ -1563,7 +1563,7 @@ impl SmartHotWaterTank {
         energy_supply_conn_unmet_demand: Option<EnergySupplyConnection>,
         energy_supply_conn_pump: EnergySupplyConnection,
         contents: Option<MaterialProperties>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let detailed_output = detailed_output.unwrap_or(false);
         let nb_vol = nb_vol.unwrap_or(100);
         let contents = contents.unwrap_or(*WATER);
@@ -1582,16 +1582,16 @@ impl SmartHotWaterTank {
             energy_supply_conn_unmet_demand,
             contents,
             detailed_output,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             storage_tank,
             power_pump_kw,
             max_flow_rate_pump_l_per_min,
             temp_usable,
             temp_setpnt_max,
             energy_supply_connection_pump: energy_supply_conn_pump,
-        }
+        })
     }
 
     fn retrieve_setpnt(
@@ -3278,7 +3278,8 @@ mod tests {
             Some(energy_supply_connection),
             *WATER,
             false,
-        );
+        )
+        .unwrap();
 
         (storage_tank, energy_supply)
     }
@@ -3347,7 +3348,8 @@ mod tests {
             Some(energy_supply_connection),
             *WATER,
             false,
-        );
+        )
+        .unwrap();
 
         (storage_tank, energy_supply)
     }
@@ -3495,6 +3497,7 @@ mod tests {
             *WATER,
             false,
         )
+        .unwrap()
     }
 
     #[fixture]
@@ -3790,7 +3793,8 @@ mod tests {
             None,
             *WATER,
             false,
-        );
+        )
+        .unwrap();
 
         (
             storage_tank,
@@ -5212,6 +5216,7 @@ mod tests {
             energy_supply_conn_pump,
             None,
         )
+        .unwrap()
     }
 
     #[fixture]
