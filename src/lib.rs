@@ -54,6 +54,7 @@ use csv::WriterBuilder;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use smartstring::alias::String;
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -408,7 +409,7 @@ pub fn run_project(
         .map_err(|e| {
             HemError::GeneralPanic(
                 e.downcast_ref::<&str>()
-                    .map_or("Error not captured", |v| v)
+                    .map_or("Uncaught panic - could not capture more information; to debug further, try replicating in debug mode.", |v| v)
                     .to_owned(),
             )
         })?
