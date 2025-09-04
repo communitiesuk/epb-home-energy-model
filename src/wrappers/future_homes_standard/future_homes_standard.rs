@@ -167,8 +167,8 @@ pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) {
     input.set_temp_internal_air_static_calcs(Some(LIVING_ROOM_SETPOINT_FHS));
 }
 
-static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(|| {
-    let mut factors: HashMap<String, FactorData> = Default::default();
+static EMIS_PE_FACTORS: LazyLock<IndexMap<String, FactorData>> = LazyLock::new(|| {
+    let mut factors: IndexMap<String, FactorData> = Default::default();
 
     let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
         "./FHS_emisPEfactors_05-08-2024.csv"
@@ -183,10 +183,10 @@ static EMIS_PE_FACTORS: LazyLock<HashMap<String, FactorData>> = LazyLock::new(||
     factors
 });
 
-static EMIS_PE_FACTORS_ELEC: LazyLock<HashMap<usize, ElectricityFactorData>> =
+static EMIS_PE_FACTORS_ELEC: LazyLock<IndexMap<usize, ElectricityFactorData>> =
     LazyLock::new(|| {
         // Load emissions factors and primary energy factors from data file for electricity
-        let mut emis_pe_factors_elec: HashMap<usize, ElectricityFactorData> = Default::default();
+        let mut emis_pe_factors_elec: IndexMap<usize, ElectricityFactorData> = Default::default();
 
         let mut factors_reader = Reader::from_reader(BufReader::new(Cursor::new(include_str!(
             "./DEMO_variable_grid_model.csv"
