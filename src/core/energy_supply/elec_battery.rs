@@ -57,6 +57,9 @@ impl ElectricBattery {
         external_conditions: Arc<ExternalConditions>,
     ) -> Self {
         let state_of_health = max_of_2(Self::state_of_health_equ(battery_age), 0.);
+        // below code, in combination with charge_discharge_efficiency minimum value being 0, is
+        // erroneous and leads to NaN error further on (upstream python throws a ZeroDivisionError
+        // immediately), reported upstream
         let one_way_battery_efficiency = charge_discharge_efficiency.powf(0.5);
         let reverse_one_way_battery_efficiency = 1. / one_way_battery_efficiency;
 
