@@ -1249,6 +1249,11 @@ impl ExternalConditions {
                                 height: shading_height,
                                 distance,
                             } => {
+                                // added below bail to match the (erroneous) Python behaviour which
+                                // has been reported upstream (schema allows 0 but will error here)
+                                if *distance <= 0. {
+                                    bail!("distance for shading objects with type 'obstacle' should be greater than zero");
+                                }
                                 let h_shade = 0.0f64.max(*shading_height - base_height);
 
                                 if f_sky == 1. {
