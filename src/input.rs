@@ -2353,6 +2353,8 @@ impl GroundBuildingElement for BuildingElement {
     }
 
     fn set_r_f(&mut self, new_r_f: f64) {
+        // the python code has a bug here in 0.34 and 0.36 but it has been fixed in the latest version
+        // (a new property r_f is added to the building element instead of updating thermal_resistance_floor_construction)
         match self {
             Self::Ground {
                 thermal_resistance_floor_construction: r_f,
