@@ -33,17 +33,17 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
 
     // Retrieve the number of bedrooms and total volume
     let number_of_bedrooms = input
-        .number_of_bedrooms()
+        .number_of_bedrooms()?
         .ok_or_else(|| anyhow!("Expected number of bedrooms to be indicated."))?;
-    let total_volume = input.total_zone_volume();
+    let total_volume = input.total_zone_volume()?;
 
-    let total_floor_area = calc_tfa(input);
+    let total_floor_area = calc_tfa(input)?;
     let req_ach =
         minimum_air_change_rate(input, total_floor_area, total_volume, number_of_bedrooms);
     // convert to m3/h
     let design_outdoor_air_flow_rate = req_ach * total_volume;
 
-    input.reset_mechanical_ventilation();
+    input.reset_mechanical_ventilation()?;
     input.add_mechanical_ventilation(
         "Decentralised_Continuous_MEV_for_FEE_calc",
         json!({
@@ -61,7 +61,7 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     // Look up cold water feed type
     // TODO (from Python) The cold_water_source_name here needs to match the one defined in the
     //                    standard FHS wrapper - ideally these would only be defined in one place
-    let cold_water_source_name = if input.cold_water_source_has_header_tank() {
+    let cold_water_source_name = if input.cold_water_source_has_header_tank()? {
         "header tank"
     } else {
         "mains water"
@@ -119,21 +119,21 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     }))?;
 
     // Dwelling achieves water use target of not more than 125 litres/day
-    input.set_part_g_compliance(true);
+    input.set_part_g_compliance(true)?;
 
     // Remove WWHRS if present
-    input.remove_wwhrs();
+    input.remove_wwhrs()?;
 
     // Lighting:
     // - capacity same as main FHS wrapper (so will be set in create_lighting_gains function)
     // - efficacy 120 lumens/W
-    input.set_lighting_efficacy_for_all_zones(120.0);
+    input.set_lighting_efficacy_for_all_zones(120.0)?;
 
     // Space heating from InstantElecHeater
     // Set power such that it should always be sufficient for any realistic demand
     // Assume convective fraction for fan heater from BS EN 15316-2:2017 Table B.17
-    input.remove_space_heat_systems();
-    for z_name in input.zone_keys() {
+    input.remove_space_heat_systems()?;
+    for z_name in input.zone_keys()? {
         let h_name = format!("{z_name}_heating_for_FEE_calc");
         input.set_space_heat_system_for_zone(&z_name, &h_name)?;
         input.set_space_heat_system_for_key(
@@ -151,8 +151,8 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     // Set capacity such that it should always be sufficient for any realistic demand
     // Efficiency does not matter for this calc so set to 1.0
     // Assume convective fraction for cold air blowing system from BS EN 15316-2:2017 Table B.17
-    input.remove_space_cool_systems();
-    for z_name in input.zone_keys() {
+    input.remove_space_cool_systems()?;
+    for z_name in input.zone_keys()? {
         let c_name = format!("{z_name}_cooling_for_FEE_calc");
         input.set_space_cool_system_for_zone(&z_name, &c_name)?;
         input.set_space_cool_system_for_key(
@@ -172,9 +172,9 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
 
     // Remove on-site generation, diverter and electric battery, if present
     input
-        .remove_on_site_generation()
-        .remove_all_diverters_from_energy_supplies()
-        .remove_all_batteries_from_energy_supplies();
+        .remove_on_site_generation()?
+        .remove_all_diverters_from_energy_supplies()?
+        .remove_all_batteries_from_energy_supplies()?;
 
     // Apply standard FHS preprocessing assumptions. Note these should be applied
     // after the other adjustments are made, because decisions may be based on

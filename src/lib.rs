@@ -89,7 +89,7 @@ pub fn run_project(
             let mut input_for_processing = ingest_for_processing(input)?;
 
             input_for_processing
-                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()));
+                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
             Ok(input_for_processing)
         }
 

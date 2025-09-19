@@ -8,12 +8,11 @@ use crate::external_conditions::{
     create_external_conditions, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
-    EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
-    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
-    WindowTreatmentType, ZoneLightingBulbs,
+    json_error, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
+    JsonAccessResult, MechanicalVentilationForProcessing, MechanicalVentilationJsonValue,
+    SmartApplianceBattery, TransparentBuildingElement, TransparentBuildingElementJsonValue,
+    WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -27,7 +26,7 @@ use csv::{Reader, WriterBuilder};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
@@ -103,11 +102,11 @@ pub fn apply_fhs_preprocessing(
                 .expect("Could not read cold_water_loss_profile.csv")
         });
 
-    input.set_simulation_time(simtime());
+    input.set_simulation_time(simtime())?;
 
-    input.reset_internal_gains();
+    input.reset_internal_gains()?;
 
-    let tfa = calc_tfa(input);
+    let tfa = calc_tfa(input)?;
 
     let nbeds = calc_nbeds(input)?;
 
@@ -125,16 +124,28 @@ pub fn apply_fhs_preprocessing(
     create_lighting_gains(input, tfa, n_occupants)?;
     create_appliance_gains(input, tfa, n_occupants, &APPLIANCE_PROPENSITIES)?;
 
-    for source_key in input.hot_water_source_keys() {
-        let source = input.hot_water_source_details_for_key(&source_key);
-        if source.is_storage_tank() {
-            source.set_init_temp(HW_SETPOINT_MAX);
-        } else if source.is_smart_hot_water_tank() {
-            source.set_init_temp(HW_SETPOINT_MAX);
-            source.set_temp_usable(HW_TEMPERATURE);
-        } else {
-            source.set_setpoint_temp(HW_TEMPERATURE);
-        }
+    for source in input.hot_water_source_mut()?.values_mut() {
+        let source_type: String = source
+            .get("type")
+            .ok_or(json_error("Hot water source did not have a type field"))?
+            .as_str()
+            .ok_or(json_error("Type field was not a string"))?
+            .into();
+        let source = source
+            .as_object_mut()
+            .ok_or(json_error("Hot water source was not an object"))?;
+        match source_type.as_str() {
+            "StorageTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+            }
+            "SmartHotWaterTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+                source.insert("temp_usable".into(), json!(HW_TEMPERATURE));
+            }
+            _ => {
+                source.insert("setpoint_temp".into(), json!(HW_TEMPERATURE));
+            }
+        };
     }
 
     let cold_water_feed_temps = create_cold_water_feed_temps(input)?;
@@ -150,12 +161,9 @@ pub fn apply_fhs_preprocessing(
         create_mev_pattern(input)?;
     }
 
-    set_temp_internal_static_calcs(input);
+    set_temp_internal_static_calcs(input)?;
 
-    if input
-        .smart_appliance_control_by_name(SMART_APPLIANCE_CONTROL_NAME)
-        .is_some()
-    {
+    if input.has_named_smart_appliance_control(SMART_APPLIANCE_CONTROL_NAME)? {
         // run project for 24 hours to obtain initial estimate for daily heating demand
         sim_24h(input, sim_settings)?;
     }
@@ -163,8 +171,10 @@ pub fn apply_fhs_preprocessing(
     Ok(())
 }
 
-pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) {
-    input.set_temp_internal_air_static_calcs(Some(LIVING_ROOM_SETPOINT_FHS));
+pub(super) fn set_temp_internal_static_calcs(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    input.set_temp_internal_air_static_calcs(Some(LIVING_ROOM_SETPOINT_FHS))?;
+
+    Ok(())
 }
 
 static EMIS_PE_FACTORS: LazyLock<IndexMap<String, FactorData>> = LazyLock::new(|| {
@@ -680,7 +690,7 @@ fn write_postproc_summary_file(
     Ok(())
 }
 
-pub fn calc_tfa(input: &InputForProcessing) -> f64 {
+pub fn calc_tfa(input: &InputForProcessing) -> JsonAccessResult<f64> {
     input.total_zone_area()
 }
 
@@ -689,7 +699,7 @@ fn calc_tfa_from_finalised_input(input: &Input) -> f64 {
 }
 
 pub(super) fn calc_nbeds(input: &InputForProcessing) -> anyhow::Result<usize> {
-    match input.number_of_bedrooms() {
+    match input.number_of_bedrooms()? {
         Some(bedrooms) => Ok(bedrooms),
         None => bail!("missing NumberOfBedrooms - required for FHS calculation"),
     }
@@ -845,7 +855,7 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
     // (i.e. control type 3 in SAP 10 terminology),
     // the heating times are necessarily the same as the living room,
     // so the evening heating period would also start at 16:30 on weekdays.
-    let control_type = match input.heating_control_type() {
+    let control_type = match input.heating_control_type()? {
         Some(HeatingControlType::SeparateTimeAndTemperatureControl) => ControlType::Type3,
         Some(HeatingControlType::SeparateTemperatureControl) => ControlType::Type2,
         None => {
@@ -853,12 +863,12 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
         }
     };
 
-    for zone in input.zone_keys() {
+    for zone in input.zone_keys()? {
         match (
-            input.space_heat_control_for_zone(zone.as_str())?,
+            input.space_heat_control_for_zone(zone.as_str())?.as_ref().map(|v| v.as_str()),
             control_type,
         ) {
-            (Some(SpaceHeatControlType::LivingRoom), _) => {
+            (Some("livingroom"), _) => {
                 input.set_init_temp_setpoint_for_zone(zone.as_str(), LIVING_ROOM_SETPOINT_FHS)?;
                 let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
                 for space_heat_system in space_heat_system_references {
@@ -879,16 +889,16 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                         }
                     );
                     let control_json = living_room_control.as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(&space_heat_system)? {
                         control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(&space_heat_system)? {
                         control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
                     input.add_control(&ctrlname, living_room_control)?;
                 }
             }
-            (Some(SpaceHeatControlType::RestOfDwelling), control_type) => {
+            (Some("restofdwelling"), control_type) => {
                 input.set_init_temp_setpoint_for_zone(zone.as_str(), REST_OF_DWELLING_SETPOINT_FHS)?;
                 let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
                 for space_heat_system in space_heat_system_references {
@@ -912,15 +922,16 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                         }
                     );
                     let control_json = rest_of_dwelling_control.as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(space_heat_system.as_str())? {
+                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(&space_heat_system)? {
                         control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(space_heat_system.as_str())? {
+                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(&space_heat_system)? {
                         control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
-                    input.add_control(ctrlname, rest_of_dwelling_control)?;
+                    input.add_control(&ctrlname, rest_of_dwelling_control)?;
                 }
             }
+            (Some(unknown_space_heat_control_type), _) => bail!("Encountered unknown space heat control type: {unknown_space_heat_control_type}"),
             (None, _) => bail!("FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"),
         }
     }
@@ -949,18 +960,31 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     let hw_pv_diverter_max_temp_base_name = "_HW_pv_diverter_max_temp";
     let hw_pv_diverter_smart_hw_tank_ctrl_base_name = "_HW_pv_diverter_smart_hw_tank_ctrl";
 
-    for energy_supply_name in input.names_of_energy_supplies_with_diverters() {
-        for (hw_source_name, hw_source) in input.hot_water_source().as_index_map() {
-            match hw_source {
-                crate::input::HotWaterSourceDetails::StorageTank { .. } => {
+    for energy_supply_name in input.names_of_energy_supplies_with_diverters()? {
+        let hw_sources: IndexMap<_, _> = input
+            .hot_water_source()?
+            .iter()
+            .map(|(name, source)| {
+                (
+                    String::from(name),
+                    source
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                )
+            })
+            .collect();
+        for (hw_source_name, hw_source_type) in hw_sources {
+            match hw_source_type.as_ref().map(|s| s.as_str()) {
+                Some("StorageTank") => {
                     let control_name =
                         format!("{hw_pv_diverter_max_temp_base_name}_{hw_source_name}");
                     input.set_control_max_name_for_energy_supply_diverter(
                         &energy_supply_name,
                         &control_name,
-                    );
+                    )?;
                     input.add_control(
-                        control_name,
+                        &control_name,
                         json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
@@ -974,15 +998,15 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
                         }),
                     )?;
                 }
-                crate::input::HotWaterSourceDetails::SmartHotWaterTank { .. } => {
+                Some("SmartHotWaterTank") => {
                     let control_name =
                         format!("{hw_pv_diverter_smart_hw_tank_ctrl_base_name}_{hw_source_name}");
                     input.set_control_max_name_for_energy_supply_diverter(
                         &energy_supply_name,
                         &control_name,
-                    );
+                    )?;
                     input.add_control(
-                        control_name,
+                        &control_name,
                         json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
@@ -1077,8 +1101,12 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         }),
     )?;
 
-    for hwsource in input.hot_water_source_keys() {
-        let source = input.hot_water_source_details_for_key(hwsource.as_str());
+    for mut source in input
+        .hot_water_source_mut()?
+        .values_mut()
+        .flat_map(|value| value.as_object_mut())
+        .map(|map| HotWaterSourceDetailsJsonMap(map))
+    {
         if source.is_storage_tank() {
             source.set_control_min_name_for_storage_tank_heat_sources(hw_min_temp)?;
             source.set_control_max_name_for_storage_tank_heat_sources(hw_max_temp)?;
@@ -1571,20 +1599,33 @@ fn create_lighting_gains(
     let mut total_capacity = 0.;
     let mut total_area = 0.;
 
-    if !input.all_zones_have_bulbs() {
+    if !input.all_zones_have_bulbs()? {
         bail!("At least one zone does not have lighting bulbs defined.");
     }
-    for (zone_name, bulbs) in input.light_bulbs_for_each_zone() {
+    for (zone_name, bulbs) in input.light_bulbs_for_each_zone()? {
         let mut zone_total_lumens = 0.0;
         let mut zone_total_wattage = 0.0;
         let mut zone_capacity = 0.0;
 
-        for bulb in bulbs {
-            let ZoneLightingBulbs {
-                efficacy: bulb_efficacy,
-                power: bulb_power,
-                count: bulb_count,
-            } = bulb;
+        for (bulb_name, bulb) in bulbs {
+            let bulb_efficacy = bulb
+                .get("efficacy")
+                .and_then(|e| e.as_f64())
+                .ok_or(json_error(
+                    "Bulb efficacy for bulb with name '{bulb_name}' should have been expressed as a number",
+                ))?;
+            let bulb_power = bulb
+                .get("power")
+                .and_then(|e| e.as_f64())
+                .ok_or(json_error(
+                    "Bulb power for bulb with name '{bulb_name}' should have been expressed as a number",
+                ))?;
+            let bulb_count = bulb
+                .get("count")
+                .and_then(|e| e.as_u64())
+                .ok_or(json_error(
+                    "Bulb count for bulb with name '{bulb_name}' should have been expressed as an integer",
+                ))?;
 
             // Calculate total lumens and wattage for the bulb
             let bulb_lumens = bulb_efficacy * bulb_power * bulb_count as f64;
@@ -1658,7 +1699,7 @@ fn create_lighting_gains(
         })
         .collect();
 
-    input.clear_appliance_gains();
+    input.clear_appliance_gains()?;
     input.set_lighting_gains(json!({
         "type": "lighting",
         "start_day": 0,
@@ -1696,15 +1737,15 @@ fn create_appliance_gains(
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
-    appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
+    appliance_cooking_defaults(input, number_of_occupants, total_floor_area)?;
     let cookparams = cooking_demand(input, number_of_occupants)?;
 
     // TODO (from Python) change to enum
     // TODO (from Python) check appliances are named correctly and what to do if not?
 
-    let appliance_map: IndexMap<ApplianceKey, ApplianceUseProfile> = IndexMap::from([
+    let appliance_map: IndexMap<&str, ApplianceUseProfile> = IndexMap::from([
         (
-            ApplianceKey::Fridge,
+            "Fridge",
             ApplianceUseProfile::simple(
                 1.,
                 0.,
@@ -1713,7 +1754,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Freezer,
+            "Freezer",
             ApplianceUseProfile::simple(
                 1.,
                 0.,
@@ -1722,7 +1763,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::FridgeFreezer,
+            "Fridge-Freezer",
             ApplianceUseProfile::simple(
                 1.,
                 0.,
@@ -1731,7 +1772,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::OtherDevices,
+            "Otherdevices",
             ApplianceUseProfile::simple(
                 1.,
                 0.,
@@ -1740,7 +1781,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Dishwasher,
+            "Dishwasher",
             ApplianceUseProfile::complex(
                 number_of_occupants,
                 132,       // HES 2012 final report table 22
@@ -1753,7 +1794,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::ClothesWashing,
+            "Clothes_washing",
             ApplianceUseProfile::clothes(
                 number_of_occupants,
                 174, // HES 2012 final report table 22
@@ -1767,7 +1808,7 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::ClothesDrying,
+            "Clothes_drying",
             ApplianceUseProfile::clothes(
                 number_of_occupants,
                 145, // HES 2012 final report table 22
@@ -1781,10 +1822,10 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Oven,
+            "Oven",
             ApplianceUseProfile::complex(
                 1.,
-                cookparams.get(&ApplianceKey::Oven).unwrap().event_count, // analysis of HES - see folder
+                cookparams.get("Oven").unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 0.5,
@@ -1794,10 +1835,10 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Hobs,
+            "Hobs",
             ApplianceUseProfile::complex(
                 1.,
-                cookparams.get(&ApplianceKey::Hobs).unwrap().event_count, // analysis of HES - see folder
+                cookparams.get("Hobs").unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 0.5,
@@ -1807,13 +1848,10 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Microwave,
+            "Microwave",
             ApplianceUseProfile::complex(
                 1.,
-                cookparams
-                    .get(&ApplianceKey::Microwave)
-                    .unwrap()
-                    .event_count, // analysis of HES - see folder
+                cookparams.get("Microwave").unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 1.,
@@ -1823,10 +1861,10 @@ fn create_appliance_gains(
             ),
         ),
         (
-            ApplianceKey::Kettle,
+            "Kettle",
             ApplianceUseProfile::complex(
                 1.,
-                cookparams.get(&ApplianceKey::Kettle).unwrap().event_count, // analysis of HES - see folder
+                cookparams.get("Kettle").unwrap().event_count, // analysis of HES - see folder
                 None,
                 0.50,
                 1.,
@@ -1839,9 +1877,9 @@ fn create_appliance_gains(
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
-    let mut priority: IndexMap<ApplianceKey, (Option<isize>, f64)> = Default::default();
-    let mut power_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
-    let mut weight_scheds: IndexMap<ApplianceKey, Vec<f64>> = Default::default();
+    let mut priority: IndexMap<String, (Option<isize>, f64)> = Default::default();
+    let mut power_scheds: IndexMap<String, Vec<f64>> = Default::default();
+    let mut weight_scheds: IndexMap<String, Vec<f64>> = Default::default();
     let mut loadshifting_flag = false;
     // loop through appliances in the assessment.
     let input_appliances = input.clone_appliances();
@@ -1852,7 +1890,7 @@ fn create_appliance_gains(
     for (appliance_key, appliance) in input_appliances {
         // if it needs to be modelled per use
         let map_appliance = appliance_map
-            .get(&appliance_key)
+            .get(appliance_key.as_str())
             .expect("Appliance key was not in appliance map");
 
         if let Some(use_data) = map_appliance.use_data {
@@ -1873,34 +1911,41 @@ fn create_appliance_gains(
                 Some(use_data.duration_deviation),
             )?;
 
-            let appliance_energy_supply = if let ApplianceEntry::Object(appliance_obj) = &appliance
-            {
-                appliance_obj.energy_supply
-            } else {
-                None
-            };
+            let appliance_energy_supply = appliance.get("Energysupply").and_then(|e| e.as_str());
+
+            let load_shifting = appliance.get("loadshifting").and_then(|v| v.as_object());
 
             // if the appliance specifies load shifting, add it to the appliance gains details
-            let load_shifting = if let ApplianceEntry::Object(Appliance {
-                load_shifting: Some(load_shifting),
-                ..
-            }) = &appliance
-            {
+            let load_shifting = if let Some(load_shifting) = load_shifting {
                 loadshifting_flag = true;
 
-                if load_shifting.max_shift_hrs >= 24. {
+                if load_shifting
+                    .get("max_shift_hrs")
+                    .and_then(|e| e.as_f64())
+                    .ok_or(json_error(
+                        "max_shift_hrs field of a load shifting object was expected to be numeric",
+                    ))?
+                    >= 24.
+                {
                     // could instead change length of buffers/initial simulation match this, but unclear what benefit this would have
                     bail!("{} max_shift_hrs too high, FHS wrapper cannot handle max shift >= 24 hours", appliance_key);
                 }
 
                 // establish priority between appliances based on user defined priority,
                 // and failing that, demand per cycle
-                priority.insert(appliance_key, (load_shifting.priority, kwhcycle));
+                priority.insert(
+                    String::from(&appliance_key),
+                    (
+                        load_shifting
+                            .get("priority")
+                            .and_then(|priority| priority.as_u64())
+                            .map(|u| u as isize),
+                        kwhcycle,
+                    ),
+                );
 
                 let mut load_shifting = load_shifting.clone();
-                load_shifting
-                    .control
-                    .replace(SMART_APPLIANCE_CONTROL_NAME.into());
+                load_shifting.insert("Control".into(), json!(SMART_APPLIANCE_CONTROL_NAME));
 
                 // create year long cost profile
                 // loadshifting is also intended to respond to CO2, primary energy factors instead of cost, for example
@@ -1909,26 +1954,26 @@ fn create_appliance_gains(
                 // TODO (Python) - create weight timeseries as combination of PE, CO2, cost factors.
                 // could also multiply by propensity factor
                 let weight_timeseries = reject_nulls(expand_numeric_schedule(
-                    input.tariff_schedule().ok_or_else(|| {
+                    &input.tariff_schedule()?.ok_or_else(|| {
                         anyhow!(
                             "A tariff schedule was expected to have been provided in the input."
                         )
                     })?,
                 ))?;
-                load_shifting.weight_timeseries = Some(weight_timeseries.clone());
-                weight_scheds.insert(appliance_key, weight_timeseries);
+                load_shifting.insert("weight_timeseries".into(), json!(weight_timeseries));
+                weight_scheds.insert(String::from(&appliance_key), weight_timeseries);
 
                 Some(load_shifting)
             } else {
                 // only add demand from appliances that DO NOT have loadshifting to the demands
-                power_scheds.insert(appliance_key, app.flat_schedule.clone());
-                priority.insert(appliance_key, (None, kwhcycle));
+                power_scheds.insert(String::from(&appliance_key), app.flat_schedule.clone());
+                priority.insert(String::from(&appliance_key), (None, kwhcycle));
                 None
             };
 
-            input.set_gains_for_field(String::from(appliance_key), json!({
+            input.set_gains_for_field(String::from(&appliance_key), json!({
                 "type": appliance_key,
-                "EnergySupply": if [ApplianceKey::Hobs, ApplianceKey::Oven].contains(&appliance_key) {
+                "EnergySupply": if ["Hobs", "Oven"].contains(&appliance_key.as_str()) {
                     appliance_energy_supply.ok_or_else(|| anyhow!("Could not get energy supply type for appliance with key {appliance_key}"))?.to_string()
                 } else {
                     ENERGY_SUPPLY_NAME_ELECTRICITY.to_owned()
@@ -1943,28 +1988,25 @@ fn create_appliance_gains(
             }))?;
         } else {
             // model as yearlong time series schedule of demand in W
-            let annual_kwh = if let ApplianceEntry::Object(Appliance {
-                kwh_per_annum: Some(ref kwh_per_annum),
-                ..
-            }) = &appliance
-            {
-                kwh_per_annum * map_appliance.util_unit
-            } else {
-                continue;
+            let annual_kwh = match appliance.get("kWh_per_annum").and_then(|v| v.as_f64()) {
+                Some(kwh) => kwh * map_appliance.util_unit,
+                None => {
+                    continue;
+                }
             };
 
-            let flat_schedule: Vec<f64> = appliance_map[&appliance_key]
+            let flat_schedule: Vec<f64> = appliance_map[appliance_key.as_str()]
                 .prof
                 .iter()
                 .map(|&frac| WATTS_PER_KILOWATT as f64 / DAYS_PER_YEAR as f64 * frac * annual_kwh)
                 .collect();
-            power_scheds.insert(appliance_key, flat_schedule.clone());
+            power_scheds.insert(String::from(&appliance_key), flat_schedule.clone());
 
-            priority.insert(appliance_key, (None, kwhcycle));
+            priority.insert(String::from(&appliance_key), (None, kwhcycle));
 
             let appliance_uses_gas: bool = false; // upstream Python checks appliance key contains substring 'gas', may be erroneous
 
-            input.set_gains_for_field(String::from(appliance_key), json!({
+            input.set_gains_for_field(String::from(&appliance_key), json!({
                 "type": appliance_key,
                 "EnergySupply": if appliance_uses_gas { ENERGY_SUPPLY_NAME_GAS } else { ENERGY_SUPPLY_NAME_ELECTRICITY },
                 "start_day": 0,
@@ -1999,7 +2041,7 @@ fn create_appliance_gains(
 
     for appliance_key in power_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())
+            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2027,7 +2069,7 @@ fn create_appliance_gains(
 
     for appliance_key in weight_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())
+            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2054,8 +2096,8 @@ fn create_appliance_gains(
     }
 
     if loadshifting_flag {
-        input.remove_all_smart_appliance_controls();
-        let appliance_keys = input.appliance_keys();
+        input.remove_all_smart_appliance_controls()?;
+        let appliance_keys = input.appliance_keys()?;
         input.add_smart_appliance_control(
             SMART_APPLIANCE_CONTROL_NAME,
             json!({
@@ -2070,7 +2112,7 @@ fn create_appliance_gains(
     let defined_priority = priority
         .iter()
         .filter_map(|(appliance_name, priorities)| priorities.0.map(|_| appliance_name))
-        .collect::<Vec<&ApplianceKey>>();
+        .collect::<Vec<_>>();
 
     let mut first_priority_ranks: Vec<isize> = defined_priority
         .iter()
@@ -2082,12 +2124,12 @@ fn create_appliance_gains(
 
     let lowest_priority = first_priority_ranks.iter().max().unwrap();
 
-    let priority_kwhcycle: Vec<ApplianceKey> = priority
+    let priority_kwhcycle = priority
         .clone()
         .sorted_by(|_, (_, kwhcycle1), _, (_, kwhcycle2)| kwhcycle2.total_cmp(kwhcycle1))
         .filter(|(_, (priority, _))| priority.is_none())
         .map(|x| x.0)
-        .collect();
+        .collect_vec();
 
     for appliance in priority.keys() {
         let new_priority = if defined_priority.contains(&appliance) {
@@ -2205,11 +2247,11 @@ struct ApplianceCookingDemand {
 fn cooking_demand(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
-) -> anyhow::Result<IndexMap<ApplianceKey, ApplianceCookingDemand>> {
-    let oven_energy_supply = input.energy_supply_for_appliance(&ApplianceKey::Oven);
+) -> anyhow::Result<IndexMap<&str, ApplianceCookingDemand>> {
+    let oven_energy_supply = input.energy_supply_for_appliance("Oven");
     let oven_fuel = match oven_energy_supply {
         Ok(energy_supply) => {
-            Some(input.fuel_type_for_energy_supply_field(&energy_supply.to_string())?)
+            Some(input.fuel_type_for_energy_supply_reference(&energy_supply.to_string())?)
         }
         Err(_) => None,
     };
@@ -2221,10 +2263,10 @@ fn cooking_demand(
         event_count: Default::default(),
     };
 
-    let hobs_energy_supply = input.energy_supply_for_appliance(&ApplianceKey::Hobs);
+    let hobs_energy_supply = input.energy_supply_for_appliance("Hobs");
     let hobs_fuel = match hobs_energy_supply {
         Ok(energy_supply) => {
-            Some(input.fuel_type_for_energy_supply_field(&energy_supply.to_string())?)
+            Some(input.fuel_type_for_energy_supply_reference(&energy_supply.to_string())?)
         }
         Err(_) => None,
     };
@@ -2236,7 +2278,7 @@ fn cooking_demand(
         event_count: Default::default(),
     };
 
-    let microwave_fuel = match input.appliances_contain_key(&ApplianceKey::Microwave) {
+    let microwave_fuel = match input.appliances_contain_key("Microwave") {
         true => Some(EnergySupplyType::Electricity.into()),
         false => None,
     };
@@ -2248,7 +2290,7 @@ fn cooking_demand(
         event_count: Default::default(),
     };
 
-    let kettle_fuel = match input.appliances_contain_key(&ApplianceKey::Kettle) {
+    let kettle_fuel = match input.appliances_contain_key("Kettle") {
         true => Some(EnergySupplyType::Electricity.into()),
         false => None,
     };
@@ -2260,10 +2302,10 @@ fn cooking_demand(
         event_count: Default::default(),
     };
     let mut cook_params = IndexMap::from([
-        (ApplianceKey::Oven, oven),
-        (ApplianceKey::Hobs, hobs),
-        (ApplianceKey::Microwave, microwave),
-        (ApplianceKey::Kettle, kettle),
+        ("Oven", oven),
+        ("Hobs", hobs),
+        ("Microwave", microwave),
+        ("Kettle", kettle),
     ]);
 
     let gas_total: f64 = cook_params
@@ -2309,118 +2351,138 @@ fn appliance_cooking_defaults(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
     total_floor_area: f64,
-) -> (
-    IndexMap<ApplianceKey, Appliance>,
-    IndexMap<ApplianceKey, Appliance>,
-) {
-    let cooking_fuels = input.all_energy_supply_fuel_types();
+) -> anyhow::Result<(IndexMap<&str, JsonValue>, IndexMap<&str, JsonValue>)> {
+    let cooking_fuels = input.all_energy_supply_fuel_types()?;
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
-    let mut cooking_defaults: IndexMap<ApplianceKey, Appliance> = match (
-        cooking_fuels.contains(&FuelType::Electricity),
-        cooking_fuels.contains(&FuelType::MainsGas),
+    let mut cooking_defaults: IndexMap<&str, JsonValue> = match (
+        cooking_fuels.contains("electricity"),
+        cooking_fuels.contains("mains_gas"),
     ) {
         (true, true) => IndexMap::from([
             (
-                ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
+                "Oven",
+                json!({
+                    "Energysupply": "mains elec",
+                    "kWh_per_cycle": 0.59,
+                }),
             ),
             (
-                ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
+                "Hobs",
+                json!({
+                    "Energysupply": "mains gas",
+                    "kWh_per_cycle": 0.72,
+                }),
             ),
         ]),
         (_, true) => IndexMap::from([
             (
-                ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 1.57),
+                "Oven",
+                json!({
+                    "Energysupply": "mains gas",
+                    "kWh_per_cycle": 1.57,
+                }),
             ),
             (
-                ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
+                "Hobs",
+                json!({
+                    "Energysupply": "mains gas",
+                    "kWh_per_cycle": 0.72,
+                }),
             ),
         ]),
         (true, _) => IndexMap::from([
             (
-                ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
+                "Oven",
+                json!({
+                    "Energysupply": "mains elec",
+                    "kWh_per_cycle": 0.59,
+                }),
             ),
             (
-                ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
+                "Hobs",
+                json!({
+                    "Energysupply": "mains elec",
+                    "kWh_per_cycle": 0.72,
+                }),
             ),
         ]),
         _ => IndexMap::from([
             (
-                ApplianceKey::Oven,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
+                "Oven",
+                json!({
+                    "Energysupply": "mains elec",
+                    "kWh_per_cycle": 0.59,
+                }),
             ),
             (
-                ApplianceKey::Hobs,
-                Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
+                "Hobs",
+                json!({
+                    "Energysupply": "mains elec",
+                    "kWh_per_cycle": 0.72,
+                }),
             ),
         ]),
     };
 
     let mut additional_cooking_defaults = IndexMap::from([
-        (ApplianceKey::Kettle, Appliance::with_kwh_per_cycle(0.1)),
-        (ApplianceKey::Microwave, Appliance::with_kwh_per_cycle(0.08)),
+        ("Kettle", json!({"kWh_per_cycle": 0.1})),
+        ("Microwave", json!({"kWh_per_cycle": 0.08})),
     ]);
 
     let appliance_defaults = IndexMap::from([
         (
-            ApplianceKey::OtherDevices,
-            Appliance::with_kwh_per_annum(
-                30.0 * (number_of_occupants * total_floor_area).powf(0.49),
-            ),
+            "Otherdevices",
+            json!({
+                "kWh_per_annum": 30.0 * (number_of_occupants * total_floor_area).powf(0.49),
+            }),
+        ),
+        ("Dishwasher", json!({"kWh_per_100cycle" : 53.0})),
+        (
+            "Clothes_washing",
+            json!({
+                "kWh_per_100cycle" : 53.0,
+                "kg_load": 7.0
+            }),
         ),
         (
-            ApplianceKey::Dishwasher,
-            Appliance::with_kwh_per_100_cycle(53.0, None),
+            "Clothes_drying",
+            json!({
+                "kWh_per_100cycle" : 98.0,
+                "kg_load": 7.0
+            }),
         ),
-        (
-            ApplianceKey::ClothesWashing,
-            Appliance::with_kwh_per_100_cycle(53.0, Some(7.0)),
-        ),
-        (
-            ApplianceKey::ClothesDrying,
-            Appliance::with_kwh_per_100_cycle(98.0, Some(7.0)),
-        ),
-        (ApplianceKey::Fridge, Appliance::with_kwh_per_annum(76.7)),
-        (ApplianceKey::Freezer, Appliance::with_kwh_per_annum(128.2)),
-        (
-            ApplianceKey::FridgeFreezer,
-            Appliance::with_kwh_per_annum(137.4),
-        ),
+        ("Fridge", json!({"kWh_per_annum" : 76.7})),
+        ("Freezer", json!({"kWh_per_annum" : 128.2})),
+        ("Fridge-Freezer", json!({"kWh_per_annum" : 137.4})),
     ]);
 
-    if !input.has_appliances() {
-        input.merge_in_appliances(&appliance_defaults);
-        input.merge_in_appliances(&cooking_defaults);
-        input.merge_in_appliances(&additional_cooking_defaults);
+    if !input.has_appliances()? {
+        input.merge_in_appliances(&appliance_defaults)?;
+        input.merge_in_appliances(&cooking_defaults)?;
+        input.merge_in_appliances(&additional_cooking_defaults)?;
     } else {
         for appliance_name in appliance_defaults.keys() {
             if !input.appliances_contain_key(appliance_name)
-                || input.appliance_key_has_reference(appliance_name, &ApplianceReference::Default)
+                || input.appliance_key_has_reference(appliance_name, "Default")?
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
-                )]));
-            } else if input
-                .appliance_key_has_reference(appliance_name, &ApplianceReference::NotInstalled)
-            {
-                input.remove_appliance(appliance_name);
+                )]))?;
+            } else if input.appliance_key_has_reference(appliance_name, "Not Installed")? {
+                input.remove_appliance(appliance_name)?;
             } else {
                 // user has specified appliance efficiency, overwrite efficiency with default
-                let original_load_shifting_value = input.loadshifting_for_appliance(appliance_name);
+                let original_load_shifting_value =
+                    input.loadshifting_for_appliance(appliance_name)?;
 
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
-                )]));
+                )]))?;
                 if let Some(load_shifting) = original_load_shifting_value {
-                    input.set_loadshifting_for_appliance(appliance_name, load_shifting);
+                    input.set_loadshifting_for_appliance(appliance_name, json!(load_shifting))?;
                 }
             }
         }
@@ -2430,69 +2492,73 @@ fn appliance_cooking_defaults(
         {
             // neither cooker nor oven specified, add cooker as minimum requirement
             input.merge_in_appliances(&IndexMap::from([(
-                ApplianceKey::Hobs,
-                cooking_defaults[&ApplianceKey::Hobs].clone(),
-            )]));
+                "Hobs",
+                cooking_defaults["Hobs"].clone(),
+            )]))?;
         }
         cooking_defaults.append(&mut additional_cooking_defaults);
         for (cooking_name, cooking_appliance) in cooking_defaults.iter() {
             if !input.appliances_contain_key(cooking_name)
-                || input.appliance_key_has_reference(cooking_name, &ApplianceReference::Default)
+                || input.appliance_key_has_reference(cooking_name, "Default")?
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     cooking_name.to_owned(),
                     cooking_appliance.clone(),
-                )]));
-            } else if input
-                .appliance_key_has_reference(cooking_name, &ApplianceReference::NotInstalled)
-            {
-                input.remove_appliance(cooking_name);
+                )]))?;
+            } else if input.appliance_key_has_reference(cooking_name, "Not Installed")? {
+                input.remove_appliance(cooking_name)?;
             } else {
                 // NB: there is a possible issue in the Python here where the wrong key is used
                 input.merge_in_appliances(&IndexMap::from([(
                     cooking_name.to_owned(),
                     cooking_appliance.clone(),
-                )]));
+                )]))?;
             }
         }
     }
 
-    (appliance_defaults, cooking_defaults)
+    Ok((appliance_defaults, cooking_defaults))
 }
 
 fn appliance_kwh_cycle_loading_factor(
     input: &InputForProcessing,
-    appliance_key: &ApplianceKey,
-    appliance_map: &IndexMap<ApplianceKey, ApplianceUseProfile>,
+    appliance_key: &str,
+    appliance_map: &IndexMap<&str, ApplianceUseProfile>,
 ) -> anyhow::Result<(f64, f64)> {
     // value on energy label is defined differently between appliance types,
     // convert any different input types to simple kWh per cycle
 
-    let (kwh_cycle, appliance) = if let Some(ApplianceEntry::Object(appliance)) =
-        input.appliance_with_key(appliance_key)
+    let appliance = input
+        .appliance_with_key(appliance_key)?
+        .ok_or_else(|| anyhow!("Appliance '{appliance_key}' not found"))?;
+    let kwh_cycle = if let Some(kwh_per_cycle) =
+        appliance.get("kWh_per_cycle").and_then(|v| v.as_f64())
     {
-        (
-            (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
-                kwh_per_cycle
-            } else if let Some(kwh_per_100_cycle) = appliance.kwh_per_100_cycle {
-                kwh_per_100_cycle / 100.
-            } else if let (Some(kwh_per_annum), Some(standard_use)) =
-                (appliance.kwh_per_annum, appliance.standard_use)
-            {
-                kwh_per_annum / standard_use
-            } else {
-                bail!("{} demand must be specified as one of 'kWh_per_cycle', 'kWh_per_100cycle' or 'kWh_per_annum'", appliance_key)
-            }),
-            appliance,
-        )
+        kwh_per_cycle
+    } else if let Some(kwh_per_100_cycle) =
+        appliance.get("kWh_per_100cycle").and_then(|v| v.as_f64())
+    {
+        kwh_per_100_cycle / 100.
+    } else if let Some(kwh_per_annum) = appliance.get("kWh_per_annum").and_then(|v| v.as_f64()) {
+        // standard use is the number of cycles per annum dictated by EU standard for energy label
+        let standard_use = appliance.get("standard_use").and_then(|v| v.as_f64());
+        let standard_use = match standard_use {
+            Some(standard_use) => standard_use,
+            None => {
+                return Err(anyhow!(
+                    "Appliance '{appliance_key}' does not have a standard_use value"
+                ))
+            }
+        };
+        kwh_per_annum / standard_use
     } else {
-        bail!("Appliance with name '{appliance_key}' must exist.")
+        bail!("Appliance '{appliance_key}' demand must be specified as one of 'kWh_per_cycle', 'kWh_per_100cycle' or 'kWh_per_annum'");
     };
 
     let map_appliance = appliance_map.get(appliance_key).ok_or_else(|| anyhow!("The appliance name '{appliance_key}' was expected to be found within the appliance map: {appliance_map:?}."))?;
 
     let mut loading_factor = 1.;
-    if appliance_key.is_clothes_appliance() {
+    if appliance_key.starts_with("Clothes") {
         // additionally, laundry appliances have variable load size,
         // which affects the required number of uses to do all the occupants' laundry for the year
         loading_factor = {
@@ -2504,9 +2570,12 @@ fn appliance_kwh_cycle_loading_factor(
                 .as_ref()
                 .ok_or_else(|| anyhow!("Appliance is expected to have clothes use data"))?
                 .standard_load_kg
-                / appliance.kg_load.as_ref().ok_or_else(|| {
-                    anyhow!("Passed in appliance is expected to have a kg_load value.")
-                })?
+                / appliance
+                    .get("kg_load")
+                    .and_then(|kg_load| kg_load.as_f64())
+                    .ok_or_else(|| {
+                        anyhow!("Passed in appliance is expected to have a kg_load value.")
+                    })?
         };
 
         // There is some unreachable code in the Python here around spin dry efficiency class
@@ -2527,7 +2596,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     input_24h.set_non_appliance_demand_24hr_on_smart_appliance_control(
         SMART_APPLIANCE_CONTROL_NAME,
         zeros_24h_by_supply.clone(),
-    );
+    )?;
 
     input_24h.set_battery24hr_on_smart_appliance_control(
         SMART_APPLIANCE_CONTROL_NAME,
@@ -2537,13 +2606,13 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
             energy_into_battery_from_grid: zeros_24h_by_supply.clone(),
             battery_state_of_charge: zeros_24h_by_supply.clone(),
         },
-    );
+    )?;
 
     input_24h.set_simulation_time(SimulationTime::new(
         SIMTIME_START,
         SIMTIME_START + HOURS_PER_DAY as f64,
         SIMTIME_STEP,
-    ));
+    ))?;
 
     // create a corpus instance
     let output_options = OutputOptions {
@@ -2552,7 +2621,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     };
 
     let corpus = Corpus::from_inputs(
-        input_24h.as_input(),
+        &input_24h.as_input(),
         None,
         sim_settings.tariff_data_filename.as_deref(),
         &output_options,
@@ -2576,11 +2645,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let mut non_appliance_electricity_demand = vec![];
     for i in 0..min_demand_length {
         for (name, user) in electricity_users {
-            let name = ApplianceKey::try_from(name.as_str());
-            let do_increment = match name {
-                Ok(name) => !input.appliances_contain_key(&name),
-                Err(_) => true,
-            };
+            let do_increment = !input.appliances_contain_key(&name);
             if do_increment {
                 if i >= non_appliance_electricity_demand.len() {
                     non_appliance_electricity_demand.resize(i + 1, 0.0);
@@ -2601,7 +2666,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     input.set_non_appliance_demand_24hr_on_smart_appliance_control(
         SMART_APPLIANCE_CONTROL_NAME,
         non_appliance_demand_24hr,
-    );
+    )?;
 
     let energy_into_battery_from_generation = results
         .energy_to_storage
@@ -2632,7 +2697,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
             energy_into_battery_from_grid,
             battery_state_of_charge,
         },
-    );
+    )?;
 
     Ok(())
 }
@@ -2641,7 +2706,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
 fn check_shower_flowrate(input: &InputForProcessing) -> anyhow::Result<()> {
     let min_flowrate = 8.0;
 
-    for (name, flowrate) in input.shower_flowrates() {
+    for (name, flowrate) in input.shower_flowrates()? {
         if flowrate < min_flowrate {
             // only currently known shower name that can have a flowrate is "mixer"
             bail!("Invalid flow rate: {flowrate} litres per minute in shower with name '{name}'");
@@ -2722,7 +2787,7 @@ pub(super) fn create_hot_water_use_pattern(
     let fhw = (365. * vol_hw_daily_average) / ref_hw_vol;
 
     // if part G has been complied with, apply 5% reduction to duration of Other events
-    let part_g_bonus = if let Some(part_g_compliance) = input.part_g_compliance() {
+    let part_g_bonus = if let Some(part_g_compliance) = input.part_g_compliance()? {
         if part_g_compliance {
             0.95
         } else {
@@ -2781,29 +2846,29 @@ pub(super) fn create_hot_water_use_pattern(
         }
 
         input.add_water_heating_event(
-            drawoff.event_type,
+            &drawoff.event_type,
             &drawoff.name,
-            WaterHeatingEvent {
-                start: event_start,
-                duration: Some(duration),
-                volume: if event.event_type.is_bath_type() {
+            json!({
+                "start": event_start,
+                "duration": Some(duration),
+                "volume": if event.event_type.is_bath_type() {
                     // if the end user the event is being assigned to has a defined flowrate
                     // we are able to supply a volume
                     input
-                        .flowrate_for_bath_field(&drawoff.name)
+                        .flowrate_for_bath_field(&drawoff.name)?
                         .map(|flowrate| duration * flowrate)
                 } else {
                     None
                 },
-                temperature: if event.event_type.is_shower_type() {
+                "temperature": if event.event_type.is_shower_type() {
                     event_temperature_showers
                 } else if event.event_type.is_bath_type() {
                     event_temperature_bath
                 } else {
                     event_temperature_others
                 },
-            },
-        );
+            }),
+        )?;
     }
 
     Ok(())
@@ -2811,10 +2876,7 @@ pub(super) fn create_hot_water_use_pattern(
 
 fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let simtime = simtime();
-    let extcond = create_external_conditions(
-        input.external_conditions().as_ref().clone(),
-        &simtime.iter(),
-    )?;
+    let extcond = create_external_conditions(input.external_conditions()?, &simtime.iter())?;
     let mut curtain_opening_sched_manual: Vec<Option<bool>> = Default::default();
     let mut curtain_opening_sched_auto: Vec<bool> = Default::default();
     let mut blinds_closing_irrad_manual: Vec<Option<f64>> = Default::default();
@@ -2911,35 +2973,56 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
         }),
     )?;
 
-    let transparent_building_elements = input.all_transparent_building_elements_mut();
+    let transparent_building_elements = input.all_transparent_building_elements_mut()?;
 
-    for building_element in transparent_building_elements.iter() {
-        if let Some(window_treatments) = building_element.treatment() {
-            for mut treatment in window_treatments {
-                treatment.set_is_open(false);
-
-                match treatment.treatment_type {
-                    WindowTreatmentType::Curtains => {
-                        if treatment.controls.is_manual() {
-                            treatment.set_open_control("_curtains_open_manual");
+    for mut building_element in transparent_building_elements
+        .into_iter()
+        .map(|el| TransparentBuildingElementJsonValue(el))
+    {
+        for treatment in building_element.treatment().iter_mut().flatten() {
+            treatment.insert("is_open".into(), json!(false));
+            if let Some(treatment_type) = treatment
+                .get("type")
+                .and_then(|treatment_type| treatment_type.as_str())
+            {
+                let treatment_controls_are_manual = treatment
+                    .get("WindowTreatmentControl")
+                    .and_then(|window_control| window_control.as_str())
+                    .is_some_and(|window_control_type| window_control_type.starts_with("manual"));
+                match treatment_type {
+                    "curtains" => {
+                        if treatment_controls_are_manual {
+                            treatment.insert("Control_open".into(), json!("_curtains_open_manual"));
                         } else {
-                            treatment.set_open_control("_curtains_open_auto");
+                            treatment.insert("Control_open".into(), json!("_curtains_open_auto"));
                         }
                     }
-                    // blinds are opened and closed in response to solar irradiance incident upon them
-                    WindowTreatmentType::Blinds => {
-                        if treatment.controls.is_manual() {
+                    "blinds" => {
+                        if treatment_controls_are_manual {
                             // manual control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment
-                                .set_closing_irradiance_control("_blinds_closing_irrad_manual");
-                            treatment
-                                .set_opening_irradiance_control("_blinds_opening_irrad_manual");
+                            treatment.insert(
+                                "Control_closing_irrad".into(),
+                                json!("_blinds_closing_irrad_manual"),
+                            );
+                            treatment.insert(
+                                "Control_opening_irrad".into(),
+                                json!("_blinds_opening_irrad_manual"),
+                            );
                         } else {
                             // automatic control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment.set_closing_irradiance_control("_blinds_closing_irrad_auto");
-                            treatment.set_opening_irradiance_control("_blinds_opening_irrad_auto");
-                            treatment.set_opening_delay_hrs(2.);
+                            treatment.insert(
+                                "Control_closing_irrad".into(),
+                                json!("_blinds_closing_irrad_auto"),
+                            );
+                            treatment.insert(
+                                "Control_opening_irrad".into(),
+                                json!("_blinds_opening_irrad_auto"),
+                            );
+                            treatment.insert("opening_delay_hrs".into(), json!(2));
                         }
+                    }
+                    _ => {
+                        // do nothing
                     }
                 }
             }
@@ -2963,7 +3046,7 @@ pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> 
             }
         }),
     )?;
-    input.set_window_adjust_control_for_infiltration_ventilation("_window_opening_adjust");
+    input.set_window_adjust_control_for_infiltration_ventilation("_window_opening_adjust")?;
 
     input.add_control(
         "_window_opening_openablealways",
@@ -2996,7 +3079,11 @@ pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> 
 
     let noise_nuisance = input.infiltration_ventilation_is_noise_nuisance();
 
-    for transparent_building_element in input.all_transparent_building_elements_mut() {
+    for mut transparent_building_element in input
+        .all_transparent_building_elements_mut()?
+        .into_iter()
+        .map(|t| TransparentBuildingElementJsonValue(t))
+    {
         let element_is_security_risk = transparent_building_element.is_security_risk();
         transparent_building_element.set_window_openable_control(
             if noise_nuisance || element_is_security_risk {
@@ -3054,7 +3141,7 @@ fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Resul
             }
         }),
     )?;
-    input.set_vent_adjust_min_control_for_infiltration_ventilation("_vent_adjust_min_ach");
+    input.set_vent_adjust_min_control_for_infiltration_ventilation("_vent_adjust_min_ach")?;
 
     input.add_control(
         "_vent_adjust_max_ach",
@@ -3067,7 +3154,7 @@ fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Resul
             }
         }),
     )?;
-    input.set_vent_adjust_max_control_for_infiltration_ventilation("_vent_adjust_max_ach");
+    input.set_vent_adjust_max_control_for_infiltration_ventilation("_vent_adjust_max_ach")?;
 
     Ok(())
 }
@@ -3075,16 +3162,17 @@ fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Resul
 fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // intermittent extract fans are assumed to turn on whenever cooking, bath or shower events occur
 
-    let shower_and_bath_events = input.water_heating_events_of_types(&[
-        WaterHeatingEventType::Shower,
-        WaterHeatingEventType::Bath,
-    ]);
-    let appliance_gains_events = input.appliance_gains_events();
+    let shower_and_bath_events = input.water_heating_events_of_types(&["Shower", "Bath"])?;
+    let appliance_gains_events = input.appliance_gains_events()?;
 
-    let mech_vents = input.keyed_mechanical_ventilations_for_processing();
+    let mut mech_vents = input
+        .keyed_mechanical_ventilations_for_processing()?
+        .into_iter()
+        .map(|(name, vent)| (name, MechanicalVentilationJsonValue(vent)))
+        .collect::<IndexMap<_, _>>();
     let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
         .iter()
-        .filter(|(_, vent)| vent.vent_type() == VentType::IntermittentMev)
+        .filter(|(_, vent)| vent.vent_is_type("Intermittent MEV"))
         .fold(IndexMap::from([]), |mut acc, (vent, _)| {
             acc.insert(
                 vent.to_owned(),
@@ -3101,16 +3189,26 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut cycle_mev = CycleMev::new(mev_names.iter().map(String::as_str).collect());
 
     for event in shower_and_bath_events {
+        let event_start = event
+            .get("start")
+            .and_then(|v| v.as_f64())
+            .ok_or(json_error(
+                "Event was expected to have a numeric start field",
+            ))?;
+        let event_duration = event
+            .get("duration")
+            .and_then(|v| v.as_f64())
+            .ok_or(json_error(
+                "Event was expected to have a numeric duration field",
+            ))?;
         let mev_name = cycle_mev.mev();
-        let idx = (event.start / SIMTIME_STEP).floor() as usize;
-        let tsfrac = event.duration.ok_or_else(|| {
-            anyhow!("Water heating event was expected to have a defined duration in FHS transform.")
-        })? / (MINUTES_PER_HOUR as f64 * SIMTIME_STEP);
+        let idx = (event_start / SIMTIME_STEP).floor() as usize;
+        let tsfrac = event_duration / (MINUTES_PER_HOUR as f64 * SIMTIME_STEP);
         // add fraction of the timestep for which appliance is turned on
         // to the fraction of the timestep for which the fan is turned on,
         // and cap that fraction at 1.
         let mut integralx: f64 = Default::default();
-        let start_offset = event.start / SIMTIME_STEP - idx as f64;
+        let start_offset = event_start / SIMTIME_STEP - idx as f64;
         while integralx < tsfrac {
             let segment = (start_offset.ceil() - start_offset).min(tsfrac - integralx);
             let step_idx = (idx + (start_offset + integralx).floor() as usize)
@@ -3167,7 +3265,7 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for vent in intermittent_mev.keys() {
         let control_name = &control_names[vent];
         input.add_control(
-            control_name.clone(),
+            control_name,
             json!({
                 "type": "SetpointTimeControl",
                 "start_day": 0,
@@ -3207,22 +3305,26 @@ impl<'a> CycleMev<'a> {
 }
 
 fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    for mech_vents_data in input.mechanical_ventilations_for_processing().iter_mut() {
-        match mech_vents_data.vent_type() {
-            crate::input::VentType::CentralisedContinuousMev | crate::input::VentType::Mvhr => {
-                let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;
-                let measured_air_flow_rate = mech_vents_data.measured_air_flow_rate().ok_or_else(|| anyhow!("Measured air flow rate was not given for a mechanical ventilation that expected one to be present."))?;
-                // Specific fan power is total measured electrical power in Watts divided by air flow rate
-                let measured_sfp = measured_fan_power / measured_air_flow_rate; // in W/l/s
-                mech_vents_data.set_sfp(measured_sfp);
-            }
-            crate::input::VentType::IntermittentMev
-            | crate::input::VentType::DecentralisedContinuousMev => {
-                continue;
-            }
-            crate::input::VentType::Piv => {
-                bail!("Mechanical ventilation type of PIV not recognised")
-            }
+    for mut mech_vents_data in input
+        .mechanical_ventilations_for_processing()?
+        .into_iter()
+        .map(|vent| MechanicalVentilationJsonValue(vent))
+    {
+        if mech_vents_data.vent_is_type("Centralised continuous MEV")
+            || mech_vents_data.vent_is_type("MVHR")
+        {
+            let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;
+            let measured_air_flow_rate = mech_vents_data.measured_air_flow_rate().ok_or_else(|| anyhow!("Measured air flow rate was not given for a mechanical ventilation that expected one to be present."))?;
+            // Specific fan power is total measured electrical power in Watts divided by air flow rate
+            let measured_sfp = measured_fan_power / measured_air_flow_rate; // in W/l/s
+            mech_vents_data.set_sfp(measured_sfp);
+        } else if mech_vents_data.vent_is_type("Intermittent MEV")
+            || mech_vents_data.vent_is_type("Decentralised continuous MEV")
+        {
+            continue;
+        } else if mech_vents_data.vent_is_type("PIV") {
+            // PIV will be removed as of FHS 0.25/ HEM 0.36 so remove this clause at this point
+            bail!("Mechanical ventilation type of PIV not recognised");
         }
     }
 
@@ -3230,12 +3332,14 @@ fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
 }
 
 fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let zone_keys = input.zone_keys();
+    let zone_keys = input.zone_keys()?;
     for zone_key in &zone_keys {
         if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
-            match space_heat_control {
-                SpaceHeatControlType::LivingRoom => {
-                    for space_cool_system in input.space_cool_system_for_zone(zone_key)? {
+            match space_heat_control.as_str() {
+                "livingroom" => {
+                    for space_cool_system in
+                        input.space_cool_system_for_zone(zone_key)?.iter().cloned()
+                    {
                         let ctrl_name = format!("Cooling_{space_cool_system}");
                         input.set_control_string_for_space_cool_system(
                             &space_cool_system,
@@ -3254,13 +3358,13 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                             }
                         });
                         let control_json = living_room_control.as_object_mut().unwrap();
-                        if let Some(temp_setback) = input
-                            .temperature_setback_for_space_cool_system(space_cool_system.as_str())?
+                        if let Some(temp_setback) =
+                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
                         {
                             control_json.insert("setpoint_max".to_string(), temp_setback.into());
                         }
-                        if let Some(advanced_start) = input
-                            .advanced_start_for_space_cool_system(space_cool_system.as_str())?
+                        if let Some(advanced_start) =
+                            input.advanced_start_for_space_cool_system(&space_cool_system)?
                         {
                             control_json
                                 .insert("advanced_start".to_string(), advanced_start.into());
@@ -3268,11 +3372,11 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                         input.add_control(&ctrl_name, living_room_control)?;
                     }
                 }
-                SpaceHeatControlType::RestOfDwelling => {
+                "restofdwelling" => {
                     for space_cool_system in input.space_cool_system_for_zone(zone_key)? {
                         let ctrl_name = format!("Cooling_{space_cool_system}");
                         input.set_control_string_for_space_cool_system(
-                            space_cool_system.as_str(),
+                            &space_cool_system,
                             &ctrl_name,
                         )?;
                         let mut rest_of_dwelling_control = json!({
@@ -3285,19 +3389,22 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                             }
                         });
                         let control_json = rest_of_dwelling_control.as_object_mut().unwrap();
-                        if let Some(temp_setback) = input
-                            .temperature_setback_for_space_cool_system(space_cool_system.as_str())?
+                        if let Some(temp_setback) =
+                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
                         {
                             control_json.insert("setpoint_max".to_string(), temp_setback.into());
                         }
-                        if let Some(advanced_start) = input
-                            .advanced_start_for_space_cool_system(space_cool_system.as_str())?
+                        if let Some(advanced_start) =
+                            input.advanced_start_for_space_cool_system(&space_cool_system)?
                         {
                             control_json
                                 .insert("advanced_start".to_string(), advanced_start.into());
                         }
-                        input.add_control(ctrl_name.to_owned(), rest_of_dwelling_control)?;
+                        input.add_control(&ctrl_name, rest_of_dwelling_control)?;
                     }
+                }
+                unknown_type => {
+                    bail!("Encountered unknown space heat control type: {unknown_type}")
                 }
             }
         }
@@ -3477,10 +3584,10 @@ pub(super) fn create_cold_water_feed_temps(
     // typical fall in feed temp from midnight to 6am
     let delta = 1.5;
 
-    let (t24m, feed_type) = if input.cold_water_source_has_header_tank() {
-        (t24m_header_tank, ColdWaterSourceType::HeaderTank)
+    let (t24m, feed_type) = if input.cold_water_source_has_header_tank()? {
+        (t24m_header_tank, "header tank")
     } else {
-        (t24m_mains, ColdWaterSourceType::MainsWater)
+        (t24m_mains, "mains water")
     };
 
     let mut cold_feed_schedule_m: Vec<Vec<f64>> = Vec::with_capacity(12 * 24);
@@ -3532,8 +3639,8 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
     let mut total_area = vec![0.; simtime().total_steps()];
 
     let data: Vec<Vec<f64>> = input
-        .all_building_elements()
-        .iter()
+        .all_building_elements()?
+        .values()
         .filter_map(|el| match el {
             crate::input::BuildingElement::Transparent {
                 orientation,
@@ -3554,7 +3661,7 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
                 let w_area = width * height;
                 // retrieve half-hourly shading factor
                 let direct_result =
-                    shading_factor(input, base_height, height, width, orientation, shading);
+                    shading_factor(input, base_height, height, width, orientation, &shading);
 
                 let area = 0.9 * w_area * (1. - ff) * g_val;
 
@@ -3600,7 +3707,7 @@ fn shading_factor(
 
     let time = simtime();
 
-    let input_external_conditions = input.external_conditions();
+    let input_external_conditions = input.external_conditions()?;
 
     let dir_beam_conversion = input_external_conditions
         .direct_beam_conversion_needed
@@ -3680,11 +3787,11 @@ fn top_up_lighting(
     l_req: f64,
     total_capacity: f64,
 ) -> anyhow::Result<f64> {
-    if !input.all_zones_have_bulbs() {
+    if !input.all_zones_have_bulbs()? {
         bail!("At least one zone has lighting that does not have bulbs defined.");
     }
 
-    let tfa = calc_tfa(input);
+    let tfa = calc_tfa(input)?;
     let capacity_ref = 330. * tfa;
 
     let l_prov = l_req * (total_capacity / capacity_ref);

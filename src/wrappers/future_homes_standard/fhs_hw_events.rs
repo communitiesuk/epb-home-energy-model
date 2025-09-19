@@ -1,7 +1,7 @@
 use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::input::{ColdWaterSourceType, InputForProcessing, WaterHeatingEventType};
+use crate::input::{InputForProcessing, WaterHeatingEventType};
 use crate::wrappers::future_homes_standard::future_homes_standard::HourlyHotWaterEvent;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use csv::Reader;
 use indexmap::IndexMap;
 use parking_lot::Mutex;
@@ -117,25 +117,29 @@ pub fn reset_events_and_provide_drawoff_generator(
     // if multiple showers/baths are present, we need to cycle through them
     // if either is missing replace with the one that is present,
     // if neither is present, "other" events with same consumption as a bath should be used
-    input.reset_water_heating_events();
+    input.reset_water_heating_events()?;
 
-    for shower in input.shower_keys() {
+    for shower in input.shower_keys()? {
         showers.push(Drawoff {
-            event_type: WaterHeatingEventType::Shower,
+            event_type: "Shower".into(),
             name: shower,
             duration_fn: Rc::new(Mutex::new(Box::new(shower_duration_func))),
         });
     }
 
-    for bath in input.bath_keys() {
-        let bath_size = input.size_for_bath_field(bath.as_str()).unwrap_or_else(|| {
-            panic!("Tried to access a bath input with a nonexistent key '{bath}'")
-        });
+    for bath in input.bath_keys()? {
+        let bath_size = input.size_for_bath_field(bath.as_str())?.ok_or(anyhow!(
+            "Tried to access a bath input with a nonexistent key '{bath}'"
+        ))?;
         // displacement of average occupant subtracted from volume of bath tub to work out fill volume
         let bath_size = bath_size_displaced(n_occupants, bath_size)?;
-        let bath_flowrate = input.flowrate_for_bath_field(bath.as_str()).unwrap();
+        let bath_flowrate = input
+            .flowrate_for_bath_field(bath.as_str())?
+            .ok_or(anyhow!(
+                "Tried to access bath input with a nonexistent key '{bath}'"
+            ))?;
         baths.push(Drawoff {
-            event_type: WaterHeatingEventType::Bath,
+            event_type: "Bath".into(),
             duration_fn: Rc::new(Mutex::new(Box::new(partial!(move bath_duration_func =>
                 bath_size,
                 bath_flowrate,
@@ -145,11 +149,11 @@ pub fn reset_events_and_provide_drawoff_generator(
         });
     }
 
-    for other_name in input.other_water_use_keys() {
-        let other_flow_rate = input.flow_rate_for_other_water_use_field(other_name.as_str()).unwrap_or_else(|| panic!("Tried to access an input for other water use with a nonexistent key '{other_name}'"));
+    for other_name in input.other_water_use_keys()? {
+        let other_flow_rate = input.flow_rate_for_other_water_use_field(other_name.as_str())?.ok_or(anyhow!("Tried to access an input for other water use with a nonexistent key '{other_name}'"))?;
         let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
-            event_type: WaterHeatingEventType::Other,
+            event_type: "Other".into(),
             duration_fn: Rc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
                 other_flow_rate,
                 _
@@ -163,15 +167,15 @@ pub fn reset_events_and_provide_drawoff_generator(
     // event duration is calculated such as to deliver a fixed volume of water (otherdurationfunc above)
     // so this choice only affects how sharp peaks in HW demand can be.
     if other.is_empty() {
-        let feed_type = if input.cold_water_source_has_header_tank() {
-            ColdWaterSourceType::HeaderTank
+        let feed_type = if input.cold_water_source_has_header_tank()? {
+            "header tank"
         } else {
-            ColdWaterSourceType::MainsWater
+            "mains water"
         };
 
-        input.set_other_water_use_details(feed_type, 8.0);
+        input.set_other_water_use_details(feed_type, 8.0)?;
         let other_flow_rate = input
-            .flow_rate_for_other_water_use_field("other")
+            .flow_rate_for_other_water_use_field("other")?
             .unwrap_or_else(|| {
                 panic!(
                     "Tried to access an input for other water use with a nonexistent key 'other'"
@@ -179,7 +183,7 @@ pub fn reset_events_and_provide_drawoff_generator(
             });
         let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
-            event_type: WaterHeatingEventType::Other,
+            event_type: "Other".into(),
             name: "other".into(),
             duration_fn: Rc::new(Mutex::new(Box::new(partial!(move other_duration_func =>
                 other_flow_rate,
@@ -203,14 +207,14 @@ pub fn reset_events_and_provide_drawoff_generator(
             // using a default of 180L tub and 8.0l/min flowrate
             let bath_size = bath_size_displaced(n_occupants, STANDARD_BATH_SIZE)?;
             baths.push(Drawoff {
-                event_type: WaterHeatingEventType::Other,
+                event_type: "Other".into(),
                 name: "other".into(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => bath_size, 8.0, _),
                 ))),
             });
             showers.push(Drawoff {
-                event_type: WaterHeatingEventType::Other,
+                event_type: "Other".into(),
                 name: "other".into(),
                 duration_fn: Rc::new(Mutex::new(Box::new(
                     partial!(move bath_duration_func => bath_size, 8.0, _),
@@ -251,7 +255,7 @@ type DurationFn = Rc<Mutex<Box<dyn FnMut(DrawoffEvent) -> f64>>>;
 
 #[derive(Clone)]
 pub struct Drawoff {
-    pub event_type: WaterHeatingEventType,
+    pub event_type: String,
     pub name: String,
     pub duration_fn: DurationFn,
 }

@@ -1,5 +1,6 @@
 use crate::input::{WaterHeatingEvent, WaterHeatingEventType};
 use anyhow::{anyhow, bail};
+use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
 use serde_json::Value;
 
@@ -33,7 +34,7 @@ pub(crate) struct ScheduleEvent {
     pub(crate) temperature: Option<f64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
 pub(crate) enum WaterScheduleEventType {
     Shower,
     Bath,

@@ -80,7 +80,7 @@ impl HemWrapper for FhsComplianceWrapper {
             .map(|(i, mut input)| {
                 let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
                 do_fhs_preprocessing(&mut input, flags)?;
-                Ok((*key, input.finalize()))
+                Ok((*key, input.finalize()?))
             })
             .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>()
     }

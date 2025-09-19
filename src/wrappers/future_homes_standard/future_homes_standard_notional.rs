@@ -11,10 +11,10 @@ use crate::core::water_heat_demand::dhw_demand::{
 use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
 use crate::input::{
-    BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, GroundBuildingElement,
-    HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing,
-    MechanicalVentilation, SpaceHeatSystemHeatSource, ThermalBridgingDetails,
-    UValueEditableBuildingElement, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
+    BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
+    HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
+    SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
+    UValueEditableBuildingElementJsonValue, WaterPipeContentsType, WaterPipework,
     WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
@@ -34,7 +34,7 @@ use crate::{
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use serde_json::json;
+use serde_json::{json, Value};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -61,10 +61,10 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     let is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
     let is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
     // Check if a heat network is present
-    let is_heat_network = check_heatnetwork_present(input);
+    let is_heat_network = check_heatnetwork_present(input)?;
 
     // Determine cold water source
-    let cold_water_source = input.cold_water_source();
+    let cold_water_source = input.cold_water_source()?;
 
     if cold_water_source.len() != 1 {
         bail!("The FHS Notional wrapper expects exactly one cold water type to be set.");
@@ -77,15 +77,15 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     };
 
     // Retrieve the number of bedrooms and total volume
-    let bedroom_number = input.number_of_bedrooms().ok_or_else(|| {
+    let bedroom_number = input.number_of_bedrooms()?.ok_or_else(|| {
         anyhow!("FHS Notional wrapper expects number of bedrooms to be provided.")
     })?;
-    let total_volume = input.total_zone_volume();
+    let total_volume = input.total_zone_volume()?;
 
     // Determine the TFA
-    let total_floor_area = calc_tfa(input);
+    let total_floor_area = calc_tfa(input)?;
 
-    edit_lighting_efficacy(input);
+    edit_lighting_efficacy(input)?;
     edit_opaque_adjztu_elements(input)?;
     edit_transparent_element(input)?;
     edit_glazing_for_glazing_limit(input, total_floor_area)?;
@@ -96,16 +96,16 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     edit_bath_shower_other(input, cold_water_source)?;
 
     // add WWHRS if needed (and remove any existing systems)
-    remove_wwhrs_if_present(input);
+    remove_wwhrs_if_present(input)?;
     add_wwhrs(input, cold_water_source, is_notional_a, is_fee)?;
 
     // modify hot water distribution
     edit_hot_water_distribution(input, total_floor_area)?;
 
     // remove on-site generation, pv diverter or electric battery if present
-    remove_onsite_generation_if_present(input);
-    remove_pv_diverter_if_present(input);
-    remove_electric_battery_if_present(input);
+    remove_onsite_generation_if_present(input)?;
+    remove_pv_diverter_if_present(input)?;
+    remove_electric_battery_if_present(input)?;
 
     // modify ventilation
     let minimum_air_change_rate =
@@ -132,28 +132,26 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     Ok(())
 }
 
-fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
-    input
-        .heat_source_wet()
-        .iter()
-        .flat_map(|heat_source_wet| heat_source_wet.values())
-        .any(|source| {
-            matches!(
-                source,
-                HeatSourceWetDetails::Hiu { .. }
-                    | HeatSourceWetDetails::HeatPump {
-                        source_type: HeatPumpSourceType::HeatNetwork,
-                        ..
-                    }
-            )
-        })
+fn check_heatnetwork_present(input: &InputForProcessing) -> anyhow::Result<bool> {
+    Ok(input.heat_source_wet()?.values().any(|source| {
+        matches!(
+            source,
+            HeatSourceWetDetails::Hiu { .. }
+                | HeatSourceWetDetails::HeatPump {
+                    source_type: HeatPumpSourceType::HeatNetwork,
+                    ..
+                }
+        )
+    }))
 }
 
 /// Apply notional lighting efficacy
 /// efficacy = 120 lm/W
-fn edit_lighting_efficacy(input: &mut InputForProcessing) {
+fn edit_lighting_efficacy(input: &mut InputForProcessing) -> JsonAccessResult<()> {
     let lighting_efficacy = 120.0;
-    input.set_lighting_efficacy_for_all_zones(lighting_efficacy);
+    input.set_lighting_efficacy_for_all_zones(lighting_efficacy)?;
+
+    Ok(())
 }
 
 /// Apply Notional infiltration specifications
@@ -170,32 +168,42 @@ fn edit_infiltration_ventilation(
     // pressure test results dependent on Notional option A or B
     let test_result = if is_notional_a { 4. } else { 5. };
 
-    let number_of_wet_rooms = input.number_of_wet_rooms();
+    let number_of_wet_rooms = input.number_of_wet_rooms()?;
 
-    let infiltration_ventilation = input.infiltration_ventilation_mut();
+    let infiltration_ventilation = input.infiltration_ventilation_mut()?;
 
-    infiltration_ventilation.leaks.test_pressure = 50.;
-    infiltration_ventilation.leaks.test_result = test_result;
+    {
+        let leaks = infiltration_ventilation
+            .entry("Leaks")
+            .or_insert(json!({}))
+            .as_object_mut()
+            .ok_or(anyhow::anyhow!("Leaks was expected to be an object"))?;
+        leaks.insert("test_pressure".into(), json!(50.));
+        leaks.insert("test_result".into(), json!(test_result));
+    }
 
     // all openings set to 0
     // delete all combustion appliances Cowls and PDUs.
-    infiltration_ventilation.pdus = IndexMap::new();
-    infiltration_ventilation.cowls = IndexMap::new();
-    infiltration_ventilation.combustion_appliances = IndexMap::new();
+    infiltration_ventilation.insert("PDUs".into(), json!({}));
+    infiltration_ventilation.insert("Cowls".into(), json!({}));
+    infiltration_ventilation.insert("CombustionAppliances".into(), json!({}));
 
     if is_notional_a {
         // Notional option A uses continuous extract, so no intermittent extract fans
         // Continuous decentralised mechanical extract ventilation
 
-        infiltration_ventilation.mechanical_ventilation = serde_json::from_value(json!({
-        "Decentralised_Continuous_MEV_for_notional":{
-            "sup_air_flw_ctrl": "ODA",
-            "sup_air_temp_ctrl": "CONST",
-            "vent_type": "Decentralised continuous MEV",
-            "SFP":0.15,
-            "EnergySupply": "mains elec",
-            "design_outdoor_air_flow_rate": minimum_air_flow_rate
-        }}))?;
+        infiltration_ventilation.insert(
+            "MechanicalVentilation".into(),
+            json!({
+            "Decentralised_Continuous_MEV_for_notional":{
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "CONST",
+                "vent_type": "Decentralised continuous MEV",
+                "SFP":0.15,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": minimum_air_flow_rate
+            }}),
+        );
     } else {
         // extract_fans follow the same as the actual dwelling
         // but there must be a minimum of one extract fan
@@ -206,9 +214,9 @@ fn edit_infiltration_ventilation(
         if wet_rooms_count <= 1 {
             bail!("invalid/missing NumberOfWetRooms ({wet_rooms_count})");
         }
-        let mut mech_vents: IndexMap<String, MechanicalVentilation> = Default::default();
+        let mut mech_vents: IndexMap<String, Value> = Default::default();
         for i in 0..wet_rooms_count {
-            let mech_vent: MechanicalVentilation = serde_json::from_value(json!(
+            let mech_vent = json!(
                     {
                     "sup_air_flw_ctrl": "ODA",
                     "sup_air_temp_ctrl": "CONST",
@@ -217,10 +225,10 @@ fn edit_infiltration_ventilation(
                     "EnergySupply": "mains elec",
                     "design_outdoor_air_flow_rate": 80
                 }
-            ))?;
+            );
             mech_vents.insert(i.to_string().into(), mech_vent);
         }
-        infiltration_ventilation.mechanical_ventilation = mech_vents;
+        infiltration_ventilation.insert("MechanicalVentilation".into(), json!(mech_vents));
     }
 
     Ok(())
@@ -233,10 +241,13 @@ fn edit_infiltration_ventilation(
 /// to differentiate external doors from walls, user input: is_external_door
 fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result<()> {
     let mut opaque_adjztu_building_elements =
-        input.all_opaque_and_adjztu_building_elements_mut_u_values();
+        input.all_opaque_and_adjztu_building_elements_mut_u_values()?;
 
-    for building_element in opaque_adjztu_building_elements.iter_mut() {
-        let pitch_class = pitch_class(building_element.pitch());
+    for mut building_element in opaque_adjztu_building_elements
+        .iter_mut()
+        .map(|json_map| UValueEditableBuildingElementJsonValue(json_map))
+    {
+        let pitch_class = pitch_class(building_element.pitch()?);
         match pitch_class {
             HeatFlowDirection::Downwards => {
                 building_element.set_u_value(0.13);
@@ -261,7 +272,7 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
             }
         }
         // remove the r_c input if it was there, as engine would prioritise r_c over u_value
-        building_element.remove_r_c();
+        building_element.remove_thermal_resistance_construction();
     }
 
     Ok(())
@@ -287,10 +298,13 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
     let mut _total_rooflight_area = 0.;
     let mut _sum_uval_times_area = 0.;
 
-    let mut building_elements = input.all_transparent_building_elements_mut_u_values();
+    let mut building_elements = input.all_transparent_building_elements_mut()?;
 
-    for building_element in building_elements.iter_mut() {
-        let pitch_class = pitch_class(building_element.pitch());
+    for mut building_element in building_elements
+        .iter_mut()
+        .map(|json_map| UValueEditableBuildingElementJsonValue(json_map))
+    {
+        let pitch_class = pitch_class(building_element.pitch()?);
         match pitch_class {
             HeatFlowDirection::Upwards => {
                 // rooflight
@@ -314,12 +328,12 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
                 })?;
                 _sum_uval_times_area += current_u_value * rooflight_area;
                 building_element.set_u_value(1.7);
-                building_element.remove_r_c();
+                building_element.remove_thermal_resistance_construction();
             }
             _ => {
                 // if it is not a roof light, it is a glazed door or window
                 building_element.set_u_value(1.2);
-                building_element.remove_r_c();
+                building_element.remove_thermal_resistance_construction();
             }
         }
     }
@@ -330,41 +344,56 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
 ///Split windows/rooflights and walls/roofs into dictionaries.
 fn split_glazing_and_walls(
     input: &mut InputForProcessing,
-) -> (Vec<&mut BuildingElement>, Vec<&mut BuildingElement>) {
-    let mut windows_rooflight = vec![];
-    let mut walls_roofs = vec![];
+) -> anyhow::Result<(
+    IndexMap<String, BuildingElement>,
+    IndexMap<String, BuildingElement>,
+)> {
+    let mut windows_rooflight: IndexMap<String, BuildingElement> = Default::default();
+    let mut walls_roofs: IndexMap<String, BuildingElement> = Default::default();
 
-    let building_elements = input.all_building_elements_mut();
+    let building_elements = input.all_building_elements()?;
 
-    for building_element in building_elements {
+    for (name, building_element) in building_elements {
         match building_element {
-            BuildingElement::Transparent { .. } => windows_rooflight.push(building_element),
-            BuildingElement::Opaque { .. } => walls_roofs.push(building_element),
+            BuildingElement::Transparent { .. } => {
+                windows_rooflight.insert(String::from(name), building_element);
+            }
+            BuildingElement::Opaque { .. } => {
+                walls_roofs.insert(String::from(name), building_element);
+            }
             _ => continue,
         }
     }
 
-    (windows_rooflight, walls_roofs)
+    Ok((windows_rooflight, walls_roofs))
 }
 
 ///Calculate difference between old  and new glazing area and adjust the glazing areas
 fn calculate_area_diff_and_adjust_glazing_area(
+    input: &mut InputForProcessing,
     linear_reduction_factor: f64,
-    window_rooflight_element: &mut BuildingElement,
-) -> f64 {
-    if let BuildingElement::Transparent {
-        ref mut height,
-        ref mut width,
-        ..
-    } = window_rooflight_element
-    {
-        let old_area = *height * *width;
-        *height *= linear_reduction_factor;
-        *width *= linear_reduction_factor;
+    window_rooflight_element: &BuildingElement,
+    building_element_reference: &str,
+) -> anyhow::Result<f64> {
+    if let BuildingElement::Transparent { height, width, .. } = window_rooflight_element {
+        let old_area = height * width;
+        let new_height = height * linear_reduction_factor;
+        let new_width = width * linear_reduction_factor;
 
-        let new_area = *height * *width;
+        input.set_numeric_field_for_building_element(
+            building_element_reference,
+            "height",
+            new_height,
+        )?;
+        input.set_numeric_field_for_building_element(
+            building_element_reference,
+            "width",
+            new_width,
+        )?;
 
-        old_area - new_area
+        let new_area = new_height * new_width;
+
+        Ok(old_area - new_area)
     } else {
         panic!("This function expects to be called for a Transparent BuildingElement only.")
     }
@@ -372,7 +401,7 @@ fn calculate_area_diff_and_adjust_glazing_area(
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
 fn find_walls_roofs_with_same_orientation_and_pitch(
-    wall_roofs: &[&mut BuildingElement],
+    wall_roofs: &[&BuildingElement],
     window_rooflight_element: &BuildingElement,
 ) -> anyhow::Result<Vec<usize>> {
     let window_rooflight_pitch = window_rooflight_element.pitch();
@@ -412,7 +441,7 @@ fn calc_max_glazing_area_fraction(
     let mut total_rooflight_area = 0.0;
     let mut sum_uval_times_area = 0.0;
 
-    for element in input.all_building_elements() {
+    for element in input.all_building_elements()?.values() {
         if pitch_class(element.pitch()) != HeatFlowDirection::Upwards {
             continue;
         }
@@ -449,8 +478,8 @@ fn edit_glazing_for_glazing_limit(
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
     let total_glazing_area: f64 = input
-        .all_building_elements()
-        .iter()
+        .all_building_elements()?
+        .values()
         .filter_map(|el| match el {
             BuildingElement::Transparent { .. } => Some(el.height().unwrap() * el.width().unwrap()),
             _ => None,
@@ -460,7 +489,7 @@ fn edit_glazing_for_glazing_limit(
     let max_glazing_area_fraction = calc_max_glazing_area_fraction(input, total_floor_area)?;
     let max_glazing_area = max_glazing_area_fraction * total_floor_area;
 
-    let (windows_rooflight, mut walls_roofs) = split_glazing_and_walls(input);
+    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input)?;
 
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
@@ -469,31 +498,39 @@ fn edit_glazing_for_glazing_limit(
         //       To do this, we may need to capture a sample input that induces this to happen in the Python, and request
         //       upstream for how to deal with this.
 
-        for window_rooflight_element in windows_rooflight {
+        for (building_element_reference, window_rooflight_element) in windows_rooflight {
             let area_diff = calculate_area_diff_and_adjust_glazing_area(
+                input,
                 linear_reduction_factor,
-                window_rooflight_element,
-            );
+                &window_rooflight_element,
+                &building_element_reference,
+            )?;
 
             let same_orientation_indices = find_walls_roofs_with_same_orientation_and_pitch(
-                &walls_roofs,
-                window_rooflight_element,
+                &walls_roofs.values().collect::<Vec<_>>(),
+                &window_rooflight_element,
             )?;
 
             let wall_roof_area_total = same_orientation_indices
                 .iter()
-                .filter_map(|i| match walls_roofs[*i] {
+                .filter_map(|i| match walls_roofs.values().nth(*i).unwrap() {
                     BuildingElement::Opaque { ref area, .. } => Some(*area),
                     _ => None,
                 })
                 .sum::<f64>();
 
             for i in same_orientation_indices.iter() {
-                let wall_roof = walls_roofs.get_mut(*i).unwrap();
-                if let BuildingElement::Opaque { ref mut area, .. } = wall_roof {
+                let wall_roof = walls_roofs.values().nth(*i).unwrap();
+                if let BuildingElement::Opaque { ref area, .. } = wall_roof {
                     let wall_roof_prop = *area / wall_roof_area_total;
 
-                    *area += area_diff * wall_roof_prop;
+                    let new_area = area + area_diff * wall_roof_prop;
+
+                    input.set_numeric_field_for_building_element(
+                        &building_element_reference,
+                        "area",
+                        new_area,
+                    )?;
                 }
             }
         }
@@ -509,9 +546,13 @@ fn edit_glazing_for_glazing_limit(
 pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // TODO (from Python) waiting from MHCLG/DESNZ for clarification if basement floors and basement walls are treated the same
 
-    for building_element in input.all_ground_building_elements_mut() {
+    for mut building_element in input
+        .all_ground_building_elements_mut()?
+        .into_iter()
+        .map(|json_map| GroundBuildingElementJsonValue(json_map))
+    {
         building_element.set_u_value(0.13);
-        building_element.set_r_f(6.12);
+        building_element.set_thermal_resistance_floor_construction(6.12);
         building_element.set_psi_wall_floor_junc(0.16);
     }
 
@@ -523,27 +564,27 @@ pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Resu
 ///
 /// TODO (from Python) - how to deal with ThermalBridging when lengths are not specified?
 pub(crate) fn edit_thermal_bridging(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let mut thermal_bridging_elements = input.all_thermal_bridging_elements();
+    let mut thermal_bridging_elements = input.all_thermal_bridging_elements()?;
 
     for element in thermal_bridging_elements
         .iter_mut()
         .flat_map(|group| group.values_mut())
+        .filter_map(|bridging| bridging.as_object_mut())
     {
-        match element {
-            ThermalBridgingDetails::Point {
-                heat_transfer_coefficient,
-                ..
-            } => {
-                *heat_transfer_coefficient = 0.;
+        let bridge_type: String = element
+            .get("type")
+            .and_then(|bridge_type| bridge_type.as_str())
+            .ok_or_else(|| anyhow!("Thermal bridging type was expected to be set."))?
+            .into();
+        match bridge_type.as_str() {
+            "ThermalBridgePoint" => {
+                element.insert("heat_transfer_coeff".into(), json!(0.));
             }
-            ThermalBridgingDetails::Linear {
-                junction_type,
-                linear_thermal_transmittance,
-                ..
-            } => {
-                let junction_type = junction_type.as_ref().and_then(|junc| if TABLE_R2.contains_key(junc.as_str()) {Some(junc.clone())} else {None}).ok_or_else(|| anyhow!("Thermal bridging junction type was expected to be set and one of the values in SAP10.2 Table R2."))?;
-                *linear_thermal_transmittance = TABLE_R2[junction_type.as_str()];
+            "ThermalBridgeLinear" => {
+                let junction_type = element.get("junction_type").and_then(|junc| junc.as_str()).and_then(|junc| if TABLE_R2.contains_key(junc) {Some(junc)} else {None}).ok_or_else(|| anyhow!("Thermal bridging junction type was expected to be set and one of the values in SAP10.2 Table R2."))?;
+                element.insert("linear_thermal_transmittance".into(), json!(TABLE_R2[junction_type]));
             }
+            unknown_type => bail!("Thermal bridging type was expected to be set and either ThermalBridgePoint or ThermalBridgeLinear was expected, but {unknown_type} was found."),
         }
     }
 
@@ -607,7 +648,7 @@ fn edit_add_heatnetwork_heating(
 ) -> anyhow::Result<()> {
     let heat_network_name = "_notional_heat_network";
 
-    let notional_heat_network = serde_json::from_value(json!(
+    let notional_heat_network = json!(
      {
         NOTIONAL_HIU: {
             "type": "HIU",
@@ -616,28 +657,28 @@ fn edit_add_heatnetwork_heating(
             "HIU_daily_loss": 0.8,
             "building_level_distribution_losses": 62,
         }
-    }))?;
+    });
 
-    let notional_hot_water_source: HotWaterSource = serde_json::from_value(json!({
+    let notional_hot_water_source = json!({
         "hw cylinder": {
             "type": "HIU",
             "ColdWaterSource": cold_water_source,
             "HeatSourceWet": NOTIONAL_HIU,
             }
-    }))?;
+    });
 
-    let heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
+    let heat_network_fuel_data = json!({
         "fuel": "custom",
         "factor":{
             "Emissions Factor kgCO2e/kWh": 0.033,
             "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.033,
             "Primary Energy Factor kWh/kWh delivered": 0.75
             }
-    }))?;
+    });
 
-    input.set_heat_source_wet(notional_heat_network);
-    input.set_hot_water_source(notional_hot_water_source);
-    input.add_energy_supply_for_key(heat_network_name, heat_network_fuel_data);
+    input.set_heat_source_wet(notional_heat_network)?;
+    input.set_hot_water_source(notional_hot_water_source)?;
+    input.add_energy_supply_for_key(heat_network_name, heat_network_fuel_data)?;
 
     Ok(())
 }
@@ -801,7 +842,7 @@ fn edit_add_default_space_heating_system(
         }
     }))?;
 
-    input.set_heat_source_wet(notional_hp);
+    input.set_heat_source_wet(notional_hp)?;
     Ok(())
 }
 
@@ -822,21 +863,19 @@ fn edit_default_space_heating_distribution_system(
     let thermal_mass_per_rad = 51.8 * JOULES_PER_KILOJOULE as f64 / JOULES_PER_KILOWATT_HOUR as f64;
 
     // Initialise space heating system in project dict
-    input.remove_space_heat_systems();
+    input.remove_space_heat_systems()?;
 
-    for zone_name in input.zone_keys() {
+    for zone_name in input.zone_keys()? {
         let system_name = format!("{zone_name}_SpaceHeatSystem_Notional");
         input.set_space_heat_system_for_zone(&zone_name, &system_name)?;
         let heatsourcewet_name = input
-            .heat_source_wet()
-            .ok_or_else(|| {
-                anyhow!("FHS Notional wrapper expected HeatSourceWet field to be set on input.")
-            })?
+            .heat_source_wet()?
             .first()
             .ok_or_else(|| {
                 anyhow!("FHS Notional wrapper expected at least one heat source wet to be defined.")
             })?
-            .0;
+            .0
+            .clone();
 
         // Calculate number of radiators
         let emitter_cap = design_capacity.get(&zone_name).ok_or_else(|| {
@@ -895,7 +934,7 @@ fn edit_heatnetwork_space_heating_distribution_system(
 
     let notional_heat_source: SpaceHeatSystemHeatSource =
         serde_json::from_value(json!({"name": NOTIONAL_HIU}))?;
-    input.set_heat_source_for_space_heat_system(notional_heat_source)?;
+    input.set_heat_source_for_all_space_heat_systems(notional_heat_source)?;
 
     Ok(())
 }
@@ -930,10 +969,12 @@ fn edit_bath_shower_other(
     Ok(())
 }
 
-fn remove_wwhrs_if_present(input: &mut InputForProcessing) {
-    if input.wwhrs().is_some() {
-        input.remove_wwhrs();
+fn remove_wwhrs_if_present(input: &mut InputForProcessing) -> anyhow::Result<()> {
+    if input.wwhrs()?.is_some() {
+        input.remove_wwhrs()?;
     }
+
+    Ok(())
 }
 
 fn add_wwhrs(
@@ -946,9 +987,10 @@ fn add_wwhrs(
     //      storeys in building for houses and assume 1 for flats. Note that this
     //      means that maisonettes cannot be handled at present.
 
-    let storeys_in_building = match input.build_type() {
-        BuildType::House => input.storeys_in_building(),
-        BuildType::Flat => 1,
+    let storeys_in_building = match input.build_type()?.as_str() {
+        "house" => input.storeys_in_building()?,
+        "flat" => 1,
+        unknown_type => bail!("Encountered unexpected building type '{unknown_type}'"),
     };
 
     // add WWHRS if more than 1 storeys in dwelling, notional A and not FEE
@@ -998,7 +1040,7 @@ fn calc_daily_hw_demand(
     // create ColdWaterSource
     let cold_water_feed_temps = create_cold_water_feed_temps(input)?;
     let cold_water_sources: ColdWaterSources = input
-        .cold_water_source()
+        .cold_water_source()?
         .iter()
         .map(|(key, source)| {
             (
@@ -1013,7 +1055,7 @@ fn calc_daily_hw_demand(
         .collect();
 
     let wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>> = if let Some(waste_water_heat_recovery) =
-        input.wwhrs()
+        input.wwhrs()?
     {
         let notional_wwhrs = waste_water_heat_recovery.get(NOTIONAL_WWHRS).ok_or_else(|| anyhow!("A {} entry for WWHRS was expected to have been set in the FHS Notional wrapper.", NOTIONAL_WWHRS))?;
         [(
@@ -1046,9 +1088,9 @@ fn calc_daily_hw_demand(
     let sim_timestep = simtime.step;
     let total_timesteps = simtime.total_steps();
     let event_types_names_list = [
-        (WaterHeatingEventType::Shower, NOTIONAL_SHOWER_NAME),
-        (WaterHeatingEventType::Bath, NOTIONAL_BATH_NAME),
-        (WaterHeatingEventType::Other, NOTIONAL_OTHER_HW_NAME),
+        ("Shower", NOTIONAL_SHOWER_NAME),
+        ("Bath", NOTIONAL_BATH_NAME),
+        ("Other", NOTIONAL_OTHER_HW_NAME),
     ];
 
     // Initialize a single schedule dictionary
@@ -1056,22 +1098,34 @@ fn calc_daily_hw_demand(
 
     // Populate the event_schedules dictionary using the modified expand_events function
     for (event_type, event_name) in event_types_names_list {
-        let event_data = input.water_heating_event_by_type_and_name(event_type, event_name).ok_or_else(|| anyhow!("FHS Notional wrapper expected water heating events with type '{event_type:?}' and name '{event_name}'"))?.iter().map(Into::into).collect::<Vec<_>>();
+        let event_data = input.water_heating_event_by_type_and_name(event_type, event_name)?.ok_or_else(|| anyhow!("FHS Notional wrapper expected water heating events with type '{event_type:?}' and name '{event_name}'"))?.iter().map(Into::into).collect::<Vec<_>>();
         event_schedules = expand_events(
             event_data,
             sim_timestep,
             total_timesteps,
             event_name,
-            event_type.into(),
+            serde_json::from_value(json!(event_type))?,
             event_schedules,
         )?;
     }
 
     let dhw_demand = DomesticHotWaterDemand::new(
-        input.showers().cloned().unwrap_or_default(),
-        input.baths().cloned().unwrap_or_default(),
-        input.other_water_uses().cloned().unwrap_or_default(),
-        input.water_distribution().cloned(),
+        input
+            .showers()?
+            .map(|showers| serde_json::from_value(json!(showers)))
+            .transpose()?
+            .unwrap_or_default(),
+        input
+            .baths()?
+            .map(|baths| serde_json::from_value(json!(baths)))
+            .transpose()?
+            .unwrap_or_default(),
+        input
+            .other_water_uses()?
+            .map(|other_water_uses| serde_json::from_value(json!(other_water_uses)))
+            .transpose()?
+            .unwrap_or_default(),
+        input.water_distribution()?.clone(),
         &cold_water_sources,
         &wwhrs,
         &Default::default(),
@@ -1099,7 +1153,7 @@ fn edit_storagetank(
     cold_water_source_type: ColdWaterSourceType,
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
-    let cylinder_vol = match input.hot_water_cylinder_volume() {
+    let cylinder_vol = match input.hot_water_cylinder_volume()? {
         Some(volume) => volume,
         None => {
             let daily_hwd = calc_daily_hw_demand(input, total_floor_area, cold_water_source_type)?;
@@ -1148,16 +1202,17 @@ fn edit_primary_pipework(
     let pipe_contents = WaterPipeContentsType::Water;
     let insulation_thermal_conductivity = 0.035;
 
-    let length_max = match input.build_type() {
-        BuildType::Flat => 0.05 * total_floor_area,
-        BuildType::House => {
-            0.05 * input.ground_floor_area().ok_or_else(|| {
+    let length_max = match input.build_type()?.as_str() {
+        "flat" => 0.05 * total_floor_area,
+        "house" => {
+            0.05 * input.ground_floor_area()?.ok_or_else(|| {
                 anyhow!("FHS Notional wrapper expected ground floor area to be set for a house.")
             })?
         }
+        unknown_type => bail!("Encountered unexpected building type '{unknown_type}'"),
     };
 
-    let mut primary_pipework = input.primary_pipework_clone();
+    let mut primary_pipework = input.primary_pipework_clone()?;
 
     if primary_pipework.is_none() {
         primary_pipework = Some(vec![serde_json::from_value::<WaterPipework>(json!({
@@ -1210,7 +1265,7 @@ fn edit_hot_water_distribution(
     // hot water dictionary
     let mut hot_water_distribution_inner_list = vec![];
 
-    for item in input.water_distribution().into_iter().flatten() {
+    for item in input.water_distribution()?.into_iter().flatten() {
         // only include internal pipework in notional buildings
         if item.location == WaterPipeworkLocation::Internal {
             hot_water_distribution_inner_list.push(item);
@@ -1225,13 +1280,14 @@ fn edit_hot_water_distribution(
     let external_diameter_mm_min = 15.;
     let insulation_thickness_mm = 20.;
 
-    let length_max = match input.build_type() {
-        BuildType::Flat => 0.2 * total_floor_area,
-        BuildType::House => {
+    let length_max = match input.build_type()?.as_str() {
+        "flat" => 0.2 * total_floor_area,
+        "house" => {
             0.2 * input
-                .ground_floor_area()
+                .ground_floor_area()?
                 .ok_or_else(|| anyhow!("Notional wrapper expected a ground floor area to be set"))?
         }
+        unknown_type => bail!("Encountered unexpected building type '{unknown_type}'"),
     };
 
     // Iterate over hot_water_distribution_inner_list
@@ -1281,12 +1337,16 @@ fn edit_hot_water_distribution(
     Ok(())
 }
 
-fn remove_pv_diverter_if_present(input: &mut InputForProcessing) {
-    input.remove_all_diverters_from_energy_supplies();
+fn remove_pv_diverter_if_present(
+    input: &mut InputForProcessing,
+) -> JsonAccessResult<&mut InputForProcessing> {
+    input.remove_all_diverters_from_energy_supplies()
 }
 
-fn remove_electric_battery_if_present(input: &mut InputForProcessing) {
-    input.remove_all_batteries_from_energy_supplies();
+fn remove_electric_battery_if_present(
+    input: &mut InputForProcessing,
+) -> JsonAccessResult<&mut InputForProcessing> {
+    input.remove_all_batteries_from_energy_supplies()
 }
 
 fn edit_space_heating_system(
@@ -1315,7 +1375,7 @@ fn edit_space_heating_system(
 }
 
 fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let part_o_active_cooling_required = input.part_o_active_cooling_required().unwrap_or(false);
+    let part_o_active_cooling_required = input.part_o_active_cooling_required()?.unwrap_or(false);
 
     if part_o_active_cooling_required {
         input.set_efficiency_for_all_space_cool_systems(5.1)?;
@@ -1335,17 +1395,17 @@ fn calc_design_capacity(
     let mut clone = input.clone();
 
     // Calculate heat transfer coefficients and heat loss parameters
-    set_temp_internal_static_calcs(&mut clone);
+    set_temp_internal_static_calcs(&mut clone)?;
     let HtcHlpCalculation {
         htc_map: htc_dict, ..
-    } = calc_htc_hlp(clone.as_input())?;
+    } = calc_htc_hlp(&clone.as_input())?;
 
     // Calculate design capacity
-    let min_air_temp = *input.external_conditions().air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
+    let min_air_temp = *input.external_conditions()?.air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
     let set_point = LIVING_ROOM_SETPOINT_FHS.max(REST_OF_DWELLING_SETPOINT_FHS);
     let temperature_difference = set_point - min_air_temp;
     let design_capacity_map: IndexMap<String, f64> = input
-        .zone_keys()
+        .zone_keys()?
         .into_iter()
         .map(|key| {
             (key.to_owned(), {
@@ -1366,16 +1426,15 @@ fn calc_design_capacity(
 /// Set as 18C for now. The FHS wrapper will overwrite temp_setpnt_init '''
 #[cfg(test)]
 fn initialise_temperature_setpoints(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    for zone_key in input.zone_keys() {
+    for zone_key in input.zone_keys()? {
         input.set_init_temp_setpoint_for_zone(zone_key.as_str(), 18.)?;
     }
     Ok(())
 }
 
-fn remove_onsite_generation_if_present(input: &mut InputForProcessing) {
-    if input.on_site_generation().is_some() {
-        input.remove_on_site_generation();
-    }
+fn remove_onsite_generation_if_present(input: &mut InputForProcessing) -> JsonAccessResult<()> {
+    input.remove_on_site_generation()?;
+    Ok(())
 }
 
 fn add_solar_pv(
@@ -1384,30 +1443,31 @@ fn add_solar_pv(
     is_fee: bool,
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
-    let number_of_storeys = input.storeys_in_building();
+    let number_of_storeys = input.storeys_in_building()?;
 
     // PV is included in the notional if the building contains 15 stories or
     // less that contain dwellings.
     if number_of_storeys <= 15 && is_notional_a && !is_fee {
         let ground_floor_area = input
-            .ground_floor_area()
+            .ground_floor_area()?
             .ok_or_else(|| anyhow!("Notional wrapped expected ground floor area to be set"))?;
-        let (peak_kw, base_height_pv) = match input.build_type() {
-            BuildType::House => {
+        let (peak_kw, base_height_pv) = match input.build_type()?.as_str() {
+            "house" => {
                 let peak_kw = ground_floor_area * 0.4 / 4.5;
-                let base_height_pv = input.max_base_height_from_building_elements().ok_or_else(|| anyhow!("Notional wrapper expected at least one building element with a base height"))?;
+                let base_height_pv = input.max_base_height_from_building_elements()?.ok_or_else(|| anyhow!("Notional wrapper expected at least one building element with a base height"))?;
 
                 (peak_kw, base_height_pv)
             }
-            BuildType::Flat => {
+            "flat" => {
                 let peak_kw = total_floor_area * 0.4 / (4.5 * number_of_storeys as f64);
-                let zone_total_volume = input.total_zone_volume();
-                let zone_total_area = input.total_zone_area();
+                let zone_total_volume = input.total_zone_volume()?;
+                let zone_total_area = input.total_zone_area()?;
                 let base_height_pv =
                     (zone_total_volume / zone_total_area + 0.3) * number_of_storeys as f64;
 
                 (peak_kw, base_height_pv)
             }
+            unknown_type => bail!("Unexpected building type '{unknown_type}' encountered"),
         };
 
         // PV array area
@@ -1481,14 +1541,9 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, InfiltrationVentilation,
-        OnSiteGeneration, SpaceHeatSystem, SpaceHeatSystemHeatSource, SystemReference,
-        WaterPipeworkLoose,
+        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkLoose,
     };
-    use crate::input::{
-        Baths, HotWaterSource, OtherWaterUses, Shower, Showers, ThermalBridging,
-        ThermalBridgingDetails, WasteWaterHeatRecovery, ZoneDictionary,
-    };
+    use crate::input::{HotWaterSource, WasteWaterHeatRecovery};
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
     use serde_json::json;
@@ -1527,20 +1582,18 @@ mod tests {
     #[rstest]
     // this test does not exist in Python HEM
     fn test_check_heatnetwork_present(test_input: InputForProcessing) {
-        assert!(!check_heatnetwork_present(&test_input));
+        assert!(!check_heatnetwork_present(&test_input).unwrap());
     }
 
     #[rstest]
     fn test_edit_lighting_efficacy(mut test_input: InputForProcessing) {
         let test_input = test_input.borrow_mut();
-        edit_lighting_efficacy(test_input);
+        edit_lighting_efficacy(test_input).unwrap();
 
-        for zone in test_input.zone_keys() {
-            let lighting_efficacy = test_input.lighting_efficacy_for_zone(&zone);
+        for zone in test_input.zone_keys().unwrap() {
+            let lighting_efficacy = test_input.lighting_efficacy_for_zone(&zone).unwrap();
             assert_eq!(
-                lighting_efficacy
-                    .unwrap()
-                    .expect("expected lighting in zone and efficacy in lighting"),
+                lighting_efficacy.expect("expected lighting in zone and efficacy in lighting"),
                 120.
             )
         }
@@ -1554,7 +1607,7 @@ mod tests {
         edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
             .unwrap();
 
-        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+        let expected = json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
             "terrain_class": "OpenField",
@@ -1597,10 +1650,9 @@ mod tests {
             "CombustionAppliances": {},
             "ventilation_zone_base_height": 2.5
         }
-        ))
-        .unwrap();
+        );
 
-        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
 
         assert_eq!(expected, infiltration_ventilation)
     }
@@ -1613,7 +1665,7 @@ mod tests {
         edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
             .unwrap();
 
-        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+        let expected = json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
             "terrain_class": "OpenField",
@@ -1663,10 +1715,9 @@ mod tests {
             "Cowls": {},
             "CombustionAppliances": {},
             "ventilation_zone_base_height": 2.5
-        }))
-        .unwrap();
+        });
 
-        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
 
         assert_eq!(expected, infiltration_ventilation)
     }
@@ -1677,7 +1728,7 @@ mod tests {
 
         // not using the building_element_by_key method here to closly match the Python test
 
-        for building_element in test_input.all_building_elements() {
+        for building_element in test_input.all_building_elements().unwrap().values() {
             if let input::BuildingElement::Opaque { .. }
             | input::BuildingElement::AdjacentUnconditionedSpace { .. } = building_element
             {
@@ -1713,29 +1764,33 @@ mod tests {
     fn test_edit_transparent_element(mut test_input: InputForProcessing) {
         edit_transparent_element(&mut test_input).unwrap();
 
-        let BuildingElement::Transparent {
-            u_value,
-            thermal_resistance_construction,
-            ..
-        } = test_input.building_element_by_key("zone 1", "window 0")
-        else {
-            panic!("Window 0 in Zone 1 should be set up as a transparent building element")
-        };
+        let zone_1_window_0_element = test_input
+            .building_element_by_key("zone 1", "window 0")
+            .unwrap();
 
-        assert_eq!(*u_value, Some(1.2));
-        assert_eq!(*thermal_resistance_construction, None);
+        assert_eq!(
+            zone_1_window_0_element
+                .get("u_value")
+                .and_then(|v| v.as_f64()),
+            Some(1.2)
+        );
+        assert!(zone_1_window_0_element
+            .get("thermal_resistance_construction")
+            .is_none());
 
-        let BuildingElement::Transparent {
-            u_value,
-            thermal_resistance_construction,
-            ..
-        } = test_input.building_element_by_key("zone 2", "window 0")
-        else {
-            panic!("Window 0 in Zone 2 should be set up as a transparent building element")
-        };
+        let zone_2_window_0_element = test_input
+            .building_element_by_key("zone 2", "window 0")
+            .unwrap();
 
-        assert_eq!(*u_value, Some(1.2));
-        assert_eq!(*thermal_resistance_construction, None);
+        assert_eq!(
+            zone_2_window_0_element
+                .get("u_value")
+                .and_then(|v| v.as_f64()),
+            Some(1.2)
+        );
+        assert!(zone_2_window_0_element
+            .get("thermal_resistance_construction")
+            .is_none());
     }
 
     #[rstest]
@@ -1744,31 +1799,51 @@ mod tests {
 
         edit_ground_floors(test_input).unwrap();
 
-        let BuildingElement::Ground {
-            u_value,
-            thermal_resistance_floor_construction: r_f,
-            psi_wall_floor_junc,
-            ..
-        } = test_input.building_element_by_key("zone 1", "ground")
-        else {
-            panic!("ground in Zone 1 should be set up as a ground building element")
-        };
-        assert_eq!(*u_value, 0.13);
-        assert_eq!(*r_f, 6.12);
-        assert_eq!(*psi_wall_floor_junc, 0.16);
+        let zone_1_ground_element = test_input
+            .building_element_by_key("zone 1", "ground")
+            .unwrap();
 
-        let BuildingElement::Ground {
-            u_value,
-            thermal_resistance_floor_construction: r_f,
-            psi_wall_floor_junc,
-            ..
-        } = test_input.building_element_by_key("zone 2", "ground")
-        else {
-            panic!("ground in Zone 2 should be set up as a ground building element")
-        };
-        assert_eq!(*u_value, 0.13);
-        assert_eq!(*r_f, 6.12);
-        assert_eq!(*psi_wall_floor_junc, 0.16);
+        assert_eq!(
+            zone_1_ground_element
+                .get("u_value")
+                .and_then(|v| v.as_f64()),
+            Some(0.13)
+        );
+        assert_eq!(
+            zone_1_ground_element
+                .get("thermal_resistance_floor_construction")
+                .and_then(|v| v.as_f64()),
+            Some(6.12)
+        );
+        assert_eq!(
+            zone_1_ground_element
+                .get("psi_wall_floor_junc")
+                .and_then(|v| v.as_f64()),
+            Some(0.16)
+        );
+
+        let zone_2_ground_element = test_input
+            .building_element_by_key("zone 2", "ground")
+            .unwrap();
+
+        assert_eq!(
+            zone_2_ground_element
+                .get("u_value")
+                .and_then(|v| v.as_f64()),
+            Some(0.13)
+        );
+        assert_eq!(
+            zone_2_ground_element
+                .get("thermal_resistance_floor_construction")
+                .and_then(|v| v.as_f64()),
+            Some(6.12)
+        );
+        assert_eq!(
+            zone_2_ground_element
+                .get("psi_wall_floor_junc")
+                .and_then(|v| v.as_f64()),
+            Some(0.16)
+        );
     }
 
     #[rstest]
@@ -1777,49 +1852,66 @@ mod tests {
 
         edit_thermal_bridging(test_input).unwrap();
 
-        for thermal_bridging in test_input.all_thermal_bridgings() {
-            match thermal_bridging {
-                ThermalBridging::Number(_) => {}
-                ThermalBridging::Elements(elements) => {
-                    for bridging in elements.values() {
-                        match bridging {
-                            ThermalBridgingDetails::Point {
-                                heat_transfer_coefficient,
-                                ..
-                            } => {
-                                assert_eq!(*heat_transfer_coefficient, 0.0);
-                            }
-                            ThermalBridgingDetails::Linear {
-                                junction_type,
-                                linear_thermal_transmittance,
-                                ..
-                            } => {
-                                let junction_type = junction_type.as_ref().unwrap().as_str();
-                                assert!(TABLE_R2.contains_key(junction_type));
-                                assert_eq!(*linear_thermal_transmittance, TABLE_R2[junction_type]);
-                            }
-                        }
-                    }
-                }
+        for thermal_bridging in test_input
+            .all_thermal_bridgings()
+            .unwrap()
+            .into_iter()
+            .filter_map(|t| t.as_object())
+            .flat_map(|v| v.values())
+            .filter_map(|v| v.as_object())
+        {
+            let bridging_type = thermal_bridging.get("type").unwrap().as_str().unwrap();
+            if bridging_type == "ThermalBridgePoint" {
+                assert_eq!(
+                    thermal_bridging
+                        .get("heat_transfer_coeff")
+                        .unwrap()
+                        .as_f64()
+                        .unwrap(),
+                    0.0
+                );
+            } else if bridging_type == "ThermalBridgeLinear" {
+                let junction_type = thermal_bridging
+                    .get("junction_type")
+                    .unwrap()
+                    .as_str()
+                    .unwrap();
+                assert!(TABLE_R2.contains_key(junction_type));
+                assert_eq!(
+                    thermal_bridging
+                        .get("linear_thermal_transmittance")
+                        .unwrap()
+                        .as_f64()
+                        .unwrap(),
+                    TABLE_R2[junction_type]
+                );
+            } else {
+                panic!("Unknown thermal bridging type '{bridging_type}' encountered");
             }
         }
     }
 
     #[rstest]
     fn test_calc_max_glazing_area_fraction(mut test_input: InputForProcessing) {
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, None));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.5, None))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.24375,
             "incorrect max glazing area fraction"
         );
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.0, None));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.0, None))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
             "incorrect max glazing area fraction"
         );
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, Some(90.)));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.5, Some(90.)))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
@@ -1832,19 +1924,24 @@ mod tests {
     fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
         let linear_reduction_factor: f64 = 0.7001400420140049;
 
-        let window = test_input.building_element_by_key_mut("zone 1", "window 0");
+        let window: BuildingElement = serde_json::from_value(json!(test_input
+            .building_element_by_key("zone 1", "window 0")
+            .unwrap()))
+        .unwrap();
 
-        let area_diff =
-            calculate_area_diff_and_adjust_glazing_area(linear_reduction_factor, window);
+        let area_diff = calculate_area_diff_and_adjust_glazing_area(
+            &mut test_input,
+            linear_reduction_factor,
+            &window,
+            "zone 1",
+        )
+        .unwrap();
 
         assert_relative_eq!(area_diff, 2.549019607843137);
     }
 
-    fn zone_input_for_max_glazing_area_test(
-        u_value: f64,
-        pitch_override: Option<f64>,
-    ) -> ZoneDictionary {
-        serde_json::from_value(json!({"test_zone": {
+    fn zone_input_for_max_glazing_area_test(u_value: f64, pitch_override: Option<f64>) -> Value {
+        json!({"test_zone": {
             "BuildingElement": {
                 "test_rooflight": {
                     "type": "BuildingElementTransparent",
@@ -1862,8 +1959,7 @@ mod tests {
             "ThermalBridging": 1.0,
             "area": 10.0,
             "volume": 20.0
-        }}))
-        .unwrap()
+        }})
     }
 
     // this test does not exist in Python HEM
@@ -1906,14 +2002,17 @@ mod tests {
 
         assert_eq!(
             test_input.heat_source_wet().unwrap(),
-            &expected_heat_source_wet
+            expected_heat_source_wet
         );
 
-        assert_eq!(test_input.hot_water_source(), &expected_hot_water_source);
+        assert_eq!(
+            json!(test_input.hot_water_source().unwrap()),
+            json!(expected_hot_water_source)
+        );
 
         assert_eq!(
-            test_input.energy_supply_by_key(heat_network_name),
-            Some(&expected_heat_network_fuel_data)
+            json!(test_input.energy_supply_by_key(heat_network_name).unwrap()),
+            json!(expected_heat_network_fuel_data)
         );
     }
 
@@ -1938,10 +2037,9 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let expected_heat_source: SpaceHeatSystemHeatSource =
-                serde_json::from_value(json!({"name": NOTIONAL_HIU})).unwrap();
+            let expected_heat_source = json!({"name": NOTIONAL_HIU});
 
-            assert_eq!(heat_source, expected_heat_source)
+            assert_eq!(*heat_source, expected_heat_source)
         }
     }
 
@@ -1953,30 +2051,39 @@ mod tests {
 
         edit_bath_shower_other(&mut test_input, cold_water_source_type).unwrap();
 
-        let expected_baths: Baths = serde_json::from_value(json!({ "medium": {
+        let expected_baths = json!({ "medium": {
             "ColdWaterSource": cold_water_source_type_string,
             "flowrate": 12,
             "size": 180
-        }}))
-        .unwrap();
+        }})
+        .as_object()
+        .unwrap()
+        .clone();
 
-        let expected_showers: Showers = serde_json::from_value(json!({"mixer": {
+        let expected_showers = json!({"mixer": {
             "ColdWaterSource": cold_water_source_type_string,
             "flowrate": 8,
             "type": "MixerShower"
-        }}))
-        .unwrap();
+        }})
+        .as_object()
+        .unwrap()
+        .clone();
 
-        let expected_other: OtherWaterUses = serde_json::from_value(json!({"other": {
+        let expected_other = json!({"other": {
             "ColdWaterSource": cold_water_source_type_string,
             "flowrate": 6,
-        }}))
-        .unwrap();
+        }})
+        .as_object()
+        .unwrap()
+        .clone();
 
-        assert_eq!(test_input.baths().unwrap().clone(), expected_baths);
-        assert_eq!(test_input.showers().unwrap().clone(), expected_showers);
+        assert_eq!(test_input.baths().unwrap().unwrap().clone(), expected_baths);
         assert_eq!(
-            test_input.other_water_uses().unwrap().clone(),
+            test_input.showers().unwrap().unwrap().clone(),
+            expected_showers
+        );
+        assert_eq!(
+            test_input.other_water_uses().unwrap().unwrap().clone(),
             expected_other
         );
     }
@@ -1998,13 +2105,13 @@ mod tests {
                 }
             }))
             .unwrap();
-        remove_wwhrs_if_present(&mut test_input);
-        assert_eq!(test_input.wwhrs(), None);
+        remove_wwhrs_if_present(&mut test_input).unwrap();
+        assert!(test_input.wwhrs().unwrap().is_none());
     }
 
     #[rstest]
     fn test_add_wwhrs(mut test_input: InputForProcessing) {
-        test_input.set_storeys_in_building(2);
+        test_input.set_storeys_in_building(2).unwrap();
 
         let cold_water_source_type = ColdWaterSourceType::MainsWater;
 
@@ -2021,22 +2128,20 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(test_input.wwhrs().unwrap().clone(), expected_wwhrs);
+        assert_eq!(test_input.wwhrs().unwrap().unwrap().clone(), expected_wwhrs);
 
-        match &test_input.showers().as_ref().unwrap().0["mixer"] {
-            Shower::MixerShower {
-                waste_water_heat_recovery,
-                ..
-            } => {
-                assert_eq!(
-                    waste_water_heat_recovery.as_ref().unwrap(),
-                    "Notional_Inst_WWHRS"
-                )
-            }
-            _ => {
-                panic!()
-            }
-        }
+        let mixer_shower = test_input
+            .showers()
+            .unwrap()
+            .unwrap()
+            .get("mixer")
+            .and_then(|mixer| mixer.as_object())
+            .unwrap();
+
+        assert_eq!(
+            mixer_shower.get("WWHRS").and_then(|wwhrs| wwhrs.as_str()),
+            Some("Notional_Inst_WWHRS")
+        );
     }
 
     #[rstest]
@@ -2045,17 +2150,17 @@ mod tests {
 
         add_wwhrs(&mut test_input, cold_water_source_type, true, false).unwrap();
 
-        assert!(test_input.wwhrs().is_none());
+        assert!(test_input.wwhrs().unwrap().is_none());
 
-        match &test_input.showers().as_ref().unwrap().0["mixer"] {
-            Shower::MixerShower {
-                waste_water_heat_recovery,
-                ..
-            } => assert!(waste_water_heat_recovery.is_none()),
-            _ => {
-                panic!()
-            }
-        }
+        let mixer_shower = test_input
+            .showers()
+            .unwrap()
+            .unwrap()
+            .get("mixer")
+            .and_then(|mixer| mixer.as_object())
+            .unwrap();
+
+        assert!(!mixer_shower.contains_key("WWHRS"));
     }
 
     #[rstest]
@@ -2073,7 +2178,7 @@ mod tests {
     #[rstest]
     fn test_edit_storagetank(mut test_input: InputForProcessing) {
         let cold_water_source_type = ColdWaterSourceType::MainsWater;
-        let total_floor_area = calc_tfa(&test_input);
+        let total_floor_area = calc_tfa(&test_input).unwrap();
 
         edit_storagetank(&mut test_input, cold_water_source_type, total_floor_area).unwrap();
 
@@ -2088,7 +2193,7 @@ mod tests {
                 "pipe_contents": "water"
         }]);
 
-        let expected_hotwater_source: HotWaterSource = serde_json::from_value(json!({
+        let expected_hotwater_source = json!({
             "hw cylinder": {
                 "ColdWaterSource": cold_water_source_type,
                 "HeatSource": {
@@ -2107,17 +2212,22 @@ mod tests {
                 "volume": 80.0,
                 "primary_pipework": expected_primary_pipework,
             }
-        }))
-        .unwrap();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
-        assert_eq!(test_input.hot_water_source(), &expected_hotwater_source);
+        assert_eq!(
+            test_input.hot_water_source().unwrap().clone(),
+            expected_hotwater_source
+        );
     }
 
     #[ignore = "Below test used to fail due to randomisation issue, now numbers are even further apart"]
     #[rstest]
     fn test_calc_daily_hw_demand(mut test_input: InputForProcessing) {
         let cold_water_source_type = ColdWaterSourceType::MainsWater;
-        let total_floor_area = calc_tfa(&test_input);
+        let total_floor_area = calc_tfa(&test_input).unwrap();
 
         // Add notional objects that affect HW demand calc
         edit_bath_shower_other(&mut test_input, cold_water_source_type).unwrap();
@@ -2500,7 +2610,7 @@ mod tests {
 
     #[rstest]
     fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
-        let tfa = calc_tfa(&test_input);
+        let tfa = calc_tfa(&test_input).unwrap();
         edit_hot_water_distribution(&mut test_input, tfa).unwrap();
 
         let expected_hot_water_distribution_inner: WaterPipeworkLoose =
@@ -2518,11 +2628,16 @@ mod tests {
             ))
             .unwrap();
 
-        let actual_hot_water_distribution_inner =
-            test_input.water_distribution().unwrap().first().unwrap();
+        let actual_hot_water_distribution_inner = test_input
+            .water_distribution()
+            .unwrap()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap();
 
         assert_eq!(
-            *actual_hot_water_distribution_inner,
+            actual_hot_water_distribution_inner,
             expected_hot_water_distribution_inner
         );
     }
@@ -2535,11 +2650,14 @@ mod tests {
             "HeatSource": "immersion"
         });
         let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
-        test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
+        let _ = test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
 
-        remove_pv_diverter_if_present(&mut test_input);
-        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
-        assert!(energy_supply.diverter.is_none())
+        remove_pv_diverter_if_present(&mut test_input).unwrap();
+        let energy_supply = test_input
+            .energy_supply_by_key(energy_supply_key)
+            .unwrap()
+            .unwrap();
+        assert!(!energy_supply.contains_key("diverter"))
     }
 
     // this test does not exist in Python HEM
@@ -2556,23 +2674,33 @@ mod tests {
             "grid_charging_possible": false
         });
         let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
-        test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
+        let _ =
+            test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
 
-        remove_electric_battery_if_present(&mut test_input);
-        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
-        assert!(energy_supply.electric_battery.is_none());
+        let _ = remove_electric_battery_if_present(&mut test_input);
+        let energy_supply = test_input
+            .energy_supply_by_key(energy_supply_key)
+            .unwrap()
+            .unwrap();
+        assert!(!energy_supply.contains_key("ElectricBattery"));
     }
 
     #[rstest]
     fn test_edit_space_cool_system(mut test_input: InputForProcessing) {
-        test_input.set_part_o_active_cooling_required(true);
+        test_input.set_part_o_active_cooling_required(true).unwrap();
         let _ = edit_space_cool_system(&mut test_input);
-        let space_cool_system = test_input.space_cool_system().unwrap();
+        let space_cool_system = test_input.space_cool_system().unwrap().unwrap();
 
         for system in space_cool_system.values() {
-            assert_eq!(system.efficiency, 5.1);
-            assert_eq!(system.frac_convective, 0.95);
-            assert_eq!(system.energy_supply, ENERGY_SUPPLY_NAME_ELECTRICITY);
+            assert_eq!(system.get("efficiency").and_then(|v| v.as_f64()), Some(5.1));
+            assert_eq!(
+                system.get("frac_convective").and_then(|v| v.as_f64()),
+                Some(0.95)
+            );
+            assert_eq!(
+                system.get("EnergySupply").and_then(|v| v.as_str()),
+                Some(ENERGY_SUPPLY_NAME_ELECTRICITY)
+            );
         }
     }
 
@@ -2597,7 +2725,7 @@ mod tests {
     fn test_initialise_temperature_setpoints(mut test_input: InputForProcessing) {
         initialise_temperature_setpoints(&mut test_input).unwrap();
 
-        let temp_setpoints = test_input.all_init_temp_setpoints();
+        let temp_setpoints = test_input.all_init_temp_setpoints().unwrap();
 
         for temp_setpoint in temp_setpoints {
             assert_eq!(temp_setpoint, Some(18.));
@@ -2626,13 +2754,13 @@ mod tests {
             }))
             .unwrap();
 
-        remove_onsite_generation_if_present(&mut test_input);
-        assert_eq!(test_input.on_site_generation(), None);
+        remove_onsite_generation_if_present(&mut test_input).unwrap();
+        assert!(test_input.on_site_generation().unwrap().is_none());
     }
 
     #[rstest]
     fn test_add_solar_pv_house_only(mut test_input: InputForProcessing) {
-        let expected_result: OnSiteGeneration = serde_json::from_value(json!({"PV1": {
+        let expected_result = json!({"PV1": {
                 "EnergySupply": "mains elec",
                 "orientation360": 180,
                 "peak_power": 4.444444444444445,
@@ -2648,16 +2776,21 @@ mod tests {
                 "width": 6.324555320336759,
                 "height": 3.1622776601683795
                 }
-        }))
+        })
+        .as_object()
+        .cloned()
         .unwrap();
 
         let is_notional_a = true;
         let is_fee = false;
-        let total_floor_area = calc_tfa(&test_input);
+        let total_floor_area = calc_tfa(&test_input).unwrap();
 
-        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area).unwrap();
+        let _ = add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area);
 
-        assert_eq!(*test_input.on_site_generation().unwrap(), expected_result);
+        assert_eq!(
+            test_input.on_site_generation().unwrap().unwrap().to_owned(),
+            expected_result
+        );
     }
 
     #[rstest]
@@ -2797,7 +2930,7 @@ mod tests {
         // TODO currently because of a custom impl PartialEq for HeatPumpTestDatum
         // this test passes when test data does not match exactly
 
-        assert_eq!(*test_input.heat_source_wet().unwrap(), expected);
+        assert_eq!(test_input.heat_source_wet().unwrap(), expected);
     }
 
     // this test does not exist in Python HEM
@@ -2808,20 +2941,21 @@ mod tests {
 
         edit_default_space_heating_distribution_system(&mut test_input, &design_capacity).unwrap();
 
-        for zone_key in test_input.zone_keys() {
+        for zone_key in test_input.zone_keys().unwrap() {
             let expected_space_heat_system_name = zone_key.clone() + "_SpaceHeatSystem_Notional";
 
-            let actual_space_heat_system_name_in_zone =
-                match test_input.space_heat_system_for_zone(&zone_key).unwrap() {
-                    SystemReference::None(_) => panic!("Expected a space heat system"),
-                    SystemReference::Single(name) => name.clone(),
-                    SystemReference::Multiple(names) => names.first().cloned().unwrap(),
-                };
+            let actual_space_heat_system_name_in_zone = test_input
+                .space_heat_system_for_zone(&zone_key)
+                .unwrap()
+                .first()
+                .unwrap()
+                .to_owned();
 
-            let actual_space_heat_system =
-                test_input.space_heat_system_for_key(&expected_space_heat_system_name);
+            let actual_space_heat_system = test_input
+                .space_heat_system_for_key(&expected_space_heat_system_name)
+                .unwrap();
 
-            let expected_space_heat_systems: SpaceHeatSystem = serde_json::from_value(json!({
+            let expected_space_heat_systems: Value = json!({
                 "zone 1_SpaceHeatSystem_Notional":
                 {
                     "Control": "HeatingPattern_Null",
@@ -2867,11 +3001,10 @@ mod tests {
                     "type": "WetDistribution"
                 }
             }
-            ))
-            .unwrap();
+            );
 
             let expected_space_heat_system = expected_space_heat_systems
-                .get(&expected_space_heat_system_name)
+                .get::<&std::string::String>(&expected_space_heat_system_name.clone().into())
                 .unwrap();
 
             assert_eq!(

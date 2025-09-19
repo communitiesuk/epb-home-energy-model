@@ -44,7 +44,10 @@ impl HemWrapper for PassthroughHemWrapper {
         input: InputForProcessing,
         _flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        Ok(HashMap::from([(CalculationKey::Primary, input.finalize())]))
+        Ok(HashMap::from([(
+            CalculationKey::Primary,
+            input.finalize()?,
+        )]))
     }
 
     fn apply_postprocessing(
