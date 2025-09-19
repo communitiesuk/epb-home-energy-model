@@ -10,10 +10,10 @@ use crate::external_conditions::{
 use crate::input::{
     Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing,
-    MechanicalVentilationForProcessing, SmartApplianceBattery, SpaceHeatControlType,
-    TransparentBuildingElement, VentType, WaterHeatingEvent, WaterHeatingEventType,
-    WindowTreatmentType, ZoneLightingBulbs,
+    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, JsonAccessError,
+    JsonAccessResult, MechanicalVentilationForProcessing, SmartApplianceBattery,
+    SpaceHeatControlType, TransparentBuildingElement, VentType, WaterHeatingEvent,
+    WaterHeatingEventType, WindowTreatmentType, ZoneLightingBulbs,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -103,11 +103,11 @@ pub fn apply_fhs_preprocessing(
                 .expect("Could not read cold_water_loss_profile.csv")
         });
 
-    input.set_simulation_time(simtime());
+    input.set_simulation_time(simtime())?;
 
     input.reset_internal_gains();
 
-    let tfa = calc_tfa(input);
+    let tfa = calc_tfa(input)?;
 
     let nbeds = calc_nbeds(input)?;
 
@@ -153,7 +153,7 @@ pub fn apply_fhs_preprocessing(
     set_temp_internal_static_calcs(input);
 
     if input
-        .smart_appliance_control_by_name(SMART_APPLIANCE_CONTROL_NAME)
+        .smart_appliance_control_by_name(SMART_APPLIANCE_CONTROL_NAME)?
         .is_some()
     {
         // run project for 24 hours to obtain initial estimate for daily heating demand
@@ -680,7 +680,7 @@ fn write_postproc_summary_file(
     Ok(())
 }
 
-pub fn calc_tfa(input: &InputForProcessing) -> f64 {
+pub fn calc_tfa(input: &InputForProcessing) -> JsonAccessResult<f64> {
     input.total_zone_area()
 }
 
@@ -689,7 +689,7 @@ fn calc_tfa_from_finalised_input(input: &Input) -> f64 {
 }
 
 pub(super) fn calc_nbeds(input: &InputForProcessing) -> anyhow::Result<usize> {
-    match input.number_of_bedrooms() {
+    match input.number_of_bedrooms()? {
         Some(bedrooms) => Ok(bedrooms),
         None => bail!("missing NumberOfBedrooms - required for FHS calculation"),
     }
@@ -2543,7 +2543,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
         SIMTIME_START,
         SIMTIME_START + HOURS_PER_DAY as f64,
         SIMTIME_STEP,
-    ));
+    ))?;
 
     // create a corpus instance
     let output_options = OutputOptions {
@@ -2552,7 +2552,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     };
 
     let corpus = Corpus::from_inputs(
-        input_24h.as_input(),
+        &input_24h.as_input(),
         None,
         sim_settings.tariff_data_filename.as_deref(),
         &output_options,
@@ -3477,10 +3477,10 @@ pub(super) fn create_cold_water_feed_temps(
     // typical fall in feed temp from midnight to 6am
     let delta = 1.5;
 
-    let (t24m, feed_type) = if input.cold_water_source_has_header_tank() {
-        (t24m_header_tank, ColdWaterSourceType::HeaderTank)
+    let (t24m, feed_type) = if input.cold_water_source_has_header_tank()? {
+        (t24m_header_tank, "header tank")
     } else {
-        (t24m_mains, ColdWaterSourceType::MainsWater)
+        (t24m_mains, "mains water")
     };
 
     let mut cold_feed_schedule_m: Vec<Vec<f64>> = Vec::with_capacity(12 * 24);
@@ -3684,7 +3684,7 @@ fn top_up_lighting(
         bail!("At least one zone has lighting that does not have bulbs defined.");
     }
 
-    let tfa = calc_tfa(input);
+    let tfa = calc_tfa(input)?;
     let capacity_ref = 330. * tfa;
 
     let l_prov = l_req * (total_capacity / capacity_ref);

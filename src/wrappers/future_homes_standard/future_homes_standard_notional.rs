@@ -34,7 +34,7 @@ use crate::{
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use serde_json::json;
+use serde_json::{json, Value};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -77,13 +77,13 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     };
 
     // Retrieve the number of bedrooms and total volume
-    let bedroom_number = input.number_of_bedrooms().ok_or_else(|| {
+    let bedroom_number = input.number_of_bedrooms()?.ok_or_else(|| {
         anyhow!("FHS Notional wrapper expects number of bedrooms to be provided.")
     })?;
-    let total_volume = input.total_zone_volume();
+    let total_volume = input.total_zone_volume()?;
 
     // Determine the TFA
-    let total_floor_area = calc_tfa(input);
+    let total_floor_area = calc_tfa(input)?;
 
     edit_lighting_efficacy(input);
     edit_opaque_adjztu_elements(input)?;
@@ -170,7 +170,7 @@ fn edit_infiltration_ventilation(
     // pressure test results dependent on Notional option A or B
     let test_result = if is_notional_a { 4. } else { 5. };
 
-    let number_of_wet_rooms = input.number_of_wet_rooms();
+    let number_of_wet_rooms = input.number_of_wet_rooms()?;
 
     let infiltration_ventilation = input.infiltration_ventilation_mut();
 
@@ -618,13 +618,13 @@ fn edit_add_heatnetwork_heating(
         }
     }))?;
 
-    let notional_hot_water_source: HotWaterSource = serde_json::from_value(json!({
+    let notional_hot_water_source = json!({
         "hw cylinder": {
             "type": "HIU",
             "ColdWaterSource": cold_water_source,
             "HeatSourceWet": NOTIONAL_HIU,
             }
-    }))?;
+    });
 
     let heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
         "fuel": "custom",
@@ -824,7 +824,7 @@ fn edit_default_space_heating_distribution_system(
     // Initialise space heating system in project dict
     input.remove_space_heat_systems();
 
-    for zone_name in input.zone_keys() {
+    for zone_name in input.zone_keys()? {
         let system_name = format!("{zone_name}_SpaceHeatSystem_Notional");
         input.set_space_heat_system_for_zone(&zone_name, &system_name)?;
         let heatsourcewet_name = input
@@ -947,7 +947,7 @@ fn add_wwhrs(
     //      means that maisonettes cannot be handled at present.
 
     let storeys_in_building = match input.build_type() {
-        BuildType::House => input.storeys_in_building(),
+        BuildType::House => input.storeys_in_building()?,
         BuildType::Flat => 1,
     };
 
@@ -1070,8 +1070,8 @@ fn calc_daily_hw_demand(
     let dhw_demand = DomesticHotWaterDemand::new(
         input.showers().cloned().unwrap_or_default(),
         input.baths().cloned().unwrap_or_default(),
-        input.other_water_uses().cloned().unwrap_or_default(),
-        input.water_distribution().cloned(),
+        input.other_water_uses()?.cloned().unwrap_or_default(),
+        input.water_distribution()?.cloned(),
         &cold_water_sources,
         &wwhrs,
         &Default::default(),
@@ -1315,7 +1315,7 @@ fn edit_space_heating_system(
 }
 
 fn edit_space_cool_system(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    let part_o_active_cooling_required = input.part_o_active_cooling_required().unwrap_or(false);
+    let part_o_active_cooling_required = input.part_o_active_cooling_required()?.unwrap_or(false);
 
     if part_o_active_cooling_required {
         input.set_efficiency_for_all_space_cool_systems(5.1)?;
@@ -1338,7 +1338,7 @@ fn calc_design_capacity(
     set_temp_internal_static_calcs(&mut clone);
     let HtcHlpCalculation {
         htc_map: htc_dict, ..
-    } = calc_htc_hlp(clone.as_input())?;
+    } = calc_htc_hlp(&clone.as_input())?;
 
     // Calculate design capacity
     let min_air_temp = *input.external_conditions().air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
@@ -1384,7 +1384,7 @@ fn add_solar_pv(
     is_fee: bool,
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
-    let number_of_storeys = input.storeys_in_building();
+    let number_of_storeys = input.storeys_in_building()?;
 
     // PV is included in the notional if the building contains 15 stories or
     // less that contain dwellings.
@@ -1401,8 +1401,8 @@ fn add_solar_pv(
             }
             BuildType::Flat => {
                 let peak_kw = total_floor_area * 0.4 / (4.5 * number_of_storeys as f64);
-                let zone_total_volume = input.total_zone_volume();
-                let zone_total_area = input.total_zone_area();
+                let zone_total_volume = input.total_zone_volume()?;
+                let zone_total_area = input.total_zone_area()?;
                 let base_height_pv =
                     (zone_total_volume / zone_total_area + 0.3) * number_of_storeys as f64;
 

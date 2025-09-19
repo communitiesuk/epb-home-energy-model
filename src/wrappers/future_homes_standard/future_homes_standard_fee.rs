@@ -33,11 +33,11 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
 
     // Retrieve the number of bedrooms and total volume
     let number_of_bedrooms = input
-        .number_of_bedrooms()
+        .number_of_bedrooms()?
         .ok_or_else(|| anyhow!("Expected number of bedrooms to be indicated."))?;
-    let total_volume = input.total_zone_volume();
+    let total_volume = input.total_zone_volume()?;
 
-    let total_floor_area = calc_tfa(input);
+    let total_floor_area = calc_tfa(input)?;
     let req_ach =
         minimum_air_change_rate(input, total_floor_area, total_volume, number_of_bedrooms);
     // convert to m3/h
