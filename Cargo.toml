@@ -40,7 +40,7 @@ rayon = "1.11.0"
 roots = "0.0.8"
 serde = { version = "1.0.223", features = ["derive", "rc"] }
 serde-enum-str = "0.4.0"
-serde_json = "1.0.143"
+serde_json = "1.0.145"
 serde_repr = "0.1.20"
 serde_valid = "1.0.4"
 smartstring = { version = "1.0.1", features = ["arbitrary", "serde"] }
