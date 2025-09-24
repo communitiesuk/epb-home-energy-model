@@ -1807,19 +1807,25 @@ mod tests {
 
     #[rstest]
     fn test_calc_max_glazing_area_fraction(mut test_input: InputForProcessing) {
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, None));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.5, None))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.24375,
             "incorrect max glazing area fraction"
         );
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.0, None));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.0, None))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
             "incorrect max glazing area fraction"
         );
-        test_input.set_zone(zone_input_for_max_glazing_area_test(1.5, Some(90.)));
+        test_input
+            .set_zone(zone_input_for_max_glazing_area_test(1.5, Some(90.)))
+            .unwrap();
         assert_eq!(
             calc_max_glazing_area_fraction(&test_input, 80.0).unwrap(),
             0.25,
@@ -1840,11 +1846,8 @@ mod tests {
         assert_relative_eq!(area_diff, 2.549019607843137);
     }
 
-    fn zone_input_for_max_glazing_area_test(
-        u_value: f64,
-        pitch_override: Option<f64>,
-    ) -> ZoneDictionary {
-        serde_json::from_value(json!({"test_zone": {
+    fn zone_input_for_max_glazing_area_test(u_value: f64, pitch_override: Option<f64>) -> Value {
+        json!({"test_zone": {
             "BuildingElement": {
                 "test_rooflight": {
                     "type": "BuildingElementTransparent",
@@ -1862,8 +1865,7 @@ mod tests {
             "ThermalBridging": 1.0,
             "area": 10.0,
             "volume": 20.0
-        }}))
-        .unwrap()
+        }})
     }
 
     // this test does not exist in Python HEM

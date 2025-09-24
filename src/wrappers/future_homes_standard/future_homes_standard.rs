@@ -152,10 +152,7 @@ pub fn apply_fhs_preprocessing(
 
     set_temp_internal_static_calcs(input);
 
-    if input
-        .smart_appliance_control_by_name(SMART_APPLIANCE_CONTROL_NAME)?
-        .is_some()
-    {
+    if input.has_named_smart_appliance_control(SMART_APPLIANCE_CONTROL_NAME)? {
         // run project for 24 hours to obtain initial estimate for daily heating demand
         sim_24h(input, sim_settings)?;
     }
