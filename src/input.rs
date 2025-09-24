@@ -957,6 +957,30 @@ pub trait HotWaterSourceDetailsForProcessing {
     fn set_temp_usable(&mut self, temp_usable: f64);
 }
 
+struct HotWaterSourceDetailsForProcessing2<'a>(&'a mut Map<std::string::String, JsonValue>);
+
+impl HotWaterSourceDetailsForProcessing2 {
+    fn size(&self) -> usize {
+        self.0.len()
+    }
+
+    fn is_storage_tank(&self) -> bool {
+        self.0.contains_key("StorageTank")
+    }
+
+    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
+        if self
+            .0
+            .get("type")
+            .and_then(|v| v.as_str())
+            .is_some_and(|source_type| source_type == "StorageTank")
+        {
+            self.0
+                .insert("Control_hold_at_setpnt".into(), json!(control_name.into()));
+        }
+    }
+}
+
 impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetails {
     fn is_storage_tank(&self) -> bool {
         matches!(self, Self::StorageTank { .. })
@@ -3660,7 +3684,7 @@ static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
 #[error("Error accessing JSON during FHS preprocessing: {0}")]
 pub(crate) struct JsonAccessError(String);
 
-fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
+pub(crate) fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
     JsonAccessError(message.into())
 }
 
@@ -4265,7 +4289,7 @@ impl InputForProcessing {
     ) -> JsonAccessResult<()> {
         let systems = self.root_object_entry_mut("SpaceCoolSystem")?;
         for system in systems.values_mut().flat_map(|s| s.as_object_mut()) {
-            system.insert("energy_supply_name".into(), json!(energy_supply_name));
+            system.insert("EnergySupply".into(), json!(energy_supply_name));
         }
 
         Ok(())
@@ -4401,36 +4425,31 @@ impl InputForProcessing {
     pub(crate) fn heat_source_for_space_heat_system(
         &self,
         space_heat_system: &str,
-    ) -> Option<&JsonValue> {
-        self.root_object("SpaceHeatSystem").ok()?.and_then(|| ).get(space_heat_system)
-        Ok(self
-            .input
-            .space_heat_system
-            .as_ref()
-            .ok_or_else(|| {
-                anyhow!("There is no space heat system provided at the root of the input")
-            })?
-            .get(space_heat_system)
-            .ok_or_else(|| {
-                anyhow!(
-                    "There is no provided space heat system with the name '{space_heat_system}'"
-                )
-            })?
-            .heat_source())
+    ) -> JsonAccessResult<Option<&JsonValue>> {
+        let space_heat_systems = self.optional_root_object("SpaceHeatSystem")?;
+        let space_heat_systems = match space_heat_systems {
+            Some(ref space_heat_systems) => space_heat_systems,
+            None => return Ok(None),
+        };
+        let space_heat_system = space_heat_systems.get(space_heat_system);
+
+        Ok(space_heat_system.and_then(|space_heat_system| {
+            space_heat_system
+                .as_object()
+                .and_then(|space_heat_system| space_heat_system.get("heat_source"))
+        }))
     }
 
-    pub(crate) fn set_heat_source_for_space_heat_system(
+    pub(crate) fn set_heat_source_for_all_space_heat_systems(
         &mut self,
         heat_source: SpaceHeatSystemHeatSource,
     ) -> anyhow::Result<()> {
-        self.root()?
-            .space_heat_system
-            .as_mut()
-            .ok_or(anyhow!(
-                "There is no space heat system provided at the root of the input"
-            ))?
-            .into_iter()
-            .for_each(|(_, system_details)| system_details.set_heat_source(heat_source.clone()));
+        self.root_object_entry_mut("SpaceHeatSystem")?
+            .values_mut()
+            .flat_map(|system| system.as_object_mut())
+            .for_each(|system_details| {
+                system_details.insert("HeatSource".into(), json!(heat_source));
+            });
         Ok(())
     }
 
@@ -4447,6 +4466,12 @@ impl InputForProcessing {
         self.root_object("HotWaterSource")
     }
 
+    pub(crate) fn hot_water_source_mut(
+        &mut self,
+    ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
+        self.root_object_mut("HotWaterSource")
+    }
+
     pub(crate) fn hot_water_source_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self
             .root_object("HotWaterSource")?
@@ -4458,10 +4483,11 @@ impl InputForProcessing {
     pub(crate) fn hot_water_source_details_for_key(
         &mut self,
         source_key: &str,
-    ) -> &mut impl HotWaterSourceDetailsForProcessing {
-        self.input
-            .hot_water_source
-            .hot_water_source_for_processing(source_key)
+    ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
+        Ok(self
+            .root_object("HotWaterSource")?
+            .get(source_key)
+            .and_then(|details| details.as_object()))
     }
 
     pub(crate) fn names_of_energy_supplies_with_diverters(&self) -> JsonAccessResult<Vec<String>> {
@@ -4485,19 +4511,15 @@ impl InputForProcessing {
     ) -> JsonAccessResult<&Self> {
         self.root_object_mut("EnergySupply")?
             .get_mut(energy_supply_name)
-            .ok_or(json_error(
-                format!("There is no provided energy supply with the name '{energy_supply_name}'")
-                    .into(),
-            ))?
+            .ok_or(json_error(format!(
+                "There is no provided energy supply with the name '{energy_supply_name}'"
+            )))?
             .as_object_mut()
-            .ok_or(
-                json_error("The indicated energy supply was not an object".into())
-                    .map_err(|err| anyhow!(err)),
-            )?
+            .ok_or(json_error("The indicated energy supply was not an object"))?
             .get_mut(energy_supply_name)
             .map(|energy_supply| {
-                energy_supply.diverter.as_mut().map(|diverter| {
-                    diverter.control_max.replace(control_max_name.into());
+                energy_supply.get("diverter").as_mut().map(|diverter| {
+                    diverter.get("Controlmax").replace(&json!(control_max_name));
                 })
             });
         Ok(self)

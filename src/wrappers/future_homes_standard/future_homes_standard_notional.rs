@@ -895,7 +895,7 @@ fn edit_heatnetwork_space_heating_distribution_system(
 
     let notional_heat_source: SpaceHeatSystemHeatSource =
         serde_json::from_value(json!({"name": NOTIONAL_HIU}))?;
-    input.set_heat_source_for_space_heat_system(notional_heat_source)?;
+    input.set_heat_source_for_all_space_heat_systems(notional_heat_source)?;
 
     Ok(())
 }
@@ -1940,10 +1940,9 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let expected_heat_source: SpaceHeatSystemHeatSource =
-                serde_json::from_value(json!({"name": NOTIONAL_HIU})).unwrap();
+            let expected_heat_source = json!({"name": NOTIONAL_HIU});
 
-            assert_eq!(heat_source, expected_heat_source)
+            assert_eq!(*heat_source, expected_heat_source)
         }
     }
 

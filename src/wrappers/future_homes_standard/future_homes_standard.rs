@@ -8,7 +8,7 @@ use crate::external_conditions::{
     create_external_conditions, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
+    json_error, Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, Input, InputForProcessing, JsonAccessError,
     JsonAccessResult, MechanicalVentilationForProcessing, SmartApplianceBattery,
@@ -125,16 +125,28 @@ pub fn apply_fhs_preprocessing(
     create_lighting_gains(input, tfa, n_occupants)?;
     create_appliance_gains(input, tfa, n_occupants, &APPLIANCE_PROPENSITIES)?;
 
-    for source_key in input.hot_water_source_keys() {
-        let source = input.hot_water_source_details_for_key(&source_key);
-        if source.is_storage_tank() {
-            source.set_init_temp(HW_SETPOINT_MAX);
-        } else if source.is_smart_hot_water_tank() {
-            source.set_init_temp(HW_SETPOINT_MAX);
-            source.set_temp_usable(HW_TEMPERATURE);
-        } else {
-            source.set_setpoint_temp(HW_TEMPERATURE);
-        }
+    for source in input.hot_water_source_mut()?.values_mut() {
+        let source_type: String = source
+            .get("type")
+            .ok_or(json_error("Hot water source did not have a type field"))?
+            .as_str()
+            .ok_or(json_error("Type field was not a string"))?
+            .into();
+        let source = source
+            .as_object_mut()
+            .ok_or(json_error("Hot water source was not an object"))?;
+        match source_type.as_str() {
+            "StorageTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+            }
+            "SmartHotWaterTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+                source.insert("temp_usable".into(), json!(HW_TEMPERATURE));
+            }
+            _ => {
+                source.insert("setpoint_temp".into(), json!(HW_TEMPERATURE));
+            }
+        };
     }
 
     let cold_water_feed_temps = create_cold_water_feed_temps(input)?;
@@ -946,18 +958,18 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
     let hw_pv_diverter_max_temp_base_name = "_HW_pv_diverter_max_temp";
     let hw_pv_diverter_smart_hw_tank_ctrl_base_name = "_HW_pv_diverter_smart_hw_tank_ctrl";
 
-    for energy_supply_name in input.names_of_energy_supplies_with_diverters() {
-        for (hw_source_name, hw_source) in input.hot_water_source().as_index_map() {
-            match hw_source {
+    for energy_supply_name in input.names_of_energy_supplies_with_diverters()? {
+        for (hw_source_name, hw_source) in input.hot_water_source()? {
+            match hw_source.get("type") {
                 crate::input::HotWaterSourceDetails::StorageTank { .. } => {
                     let control_name =
                         format!("{hw_pv_diverter_max_temp_base_name}_{hw_source_name}");
                     input.set_control_max_name_for_energy_supply_diverter(
                         &energy_supply_name,
                         &control_name,
-                    );
+                    )?;
                     input.add_control(
-                        control_name,
+                        &control_name,
                         json!({
                             "type": "SetpointTimeControl",
                             "start_day": 0,
@@ -1074,6 +1086,29 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         }),
     )?;
 
+    for source in input.hot_water_source_mut()?.values_mut() {
+        let source_type: String = source
+            .get("type")
+            .ok_or(json_error("Hot water source did not have a type field"))?
+            .as_str()
+            .ok_or(json_error("Type field was not a string"))?
+            .into();
+        let source = source
+            .as_object_mut()
+            .ok_or(json_error("Hot water source was not an object"))?;
+        match source_type.as_str() {
+            "StorageTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+            }
+            "SmartHotWaterTank" => {
+                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
+                source.insert("temp_usable".into(), json!(HW_TEMPERATURE));
+            }
+            _ => {
+                source.insert("setpoint_temp".into(), json!(HW_TEMPERATURE));
+            }
+        };
+    }
     for hwsource in input.hot_water_source_keys() {
         let source = input.hot_water_source_details_for_key(hwsource.as_str());
         if source.is_storage_tank() {
