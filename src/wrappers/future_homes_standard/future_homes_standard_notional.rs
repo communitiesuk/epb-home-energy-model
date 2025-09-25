@@ -12,7 +12,7 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
 use crate::input::{
     BuildType, BuildingElement, ColdWaterSourceType, EnergySupplyDetails, GroundBuildingElement,
-    HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing,
+    HeatPumpSourceType, HeatSourceWetDetails, HotWaterSource, InputForProcessing, JsonAccessResult,
     MechanicalVentilation, SpaceHeatSystemHeatSource, ThermalBridgingDetails,
     UValueEditableBuildingElement, WaterHeatingEventType, WaterPipeContentsType, WaterPipework,
     WaterPipeworkLocation,
@@ -61,10 +61,10 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     let is_notional_a = fhs_notional_a_assumptions || fhs_fee_notional_a_assumptions;
     let is_fee = fhs_fee_notional_a_assumptions || fhs_fee_notional_b_assumptions;
     // Check if a heat network is present
-    let is_heat_network = check_heatnetwork_present(input);
+    let is_heat_network = check_heatnetwork_present(input)?;
 
     // Determine cold water source
-    let cold_water_source = input.cold_water_source();
+    let cold_water_source = input.cold_water_source()?;
 
     if cold_water_source.len() != 1 {
         bail!("The FHS Notional wrapper expects exactly one cold water type to be set.");
@@ -104,8 +104,8 @@ pub(crate) fn apply_fhs_notional_preprocessing(
 
     // remove on-site generation, pv diverter or electric battery if present
     remove_onsite_generation_if_present(input);
-    remove_pv_diverter_if_present(input);
-    remove_electric_battery_if_present(input);
+    remove_pv_diverter_if_present(input)?;
+    remove_electric_battery_if_present(input)?;
 
     // modify ventilation
     let minimum_air_change_rate =
@@ -132,21 +132,17 @@ pub(crate) fn apply_fhs_notional_preprocessing(
     Ok(())
 }
 
-fn check_heatnetwork_present(input: &InputForProcessing) -> bool {
-    input
-        .heat_source_wet()
-        .iter()
-        .flat_map(|heat_source_wet| heat_source_wet.values())
-        .any(|source| {
-            matches!(
-                source,
-                HeatSourceWetDetails::Hiu { .. }
-                    | HeatSourceWetDetails::HeatPump {
-                        source_type: HeatPumpSourceType::HeatNetwork,
-                        ..
-                    }
-            )
-        })
+fn check_heatnetwork_present(input: &InputForProcessing) -> anyhow::Result<bool> {
+    Ok(input.heat_source_wet()?.values().any(|source| {
+        matches!(
+            source,
+            HeatSourceWetDetails::Hiu { .. }
+                | HeatSourceWetDetails::HeatPump {
+                    source_type: HeatPumpSourceType::HeatNetwork,
+                    ..
+                }
+        )
+    }))
 }
 
 /// Apply notional lighting efficacy
@@ -261,7 +257,7 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
             }
         }
         // remove the r_c input if it was there, as engine would prioritise r_c over u_value
-        building_element.remove_r_c();
+        building_element.remove_thermal_resistance_construction();
     }
 
     Ok(())
@@ -607,7 +603,7 @@ fn edit_add_heatnetwork_heating(
 ) -> anyhow::Result<()> {
     let heat_network_name = "_notional_heat_network";
 
-    let notional_heat_network = serde_json::from_value(json!(
+    let notional_heat_network = json!(
      {
         NOTIONAL_HIU: {
             "type": "HIU",
@@ -616,7 +612,7 @@ fn edit_add_heatnetwork_heating(
             "HIU_daily_loss": 0.8,
             "building_level_distribution_losses": 62,
         }
-    }))?;
+    });
 
     let notional_hot_water_source = json!({
         "hw cylinder": {
@@ -626,18 +622,18 @@ fn edit_add_heatnetwork_heating(
             }
     });
 
-    let heat_network_fuel_data: EnergySupplyDetails = serde_json::from_value(json!({
+    let heat_network_fuel_data = json!({
         "fuel": "custom",
         "factor":{
             "Emissions Factor kgCO2e/kWh": 0.033,
             "Emissions Factor kgCO2e/kWh including out-of-scope emissions": 0.033,
             "Primary Energy Factor kWh/kWh delivered": 0.75
             }
-    }))?;
+    });
 
-    input.set_heat_source_wet(notional_heat_network);
-    input.set_hot_water_source(notional_hot_water_source);
-    input.add_energy_supply_for_key(heat_network_name, heat_network_fuel_data);
+    input.set_heat_source_wet(notional_heat_network)?;
+    input.set_hot_water_source(notional_hot_water_source)?;
+    input.add_energy_supply_for_key(heat_network_name, heat_network_fuel_data)?;
 
     Ok(())
 }
@@ -828,15 +824,13 @@ fn edit_default_space_heating_distribution_system(
         let system_name = format!("{zone_name}_SpaceHeatSystem_Notional");
         input.set_space_heat_system_for_zone(&zone_name, &system_name)?;
         let heatsourcewet_name = input
-            .heat_source_wet()
-            .ok_or_else(|| {
-                anyhow!("FHS Notional wrapper expected HeatSourceWet field to be set on input.")
-            })?
+            .heat_source_wet()?
             .first()
             .ok_or_else(|| {
                 anyhow!("FHS Notional wrapper expected at least one heat source wet to be defined.")
             })?
-            .0;
+            .0
+            .clone();
 
         // Calculate number of radiators
         let emitter_cap = design_capacity.get(&zone_name).ok_or_else(|| {
@@ -998,7 +992,7 @@ fn calc_daily_hw_demand(
     // create ColdWaterSource
     let cold_water_feed_temps = create_cold_water_feed_temps(input)?;
     let cold_water_sources: ColdWaterSources = input
-        .cold_water_source()
+        .cold_water_source()?
         .iter()
         .map(|(key, source)| {
             (
@@ -1070,7 +1064,7 @@ fn calc_daily_hw_demand(
     let dhw_demand = DomesticHotWaterDemand::new(
         input.showers().cloned().unwrap_or_default(),
         input.baths().cloned().unwrap_or_default(),
-        input.other_water_uses()?.cloned().unwrap_or_default(),
+        input.other_water_uses().cloned().unwrap_or_default(),
         input.water_distribution()?.cloned(),
         &cold_water_sources,
         &wwhrs,
@@ -1281,12 +1275,16 @@ fn edit_hot_water_distribution(
     Ok(())
 }
 
-fn remove_pv_diverter_if_present(input: &mut InputForProcessing) {
-    input.remove_all_diverters_from_energy_supplies();
+fn remove_pv_diverter_if_present(
+    input: &mut InputForProcessing,
+) -> JsonAccessResult<&InputForProcessing> {
+    input.remove_all_diverters_from_energy_supplies()
 }
 
-fn remove_electric_battery_if_present(input: &mut InputForProcessing) {
-    input.remove_all_batteries_from_energy_supplies();
+fn remove_electric_battery_if_present(
+    input: &mut InputForProcessing,
+) -> JsonAccessResult<&InputForProcessing> {
+    input.remove_all_batteries_from_energy_supplies()
 }
 
 fn edit_space_heating_system(
@@ -1527,7 +1525,7 @@ mod tests {
     #[rstest]
     // this test does not exist in Python HEM
     fn test_check_heatnetwork_present(test_input: InputForProcessing) {
-        assert!(!check_heatnetwork_present(&test_input));
+        assert!(!check_heatnetwork_present(&test_input).unwrap());
     }
 
     #[rstest]
@@ -1717,7 +1715,9 @@ mod tests {
             u_value,
             thermal_resistance_construction,
             ..
-        } = test_input.building_element_by_key("zone 1", "window 0")
+        } = test_input
+            .building_element_by_key("zone 1", "window 0")
+            .unwrap()
         else {
             panic!("Window 0 in Zone 1 should be set up as a transparent building element")
         };
@@ -1729,7 +1729,9 @@ mod tests {
             u_value,
             thermal_resistance_construction,
             ..
-        } = test_input.building_element_by_key("zone 2", "window 0")
+        } = test_input
+            .building_element_by_key("zone 2", "window 0")
+            .unwrap()
         else {
             panic!("Window 0 in Zone 2 should be set up as a transparent building element")
         };
@@ -1749,7 +1751,9 @@ mod tests {
             thermal_resistance_floor_construction: r_f,
             psi_wall_floor_junc,
             ..
-        } = test_input.building_element_by_key("zone 1", "ground")
+        } = test_input
+            .building_element_by_key("zone 1", "ground")
+            .unwrap()
         else {
             panic!("ground in Zone 1 should be set up as a ground building element")
         };
@@ -1762,7 +1766,9 @@ mod tests {
             thermal_resistance_floor_construction: r_f,
             psi_wall_floor_junc,
             ..
-        } = test_input.building_element_by_key("zone 2", "ground")
+        } = test_input
+            .building_element_by_key("zone 2", "ground")
+            .unwrap()
         else {
             panic!("ground in Zone 2 should be set up as a ground building element")
         };
@@ -1908,14 +1914,17 @@ mod tests {
 
         assert_eq!(
             test_input.heat_source_wet().unwrap(),
-            &expected_heat_source_wet
+            expected_heat_source_wet
         );
 
-        assert_eq!(test_input.hot_water_source(), &expected_hot_water_source);
+        assert_eq!(
+            json!(test_input.hot_water_source().unwrap()),
+            json!(expected_hot_water_source)
+        );
 
         assert_eq!(
-            test_input.energy_supply_by_key(heat_network_name),
-            Some(&expected_heat_network_fuel_data)
+            json!(test_input.energy_supply_by_key(heat_network_name).unwrap()),
+            json!(expected_heat_network_fuel_data)
         );
     }
 
@@ -2536,11 +2545,14 @@ mod tests {
             "HeatSource": "immersion"
         });
         let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
-        test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
+        let _ = test_input.add_diverter_to_energy_supply(energy_supply_key, diverter);
 
-        remove_pv_diverter_if_present(&mut test_input);
-        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
-        assert!(energy_supply.diverter.is_none())
+        remove_pv_diverter_if_present(&mut test_input).unwrap();
+        let energy_supply = test_input
+            .energy_supply_by_key(energy_supply_key)
+            .unwrap()
+            .unwrap();
+        assert!(!energy_supply.contains_key("diverter"))
     }
 
     // this test does not exist in Python HEM
@@ -2557,11 +2569,15 @@ mod tests {
             "grid_charging_possible": false
         });
         let energy_supply_key = ENERGY_SUPPLY_NAME_ELECTRICITY;
-        test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
+        let _ =
+            test_input.add_electric_battery_to_energy_supply(energy_supply_key, electric_battery);
 
-        remove_electric_battery_if_present(&mut test_input);
-        let energy_supply = test_input.energy_supply_by_key(energy_supply_key).unwrap();
-        assert!(energy_supply.electric_battery.is_none());
+        let _ = remove_electric_battery_if_present(&mut test_input);
+        let energy_supply = test_input
+            .energy_supply_by_key(energy_supply_key)
+            .unwrap()
+            .unwrap();
+        assert!(!energy_supply.contains_key("ElectricBattery"));
     }
 
     #[rstest]
@@ -2598,7 +2614,7 @@ mod tests {
     fn test_initialise_temperature_setpoints(mut test_input: InputForProcessing) {
         initialise_temperature_setpoints(&mut test_input).unwrap();
 
-        let temp_setpoints = test_input.all_init_temp_setpoints();
+        let temp_setpoints = test_input.all_init_temp_setpoints().unwrap();
 
         for temp_setpoint in temp_setpoints {
             assert_eq!(temp_setpoint, Some(18.));
@@ -2633,7 +2649,7 @@ mod tests {
 
     #[rstest]
     fn test_add_solar_pv_house_only(mut test_input: InputForProcessing) {
-        let expected_result: OnSiteGeneration = serde_json::from_value(json!({"PV1": {
+        let expected_result = json!({"PV1": {
                 "EnergySupply": "mains elec",
                 "orientation360": 180,
                 "peak_power": 4.444444444444445,
@@ -2649,16 +2665,21 @@ mod tests {
                 "width": 6.324555320336759,
                 "height": 3.1622776601683795
                 }
-        }))
+        })
+        .as_object()
+        .cloned()
         .unwrap();
 
         let is_notional_a = true;
         let is_fee = false;
-        let total_floor_area = calc_tfa(&test_input);
+        let total_floor_area = calc_tfa(&test_input).unwrap();
 
-        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area).unwrap();
+        let _ = add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area);
 
-        assert_eq!(*test_input.on_site_generation().unwrap(), expected_result);
+        assert_eq!(
+            test_input.on_site_generation().unwrap().unwrap().to_owned(),
+            expected_result
+        );
     }
 
     #[rstest]

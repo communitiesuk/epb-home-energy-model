@@ -10,8 +10,8 @@ use crate::external_conditions::{
 use crate::input::{
     json_error, Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, Input, InputForProcessing, JsonAccessError,
-    JsonAccessResult, MechanicalVentilationForProcessing, SmartApplianceBattery,
+    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
+    JsonAccessError, JsonAccessResult, MechanicalVentilationForProcessing, SmartApplianceBattery,
     SpaceHeatControlType, TransparentBuildingElement, VentType, WaterHeatingEvent,
     WaterHeatingEventType, WindowTreatmentType, ZoneLightingBulbs,
 };
@@ -1086,31 +1086,12 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         }),
     )?;
 
-    for source in input.hot_water_source_mut()?.values_mut() {
-        let source_type: String = source
-            .get("type")
-            .ok_or(json_error("Hot water source did not have a type field"))?
-            .as_str()
-            .ok_or(json_error("Type field was not a string"))?
-            .into();
-        let source = source
-            .as_object_mut()
-            .ok_or(json_error("Hot water source was not an object"))?;
-        match source_type.as_str() {
-            "StorageTank" => {
-                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
-            }
-            "SmartHotWaterTank" => {
-                source.insert("init_temp".into(), json!(HW_SETPOINT_MAX));
-                source.insert("temp_usable".into(), json!(HW_TEMPERATURE));
-            }
-            _ => {
-                source.insert("setpoint_temp".into(), json!(HW_TEMPERATURE));
-            }
-        };
-    }
-    for hwsource in input.hot_water_source_keys() {
-        let source = input.hot_water_source_details_for_key(hwsource.as_str());
+    for mut source in input
+        .hot_water_source_mut()?
+        .values_mut()
+        .flat_map(|value| value.as_object_mut())
+        .map(|map| HotWaterSourceDetailsJsonMap(map))
+    {
         if source.is_storage_tank() {
             source.set_control_min_name_for_storage_tank_heat_sources(hw_min_temp)?;
             source.set_control_max_name_for_storage_tank_heat_sources(hw_max_temp)?;
@@ -1606,17 +1587,30 @@ fn create_lighting_gains(
     if !input.all_zones_have_bulbs() {
         bail!("At least one zone does not have lighting bulbs defined.");
     }
-    for (zone_name, bulbs) in input.light_bulbs_for_each_zone() {
+    for (zone_name, bulbs) in input.light_bulbs_for_each_zone()? {
         let mut zone_total_lumens = 0.0;
         let mut zone_total_wattage = 0.0;
         let mut zone_capacity = 0.0;
 
         for bulb in bulbs {
-            let ZoneLightingBulbs {
-                efficacy: bulb_efficacy,
-                power: bulb_power,
-                count: bulb_count,
-            } = bulb;
+            let bulb_efficacy = bulb
+                .get("efficacy")
+                .and_then(|e| e.as_f64())
+                .ok_or(json_error(
+                    "Bulb efficacy should have been expressed as a number",
+                ))?;
+            let bulb_power = bulb
+                .get("power")
+                .and_then(|e| e.as_f64())
+                .ok_or(json_error(
+                    "Bulb power should have been expressed as a number",
+                ))?;
+            let bulb_count = bulb
+                .get("count")
+                .and_then(|e| e.as_u64())
+                .ok_or(json_error(
+                    "Bulb count should have been expressed as an integer",
+                ))?;
 
             // Calculate total lumens and wattage for the bulb
             let bulb_lumens = bulb_efficacy * bulb_power * bulb_count as f64;
@@ -2031,7 +2025,7 @@ fn create_appliance_gains(
 
     for appliance_key in power_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())
+            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2059,7 +2053,7 @@ fn create_appliance_gains(
 
     for appliance_key in weight_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())
+            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2943,7 +2937,7 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
         }),
     )?;
 
-    let transparent_building_elements = input.all_transparent_building_elements_mut();
+    let transparent_building_elements = input.all_transparent_building_elements_mut()?;
 
     for building_element in transparent_building_elements.iter() {
         if let Some(window_treatments) = building_element.treatment() {
