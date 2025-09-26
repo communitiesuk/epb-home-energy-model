@@ -11,8 +11,9 @@ use crate::input::{
     json_error, Appliance, ApplianceEntry, ApplianceKey, ApplianceReference, ColdWaterSourceType,
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
-    JsonAccessError, JsonAccessResult, MechanicalVentilationForProcessing, SmartApplianceBattery,
-    SpaceHeatControlType, TransparentBuildingElement, VentType, WaterHeatingEvent,
+    JsonAccessError, JsonAccessResult, MechanicalVentilationForProcessing,
+    MechanicalVentilationJsonValue, SmartApplianceBattery, SpaceHeatControlType,
+    TransparentBuildingElement, TransparentBuildingElementJsonValue, VentType, WaterHeatingEvent,
     WaterHeatingEventType, WindowTreatmentType, ZoneLightingBulbs,
 };
 use crate::output::Output;
@@ -1722,7 +1723,7 @@ fn create_appliance_gains(
 
     // add any missing required appliances to the assessment,
     // get default demand figures for any unknown appliances
-    appliance_cooking_defaults(input, number_of_occupants, total_floor_area);
+    appliance_cooking_defaults(input, number_of_occupants, total_floor_area)?;
     let cookparams = cooking_demand(input, number_of_occupants)?;
 
     // TODO (from Python) change to enum
@@ -2335,54 +2336,54 @@ fn appliance_cooking_defaults(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
     total_floor_area: f64,
-) -> (
+) -> anyhow::Result<(
     IndexMap<ApplianceKey, Appliance>,
     IndexMap<ApplianceKey, Appliance>,
-) {
-    let cooking_fuels = input.all_energy_supply_fuel_types();
+)> {
+    let cooking_fuels = input.all_energy_supply_fuel_types()?;
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
-    let mut cooking_defaults: IndexMap<ApplianceKey, Appliance> = match (
-        cooking_fuels.contains(&FuelType::Electricity),
-        cooking_fuels.contains(&FuelType::MainsGas),
+    let mut cooking_defaults: IndexMap<&str, Appliance> = match (
+        cooking_fuels.contains("electricity"),
+        cooking_fuels.contains("mains_gas"),
     ) {
         (true, true) => IndexMap::from([
             (
-                ApplianceKey::Oven,
+                "Oven",
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
-                ApplianceKey::Hobs,
+                "Hobs",
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
             ),
         ]),
         (_, true) => IndexMap::from([
             (
-                ApplianceKey::Oven,
+                "Oven",
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 1.57),
             ),
             (
-                ApplianceKey::Hobs,
+                "Hobs",
                 Appliance::with_energy_supply(EnergySupplyType::MainsGas, 0.72),
             ),
         ]),
         (true, _) => IndexMap::from([
             (
-                ApplianceKey::Oven,
+                "Oven",
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
-                ApplianceKey::Hobs,
+                "Hobs",
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
             ),
         ]),
         _ => IndexMap::from([
             (
-                ApplianceKey::Oven,
+                "Oven",
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.59),
             ),
             (
-                ApplianceKey::Hobs,
+                "Hobs",
                 Appliance::with_energy_supply(EnergySupplyType::Electricity, 0.72),
             ),
         ]),
@@ -2395,51 +2396,44 @@ fn appliance_cooking_defaults(
 
     let appliance_defaults = IndexMap::from([
         (
-            ApplianceKey::OtherDevices,
+            "Otherdevices",
             Appliance::with_kwh_per_annum(
                 30.0 * (number_of_occupants * total_floor_area).powf(0.49),
             ),
         ),
+        ("Dishwasher", Appliance::with_kwh_per_100_cycle(53.0, None)),
         (
-            ApplianceKey::Dishwasher,
-            Appliance::with_kwh_per_100_cycle(53.0, None),
-        ),
-        (
-            ApplianceKey::ClothesWashing,
+            "Clothes_washing",
             Appliance::with_kwh_per_100_cycle(53.0, Some(7.0)),
         ),
         (
-            ApplianceKey::ClothesDrying,
+            "Clothes_drying",
             Appliance::with_kwh_per_100_cycle(98.0, Some(7.0)),
         ),
-        (ApplianceKey::Fridge, Appliance::with_kwh_per_annum(76.7)),
-        (ApplianceKey::Freezer, Appliance::with_kwh_per_annum(128.2)),
-        (
-            ApplianceKey::FridgeFreezer,
-            Appliance::with_kwh_per_annum(137.4),
-        ),
+        ("Fridge", Appliance::with_kwh_per_annum(76.7)),
+        ("Freezer", Appliance::with_kwh_per_annum(128.2)),
+        ("Fridge-Freezer", Appliance::with_kwh_per_annum(137.4)),
     ]);
 
-    if !input.has_appliances() {
+    if !input.has_appliances()? {
         input.merge_in_appliances(&appliance_defaults);
         input.merge_in_appliances(&cooking_defaults);
         input.merge_in_appliances(&additional_cooking_defaults);
     } else {
         for appliance_name in appliance_defaults.keys() {
             if !input.appliances_contain_key(appliance_name)
-                || input.appliance_key_has_reference(appliance_name, &ApplianceReference::Default)
+                || input.appliance_key_has_reference(appliance_name, "Default")
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
                     appliance_defaults[appliance_name].clone(),
                 )]));
-            } else if input
-                .appliance_key_has_reference(appliance_name, &ApplianceReference::NotInstalled)
-            {
+            } else if input.appliance_key_has_reference(appliance_name, "Not Installed") {
                 input.remove_appliance(appliance_name);
             } else {
                 // user has specified appliance efficiency, overwrite efficiency with default
-                let original_load_shifting_value = input.loadshifting_for_appliance(appliance_name);
+                let original_load_shifting_value =
+                    input.loadshifting_for_appliance(appliance_name)?;
 
                 input.merge_in_appliances(&IndexMap::from([(
                     appliance_name.to_owned(),
@@ -2463,15 +2457,13 @@ fn appliance_cooking_defaults(
         cooking_defaults.append(&mut additional_cooking_defaults);
         for (cooking_name, cooking_appliance) in cooking_defaults.iter() {
             if !input.appliances_contain_key(cooking_name)
-                || input.appliance_key_has_reference(cooking_name, &ApplianceReference::Default)
+                || input.appliance_key_has_reference(cooking_name, "Default")
             {
                 input.merge_in_appliances(&IndexMap::from([(
                     cooking_name.to_owned(),
                     cooking_appliance.clone(),
                 )]));
-            } else if input
-                .appliance_key_has_reference(cooking_name, &ApplianceReference::NotInstalled)
-            {
+            } else if input.appliance_key_has_reference(cooking_name, "Not Installed") {
                 input.remove_appliance(cooking_name);
             } else {
                 // NB: there is a possible issue in the Python here where the wrong key is used
@@ -2483,19 +2475,19 @@ fn appliance_cooking_defaults(
         }
     }
 
-    (appliance_defaults, cooking_defaults)
+    Ok((appliance_defaults, cooking_defaults))
 }
 
 fn appliance_kwh_cycle_loading_factor(
     input: &InputForProcessing,
-    appliance_key: &ApplianceKey,
+    appliance_key: &str,
     appliance_map: &IndexMap<ApplianceKey, ApplianceUseProfile>,
 ) -> anyhow::Result<(f64, f64)> {
     // value on energy label is defined differently between appliance types,
     // convert any different input types to simple kWh per cycle
 
     let (kwh_cycle, appliance) = if let Some(ApplianceEntry::Object(appliance)) =
-        input.appliance_with_key(appliance_key)
+        input.appliance_with_key(appliance_key)?
     {
         (
             (if let Some(kwh_per_cycle) = appliance.kwh_per_cycle {
@@ -2939,7 +2931,10 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     let transparent_building_elements = input.all_transparent_building_elements_mut()?;
 
-    for building_element in transparent_building_elements.iter() {
+    for building_element in transparent_building_elements
+        .into_iter()
+        .map(|el| TransparentBuildingElementJsonValue(el))
+    {
         if let Some(window_treatments) = building_element.treatment() {
             for mut treatment in window_treatments {
                 treatment.set_is_open(false);
@@ -2989,7 +2984,7 @@ pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> 
             }
         }),
     )?;
-    input.set_window_adjust_control_for_infiltration_ventilation("_window_opening_adjust");
+    input.set_window_adjust_control_for_infiltration_ventilation("_window_opening_adjust")?;
 
     input.add_control(
         "_window_opening_openablealways",
@@ -3080,7 +3075,7 @@ fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Resul
             }
         }),
     )?;
-    input.set_vent_adjust_min_control_for_infiltration_ventilation("_vent_adjust_min_ach");
+    input.set_vent_adjust_min_control_for_infiltration_ventilation("_vent_adjust_min_ach")?;
 
     input.add_control(
         "_vent_adjust_max_ach",
@@ -3093,7 +3088,7 @@ fn create_vent_opening_schedule(input: &mut InputForProcessing) -> anyhow::Resul
             }
         }),
     )?;
-    input.set_vent_adjust_max_control_for_infiltration_ventilation("_vent_adjust_max_ach");
+    input.set_vent_adjust_max_control_for_infiltration_ventilation("_vent_adjust_max_ach")?;
 
     Ok(())
 }
@@ -3105,12 +3100,16 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
         WaterHeatingEventType::Shower,
         WaterHeatingEventType::Bath,
     ]);
-    let appliance_gains_events = input.appliance_gains_events();
+    let appliance_gains_events = input.appliance_gains_events()?;
 
-    let mech_vents = input.keyed_mechanical_ventilations_for_processing();
+    let mech_vents = input
+        .keyed_mechanical_ventilations_for_processing()?
+        .into_iter()
+        .map(|(name, vent)| (name, MechanicalVentilationJsonValue(vent)))
+        .collect::<IndexMap<_, _>>();
     let mut intermittent_mev: IndexMap<String, Vec<f64>> = mech_vents
         .iter()
-        .filter(|(_, vent)| vent.vent_type() == VentType::IntermittentMev)
+        .filter(|(_, vent)| vent.vent_is_type("Intermittent MEV"))
         .fold(IndexMap::from([]), |mut acc, (vent, _)| {
             acc.insert(
                 vent.to_owned(),
@@ -3233,22 +3232,26 @@ impl<'a> CycleMev<'a> {
 }
 
 fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
-    for mech_vents_data in input.mechanical_ventilations_for_processing().iter_mut() {
-        match mech_vents_data.vent_type() {
-            crate::input::VentType::CentralisedContinuousMev | crate::input::VentType::Mvhr => {
-                let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;
-                let measured_air_flow_rate = mech_vents_data.measured_air_flow_rate().ok_or_else(|| anyhow!("Measured air flow rate was not given for a mechanical ventilation that expected one to be present."))?;
-                // Specific fan power is total measured electrical power in Watts divided by air flow rate
-                let measured_sfp = measured_fan_power / measured_air_flow_rate; // in W/l/s
-                mech_vents_data.set_sfp(measured_sfp);
-            }
-            crate::input::VentType::IntermittentMev
-            | crate::input::VentType::DecentralisedContinuousMev => {
-                continue;
-            }
-            crate::input::VentType::Piv => {
-                bail!("Mechanical ventilation type of PIV not recognised")
-            }
+    for mut mech_vents_data in input
+        .mechanical_ventilations_for_processing()?
+        .into_iter()
+        .map(|vent| MechanicalVentilationJsonValue(vent))
+    {
+        if mech_vents_data.vent_is_type("Centralised continuous MEV")
+            || mech_vents_data.vent_is_type("MVHR")
+        {
+            let measured_fan_power = mech_vents_data.measured_fan_power().ok_or_else(|| anyhow!("Measured fan power was not given for a mechanical ventilation that expected one to be present."))?;
+            let measured_air_flow_rate = mech_vents_data.measured_air_flow_rate().ok_or_else(|| anyhow!("Measured air flow rate was not given for a mechanical ventilation that expected one to be present."))?;
+            // Specific fan power is total measured electrical power in Watts divided by air flow rate
+            let measured_sfp = measured_fan_power / measured_air_flow_rate; // in W/l/s
+            mech_vents_data.set_sfp(measured_sfp);
+        } else if mech_vents_data.vent_is_type("Intermittent MEV")
+            || mech_vents_data.vent_is_type("Decentralised continuous MEV")
+        {
+            continue;
+        } else if mech_vents_data.vent_is_type("PIV") {
+            // PIV will be removed as of FHS 0.25/ HEM 0.36 so remove this clause at this point
+            bail!("Mechanical ventilation type of PIV not recognised");
         }
     }
 

@@ -168,30 +168,40 @@ fn edit_infiltration_ventilation(
 
     let number_of_wet_rooms = input.number_of_wet_rooms()?;
 
-    let infiltration_ventilation = input.infiltration_ventilation_mut();
+    let infiltration_ventilation = input.infiltration_ventilation_mut()?;
 
-    infiltration_ventilation.leaks.test_pressure = 50.;
-    infiltration_ventilation.leaks.test_result = test_result;
+    {
+        let leaks = infiltration_ventilation
+            .entry("Leaks")
+            .or_insert(json!({}))
+            .as_object_mut()
+            .ok_or(anyhow::anyhow!("Leaks was expected to be an object"))?;
+        leaks.insert("test_pressure".into(), json!(50.));
+        leaks.insert("test_result".into(), json!(test_result));
+    }
 
     // all openings set to 0
     // delete all combustion appliances Cowls and PDUs.
-    infiltration_ventilation.pdus = IndexMap::new();
-    infiltration_ventilation.cowls = IndexMap::new();
-    infiltration_ventilation.combustion_appliances = IndexMap::new();
+    infiltration_ventilation.insert("PDUs".into(), json!({}));
+    infiltration_ventilation.insert("Cowls".into(), json!({}));
+    infiltration_ventilation.insert("CombustionAppliances".into(), json!({}));
 
     if is_notional_a {
         // Notional option A uses continuous extract, so no intermittent extract fans
         // Continuous decentralised mechanical extract ventilation
 
-        infiltration_ventilation.mechanical_ventilation = serde_json::from_value(json!({
-        "Decentralised_Continuous_MEV_for_notional":{
-            "sup_air_flw_ctrl": "ODA",
-            "sup_air_temp_ctrl": "CONST",
-            "vent_type": "Decentralised continuous MEV",
-            "SFP":0.15,
-            "EnergySupply": "mains elec",
-            "design_outdoor_air_flow_rate": minimum_air_flow_rate
-        }}))?;
+        infiltration_ventilation.insert(
+            "MechanicalVentilation".into(),
+            json!({
+            "Decentralised_Continuous_MEV_for_notional":{
+                "sup_air_flw_ctrl": "ODA",
+                "sup_air_temp_ctrl": "CONST",
+                "vent_type": "Decentralised continuous MEV",
+                "SFP":0.15,
+                "EnergySupply": "mains elec",
+                "design_outdoor_air_flow_rate": minimum_air_flow_rate
+            }}),
+        );
     } else {
         // extract_fans follow the same as the actual dwelling
         // but there must be a minimum of one extract fan
@@ -202,9 +212,9 @@ fn edit_infiltration_ventilation(
         if wet_rooms_count <= 1 {
             bail!("invalid/missing NumberOfWetRooms ({wet_rooms_count})");
         }
-        let mut mech_vents: IndexMap<String, MechanicalVentilation> = Default::default();
+        let mut mech_vents: IndexMap<String, Value> = Default::default();
         for i in 0..wet_rooms_count {
-            let mech_vent: MechanicalVentilation = serde_json::from_value(json!(
+            let mech_vent = json!(
                     {
                     "sup_air_flw_ctrl": "ODA",
                     "sup_air_temp_ctrl": "CONST",
@@ -213,10 +223,10 @@ fn edit_infiltration_ventilation(
                     "EnergySupply": "mains elec",
                     "design_outdoor_air_flow_rate": 80
                 }
-            ))?;
+            );
             mech_vents.insert(i.to_string().into(), mech_vent);
         }
-        infiltration_ventilation.mechanical_ventilation = mech_vents;
+        infiltration_ventilation.insert("MechanicalVentilation".into(), json!(mech_vents));
     }
 
     Ok(())
@@ -1552,7 +1562,7 @@ mod tests {
         edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
             .unwrap();
 
-        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+        let expected = json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
             "terrain_class": "OpenField",
@@ -1595,10 +1605,9 @@ mod tests {
             "CombustionAppliances": {},
             "ventilation_zone_base_height": 2.5
         }
-        ))
-        .unwrap();
+        );
 
-        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
 
         assert_eq!(expected, infiltration_ventilation)
     }
@@ -1611,7 +1620,7 @@ mod tests {
         edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
             .unwrap();
 
-        let expected: InfiltrationVentilation = serde_json::from_value(json!({
+        let expected = json!({
             "cross_vent_factor": true,
             "shield_class": "Normal",
             "terrain_class": "OpenField",
@@ -1661,10 +1670,9 @@ mod tests {
             "Cowls": {},
             "CombustionAppliances": {},
             "ventilation_zone_base_height": 2.5
-        }))
-        .unwrap();
+        });
 
-        let infiltration_ventilation = test_input.infiltration_ventilation().clone();
+        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
 
         assert_eq!(expected, infiltration_ventilation)
     }

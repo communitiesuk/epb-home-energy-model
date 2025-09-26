@@ -2265,7 +2265,7 @@ impl BuildingElement {
 pub(crate) trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
-    fn treatment(&self) -> Option<Vec<Map<std::string::String, JsonValue>>>;
+    fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
 }
 
 pub(crate) struct TransparentBuildingElementJsonValue<'a>(
@@ -2285,11 +2285,11 @@ impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
             .unwrap_or(false)
     }
 
-    fn treatment(&self) -> Option<Vec<Map<std::string::String, JsonValue>>> {
+    fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>> {
         self.0
-            .get("treatment")
-            .and_then(|v| v.as_array())
-            .map(|v| v.iter().flat_map(|v| v.as_object()).cloned().collect())
+            .get_mut("treatment")
+            .and_then(|v| v.as_array_mut())
+            .map(|v| v.iter_mut().flat_map(|v| v.as_object_mut()).collect())
     }
 }
 
@@ -3203,32 +3203,41 @@ pub struct MechanicalVentilation {
 }
 
 pub(crate) trait MechanicalVentilationForProcessing {
-    fn vent_type(&self) -> VentType;
+    fn vent_is_type(&self, vent_type: &str) -> bool;
     fn measured_fan_power(&self) -> Option<f64>;
     fn measured_air_flow_rate(&self) -> Option<f64>;
     fn set_sfp(&mut self, sfp: f64);
     fn set_control(&mut self, control: &str);
 }
 
-impl MechanicalVentilationForProcessing for MechanicalVentilation {
-    fn set_sfp(&mut self, sfp: f64) {
-        self.sfp = Some(sfp);
-    }
+pub(crate) struct MechanicalVentilationJsonValue<'a>(
+    pub(crate) &'a mut Map<std::string::String, JsonValue>,
+);
 
-    fn vent_type(&self) -> VentType {
-        self.vent_type
+impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
+    fn vent_is_type(&self, vent_type: &str) -> bool {
+        self.0
+            .get("vent_type")
+            .and_then(|value_type| value_type.as_str())
+            .is_some_and(|existing_type| existing_type == vent_type)
     }
 
     fn measured_fan_power(&self) -> Option<f64> {
-        self.measured_fan_power
+        self.0.get("measured_fan_power").and_then(|m| m.as_f64())
     }
 
     fn measured_air_flow_rate(&self) -> Option<f64> {
-        self.measured_air_flow_rate
+        self.0
+            .get("measured_air_flow_rate")
+            .and_then(|m| m.as_f64())
+    }
+
+    fn set_sfp(&mut self, sfp: f64) {
+        self.0.insert("SFP".into(), json!(sfp));
     }
 
     fn set_control(&mut self, control: &str) {
-        self.control = Some(control.into());
+        self.0.insert("Control".into(), json!(control));
     }
 }
 
@@ -3672,6 +3681,13 @@ impl InputForProcessing {
         root_key: &str,
     ) -> JsonAccessResult<Option<&Map<std::string::String, JsonValue>>> {
         Ok(self.root()?.get(root_key).and_then(|v| v.as_object()))
+    }
+
+    fn root_value(&self, root_key: &str) -> JsonAccessResult<&JsonValue> {
+        Ok(self
+            .root()?
+            .get(root_key)
+            .ok_or(json_error(format!("No {root_key} node found")))?)
     }
 
     pub(crate) fn set_simulation_time(
@@ -4944,12 +4960,20 @@ impl InputForProcessing {
 
     pub(crate) fn all_transparent_building_elements_mut(
         &mut self,
-    ) -> JsonAccessResult<Vec<&mut impl TransparentBuildingElement>> {
+    ) -> JsonAccessResult<Vec<&mut Map<std::string::String, JsonValue>>> {
         Ok(self
             .zone_node_mut()?
             .values_mut()
-            .flat_map(|zone| zone.building_elements.values_mut())
-            .filter(|el| matches!(el, BuildingElement::Transparent { .. }))
+            .filter_map(|zone| {
+                zone.as_object_mut()
+                    .and_then(|zone| zone.get_mut("BuildingElement"))
+                    .and_then(|node| node.as_object_mut())
+            })
+            .filter(|el| {
+                el.get("type")
+                    .and_then(|type_field| type_field.as_str())
+                    .is_some_and(|building_type| building_type == "BuildingElementTransparent")
+            })
             .collect())
     }
 
@@ -5083,7 +5107,7 @@ impl InputForProcessing {
         Ok(self.root()?.contains_key("Appliances"))
     }
 
-    pub(crate) fn merge_in_appliances(&mut self, appliances: &IndexMap<ApplianceKey, Appliance>) {
+    pub(crate) fn merge_in_appliances(&mut self, appliances: &IndexMap<&str, Appliance>) {
         let mut appliances: IndexMap<ApplianceKey, ApplianceEntry> = appliances
             .iter()
             .map(|(k, v)| (*k, ApplianceEntry::Object(v.clone())))
@@ -5095,112 +5119,111 @@ impl InputForProcessing {
         }
     }
 
-    pub(crate) fn remove_appliance(&mut self, appliance_key: &ApplianceKey) {
-        if let Some(ref mut appliances) = self.input.appliances.as_mut() {
-            appliances.shift_remove_entry(appliance_key);
-        }
+    pub(crate) fn remove_appliance(&mut self, appliance_key: &str) -> JsonAccessResult<&Self> {
+        self.root_object_entry_mut("Appliances")?
+            .remove(appliance_key);
+
+        Ok(self)
     }
 
     pub(crate) fn appliances_contain_key(&self, name: &ApplianceKey) -> bool {
-        self.input
-            .get("Appliances")
+        self.root_object("Appliances")
+            .ok()
             .is_some_and(|appliances| appliances.contains(name))
     }
 
     pub(crate) fn appliance_key_has_reference(
         &self,
-        key: &ApplianceKey,
-        reference: &ApplianceReference,
-    ) -> bool {
-        self.input.appliances.as_ref().is_some_and(|appliances| {
-            appliances.get(key).is_some_and(|appliance| {
-                if let ApplianceEntry::Reference(appliance_reference) = appliance {
-                    appliance_reference == reference
-                } else {
-                    false
-                }
-            })
+        key: &str,
+        reference: &str,
+    ) -> JsonAccessResult<bool> {
+        let empty_map = Map::new();
+        Ok(self
+            .root_object("Appliances")
+            .unwrap_or(&empty_map)
+            .get(key)
+            .and_then(|value| value.as_str())
+            .is_some_and(|appliance_reference| appliance_reference == reference))
+    }
+
+    pub(crate) fn appliance_keys(&self) -> JsonAccessResult<Vec<String>> {
+        let empty_map = Map::new();
+        Ok(self
+            .root_object("Appliances")
+            .unwrap_or(&empty_map)
+            .keys()
+            .map(String::from)
+            .collect())
+    }
+
+    pub(crate) fn appliance_with_key(&self, key: &str) -> JsonAccessResult<Option<&JsonValue>> {
+        Ok(match self.root_object("Appliances") {
+            Err(_) => return Ok(None),
+            Ok(appliances) => appliances.get(key),
         })
-    }
-
-    pub(crate) fn appliance_keys(&self) -> Vec<ApplianceKey> {
-        self.input
-            .appliances
-            .iter()
-            .flat_map(|appliances| appliances.keys())
-            .copied()
-            .collect()
-    }
-
-    pub(crate) fn appliance_with_key(&self, key: &ApplianceKey) -> Option<&ApplianceEntry> {
-        self.input
-            .appliances
-            .as_ref()
-            .and_then(|appliances| appliances.get(key))
     }
 
     pub(crate) fn appliance_with_key_mut(
         &mut self,
-        key: &ApplianceKey,
-    ) -> Option<&mut ApplianceEntry> {
-        self.input
-            .appliances
-            .as_mut()
-            .and_then(|appliances| appliances.get_mut(key))
+        key: &str,
+    ) -> JsonAccessResult<Option<&mut JsonValue>> {
+        Ok(self.root_object_entry_mut("Appliances")?.get_mut(key))
     }
 
-    pub(crate) fn clone_appliances(&self) -> IndexMap<ApplianceKey, ApplianceEntry> {
-        self.input.appliances.clone().unwrap_or_default()
+    pub(crate) fn clone_appliances(&self) -> Map<std::string::String, JsonValue> {
+        self.root_object("Appliances")
+            .cloned()
+            .unwrap_or(Map::new())
     }
 
-    pub(crate) fn tariff_schedule(&self) -> Option<&NumericSchedule> {
-        self.input.tariff.as_ref().map(|tariff| &tariff.schedule)
+    pub(crate) fn tariff_schedule(&self) -> anyhow::Result<Option<NumericSchedule>> {
+        self.root_object("Tariff")
+            .ok()
+            .cloned()
+            .and_then(|tariff| tariff.get("schedule").cloned())
+            .map(|schedule| serde_json::from_value(schedule.clone()))
+            .transpose()
+            .map_err(|err| anyhow!(err))
     }
 
-    pub(crate) fn energy_supply_for_appliance(
-        &self,
-        key: &ApplianceKey,
-    ) -> anyhow::Result<EnergySupplyType> {
-        let appliances = self
-            .input
-            .appliances
-            .as_ref()
-            .ok_or_else(|| anyhow!("No appliances in input"))?;
+    pub(crate) fn energy_supply_for_appliance(&self, key: &str) -> anyhow::Result<&str> {
+        let appliances = self.root_object("Appliances")?;
 
-        let appliance = appliances
+        Ok(appliances
             .get(key)
-            .ok_or_else(|| anyhow!("No {} in appliances input", key))?;
-        if let ApplianceEntry::Object(appliance_object) = appliance {
-            appliance_object
-                .energy_supply
-                .ok_or_else(|| anyhow!("No energy supply for appliance {}", key))
-        } else {
-            Err(anyhow!(""))
-        }
+            .and_then(|appliance| appliance.as_object())
+            .ok_or_else(|| anyhow!("No {key} object in appliances input"))?
+            .get("Energysupply")
+            .and_then(|supply| supply.as_str())
+            .ok_or_else(|| anyhow!("No energy supply for appliance '{key}'"))?)
     }
 
     pub(crate) fn loadshifting_for_appliance(
         &self,
-        appliance_key: &ApplianceKey,
-    ) -> Option<ApplianceLoadShifting> {
-        let appliance = self.appliance_with_key(appliance_key);
+        appliance_key: &str,
+    ) -> JsonAccessResult<Option<Map<std::string::String, JsonValue>>> {
+        let appliance = self.appliance_with_key(appliance_key)?;
 
-        if let Some(ApplianceEntry::Object(a)) = appliance {
-            a.load_shifting.clone()
-        } else {
-            None
-        }
+        Ok(appliance
+            .and_then(|appliance| appliance.get("loadshifting"))
+            .and_then(|load_shifting| load_shifting.as_object())
+            .cloned())
     }
 
     pub(crate) fn set_loadshifting_for_appliance(
         &mut self,
-        appliance_key: &ApplianceKey,
-        new_load_shifting: ApplianceLoadShifting,
-    ) {
-        if let Some(ApplianceEntry::Object(appliance)) = self.appliance_with_key_mut(appliance_key)
+        appliance_key: &str,
+        new_load_shifting: JsonValue,
+    ) -> JsonAccessResult<()> {
+        let mut appliance = self.appliance_with_key_mut(appliance_key)?;
+        if let Some(appliance) = appliance
+            .as_mut()
+            .and_then(|appliance| appliance.as_object_mut())
         {
-            appliance.load_shifting = Some(new_load_shifting);
+            appliance.insert("loadshifting".into(), new_load_shifting);
         }
+
+        Ok(())
     }
 
     fn infiltration_ventilation_node(
@@ -5217,29 +5240,54 @@ impl InputForProcessing {
 
     pub(crate) fn mechanical_ventilations_for_processing(
         &mut self,
-    ) -> Vec<&mut impl MechanicalVentilationForProcessing> {
-        self.infiltration_ventilation_node_mut()
-            .mechanical_ventilation
+    ) -> JsonAccessResult<Vec<&mut Map<std::string::String, JsonValue>>> {
+        let mech_vents = match self
+            .infiltration_ventilation_node_mut()?
+            .get_mut("MechanicalVentilation")
+            .and_then(|v| v.as_object_mut())
+        {
+            None => return Ok(Vec::new()),
+            Some(mech_vents) => mech_vents,
+        };
+        Ok(mech_vents
             .values_mut()
-            .collect::<Vec<_>>()
+            .filter_map(|v| v.as_object_mut())
+            .collect())
     }
 
     pub(crate) fn keyed_mechanical_ventilations_for_processing(
         &mut self,
-    ) -> &mut IndexMap<String, impl MechanicalVentilationForProcessing> {
-        &mut self.input.infiltration_ventilation.mechanical_ventilation
+    ) -> JsonAccessResult<IndexMap<String, &mut Map<std::string::String, JsonValue>>> {
+        let mech_vents = match self
+            .infiltration_ventilation_node_mut()?
+            .get_mut("MechanicalVentilation")
+            .and_then(|v| v.as_object_mut())
+        {
+            None => return Ok(Default::default()),
+            Some(mech_vents) => mech_vents,
+        };
+        Ok(mech_vents
+            .iter_mut()
+            .filter_map(|(name, v)| {
+                let mech_vent = match v.as_object_mut() {
+                    None => return None,
+                    Some(mech_vent) => mech_vent,
+                };
+                Some((String::from(name), mech_vent))
+            })
+            .collect())
     }
 
     pub(crate) fn has_mechanical_ventilation(&self) -> bool {
-        !self
-            .input
-            .infiltration_ventilation
-            .mechanical_ventilation
-            .is_empty()
+        self.root_object("InfiltrationVentilation")
+            .ok()
+            .is_some_and(|node| node.contains_key("MechanicalVentilation"))
     }
 
-    pub(crate) fn reset_mechanical_ventilation(&mut self) {
-        self.input.infiltration_ventilation.mechanical_ventilation = Default::default();
+    pub(crate) fn reset_mechanical_ventilation(&mut self) -> JsonAccessResult<&Self> {
+        self.root_object_entry_mut("InfiltrationVentilation")?
+            .remove("MechanicalVentilation");
+        Ok(self)
     }
 
     pub(crate) fn add_mechanical_ventilation(
@@ -5265,51 +5313,73 @@ impl InputForProcessing {
 
     pub(crate) fn appliance_gains_events(
         &self,
-    ) -> IndexMap<String, Vec<ApplianceGainsDetailsEvent>> {
-        self.input
-            .appliance_gains
+    ) -> anyhow::Result<IndexMap<String, Vec<ApplianceGainsDetailsEvent>>> {
+        let appliance_gains = match self.root_object("ApplianceGains") {
+            Ok(appliance_gains) => appliance_gains,
+            Err(_) => return Ok(IndexMap::new()),
+        };
+        appliance_gains
             .iter()
-            .map(|(name, gain)| {
-                (
-                    name.clone(),
-                    gain.events.as_ref().unwrap_or(&vec![]).clone(),
-                )
-            })
-            .collect()
+            .map(
+                |(name, gain)| -> Result<(String, Vec<ApplianceGainsDetailsEvent>), _> {
+                    Ok((
+                        String::from(name),
+                        serde_json::from_value(
+                            gain.get("Events")
+                                .and_then(|events| events.is_array().then_some(events))
+                                .cloned()
+                                .unwrap_or(json!([])),
+                        )?,
+                    ))
+                },
+            )
+            .collect::<anyhow::Result<_>>()
     }
 
-    pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(&mut self, control: &str) {
-        self.input.infiltration_ventilation.window_adjust_control = Some(control.into());
+    pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(
+        &mut self,
+        control: &str,
+    ) -> JsonAccessResult<&Self> {
+        self.infiltration_ventilation_node_mut()?
+            .insert("Control_WindowAdjust".into(), control.into());
+        Ok(self)
     }
 
     pub(crate) fn set_vent_adjust_min_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
-    ) {
-        self.input.infiltration_ventilation.vent_adjust_min_control = Some(control.into());
+    ) -> JsonAccessResult<&Self> {
+        self.infiltration_ventilation_node_mut()?
+            .insert("Control_VentAdjustMin".into(), control.into());
+        Ok(self)
     }
 
     pub(crate) fn set_vent_adjust_max_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
-    ) {
-        self.input.infiltration_ventilation.vent_adjust_max_control = Some(control.into());
+    ) -> JsonAccessResult<&Self> {
+        self.infiltration_ventilation_node_mut()?
+            .insert("Control_VentAdjustMax".into(), control.into());
+        Ok(self)
     }
 
     pub(crate) fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
-        self.input
-            .infiltration_ventilation
-            .noise_nuisance
+        self.root_object("InfiltrationVentilation")
+            .ok()
+            .and_then(|infiltration| infiltration.get("noise_nuisance"))
+            .and_then(|nuisance| nuisance.as_bool())
             .unwrap_or(false)
     }
 
     #[cfg(test)]
-    pub(crate) fn infiltration_ventilation(&self) -> &InfiltrationVentilation {
-        &self.input.infiltration_ventilation
+    pub(crate) fn infiltration_ventilation(&self) -> JsonAccessResult<&JsonValue> {
+        self.root_value("InfiltrationVentilation")
     }
 
-    pub(crate) fn infiltration_ventilation_mut(&mut self) -> &mut InfiltrationVentilation {
-        &mut self.input.infiltration_ventilation
+    pub(crate) fn infiltration_ventilation_mut(
+        &mut self,
+    ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
+        self.root_object_entry_mut("InfiltrationVentilation")
     }
 
     pub(crate) fn set_heat_source_wet(
@@ -5387,26 +5457,27 @@ impl InputForProcessing {
             .and_then(|area| area.as_f64()))
     }
 
-    pub(crate) fn primary_pipework_clone(&self) -> Option<Vec<WaterPipework>> {
-        match &self.input.hot_water_source.hot_water_cylinder {
-            HotWaterSourceDetails::StorageTank {
-                primary_pipework, ..
-            } => primary_pipework.clone(),
-            _ => None,
-        }
+    pub(crate) fn primary_pipework_clone(&self) -> anyhow::Result<Option<Vec<WaterPipework>>> {
+        Ok(self
+            .hot_water_source()?
+            .get("hw cylinder")
+            .and_then(|cylinder| cylinder.get("primary_pipework"))
+            .and_then(|primary_pipework| primary_pipework.is_array().then_some(primary_pipework))
+            .map(|primary_pipework| serde_json::from_value(primary_pipework.to_owned()))
+            .transpose()?)
     }
 
     pub(crate) fn water_heating_event_by_type_and_name(
         &self,
-        event_type: WaterHeatingEventType,
+        event_type: &str,
         event_name: &str,
-    ) -> Option<&[WaterHeatingEvent]> {
-        self.input
-            .water_heating_events
-            .0
-            .get(&event_type)
-            .and_then(|events| events.get(event_name))
-            .map(|events| events.as_slice())
+    ) -> anyhow::Result<Option<Vec<WaterHeatingEvent>>> {
+        Ok(self
+            .root_object("Events")?
+            .get(event_type)
+            .and_then(|event_group| event_group.get(event_name))
+            .map(|events| serde_json::from_value(events.to_owned()))
+            .transpose()?)
     }
 
     pub(crate) fn part_o_active_cooling_required(&self) -> JsonAccessResult<Option<bool>> {
@@ -5440,7 +5511,7 @@ impl TryFrom<&InputForProcessing> for Corpus {
 
     fn try_from(input: &InputForProcessing) -> Result<Self, Self::Error> {
         Corpus::from_inputs(
-            serde_json::from_value(input.input.to_owned())?,
+            &serde_json::from_value(input.input.to_owned())?,
             None,
             None,
             &Default::default(),

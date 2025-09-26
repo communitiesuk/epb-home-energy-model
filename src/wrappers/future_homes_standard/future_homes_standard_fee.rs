@@ -43,7 +43,7 @@ pub fn apply_fhs_fee_preprocessing(input: &mut InputForProcessing) -> anyhow::Re
     // convert to m3/h
     let design_outdoor_air_flow_rate = req_ach * total_volume;
 
-    input.reset_mechanical_ventilation();
+    input.reset_mechanical_ventilation()?;
     input.add_mechanical_ventilation(
         "Decentralised_Continuous_MEV_for_FEE_calc",
         json!({
