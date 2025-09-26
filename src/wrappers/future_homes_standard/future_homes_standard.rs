@@ -2931,36 +2931,54 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     let transparent_building_elements = input.all_transparent_building_elements_mut()?;
 
-    for building_element in transparent_building_elements
+    for mut building_element in transparent_building_elements
         .into_iter()
         .map(|el| TransparentBuildingElementJsonValue(el))
     {
-        if let Some(window_treatments) = building_element.treatment() {
-            for mut treatment in window_treatments {
-                treatment.set_is_open(false);
-
-                match treatment.treatment_type {
-                    WindowTreatmentType::Curtains => {
-                        if treatment.controls.is_manual() {
-                            treatment.set_open_control("_curtains_open_manual");
+        for treatment in building_element.treatment().iter_mut().flatten() {
+            treatment.insert("is_open".into(), json!(false));
+            if let Some(treatment_type) = treatment
+                .get("type")
+                .and_then(|treatment_type| treatment_type.as_str())
+            {
+                let treatment_controls_are_manual = treatment
+                    .get("WindowTreatmentControl")
+                    .and_then(|window_control| window_control.as_str())
+                    .is_some_and(|window_control_type| window_control_type.starts_with("manual"));
+                match treatment_type {
+                    "curtains" => {
+                        if treatment_controls_are_manual {
+                            treatment.insert("Control_open".into(), json!("_curtains_open_manual"));
                         } else {
-                            treatment.set_open_control("_curtains_open_auto");
+                            treatment.insert("Control_open".into(), json!("_curtains_open_auto"));
                         }
                     }
-                    // blinds are opened and closed in response to solar irradiance incident upon them
-                    WindowTreatmentType::Blinds => {
-                        if treatment.controls.is_manual() {
+                    "blinds" => {
+                        if treatment_controls_are_manual {
                             // manual control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment
-                                .set_closing_irradiance_control("_blinds_closing_irrad_manual");
-                            treatment
-                                .set_opening_irradiance_control("_blinds_opening_irrad_manual");
+                            treatment.insert(
+                                "Control_closing_irrad".into(),
+                                json!("_blinds_closing_irrad_manual"),
+                            );
+                            treatment.insert(
+                                "Control_opening_irrad".into(),
+                                json!("_blinds_opening_irrad_manual"),
+                            );
                         } else {
                             // automatic control - Table B.24 in BS EN ISO 52016-1:2017.
-                            treatment.set_closing_irradiance_control("_blinds_closing_irrad_auto");
-                            treatment.set_opening_irradiance_control("_blinds_opening_irrad_auto");
-                            treatment.set_opening_delay_hrs(2.);
+                            treatment.insert(
+                                "Control_closing_irrad".into(),
+                                json!("_blinds_closing_irrad_auto"),
+                            );
+                            treatment.insert(
+                                "Control_opening_irrad".into(),
+                                json!("_blinds_opening_irrad_auto"),
+                            );
+                            treatment.insert("opening_delay_hrs".into(), json!(2));
                         }
+                    }
+                    _ => {
+                        // do nothing
                     }
                 }
             }

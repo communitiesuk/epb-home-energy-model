@@ -5029,22 +5029,34 @@ impl InputForProcessing {
             .max_by(|a, b| a.total_cmp(b)))
     }
 
-    pub(crate) fn all_building_elements(&self) -> JsonAccessResult<Vec<&BuildingElement>> {
-        Ok(self
-            .zone_node()?
-            .values()
-            .flat_map(|zone| zone.building_elements.values())
-            .collect())
+    pub(crate) fn set_numeric_field_for_building_element(
+        &mut self,
+        building_element_reference: &str,
+        field: &str,
+        value: f64,
+    ) -> anyhow::Result<()> {
+        *self.zone_node_mut()?
+            .values_mut()
+            .filter_map(|zone| zone.get_mut("BuildingElement").and_then(|el| el.as_object_mut()))
+            .flatten()
+            .find(|(name, value)| name == building_element_reference)
+            .ok_or(anyhow!("Could not find building element with reference '{building_element_reference}'"))?
+            .1
+            .get_mut(field)
+            .ok_or(anyhow!("Could not find field '{field}' on building element with reference '{building_element_reference}'"))? = json!(value);
+
+        Ok(())
     }
 
-    pub(crate) fn all_building_elements_mut(
-        &mut self,
-    ) -> JsonAccessResult<Vec<&mut BuildingElement>> {
-        Ok(self
-            .zone_node_mut()?
-            .values_mut()
-            .flat_map(|zone| zone.building_elements.values_mut())
-            .collect())
+    pub(crate) fn all_building_elements(
+        &self,
+    ) -> anyhow::Result<IndexMap<String, BuildingElement>> {
+        self.zone_node()?
+            .values()
+            .filter_map(|zone| zone.get("BuildingElement").and_then(|el| el.as_object()))
+            .flatten()
+            .map(|(name, el)| Ok((String::from(name), serde_json::from_value(el.to_owned())?)))
+            .collect()
     }
 
     #[cfg(test)]

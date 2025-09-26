@@ -336,41 +336,56 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
 ///Split windows/rooflights and walls/roofs into dictionaries.
 fn split_glazing_and_walls(
     input: &mut InputForProcessing,
-) -> (Vec<&mut BuildingElement>, Vec<&mut BuildingElement>) {
-    let mut windows_rooflight = vec![];
-    let mut walls_roofs = vec![];
+) -> anyhow::Result<(
+    IndexMap<String, BuildingElement>,
+    IndexMap<String, BuildingElement>,
+)> {
+    let mut windows_rooflight: IndexMap<String, BuildingElement> = Default::default();
+    let mut walls_roofs: IndexMap<String, BuildingElement> = Default::default();
 
-    let building_elements = input.all_building_elements_mut();
+    let building_elements = input.all_building_elements()?;
 
-    for building_element in building_elements {
+    for (name, building_element) in building_elements {
         match building_element {
-            BuildingElement::Transparent { .. } => windows_rooflight.push(building_element),
-            BuildingElement::Opaque { .. } => walls_roofs.push(building_element),
+            BuildingElement::Transparent { .. } => {
+                windows_rooflight.insert(String::from(name), building_element);
+            }
+            BuildingElement::Opaque { .. } => {
+                walls_roofs.insert(String::from(name), building_element);
+            }
             _ => continue,
         }
     }
 
-    (windows_rooflight, walls_roofs)
+    Ok((windows_rooflight, walls_roofs))
 }
 
 ///Calculate difference between old  and new glazing area and adjust the glazing areas
 fn calculate_area_diff_and_adjust_glazing_area(
+    input: &mut InputForProcessing,
     linear_reduction_factor: f64,
-    window_rooflight_element: &mut BuildingElement,
-) -> f64 {
-    if let BuildingElement::Transparent {
-        ref mut height,
-        ref mut width,
-        ..
-    } = window_rooflight_element
-    {
-        let old_area = *height * *width;
-        *height *= linear_reduction_factor;
-        *width *= linear_reduction_factor;
+    window_rooflight_element: &BuildingElement,
+    building_element_reference: &str,
+) -> anyhow::Result<f64> {
+    if let BuildingElement::Transparent { height, width, .. } = window_rooflight_element {
+        let old_area = height * width;
+        let new_height = height * linear_reduction_factor;
+        let new_width = width * linear_reduction_factor;
 
-        let new_area = *height * *width;
+        input.set_numeric_field_for_building_element(
+            building_element_reference,
+            "height",
+            new_height,
+        )?;
+        input.set_numeric_field_for_building_element(
+            building_element_reference,
+            "width",
+            new_width,
+        )?;
 
-        old_area - new_area
+        let new_area = new_height * new_width;
+
+        Ok(old_area - new_area)
     } else {
         panic!("This function expects to be called for a Transparent BuildingElement only.")
     }
@@ -378,7 +393,7 @@ fn calculate_area_diff_and_adjust_glazing_area(
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
 fn find_walls_roofs_with_same_orientation_and_pitch(
-    wall_roofs: &[&mut BuildingElement],
+    wall_roofs: &[&BuildingElement],
     window_rooflight_element: &BuildingElement,
 ) -> anyhow::Result<Vec<usize>> {
     let window_rooflight_pitch = window_rooflight_element.pitch();
@@ -455,8 +470,8 @@ fn edit_glazing_for_glazing_limit(
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
     let total_glazing_area: f64 = input
-        .all_building_elements()
-        .iter()
+        .all_building_elements()?
+        .values()
         .filter_map(|el| match el {
             BuildingElement::Transparent { .. } => Some(el.height().unwrap() * el.width().unwrap()),
             _ => None,
@@ -466,7 +481,7 @@ fn edit_glazing_for_glazing_limit(
     let max_glazing_area_fraction = calc_max_glazing_area_fraction(input, total_floor_area)?;
     let max_glazing_area = max_glazing_area_fraction * total_floor_area;
 
-    let (windows_rooflight, mut walls_roofs) = split_glazing_and_walls(input);
+    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input)?;
 
     if total_glazing_area > max_glazing_area {
         let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
@@ -475,31 +490,39 @@ fn edit_glazing_for_glazing_limit(
         //       To do this, we may need to capture a sample input that induces this to happen in the Python, and request
         //       upstream for how to deal with this.
 
-        for window_rooflight_element in windows_rooflight {
+        for (building_element_reference, window_rooflight_element) in windows_rooflight {
             let area_diff = calculate_area_diff_and_adjust_glazing_area(
+                input,
                 linear_reduction_factor,
-                window_rooflight_element,
-            );
+                &window_rooflight_element,
+                &building_element_reference,
+            )?;
 
             let same_orientation_indices = find_walls_roofs_with_same_orientation_and_pitch(
-                &walls_roofs,
-                window_rooflight_element,
+                &walls_roofs.values().collect::<Vec<_>>(),
+                &window_rooflight_element,
             )?;
 
             let wall_roof_area_total = same_orientation_indices
                 .iter()
-                .filter_map(|i| match walls_roofs[*i] {
+                .filter_map(|i| match walls_roofs.values().nth(*i).unwrap() {
                     BuildingElement::Opaque { ref area, .. } => Some(*area),
                     _ => None,
                 })
                 .sum::<f64>();
 
             for i in same_orientation_indices.iter() {
-                let wall_roof = walls_roofs.get_mut(*i).unwrap();
-                if let BuildingElement::Opaque { ref mut area, .. } = wall_roof {
+                let wall_roof = walls_roofs.values().nth(*i).unwrap();
+                if let BuildingElement::Opaque { ref area, .. } = wall_roof {
                     let wall_roof_prop = *area / wall_roof_area_total;
 
-                    *area += area_diff * wall_roof_prop;
+                    let new_area = area + area_diff * wall_roof_prop;
+
+                    input.set_numeric_field_for_building_element(
+                        &building_element_reference,
+                        "area",
+                        new_area,
+                    )?;
                 }
             }
         }
