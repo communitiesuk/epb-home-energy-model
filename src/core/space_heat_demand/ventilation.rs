@@ -2373,7 +2373,7 @@ impl InfiltrationVentilation {
         }
 
         Ok(InfiltrationVentilation::new(
-            input.cross_vent_factor,
+            input.cross_vent_possible,
             input.shield_class,
             &input.terrain_class,
             average_pitch,

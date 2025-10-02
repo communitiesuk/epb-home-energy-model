@@ -3067,7 +3067,7 @@ pub enum BuildType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
-    pub(crate) cross_vent_factor: bool,
+    pub(crate) cross_vent_possible: bool,
     pub(crate) shield_class: VentilationShieldClass,
     pub(crate) terrain_class: TerrainClass,
     pub(crate) altitude: f64,

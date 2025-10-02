@@ -130,7 +130,7 @@ pub struct ExternalConditions {
 /// * `wind_directions` - list of wind directions in degrees where North=0, East=90,
 ///                       South=180, West=270. Values range: 0 to 360.
 ///                       Wind direction is reported by the direction from which it originates.
-///                       E.g, a southernly (180 degree) wind blows from the south to the north.
+///                       E.g, a southerly (180 degree) wind blows from the south to the north.
 /// * `diffuse_horizontal_radiation` - list of diffuse horizontal radiation values, in W/m2 (one entry per hour)
 /// * `direct_beam_radiation` - list of direct beam radiation values, in W/m2 (one entry per hour)
 /// * `solar_reflectivity_of_ground` - list of ground reflectivity values, 0 to 1 (one entry per hour)
