@@ -478,6 +478,84 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_charge_efficiency(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.get_charge_efficiency(simulation_time),
+            0.6687167004967052
+        );
+    }
+
+    #[rstest]
+    fn test_get_discharge_efficiency(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.get_discharge_efficiency(simulation_time),
+            0.8358958756208815
+        );
+    }
+
+    #[rstest]
+    fn test_get_charge_discharge_efficiency(electric_battery: ElectricBattery) {
+        assert_relative_eq!(electric_battery.get_charge_discharge_efficiency(), 0.8);
+    }
+
+    #[rstest]
+    fn test_get_max_capacity(electric_battery: ElectricBattery) {
+        assert_relative_eq!(electric_battery.get_max_capacity(), 1.76);
+    }
+
+    #[rstest]
+    fn test_timestep_end(electric_battery: ElectricBattery) {
+        electric_battery
+            .total_time_charging_current_timestep
+            .store(10., Ordering::SeqCst);
+        electric_battery.timestep_end();
+
+        assert_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+    }
+
+    #[rstest]
+    fn test_limit_capacity_due_to_temp(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.limit_capacity_due_to_temp(simulation_time),
+            0.8496
+        );
+
+        let mut electric_battery_inside = electric_battery;
+        electric_battery_inside.battery_location = BatteryLocation::Inside;
+    }
+
+    // Skipping Python's test_limit_capacity_due_to_temp_invalid_location as battery location is an
+    // enum in the Rust so can't be invalid
+
+    #[rstest]
+    fn test_capacity_temp_equ(electric_battery: ElectricBattery) {
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(5.), 0.9043);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(10.), 0.9476);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(20.), 1.);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(30.), 1.);
+    }
+
+    #[rstest]
     pub fn test_charge_discharge_battery(
         electric_battery: ElectricBattery,
         simulation_time: SimulationTime,
@@ -506,6 +584,22 @@ mod tests {
             electric_battery.charge_discharge_battery(0.1, false, simulation_time),
             0.0747648,
             max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_below_minimum_charge_rate(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        // Test that the battery is not charged when below the minimum charge rate
+        let simulation_time = simulation_time.iter().next().unwrap();
+        let mut electric_battery = electric_battery;
+        electric_battery.minimum_charge_rate = 20.;
+
+        assert_eq!(
+            electric_battery.charge_discharge_battery(10., false, simulation_time),
+            0.
         );
     }
 }
