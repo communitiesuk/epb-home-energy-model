@@ -2020,9 +2020,7 @@ mod tests {
 
         let service_name = "service_name";
 
-        boiler
-            .create_service_connection(service_name)
-            .unwrap();
+        boiler.create_service_connection(service_name).unwrap();
 
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(
             [true, true, true, true, true, true, true, true]

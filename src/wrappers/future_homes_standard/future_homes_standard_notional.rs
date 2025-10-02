@@ -549,7 +549,7 @@ pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Resu
     for mut building_element in input
         .all_ground_building_elements_mut()?
         .into_iter()
-        .map(|json_map| GroundBuildingElementJsonValue(json_map))
+        .map(GroundBuildingElementJsonValue)
     {
         building_element.set_u_value(0.13);
         building_element.set_thermal_resistance_floor_construction(6.12);

@@ -3621,17 +3621,15 @@ impl InputForProcessing {
     }
 
     fn root(&self) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
-        Ok(self
-            .input
+        self.input
             .as_object()
-            .ok_or(json_error("Root document is not an object"))?)
+            .ok_or(json_error("Root document is not an object"))
     }
 
     fn root_mut(&mut self) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
-        Ok(self
-            .input
+        self.input
             .as_object_mut()
-            .ok_or(json_error("Root document is not an object"))?)
+            .ok_or(json_error("Root document is not an object"))
     }
 
     fn set_on_root_key(&mut self, root_key: &str, value: JsonValue) -> JsonAccessResult<&mut Self> {
@@ -3650,24 +3648,22 @@ impl InputForProcessing {
         &self,
         root_key: &str,
     ) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
-        Ok(self
-            .root()?
+        self.root()?
             .get(root_key)
             .ok_or(json_error(format!("No {root_key} node found")))?
             .as_object()
-            .ok_or(json_error(format!("{root_key} node was not an object")))?)
+            .ok_or(json_error(format!("{root_key} node was not an object")))
     }
 
     fn root_object_mut(
         &mut self,
         root_key: &str,
     ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
-        Ok(self
-            .root_mut()?
+        self.root_mut()?
             .get_mut(root_key)
             .ok_or(json_error(format!("No {root_key} node found")))?
             .as_object_mut()
-            .ok_or(json_error(format!("{root_key} node was not an object")))?)
+            .ok_or(json_error(format!("{root_key} node was not an object")))
     }
 
     /// Uses entry API to ensure that root key is created if it does not already exist.
@@ -3675,12 +3671,11 @@ impl InputForProcessing {
         &mut self,
         root_key: &str,
     ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
-        Ok(self
-            .root_mut()?
+        self.root_mut()?
             .entry(root_key)
             .or_insert(json!({}))
             .as_object_mut()
-            .ok_or(json_error(format!("{root_key} node was not an object")))?)
+            .ok_or(json_error(format!("{root_key} node was not an object")))
     }
 
     fn optional_root_object(
@@ -3691,10 +3686,9 @@ impl InputForProcessing {
     }
 
     fn root_value(&self, root_key: &str) -> JsonAccessResult<&JsonValue> {
-        Ok(self
-            .root()?
+        self.root()?
             .get(root_key)
-            .ok_or(json_error(format!("No {root_key} node found")))?)
+            .ok_or(json_error(format!("No {root_key} node found")))
     }
 
     pub(crate) fn set_simulation_time(
@@ -3754,37 +3748,34 @@ impl InputForProcessing {
         &self,
         zone_key: &str,
     ) -> JsonAccessResult<&serde_json::Map<std::string::String, JsonValue>> {
-        Ok(self
-            .zone_node()?
+        self.zone_node()?
             .get(zone_key)
             .ok_or(json_error(format!("Zone key {zone_key} did not exist")))?
             .as_object()
-            .ok_or(json_error("Zone node was not an object"))?)
+            .ok_or(json_error("Zone node was not an object"))
     }
 
     fn specific_zone_mut(
         &mut self,
         zone_key: &str,
     ) -> JsonAccessResult<&mut serde_json::Map<std::string::String, JsonValue>> {
-        Ok(self
-            .zone_node_mut()?
+        self.zone_node_mut()?
             .get_mut(zone_key)
             .ok_or(json_error(format!("Zone key {zone_key} did not exist")))?
             .as_object_mut()
-            .ok_or(json_error("Zone node was not an object"))?)
+            .ok_or(json_error("Zone node was not an object"))
     }
 
     pub(crate) fn total_zone_area(&self) -> JsonAccessResult<f64> {
-        Ok(self
-            .zone_node()?
+        self.zone_node()?
             .values()
             .map(|z| {
-                Ok(z.get("area")
+                z.get("area")
                     .ok_or(json_error("Area field not found on zone"))?
                     .as_f64()
-                    .ok_or(json_error("Area field not a number"))?)
+                    .ok_or(json_error("Area field not a number"))
             })
-            .sum::<JsonAccessResult<f64>>()?)
+            .sum::<JsonAccessResult<f64>>()
     }
 
     pub(crate) fn total_zone_volume(&self) -> JsonAccessResult<f64> {
@@ -3792,12 +3783,12 @@ impl InputForProcessing {
             .zone_node()?
             .values()
             .map(|z| {
-                Ok(z.get("volume")
+                z.get("volume")
                     .ok_or(json_error("Volume field not found on zone"))?
                     .as_number()
                     .ok_or(json_error("Volume field not a number"))?
                     .as_f64()
-                    .ok_or(json_error("Volume field not a number"))?)
+                    .ok_or(json_error("Volume field not a number"))
             })
             .collect::<JsonAccessResult<Vec<_>>>()?
             .into_iter()
@@ -3927,12 +3918,12 @@ impl InputForProcessing {
     pub(crate) fn heating_control_type(&self) -> JsonAccessResult<Option<HeatingControlType>> {
         self.root()?
             .get("HeatingControlType")
-            .and_then(
+            .map(
                 |node| match serde_json::from_value::<HeatingControlType>(node.to_owned()) {
-                    Ok(t) => Some(Ok(t)),
-                    Err(_) => Some(Err(json_error(
+                    Ok(t) => Ok(t),
+                    Err(_) => Err(json_error(
                         "Could not parse HeatingControlType into a known value",
-                    ))),
+                    )),
                 },
             )
             .transpose()
@@ -4048,7 +4039,7 @@ impl InputForProcessing {
         Ok(match self.specific_zone(zone)?.get("SpaceHeatSystem") {
             Some(JsonValue::String(system)) => vec![String::from(system)],
             Some(JsonValue::Array(systems)) => systems
-                .into_iter()
+                .iter()
                 .map(|system| {
                     Ok(String::from(system.as_str().ok_or(json_error(
                         "Space heat system list contained a non-string",
@@ -4074,7 +4065,7 @@ impl InputForProcessing {
         Ok(match self.specific_zone(zone)?.get("SpaceCoolSystem") {
             Some(JsonValue::String(system)) => vec![String::from(system)],
             Some(JsonValue::Array(systems)) => systems
-                .into_iter()
+                .iter()
                 .map(|s| {
                     Ok(String::from(s.as_str().ok_or(json_error(
                         "SpaceCoolSystem list contained non-strings",
@@ -4244,7 +4235,7 @@ impl InputForProcessing {
 
     pub(crate) fn space_heat_system_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(match self.optional_root_object("SpaceHeatSystem")? {
-            Some(ref space_heat_system) => space_heat_system.keys().map(String::from).collect(),
+            Some(space_heat_system) => space_heat_system.keys().map(String::from).collect(),
             None => vec![],
         })
     }
@@ -4541,11 +4532,10 @@ impl InputForProcessing {
         Ok(showers
             .iter()
             .filter_map(|(name, shower)| {
-                if let Some(flow_rate) = shower.get("flowrate").and_then(|s| s.as_f64()) {
-                    Some((String::from(name), flow_rate))
-                } else {
-                    None
-                }
+                shower
+                    .get("flowrate")
+                    .and_then(|s| s.as_f64())
+                    .map(|flow_rate| (String::from(name), flow_rate))
             })
             .collect())
     }
@@ -4555,15 +4545,14 @@ impl InputForProcessing {
     }
 
     pub(crate) fn showers(&self) -> JsonAccessResult<Option<&Map<std::string::String, JsonValue>>> {
-        Ok(self
-            .hot_water_demand()?
+        self.hot_water_demand()?
             .get("Shower")
             .map(|showers| {
                 showers
                     .as_object()
                     .ok_or(json_error("Shower was not an object"))
             })
-            .transpose()?)
+            .transpose()
     }
 
     pub(crate) fn shower_keys(&self) -> JsonAccessResult<Vec<String>> {
@@ -4717,7 +4706,7 @@ impl InputForProcessing {
                     .is_some_and(|source_type| source_type == "StorageTank")
                     .then_some(cylinder)
             }) {
-            None => return (),
+            None => return,
             Some(heat_sources) => heat_sources,
         };
 
@@ -4733,15 +4722,13 @@ impl InputForProcessing {
     }
 
     pub(crate) fn part_g_compliance(&self) -> JsonAccessResult<Option<bool>> {
-        Ok(self
-            .root()?
+        self.root()?
             .get("PartGcompliance")
             .map(|node| {
-                Ok(node
-                    .as_bool()
-                    .ok_or(json_error("Part G compliance was not passed as a boolean"))?)
+                node.as_bool()
+                    .ok_or(json_error("Part G compliance was not passed as a boolean"))
             })
-            .transpose()?)
+            .transpose()
     }
 
     pub(crate) fn set_part_g_compliance(&mut self, is_compliant: bool) -> JsonAccessResult<&Self> {
@@ -5174,11 +5161,11 @@ impl InputForProcessing {
         appliances: &IndexMap<&str, JsonValue>,
     ) -> anyhow::Result<()> {
         let mut appliances_value = serde_json::to_value(appliances.to_owned())?;
-        let mut appliances = appliances_value
+        let appliances = appliances_value
             .as_object_mut()
             .ok_or(anyhow!("Appliances were not an object when expected to be"))?;
         let existing_appliances = self.root_object_entry_mut("Appliances")?;
-        existing_appliances.append(&mut appliances);
+        existing_appliances.append(appliances);
 
         Ok(())
     }
@@ -5253,13 +5240,13 @@ impl InputForProcessing {
     pub(crate) fn energy_supply_for_appliance(&self, key: &str) -> anyhow::Result<&str> {
         let appliances = self.root_object("Appliances")?;
 
-        Ok(appliances
+        appliances
             .get(key)
             .and_then(|appliance| appliance.as_object())
             .ok_or_else(|| anyhow!("No {key} object in appliances input"))?
             .get("Energysupply")
             .and_then(|supply| supply.as_str())
-            .ok_or_else(|| anyhow!("No energy supply for appliance '{key}'"))?)
+            .ok_or_else(|| anyhow!("No energy supply for appliance '{key}'"))
     }
 
     pub(crate) fn loadshifting_for_appliance(

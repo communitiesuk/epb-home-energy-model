@@ -1240,9 +1240,7 @@ mod tests {
             simulation_time.step,
         )
         .unwrap();
-        boiler
-            .create_service_connection("boiler_test")
-            .unwrap();
+        boiler.create_service_connection("boiler_test").unwrap();
 
         (boiler, energy_supply)
     }
@@ -1287,9 +1285,7 @@ mod tests {
             simulation_time.step,
         )
         .unwrap();
-        boiler
-            .create_service_connection("boiler_test")
-            .unwrap();
+        boiler.create_service_connection("boiler_test").unwrap();
 
         boiler
     }
@@ -1445,9 +1441,7 @@ mod tests {
             simulation_time.step,
         )
         .unwrap();
-        boiler
-            .create_service_connection("boiler_test")
-            .unwrap();
+        boiler.create_service_connection("boiler_test").unwrap();
 
         boiler
     }
@@ -1590,9 +1584,7 @@ mod tests {
             simulation_time_for_service_space.step,
         )
         .unwrap();
-        boiler
-            .create_service_connection("boiler_test")
-            .unwrap();
+        boiler.create_service_connection("boiler_test").unwrap();
 
         boiler
     }
@@ -1662,15 +1654,11 @@ mod tests {
         // Ensure the service name does not already exist in energy supply connections
         assert!(!boiler.energy_supply_connections.contains_key(service_name));
         // Call the method under test
-        boiler
-            .create_service_connection(service_name)
-            .unwrap();
+        boiler.create_service_connection(service_name).unwrap();
         // Check that the service name was added to enercy supply connections
         assert!(boiler.energy_supply_connections.contains_key(service_name));
         // Check there is an error when connection is attempted with existing service name
-        assert!(boiler
-            .create_service_connection(service_name)
-            .is_err());
+        assert!(boiler.create_service_connection(service_name).is_err());
     }
 
     #[rstest]

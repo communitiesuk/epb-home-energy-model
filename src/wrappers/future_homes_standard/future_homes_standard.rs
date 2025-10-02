@@ -1105,7 +1105,7 @@ fn create_water_heating_pattern(input: &mut InputForProcessing) -> anyhow::Resul
         .hot_water_source_mut()?
         .values_mut()
         .flat_map(|value| value.as_object_mut())
-        .map(|map| HotWaterSourceDetailsJsonMap(map))
+        .map(HotWaterSourceDetailsJsonMap)
     {
         if source.is_storage_tank() {
             source.set_control_min_name_for_storage_tank_heat_sources(hw_min_temp)?;
@@ -2041,7 +2041,7 @@ fn create_appliance_gains(
 
     for appliance_key in power_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
+            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2069,7 +2069,7 @@ fn create_appliance_gains(
 
     for appliance_key in weight_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(&appliance_key.to_string())?
+            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())?
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
@@ -2250,9 +2250,7 @@ fn cooking_demand(
 ) -> anyhow::Result<IndexMap<&str, ApplianceCookingDemand>> {
     let oven_energy_supply = input.energy_supply_for_appliance("Oven");
     let oven_fuel = match oven_energy_supply {
-        Ok(energy_supply) => {
-            Some(input.fuel_type_for_energy_supply_reference(&energy_supply.to_string())?)
-        }
+        Ok(energy_supply) => Some(input.fuel_type_for_energy_supply_reference(energy_supply)?),
         Err(_) => None,
     };
     let oven = ApplianceCookingDemand {
@@ -2265,9 +2263,7 @@ fn cooking_demand(
 
     let hobs_energy_supply = input.energy_supply_for_appliance("Hobs");
     let hobs_fuel = match hobs_energy_supply {
-        Ok(energy_supply) => {
-            Some(input.fuel_type_for_energy_supply_reference(&energy_supply.to_string())?)
-        }
+        Ok(energy_supply) => Some(input.fuel_type_for_energy_supply_reference(energy_supply)?),
         Err(_) => None,
     };
     let hobs = ApplianceCookingDemand {
@@ -2347,11 +2343,13 @@ fn cooking_demand(
     Ok(cook_params)
 }
 
+type ApplianceCookingDefaults<'a> = (IndexMap<&'a str, JsonValue>, IndexMap<&'a str, JsonValue>);
+
 fn appliance_cooking_defaults(
     input: &mut InputForProcessing,
     number_of_occupants: f64,
     total_floor_area: f64,
-) -> anyhow::Result<(IndexMap<&str, JsonValue>, IndexMap<&str, JsonValue>)> {
+) -> anyhow::Result<ApplianceCookingDefaults<'_>> {
     let cooking_fuels = input.all_energy_supply_fuel_types()?;
 
     // (from Python) also check gas/elec cooker/oven  together - better to have energysupply as a dict entry?
@@ -2645,7 +2643,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     let mut non_appliance_electricity_demand = vec![];
     for i in 0..min_demand_length {
         for (name, user) in electricity_users {
-            let do_increment = !input.appliances_contain_key(&name);
+            let do_increment = !input.appliances_contain_key(name);
             if do_increment {
                 if i >= non_appliance_electricity_demand.len() {
                     non_appliance_electricity_demand.resize(i + 1, 0.0);
@@ -2977,7 +2975,7 @@ fn window_treatment(input: &mut InputForProcessing) -> anyhow::Result<()> {
 
     for mut building_element in transparent_building_elements
         .into_iter()
-        .map(|el| TransparentBuildingElementJsonValue(el))
+        .map(TransparentBuildingElementJsonValue)
     {
         for treatment in building_element.treatment().iter_mut().flatten() {
             treatment.insert("is_open".into(), json!(false));
@@ -3082,7 +3080,7 @@ pub(super) fn create_window_opening_schedule(input: &mut InputForProcessing) -> 
     for mut transparent_building_element in input
         .all_transparent_building_elements_mut()?
         .into_iter()
-        .map(|t| TransparentBuildingElementJsonValue(t))
+        .map(TransparentBuildingElementJsonValue)
     {
         let element_is_security_risk = transparent_building_element.is_security_risk();
         transparent_building_element.set_window_openable_control(
@@ -3308,7 +3306,7 @@ fn calc_sfp_mech_vent(input: &mut InputForProcessing) -> anyhow::Result<()> {
     for mut mech_vents_data in input
         .mechanical_ventilations_for_processing()?
         .into_iter()
-        .map(|vent| MechanicalVentilationJsonValue(vent))
+        .map(MechanicalVentilationJsonValue)
     {
         if mech_vents_data.vent_is_type("Centralised continuous MEV")
             || mech_vents_data.vent_is_type("MVHR")
@@ -3337,12 +3335,10 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
         if let Some(space_heat_control) = input.space_heat_control_for_zone(zone_key)? {
             match space_heat_control.as_str() {
                 "livingroom" => {
-                    for space_cool_system in
-                        input.space_cool_system_for_zone(zone_key)?.iter().cloned()
-                    {
+                    for space_cool_system in input.space_cool_system_for_zone(zone_key)?.iter() {
                         let ctrl_name = format!("Cooling_{space_cool_system}");
                         input.set_control_string_for_space_cool_system(
-                            &space_cool_system,
+                            space_cool_system,
                             &ctrl_name,
                         )?;
                         let mut living_room_control = json!({
@@ -3359,12 +3355,12 @@ fn create_cooling(input: &mut InputForProcessing) -> anyhow::Result<()> {
                         });
                         let control_json = living_room_control.as_object_mut().unwrap();
                         if let Some(temp_setback) =
-                            input.temperature_setback_for_space_cool_system(&space_cool_system)?
+                            input.temperature_setback_for_space_cool_system(space_cool_system)?
                         {
                             control_json.insert("setpoint_max".to_string(), temp_setback.into());
                         }
                         if let Some(advanced_start) =
-                            input.advanced_start_for_space_cool_system(&space_cool_system)?
+                            input.advanced_start_for_space_cool_system(space_cool_system)?
                         {
                             control_json
                                 .insert("advanced_start".to_string(), advanced_start.into());
@@ -3661,7 +3657,7 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
                 let w_area = width * height;
                 // retrieve half-hourly shading factor
                 let direct_result =
-                    shading_factor(input, base_height, height, width, orientation, &shading);
+                    shading_factor(input, base_height, height, width, orientation, shading);
 
                 let area = 0.9 * w_area * (1. - ff) * g_val;
 

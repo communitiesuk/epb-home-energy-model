@@ -2296,10 +2296,8 @@ impl Corpus {
 
         hot_water_demand_dict.insert("demand".into(), vec_capacity());
         hot_water_energy_demand_dict.insert("energy_demand".into(), vec_capacity());
-        hot_water_energy_demand_dict_incl_pipework.insert(
-            "energy_demand_incl_pipework_loss".into(),
-            vec_capacity(),
-        );
+        hot_water_energy_demand_dict_incl_pipework
+            .insert("energy_demand_incl_pipework_loss".into(), vec_capacity());
         hot_water_energy_output_dict.insert("energy_output", vec_capacity());
         hot_water_duration_dict.insert("duration".into(), vec_capacity());
         hot_water_no_events_dict.insert(
@@ -2308,8 +2306,7 @@ impl Corpus {
         );
         hot_water_pipework_dict.insert("pw_losses".into(), vec_capacity());
         ductwork_gains_dict.insert("ductwork_gains".into(), vec_capacity());
-        hot_water_primary_pipework_dict
-            .insert("primary_pw_losses".into(), vec_capacity());
+        hot_water_primary_pipework_dict.insert("primary_pw_losses".into(), vec_capacity());
         hot_water_storage_losses_dict.insert("storage_losses".into(), vec_capacity());
         self.initial_loop.store(true, Ordering::SeqCst);
         let mut internal_pressure_window: HashMap<ReportingFlag, f64> = Default::default();
