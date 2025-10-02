@@ -956,7 +956,7 @@ impl Emitters {
         let delta_t_values = temperature_data.iter().map(|row| row[0]).collect_vec();
         let _min_delta_t = delta_t_values.iter().min_by(|a, b| a.total_cmp(b));
 
-        let fan_power_values = fan_power_data[1..].iter().map(|f| <f64>::from(f));
+        let fan_power_values = fan_power_data[1..].iter().map(<f64>::from);
 
         // Parsing product data to get outputs and fan speeds
         let interpolated_outputs: Vec<_> = (1..temperature_data[1].len())
@@ -2021,7 +2021,7 @@ mod tests {
         let service_name = "service_name";
 
         boiler
-            .create_service_connection(service_name.into())
+            .create_service_connection(service_name)
             .unwrap();
 
         let control = Arc::from(Control::OnOffTime(OnOffTimeControl::new(

@@ -1214,44 +1214,49 @@ fn edit_primary_pipework(
 
     let mut primary_pipework = input.primary_pipework_clone()?;
 
-    if primary_pipework.is_none() {
-        primary_pipework = Some(vec![serde_json::from_value::<WaterPipework>(json!({
-            "location": "internal",
-            "internal_diameter_mm": internal_diameter_mm_min,
-            "external_diameter_mm": external_diameter_mm_min,
-            "length": length_max,
-            "insulation_thermal_conductivity": insulation_thermal_conductivity,
-            "insulation_thickness_mm": insulation_thickness_mm_min,
-            "surface_reflectivity": surface_reflectivity,
-            "pipe_contents": pipe_contents
-        }))?]);
-    } else {
-        for pipework in primary_pipework.as_mut().unwrap().iter_mut() {
-            let length = pipework.length;
-            let internal_diameter_mm = pipework.internal_diameter_mm.max(internal_diameter_mm_min);
-            let external_diameter_mm = pipework.external_diameter_mm.max(external_diameter_mm_min);
-
-            // Update insulation thickness based on internal diameter
-            let adjusted_insulation_thickness_mm_min = if internal_diameter_mm > 25. {
-                35.
-            } else {
-                insulation_thickness_mm_min
-            };
-
-            // Primary pipework should not be greater than maximum length
-            let length = length.min(length_max);
-
-            // Update pipework
-            *pipework = serde_json::from_value(json!({
+    match primary_pipework {
+        None => {
+            primary_pipework = Some(vec![serde_json::from_value::<WaterPipework>(json!({
                 "location": "internal",
-                "internal_diameter_mm": internal_diameter_mm,
-                "external_diameter_mm": external_diameter_mm,
-                "length": length,
+                "internal_diameter_mm": internal_diameter_mm_min,
+                "external_diameter_mm": external_diameter_mm_min,
+                "length": length_max,
                 "insulation_thermal_conductivity": insulation_thermal_conductivity,
-                "insulation_thickness_mm": adjusted_insulation_thickness_mm_min,
+                "insulation_thickness_mm": insulation_thickness_mm_min,
                 "surface_reflectivity": surface_reflectivity,
                 "pipe_contents": pipe_contents
-            }))?;
+            }))?]);
+        }
+        Some(ref mut primary_pipework) => {
+            for pipework in primary_pipework.iter_mut() {
+                let length = pipework.length;
+                let internal_diameter_mm =
+                    pipework.internal_diameter_mm.max(internal_diameter_mm_min);
+                let external_diameter_mm =
+                    pipework.external_diameter_mm.max(external_diameter_mm_min);
+
+                // Update insulation thickness based on internal diameter
+                let adjusted_insulation_thickness_mm_min = if internal_diameter_mm > 25. {
+                    35.
+                } else {
+                    insulation_thickness_mm_min
+                };
+
+                // Primary pipework should not be greater than maximum length
+                let length = length.min(length_max);
+
+                // Update pipework
+                *pipework = serde_json::from_value(json!({
+                    "location": "internal",
+                    "internal_diameter_mm": internal_diameter_mm,
+                    "external_diameter_mm": external_diameter_mm,
+                    "length": length,
+                    "insulation_thermal_conductivity": insulation_thermal_conductivity,
+                    "insulation_thickness_mm": adjusted_insulation_thickness_mm_min,
+                    "surface_reflectivity": surface_reflectivity,
+                    "pipe_contents": pipe_contents
+                }))?;
+            }
         }
     }
 

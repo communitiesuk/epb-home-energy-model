@@ -592,7 +592,7 @@ impl Boiler {
 
         self.energy_supply_connections.insert(
             service_name.into(),
-            EnergySupply::connection(self.energy_supply.clone(), service_name.as_ref()).unwrap(),
+            EnergySupply::connection(self.energy_supply.clone(), service_name).unwrap(),
         );
 
         Ok(())
@@ -1241,7 +1241,7 @@ mod tests {
         )
         .unwrap();
         boiler
-            .create_service_connection("boiler_test".into())
+            .create_service_connection("boiler_test")
             .unwrap();
 
         (boiler, energy_supply)
@@ -1288,7 +1288,7 @@ mod tests {
         )
         .unwrap();
         boiler
-            .create_service_connection("boiler_test".into())
+            .create_service_connection("boiler_test")
             .unwrap();
 
         boiler
@@ -1446,7 +1446,7 @@ mod tests {
         )
         .unwrap();
         boiler
-            .create_service_connection("boiler_test".into())
+            .create_service_connection("boiler_test")
             .unwrap();
 
         boiler
@@ -1591,7 +1591,7 @@ mod tests {
         )
         .unwrap();
         boiler
-            .create_service_connection("boiler_test".into())
+            .create_service_connection("boiler_test")
             .unwrap();
 
         boiler
@@ -1663,13 +1663,13 @@ mod tests {
         assert!(!boiler.energy_supply_connections.contains_key(service_name));
         // Call the method under test
         boiler
-            .create_service_connection(service_name.into())
+            .create_service_connection(service_name)
             .unwrap();
         // Check that the service name was added to enercy supply connections
         assert!(boiler.energy_supply_connections.contains_key(service_name));
         // Check there is an error when connection is attempted with existing service name
         assert!(boiler
-            .create_service_connection(service_name.into())
+            .create_service_connection(service_name)
             .is_err());
     }
 
@@ -1934,7 +1934,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         boiler
-            .create_service_connection("boiler_demand_energy".into())
+            .create_service_connection("boiler_demand_energy")
             .unwrap();
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
@@ -1957,7 +1957,7 @@ mod tests {
         }
 
         boiler
-            .create_service_connection("boiler_demand_energy_with_hybrid".into())
+            .create_service_connection("boiler_demand_energy_with_hybrid")
             .unwrap();
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
@@ -1980,7 +1980,7 @@ mod tests {
 
         // Test with time_elapsed_hp
         boiler
-            .create_service_connection("boiler_demand_energy_hybrid_time_elapsed".into())
+            .create_service_connection("boiler_demand_energy_hybrid_time_elapsed")
             .unwrap();
 
         for (t_idx, _) in simulation_time.iter().enumerate() {
@@ -2059,7 +2059,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         boiler
-            .create_service_connection("boiler_demand_energy".into())
+            .create_service_connection("boiler_demand_energy")
             .unwrap();
 
         boiler
