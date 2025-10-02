@@ -2819,8 +2819,10 @@ impl HeatPump {
         temp_used_for_scaling: f64,
         temp_limit_upper: f64,
     ) -> f64 {
-        if temp_output.is_some() && temp_output.unwrap() > temp_limit_upper {
-            let temp_output = temp_output.unwrap();
+        if let (Some(temp_output), true) = (
+            temp_output,
+            temp_output.is_some_and(|temp_output| temp_output > temp_limit_upper),
+        ) {
             if temp_output == temp_used_for_scaling {
                 energy_output_required
             } else if (temp_limit_upper - temp_used_for_scaling) >= self.temp_diff_flow_return_min {
@@ -7007,11 +7009,8 @@ mod tests {
             .unwrap(),
         ));
 
-        let boiler_service_space = Boiler::create_service_space_heating(
-            boiler.clone(),
-            "service_boilerspace",
-            control,
-        );
+        let boiler_service_space =
+            Boiler::create_service_space_heating(boiler.clone(), "service_boilerspace", control);
         let hybrid_boiler_service =
             HybridBoilerService::Space(Arc::from(Mutex::from(boiler_service_space)));
         let input = create_heat_pump_input_from_json(None);

@@ -662,14 +662,12 @@ pub(crate) struct ControlCombination {
     pub(crate) controls: Vec<String>,
 }
 
-fn validate_length_minimum_two(
-    sources: &Vec<String>,
-) -> Result<(), serde_valid::validation::Error> {
+fn validate_length_minimum_two(sources: &[String]) -> Result<(), serde_valid::validation::Error> {
     validate_length_minimum::<2>(sources)
 }
 
 fn validate_length_minimum<const T: usize>(
-    sources: &Vec<String>,
+    sources: &[String],
 ) -> Result<(), serde_valid::validation::Error> {
     sources
         .iter()
