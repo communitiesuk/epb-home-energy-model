@@ -905,24 +905,18 @@ impl ControlBehaviour for SmartApplianceControl {}
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
-    _start_day: u32,
-    _time_series_step: f64,
 }
 
 impl CombinationTimeControl {
     pub(crate) fn new(
         combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
-        start_day: u32,
-        time_series_step: f64,
     ) -> anyhow::Result<Self> {
         Self::validate_combinations(&combinations, &controls)?;
 
         Ok(Self {
             combinations,
             controls,
-            _start_day: start_day,
-            _time_series_step: time_series_step,
         })
     }
 
@@ -2239,7 +2233,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_on_off, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_on_off, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2252,7 +2246,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_setpoint, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_setpoint, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2265,7 +2259,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_req, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_req, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2278,8 +2272,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_on_off_cost, controls_for_combination, 0, 1.)
-            .unwrap()
+        CombinationTimeControl::new(combination_on_off_cost, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2328,8 +2321,6 @@ mod tests {
             }))
             .unwrap(),
             controls_for_target_charge,
-            0,
-            1.,
         )
         .unwrap()
     }
@@ -2344,8 +2335,6 @@ mod tests {
             }))
             .unwrap(),
             controls_for_target_charge,
-            0,
-            1.,
         )
         .unwrap()
     }
@@ -2495,8 +2484,6 @@ mod tests {
             assert!(CombinationTimeControl::new(
                 serde_json::from_value(invalid_combination).unwrap(),
                 controls_for_invalid_combinations.clone(),
-                0,
-                1.,
             )
             .is_err());
         }

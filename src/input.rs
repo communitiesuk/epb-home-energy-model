@@ -592,11 +592,7 @@ pub(crate) enum ControlDetails {
         schedule: BooleanSchedule,
     },
     #[serde(rename = "CombinationTimeControl")]
-    CombinationTime {
-        start_day: u32,
-        time_series_step: f64,
-        combination: ControlCombinations,
-    },
+    CombinationTime { combination: ControlCombinations },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -711,33 +707,31 @@ pub(crate) struct SmartApplianceBattery {
 }
 
 impl ControlDetails {
-    pub(crate) fn start_day(&self) -> u32 {
+    pub(crate) fn start_day(&self) -> anyhow::Result<u32> {
         match self {
-            ControlDetails::OnOffTime { start_day, .. } => *start_day,
-            ControlDetails::OnOffCostMinimisingTime { start_day, .. } => *start_day,
-            ControlDetails::SetpointTime { start_day, .. } => *start_day,
-            ControlDetails::Charge { start_day, .. } => *start_day,
-            ControlDetails::CombinationTime { start_day, .. } => *start_day,
+            ControlDetails::OnOffTime { start_day, .. } => Ok(*start_day),
+            ControlDetails::OnOffCostMinimisingTime { start_day, .. } => Ok(*start_day),
+            ControlDetails::SetpointTime { start_day, .. } => Ok(*start_day),
+            ControlDetails::Charge { start_day, .. } => Ok(*start_day),
+            _ => Err(anyhow!("Start day was not available")),
         }
     }
 
-    pub(crate) fn time_series_step(&self) -> f64 {
+    pub(crate) fn time_series_step(&self) -> anyhow::Result<f64> {
         match self {
             ControlDetails::OnOffTime {
                 time_series_step, ..
-            } => *time_series_step,
+            } => Ok(*time_series_step),
             ControlDetails::OnOffCostMinimisingTime {
                 time_series_step, ..
-            } => *time_series_step,
+            } => Ok(*time_series_step),
             ControlDetails::SetpointTime {
                 time_series_step, ..
-            } => *time_series_step,
+            } => Ok(*time_series_step),
             ControlDetails::Charge {
                 time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::CombinationTime {
-                time_series_step, ..
-            } => *time_series_step,
+            } => Ok(*time_series_step),
+            _ => Err(anyhow!("Time series step was not available")),
         }
     }
 
@@ -745,7 +739,7 @@ impl ControlDetails {
         match self {
             ControlDetails::OnOffCostMinimisingTime { schedule, .. } => Ok(schedule),
             ControlDetails::SetpointTime { schedule, .. } => Ok(schedule),
-            _ => Err(anyhow::anyhow!("Numeric schedule was not available")),
+            _ => Err(anyhow!("Numeric schedule was not available")),
         }
     }
 }

@@ -287,11 +287,7 @@ fn single_control_from_details(
             time_on_daily.unwrap_or_default(),
         ))
         .into(),
-        ControlDetails::CombinationTime {
-            start_day,
-            time_series_step,
-            combination,
-        } => {
+        ControlDetails::CombinationTime { combination } => {
             // resolved controls needs to be: IndexMap<String, Arc<Control>>
 
             /// Recursively collects all unique controls from the combination control dictionary.
@@ -380,8 +376,6 @@ fn single_control_from_details(
             Control::CombinationTime(CombinationTimeControl::new(
                 combination.clone(),
                 resolved_controls,
-                *start_day,
-                *time_series_step,
             )?)
             .into()
         }
@@ -5442,8 +5436,8 @@ fn required_vent_data_from_input(input: &ControlInput) -> anyhow::Result<Option<
         .map(|ctrl| {
             anyhow::Ok(RequiredVentData {
                 schedule: expand_numeric_schedule(ctrl.numeric_schedule()?),
-                start_day: ctrl.start_day(),
-                time_series_step: ctrl.time_series_step(),
+                start_day: ctrl.start_day()?,
+                time_series_step: ctrl.time_series_step()?,
             })
         })
         .transpose()
