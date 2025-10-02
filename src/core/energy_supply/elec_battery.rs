@@ -327,7 +327,7 @@ impl ElectricBattery {
     pub(crate) fn calculate_max_discharge(&self, state_of_charge: f64) -> f64 {
         let discharge_factor_for_soc = Self::discharge_rate_soc_equ(state_of_charge);
 
-        (self.maximum_discharge_rate * discharge_factor_for_soc * self.simulation_timestep) * -1.
+        -(self.maximum_discharge_rate * discharge_factor_for_soc * self.simulation_timestep)
     }
 
     /// Calculations to be done at the end of each timestep

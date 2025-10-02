@@ -2340,7 +2340,7 @@ impl HeatPump {
             Boiler::create_service_hot_water_combi(
                 boiler.clone(),
                 boiler_data,
-                service_name.into(),
+                service_name,
                 temp_hot_water,
                 cold_feed,
             )
@@ -7009,7 +7009,7 @@ mod tests {
 
         let boiler_service_space = Boiler::create_service_space_heating(
             boiler.clone(),
-            "service_boilerspace".into(),
+            "service_boilerspace",
             control,
         );
         let hybrid_boiler_service =
@@ -7607,7 +7607,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_boilerspace".try_into().unwrap(),
+                service_name: "service_boilerspace".into(),
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -7674,7 +7674,7 @@ mod tests {
 
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
-                service_name: "service_no_boiler".try_into().unwrap(),
+                service_name: "service_no_boiler".into(),
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -7704,7 +7704,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_no_boiler".try_into().unwrap(),
+                service_name: "service_no_boiler".into(),
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -7844,7 +7844,7 @@ mod tests {
 
         let expected_modcontrol_calcs = [
             HeatPumpEnergyCalculation {
-                service_name: "service_backup_modctrl".try_into().unwrap(),
+                service_name: "service_backup_modctrl".into(),
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -7874,7 +7874,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_backup_modctrl".try_into().unwrap(),
+                service_name: "service_backup_modctrl".into(),
                 service_type: ServiceType::Water,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -7934,7 +7934,7 @@ mod tests {
         // Check the results with service off and more energy_output_required
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
-                service_name: "service_energy_output_required".try_into().unwrap(),
+                service_name: "service_energy_output_required".into(),
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 50.,
@@ -7964,7 +7964,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_energy_output_required".try_into().unwrap(),
+                service_name: "service_energy_output_required".into(),
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 50.,
@@ -8068,7 +8068,7 @@ mod tests {
 
         let expected_off_with_boiler_calcs = [
             HeatPumpEnergyCalculation {
-                service_name: "service_boilerspace_service_off".try_into().unwrap(),
+                service_name: "service_boilerspace_service_off".into(),
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 1.0,
@@ -8098,7 +8098,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_boilerspace_service_off".try_into().unwrap(),
+                service_name: "service_boilerspace_service_off".into(),
                 service_type: ServiceType::Water,
                 service_on: false,
                 energy_output_required: 1.0,
@@ -8238,7 +8238,7 @@ mod tests {
 
         let expected_energy_calcs: [HeatPumpEnergyCalculation; 2] = [
             HeatPumpEnergyCalculation {
-                service_name: "service_backup_substitute".try_into().unwrap(),
+                service_name: "service_backup_substitute".into(),
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -8268,7 +8268,7 @@ mod tests {
                 energy_output_delivered_boiler: None,
             },
             HeatPumpEnergyCalculation {
-                service_name: "service_backup_substitute".try_into().unwrap(),
+                service_name: "service_backup_substitute".into(),
                 service_type: ServiceType::Space,
                 service_on: true,
                 energy_output_required: 1.0,
@@ -8412,7 +8412,7 @@ mod tests {
             *heat_pump_with_boiler.service_results.read().deref(),
             vec![
                 ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
-                    service_name: "service_boiler_demand_energy".try_into().unwrap(),
+                    service_name: "service_boiler_demand_energy".into(),
                     service_type: ServiceType::Water,
                     service_on: true,
                     energy_output_required: 1.0,
@@ -8442,7 +8442,7 @@ mod tests {
                     energy_output_delivered_boiler: Some(0.0)
                 })),
                 ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
-                    service_name: "service_boiler_demand_energy".try_into().unwrap(),
+                    service_name: "service_boiler_demand_energy".into(),
                     service_type: ServiceType::Water,
                     service_on: true,
                     energy_output_required: 1.0,
@@ -9032,7 +9032,7 @@ mod tests {
         );
 
         let expected_service_results = [ServiceResult::Full(Box::new(HeatPumpEnergyCalculation {
-            service_name: "servicetimestep_demand_energy".try_into().unwrap(),
+            service_name: "servicetimestep_demand_energy".into(),
             service_type: ServiceType::Water,
             service_on: true,
             energy_output_required: 5.0,

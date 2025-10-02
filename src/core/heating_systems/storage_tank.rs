@@ -756,7 +756,7 @@ impl StorageTank {
             } else {
                 self.determine_heat_source_switch_on(
                     temp_s3_n,
-                    heat_source_name.into(),
+                    heat_source_name,
                     heat_source,
                     heater_layer,
                     thermostat_layer,

@@ -329,7 +329,7 @@ impl EnergySupply {
         amount_produced: f64,
         timestep_index: usize,
     ) -> Result<(), anyhow::Error> {
-        self.demand_energy(end_user_name, amount_produced * -1.0, timestep_index)
+        self.demand_energy(end_user_name, -amount_produced, timestep_index)
     }
 
     /// Return list of the total demand on this energy source for each timestep
