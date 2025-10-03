@@ -4361,7 +4361,7 @@ impl InputForProcessing {
         Ok(space_heat_system.and_then(|space_heat_system| {
             space_heat_system
                 .as_object()
-                .and_then(|space_heat_system| space_heat_system.get("heat_source"))
+                .and_then(|space_heat_system| space_heat_system.get("HeatSource"))
         }))
     }
 
@@ -4741,11 +4741,16 @@ impl InputForProcessing {
         let node_for_type = self
             .root_object_entry_mut("Events")?
             .entry(event_type)
-            .or_insert(json!([]));
-        if let Some(events) = node_for_type.as_array_mut() {
+            .or_insert(json!({}))
+            .as_object_mut()
+            .ok_or(json_error("Events node was not an object"))?;
+        let node_for_subtype = node_for_type.entry(subtype_name).or_insert(json!([]));
+        if let Some(events) = node_for_subtype.as_array_mut() {
             events.push(event);
         } else {
-            *node_for_type = json!([event]);
+            return Err(json_error(format!(
+                "Events node at '{event_type}' -> '{subtype_name}' was not an array"
+            )));
         }
 
         Ok(self)
@@ -5049,13 +5054,11 @@ impl InputForProcessing {
         Ok(self
             .zone_node()?
             .values()
-            .filter_map(|zone| zone.as_object())
-            .flat_map(|zone| zone.get("BuildingElement"))
+            .filter_map(|zone| zone.get("BuildingElement"))
+            .filter_map(|building_element| building_element.as_object())
+            .flat_map(|building_element_node| building_element_node.values())
             .filter_map(|building_element| {
-                building_element
-                    .as_object()
-                    .and_then(|building_element| building_element.get("base_height"))
-                    .and_then(|h| h.as_f64())
+                building_element.get("base_height").and_then(|h| h.as_f64())
             })
             .max_by(|a, b| a.total_cmp(b)))
     }
@@ -5492,6 +5495,7 @@ impl InputForProcessing {
         Ok(self
             .root_object("HotWaterSource")?
             .get("hw cylinder")
+            .and_then(|cylinder| cylinder.get("volume"))
             .and_then(|v| v.as_f64()))
     }
 
@@ -5517,12 +5521,22 @@ impl InputForProcessing {
         event_type: &str,
         event_name: &str,
     ) -> anyhow::Result<Option<Vec<WaterHeatingEvent>>> {
-        Ok(self
+        let result = Ok(self
             .root_object("Events")?
             .get(event_type)
             .and_then(|event_group| event_group.get(event_name))
             .map(|events| serde_json::from_value(events.to_owned()))
-            .transpose()?)
+            .transpose()?);
+
+        if let Ok(None) = result {
+            println!(
+                "No events found for event type {} and name {}",
+                event_type, event_name
+            );
+            println!("Events: {:?}", self.root_object("Events")?.keys());
+        }
+
+        result
     }
 
     pub(crate) fn part_o_active_cooling_required(&self) -> JsonAccessResult<Option<bool>> {
@@ -5649,5 +5663,118 @@ mod tests {
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);
         }
+    }
+}
+
+#[cfg(test)]
+mod accessors_tests {
+    use super::*;
+    use rstest::*;
+
+    #[fixture]
+    fn events_input() -> InputForProcessing {
+        let events_input_json = json!({
+            "Events": {
+                "Shower": {
+                  "IES": [
+                    {
+                      "start": 4.1,
+                      "duration": 6,
+                      "temperature": 41.0
+                    },
+                    {
+                      "start": 4.5,
+                      "duration": 6,
+                      "temperature": 41.0
+                    },
+                    {
+                      "start": 6,
+                      "duration": 6,
+                      "temperature": 41.0
+                    }
+                  ],
+                  "mixer": [
+                    {
+                      "start": 7,
+                      "duration": 6,
+                      "temperature": 41.0
+                    }
+                  ]
+                }
+          }
+        });
+
+        InputForProcessing {
+            input: events_input_json,
+        }
+    }
+
+    #[rstest]
+    fn test_water_heating_event_by_type_and_name_when_exists(events_input: InputForProcessing) {
+        assert_eq!(
+            events_input
+                .water_heating_event_by_type_and_name("Shower", "mixer")
+                .unwrap(),
+            Some(vec![WaterHeatingEvent {
+                start: 7.,
+                duration: Some(6.),
+                volume: None,
+                temperature: 41.0
+            }])
+        );
+    }
+
+    #[fixture]
+    fn hot_water_cylinder_input() -> InputForProcessing {
+        let hot_water_source_json = json!({
+            "HotWaterSource": {
+                "hw cylinder": {
+                  "type": "StorageTank",
+                  "volume": 80.0,
+                  "daily_losses": 1.68,
+                  "min_temp": 52.0,
+                  "setpoint_temp": 55.0,
+                  "ColdWaterSource": "mains water",
+                  "HeatSource": {
+                    "hp": {
+                      "type": "HeatSourceWet",
+                      "name": "hp",
+                      "temp_flow_limit_upper": 65,
+                      "ColdWaterSource": "mains water",
+                      "EnergySupply": "mains elec",
+                      "Control": "hw timer",
+                      "heater_position": 0.1,
+                      "thermostat_position": 0.33
+                    }
+                  },
+                  "primary_pipework": [
+                    {
+                      "location": "external",
+                      "internal_diameter_mm": 26.,
+                      "external_diameter_mm": 28.,
+                      "length": 3.0,
+                      "insulation_thermal_conductivity": 0.037,
+                      "insulation_thickness_mm": 25.,
+                      "surface_reflectivity": false,
+                      "pipe_contents": "water"
+                    }
+                  ]
+                }
+              }
+        });
+
+        InputForProcessing {
+            input: hot_water_source_json,
+        }
+    }
+
+    #[rstest]
+    fn test_hot_water_cylinder_volume(hot_water_cylinder_input: InputForProcessing) {
+        assert_eq!(
+            hot_water_cylinder_input
+                .hot_water_cylinder_volume()
+                .unwrap(),
+            Some(80.0)
+        )
     }
 }
