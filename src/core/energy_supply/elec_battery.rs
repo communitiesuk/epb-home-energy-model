@@ -353,12 +353,12 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
         ExternalConditions::new(
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
@@ -459,7 +459,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn electric_battery(
+    fn electric_battery(
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> ElectricBattery {
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_charge_discharge_battery(
+    fn test_charge_discharge_battery(
         electric_battery: ElectricBattery,
         simulation_time: SimulationTime,
     ) {
