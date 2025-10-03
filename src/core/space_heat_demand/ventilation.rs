@@ -17,9 +17,9 @@ use crate::errors::NotImplementedError;
 use crate::input::{
     init_orientation, BuildingElement, CombustionAirSupplySituation, CombustionApplianceType,
     CombustionFuelType, DuctShape, FlueGasExhaustSituation,
-    InfiltrationVentilation as InfiltrationVentilationInput, SupplyAirFlowRateControlType,
-    SupplyAirTemperatureControlType, TerrainClass, VentType, VentilationShieldClass,
-    WindowPart as WindowPartInput, ZoneDictionary,
+    InfiltrationVentilation as InfiltrationVentilationInput, MechVentType,
+    SupplyAirFlowRateControlType, SupplyAirTemperatureControlType, TerrainClass,
+    VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail, Error};
@@ -1142,7 +1142,7 @@ pub(crate) struct MechanicalVentilation {
     _q_h_des: f64,
     _q_c_des: f64,
     _theta_ctrl_sys: Option<f64>,
-    vent_type: VentType,
+    vent_type: MechVentType,
     _total_volume: f64,
     ctrl_intermittent_mev: Option<Arc<Control>>,
     sfp: f64,
@@ -1177,7 +1177,7 @@ impl MechanicalVentilation {
         _sup_air_temp_ctrl: SupplyAirTemperatureControlType,
         q_h_des: f64,
         q_c_des: f64,
-        vent_type: VentType,
+        vent_type: MechVentType,
         specific_fan_power: f64,
         design_outdoor_air_flow_rate: f64,
         energy_supply_conn: EnergySupplyConnection,
@@ -1234,10 +1234,10 @@ impl MechanicalVentilation {
     /// Adjusted to be based on ventilation type instead of vent_sys_op.
     fn calc_req_oda_flow_rates_at_atds(&self) -> (f64, f64) {
         match &self.vent_type {
-            VentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
-            VentType::IntermittentMev
-            | VentType::CentralisedContinuousMev
-            | VentType::DecentralisedContinuousMev => {
+            MechVentType::Mvhr => (self.qv_oda_req_design, -self.qv_oda_req_design),
+            MechVentType::IntermittentMev
+            | MechVentType::CentralisedContinuousMev
+            | MechVentType::DecentralisedContinuousMev => {
                 // NOTE: Calculation of effective flow rate of external air (in func
                 // calc_mech_vent_air_flw_rates_req_to_supply_vent_zone) assumes that
                 // supply and extract are perfectly balanced (as defined above), so
@@ -1245,14 +1245,14 @@ impl MechanicalVentilation {
                 // with that in mind
                 (0., -self.qv_oda_req_design)
             }
-            VentType::Piv => (self.qv_oda_req_design, 0.),
+            MechVentType::Piv => (self.qv_oda_req_design, 0.),
         }
     }
 
     /// Returns the fraction of the timestep for which the ventilation is running
     fn f_op_v(&self, simulation_time: &SimulationTimeIteration) -> f64 {
         match &self.vent_type {
-            VentType::IntermittentMev => {
+            MechVentType::IntermittentMev => {
                 let f_op_v = self
                     .ctrl_intermittent_mev
                     .as_ref()
@@ -1266,9 +1266,9 @@ impl MechanicalVentilation {
 
                 f_op_v
             }
-            VentType::DecentralisedContinuousMev
-            | VentType::CentralisedContinuousMev
-            | VentType::Mvhr => {
+            MechVentType::DecentralisedContinuousMev
+            | MechVentType::CentralisedContinuousMev
+            | MechVentType::Mvhr => {
                 // Assumed to operate continuously
                 1.
             }
@@ -1297,12 +1297,6 @@ impl MechanicalVentilation {
                 let qv_eta_dis_req = f_op_v * qv_eta_req;
 
                 (qv_sup_dis_req, qv_eta_dis_req)
-            }
-            SupplyAirFlowRateControlType::Load => {
-                // NOTE - this is not currently implemented in the Python code
-                // reported up to BRE https://dev.azure.com/BreGroup/SAP%2011/_workitems/edit/45523
-                // and not yet fixed as of 0.33
-                return Err(NotImplementedError::new("calc_mech_vent_air_flw_rates_req_to_supply_vent_zone is not implemented for SupplyAirFlowRateControlType::Load as outstanding bug in upstream Python"));
             }
         };
 
@@ -1353,17 +1347,17 @@ impl MechanicalVentilation {
             * self.f_op_v(simulation_time_iteration);
 
         let (supply_fan_energy_use_kwh, extract_fan_energy_use_in_kwh) = match self.vent_type {
-            VentType::IntermittentMev
-            | VentType::CentralisedContinuousMev
-            | VentType::DecentralisedContinuousMev => {
+            MechVentType::IntermittentMev
+            | MechVentType::CentralisedContinuousMev
+            | MechVentType::DecentralisedContinuousMev => {
                 // Fan energy use = 0
                 (0.0, fan_energy_use_kwh)
             }
-            VentType::Mvhr => {
+            MechVentType::Mvhr => {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            VentType::Piv => {
+            MechVentType::Piv => {
                 // Positive input, supply fans only
                 (fan_energy_use_kwh, 0.)
             }
@@ -1382,7 +1376,7 @@ impl MechanicalVentilation {
             / (f64::from(WATTS_PER_KILOWATT) * simulation_time_iteration.timestep)
     }
 
-    pub fn vent_type(&self) -> VentType {
+    pub fn vent_type(&self) -> MechVentType {
         self.vent_type
     }
 }
@@ -2184,34 +2178,40 @@ impl InfiltrationVentilation {
             .values()
             .flat_map(|zone| zone.building_elements.values())
             .map(|building_element| {
-                anyhow::Ok(if let BuildingElement::Transparent {
-                    window_openable_control,
-                    free_area_height,
-                    mid_height,
-                    max_window_open_area,
-                    window_part_list,
-                    orientation,
-                    pitch,
-                    ..
-                } = building_element
-                {
-                    Some({
-                        let on_off_ctrl =
-                            window_openable_control
-                                .as_ref()
-                                .and_then(|window_openable_control| {
+                anyhow::Ok(
+                    if let BuildingElement::Transparent {
+                        window_openable_control,
+                        free_area_height,
+                        mid_height,
+                        max_window_open_area,
+                        window_part_list,
+                        orientation,
+                        pitch,
+                        ..
+                    } = building_element
+                    {
+                        Some({
+                            let on_off_ctrl = window_openable_control.as_ref().and_then(
+                                |window_openable_control| {
                                     controls.get_with_string(window_openable_control)
-                                });
-                        anyhow::Ok(Window::new(free_area_height.ok_or_else(|| anyhow!("A free_area_height value was expected for a transparent building element."))?, mid_height.ok_or_else(|| anyhow!("A mid_height value was expected for a transparent building element."))?,
-                                       max_window_open_area.ok_or_else(|| anyhow!("A max_window_open_area value was expected for a transparent building element."))?,
-                                       window_part_list.as_ref().unwrap_or(&vec![]).clone(), init_orientation(*orientation),
-                                       *pitch,
-                                       input.altitude,
-                                       on_off_ctrl, ventilation_zone_base_height))
-                    })
-                } else {
-                    None
-                })
+                                },
+                            );
+                            anyhow::Ok(Window::new(
+                                *free_area_height,
+                                *mid_height,
+                                *max_window_open_area,
+                                window_part_list.clone(),
+                                init_orientation(*orientation),
+                                *pitch,
+                                input.altitude,
+                                on_off_ctrl,
+                                ventilation_zone_base_height,
+                            ))
+                        })
+                    } else {
+                        None
+                    },
+                )
             })
             .filter_map(|x| x.ok())
             .flatten()
@@ -2299,18 +2299,20 @@ impl InfiltrationVentilation {
             surface_area_roof,
         );
 
-        let combustion_appliances = input
-            .combustion_appliances
-            .values()
-            .map(|combustion_appliances_data| {
-                CombustionAppliances::new(
-                    combustion_appliances_data.supply_situation,
-                    combustion_appliances_data.exhaust_situation,
-                    combustion_appliances_data.fuel_type,
-                    combustion_appliances_data.appliance_type,
-                )
-            })
-            .collect();
+        let combustion_appliances = vec![];
+        // there is no combustion appliances field defined in the Python input file for 0.36+
+        // let combustion_appliances = input
+        //     .combustion_appliances
+        //     .values()
+        //     .map(|combustion_appliances_data| {
+        //         CombustionAppliances::new(
+        //             combustion_appliances_data.supply_situation,
+        //             combustion_appliances_data.exhaust_situation,
+        //             combustion_appliances_data.fuel_type,
+        //             combustion_appliances_data.appliance_type,
+        //         )
+        //     })
+        //     .collect();
 
         // (unfinished in upstream Python)
         let atds = Default::default();
@@ -2336,19 +2338,19 @@ impl InfiltrationVentilation {
                 EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
 
             mechanical_ventilations.push(
-                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp.ok_or_else(|| anyhow!("A specific fan power value is expected for a mechanical ventilation unit."))?, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
-                    VentType::Mvhr => mech_vents_data.mvhr_efficiency,
-                    VentType::IntermittentMev
-                    | VentType::CentralisedContinuousMev
-                    | VentType::DecentralisedContinuousMev => {
+                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type.into(), 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
+                    MechVentType::Mvhr => mech_vents_data.mvhr_efficiency,
+                    MechVentType::IntermittentMev
+                    | MechVentType::CentralisedContinuousMev
+                    | MechVentType::DecentralisedContinuousMev => {
                         None
                     }
-                    VentType::Piv => bail!("PIV vent type is not currently recognised when building up mechanical ventilation values for calculation"),
+                    MechVentType::Piv => bail!("PIV vent type is not currently recognised when building up mechanical ventilation values for calculation"),
                 }, None)),
             );
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
-            if mech_vents_data.vent_type == VentType::Mvhr {
+            if mech_vents_data.vent_type == MechVentType::Mvhr {
                 space_heating_ductwork.insert(
                     mech_vents_name.to_owned(),
                     mech_vents_data
@@ -2933,56 +2935,48 @@ mod tests {
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
@@ -3358,7 +3352,7 @@ mod tests {
             SupplyAirTemperatureControlType::Constant,
             1.,
             3.4,
-            VentType::Mvhr,
+            MechVentType::Mvhr,
             1.5,
             0.5,
             energy_supply_connection,

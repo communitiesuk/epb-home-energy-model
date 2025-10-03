@@ -379,14 +379,12 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    number: 1,
                     start: 180.,
                     end: 135.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 2,
                     start: 135.,
                     end: 90.,
                     shading_objects: Some(vec![ShadingObject {
@@ -397,14 +395,12 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 3,
                     start: 90.,
                     end: 45.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 4,
                     start: 45.,
                     end: 0.,
                     shading_objects: Some(vec![
@@ -422,7 +418,6 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 5,
                     start: 0.,
                     end: -45.,
                     shading_objects: Some(vec![ShadingObject {
@@ -433,21 +428,18 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 6,
                     start: -45.,
                     end: -90.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 7,
                     start: -90.,
                     end: -135.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 8,
                     start: -135.,
                     end: -180.,
                     shading_objects: None,

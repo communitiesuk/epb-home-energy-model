@@ -10,9 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, OtherWaterUseDetails, OtherWaterUses as OtherWaterUseInput,
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput,
-    WaterPipeContentsType, WaterPipeworkLoose,
+    WaterPipeContentsType, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -395,7 +395,7 @@ fn shower_from_input(
     Ok(match input {
         ShowerInput::MixerShower {
             cold_water_source,
-            waste_water_heat_recovery,
+            waste_water_heat_recovery_system: waste_water_heat_recovery,
             flowrate,
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
@@ -443,7 +443,7 @@ fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> 
 }
 
 fn input_to_other_water_events(
-    input: &OtherWaterUseDetails,
+    input: &OtherWaterUse,
     cold_water_sources: &ColdWaterSources,
 ) -> OtherHotWater {
     let cold_water_source = cold_water_sources
@@ -455,7 +455,7 @@ fn input_to_other_water_events(
 }
 
 fn input_to_water_distribution_pipework(
-    input: &WaterPipeworkLoose,
+    input: &WaterPipeworkSimple,
     total_number_tapping_points: usize,
 ) -> anyhow::Result<PipeworkSimple> {
     // Calculate average length of pipework between HW system and tapping point
@@ -463,10 +463,7 @@ fn input_to_water_distribution_pipework(
 
     PipeworkSimple::new(
         input.location.into(),
-        input
-            .internal_diameter_mm
-            .ok_or_else(|| anyhow!("Internal diameter expected to be set"))?
-            / MILLIMETRES_IN_METRE as f64,
+        input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
         length_average,
         WaterPipeContentsType::Water,
     )
@@ -525,7 +522,7 @@ mod tests {
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    waste_water_heat_recovery: Some("Example_Inst_WWHRS".into()),
+                    waste_water_heat_recovery_system: Some("Example_Inst_WWHRS".into()),
                 },
             ),
             (
@@ -549,16 +546,16 @@ mod tests {
 
         let other_input = OtherWaterUses(IndexMap::from([(
             "other".into(),
-            OtherWaterUseDetails {
+            OtherWaterUse {
                 flowrate: 8.0,
                 cold_water_source: ColdWaterSourceType::MainsWater,
             },
         )]));
 
         let hw_pipework = Some(vec![
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: Some(30.),
+                internal_diameter_mm: 30.,
                 length: 10.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -566,9 +563,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: Some(28.),
+                internal_diameter_mm: 28.,
                 length: 9.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -576,9 +573,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: Some(32.),
+                internal_diameter_mm: 32.,
                 length: 5.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -586,9 +583,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: Some(31.),
+                internal_diameter_mm: 31.,
                 length: 8.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,

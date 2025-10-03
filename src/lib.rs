@@ -372,7 +372,7 @@ pub fn run_project(
                         heat_loss_parameter,
                         heat_capacity_parameter,
                         heat_loss_form_factor,
-                        temp_internal_air: primary_input.temp_internal_air_static_calcs.ok_or_else(|| anyhow!("A value for the temp_internal_air_static_calcs field was expected to have been provided on the input."))?,
+                        temp_internal_air: primary_input.temp_internal_air_static_calcs,
                         temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
                     },
                 )?;

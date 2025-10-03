@@ -50,7 +50,7 @@ pub(crate) struct ElecStorageHeater {
     storage_capacity: f64,
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
-    n_units: i32,
+    n_units: u32,
     energy_supply_conn: EnergySupplyConnection,
     control: Arc<Control>,
     charge_control: Arc<Control>,
@@ -84,7 +84,7 @@ struct CurrentEnergyProfile {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StorageHeaterDetailedResult {
     timestep_idx: usize,
-    n_units: i32,
+    n_units: u32,
     energy_demand: f64,
     energy_delivered: f64,
     energy_instant: f64,
@@ -230,7 +230,7 @@ impl ElecStorageHeater {
         air_flow_type: ElectricStorageHeaterAirFlowType,
         frac_convective: f64,
         fan_pwr: f64,
-        n_units: i32,
+        n_units: u32,
         zone_setpoint_init: f64,
         zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
         energy_supply_conn: EnergySupplyConnection,

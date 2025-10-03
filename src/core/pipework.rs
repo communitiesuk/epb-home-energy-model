@@ -35,7 +35,7 @@ impl From<WaterPipeworkLocation> for PipeworkLocation {
 /// A trait to mark that which can be considered "pipeworkesque", analogous to the PipeworkSimple
 /// type in the upstream Python, which both the concrete PipeworkSimple and Pipework can be considered
 /// to belong to.
-pub trait Pipeworkesque {
+pub(crate) trait Pipeworkesque {
     fn location(&self) -> PipeworkLocation;
 
     fn volume_litres(&self) -> f64;
@@ -45,7 +45,7 @@ pub trait Pipeworkesque {
 
 /// An object to represent heat loss from pipework after flow has stopped
 #[derive(Debug)]
-pub struct PipeworkSimple {
+pub(crate) struct PipeworkSimple {
     location: PipeworkLocation,
     length_in_m: f64,
     volume_litres: f64,
@@ -53,7 +53,7 @@ pub struct PipeworkSimple {
 }
 
 impl PipeworkSimple {
-    pub fn new(
+    pub(crate) fn new(
         location: PipeworkLocation,
         internal_diameter: f64,
         length: f64,
@@ -67,11 +67,6 @@ impl PipeworkSimple {
         let contents_properties = match contents {
             WaterPipeContentsType::Water => *WATER,
             WaterPipeContentsType::Glycol25 => *GLYCOL25,
-            content_type => {
-                return Err(InvalidPipeworkInput::IllegalWaterPipeContentsType(
-                    content_type,
-                ))
-            }
         };
         Ok(Self {
             location,
@@ -170,7 +165,6 @@ impl Pipework {
 
         // Set the heat transfer coefficient inside the pipe, in W / m^2 K
         let internal_htc = match contents {
-            WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
             WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
             WaterPipeContentsType::Glycol25 => INTERNAL_HTC_GLYCOL25,
         };
@@ -383,17 +377,6 @@ mod tests {
             WaterPipeContentsType::Water,
         )
         .unwrap()
-    }
-
-    #[rstest]
-    fn test_invalid_contents() {
-        assert!(PipeworkSimple::new(
-            PipeworkLocation::External,
-            0.05,
-            7.,
-            WaterPipeContentsType::Air
-        )
-        .is_err());
     }
 
     #[rstest]

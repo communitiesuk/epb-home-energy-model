@@ -4,13 +4,13 @@ use rand_pcg::Pcg64;
 
 use crate::{
     core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT},
-    input::ApplianceGainsDetailsEvent,
+    input::ApplianceGainsEvent,
 };
 
 pub(super) struct FhsAppliance {
     pub(super) standby_w: f64,
     pub(super) gains_frac: f64,
-    pub(super) event_list: Vec<ApplianceGainsDetailsEvent>,
+    pub(super) event_list: Vec<ApplianceGainsEvent>,
     pub(super) flat_schedule: Vec<f64>,
 }
 
@@ -60,7 +60,7 @@ impl FhsAppliance {
         standby_w: f64,
         event_duration: f64,
         duration_std_dev: f64,
-    ) -> anyhow::Result<(Vec<ApplianceGainsDetailsEvent>, Vec<f64>)> {
+    ) -> anyhow::Result<(Vec<ApplianceGainsEvent>, Vec<f64>)> {
         // upstream Python here constructs a seed sequence from consecutive numbers - instead, here we sum the series
         let mut appliance_rng = Pcg64::seed_from_u64(
             (0..(flat_profile.len() + annual_expected_uses.ceil() as usize))
@@ -117,7 +117,7 @@ impl FhsAppliance {
         //                         / (self.annual_expected_demand - hours_per_day * days_per_year * self.standby_W / W_per_kW)
 
         let expected_demand_w_event = op_kwh * WATTS_PER_KILOWATT as f64 / event_duration;
-        let mut eventlist: Vec<ApplianceGainsDetailsEvent> = vec![];
+        let mut eventlist: Vec<ApplianceGainsEvent> = vec![];
         let mut sched = vec![standby_w; flat_profile.len()];
         let flat_profile_len = flat_profile.len();
 
@@ -130,7 +130,7 @@ impl FhsAppliance {
                     event_duration * (1. + event_size_deviations[event_count]) / f_appliance;
                 event_count += 1;
                 // step will depend on timestep of flatprofile, always hourly so no adjustment
-                eventlist.push(ApplianceGainsDetailsEvent {
+                eventlist.push(ApplianceGainsEvent {
                     start: step as f64 + start_offset,
                     duration,
                     demand_w: demand_w_event,

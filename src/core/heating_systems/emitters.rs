@@ -388,13 +388,12 @@ impl Emitters {
                 fancoil_test_data,
             } = emitter
             {
-                let n_units = n_units.unwrap_or(1);
                 let test_data = Self::add_temperature_diff_zero(fancoil_test_data);
                 let (temperature_data, fan_power_data) =
                     Self::format_fancoil_manufacturer_data(fancoil_test_data)?;
 
                 let emitter = Arc::new(WetEmitter::Fancoil {
-                    n_units,
+                    n_units: *n_units,
                     frac_convective: *frac_convective,
                     _test_data: test_data,
                     temperature_data,
@@ -1903,56 +1902,48 @@ mod tests {
         let direct_beam_radiations = vec![420., 750., 425., 500., 0., 40., 0., 388.];
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
@@ -1990,7 +1981,7 @@ mod tests {
     ) -> SpaceHeatingService {
         let boiler_details = HeatSourceWetDetails::Boiler {
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             rated_power: 2.5, // changed to match Python mocks
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,

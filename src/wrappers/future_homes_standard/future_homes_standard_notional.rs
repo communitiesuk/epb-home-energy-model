@@ -1303,9 +1303,7 @@ fn edit_hot_water_distribution(
         let length = min_of_2(length_actual, length_max);
 
         // Update internal diameter to minimum if not present and should not be lower than the minimum
-        let internal_diameter_mm = hot_water_distribution_inner
-            .internal_diameter_mm
-            .unwrap_or(internal_diameter_mm_min);
+        let internal_diameter_mm = hot_water_distribution_inner.internal_diameter_mm;
         let internal_diameter_mm = internal_diameter_mm.max(internal_diameter_mm_min);
 
         // Update external diameter to minimum if not present and should not be lower than the minimum
@@ -1546,7 +1544,7 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkLoose,
+        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
     };
     use crate::input::{HotWaterSource, WasteWaterHeatRecovery};
     use approx::assert_relative_eq;
@@ -2618,7 +2616,7 @@ mod tests {
         let tfa = calc_tfa(&test_input).unwrap();
         edit_hot_water_distribution(&mut test_input, tfa).unwrap();
 
-        let expected_hot_water_distribution_inner: WaterPipeworkLoose =
+        let expected_hot_water_distribution_inner: WaterPipeworkSimple =
             serde_json::from_value(json!(
                     {
                         "location": "internal",

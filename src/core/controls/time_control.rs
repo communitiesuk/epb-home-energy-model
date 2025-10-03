@@ -719,8 +719,8 @@ impl SmartApplianceControl {
         power_timeseries: &IndexMap<String, Vec<f64>>,
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
-        non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
-        battery_24hr: Option<SmartApplianceBattery>,
+        non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+        battery_24hr: SmartApplianceBattery,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         appliance_names: Vec<String>,
     ) -> anyhow::Result<Self> {
@@ -735,12 +735,7 @@ impl SmartApplianceControl {
             .map(|(name, _supply)| {
                 (
                     name.to_owned(),
-                    battery_24hr
-                        .as_ref()
-                        .expect(
-                            "Expected battery 24 h to be set for energy supply that has battery ",
-                        )
-                        .battery_state_of_charge[name]
+                    battery_24hr.battery_state_of_charge[name]
                         .iter()
                         .map(|x| AtomicF64::new(*x))
                         .collect_vec(),
@@ -763,9 +758,8 @@ impl SmartApplianceControl {
             ts_step: timeseries_step,
             simulation_timestep: simulation_time_iterator.step_in_hours(),
             ts_step_ratio: simulation_time_iterator.step_in_hours() / timeseries_step,
-            buffer_length: non_appliance_demand_24hr.clone().expect("Expected non_appliance_demand_24hr to be set").first().as_ref().ok_or_else(|| anyhow!("non_appliance_demand_24hr parameter for SmartApplianceControl cannot be empty."))?.1.len(),
+            buffer_length: non_appliance_demand_24hr.clone().first().as_ref().ok_or_else(|| anyhow!("non_appliance_demand_24hr parameter for SmartApplianceControl cannot be empty."))?.1.len(),
             non_appliance_demand_24hr: non_appliance_demand_24hr.clone()
-                .expect("Expected non_appliance_demand_24hr to be set")
                 .into_iter()
                 .map(|(key, value)| (key, value.iter().map(|x| AtomicF64::new(*x)).collect_vec()))
                 .collect(),

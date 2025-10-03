@@ -9,7 +9,7 @@ use crate::core::units::{MINUTES_PER_HOUR, WATTS_PER_KILOWATT};
 use crate::core::water_heat_demand::misc::frac_hot_water;
 use crate::corpus::{HeatSource, TempInternalAirFn};
 use crate::external_conditions::ExternalConditions;
-use crate::input::{SolarCellLocation, WaterPipework};
+use crate::input::{SolarCollectorLoopLocation, WaterPipework};
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
@@ -2754,7 +2754,7 @@ impl SurplusDiverting for PVDiverter {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct SolarThermalSystem {
-    sol_loc: SolarCellLocation,
+    sol_loc: SolarCollectorLoopLocation,
     area: f64,
     peak_collector_efficiency: f64,
     incidence_angle_modifier: f64,
@@ -2811,7 +2811,7 @@ impl SolarThermalSystem {
     /// * overshading     -- TODO could add at a later date. Feed into solar module
     /// * controlmax      -- reference to a control object which must select current the maximum timestep temperature
     pub(crate) fn new(
-        sol_loc: SolarCellLocation,
+        sol_loc: SolarCollectorLoopLocation,
         area_module: f64,
         modules: usize,
         peak_collector_efficiency: f64,
@@ -2879,11 +2879,13 @@ impl SolarThermalSystem {
 
         self.air_temp_coll_loop.store(
             match self.sol_loc {
-                SolarCellLocation::Hs => air_temp_heated_room,
-                SolarCellLocation::Nhs => {
+                SolarCollectorLoopLocation::Hs => air_temp_heated_room,
+                SolarCollectorLoopLocation::Nhs => {
                     (air_temp_heated_room + self.external_conditions.air_temp(simulation_time)) / 2.
                 }
-                SolarCellLocation::Out => self.external_conditions.air_temp(simulation_time),
+                SolarCollectorLoopLocation::Out => {
+                    self.external_conditions.air_temp(simulation_time)
+                }
             },
             Ordering::SeqCst,
         );
@@ -3063,28 +3065,24 @@ mod tests {
         let solar_reflectivity_of_ground = vec![0.2; 8760];
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: Some(vec![ShadingObject {
@@ -3095,28 +3093,24 @@ mod tests {
                 ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
@@ -3376,56 +3370,48 @@ mod tests {
 
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
@@ -3600,28 +3586,24 @@ mod tests {
         ];
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: Some(vec![ShadingObject {
@@ -3632,28 +3614,24 @@ mod tests {
                 ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
@@ -3748,7 +3726,7 @@ mod tests {
         );
 
         let solar_thermal = Arc::new(Mutex::new(SolarThermalSystem::new(
-            SolarCellLocation::Out,
+            SolarCollectorLoopLocation::Out,
             3.,
             1,
             0.8,
@@ -4701,7 +4679,7 @@ mod tests {
             assert_relative_eq!(actual, expected[t_idx], max_relative = 1e-7);
         }
 
-        solar_thermal.lock().sol_loc = SolarCellLocation::Nhs;
+        solar_thermal.lock().sol_loc = SolarCollectorLoopLocation::Nhs;
         let expected = [
             0.,
             0.,
@@ -4738,7 +4716,7 @@ mod tests {
             assert_relative_eq!(actual, expected[t_idx], max_relative = 1e-7);
         }
 
-        solar_thermal.lock().sol_loc = SolarCellLocation::Hs;
+        solar_thermal.lock().sol_loc = SolarCollectorLoopLocation::Hs;
         let expected = [
             0.,
             0.,

@@ -934,6 +934,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         thermal_transmission_walls,
                         depth_basement_floor,
                         height_basement_walls,
+                        ..
                     } => init_unheated_basement(
                         *thermal_transmittance_of_floor_above_basement,
                         *thermal_transmission_walls,
@@ -2487,13 +2488,10 @@ pub(crate) struct WindowTreatment {
     #[allow(dead_code)]
     delta_r: f64,
     trans_red: f64,
-    _closing_irradiance: Option<f64>,
-    _opening_irradiance: Option<f64>,
     closing_irradiance_control: Option<Arc<Control>>,
     opening_irradiance_control: Option<Arc<Control>>,
     open_control: Option<Arc<Control>>,
     is_open: AtomicBool,
-    _waking_hour: Option<usize>,
     opening_delay_hrs: f64,
     time_last_adjusted: AtomicF64,
 }
@@ -2509,8 +2507,6 @@ impl WindowTreatment {
             controls: input.controls.into(),
             delta_r: input.delta_r,
             trans_red: input.trans_red,
-            _closing_irradiance: input.closing_irradiance,
-            _opening_irradiance: input.opening_irradiance,
             closing_irradiance_control: input
                 .closing_irradiance_control
                 .as_ref()
@@ -2524,7 +2520,6 @@ impl WindowTreatment {
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             is_open: input.is_open.unwrap_or_default().into(),
-            _waking_hour: input.waking_hour,
             opening_delay_hrs: input.opening_delay_hrs,
             time_last_adjusted: (current_hour as f64).into(),
         }
@@ -3787,6 +3782,7 @@ mod tests {
             thermal_transmission_walls: 0.5,
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
+            thermal_resistance_of_basement_walls: 0.5,
         };
         let be_m = BuildingElementGround::new(
             30.0,

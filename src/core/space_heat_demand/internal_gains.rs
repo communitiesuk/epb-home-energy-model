@@ -2,7 +2,7 @@ use crate::compare_floats::min_of_2;
 use crate::core::controls::time_control::SmartApplianceControl;
 use crate::core::energy_supply::energy_supply::EnergySupplyConnection;
 use crate::core::units::WATTS_PER_KILOWATT;
-use crate::input::{ApplianceGainsDetails, ApplianceGainsDetailsEvent, ApplianceLoadShifting};
+use crate::input::{ApplianceGainsDetails, ApplianceGainsEvent, ApplianceLoadShifting};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use anyhow::anyhow;
 use atomic_float::AtomicF64;
@@ -129,7 +129,7 @@ pub struct EventApplianceGains {
     _series_length: usize,
     load_shifting_metadata: Option<LoadShiftingMetadata>,
     max_shift: f64,
-    usage_events: Arc<RwLock<Vec<ApplianceGainsDetailsEvent>>>,
+    usage_events: Arc<RwLock<Vec<ApplianceGainsEvent>>>,
     total_floor_area: f64,
     total_power_supply: Vec<AtomicF64>,
     standby_power: f64,
@@ -261,10 +261,7 @@ impl EventApplianceGains {
         Ok(())
     }
 
-    fn process_event(
-        &self,
-        event: &ApplianceGainsDetailsEvent,
-    ) -> anyhow::Result<(usize, Vec<f64>)> {
+    fn process_event(&self, event: &ApplianceGainsEvent) -> anyhow::Result<(usize, Vec<f64>)> {
         let (start_idx, power_list_over_timesteps) = self.event_to_schedule(event);
         Ok((
             start_idx
@@ -293,7 +290,7 @@ impl EventApplianceGains {
         &self,
         start_idx: usize,
         power_list_over_timesteps: &[f64],
-        event: &ApplianceGainsDetailsEvent,
+        event: &ApplianceGainsEvent,
     ) -> anyhow::Result<usize> {
         // pos list will store the total weighted demand (including from the rest of the dwelling)
         // for the usage event happening at the intended time, or 1 timestep into the future, or 2, up to
@@ -367,8 +364,8 @@ impl EventApplianceGains {
             .expect("Position expected to be findable for minimum value in a list."))
     }
 
-    fn event_to_schedule(&self, usage_event: &ApplianceGainsDetailsEvent) -> (usize, Vec<f64>) {
-        let ApplianceGainsDetailsEvent {
+    fn event_to_schedule(&self, usage_event: &ApplianceGainsEvent) -> (usize, Vec<f64>) {
+        let ApplianceGainsEvent {
             start,
             duration,
             demand_w: demand_w_event,
@@ -426,7 +423,7 @@ impl TryFrom<&ApplianceLoadShifting> for LoadShiftingMetadata {
 
     fn try_from(input: &ApplianceLoadShifting) -> Result<Self, Self::Error> {
         Ok(Self {
-            weight_timeseries: input.weight_timeseries.as_ref().ok_or_else(|| anyhow!("Expected a weight timeseries to have been available as part of load shifting data for internal gains."))?.clone(),
+            weight_timeseries: input.weight_timeseries.clone(),
             demand_limit: input.demand_limit_weighted,
         })
     }
@@ -675,8 +672,8 @@ mod tests {
             &IndexMap::from([("mains elec".into(), power_timeseries)]),
             appliance_data.time_series_step,
             &simulation_time_for_event_appliance_gains.iter(),
-            Some(non_appliance_demand_24hr),
-            Some(battery24hr),
+            non_appliance_demand_24hr,
+            battery24hr,
             &IndexMap::from([("mains elec".into(), energy_supply)]),
             vec!["Clothes_drying".into()],
         )
@@ -695,7 +692,7 @@ mod tests {
 
     #[rstest]
     fn test_process_event(event_appliance_gains: EventApplianceGains) {
-        let event = ApplianceGainsDetailsEvent {
+        let event = ApplianceGainsEvent {
             start: 3.,
             duration: 1.75,
             demand_w: 900.0,
@@ -708,7 +705,7 @@ mod tests {
 
     #[rstest]
     fn test_event_to_schedule(event_appliance_gains: EventApplianceGains) {
-        let event = ApplianceGainsDetailsEvent {
+        let event = ApplianceGainsEvent {
             start: 3.,
             duration: 1.75,
             demand_w: 900.0,
@@ -789,7 +786,7 @@ mod tests {
 
     #[rstest]
     fn test_shift_iterative(event_appliance_gains: EventApplianceGains) {
-        let event = ApplianceGainsDetailsEvent {
+        let event = ApplianceGainsEvent {
             start: 2.33,
             duration: 1.0,
             demand_w: 900.,

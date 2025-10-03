@@ -3,7 +3,7 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
-use crate::input::{EnergySupplyTariff, FuelType, SecondarySupplyType};
+use crate::input::{EnergySupplyPriorityEntry, EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
@@ -129,7 +129,7 @@ pub(crate) struct EnergySupply {
     electric_battery: Option<ElectricBattery>,
     #[derivative(Debug = "ignore")]
     diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
-    priority: Option<Vec<SecondarySupplyType>>,
+    priority: Option<Vec<EnergySupplyPriorityEntry>>,
     is_export_capable: bool,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -157,7 +157,7 @@ impl EnergySupply {
         simulation_timesteps: usize,
         tariff_input: Option<EnergySupplyTariffInput>,
         electric_battery: Option<ElectricBattery>,
-        priority: Option<Vec<SecondarySupplyType>>,
+        priority: Option<Vec<EnergySupplyPriorityEntry>>,
         is_export_capable: Option<bool>,
     ) -> anyhow::Result<Self> {
         let tariff_info = if electric_battery
@@ -654,7 +654,7 @@ impl EnergySupply {
             }
             Some(priority) => {
                 for item in priority {
-                    if matches!(item, SecondarySupplyType::ElectricBattery)
+                    if matches!(item, EnergySupplyPriorityEntry::ElectricBattery)
                         && self.electric_battery.is_some()
                     {
                         let electric_battery = self.electric_battery.as_ref().unwrap();
@@ -681,7 +681,7 @@ impl EnergySupply {
                         demand_not_met -= energy_out_of_battery;
                         self.energy_out_of_battery[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
-                    } else if matches!(item, SecondarySupplyType::Diverter)
+                    } else if matches!(item, EnergySupplyPriorityEntry::Diverter)
                         && self.diverter.is_some()
                     {
                         let diverter = self.diverter.as_ref().unwrap();
@@ -789,7 +789,7 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub(crate) fn with_priority(mut self, priority: Vec<SecondarySupplyType>) -> Self {
+    pub(crate) fn with_priority(mut self, priority: Vec<EnergySupplyPriorityEntry>) -> Self {
         self.energy_supply.priority = Some(priority);
         self
     }
@@ -1449,8 +1449,8 @@ mod tests {
 
         // Set priority
         let priority = vec![
-            SecondarySupplyType::Diverter,
-            SecondarySupplyType::ElectricBattery,
+            EnergySupplyPriorityEntry::Diverter,
+            EnergySupplyPriorityEntry::ElectricBattery,
         ];
 
         let mut builder =

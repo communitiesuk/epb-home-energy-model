@@ -71,18 +71,16 @@ impl BoilerServiceWaterCombi {
                 rejected_energy_1,
                 storage_loss_factor_2,
                 rejected_factor_3,
-                daily_hot_water_usage,
+                daily_hw_usage: daily_hot_water_usage,
                 ..
             } => {
                 let (rejected_energy_1, storage_loss_factor_2, rejected_factor_3) =
                     match separate_dhw_tests {
-                        BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => (
-                            Some(rejected_energy_1),
-                            Some(storage_loss_factor_2),
-                            Some(rejected_factor_3),
-                        ),
+                        BoilerHotWaterTest::ML | BoilerHotWaterTest::MS => {
+                            (rejected_energy_1, storage_loss_factor_2, rejected_factor_3)
+                        }
                         BoilerHotWaterTest::MOnly => {
-                            (Some(rejected_energy_1), Some(storage_loss_factor_2), None)
+                            (rejected_energy_1, storage_loss_factor_2, None)
                         }
                         BoilerHotWaterTest::NoAdditionalTests => (None, None, None),
                     };
@@ -431,7 +429,7 @@ impl Boiler {
         match boiler_data {
             HeatSourceWetDetails::Boiler {
                 energy_supply: energy_supply_type,
-                energy_supply_auxiliary: _,
+                energy_supply_aux: _,
                 rated_power: boiler_power,
                 efficiency_full_load: full_load_gross,
                 efficiency_part_load: part_load_gross,
@@ -1094,7 +1092,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceControlType, HeatSourceWetType};
+    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
     use itertools::Itertools;
@@ -1107,7 +1105,7 @@ mod tests {
     pub fn boiler_data() -> HeatSourceWetDetails {
         HeatSourceWetDetails::Boiler {
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             rated_power: 24.0,
             efficiency_full_load: 0.88,
             efficiency_part_load: 0.986,
@@ -1157,56 +1155,48 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    number: 1,
                     start: 180.,
                     end: 135.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 2,
                     start: 135.,
                     end: 90.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 3,
                     start: 90.,
                     end: 90.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 4,
                     start: 45.,
                     end: 0.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 5,
                     start: 0.,
                     end: -45.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 6,
                     start: -45.,
                     end: -90.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 7,
                     start: -90.,
                     end: -135.,
                     shading_objects: None,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 8,
                     start: -135.,
                     end: -180.,
                     shading_objects: None,
@@ -1250,7 +1240,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,
@@ -1295,17 +1285,14 @@ mod tests {
         HotWaterSourceDetails::CombiBoiler {
             separate_dhw_tests: BoilerHotWaterTest::ML,
             // fuel_energy_1: 7.099, // we don't have this field currently - unsure whether this is a mistake in the test fixture
-            rejected_energy_1: 0.0004,
+            rejected_energy_1: Some(0.0004),
             // storage_loss_factor_1: 0.98328, // we don't have this field currently - unsure whether this is a mistake in the test fixture
-            fuel_energy_2: 13.078,
-            rejected_energy_2: 0.0004,
-            storage_loss_factor_2: 0.91574,
-            rejected_factor_3: 0.,
+            storage_loss_factor_2: Some(0.91574),
+            rejected_factor_3: Some(0.),
             setpoint_temp: None,
-            daily_hot_water_usage: 132.5802,
+            daily_hw_usage: 132.5802,
             cold_water_source: ColdWaterSourceType::MainsWater,
             heat_source_wet: HeatSourceWetType::Boiler,
-            control: HeatSourceControlType::HotWaterTimer,
         }
     }
 
@@ -1406,7 +1393,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 24.0,
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,
             boiler_location: HeatSourceLocation::Internal,
@@ -1536,7 +1523,7 @@ mod tests {
         HeatSourceWetDetails::Boiler {
             rated_power: 16.85,
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             efficiency_full_load: 0.868,
             efficiency_part_load: 0.952,
             boiler_location: HeatSourceLocation::Internal,

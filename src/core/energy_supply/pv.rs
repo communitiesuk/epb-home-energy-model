@@ -6,7 +6,7 @@ use crate::core::units::WATTS_PER_KILOWATT;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
-use crate::input::{InverterType, OnSiteGenerationVentilationStrategy};
+use crate::input::{InverterType, PhotovoltaicVentilationStrategy};
 use crate::simulation_time::SimulationTimeIteration;
 use std::f64::consts::{E, PI};
 use std::sync::Arc;
@@ -161,7 +161,7 @@ impl PhotovoltaicSystem {
     /// * `inverter_type` - type of inverter to help with calculation of efficiency of inverter when overshading
     pub fn new(
         peak_power: f64,
-        ventilation_strategy: OnSiteGenerationVentilationStrategy,
+        ventilation_strategy: PhotovoltaicVentilationStrategy,
         pitch: f64,
         orientation: f64,
         base_height: f64,
@@ -179,16 +179,14 @@ impl PhotovoltaicSystem {
         Self {
             peak_power,
             f_perf: match ventilation_strategy {
-                OnSiteGenerationVentilationStrategy::Unventilated => F_PERF_LOOKUP_UNVENTILATED,
-                OnSiteGenerationVentilationStrategy::ModeratelyVentilated => {
+                PhotovoltaicVentilationStrategy::Unventilated => F_PERF_LOOKUP_UNVENTILATED,
+                PhotovoltaicVentilationStrategy::ModeratelyVentilated => {
                     F_PERF_LOOKUP_MODERATELY_VENTILATED
                 }
-                OnSiteGenerationVentilationStrategy::StronglyOrForcedVentilated => {
+                PhotovoltaicVentilationStrategy::StronglyOrForcedVentilated => {
                     F_PERF_LOOKUP_STRONGLY_OR_FORCED_VENTILATED
                 }
-                OnSiteGenerationVentilationStrategy::RearSurfaceFree => {
-                    F_PERF_LOOKUP_REAR_SURFACE_FREE
-                }
+                PhotovoltaicVentilationStrategy::RearSurfaceFree => F_PERF_LOOKUP_REAR_SURFACE_FREE,
             },
             pitch,
             orientation,
@@ -368,13 +366,11 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    number: 1,
                     start: 180.,
                     end: 135.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 2,
                     start: 135.,
                     end: 90.,
                     shading_objects: Some(vec![ShadingObject {
@@ -385,13 +381,11 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 3,
                     start: 90.,
                     end: 45.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 4,
                     start: 45.,
                     end: 0.,
                     shading_objects: Some(vec![
@@ -409,7 +403,6 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 5,
                     start: 0.,
                     end: -45.,
                     shading_objects: Some(vec![ShadingObject {
@@ -420,19 +413,16 @@ mod tests {
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 6,
                     start: -45.,
                     end: -90.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 7,
                     start: -90.,
                     end: -135.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 8,
                     start: -135.,
                     end: -180.,
                     ..Default::default()
@@ -455,7 +445,7 @@ mod tests {
                 .unwrap();
         let pv = PhotovoltaicSystem::new(
             2.5,
-            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
             0.,
             10.,
@@ -485,7 +475,7 @@ mod tests {
             EnergySupply::connection(energy_supply.clone(), "pv generation with shading").unwrap();
         let pv = PhotovoltaicSystem::new(
             2.5,
-            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
             0.,
             10.,

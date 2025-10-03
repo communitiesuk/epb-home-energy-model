@@ -18,8 +18,8 @@ use crate::corpus::TempInternalAirFn;
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
-    HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType, HeatPumpTestDatum,
-    HeatSourceWetDetails, HotWaterSourceDetails,
+    HeatPumpHotWaterTestData, HeatPumpSinkType, HeatPumpSourceType,
+    HeatPumpTestDatum as HeatPumpTestDatumInput, HeatSourceWetDetails, HotWaterSourceDetails,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
@@ -103,11 +103,11 @@ fn carnot_cop(temp_source: f64, temp_outlet: f64, temp_diff_limit_low: Option<f6
 ///                - temp_test (in Celsius)
 fn interpolate_exhaust_air_heat_pump_test_data(
     throughput_exhaust_air: f64,
-    test_data: &Vec<HeatPumpTestDatum>,
+    test_data: &Vec<HeatPumpTestDatumInput>,
     source_type: HeatPumpSourceType,
 ) -> anyhow::Result<(f64, Vec<HeatPumpTestDatum>)> {
     // split test records into different lists by air flow rate
-    let mut test_data_by_air_flow_rate: HashMap<OrderedFloat<f64>, Vec<&HeatPumpTestDatum>> =
+    let mut test_data_by_air_flow_rate: HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> =
         Default::default();
     for test_data_record in test_data {
         if test_data_record.air_flow_rate.is_none() {
@@ -116,7 +116,7 @@ fn interpolate_exhaust_air_heat_pump_test_data(
         test_data_by_air_flow_rate
             .entry(OrderedFloat(test_data_record.air_flow_rate.unwrap()))
             .or_default()
-            .push(test_data_record);
+            .push(HeatPumpTestDatum::from(test_data_record.clone()));
     }
 
     // check that all lists have same combination of design flow temp and test letter
@@ -218,6 +218,51 @@ fn interpolate_exhaust_air_heat_pump_test_data(
         lowest_air_flow_rate_in_test_data.to_owned().to_owned(),
         test_data_interp_by_air_flow_rate,
     ))
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct HeatPumpTestDatum {
+    air_flow_rate: Option<f64>,
+    test_letter: TestLetter,
+    capacity: f64,
+    cop: f64,
+    degradation_coefficient: f64,
+    design_flow_temp: f64,
+    temp_outlet: f64,
+    temp_source: f64,
+    temp_test: f64,
+    eahp_mixed_ext_air_ratio: Option<f64>,
+    ext_air_ratio: Option<f64>,
+}
+
+impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
+    fn from(value: HeatPumpTestDatumInput) -> Self {
+        let HeatPumpTestDatumInput {
+            air_flow_rate,
+            test_letter,
+            capacity,
+            cop,
+            degradation_coefficient,
+            design_flow_temp,
+            temp_outlet,
+            temp_source,
+            temp_test,
+            eahp_mixed_ext_air_ratio,
+        } = value;
+        Self {
+            air_flow_rate,
+            test_letter,
+            capacity,
+            cop,
+            degradation_coefficient,
+            design_flow_temp,
+            temp_outlet,
+            temp_source,
+            temp_test,
+            eahp_mixed_ext_air_ratio,
+            ext_air_ratio: Default::default(),
+        }
+    }
 }
 
 //part of the thermal losses transmitted to the room
@@ -487,7 +532,6 @@ pub(crate) enum TestLetter {
     C,
     D,
     F,
-    F2, // this appears in some example JSON
 }
 
 impl std::fmt::Display for TestLetter {
@@ -501,7 +545,6 @@ impl std::fmt::Display for TestLetter {
                 TestLetter::C => "C",
                 TestLetter::D => "D",
                 TestLetter::F => "F",
-                TestLetter::F2 => "F2",
             }
         )
     }
@@ -618,7 +661,7 @@ const TEST_LETTERS_NON_BIVALENT: [char; 4] = ['A', 'B', 'C', 'D'];
 const TEST_LETTERS_ALL: [char; 5] = ['A', 'B', 'C', 'D', 'F'];
 
 impl HeatPumpTestData {
-    pub fn new(data: Vec<HeatPumpTestDatum>) -> anyhow::Result<Self> {
+    pub(crate) fn new(data: Vec<HeatPumpTestDatum>) -> anyhow::Result<Self> {
         // keyed by design flow temp
         let mut test_data: HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>> = Default::default();
         let mut dsgn_flow_temps: Vec<OrderedFloat<f64>> = Default::default();
@@ -2078,7 +2121,7 @@ impl HeatPump {
         let (time_delay_backup, power_max_backup) = match backup_ctrl {
             HeatPumpBackupControlType::None => (None, Some(0.)),
             _ => (
-                Some(time_delay_backup),
+                time_delay_backup,
                 match boiler {
                     None => power_max_backup,
                     Some(_) => Some(0.),
@@ -2093,7 +2136,7 @@ impl HeatPump {
 
         let temp_return_feed_max = match sink_type {
             HeatPumpSinkType::Air => None,
-            _ => Some(celsius_to_kelvin(temp_return_feed_max)?),
+            _ => temp_return_feed_max.map(celsius_to_kelvin).transpose()?,
         };
         let temp_distribution_heat_network = match source_type {
             HeatPumpSourceType::HeatNetwork => *temp_distribution_heat_network,
@@ -2119,7 +2162,7 @@ impl HeatPump {
                     test_data_after_interpolation,
                 )
             } else {
-                (1.0, None, test_data)
+                (1.0, None, test_data.into_iter().map(Into::into).collect())
             };
 
         // TODO (from Python) For now, disable exhaust air heat pump when conditions are out of
@@ -2242,7 +2285,7 @@ impl HeatPump {
             temp_lower_op_limit,
             temp_diff_flow_return_min,
             var_flow_temp_ctrl_during_test,
-            power_heating_circ_pump,
+            power_heating_circ_pump: power_heating_circ_pump.unwrap_or(0.),
             power_heating_warm_air_fan,
             power_source_circ_pump,
             power_standby,
@@ -4409,7 +4452,7 @@ impl HeatPumpHotWaterOnly {
             l: test_data.l.as_ref().map(|profile_data| {
                 let HeatPumpHotWaterOnlyTestDatum {
                     cop_dhw,
-                    hw_tapping_prof_daily,
+                    hw_tapping_prof_daily_total: hw_tapping_prof_daily,
                     energy_input_measured,
                     power_standby,
                     hw_vessel_loss_daily,
@@ -4425,7 +4468,7 @@ impl HeatPumpHotWaterOnly {
             m: {
                 let HeatPumpHotWaterOnlyTestDatum {
                     cop_dhw,
-                    hw_tapping_prof_daily,
+                    hw_tapping_prof_daily_total: hw_tapping_prof_daily,
                     energy_input_measured,
                     power_standby,
                     hw_vessel_loss_daily,
@@ -4576,8 +4619,7 @@ mod tests {
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::input::{
-        BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceControlType,
-        HeatSourceLocation, HeatSourceWetType,
+        BoilerHotWaterTest, ColdWaterSourceType, FuelType, HeatSourceLocation, HeatSourceWetType,
     };
     use crate::simulation_time::SimulationTime;
     use crate::{core::material_properties::WATER, external_conditions::ShadingSegment};
@@ -4589,7 +4631,7 @@ mod tests {
     #[rstest]
     pub fn test_interpolate_exhaust_air_heat_pump_test_data() {
         let data_eahp = vec![
-            HeatPumpTestDatum {
+            HeatPumpTestDatumInput {
                 air_flow_rate: Some(100.0),
                 test_letter: TestLetter::A,
                 capacity: 5.0,
@@ -4599,10 +4641,9 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: Some(0.25),
             },
-            HeatPumpTestDatum {
+            HeatPumpTestDatumInput {
                 air_flow_rate: Some(200.0),
                 test_letter: TestLetter::A,
                 capacity: 6.0,
@@ -4612,10 +4653,9 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: Some(0.75),
             },
-            HeatPumpTestDatum {
+            HeatPumpTestDatumInput {
                 air_flow_rate: Some(100.0),
                 test_letter: TestLetter::B,
                 capacity: 5.5,
@@ -4625,10 +4665,9 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: Some(0.25),
             },
-            HeatPumpTestDatum {
+            HeatPumpTestDatumInput {
                 air_flow_rate: Some(200.0),
                 test_letter: TestLetter::B,
                 capacity: 6.0,
@@ -4638,7 +4677,6 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: Some(0.75),
             },
         ];
@@ -4653,8 +4691,8 @@ mod tests {
                 temp_outlet: 55.,
                 temp_source: 20.,
                 temp_test: -7.,
-                ext_air_ratio: Some(0.45),
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: Some(0.45),
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4666,8 +4704,8 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 20.,
                 temp_test: 2.,
-                ext_air_ratio: Some(0.45),
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: Some(0.45),
             },
         ];
 
@@ -4708,8 +4746,8 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 0.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4721,8 +4759,8 @@ mod tests {
                 temp_outlet: 30.,
                 temp_source: 0.,
                 temp_test: 2.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4734,8 +4772,8 @@ mod tests {
                 temp_outlet: 27.,
                 temp_source: 0.,
                 temp_test: 7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4747,8 +4785,8 @@ mod tests {
                 temp_outlet: 24.,
                 temp_source: 0.,
                 temp_test: 12.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4760,8 +4798,8 @@ mod tests {
                 temp_outlet: 34.,
                 temp_source: 0.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4773,8 +4811,8 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4786,8 +4824,8 @@ mod tests {
                 temp_outlet: 42.,
                 temp_source: 0.,
                 temp_test: 2.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4799,8 +4837,8 @@ mod tests {
                 temp_outlet: 36.,
                 temp_source: 0.,
                 temp_test: 7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4812,8 +4850,8 @@ mod tests {
                 temp_outlet: 30.,
                 temp_source: 0.,
                 temp_test: 12.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
@@ -4825,12 +4863,12 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
             HeatPumpTestDatum {
                 air_flow_rate: None,
-                test_letter: TestLetter::F2,
+                test_letter: TestLetter::F,
                 capacity: 8.8,
                 cop: 3.2,
                 degradation_coefficient: 0.90,
@@ -4838,8 +4876,8 @@ mod tests {
                 temp_outlet: 52.,
                 temp_source: 0.,
                 temp_test: -7.,
-                ext_air_ratio: None,
                 eahp_mixed_ext_air_ratio: None,
+                ext_air_ratio: None,
             },
         ]
     }
@@ -4955,7 +4993,7 @@ mod tests {
                 },
                 CompleteHeatPumpTestDatum {
                     air_flow_rate: None,
-                    test_letter: TestLetter::F2,
+                    test_letter: TestLetter::F,
                     capacity: 8.8,
                     carnot_cop: 6.252884615408662,
                     cop: 3.2,
@@ -5871,14 +5909,12 @@ mod tests {
         let direct_beam_radiations = vec![420., 750.];
         let shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
@@ -5929,7 +5965,7 @@ mod tests {
     ) -> Boiler {
         let boiler_details = HeatSourceWetDetails::Boiler {
             energy_supply: "mains gas".into(),
-            energy_supply_auxiliary: "mains elec".into(),
+            energy_supply_aux: "mains elec".into(),
             rated_power: 24.,
             efficiency_full_load: 0.891,
             efficiency_part_load: 0.991,
@@ -6567,15 +6603,12 @@ mod tests {
         let boiler_data: HotWaterSourceDetails = HotWaterSourceDetails::CombiBoiler {
             cold_water_source: ColdWaterSourceType::MainsWater,
             heat_source_wet: HeatSourceWetType::HeatPump,
-            control: HeatSourceControlType::HotWaterTimer,
             separate_dhw_tests: BoilerHotWaterTest::ML,
-            rejected_energy_1: 0.0004,
-            fuel_energy_2: 13.078,
-            rejected_energy_2: 0.0004,
-            storage_loss_factor_2: 0.91574,
-            rejected_factor_3: 0.,
+            rejected_energy_1: Some(0.0004),
+            storage_loss_factor_2: Some(0.91574),
+            rejected_factor_3: Some(0.),
             setpoint_temp: Some(60.),
-            daily_hot_water_usage: 120.,
+            daily_hw_usage: 120.,
         };
         let service_name = "service_hot_water_combi";
         let temp_hot_water = 50.;
@@ -9079,14 +9112,14 @@ mod tests {
         let test_data: HeatPumpHotWaterTestData = HeatPumpHotWaterTestData {
             l: Some(HeatPumpHotWaterOnlyTestDatum {
                 cop_dhw: 2.5,
-                hw_tapping_prof_daily: 11.655,
+                hw_tapping_prof_daily_total: 11.655,
                 energy_input_measured: 4.6,
                 power_standby: 0.03,
                 hw_vessel_loss_daily: 1.6,
             }),
             m: HeatPumpHotWaterOnlyTestDatum {
                 cop_dhw: 2.7,
-                hw_tapping_prof_daily: 5.845,
+                hw_tapping_prof_daily_total: 5.845,
                 energy_input_measured: 2.15,
                 power_standby: 0.02,
                 hw_vessel_loss_daily: 1.18,

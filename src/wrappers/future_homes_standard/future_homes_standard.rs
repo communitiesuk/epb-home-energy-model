@@ -347,9 +347,9 @@ pub(super) fn calc_final_rates(
                 FuelType::Custom => {
                     let factor = energy_supply_details.factor.expect("Expected custom fuel type to have associated factor values as part of energy supply input.");
                     (
-                        vec![factor.emissions],
-                        vec![factor.emissions_including_out_of_scope],
-                        vec![factor.primary_energy_factor],
+                        vec![factor.emissions_factor_kg_co2e_k_wh],
+                        vec![factor.emissions_factor_kg_co2e_k_wh_including_out_of_scope_emissions],
+                        vec![factor.primary_energy_factor_k_wh_k_wh_delivered],
                     )
                 }
                 FuelType::Electricity => {
