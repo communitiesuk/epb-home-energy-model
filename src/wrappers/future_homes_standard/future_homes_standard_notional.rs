@@ -1098,7 +1098,7 @@ fn calc_daily_hw_demand(
 
     // Populate the event_schedules dictionary using the modified expand_events function
     for (event_type, event_name) in event_types_names_list {
-        let event_data = input.water_heating_event_by_type_and_name(event_type, event_name)?.ok_or_else(|| anyhow!("FHS Notional wrapper expected water heating events with type '{event_type:?}' and name '{event_name}'"))?.iter().map(Into::into).collect::<Vec<_>>();
+        let event_data = input.water_heating_event_by_type_and_name(event_type, event_name)?.ok_or_else(|| anyhow!("FHS Notional wrapper expected water heating events with type '{event_type}' and name '{event_name}'"))?.iter().map(Into::into).collect::<Vec<_>>();
         event_schedules = expand_events(
             event_data,
             sim_timestep,
@@ -1636,8 +1636,8 @@ mod tests {
             },
             "Leaks": {
                 "ventilation_zone_height": 6,
-                "test_pressure": 50,
-                "test_result": 4,
+                "test_pressure": 50.,
+                "test_result": 4.,
                 "env_area": 220
             },
             "MechanicalVentilation": {
@@ -1694,8 +1694,8 @@ mod tests {
             },
             "Leaks": {
                 "ventilation_zone_height": 6,
-                "test_pressure": 50,
-                "test_result": 5,
+                "test_pressure": 50.,
+                "test_result": 5.,
                 "env_area": 220
             },
             "MechanicalVentilation": {
@@ -1938,7 +1938,7 @@ mod tests {
             &mut test_input,
             linear_reduction_factor,
             &window,
-            "zone 1",
+            "window 0",
         )
         .unwrap();
 
@@ -2059,7 +2059,7 @@ mod tests {
         let expected_baths = json!({ "medium": {
             "ColdWaterSource": cold_water_source_type_string,
             "flowrate": 12,
-            "size": 180
+            "size": 180.
         }})
         .as_object()
         .unwrap()
@@ -2189,11 +2189,11 @@ mod tests {
 
         let expected_primary_pipework = json!([{
             "location": "internal",
-            "internal_diameter_mm": 26,
-                "external_diameter_mm": 28,
+            "internal_diameter_mm": 26.,
+                "external_diameter_mm": 28.,
                 "length": 2.5,
                 "insulation_thermal_conductivity": 0.035,
-                "insulation_thickness_mm": 35,
+                "insulation_thickness_mm": 35.,
                 "surface_reflectivity": false,
                 "pipe_contents": "water"
         }]);
@@ -2767,17 +2767,17 @@ mod tests {
     fn test_add_solar_pv_house_only(mut test_input: InputForProcessing) {
         let expected_result = json!({"PV1": {
                 "EnergySupply": "mains elec",
-                "orientation360": 180,
+                "orientation360": 180.,
                 "peak_power": 4.444444444444445,
                 "inverter_peak_power_ac": 4.444444444444445,
                 "inverter_peak_power_dc": 4.444444444444445,
                 "inverter_is_inside": false,
                 "inverter_type": "optimised_inverter",
-                "pitch": 45,
+                "pitch": 45.,
                 "type": "PhotovoltaicSystem",
                 "ventilation_strategy": "moderately_ventilated",
                 "shading": [],
-                "base_height": 1,
+                "base_height": 1.,
                 "width": 6.324555320336759,
                 "height": 3.1622776601683795
                 }
@@ -2790,7 +2790,7 @@ mod tests {
         let is_fee = false;
         let total_floor_area = calc_tfa(&test_input).unwrap();
 
-        let _ = add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area);
+        add_solar_pv(&mut test_input, is_notional_a, is_fee, total_floor_area).unwrap();
 
         assert_eq!(
             test_input.on_site_generation().unwrap().unwrap().to_owned(),
@@ -2968,7 +2968,7 @@ mod tests {
                     "Zone": "zone 1",
                     "advanced_start": 1,
                     "design_flow_temp": 45,
-                    "design_flow_rate": 12,
+                    "design_flow_rate": 12.,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
@@ -2979,7 +2979,7 @@ mod tests {
                     "thermal_mass": 0.0,
                     "emitters": [{"wet_emitter_type": "radiator",
                           "frac_convective": 0.7,
-                          "c": 0,
+                          "c": 0.,
                           "n": 1.34}],
                     "type": "WetDistribution"
                 },
@@ -2990,7 +2990,7 @@ mod tests {
                     "Zone": "zone 2",
                     "advanced_start": 1,
                     "design_flow_temp": 45,
-                    "design_flow_rate": 12,
+                    "design_flow_rate": 12.,
                     "ecodesign_controller": {
                         "ecodesign_control_class": 2,
                         "max_outdoor_temp": 20,
@@ -3001,7 +3001,7 @@ mod tests {
                     "thermal_mass": 0.0,
                     "emitters": [{"wet_emitter_type": "radiator",
                           "frac_convective": 0.7,
-                          "c": 0,
+                          "c": 0.,
                           "n": 1.34}],
                     "type": "WetDistribution"
                 }
