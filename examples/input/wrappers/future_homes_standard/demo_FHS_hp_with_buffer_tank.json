@@ -15,7 +15,7 @@
 			{"number": 1, "start360": 0, "end360": 45},
 			{"number": 2, "start360": 45, "end360": 90},
 			{"number": 3, "start360": 90, "end360": 135},
-			{"number": 4, "start360": 135, "end360": 180, 
+			{"number": 4, "start360": 135, "end360": 180,
 				"shading": [
 					{"type": "obstacle", "height": 10.5, "distance": 12}
 				]
@@ -25,7 +25,7 @@
 			{"number": 7, "start360": 270, "end360": 315},
 			{"number": 8, "start360": 315, "end360": 360}
 		]
-		
+
 	},
 	"InternalGains": {
 		"metabolic gains": {
@@ -119,7 +119,6 @@
 			"type": "StorageTank",
 			"volume": 80.0,
 			"daily_losses": 1.68,
-			"min_temp": 52.0,
 			"init_temp": 55.0,
 			"ColdWaterSource": "mains water",
 			"HeatSource": {
@@ -322,7 +321,6 @@
 	"SpaceHeatSystem": {
 		"zone 1 radiators": {
 			"type": "WetDistribution",
-			"wet_emitter_type": "radiators",
 			"advanced_start": 1,
 			"thermal_mass": 0.14,
 			"emitters":[
@@ -359,7 +357,6 @@
 		},
 		"zone 2 radiators": {
 			"type": "WetDistribution",
-			"wet_emitter_type": "radiators",
 			"advanced_start": 1,
 			"thermal_mass": 0.14,
 			"emitters":[
@@ -415,9 +412,9 @@
 		"storeys_in_building": 1,
 		"build_type": "house"
 	},
-	
+
 		"InfiltrationVentilation": {
-		"cross_vent_factor": true,
+		"cross_vent_possible": true,
 		"shield_class": "Normal",
 		"terrain_class": "OpenField",
 		"ventilation_zone_base_height": 2.5,
@@ -448,19 +445,13 @@
 		"MechanicalVentilation": {
 			"mechvent1":{
 				"sup_air_flw_ctrl": "ODA",
-				"sup_air_temp_ctrl": "CONST",
-				"design_zone_cooling_covered_by_mech_vent": 3.4,
-				"design_zone_heating_covered_by_mech_vent": 1,
+				"sup_air_temp_ctrl": "NO_CTRL",
 				"vent_type": "Centralised continuous MEV",
 				"measured_fan_power": 12.26,
 				"measured_air_flow_rate":37,
 				"EnergySupply": "mains elec",
 				"design_outdoor_air_flow_rate": 80
 			}
-		},
-		"PDUs": {
-		},
-		"Cowls": {
 		},
 		"CombustionAppliances":{
 			"Fireplace":{
