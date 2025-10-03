@@ -542,6 +542,11 @@ mod tests {
 
         let mut electric_battery_inside = electric_battery;
         electric_battery_inside.battery_location = BatteryLocation::Inside;
+
+        assert_relative_eq!(
+            electric_battery_inside.limit_capacity_due_to_temp(simulation_time),
+            1.
+        );
     }
 
     // Skipping Python's test_limit_capacity_due_to_temp_invalid_location as battery location is an
@@ -596,9 +601,108 @@ mod tests {
         let simulation_time = simulation_time.iter().next().unwrap();
         let mut electric_battery = electric_battery;
         electric_battery.minimum_charge_rate = 20.;
+        electric_battery.charge_discharge_battery(-10., false, simulation_time);
 
         assert_eq!(
             electric_battery.charge_discharge_battery(10., false, simulation_time),
+            0.
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_no_grid(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(-10., true, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery.charge_discharge_battery(10., true, simulation_time),
+            0.,
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_grid(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(-10., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery.charge_discharge_battery(10., false, simulation_time),
+            1.121472,
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_total_time(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.,
+        );
+
+        electric_battery.charge_discharge_battery(-1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            2. / 3.
+        );
+
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            2. / 3.
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_total_time_no_charge(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        let mut electric_battery = electric_battery;
+        electric_battery.minimum_charge_rate = 20.;
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+
+        electric_battery.charge_discharge_battery(-1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
             0.
         );
     }
