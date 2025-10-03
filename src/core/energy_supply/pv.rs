@@ -619,4 +619,45 @@ mod tests {
             );
         }
     }
+
+    #[rstest]
+    fn test_inverter_efficiency_lookup(pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>)) {
+        let (pv, _) = pv;
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::StringInverter, 0.9),
+            0.8613180000000007
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::StringInverter, 0.5),
+            0.7419000000000002
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::OptimisedInverter, 0.9),
+            0.993716
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::OptimisedInverter, 0.3),
+            1.
+        );
+    }
+
+    // Skipping Python's test_inverter_efficiency_lookup_invalid_type and test_produce_energy_invalid_inverter_type
+    // as inverter type is an enum in the Rust so can't be invalid
+
+    #[rstest]
+    fn test_produce_energy_zero_ratio_of_rated_output(
+        pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        // Test that ratio_of_rated_output of 0 returns 0 energy
+        let (mut pv, _) = pv;
+        let simulation_time = simulation_time.iter().next().unwrap();
+        pv.peak_power = 0.;
+
+        assert_eq!(pv.produce_energy(simulation_time), (0., 0.));
+    }
 }
