@@ -1,4 +1,5 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
+use crate::core::units::HOURS_PER_DAY;
 use crate::{
     core::{
         controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
@@ -752,7 +753,7 @@ impl ElecStorageHeater {
                 // the next day’s heating demand based on external temperature, room temperature
                 // settings and heat demand periods.
 
-                let energy_to_store = charge_control.energy_to_store(
+                let mut energy_to_store = charge_control.energy_to_store(
                     self.demand_met.load(Ordering::SeqCst)
                         + self.demand_unmet.load(Ordering::SeqCst),
                     self.zone_setpoint_init,
@@ -761,10 +762,9 @@ impl ElecStorageHeater {
 
                 // None means not enough past data to do the calculation (Initial 24h of the calculation)
                 // We go for a full load of the hhrsh
-
-                // TODO Python handles a None case from energy_to_store here, which is currently not possible in the Rust
-                // if energy_to_store is None:
-                // energy_to_store = self.__pwr_in * units.hours_per_day
+                if energy_to_store.is_nan() {
+                    energy_to_store = self.pwr_in * HOURS_PER_DAY as f64;
+                }
 
                 let target_charge_hhrsh = if energy_to_store > 0. {
                     let current_state_of_charge = self.state_of_charge.load(Ordering::SeqCst);
