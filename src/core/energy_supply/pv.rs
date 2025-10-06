@@ -645,9 +645,6 @@ mod tests {
         );
     }
 
-    // Skipping Python's test_inverter_efficiency_lookup_invalid_type and test_produce_energy_invalid_inverter_type
-    // as inverter type is an enum in the Rust so can't be invalid
-
     #[rstest]
     fn test_produce_energy_zero_ratio_of_rated_output(
         pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),

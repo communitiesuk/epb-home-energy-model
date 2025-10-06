@@ -549,9 +549,6 @@ mod tests {
         );
     }
 
-    // Skipping Python's test_limit_capacity_due_to_temp_invalid_location as battery location is an
-    // enum in the Rust so can't be invalid
-
     #[rstest]
     fn test_capacity_temp_equ(electric_battery: ElectricBattery) {
         assert_relative_eq!(ElectricBattery::capacity_temp_equ(5.), 0.9043);
