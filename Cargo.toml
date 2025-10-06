@@ -30,7 +30,7 @@ jsonschema = "0.33.0"
 nalgebra = "0.33.2"
 ode_solvers = { version = "0.5.0", git = "https://github.com/russ-madetech/ode-solvers", branch = "events" }
 ordered-float = "5.0.0"
-parking_lot = { version = "0.12.3", features = ["hardware-lock-elision"] }
+parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 partial_application = "0.2.1"
 polyfit-rs = "0.2.1"
 rand = "0.9.1"
