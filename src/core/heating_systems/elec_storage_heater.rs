@@ -1632,6 +1632,100 @@ mod tests {
     }
 
     #[rstest]
+    fn test_electric_charge_hhrsh_negative_heat_retention_ratio(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let mut heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        heater.heat_retention_ratio = -0.9;
+        heater.state_of_charge.store(0.5, Ordering::SeqCst);
+
+        let expected_target_elec_charge = [
+            1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 0., 0.,
+            0., 0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_electric_charge_invalid_logic_type(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::HeatBattery,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+
+        heater
+            .target_electric_charge(simulation_time.iter().current_iteration())
+            .unwrap();
+    }
+
+    #[rstest]
     pub fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
