@@ -1764,6 +1764,399 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "known issue (energy_output)"]
+    pub fn test_demand_energy_no_demand(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater,
+    ) {
+        let expected_energy = [
+            0.019999999999999997,
+            0.030419151282454364,
+            0.04762390188197366,
+            0.0488,
+            0.04700000000000001,
+            0.0458,
+            0.046400000000000004,
+            0.038,
+            0.04932504653147142,
+            0.04902998233007885,
+            0.0487366832133454,
+            0.0484451386224712,
+            0.048155338061819486,
+            0.04786727109853878,
+            0.047580927362187296,
+            0.047296296544359594,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.04701336839831551,
+            0.046732132738611196,
+            0.046452579440732555,
+            0.04617469844073066,
+        ]; // Expected energy for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let energy_out = elec_storage_heater.demand_energy(0., &t_it).unwrap();
+            assert_relative_eq!(energy_out, expected_energy[t_idx], max_relative = 1e-1);
+        }
+    }
+
+    #[rstest]
+    fn test_demand_energy_detailed_results(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            1.,
+            1.,
+            10.,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            1.,
+            10.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            external_conditions, // NOTE this is None in Python
+            Some(true),
+        )
+        .unwrap();
+
+        let expected = [
+            StorageHeaterDetailedResult {
+                timestep_idx: 0,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.1360608282280595,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999999,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.08639391717719404,
+                final_soc: 0.08639391717719405,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 1,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.35997826917949083,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.15039609025924494,
+                final_soc: 0.15039609025924494,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 2,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.525860161130055,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.1978100741462394,
+                final_soc: 0.19781007414623947,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 3,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.6487484969563722,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999997,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.23293522445060216,
+                final_soc: 0.2329352244506022,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 4,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.7397864472877566,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2589565797218265,
+                final_soc: 0.2589565797218265,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 5,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.8072290379637572,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2782336759254508,
+                final_soc: 0.2782336759254508,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 6,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.8571917472765138,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999999,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.29251450119779937,
+                final_soc: 0.29251450119779937,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 7,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.894205037502244,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.3030939974475749,
+                final_soc: 0.303093997447575,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 8,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.7855640835379172,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2245375890937832,
+                final_soc: 0.2245375890937832,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 9,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.5819603347886747,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.16634155561491576,
+                final_soc: 0.16634155561491573,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 10,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.4311269125454673,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.12322886436036903,
+                final_soc: 0.12322886436036903,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 11,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.3193867248864036,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.09129019187172868,
+                final_soc: 0.09129019187172868,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 12,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.23660753075068583,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.0676294387966601,
+                final_soc: 0.06762943879666009,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 13,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.17528317748916877,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.050101121047743225,
+                final_soc: 0.050101121047743225,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 14,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.1298529738329292,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.037115823664450306,
+                final_soc: 0.037115823664450306,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 15,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.09619745025800532,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.027496078638649776,
+                final_soc: 0.02749607863864978,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 16,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.20732566160442942,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.10676351247820681,
+                final_soc: 0.10676351247820684,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 17,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.41277253407174264,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.16548625907103254,
+                final_soc: 0.16548625907103257,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 18,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.5649711048613184,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.20898914858490067,
+                final_soc: 0.2089891485849007,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 19,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.6777226070926419,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.24121688787563644,
+                final_soc: 0.24121688787563647,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 20,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.625190008414656,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.17869788703417083,
+                final_soc: 0.17869788703417083,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 21,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.46315225418860434,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.1323826616153104,
+                final_soc: 0.13238266161531043,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 22,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.34311168983701723,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.09807149263160868,
+                final_soc: 0.09807149263160866,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 23,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.25418342247140796,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.07265315038446787,
+                final_soc: 0.07265315038446787,
+                time_used_max: 1.0,
+            },
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            heater.demand_energy(5., &t_it).unwrap();
+        }
+
+        let actual = heater.output_esh_results().unwrap();
+
+        let assert_f64 = |expected: f64, actual: f64| {
+            assert_relative_eq!(expected, actual, max_relative = 1e-6);
+        };
+
+        for t_idx in 0..24 {
+            assert_eq!(expected[t_idx].timestep_idx, actual[t_idx].timestep_idx);
+            assert_eq!(expected[t_idx].n_units, actual[t_idx].n_units);
+            assert_f64(expected[t_idx].energy_demand, actual[t_idx].energy_demand);
+            assert_f64(
+                expected[t_idx].energy_delivered,
+                actual[t_idx].energy_delivered,
+            );
+            assert_f64(expected[t_idx].energy_instant, actual[t_idx].energy_instant);
+            assert_f64(expected[t_idx].energy_charged, actual[t_idx].energy_charged);
+            assert_f64(expected[t_idx].energy_for_fan, actual[t_idx].energy_for_fan);
+            assert_f64(
+                expected[t_idx].state_of_charge,
+                actual[t_idx].state_of_charge,
+            );
+            assert_f64(expected[t_idx].final_soc, actual[t_idx].final_soc);
+            assert_f64(expected[t_idx].time_used_max, actual[t_idx].time_used_max);
+        }
+    }
+
+    #[rstest]
     #[ignore = "known issue"]
     pub fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
