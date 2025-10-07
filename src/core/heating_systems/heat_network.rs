@@ -621,6 +621,29 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn test_get_cold_water_source(
+        heat_network_service_water_direct: HeatNetworkServiceWaterDirect,
+    ) {
+        let expected = &heat_network_service_water_direct.cold_feed;
+        let actual = heat_network_service_water_direct.get_cold_water_source();
+
+        match (actual, expected) {
+            (
+                WaterSourceWithTemperature::ColdWaterSource(actual),
+                WaterSourceWithTemperature::ColdWaterSource(expected),
+            ) => {
+                assert_eq!(actual, expected);
+            }
+            _ => panic!("Expected ColdWaterSource variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_get_temp_hot_water(heat_network_service_water_direct: HeatNetworkServiceWaterDirect) {
+        assert_eq!(heat_network_service_water_direct.temp_hot_water(), 60.);
+    }
+
     #[fixture]
     #[once]
     fn heat_network_for_water_storage(
