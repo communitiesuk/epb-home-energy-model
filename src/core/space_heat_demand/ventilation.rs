@@ -1193,7 +1193,7 @@ impl MechanicalVentilation {
 
         Self {
             _theta_z_t: 0., // TODO (from Python) get Thermal zone temperature - used for LOAD
-            sup_air_flw_ctrl: SupplyAirFlowRateControlType::ODA, // TODO (from Python) currently hard coded until load comp implemented
+            sup_air_flw_ctrl: SupplyAirFlowRateControlType::Oda, // TODO (from Python) currently hard coded until load comp implemented
             _sup_air_temp_ctrl: SupplyAirTemperatureControlType::NoControl, // TODO (from Python) currently hard coded until load comp implemented
             _q_h_des: q_h_des,
             _q_c_des: q_c_des,
@@ -1291,7 +1291,7 @@ impl MechanicalVentilation {
 
         // Amount of air flow depends on controls
         let (qv_sup_dis_req, qv_eta_dis_req) = match self.sup_air_flw_ctrl {
-            SupplyAirFlowRateControlType::ODA => {
+            SupplyAirFlowRateControlType::Oda => {
                 let f_op_v = self.f_op_v(simulation_time);
                 let qv_sup_dis_req = f_op_v * qv_sup_req;
                 let qv_eta_dis_req = f_op_v * qv_eta_req;
@@ -2938,49 +2938,41 @@ mod tests {
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
-                ..Default::default()
             },
         ]
         .into();
@@ -3348,7 +3340,7 @@ mod tests {
             EnergySupply::connection(energy_supply.clone(), "mech_vent_fans").unwrap();
 
         MechanicalVentilation::new(
-            SupplyAirFlowRateControlType::ODA,
+            SupplyAirFlowRateControlType::Oda,
             SupplyAirTemperatureControlType::Constant,
             1.,
             3.4,

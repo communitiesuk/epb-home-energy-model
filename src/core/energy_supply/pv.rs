@@ -378,7 +378,6 @@ mod tests {
                         height: 2.2,
                         distance: 6.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 90.,
@@ -400,7 +399,6 @@ mod tests {
                             distance: 7.,
                         },
                     ]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 0.,
@@ -410,7 +408,6 @@ mod tests {
                         height: 3.,
                         distance: 8.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: -45.,

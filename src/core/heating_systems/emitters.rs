@@ -1905,49 +1905,41 @@ mod tests {
                 start: 180.,
                 end: 135.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 135.,
                 end: 90.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 90.,
                 end: 45.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 45.,
                 end: 0.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: 0.,
                 end: -45.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -45.,
                 end: -90.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -90.,
                 end: -135.,
                 shading_objects: None,
-                ..Default::default()
             },
             ShadingSegment {
                 start: -135.,
                 end: -180.,
                 shading_objects: None,
-                ..Default::default()
             },
         ]
         .into();

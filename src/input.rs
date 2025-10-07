@@ -3059,7 +3059,8 @@ impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum SupplyAirFlowRateControlType {
-    ODA,
+    #[serde(rename = "ODA")]
+    Oda,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]

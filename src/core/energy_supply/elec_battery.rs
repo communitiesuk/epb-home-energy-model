@@ -382,7 +382,6 @@ mod tests {
                     start: 180.,
                     end: 135.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 135.,
@@ -392,13 +391,11 @@ mod tests {
                         height: 2.2,
                         distance: 6.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 90.,
                     end: 45.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 45.,
@@ -415,7 +412,6 @@ mod tests {
                             distance: 7.,
                         },
                     ]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: 0.,
@@ -425,25 +421,21 @@ mod tests {
                         height: 3.,
                         distance: 8.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: -45.,
                     end: -90.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: -90.,
                     end: -135.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
                     start: -135.,
                     end: -180.,
                     shading_objects: None,
-                    ..Default::default()
                 },
             ]
             .into(),
