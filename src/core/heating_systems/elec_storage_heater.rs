@@ -845,17 +845,17 @@ mod tests {
     const ESH_MAX_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 24., 1.)
     }
 
     #[fixture]
-    pub fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
+    fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
         simulation_time.iter()
     }
 
     #[fixture]
-    pub fn simulation_time_iteration(
+    fn simulation_time_iteration(
         simulation_time_iterator: SimulationTimeIterator,
     ) -> SimulationTimeIteration {
         simulation_time_iterator.current_iteration()
@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
+    fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
         assert_eq!(elec_storage_heater.pwr_in, 3.5);
         assert_eq!(elec_storage_heater.storage_capacity, 10.0);
         assert_eq!(
@@ -1726,7 +1726,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_demand_energy(
+    fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1765,7 +1765,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue (energy_output)"]
-    pub fn test_demand_energy_no_demand(
+    fn test_demand_energy_no_demand(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -2158,7 +2158,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_for_fan(
+    fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -2202,7 +2202,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_instant(
+    fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -2246,7 +2246,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_charged(
+    fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -2290,7 +2290,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_stored_delivered(
+    fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -2333,7 +2333,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_heat_retention_output() {
+    fn test_heat_retention_output() {
         let soc_array = vec![0., 0.5, 1.];
         let power_array = vec![0., 0.02, 0.05];
         let storage_capacity = 10.;
