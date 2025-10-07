@@ -299,7 +299,6 @@ impl HeatBatteryServiceSpace {
     }
 }
 
-const HEAT_BATTERY_TIME_UNIT: u32 = SECONDS_PER_HOUR;
 const DEFAULT_N_ZONES: usize = 8;
 const DEFAULT_HB_TIME_STEP: f64 = 20.;
 const DEFAULT_MINIMUM_TIME_REQUIRED_TO_RUN: f64 = 120.;
@@ -1084,7 +1083,7 @@ impl HeatBattery {
 
     /// Charge the battery (update the zones temperature)
     /// It follows the same methodology as energy_demand function
-    fn charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
+    fn _charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
         let total_time_s = self.simulation_time.step_in_hours() * SECONDS_PER_HOUR as f64;
         let time_step_s = self.hb_time_step;
 

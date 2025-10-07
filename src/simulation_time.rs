@@ -11,7 +11,7 @@ const MONTH_START_END_HOURS: [u32; 13] = [
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct SimulationTime {
+pub(crate) struct SimulationTime {
     #[serde(rename = "start")]
     start_time: f64,
     #[serde(rename = "end")]
@@ -20,7 +20,7 @@ pub struct SimulationTime {
 }
 
 impl SimulationTime {
-    pub fn new(start_time: f64, end_time: f64, step: f64) -> Self {
+    pub(crate) fn new(start_time: f64, end_time: f64, step: f64) -> Self {
         Self {
             start_time,
             end_time,
@@ -28,16 +28,12 @@ impl SimulationTime {
         }
     }
 
-    pub fn total_steps(&self) -> usize {
+    pub(crate) fn total_steps(&self) -> usize {
         ((self.end_time - self.start_time) / self.step).ceil() as usize
     }
 
-    pub fn start_time(&self) -> f64 {
+    pub(crate) fn start_time(&self) -> f64 {
         self.start_time
-    }
-
-    pub fn end_time(&self) -> f64 {
-        self.end_time
     }
 
     pub(crate) fn iter(&self) -> SimulationTimeIterator {
@@ -71,41 +67,12 @@ impl SimulationTimeIterator {
         ((self.current_time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 
-    pub fn time_series_idx_days(&self, start_day: u32, step: f64) -> usize {
-        let current_day = self.current_time as u32 / HOURS_IN_DAY;
-        // TODO (from Python): (Potential) Decide from which hour of the day the system should be targeting next day charge level
-        // Currently 9pm
-        if self.current_time.floor() >= 21.0 {
-            ((current_day + 1 - start_day) as f64 / step) as usize
-        } else {
-            ((current_day - start_day) as f64 / step) as usize
-        }
-    }
-
     pub fn current_hour(&self) -> u32 {
         self.current_time.floor() as u32
     }
 
     pub fn current_day(&self) -> u32 {
         self.current_time as u32 / HOURS_IN_DAY
-    }
-
-    pub fn current_month(&self) -> Option<u32> {
-        let current_hour = self.current_hour();
-        for (i, end_hour) in MONTH_START_END_HOURS.iter().enumerate() {
-            if current_hour < *end_hour {
-                return Some((i - 1) as u32);
-            }
-        }
-        None
-    }
-
-    pub fn current_month_start_end_hours(&self) -> (u32, u32) {
-        let month_idx = self.current_month().unwrap() as usize;
-        (
-            MONTH_START_END_HOURS[month_idx],
-            MONTH_START_END_HOURS[month_idx + 1],
-        )
     }
 
     pub fn total_steps(&self) -> usize {

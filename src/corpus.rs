@@ -610,7 +610,7 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
         total_htc,
         total_hlp,
         htc_map,
-        hlp_map,
+        _hlp_map: hlp_map,
     })
 }
 
@@ -618,19 +618,16 @@ pub(crate) struct HtcHlpCalculation {
     pub(crate) total_htc: f64,
     pub(crate) total_hlp: f64,
     pub(crate) htc_map: IndexMap<String, f64>,
-    pub(crate) hlp_map: IndexMap<String, f64>,
+    pub(crate) _hlp_map: IndexMap<String, f64>,
 }
 
 #[derive(Debug)]
 pub struct Corpus {
     pub(crate) simulation_time: Arc<SimulationTimeIterator>,
     pub(crate) external_conditions: Arc<ExternalConditions>,
-    pub(crate) cold_water_sources: ColdWaterSources,
     pre_heated_water_sources: IndexMap<String, HotWaterStorageTank>,
     pub(crate) energy_supplies: IndexMap<String, Arc<RwLock<EnergySupply>>>,
     pub(crate) internal_gains: InternalGainsCollection,
-    pub(crate) controls: Controls,
-    pub(crate) wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>>,
     pub(crate) domestic_hot_water_demand: DomesticHotWaterDemand,
     r_v_arg: AtomicF64,
     pub(crate) ventilation: Arc<InfiltrationVentilation>,
@@ -642,7 +639,6 @@ pub struct Corpus {
     pub(crate) total_volume: f64,
     pub(crate) wet_heat_sources: IndexMap<String, WetHeatSource>,
     pub(crate) hot_water_sources: IndexMap<String, HotWaterSource>,
-    pub(crate) heat_system_names_requiring_overvent: Vec<String>,
     pub(crate) heat_sources_wet_with_buffer_tank: Vec<String>,
     pub(crate) space_heat_systems: IndexMap<String, Arc<Mutex<SpaceHeatSystem>>>,
     pub(crate) space_cool_systems: IndexMap<String, AirConditioning>,
@@ -976,12 +972,9 @@ impl Corpus {
         Ok(Self {
             simulation_time: simulation_time_iterator,
             external_conditions,
-            cold_water_sources,
             pre_heated_water_sources,
             energy_supplies,
             internal_gains,
-            controls,
-            wwhrs,
             domestic_hot_water_demand,
             r_v_arg: AtomicF64::new(
                 input
@@ -998,7 +991,6 @@ impl Corpus {
             total_volume,
             wet_heat_sources,
             hot_water_sources,
-            heat_system_names_requiring_overvent,
             heat_sources_wet_with_buffer_tank,
             space_heat_systems,
             space_cool_systems,

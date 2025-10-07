@@ -72,7 +72,7 @@ pub struct Zone {
     temp_prev: Arc<RwLock<Vec<f64>>>,
     print_heat_balance: bool,
     // Python has a use_fast_solver field that we don't need because we always use the equivalent fast solver in Rust
-    ventilation: Arc<InfiltrationVentilation>,
+    _ventilation: Arc<InfiltrationVentilation>,
     control: Option<Arc<Control>>,
     temp_setpnt_basis: ZoneTemperatureControlBasis,
     /// list of temperatures (nodes and internal air) from
@@ -154,7 +154,7 @@ impl Zone {
             no_of_temps,
             temp_prev: Arc::new(RwLock::new(Vec::new())),
             print_heat_balance,
-            ventilation,
+            _ventilation: ventilation,
             control,
             temp_setpnt_basis,
             temp_setpnt_init,

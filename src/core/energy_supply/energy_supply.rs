@@ -38,7 +38,7 @@ impl EnergySupplyConnection {
     }
 
     /// Forwards the amount of energy out (in kWh) to the relevant EnergySupply object
-    pub(crate) fn energy_out(
+    pub(crate) fn _energy_out(
         &self,
         amount_demanded: f64,
         timestep_idx: usize,

@@ -1,6 +1,5 @@
 #![allow(
     clippy::too_many_arguments,
-    dead_code,
     unused_variables,
     clippy::doc_overindented_list_items
 )]
@@ -1946,17 +1945,6 @@ fn write_core_output_file_hot_water_source_summary(
     // TODO complete when hot water source results defined
 }
 
-const HOURS_TO_END_JAN: f64 = 744.;
-const HOURS_TO_END_FEB: f64 = 1416.;
-const HOURS_TO_END_MAR: f64 = 2160.;
-const HOURS_TO_END_APR: f64 = 2880.;
-const HOURS_TO_END_MAY: f64 = 3624.;
-const HOURS_TO_END_JUN: f64 = 4344.;
-const HOURS_TO_END_JUL: f64 = 5088.;
-const HOURS_TO_END_AUG: f64 = 5832.;
-const HOURS_TO_END_SEP: f64 = 6552.;
-const HOURS_TO_END_OCT: f64 = 7296.;
-const HOURS_TO_END_NOV: f64 = 8016.;
 const HOURS_TO_END_DEC: f64 = 8760.;
 
 struct HourForTimestep {

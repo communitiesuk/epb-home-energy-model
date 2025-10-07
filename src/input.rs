@@ -882,7 +882,6 @@ pub(crate) trait HotWaterSourceDetailsForProcessing {
     fn is_hiu(&self) -> bool;
     fn is_point_of_use(&self) -> bool;
     fn is_smart_hot_water_tank(&self) -> bool;
-    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
     fn set_control_min_name_for_storage_tank_heat_sources(
         &mut self,
         control_name: &str,
@@ -943,18 +942,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
             .get("type")
             .and_then(|source_type| source_type.as_str())
             .is_some_and(|source_type| source_type == "SmartHotWaterTank")
-    }
-
-    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
-        if self
-            .0
-            .get("type")
-            .and_then(|v| v.as_str())
-            .is_some_and(|source_type| source_type == "StorageTank")
-        {
-            self.0
-                .insert("Control_hold_at_setpnt".into(), json!(control_name.into()));
-        }
     }
 
     fn set_control_min_name_for_storage_tank_heat_sources(
@@ -1081,17 +1068,11 @@ impl HeatSourceWetType {
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatSourceControlType {
+pub(crate) enum HeatSourceControlType {
     #[serde(rename = "hw timer")]
     HotWaterTimer,
     #[serde(rename = "window opening")]
     WindowOpening,
-    #[serde(rename = "WindowOpening_LivingRoom")]
-    WindowOpeningLivingRoom,
-    #[serde(rename = "WindowOpening_RestOfDwelling")]
-    WindowOpeningRestOfDwelling,
-    #[serde(rename = "always off")]
-    AlwaysOff,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -1184,7 +1165,7 @@ pub(crate) enum HeatSource {
 }
 
 impl HeatSource {
-    pub fn heater_position(&self) -> f64 {
+    pub(crate) fn heater_position(&self) -> f64 {
         match self {
             HeatSource::ImmersionHeater {
                 heater_position, ..
@@ -1201,7 +1182,7 @@ impl HeatSource {
         }
     }
 
-    pub fn thermostat_position(&self) -> Option<f64> {
+    pub(crate) fn thermostat_position(&self) -> Option<f64> {
         match self {
             HeatSource::ImmersionHeater {
                 thermostat_position,
@@ -1222,49 +1203,13 @@ impl HeatSource {
         }
     }
 
-    pub fn energy_supply_name(&self) -> &str {
+    pub(crate) fn energy_supply_name(&self) -> &str {
         match self {
             HeatSource::ImmersionHeater { energy_supply, .. } => energy_supply,
             HeatSource::SolarThermalSystem { energy_supply, .. } => energy_supply,
             HeatSource::ServiceWaterRegular { energy_supply, .. } => energy_supply,
             HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => energy_supply,
         }
-    }
-
-    pub(crate) fn set_control_min(&mut self, control_min_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater { control_min, .. } => {
-                *control_min = Some(control_min_name.into());
-            }
-            HeatSource::SolarThermalSystem { .. } => {
-                unreachable!()
-            }
-            HeatSource::ServiceWaterRegular { control_min, .. } => {
-                *control_min = Some(control_min_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly { control_min, .. } => {
-                *control_min = control_min_name.into();
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn set_control_max(&mut self, control_max_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater { control_max, .. } => {
-                *control_max = Some(control_max_name.into());
-            }
-            HeatSource::SolarThermalSystem { control_max, .. } => {
-                *control_max = control_max_name.into();
-            }
-            HeatSource::ServiceWaterRegular { control_max, .. } => {
-                *control_max = Some(control_max_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly { control_max, .. } => {
-                *control_max = control_max_name.into();
-            }
-        }
-        Ok(())
     }
 }
 
@@ -1452,21 +1397,6 @@ pub enum Shower {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Baths(pub IndexMap<String, BathDetails>);
 
-impl Baths {
-    /// Provide bath field names as strings.
-    fn keys(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
-    }
-
-    fn size_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|bath| bath.size)
-    }
-
-    fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|bath| bath.flowrate)
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
@@ -1483,17 +1413,6 @@ pub(crate) struct BathDetails {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
-
-impl OtherWaterUses {
-    /// Provide other water use field names as strings.
-    pub fn keys(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
-    }
-
-    pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|other| other.flowrate)
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1514,22 +1433,6 @@ pub(crate) struct WaterHeatingEvents {
     pub(crate) shower: IndexMap<String, Vec<WaterHeatingEvent>>,
     pub(crate) bath: IndexMap<String, Vec<WaterHeatingEvent>>,
     pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
-}
-
-impl WaterHeatingEvents {
-    fn add_event_for_type_and_name(
-        &mut self,
-        event_type: WaterHeatingEventType,
-        name: &str,
-        event: WaterHeatingEvent,
-    ) {
-        let map = match event_type {
-            WaterHeatingEventType::Shower => &mut self.shower,
-            WaterHeatingEventType::Bath => &mut self.bath,
-            WaterHeatingEventType::Other => &mut self.other,
-        };
-        map.entry(name.into()).or_default().push(event);
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -1633,60 +1536,6 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(rename = "Control")]
         control: String,
     },
-}
-
-impl SpaceHeatSystemDetails {
-    pub(crate) fn set_control(
-        &mut self,
-        control_string: impl Into<String>,
-    ) -> anyhow::Result<&Self> {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater {
-                ref mut control, ..
-            } => {
-                *control = control_string.into();
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater {
-                ref mut control, ..
-            } => {
-                *control = control_string.into();
-            }
-            SpaceHeatSystemDetails::WetDistribution {
-                ref mut control, ..
-            } => {
-                *control = control_string.into();
-            }
-            SpaceHeatSystemDetails::WarmAir {
-                ref mut control, ..
-            } => {
-                *control = control_string.into();
-            }
-        }
-        Ok(self)
-    }
-
-    pub(crate) fn set_heat_source(&mut self, new_heat_source: SpaceHeatSystemHeatSource) {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater { .. } => {
-                // do nothing
-            }
-            SpaceHeatSystemDetails::WetDistribution {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = new_heat_source;
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater { .. } => {
-                // do nothing
-            }
-            SpaceHeatSystemDetails::WarmAir {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = new_heat_source;
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2092,9 +1941,6 @@ pub(crate) trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
     fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
-    fn height(&self) -> JsonAccessResult<f64>;
-    fn width(&self) -> JsonAccessResult<f64>;
-    fn pitch(&self) -> JsonAccessResult<f64>;
 }
 
 pub(crate) struct TransparentBuildingElementJsonValue<'a>(
@@ -2119,33 +1965,6 @@ impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
             .get_mut("treatment")
             .and_then(|v| v.as_array_mut())
             .map(|v| v.iter_mut().flat_map(|v| v.as_object_mut()).collect())
-    }
-
-    fn height(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("height")
-            .and_then(|height| height.as_f64())
-            .ok_or(json_error(
-                "Could not access height as a number in a transparent building element",
-            ))
-    }
-
-    fn width(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("width")
-            .and_then(|width| width.as_f64())
-            .ok_or(json_error(
-                "Could not access width as a number in a transparent building element",
-            ))
-    }
-
-    fn pitch(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("pitch")
-            .and_then(|pitch| pitch.as_f64())
-            .ok_or(json_error(
-                "Could not access pitch as a number in a transparent building element",
-            ))
     }
 }
 
@@ -2309,28 +2128,6 @@ pub(crate) struct WindowTreatment {
     pub(crate) opening_delay_hrs: f64,
 }
 
-impl WindowTreatment {
-    pub(crate) fn set_is_open(&mut self, is_open: bool) {
-        self.is_open = Some(is_open);
-    }
-
-    pub(crate) fn set_open_control(&mut self, control: &str) {
-        self.open_control = Some(control.into())
-    }
-
-    pub(crate) fn set_closing_irradiance_control(&mut self, control: &str) {
-        self.closing_irradiance_control = Some(control.into())
-    }
-
-    pub(crate) fn set_opening_irradiance_control(&mut self, control: &str) {
-        self.opening_irradiance_control = Some(control.into())
-    }
-
-    pub(crate) fn set_opening_delay_hrs(&mut self, delay: f64) {
-        self.opening_delay_hrs = delay;
-    }
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
@@ -2350,12 +2147,6 @@ pub enum WindowTreatmentControl {
     CombinedLightBlindHvac,
 }
 
-impl WindowTreatmentControl {
-    pub(crate) fn is_manual(&self) -> bool {
-        [Self::Manual, Self::ManualMotorised].contains(self)
-    }
-}
-
 pub(crate) fn deserialize_possible_string_for_boolean<'de, D>(
     deserializer: D,
 ) -> Result<Option<bool>, D::Error>
@@ -2373,33 +2164,6 @@ where
             ))
         }
     })
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum FloorType {
-    #[serde(rename = "Slab_no_edge_insulation")]
-    SlabNoEdgeInsulation,
-    #[serde(rename = "Slab_edge_insulation")]
-    SlabEdgeInsulation,
-    #[serde(rename = "Suspended_floor")]
-    SuspendedFloor,
-    #[serde(rename = "Heated_basement")]
-    HeatedBasement,
-    #[serde(rename = "Unheated_basement")]
-    UnheatedBasement,
-}
-
-impl From<&FloorData> for FloorType {
-    fn from(value: &FloorData) -> Self {
-        match value {
-            FloorData::SlabNoEdgeInsulation => FloorType::SlabNoEdgeInsulation,
-            FloorData::SlabEdgeInsulation { .. } => FloorType::SlabEdgeInsulation,
-            FloorData::SuspendedFloor { .. } => FloorType::SuspendedFloor,
-            FloorData::HeatedBasement { .. } => FloorType::HeatedBasement,
-            FloorData::UnheatedBasement { .. } => FloorType::UnheatedBasement,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3235,12 +2999,6 @@ pub(crate) enum ApplianceKey {
     Lighting,
 }
 
-impl ApplianceKey {
-    pub(crate) fn is_clothes_appliance(&self) -> bool {
-        [Self::ClothesWashing, Self::ClothesDrying].contains(self)
-    }
-}
-
 impl Display for ApplianceKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
@@ -3306,56 +3064,6 @@ pub struct Appliance {
     pub(crate) standard_use: Option<f64>,
 }
 
-impl Appliance {
-    pub(crate) fn with_energy_supply(energy_supply: EnergySupplyType, kwh_per_cycle: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: None,
-            energy_supply: Some(energy_supply),
-            kwh_per_cycle: Some(kwh_per_cycle),
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_cycle(kwh_per_cycle: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: None,
-            energy_supply: None,
-            kwh_per_cycle: Some(kwh_per_cycle),
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_annum(kwh_per_annum: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: Some(kwh_per_annum),
-            energy_supply: None,
-            kwh_per_cycle: None,
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_100_cycle(kwh_per_100_cycle: f64, kg_load: Option<f64>) -> Self {
-        Self {
-            kwh_per_100_cycle: Some(kwh_per_100_cycle),
-            load_shifting: None,
-            kg_load,
-            kwh_per_annum: None,
-            energy_supply: None,
-            kwh_per_cycle: None,
-            standard_use: None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -3368,12 +3076,6 @@ pub(crate) struct ApplianceLoadShifting {
     pub(crate) max_shift_hrs: f64,
     pub(crate) demand_limit_weighted: f64,
     pub(crate) weight_timeseries: Vec<f64>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum WeightLabel {
-    Tariff,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -4295,12 +3997,6 @@ impl InputForProcessing {
             })
     }
 
-    pub(crate) fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
-        self.root_object_entry_mut("ApplianceGains")?.remove(field);
-
-        Ok(())
-    }
-
     pub(crate) fn clear_appliance_gains(&mut self) -> JsonAccessResult<&mut Self> {
         self.set_on_root_key("ApplianceGains", json!({}))
     }
@@ -4594,10 +4290,6 @@ impl InputForProcessing {
             .flatten()
             .cloned()
             .collect_vec())
-    }
-
-    pub(crate) fn defines_window_opening_for_cooling(&self) -> JsonAccessResult<bool> {
-        Ok(self.root()?.contains_key("Window_Opening_For_Cooling"))
     }
 
     pub(crate) fn cold_water_source_has_header_tank(&self) -> JsonAccessResult<bool> {
@@ -4940,27 +4632,6 @@ impl InputForProcessing {
             ))
     }
 
-    #[cfg(test)]
-    pub(crate) fn building_element_by_key_mut(
-        &mut self,
-        zone_key: &str,
-        key: &str,
-    ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
-        self.specific_zone_mut(zone_key)?
-            .get_mut("BuildingElement")
-            .ok_or(json_error("BuildingElement node not present"))?
-            .as_object_mut()
-            .ok_or(json_error("BuildingElement node was not an object"))?
-            .get_mut(key)
-            .ok_or(json_error(format!(
-                "BuildingElement with name {key} was not present"
-            )))?
-            .as_object_mut()
-            .ok_or(json_error(
-                "Building element with name {key} not provided as an object",
-            ))
-    }
-
     pub(crate) fn all_energy_supply_fuel_types(&self) -> JsonAccessResult<HashSet<String>> {
         let mut fuel_types = HashSet::new();
         for fuel in self
@@ -5098,12 +4769,6 @@ impl InputForProcessing {
         }
 
         Ok(())
-    }
-
-    fn infiltration_ventilation_node(
-        &self,
-    ) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
-        self.root_object("InfiltrationVentilation")
     }
 
     fn infiltration_ventilation_node_mut(

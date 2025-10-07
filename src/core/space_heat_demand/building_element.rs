@@ -419,16 +419,6 @@ pub(crate) trait HeatTransferThrough {
     fn r_se(&self) -> f64;
     fn r_si(&self) -> f64;
 
-    /// Return number of nodes including external and internal layers
-    fn no_of_nodes(&self) -> usize {
-        self.k_pli().len()
-    }
-
-    /// Return number of nodes excluding external and internal layers
-    fn _no_of_inside_nodes(&self) -> isize {
-        (self.no_of_nodes() - 2) as isize
-    }
-
     fn area(&self) -> f64;
 
     /// Return the fabric heat loss for the building element
@@ -1279,8 +1269,7 @@ pub(crate) struct BuildingElementOpaque {
     projected_height: f64,
     width: f64,
     orientation: f64,
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python Opaque elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
     f_sky: f64,
@@ -1337,7 +1326,6 @@ impl BuildingElementOpaque {
             projected_height: Default::default(),
             width,
             orientation,
-            areal_heat_capacity,
             k_m: Default::default(),
             k_pli: Default::default(),
             h_pli: Default::default(),
@@ -1378,10 +1366,6 @@ impl BuildingElementOpaque {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::shading_factors_direct_diffuse(self, simtime)
-    }
-
-    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
-        self.external_conditions.as_ref()
     }
 
     #[cfg(test)]
@@ -1545,8 +1529,7 @@ pub(crate) struct BuildingElementAdjacentConditionedSpace {
     r_c: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     f_sky: f64,
     therm_rad_to_sky: f64,
     external_pitch: f64,
@@ -1589,7 +1572,6 @@ impl BuildingElementAdjacentConditionedSpace {
             pitch,
             external_conditions,
             r_c: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -1785,8 +1767,7 @@ pub(crate) struct BuildingElementAdjacentUnconditionedSpaceSimple {
     r_u: f64,
     f_sky: f64,
     therm_rad_to_sky: f64,
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
     r_c: f64,
@@ -1832,7 +1813,6 @@ impl BuildingElementAdjacentUnconditionedSpaceSimple {
             r_u: Default::default(),
             f_sky: Default::default(),
             therm_rad_to_sky: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -2059,8 +2039,7 @@ pub(crate) struct BuildingElementGround {
     therm_rad_to_sky: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python Ground elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     h_pi: f64,
     h_pe: f64,
     h_ce: f64,
@@ -2155,7 +2134,6 @@ impl BuildingElementGround {
             therm_rad_to_sky: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pi: Default::default(),
             h_pe: Default::default(),
@@ -2760,10 +2738,6 @@ impl BuildingElementTransparent {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionTransmitted::shading_factors_direct_diffuse(self, simtime)
-    }
-
-    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
-        self.external_conditions.as_ref()
     }
 }
 

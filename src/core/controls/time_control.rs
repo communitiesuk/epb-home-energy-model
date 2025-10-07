@@ -95,13 +95,10 @@ impl ControlBehaviour for Control {
 pub(crate) enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),
-    WindowOpeningLivingRoom(Arc<Control>),
-    WindowOpeningRestOfDwelling(Arc<Control>),
-    AlwaysOff(Arc<Control>),
 }
 
 impl HeatSourceControl {
-    pub fn has_type(&self, control_type: HeatSourceControlType) -> bool {
+    pub(crate) fn has_type(&self, control_type: HeatSourceControlType) -> bool {
         match control_type {
             HeatSourceControlType::HotWaterTimer => {
                 matches!(self, HeatSourceControl::HotWaterTimer(_))
@@ -109,23 +106,13 @@ impl HeatSourceControl {
             HeatSourceControlType::WindowOpening => {
                 matches!(self, HeatSourceControl::WindowOpening(_))
             }
-            HeatSourceControlType::WindowOpeningLivingRoom => {
-                matches!(self, HeatSourceControl::WindowOpeningLivingRoom(_))
-            }
-            HeatSourceControlType::WindowOpeningRestOfDwelling => {
-                matches!(self, HeatSourceControl::WindowOpeningRestOfDwelling(_))
-            }
-            HeatSourceControlType::AlwaysOff => matches!(self, HeatSourceControl::AlwaysOff(_)),
         }
     }
 
-    pub fn get(&self) -> Arc<Control> {
+    pub(crate) fn get(&self) -> Arc<Control> {
         match self {
             HeatSourceControl::HotWaterTimer(control) => control.clone(),
             HeatSourceControl::WindowOpening(control) => control.clone(),
-            HeatSourceControl::WindowOpeningLivingRoom(control) => control.clone(),
-            HeatSourceControl::WindowOpeningRestOfDwelling(control) => control.clone(),
-            HeatSourceControl::AlwaysOff(control) => control.clone(),
         }
     }
 }

@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use thiserror::Error;
 
 // Set default values for the heat transfer coefficients inside the pipe, in W / m^2 K
-const INTERNAL_HTC_AIR: f64 = 15.5; // CIBSE Guide C, Table 3.25, air flow rate approx 3 m/s
+// (Python has an internal_htc_air constant here but this is gone in later versions)
 const INTERNAL_HTC_WATER: f64 = 1500.0; // CIBSE Guide C, Table 3.32 #Note, consider changing to 1478.4
 const INTERNAL_HTC_GLYCOL25: f64 = INTERNAL_HTC_WATER;
 // TODO (from Python) In the absence of a specific figure, use same value for water/glycol mix as for water.
@@ -130,8 +130,6 @@ pub enum InvalidPipeworkInput {
         external_diameter_in_m: f64,
         internal_diameter_in_m: f64,
     },
-    #[error("Pipework: {0:?} is not accepted as a valid pipework contents type")]
-    IllegalWaterPipeContentsType(WaterPipeContentsType),
 }
 
 impl Pipework {
