@@ -682,7 +682,7 @@ impl ElecStorageHeater {
                 energy_instant,
                 energy_charged,
                 energy_delivered,
-            } = *self.current_energy_profile.read();
+            } = *current_profile;
             let result = StorageHeaterDetailedResult {
                 timestep_idx: simulation_time_iteration.index,
                 n_units: self.n_units,
