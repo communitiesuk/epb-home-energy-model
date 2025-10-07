@@ -2041,11 +2041,11 @@ fn create_appliance_gains(
 
     for appliance_key in power_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())?
+            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",
-                    appliance_key
+                    appliance_key,
                 )
             })?;
 
@@ -2069,7 +2069,7 @@ fn create_appliance_gains(
 
     for appliance_key in weight_scheds.keys() {
         let energy_supply_name = input
-            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())?
+            .energy_supply_type_for_appliance_gains_field(appliance_key.as_ref())
             .ok_or_else(|| {
                 anyhow!(
                     "No energy supply type for appliance gains for {}",

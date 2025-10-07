@@ -4451,11 +4451,11 @@ impl InputForProcessing {
 
     pub(crate) fn set_gains_for_field(
         &mut self,
-        field: impl Into<String>,
+        field: impl Into<std::string::String>,
         gains_details: JsonValue,
     ) -> JsonAccessResult<&Self> {
-        self.root_mut()?
-            .insert("ApplianceGains".into(), gains_details);
+        self.root_object_entry_mut("ApplianceGains")?
+            .insert(field.into(), gains_details);
 
         Ok(self)
     }
@@ -4463,16 +4463,16 @@ impl InputForProcessing {
     pub(crate) fn energy_supply_type_for_appliance_gains_field(
         &self,
         field: &str,
-    ) -> JsonAccessResult<Option<String>> {
-        Ok(self
-            .root_object("ApplianceGains")?
-            .get(field)
+    ) -> Option<String> {
+        self.root_object("ApplianceGains")
+            .ok()
+            .and_then(|appliance_gains| appliance_gains.get(field))
             .and_then(|details| {
                 details
                     .get("EnergySupply")
                     .and_then(|energy_supply| energy_supply.as_str())
                     .map(String::from)
-            }))
+            })
     }
 
     pub(crate) fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
@@ -5782,5 +5782,30 @@ mod accessors_tests {
                 .unwrap(),
             Some(80.0)
         )
+    }
+
+    #[rstest]
+    fn test_set_gains_for_field() {
+        let mut input = InputForProcessing {
+            input: json!({
+                "ApplianceGains": {
+                    "Clothes_washing": 2,
+                }
+            }),
+        };
+
+        let expected_appliance_gains = json!({
+            "Clothes_washing": 2,
+            "Clothes_drying": 42,
+        });
+
+        input
+            .set_gains_for_field("Clothes_drying", json!(42))
+            .unwrap();
+
+        assert_eq!(
+            json!(input.root_object("ApplianceGains").unwrap()),
+            expected_appliance_gains
+        );
     }
 }
