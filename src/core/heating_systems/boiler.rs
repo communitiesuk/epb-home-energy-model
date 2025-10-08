@@ -876,8 +876,8 @@ impl Boiler {
                 energy_output_required,
                 energy_output_provided,
                 time_available,
-                time_start,
-                time_elapsed_hp,
+                _time_start: time_start,
+                _time_elapsed_hp: time_elapsed_hp,
             });
         }
 
@@ -1081,8 +1081,8 @@ struct ServiceResult {
     energy_output_required: f64,
     energy_output_provided: f64,
     time_available: f64,
-    time_start: f64,
-    time_elapsed_hp: Option<f64>,
+    _time_start: f64,
+    _time_elapsed_hp: Option<f64>,
 }
 
 #[cfg(test)]

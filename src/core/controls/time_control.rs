@@ -875,6 +875,7 @@ impl SmartApplianceControl {
 
     /// Controls generally have this method, though this control does not in Python implementation.
     /// Defaulting to returning true for a fallback implementation here.
+    #[allow(dead_code)]
     pub(crate) fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
         true
     }

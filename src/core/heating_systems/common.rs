@@ -21,8 +21,10 @@ use anyhow::{bail, Error};
 
 #[derive(Debug)]
 pub(crate) enum HeatSourceWet {
+    #[allow(dead_code)]
     WaterCombi(BoilerServiceWaterCombi),
     WaterRegular(BoilerServiceWaterRegular),
+    #[allow(dead_code)]
     Space(BoilerServiceSpace),
     HeatNetworkWaterStorage(HeatNetworkServiceWaterStorage),
     HeatBatteryHotWater(HeatBatteryServiceWaterRegular),
