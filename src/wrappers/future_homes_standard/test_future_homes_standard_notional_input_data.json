@@ -592,8 +592,11 @@
           "orientation360": 90,
           "g_value": 0.75,
           "frame_area_fraction": 0.25,
+          "free_area_height": 1.6,
           "base_height": 1,
           "height": 1.25,
+          "max_window_open_area": 3,
+          "mid_height": 1.5,
           "width": 4,
           "shading": [
             {
@@ -611,7 +614,8 @@
               "depth": 0.25,
               "distance": 0.1
             }
-          ]
+          ],
+          "window_part_list": []
         },
         "ground": {
           "type": "BuildingElementGround",
@@ -728,8 +732,11 @@
           "orientation360": 90,
           "g_value": 0.75,
           "frame_area_fraction": 0.25,
+          "free_area_height": 1.6,
           "base_height": 1,
           "height": 1.25,
+          "max_window_open_area": 3,
+          "mid_height": 1.5,
           "width": 4,
           "shading": [
             {
@@ -747,7 +754,8 @@
               "depth": 0.25,
               "distance": 0.1
             }
-          ]
+          ],
+          "window_part_list": []
         },
         "ground": {
           "type": "BuildingElementGround",
