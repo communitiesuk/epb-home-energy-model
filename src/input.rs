@@ -3222,12 +3222,6 @@ impl InputForProcessing {
         Ok(self.root()?.get(root_key).and_then(|v| v.as_object()))
     }
 
-    fn root_value(&self, root_key: &str) -> JsonAccessResult<&JsonValue> {
-        self.root()?
-            .get(root_key)
-            .ok_or(json_error(format!("No {root_key} node found")))
-    }
-
     pub(crate) fn set_simulation_time(
         &mut self,
         simulation_time: SimulationTime,
@@ -4923,11 +4917,6 @@ impl InputForProcessing {
             .and_then(|infiltration| infiltration.get("noise_nuisance"))
             .and_then(|nuisance| nuisance.as_bool())
             .unwrap_or(false)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn infiltration_ventilation(&self) -> JsonAccessResult<&JsonValue> {
-        self.root_value("InfiltrationVentilation")
     }
 
     pub(crate) fn infiltration_ventilation_mut(
