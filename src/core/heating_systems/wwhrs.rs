@@ -362,4 +362,17 @@ mod tests {
             max_relative = 1e-7
         );
     }
+
+    #[rstest]
+    fn test_temperature_for_a(
+        mut wwhrs_a: WWHRSInstantaneousSystemA,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            if t_idx == 2 {
+                wwhrs_a.set_temperature_for_return(16.);
+            }
+            assert_eq!(wwhrs_a.temperature(), [17.1, 17.1, 16.][t_idx]);
+        }
+    }
 }
