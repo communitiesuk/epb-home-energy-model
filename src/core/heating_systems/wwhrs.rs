@@ -242,7 +242,7 @@ mod tests {
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
-        SimulationTime::new(0., 2., 1.)
+        SimulationTime::new(0., 3., 1.)
     }
 
     #[fixture]
@@ -292,7 +292,6 @@ mod tests {
             simulation_time.iter().current_iteration(),
         )
     }
-
     #[rstest]
     fn test_return_temperature_for_c(
         wwhrs_c: WWHRSInstantaneousSystemC,
@@ -312,6 +311,19 @@ mod tests {
             39.1,
             max_relative = 1e-7
         );
+    }
+
+    #[rstest]
+    fn test_temperature_for_c(
+        mut wwhrs_c: WWHRSInstantaneousSystemC,
+        simulation_time: SimulationTime,
+    ) {
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            if (t_idx == 2) {
+                wwhrs_c.set_temperature_for_return(16.);
+            }
+            assert_eq!(wwhrs_c.temperature(), [17.1, 17.1, 16.][t_idx]);
+        }
     }
 
     #[fixture]
