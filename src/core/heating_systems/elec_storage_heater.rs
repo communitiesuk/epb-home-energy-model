@@ -901,18 +901,18 @@ mod tests {
             false,
             serde_json::from_value(json!(
                 [
-                    {"number": 1, "start360": 180, "end360": 135},
-                    {"number": 2, "start360": 135, "end360": 90},
-                    {"number": 3, "start360": 90, "end360": 45},
-                    {"number": 4, "start360": 45, "end360": 0,
+                    {"start360": 180, "end360": 135},
+                    {"start360": 135, "end360": 90},
+                    {"start360": 90, "end360": 45},
+                    {"start360": 45, "end360": 0,
                         "shading": [
                             {"type": "obstacle", "height": 10.5, "distance": 12}
                         ]
                     },
-                    {"number": 5, "start360": 0, "end360": -45},
-                    {"number": 6, "start360": -45, "end360": -90},
-                    {"number": 7, "start360": -90, "end360": -135},
-                    {"number": 8, "start360": -135, "end360": -180}
+                    {"start360": 0, "end360": -45},
+                    {"start360": -45, "end360": -90},
+                    {"start360": -90, "end360": -135},
+                    {"start360": -135, "end360": -180}
                 ]
             ))
             .unwrap(),

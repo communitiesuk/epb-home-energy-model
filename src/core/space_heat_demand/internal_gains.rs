@@ -561,7 +561,6 @@ mod tests {
             77.70823134533667,
         ];
         let appliance_data: ApplianceGainsDetails = serde_json::from_value(serde_json::json!({
-            "type": "Clothes_drying",
             "EnergySupply": "mains elec",
             "start_day": 0,
             "time_series_step": 1,
@@ -573,7 +572,6 @@ mod tests {
             "loadshifting":
                      {"demand_limit_weighted": 0,
                       "max_shift_hrs": 8,
-                      "weight": "Tariff",
                       "weight_timeseries": [
                         1.0,
                         1.0,

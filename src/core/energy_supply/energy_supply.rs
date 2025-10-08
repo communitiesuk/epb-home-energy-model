@@ -1108,27 +1108,27 @@ mod tests {
             false,
             serde_json::from_value(json!([
                 // upstream Python gives old 'start' fields, but we need 'start360' here
-                {"number": 1, "start360": 0, "end360": 45},
-                {"number": 2, "start360": 45, "end360": 90,
+                {"start360": 0, "end360": 45},
+                {"start360": 45, "end360": 90,
                  "shading": [
                      {"type": "overhang", "height": 2.2, "distance": 6}
                      ]
                  },
-                {"number": 3, "start360": 90, "end360": 135},
-                {"number": 4, "start360": 135, "end360": 180,
+                {"start360": 90, "end360": 135},
+                {"start360": 135, "end360": 180,
                  "shading": [
                      {"type": "obstacle", "height": 40, "distance": 4},
                      {"type": "overhang", "height": 3, "distance": 7}
                      ]
                  },
-                {"number": 5, "start360": 180, "end360": 225,
+                {"start360": 180, "end360": 225,
                  "shading": [
                      {"type": "obstacle", "height": 3, "distance": 8},
                      ]
                  },
-                {"number": 6, "start360": 225, "end360": 270},
-                {"number": 7, "start360": 270, "end360": 315},
-                {"number": 8, "start360": 315, "end360": 360}
+                {"start360": 225, "end360": 270},
+                {"start360": 270, "end360": 315},
+                {"start360": 315, "end360": 360}
             ]))
             .unwrap(),
         )

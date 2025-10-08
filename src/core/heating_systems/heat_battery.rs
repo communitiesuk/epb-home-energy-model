@@ -2036,8 +2036,8 @@ mod tests {
             // following shading segments are corrected from upstream Python, which uses angles measured from wrong origin
             serde_json::from_value(json!(
                 [
-                    {"number": 1, "start360": 0, "end360": 45},
-                    {"number": 2, "start360": 45, "end360": 90},
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
                 ]
             ))
             .unwrap(),
