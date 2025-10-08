@@ -319,7 +319,7 @@ mod tests {
         simulation_time: SimulationTime,
     ) {
         for (t_idx, _) in simulation_time.iter().enumerate() {
-            if (t_idx == 2) {
+            if t_idx == 2 {
                 wwhrs_c.set_temperature_for_return(16.);
             }
             assert_eq!(wwhrs_c.temperature(), [17.1, 17.1, 16.][t_idx]);
