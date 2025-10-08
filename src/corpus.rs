@@ -18,9 +18,7 @@ use crate::core::heating_systems::elec_storage_heater::{
 use crate::core::heating_systems::emitters::{Emitters, EmittersDetailedResult};
 use crate::core::heating_systems::heat_battery::{HeatBattery, HeatBatteryServiceWaterRegular};
 use crate::core::heating_systems::heat_network::{HeatNetwork, HeatNetworkServiceWaterDirect};
-use crate::core::heating_systems::heat_pump::{
-    HeatPump, HeatPumpHotWaterOnly, ResultsAnnual, ResultsPerTimestep,
-};
+use crate::core::heating_systems::heat_pump::{HeatPump, HeatPumpHotWaterOnly};
 use crate::core::heating_systems::instant_elec_heater::InstantElecHeater;
 use crate::core::heating_systems::point_of_use::PointOfUse;
 use crate::core::heating_systems::storage_tank::{
@@ -77,7 +75,7 @@ use crate::input::{
     ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
-use crate::ProjectFlags;
+use crate::{ProjectFlags, StringOrNumber};
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
 use indexmap::IndexMap;
@@ -94,6 +92,8 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{BufReader, Cursor, Read};
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Div};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -4155,18 +4155,158 @@ impl WetHeatSource {
         &self,
         hot_water_energy_output: &[f64],
     ) -> Option<(ResultsPerTimestep, ResultsAnnual)> {
-        if let WetHeatSource::HeatPump(heat_pump) = self {
-            Some(
-                heat_pump.lock().clone().output_detailed_results(
-                    hot_water_energy_output
-                        .iter()
-                        .map(|&x| x.into())
-                        .collect_vec(),
-                ),
-            )
-        } else {
-            None
+        match self {
+            WetHeatSource::HeatPump(heat_pump) => {
+                let (results_per_timestep, results_annual) =
+                    heat_pump.lock().clone().output_detailed_results(
+                        hot_water_energy_output
+                            .iter()
+                            .map(|&x| x.into())
+                            .collect_vec(),
+                    );
+                Some((
+                    crate::core::heating_systems::heat_pump::to_corpus_results_per_timestep(
+                        results_per_timestep,
+                    ),
+                    crate::core::heating_systems::heat_pump::to_corpus_results_annual(
+                        results_annual,
+                    ),
+                ))
+            }
+            WetHeatSource::HeatBattery(heat_battery) => heat_battery
+                .read()
+                .output_detailed_results(hot_water_energy_output)
+                .ok()
+                .map(|(results_per_timestep, results_annual)| {
+                    (
+                        crate::core::heating_systems::heat_battery::to_corpus_results_per_timestep(
+                            results_per_timestep,
+                        ),
+                        crate::core::heating_systems::heat_battery::to_corpus_results_annual(
+                            results_annual,
+                        ),
+                    )
+                }),
+            _ => None,
         }
+    }
+}
+
+pub type ResultsPerTimestep =
+    IndexMap<String, IndexMap<(String, Option<String>), Vec<ResultParamValue>>>;
+pub type ResultsAnnual =
+    IndexMap<String, IndexMap<(String, Option<String>), Vec<ResultParamValue>>>;
+
+#[derive(Clone, Debug)]
+pub enum ResultParamValue {
+    String(String),
+    Number(f64),
+    Boolean(bool),
+}
+
+impl ResultParamValue {
+    pub fn as_f64(&self) -> f64 {
+        match self {
+            ResultParamValue::Number(num) => *num,
+            _ => 0.,
+        }
+    }
+}
+
+impl Sum for ResultParamValue {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        // expect everything to be a number (or infer zero), return a number variant
+        Self::Number(
+            iter.map(|value| match value {
+                ResultParamValue::Number(num) => num,
+                _ => 0.,
+            })
+            .sum::<f64>(),
+        )
+    }
+}
+
+impl Add for ResultParamValue {
+    type Output = ResultParamValue;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ResultParamValue::Number(self.as_f64() + rhs.as_f64())
+    }
+}
+
+impl Add for &ResultParamValue {
+    type Output = ResultParamValue;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ResultParamValue::Number(self.as_f64() + rhs.as_f64())
+    }
+}
+
+impl AddAssign for ResultParamValue {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = Self::Number(self.as_f64() + rhs.as_f64());
+    }
+}
+
+impl Div for ResultParamValue {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Self::Number(self.as_f64() / rhs.as_f64())
+    }
+}
+
+impl PartialEq<f64> for ResultParamValue {
+    fn eq(&self, other: &f64) -> bool {
+        self.as_f64() == *other
+    }
+}
+
+impl From<f64> for ResultParamValue {
+    fn from(value: f64) -> Self {
+        Self::Number(value)
+    }
+}
+
+impl From<ResultParamValue> for String {
+    fn from(value: ResultParamValue) -> Self {
+        value.to_string().into()
+    }
+}
+
+impl From<&ResultParamValue> for String {
+    fn from(value: &ResultParamValue) -> Self {
+        value.to_string().into()
+    }
+}
+
+impl From<String> for ResultParamValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<StringOrNumber> for ResultParamValue {
+    fn from(value: StringOrNumber) -> Self {
+        match value {
+            StringOrNumber::String(string) => Self::String(string),
+            StringOrNumber::Float(number) => Self::Number(number),
+            StringOrNumber::Integer(number) => Self::Number(number as f64),
+        }
+    }
+}
+
+impl Display for ResultParamValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ResultParamValue::String(string) => string.to_string(),
+                ResultParamValue::Number(number) => number.to_string(),
+                ResultParamValue::Boolean(boolean) => boolean.to_string(),
+            }
+        )
     }
 }
 

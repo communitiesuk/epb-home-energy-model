@@ -21,14 +21,14 @@ extern crate is_close;
 
 use crate::core::heating_systems::elec_storage_heater::StorageHeaterDetailedResult;
 use crate::core::heating_systems::emitters::EmittersDetailedResult;
-use crate::core::heating_systems::heat_pump::{ResultsAnnual, ResultsPerTimestep};
 use crate::core::heating_systems::storage_tank::StorageTankDetailedResult;
 use crate::core::space_heat_demand::ventilation::VentilationDetailedResult;
 use crate::core::units::{convert_profile_to_daily, WATTS_PER_KILOWATT};
 pub use crate::corpus::RunResults;
 use crate::corpus::{
     calc_htc_hlp, Corpus, HeatingCoolingSystemResultKey, HotWaterResultKey, HotWaterResultMap,
-    HtcHlpCalculation, NumberOrDivisionByZero, ResultsEndUser, ZoneResultKey,
+    HtcHlpCalculation, NumberOrDivisionByZero, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
+    ZoneResultKey,
 };
 use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
 use crate::external_conditions::ExternalConditions;
@@ -51,6 +51,7 @@ use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use rayon::prelude::*;
 use smartstring::alias::String;
 use std::borrow::Cow;
@@ -1716,7 +1717,7 @@ fn write_core_output_file_heat_source_wet(
     // Repeat column headings for each service
     let mut col_headings = vec![String::from("Timestep")];
     let mut col_units_row = vec![String::from("count")];
-    let mut columns: IndexMap<String, Vec<(String, String)>> = Default::default();
+    let mut columns: IndexMap<String, Vec<(String, Option<String>)>> = Default::default();
 
     for (service_name, service_results) in heat_source_wet_results.iter() {
         columns.insert(
@@ -1729,7 +1730,10 @@ fn write_core_output_file_heat_source_wet(
                 .cloned()
                 .collect::<IndexMap<_, _>>()
                 .values()
-                .map(|col_heading| format!("{service_name}: {col_heading}").into())
+                .map(|col_heading| match col_heading {
+                    None => service_name.clone(),
+                    Some(col_heading) => format!("{service_name}: {col_heading}").into(),
+                })
                 .collect::<Vec<String>>(),
         );
         col_units_row.extend(
@@ -1779,8 +1783,13 @@ fn write_core_output_file_heat_source_wet_summary(
         for (name, value) in service_results.iter() {
             writer.write_record([
                 name.0.as_bytes(),
-                name.1.as_bytes(),
-                value.to_string().as_bytes(),
+                name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
+                value
+                    .into_iter()
+                    .map(String::from)
+                    .collect_vec()
+                    .join(", ")
+                    .as_bytes(),
             ])?;
         }
         writer.write_record([""])?;
