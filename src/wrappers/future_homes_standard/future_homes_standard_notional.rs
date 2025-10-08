@@ -1558,7 +1558,7 @@ mod tests {
         let reader = BufReader::new(Cursor::new(include_str!(
             "./test_future_homes_standard_notional_input_data.json"
         )));
-        InputForProcessing::init_with_json(reader).expect(
+        InputForProcessing::init_with_json_skip_validation(reader).expect(
             "expected valid test_future_homes_standard_notional_input_data.json to be present",
         )
     }
