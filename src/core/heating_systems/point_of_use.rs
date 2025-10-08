@@ -104,12 +104,12 @@ mod tests {
     }
 
     #[fixture]
-    pub fn energy_supply(simtime: SimulationTime) -> EnergySupply {
+    fn energy_supply(simtime: SimulationTime) -> EnergySupply {
         EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps()).build()
     }
 
     #[fixture]
-    pub fn point_of_use(energy_supply: EnergySupply) -> PointOfUse {
+    fn point_of_use(energy_supply: EnergySupply) -> PointOfUse {
         let efficiency = 1.;
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =

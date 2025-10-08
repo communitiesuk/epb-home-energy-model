@@ -449,7 +449,7 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn two_len_simulation_time() -> SimulationTime {
+    fn two_len_simulation_time() -> SimulationTime {
         SimulationTime::new(0., 2., 1.)
     }
 
@@ -848,7 +848,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn three_len_simulation_time() -> SimulationTime {
+    fn three_len_simulation_time() -> SimulationTime {
         SimulationTime::new(0., 3., 1.)
     }
 
