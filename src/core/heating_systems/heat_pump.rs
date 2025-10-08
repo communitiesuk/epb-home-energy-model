@@ -14,7 +14,10 @@ use crate::core::units::{
     celsius_to_kelvin, kelvin_to_celsius, BelowAbsoluteZeroError, HOURS_PER_DAY,
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
-use crate::corpus::TempInternalAirFn;
+use crate::corpus::{
+    ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
+    ResultsPerTimestep as CorpusResultsPerTimestep, TempInternalAirFn,
+};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     BoilerCostScheduleHybrid, HeatPumpBackupControlType, HeatPumpHotWaterOnlyTestDatum,
@@ -25,6 +28,7 @@ use crate::simulation_time::SimulationTimeIteration;
 use crate::statistics::np_interp;
 use anyhow::{anyhow, bail};
 use derivative::Derivative;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
@@ -33,9 +37,8 @@ use serde::{Deserialize, Serialize};
 use serde_enum_str::Serialize_enum_str;
 use smartstring::alias::String;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter};
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Deref, Div};
+use std::fmt::{Debug, Formatter};
+use std::ops::Deref;
 use std::sync::Arc;
 
 const N_EXER: f64 = 3.0;
@@ -4122,9 +4125,42 @@ const AUX_PARAMETERS: [(&str, &str, bool); 3] = [
     ("energy_off_mode", "kWh", true),
 ];
 
-pub type ResultsPerTimestep = HashMap<String, HashMap<(String, String), Vec<ResultParamValue>>>;
-pub type ResultsAnnual = HashMap<String, ResultAnnual>;
-type ResultAnnual = HashMap<(String, String), ResultParamValue>;
+pub(crate) type ResultsPerTimestep =
+    IndexMap<String, IndexMap<(String, String), Vec<ResultParamValue>>>;
+pub(crate) type ResultsAnnual = IndexMap<String, ResultAnnual>;
+type ResultAnnual = IndexMap<(String, String), ResultParamValue>;
+
+pub(crate) fn to_corpus_results_per_timestep(
+    results: ResultsPerTimestep,
+) -> CorpusResultsPerTimestep {
+    results
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key,
+                value
+                    .into_iter()
+                    .map(|((key1, key2), value)| ((key1, Some(key2)), value))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsAnnual {
+    results
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key,
+                value
+                    .into_iter()
+                    .map(|((key1, key2), value)| ((key1, Some(key2)), vec![value]))
+                    .collect(),
+            )
+        })
+        .collect()
+}
 
 fn result_str(string: &str) -> String {
     string.into()
@@ -4241,103 +4277,6 @@ impl HeatPumpEnergyCalculation {
             }
             &_ => panic!("Parameter {param} not recognised"),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum ResultParamValue {
-    String(String),
-    Number(f64),
-    Boolean(bool),
-}
-
-impl ResultParamValue {
-    pub fn as_f64(&self) -> f64 {
-        match self {
-            ResultParamValue::Number(num) => *num,
-            _ => 0.,
-        }
-    }
-}
-
-impl Sum for ResultParamValue {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        // expect everything to be a number (or infer zero), return a number variant
-        Self::Number(
-            iter.map(|value| match value {
-                ResultParamValue::Number(num) => num,
-                _ => 0.,
-            })
-            .sum::<f64>(),
-        )
-    }
-}
-
-impl Add for ResultParamValue {
-    type Output = ResultParamValue;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        ResultParamValue::Number(self.as_f64() + rhs.as_f64())
-    }
-}
-
-impl Add for &ResultParamValue {
-    type Output = ResultParamValue;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        ResultParamValue::Number(self.as_f64() + rhs.as_f64())
-    }
-}
-
-impl AddAssign for ResultParamValue {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = Self::Number(self.as_f64() + rhs.as_f64());
-    }
-}
-
-impl Div for ResultParamValue {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Self::Number(self.as_f64() / rhs.as_f64())
-    }
-}
-
-impl PartialEq<f64> for ResultParamValue {
-    fn eq(&self, other: &f64) -> bool {
-        self.as_f64() == *other
-    }
-}
-
-impl From<f64> for ResultParamValue {
-    fn from(value: f64) -> Self {
-        Self::Number(value)
-    }
-}
-
-impl From<ResultParamValue> for String {
-    fn from(value: ResultParamValue) -> Self {
-        value.to_string().into()
-    }
-}
-
-impl From<String> for ResultParamValue {
-    fn from(value: String) -> Self {
-        Self::String(value)
-    }
-}
-
-impl Display for ResultParamValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ResultParamValue::String(string) => string.to_string(),
-                ResultParamValue::Number(number) => number.to_string(),
-                ResultParamValue::Boolean(boolean) => boolean.to_string(),
-            }
-        )
     }
 }
 

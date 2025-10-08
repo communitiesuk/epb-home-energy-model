@@ -7,6 +7,10 @@ use crate::core::schedule::TypedScheduleEvent;
 use crate::core::units::{
     KILOJOULES_PER_KILOWATT_HOUR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, WATTS_PER_KILOWATT,
 };
+use crate::corpus::{
+    ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
+    ResultsPerTimestep as CorpusResultsPerTimestep,
+};
 use crate::input::HeatSourceWetDetails;
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
@@ -16,6 +20,7 @@ use atomic_float::AtomicF64;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use smartstring::alias::String;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -331,25 +336,27 @@ struct HeatBatteryResult {
 impl HeatBatteryResult {
     fn param_value_as_string(&self, param: &str) -> String {
         match param {
-            "service_name" => self.service_name.to_string(),
-            "service_type" => format!("{:?}", self.service_type),
-            "service_on" => self.service_on.to_string(),
-            "energy_output_required" => self.energy_output_required.to_string(),
+            "service_name" => self.service_name.clone(),
+            "service_type" => format!("{:?}", self.service_type).into(),
+            "service_on" => self.service_on.to_string().into(),
+            "energy_output_required" => self.energy_output_required.to_string().into(),
             "temp_output" => match self.temp_output {
-                Some(temp) => temp.to_string(),
-                None => "".to_string(),
+                Some(temp) => temp.to_string().into(),
+                None => "".into(),
             },
-            "temp_inlet" => self.temp_inlet.to_string(),
-            "time_running" => self.time_running.to_string(),
-            "energy_left_in_pipe" => self.energy_left_in_pipe.to_string(),
-            "temperature_left_in_pipe" => self.temperature_left_in_pipe.to_string(),
-            "energy_delivered_hb" => self.energy_delivered_hb.to_string(),
-            "energy_delivered_backup" => self.energy_delivered_backup.to_string(),
-            "energy_delivered_total" => self.energy_delivered_total.to_string(),
-            "energy_delivered_low_temp" => self.energy_delivered_low_temp.to_string(),
-            "energy_charged_during_service" => self.energy_charged_during_service.to_string(),
-            "hb_zone_temperatures" => self.hb_zone_temperatures.iter().join(","),
-            "current_hb_power" => self.current_hb_power.to_string(),
+            "temp_inlet" => self.temp_inlet.to_string().into(),
+            "time_running" => self.time_running.to_string().into(),
+            "energy_left_in_pipe" => self.energy_left_in_pipe.to_string().into(),
+            "temperature_left_in_pipe" => self.temperature_left_in_pipe.to_string().into(),
+            "energy_delivered_hb" => self.energy_delivered_hb.to_string().into(),
+            "energy_delivered_backup" => self.energy_delivered_backup.to_string().into(),
+            "energy_delivered_total" => self.energy_delivered_total.to_string().into(),
+            "energy_delivered_low_temp" => self.energy_delivered_low_temp.to_string().into(),
+            "energy_charged_during_service" => {
+                self.energy_charged_during_service.to_string().into()
+            }
+            "hb_zone_temperatures" => self.hb_zone_temperatures.iter().join(",").into(),
+            "current_hb_power" => self.current_hb_power.to_string().into(),
             _ => panic!("Unknown parameter: {}", param),
         }
     }
@@ -567,14 +574,14 @@ impl HeatBattery {
 
         // Set up EnergySupplyConnection for this service
         heat_battery.write().energy_supply_connections.insert(
-            service_name.to_string(),
-            EnergySupply::connection(energy_supply, service_name).unwrap(),
+            service_name.into(),
+            EnergySupply::connection(energy_supply, service_name)?,
         );
 
         // Set up PipeEnergy for this service to store extra
         // energy pushed into the pipe to run the battery and temperature
         heat_battery.read().pipe_energy.write().insert(
-            service_name.to_string(),
+            service_name.into(),
             PipeEnergy {
                 energy: 0.,
                 temperature: 0.,
@@ -602,7 +609,7 @@ impl HeatBattery {
         Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
         HeatBatteryServiceWaterRegular::new(
             heat_battery,
-            service_name.to_string(),
+            service_name.into(),
             cold_feed,
             control_min,
             control_max,
@@ -615,7 +622,7 @@ impl HeatBattery {
         control: Arc<Control>,
     ) -> HeatBatteryServiceSpace {
         Self::create_service_connection(heat_battery.clone(), service_name).unwrap();
-        HeatBatteryServiceSpace::new(heat_battery, service_name.to_string(), control)
+        HeatBatteryServiceSpace::new(heat_battery, service_name.into(), control)
     }
 
     /// Calculates power required for unit
@@ -1426,7 +1433,7 @@ impl HeatBattery {
                 let pipe_energy = self.pipe_energy.read();
                 let service_pipe_energy = &pipe_energy.deref()[service_name];
                 self.service_results.write().push(HeatBatteryResult {
-                    service_name: service_name.to_string(),
+                    service_name: service_name.into(),
                     service_type,
                     service_on,
                     energy_output_required,
@@ -1590,7 +1597,7 @@ impl HeatBattery {
             let pipe_energy = self.pipe_energy.read();
             let service_pipe_energy = &pipe_energy.deref()[service_name];
             self.service_results.write().push(HeatBatteryResult {
-                service_name: service_name.to_string(),
+                service_name: service_name.into(),
                 service_type,
                 service_on,
                 energy_output_required,
@@ -1763,13 +1770,15 @@ impl HeatBattery {
                             param_values
                                 .iter()
                                 .enumerate()
-                                .map(|(i, _)| format!("{parameter}{i}"))
+                                .map(|(i, _)| format!("{parameter}{i}").into())
                                 .collect(),
                         );
                     }
                     for (label, result) in labels.as_ref().unwrap().iter().zip(param_values) {
-                        results_per_timestep["auxiliary"]
-                            [&(label.to_owned(), param_unit.to_string().into())]
+                        results_per_timestep["auxiliary"][&(
+                            String::from(label.as_str()),
+                            String::from(*param_unit).into(),
+                        )]
                             .push(result.into());
                     }
                 }
@@ -1788,7 +1797,7 @@ impl HeatBattery {
                     param_results.push(result.into());
                 }
                 results_per_timestep["auxiliary"]
-                    [&(parameter.to_string(), param_unit.to_string().into())] = param_results;
+                    [&(String::from(*parameter), String::from(*param_unit).into())] = param_results;
             }
         }
 
@@ -1817,21 +1826,21 @@ impl HeatBattery {
                             .zip(current_result.hb_zone_temperatures.iter())
                         {
                             current_results
-                                .entry((label.to_owned(), param_unit.map(|u| u.to_string())))
+                                .entry((String::from(label), param_unit.map(String::from)))
                                 .or_default()
                                 .push(result.into());
                         }
                     } else {
                         let result = current_result.param_value_as_string(parameter);
                         current_results
-                            .entry((parameter.to_string(), param_unit.map(|u| u.to_string())))
+                            .entry((String::from(*parameter), param_unit.map(String::from)))
                             .or_default()
                             .push(result.into());
                     }
                 }
             }
             // For water heating service, record hot water energy delivered from tank
-            current_results[&("energy_delivered_H4".to_string(), Some("kWh".to_string()))] = if self
+            current_results[&("energy_delivered_H4".into(), Some("kWh".into()))] = if self
                 .detailed_results
                 .as_ref()
                 .unwrap()
@@ -1856,11 +1865,7 @@ impl HeatBattery {
                 //       space heating, which is not currently included in the
                 //       model. If this is included in future, this code will need
                 //       to be revised.
-                current_results[&(
-                    "energy_delivered_total".to_string(),
-                    Some("kWh".to_string()),
-                )]
-                    .clone()
+                current_results[&("energy_delivered_total".into(), Some("kWh".into()))].clone()
             };
 
             results_per_timestep.insert(service_name.to_owned(), current_results);
@@ -1873,7 +1878,7 @@ impl HeatBattery {
                     .iter()
                     .filter_map(|(parameter, param_units, incl_in_manual)| {
                         incl_in_manual.then_some((
-                            (parameter.to_string(), param_units.map(|x| x.to_string())),
+                            (String::from(*parameter), param_units.map(String::from)),
                             0.0,
                         ))
                     })
@@ -1882,17 +1887,14 @@ impl HeatBattery {
             ("auxiliary".into(), Default::default()),
         ]
         .into();
-        results_annual["Overall"].insert(
-            ("energy_delivered_H4".to_string(), Some("kWh".to_string())),
-            0.0,
-        );
+        results_annual["Overall"].insert(("energy_delivered_H4".into(), Some("kWh".into())), 0.0);
         // Report auxiliary parameters (not specific to a service)
         for (parameter, param_unit, incl_in_annual) in aux_parameters.iter() {
             if *incl_in_annual {
                 results_annual["auxiliary"].insert(
-                    (parameter.to_string(), param_unit.to_string().into()),
+                    (String::from(*parameter), String::from(*param_unit).into()),
                     results_per_timestep["auxiliary"]
-                        [&(parameter.to_string(), param_unit.to_string().into())]
+                        [&(String::from(*parameter), String::from(*param_unit).into())]
                         .iter()
                         .cloned()
                         .map(f64::from)
@@ -1907,32 +1909,31 @@ impl HeatBattery {
             for (parameter, param_unit, incl_in_annual) in output_parameters.iter() {
                 if *incl_in_annual {
                     let parameter_annual_total = results_per_timestep[service_name]
-                        [&((*parameter).to_string(), param_unit.map(|x| x.to_string()))]
+                        [&(String::from(*parameter), param_unit.map(String::from))]
                         .iter()
                         .cloned()
                         .map(f64::from)
                         .sum::<f64>();
                     current_annual_results.insert(
-                        (parameter.to_string(), param_unit.map(|x| x.to_string())),
+                        (String::from(*parameter), param_unit.map(String::from)),
                         parameter_annual_total,
                     );
                     results_annual["Overall"]
-                        [&(parameter.to_string(), param_unit.map(|x| x.to_string()))] +=
+                        [&(String::from(*parameter), param_unit.map(String::from))] +=
                         parameter_annual_total;
                 }
             }
             current_annual_results.insert(
-                ("energy_delivered_H4".to_string(), Some("kWh".to_string())),
+                ("energy_delivered_H4".into(), Some("kWh".into())),
                 results_per_timestep[service_name]
-                    [&("energy_delivered_H4".to_string(), Some("kWh".to_string()))]
+                    [&("energy_delivered_H4".into(), Some("kWh".into()))]
                     .iter()
                     .cloned()
                     .map(f64::from)
                     .sum::<f64>(),
             );
-            results_annual["Overall"]
-                [&("energy_delivered_H4".to_string(), Some("kWh".to_string()))] += results_annual
-                [service_name][&("energy_delivered_H4".to_string(), Some("kWh".to_string()))];
+            results_annual["Overall"][&("energy_delivered_H4".into(), Some("kWh".into()))] +=
+                results_annual[service_name][&("energy_delivered_H4".into(), Some("kWh".into()))];
 
             results_annual.insert(service_name.to_owned(), current_annual_results);
         }
@@ -1953,6 +1954,45 @@ impl HeatBattery {
 pub(crate) type ResultsPerTimestep =
     IndexMap<String, IndexMap<(String, Option<String>), Vec<StringOrNumber>>>;
 pub(crate) type ResultsAnnual = IndexMap<String, IndexMap<(String, Option<String>), f64>>;
+
+pub(crate) fn to_corpus_results_per_timestep(
+    results: ResultsPerTimestep,
+) -> CorpusResultsPerTimestep {
+    results
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key,
+                value
+                    .into_iter()
+                    .map(|((key1, key2), value)| {
+                        (
+                            (key1, key2),
+                            value.into_iter().map(ResultParamValue::from).collect(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn to_corpus_results_annual(results: ResultsAnnual) -> CorpusResultsAnnual {
+    results
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key,
+                value
+                    .into_iter()
+                    .map(|((key1, key2), value)| {
+                        ((key1, key2), vec![ResultParamValue::from(value)])
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
 
 #[cfg(test)]
 mod tests {
@@ -1979,6 +2019,7 @@ mod tests {
     use rstest::fixture;
     use rstest::rstest;
     use serde_json::json;
+    use smartstring::alias::String;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
