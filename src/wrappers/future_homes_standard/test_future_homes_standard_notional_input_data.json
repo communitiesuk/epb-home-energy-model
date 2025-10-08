@@ -326,7 +326,7 @@
       "power_crankcase_heater": 0.01,
       "power_off": 0.015,
       "power_max_backup": 3.0,
-      "test_data": [
+      "test_data_EN14825": [
         {
           "test_letter": "A",
           "capacity": 8.4,
