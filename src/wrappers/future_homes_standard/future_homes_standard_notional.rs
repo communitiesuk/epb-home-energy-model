@@ -1832,8 +1832,12 @@ mod tests {
                     "orientation360": 0.0,
                     "g_value": 0.0,
                     "frame_area_fraction": 0.0,
+                    "free_area_height": 0.0,
                     "base_height": 0.0,
+                    "max_window_open_area": 3,
+                    "mid_height": 1.5,
                     "shading": [],
+                    "window_part_list": []
                 }
             },
             "ThermalBridging": 1.0,
