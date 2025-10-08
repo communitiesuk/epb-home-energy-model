@@ -726,16 +726,14 @@ impl ControlDetails {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ControlLogicType {
     #[default]
     Manual,
     Automatic,
-    #[serde(rename = "celect")]
     Celect,
     // high heat retention storage heater
-    #[serde(rename = "hhrsh")]
     Hhrsh,
-    #[serde(rename = "heat_battery")]
     HeatBattery,
 }
 
@@ -1430,9 +1428,13 @@ pub(crate) type WaterDistribution = Vec<WaterPipeworkSimple>;
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct WaterHeatingEvents {
+    #[serde(default)]
     pub(crate) shower: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[serde(default)]
     pub(crate) bath: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[serde(default)]
     pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
@@ -5162,7 +5164,13 @@ mod tests {
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
-                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).unwrap();
+                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).expect(
+                    format!(
+                        "Failed deserializing {}",
+                        entry.file_name().to_str().unwrap()
+                    )
+                    .as_str(),
+                );
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);
