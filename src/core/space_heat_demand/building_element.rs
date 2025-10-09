@@ -4205,7 +4205,7 @@ mod tests {
         assert_eq!(combined_light_blind_hvac.is_automatic(), true);
     }
 
-    struct MockSolarRadiationInteraction();
+    struct MockSolarRadiationInteraction(Option<f64>);
     impl SolarRadiationInteraction for MockSolarRadiationInteraction {
         fn base_height(&self) -> f64 {
             unreachable!()
@@ -4214,63 +4214,89 @@ mod tests {
             unreachable!()
         }
         fn orientation(&self) -> f64 {
-            todo!()
+            unreachable!()
         }
         fn projected_height(&self) -> f64 {
-            todo!()
+            unreachable!()
         }
         fn set_base_height(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
         fn set_external_pitch(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
         fn set_orientation(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
         fn set_projected_height(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
-        fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
-            todo!()
+        fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
+            unreachable!()
         }
         fn set_solar_absorption_coeff(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
         fn set_width(&mut self, _: f64) {
-            todo!()
+            unreachable!()
         }
         fn shading(&self) -> &[WindowShadingObject] {
-            todo!()
+            unreachable!()
         }
         fn solar_absorption_coeff(&self) -> f64 {
-            todo!()
+            unreachable!()
         }
         fn width(&self) -> f64 {
-            todo!()
+            unreachable!()
         }
     }
 
     #[rstest]
     fn test_i_sol_dir_dif(mut simulation_time: SimulationTimeIterator) {
         assert_eq!(
-            MockSolarRadiationInteraction().i_sol_dir_dif(simulation_time.next().unwrap()),
+            MockSolarRadiationInteraction(None).i_sol_dir_dif(simulation_time.next().unwrap()),
             (0.0, 0.0)
         );
     }
 
     #[rstest]
     fn test_solar_gains() {
-        assert_eq!(MockSolarRadiationInteraction().solar_gains(), 0.0);
+        assert_eq!(SolarRadiationInteraction::solar_gains(&MockSolarRadiationInteraction(None)), 0.0);
     }
 
     #[rstest]
     fn test_shading_factors_direct_diffuse(mut simulation_time: SimulationTimeIterator) {
         assert_eq!(
-            MockSolarRadiationInteraction()
-                .shading_factors_direct_diffuse(simulation_time.next().unwrap()),
+             SolarRadiationInteraction::shading_factors_direct_diffuse(&MockSolarRadiationInteraction(None), simulation_time.next().unwrap()),
             (1.0, 1.0)
         );
+    }
+
+    impl SolarRadiationInteractionTransmitted for MockSolarRadiationInteraction {
+        fn unconverted_g_value(&self) -> f64 {
+            self.0.unwrap()
+        }
+
+        fn external_conditions(&self) -> &ExternalConditions {
+            unreachable!()
+        }
+
+        fn pitch(&self) -> f64 {
+            unreachable!()
+        }
+
+        fn area(&self) -> f64 {
+            unreachable!()
+        }
+
+        fn frame_area_fraction(&self) -> f64 {
+            unreachable!()
+        }
+    }
+
+    #[rstest]
+    fn test_convert_g_value() {
+        assert_eq!(MockSolarRadiationInteraction(Some(0.5)).convert_g_value(), 0.45);
     }
 
     #[fixture]
