@@ -2935,6 +2935,11 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rstest::*;
 
+    #[rstest]
+    fn test_convert_uvalue_to_resistance() {
+        assert_relative_eq!(convert_uvalue_to_resistance(2., 40.), 0.35985829616804244);
+    }
+
     struct MockHeatTransferInternal(f64);
 
     impl HeatTransferInternal for MockHeatTransferInternal {
@@ -2984,7 +2989,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_convert_uvalue_to_resistance(heat_transfer_internal_a: impl HeatTransferInternal) {
+    fn test_convert_uvalue_to_resistance_for_heat_transfer_internal_a(
+        heat_transfer_internal_a: impl HeatTransferInternal,
+    ) {
         assert_relative_eq!(
             heat_transfer_internal_a.convert_uvalue_to_resistance(1., 180.),
             0.7870483926665635,
@@ -3026,6 +3033,12 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "internal error: entered unreachable code")]
+    fn test_r_si_invalid_pitch(heat_transfer_internal_a: impl HeatTransferInternal) {
+        heat_transfer_internal_a.r_si_with_pitch(f64::NAN);
+    }
+
+    #[rstest]
     fn test_pitch_class(heat_transfer_internal_a: impl HeatTransferInternal) {
         assert_eq!(
             heat_transfer_internal_a.pitch_class(90.0),
@@ -3042,9 +3055,17 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "internal error: entered unreachable code")]
+    fn test_pitch_class_invalid(heat_transfer_internal_a: impl HeatTransferInternal) {
+        heat_transfer_internal_a.pitch_class(f64::NAN);
+    }
+
+    #[rstest]
     fn test_h_ri(heat_transfer_internal_a: impl HeatTransferInternal) {
         assert_eq!(heat_transfer_internal_a.h_ri(), 5.13);
     }
+
+    // skip two tests (`test_init_invalid_mass_distribution_class`) as Rust would not allow invalid mass_distribution_class values
 
     struct MockHeatTransferOtherSide(f64);
 
@@ -3095,6 +3116,8 @@ mod tests {
     ) {
         assert_eq!(heat_transfer_other_side_a.h_re(), 4.14);
     }
+
+    // skip test_fabric_heat_losss as Rust would not allow invalid method call
 
     #[fixture]
     fn simulation_time() -> SimulationTimeIterator {
@@ -3386,11 +3409,9 @@ mod tests {
         }
     }
 
-    #[ignore = "the assertion values here cause failures - upstream fix has been committed to"]
     #[rstest]
     fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
-        let results = [43.20, 35.15, 27.10, 27.15, 55.54];
-
+        let results = [43.20, 31.56, 27.10, 29.25, 55.54];
         for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_relative_eq!(be.fabric_heat_loss(), results[i], max_relative = 1e-2);
         }
@@ -3861,6 +3882,85 @@ mod tests {
         ))
     }
 
+    // skip test_init_invalid_floor_type and test_init_invalid_edge_type because Rust would not allow invalid values
+
+    fn create_suspended_floor(wind_shield_location: WindShieldLocation) -> FloorData {
+        FloorData::SuspendedFloor {
+            height_upper_surface: 1.,
+            thermal_transmission_walls: 0.5,
+            area_per_perimeter_vent: 1.,
+            shield_fact_location: wind_shield_location,
+            thermal_resistance_of_insulation: 1.,
+        }
+    }
+
+    fn create_building_element_ground(
+        simulation_time: SimulationTime,
+        floor_data: FloorData,
+    ) -> BuildingElementGround {
+        let external_conditions = Arc::new(ExternalConditions::new(
+            &simulation_time.iter(),
+            vec![1.; 8760],
+            vec![1.; 8760],
+            vec![],
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            vec![],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.,
+            None,
+            Some(DaylightSavingsConfig::NotApplicable),
+            false,
+            false,
+            None,
+        ));
+
+        BuildingElementGround::new(
+            30.0,
+            30.0,
+            0.,
+            1.0,
+            0.3,
+            15000.0,
+            MassDistributionClass::M,
+            &floor_data,
+            0.3,
+            22.0,
+            0.9,
+            external_conditions,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    /// Test that the shield_fact_location affects the wind_s_factor from h_pi and h_pe values
+    fn test_wind_shield_fact(simulation_time_for_ground: SimulationTime) {
+        let suspended_floor_sheltered = create_suspended_floor(WindShieldLocation::Sheltered);
+        let suspended_floor_average = create_suspended_floor(WindShieldLocation::Average);
+        let suspended_floor_exposed = create_suspended_floor(WindShieldLocation::Exposed);
+
+        let be_sheltered =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_sheltered);
+        assert_relative_eq!(be_sheltered.h_pi, 21.76809338521401);
+        assert_relative_eq!(be_sheltered.h_pe, 5208.393950400433);
+
+        let be_average =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_average);
+        assert_relative_eq!(be_average.h_pi, 20.285704885671986);
+        assert_relative_eq!(be_average.h_pe, 26144.01441657715);
+
+        let be_exposed =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_exposed);
+        assert_relative_eq!(be_exposed.h_pi, 19.75335084679448);
+        assert_relative_eq!(be_exposed.h_pe, 96370.39574909392);
+    }
+
+    // skipping test_wind_shield_fact_invalid_location as Rust would not allow invalid shield factor
+
     #[rstest]
     fn test_no_of_nodes_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
         for be in ground_building_elements {
@@ -4073,6 +4173,104 @@ mod tests {
                 "incorrect heat capacity returned"
             );
         }
+    }
+
+    // skipping test_from_string and test_from_string_invalid for TestWindowTreatmentType & TestWindowTreatmentCtrl as not necessary in Rust
+
+    #[rstest]
+    fn test_is_manual() {
+        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
+        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
+        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
+        let combined_light_blind_hvac: WindowTreatmentControl =
+            WindowTreatmentControl::CombinedLightBlindHvac;
+
+        assert_eq!(manual.is_manual(), true);
+        assert_eq!(manual_motorised.is_manual(), true);
+        assert_eq!(auto_motorised.is_manual(), false);
+        assert_eq!(combined_light_blind_hvac.is_manual(), false);
+    }
+
+    #[rstest]
+    fn test_is_automatic() {
+        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
+        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
+        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
+        let combined_light_blind_hvac: WindowTreatmentControl =
+            WindowTreatmentControl::CombinedLightBlindHvac;
+
+        assert_eq!(manual.is_automatic(), false);
+        assert_eq!(manual_motorised.is_automatic(), false);
+        assert_eq!(auto_motorised.is_automatic(), true);
+        assert_eq!(combined_light_blind_hvac.is_automatic(), true);
+    }
+
+    struct MockSolarRadiationInteraction();
+    impl SolarRadiationInteraction for MockSolarRadiationInteraction {
+        fn base_height(&self) -> f64 {
+            unreachable!()
+        }
+        fn external_pitch(&self) -> f64 {
+            unreachable!()
+        }
+        fn orientation(&self) -> f64 {
+            todo!()
+        }
+        fn projected_height(&self) -> f64 {
+            todo!()
+        }
+        fn set_base_height(&mut self, _: f64) {
+            todo!()
+        }
+        fn set_external_pitch(&mut self, _: f64) {
+            todo!()
+        }
+        fn set_orientation(&mut self, _: f64) {
+            todo!()
+        }
+        fn set_projected_height(&mut self, _: f64) {
+            todo!()
+        }
+        fn set_shading(&mut self, shading: Option<Vec<WindowShadingObject>>) {
+            todo!()
+        }
+        fn set_solar_absorption_coeff(&mut self, _: f64) {
+            todo!()
+        }
+        fn set_width(&mut self, _: f64) {
+            todo!()
+        }
+        fn shading(&self) -> &[WindowShadingObject] {
+            todo!()
+        }
+        fn solar_absorption_coeff(&self) -> f64 {
+            todo!()
+        }
+        fn width(&self) -> f64 {
+            todo!()
+        }
+    }
+
+    #[rstest]
+    fn test_i_sol_dir_dif(mut simulation_time: SimulationTimeIterator) {
+        assert_eq!(
+            MockSolarRadiationInteraction().i_sol_dir_dif(simulation_time.next().unwrap()),
+            (0.0, 0.0)
+        );
+    }
+
+    #[rstest]
+    fn test_solar_gains() {
+        assert_eq!(MockSolarRadiationInteraction().solar_gains(), 0.0);
+    }
+
+    #[rstest]
+    fn test_shading_factors_direct_diffuse(mut simulation_time: SimulationTimeIterator) {
+        assert_eq!(
+            MockSolarRadiationInteraction()
+                .shading_factors_direct_diffuse(simulation_time.next().unwrap()),
+            (1.0, 1.0)
+        );
     }
 
     #[fixture]
