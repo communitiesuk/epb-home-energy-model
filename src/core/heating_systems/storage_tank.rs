@@ -728,7 +728,7 @@ impl StorageTank {
     /// Energy input for the storage from the generation system
     /// (expressed per energy carrier X)
     /// Heat Source = energy carrier
-    pub(crate) fn potential_energy_input(
+    fn potential_energy_input(
         // Heat source. Addition of temp_s3_n as an argument
         &self,
         temp_s3_n: &[f64],
@@ -852,7 +852,8 @@ impl StorageTank {
                 .store(input_energy_adj, Ordering::SeqCst);
         }
 
-        let _heat_source_output = self.heat_source_output(heat_source, input_energy_adj, simtime);
+        let _heat_source_output =
+            self.heat_source_output(heat_source, input_energy_adj, simtime, None);
         // variable is updated in upstream but then never read
         // input_energy_adj -= _heat_source_output;
 
@@ -899,7 +900,7 @@ impl StorageTank {
     }
 
     /// Thermal losses are calculated with respect to the impact of the temperature set point
-    pub fn calc_temps_after_thermal_losses(
+    fn calc_temps_after_thermal_losses(
         &self,
         temp_s7_n: &[f64],
         q_x_in_n: &[f64],
@@ -1018,10 +1019,12 @@ impl StorageTank {
         heat_source: &HeatSource,
         input_energy_adj: f64,
         simulation_time_iteration: SimulationTimeIteration,
+        smart_hot_water_tank: Option<&SmartHotWaterTank>, // the temp_flow method might need to be called as a smart hot water tank if this is a storage tank composed by a smart hot water tank
     ) -> anyhow::Result<f64> {
-        let expect_message =
-            "Expected set point max to be set for storage tank with this heat source".to_string();
-        let temp_flow = self.temp_flow(heat_source, simulation_time_iteration)?;
+        let temp_flow = match smart_hot_water_tank {
+            None => self.temp_flow(heat_source, simulation_time_iteration),
+            Some(smart_hot_water_tank) => smart_hot_water_tank.temp_flow(simulation_time_iteration),
+        }?;
 
         // Input energy rounded so that almost zero negative numbers (caused by
         // floating point error) do not cause errors in subsequent code
@@ -1173,7 +1176,7 @@ impl StorageTank {
     /// h_sto_ls is the stand-by losses, in W/K
     ///
     /// TODO (from Python) there are alternative methods listed in App B (B.2.8) which are not included here.
-    pub fn stand_by_losses_coefficient(&self) -> f64 {
+    fn stand_by_losses_coefficient(&self) -> f64 {
         // BS EN 12897:2016 appendix B B.2.2
         // temperature of the water in the storage for the standardized conditions - degrees
         // these are reference (ref) temperatures from the standard test conditions for cylinder loss.
@@ -1185,11 +1188,7 @@ impl StorageTank {
 
     /// Function added into Storage tank to be called by the Solar Thermal object.
     /// Calculates the impact on storage tank temperature due to the proposed energy input
-    pub fn storage_tank_potential_effect(
-        &self,
-        energy_proposed: f64,
-        temp_s3_n: &[f64],
-    ) -> (f64, f64) {
+    fn storage_tank_potential_effect(&self, energy_proposed: f64, temp_s3_n: &[f64]) -> (f64, f64) {
         // assuming initially no water draw-off
 
         // initialise list of potential energy input for each layer
@@ -1384,7 +1383,7 @@ impl StorageTank {
     }
 
     /// Return the DHW recoverable heat losses as internal gain for the current timestep in W
-    pub fn internal_gains(&self) -> f64 {
+    pub(crate) fn internal_gains(&self) -> f64 {
         let primary_gains_timestep = self.primary_gains.load(Ordering::SeqCst);
         self.primary_gains
             .store(Default::default(), Ordering::SeqCst);
@@ -1867,7 +1866,7 @@ impl SmartHotWaterTank {
     /// Energy input for the storage from the generation system
     /// (expressed per energy carrier X)
     /// Heat Source = energy carrier
-    pub(crate) fn potential_energy_input(
+    fn potential_energy_input(
         // Heat source. Addition of temp_s3_n as an argument
         &self,
         temp_s3_n: &[f64],
@@ -1882,7 +1881,7 @@ impl SmartHotWaterTank {
         let expect_message = format!(
             "Expected temp flow to be set for storage tank with heat source: {heat_source_name}"
         );
-        let temp_flow = self.storage_tank.temp_flow(heat_source, simulation_time)?;
+        let temp_flow = self.temp_flow(simulation_time)?;
 
         let energy_potential =
             if let HeatSource::Storage(HeatSourceWithStorageTank::Solar(ref solar_heat_source)) =
@@ -2021,8 +2020,13 @@ impl SmartHotWaterTank {
         Ok(())
     }
 
-    fn temp_flow(&self, simtime: SimulationTimeIteration) -> Option<f64> {
-        self.temp_setpnt_max.setpnt(&simtime)
+    // Making this method return a Result as the corresponding method on StorageTank does, and in the original Python
+    // SmartHotWaterTank subclasses StorageTank. We're making the assumption here that .setpnt() will always return a
+    // `Some` value in normal functioning. If that isn't the case, we would need to address this differently.
+    fn temp_flow(&self, simtime: SimulationTimeIteration) -> anyhow::Result<f64> {
+        self.temp_setpnt_max.setpnt(&simtime).ok_or_else(|| {
+            anyhow!("Expected to be able to access a setpoint value in SmartHotWaterTank")
+        })
     }
 
     fn calc_state_of_charge(
@@ -2276,9 +2280,12 @@ impl SmartHotWaterTank {
             .store(input_energy_adj, Ordering::SeqCst);
 
         // Actual heat source output
-        let heat_source_output =
-            self.storage_tank
-                .heat_source_output(heat_source, input_energy_adj, simtime)?;
+        let heat_source_output = self.storage_tank.heat_source_output(
+            heat_source,
+            input_energy_adj,
+            simtime,
+            Some(self),
+        )?;
 
         // calculate volume pumped using actual heat source output
         let volumes = self.storage_tank.vol_n.clone();
