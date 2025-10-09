@@ -682,7 +682,7 @@ mod tests {
                     start: 8.,
                     duration: Some(3.),
                     temperature: 41.0,
-                    name: "mixer".to_string(), // NB. the anomalous name here is copied from the upstream Python
+                    name: "medium".to_string(),
                     event_type: WaterScheduleEventType::Bath,
                     volume: None,
                     warm_volume: None,
@@ -899,27 +899,27 @@ mod tests {
                         vol_hot_water_equiv_elec_shower: 0.0
                     },
                     DomesticHotWaterDemandData {
-                        hw_demand_vol: 39.92207133670446,
+                        hw_demand_vol: 64.89041357202146,
                         hw_demand_vol_target: IndexMap::from([
                             (
                                 41.0.into(),
                                 VolumeReference {
                                     warm_temp: 41.0,
-                                    warm_vol: 48.0
+                                    warm_vol: 72.0
                                 }
                             ),
                             (
                                 DemandVolTargetKey::TempHotWater,
                                 VolumeReference {
                                     warm_temp: 55.0,
-                                    warm_vol: 39.92207133670446
+                                    warm_vol: 64.89041357202146
                                 }
                             ),
                         ]),
-                        hw_vol_at_tapping_points: 32.365493807269814,
-                        hw_duration: 6.0,
-                        all_events: 1,
-                        hw_energy_demand: 1.9184107029362394,
+                        hw_vol_at_tapping_points: 49.77725851315216,
+                        hw_duration: 9.0,
+                        all_events: 2,
+                        hw_energy_demand: 2.9504640362695724,
                         usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 8.,
@@ -935,10 +935,10 @@ mod tests {
                                 start: 8.,
                                 duration: Some(3.),
                                 temperature: 41.0,
-                                name: "mixer".to_string(),
+                                name: "medium".to_string(),
                                 event_type: WaterScheduleEventType::Bath,
                                 volume: None,
-                                warm_volume: None,
+                                warm_volume: Some(24.),
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
@@ -1143,6 +1143,21 @@ mod tests {
                     (0.0, 0.0),
                     (0.0, 0.0)
                 ][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calc_pipework_losses_with_no_pipework(
+        mut dhw_demand: DomesticHotWaterDemand,
+        simulation_time: SimulationTime,
+    ) {
+        dhw_demand.hot_water_distribution_pipework = vec![];
+
+        for (t_idx, _) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                dhw_demand.calc_pipework_losses(1., 0., 0, 55., 20., 5.),
+                (0., 0.)
             );
         }
     }
