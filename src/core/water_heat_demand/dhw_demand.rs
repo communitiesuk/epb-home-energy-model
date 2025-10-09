@@ -1154,7 +1154,7 @@ mod tests {
     ) {
         dhw_demand.hot_water_distribution_pipework = vec![];
 
-        for (t_idx, _) in simulation_time.iter().enumerate() {
+        for _ in simulation_time.iter() {
             assert_eq!(
                 dhw_demand.calc_pipework_losses(1., 0., 0, 55., 20., 5.),
                 (0., 0.)

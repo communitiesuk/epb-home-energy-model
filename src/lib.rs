@@ -1,8 +1,4 @@
-#![allow(
-    clippy::too_many_arguments,
-    unused_variables,
-    clippy::doc_overindented_list_items
-)]
+#![allow(clippy::too_many_arguments, clippy::doc_overindented_list_items)]
 
 mod compare_floats;
 pub mod core;

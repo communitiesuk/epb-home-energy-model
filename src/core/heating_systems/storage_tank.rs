@@ -740,9 +740,6 @@ impl StorageTank {
     ) -> anyhow::Result<Vec<f64>> {
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = vec![0.; self.nb_vol];
-        let expect_message = format!(
-            "Expected temp flow to be set for storage tank with heat source: {heat_source_name}"
-        );
         let temp_flow = self.temp_flow(heat_source, simulation_time)?;
 
         let energy_potential =
@@ -817,8 +814,6 @@ impl StorageTank {
         simtime: SimulationTimeIteration,
         control_max_diverter: Option<&Control>,
     ) -> anyhow::Result<TemperatureCalculation> {
-        let temp_flow = self.temp_flow(heat_source, simtime)?;
-
         let setpntmax = if let Some(control_max_diverter) = control_max_diverter {
             control_max_diverter.setpnt(&simtime)
         } else {
@@ -1075,7 +1070,7 @@ impl StorageTank {
         let (setpntmin, setpntmax) = heat_source.setpnt(simulation_time_iteration)?;
 
         match (setpntmax, setpntmin) {
-            (None, Some(setpointmin)) => bail!("setpntmin must be None if setpntmax is None"),
+            (None, Some(_)) => bail!("setpntmin must be None if setpntmax is None"),
             (Some(setpointmax), Some(setpointmin)) => {
                 if setpointmin > setpointmax {
                     bail!("setpntmin: {setpointmin} must not be greater than setpntmax: {setpointmax}");
@@ -1878,9 +1873,6 @@ impl SmartHotWaterTank {
         // N.B. implementation from StorageTank but without thermostat_layer & with calling a SmartHotWaterTank specific method
         // initialise list of potential energy input for each layer
         let mut q_x_in_n = vec![0.; self.storage_tank.nb_vol];
-        let expect_message = format!(
-            "Expected temp flow to be set for storage tank with heat source: {heat_source_name}"
-        );
         let temp_flow = self.temp_flow(simulation_time)?;
 
         let energy_potential =
@@ -1981,7 +1973,7 @@ impl SmartHotWaterTank {
         temp_s3_n: &[f64],
         heat_source_name: &str,
         heat_source: &HeatSource,
-        heater_layer: usize,
+        _heater_layer: usize,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
         let (setpntmin, _) = self.retrieve_setpnt(heat_source, simtime)?;
@@ -2001,7 +1993,7 @@ impl SmartHotWaterTank {
         &self,
         temp_s8_n: &[f64],
         heat_source_name: &str,
-        heater_layer: usize,
+        _heater_layer: usize,
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<()> {
         let heat_source = self.storage_tank.heat_source_data[heat_source_name]
@@ -2134,7 +2126,7 @@ impl SmartHotWaterTank {
             }
 
             // Calculate energy required for usable and max temperatures
-            let (energy_req_usable, temp_simulation_usable, q_ls_n_usable) = self
+            let (energy_req_usable, temp_simulation_usable, _q_ls_n_usable) = self
                 .energy_req_target_temp(
                     &temp_layers,
                     &energy_available,
@@ -2247,7 +2239,7 @@ impl SmartHotWaterTank {
             .calc_temps_with_energy_input(temp_s3_n.as_slice(), &q_in_h_w_n);
 
         // Rearrange tank
-        let (q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
+        let (_q_h_sto_s7, temp_s7_n) = self.storage_tank.rearrange_temperatures(&temp_s6_n);
 
         // Calculate new temperatures after operation of top up pump
         let temp_s7_n = self.calc_temps_after_top_up_pump(
@@ -4995,9 +4987,7 @@ mod tests {
     }
 
     #[fixture]
-    fn simulation_time_for_smart_hot_water_tank(
-        simulation_time_for_storage_tank: SimulationTime,
-    ) -> SimulationTime {
+    fn simulation_time_for_smart_hot_water_tank() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 

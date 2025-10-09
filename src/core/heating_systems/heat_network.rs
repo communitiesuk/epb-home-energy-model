@@ -158,8 +158,6 @@ impl HeatNetworkServiceWaterStorage {
             return 0.;
         }
 
-        let control_max_setpnt = self.control_max.setpnt(simulation_time_iteration);
-
         self.heat_network.lock().energy_output_max(None)
     }
 

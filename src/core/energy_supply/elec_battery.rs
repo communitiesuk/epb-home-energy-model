@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_capacity_temp_equ(electric_battery: ElectricBattery) {
+    fn test_capacity_temp_equ() {
         assert_relative_eq!(ElectricBattery::capacity_temp_equ(5.), 0.9043);
         assert_relative_eq!(ElectricBattery::capacity_temp_equ(10.), 0.9476);
         assert_relative_eq!(ElectricBattery::capacity_temp_equ(20.), 1.);

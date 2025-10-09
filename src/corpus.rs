@@ -4662,7 +4662,7 @@ fn heat_source_from_input(
                         HeatSourceWet::HeatPumpWater(HeatPump::create_service_hot_water(
                             heat_pump.clone(),
                             &energy_supply_conn_name,
-                            55.,
+                            *temp_flow_limit_upper.as_ref().ok_or_else(|| anyhow!("A temp_limit_upper_in_c value was expected to have been provided in the case of a heat pump"))?,
                             Arc::new(cold_water_source.clone()),
                             control_min,
                             control_max,

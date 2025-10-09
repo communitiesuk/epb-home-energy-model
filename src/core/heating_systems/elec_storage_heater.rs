@@ -2126,7 +2126,7 @@ mod tests {
             },
         ];
 
-        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+        for t_it in simulation_time.iter() {
             heater.demand_energy(5., &t_it).unwrap();
         }
 
