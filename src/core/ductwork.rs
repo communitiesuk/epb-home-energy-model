@@ -218,7 +218,7 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn circular_ductwork() -> [Ductwork; 8] {
+    fn circular_ductwork() -> [Ductwork; 8] {
         [
             Ductwork::new(
                 DuctShape::Circular,
@@ -336,12 +336,61 @@ mod tests {
     }
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[rstest]
-    pub fn should_have_correct_diameter(circular_ductwork: [Ductwork; 8]) {
+    fn test_external_htc_based_on_reflective() {
+        let ductwork_reflective = Ductwork::new(
+            DuctShape::Circular,
+            None,
+            Some(1.),
+            Some(1.),
+            1.,
+            1.,
+            1.,
+            true,
+            DuctType::Exhaust,
+            MVHRLocation::Inside,
+            1.,
+        )
+        .unwrap();
+        let ductwork_non_reflective = Ductwork::new(
+            DuctShape::Circular,
+            None,
+            Some(1.),
+            Some(1.),
+            1.,
+            1.,
+            1.,
+            false,
+            DuctType::Exhaust,
+            MVHRLocation::Inside,
+            1.,
+        )
+        .unwrap();
+
+        assert_eq!(
+            ductwork_reflective.external_surface_resistance,
+            1. / (EXTERNAL_REFLECTIVE_HTC * PI * 3.)
+        );
+        assert_eq!(
+            ductwork_non_reflective.external_surface_resistance,
+            1. / (EXTERNAL_NONREFLECTIVE_HTC * PI * 3.)
+        );
+    }
+
+    #[rstest]
+    fn test_get_duct_type(circular_ductwork: [Ductwork; 8]) {
+        assert_eq!(circular_ductwork[0].duct_type(), DuctType::Exhaust);
+        assert_eq!(circular_ductwork[1].duct_type(), DuctType::Intake);
+        assert_eq!(circular_ductwork[2].duct_type(), DuctType::Supply);
+        assert_eq!(circular_ductwork[3].duct_type(), DuctType::Extract);
+    }
+
+    #[rstest]
+    fn should_have_correct_diameter(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
             circular_ductwork[0]
                 .diameter_including_insulation_in_m
@@ -352,7 +401,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_internal_surface_resistance(circular_ductwork: [Ductwork; 8]) {
+    fn should_have_correct_internal_surface_resistance(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
             circular_ductwork[0].internal_surface_resistance,
             0.82144,
@@ -361,7 +410,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_insulation_resistance(circular_ductwork: [Ductwork; 8]) {
+    fn should_have_correct_insulation_resistance(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
             circular_ductwork[0].insulation_resistance,
             8.30633,
@@ -370,7 +419,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_external_surface_resistance(circular_ductwork: [Ductwork; 8]) {
+    fn should_have_correct_external_surface_resistance(circular_ductwork: [Ductwork; 8]) {
         assert_relative_eq!(
             circular_ductwork[0].external_surface_resistance,
             0.44832,
@@ -379,7 +428,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_correct_duct_heat_loss(
+    fn should_calc_correct_duct_heat_loss(
         circular_ductwork: [Ductwork; 8],
         simulation_time: SimulationTime,
     ) {
@@ -398,7 +447,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calc_correct_total_duct_heat_loss(
+    fn should_calc_correct_total_duct_heat_loss(
         circular_ductwork: [Ductwork; 8],
         simulation_time: SimulationTime,
     ) {
@@ -424,7 +473,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn rectangular_ductwork() -> Ductwork {
+    fn rectangular_ductwork() -> Ductwork {
         Ductwork::new(
             DuctShape::Rectangular,
             Some(0.1),
@@ -442,9 +491,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn rectangular_should_have_correct_internal_surface_resistance(
-        rectangular_ductwork: Ductwork,
-    ) {
+    fn rectangular_should_have_correct_internal_surface_resistance(rectangular_ductwork: Ductwork) {
         assert_relative_eq!(
             rectangular_ductwork.internal_surface_resistance,
             0.64516,
@@ -453,7 +500,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn rectangular_should_have_correct_insulation_resistance(rectangular_ductwork: Ductwork) {
+    fn rectangular_should_have_correct_insulation_resistance(rectangular_ductwork: Ductwork) {
         assert_relative_eq!(
             rectangular_ductwork.insulation_resistance,
             5.85106,
@@ -462,9 +509,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn rectangular_should_have_correct_external_surface_resistance(
-        rectangular_ductwork: Ductwork,
-    ) {
+    fn rectangular_should_have_correct_external_surface_resistance(rectangular_ductwork: Ductwork) {
         assert_relative_eq!(
             rectangular_ductwork.external_surface_resistance,
             0.36232,
@@ -473,7 +518,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn rectangular_should_have_correct_duct_heat_loss(
+    fn rectangular_should_have_correct_duct_heat_loss(
         rectangular_ductwork: Ductwork,
         simulation_time: SimulationTime,
     ) {
@@ -490,7 +535,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn rectangular_should_have_correct_total_duct_heat_loss(
+    fn rectangular_should_have_correct_total_duct_heat_loss(
         rectangular_ductwork: Ductwork,
         simulation_time: SimulationTime,
     ) {
