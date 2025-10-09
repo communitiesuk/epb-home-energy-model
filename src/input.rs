@@ -2293,8 +2293,8 @@ pub(crate) enum SpaceCoolSystemDetails {
         frac_convective: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<String>,
+        #[serde(rename = "Control")]
+        control: String,
     },
 }
 

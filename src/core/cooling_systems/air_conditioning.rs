@@ -13,7 +13,7 @@ pub struct AirConditioning {
     frac_convective: f64,
     energy_supply_connection: EnergySupplyConnection,
     simulation_timestep: f64,
-    control: Option<Arc<Control>>,
+    control: Arc<Control>,
 }
 
 impl AirConditioning {
@@ -32,7 +32,7 @@ impl AirConditioning {
         frac_convective: f64,
         energy_supply_connection: EnergySupplyConnection,
         simulation_timestep: f64,
-        control: Option<Arc<Control>>,
+        control: Arc<Control>,
     ) -> Self {
         Self {
             cooling_capacity_in_kw,
@@ -45,14 +45,14 @@ impl AirConditioning {
     }
 
     pub fn temp_setpnt(&self, simulation_time_iteration: &SimulationTimeIteration) -> Option<f64> {
-        self.control.as_ref().and_then(|control| per_control!(control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) }))
+        per_control!(self.control.as_ref(), ctrl => { ctrl.setpnt(simulation_time_iteration) })
     }
 
     pub fn in_required_period(
         &self,
         simulation_time_iteration: &SimulationTimeIteration,
     ) -> Option<bool> {
-        self.control.as_ref().and_then(|control| per_control!(control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) }))
+        per_control!(self.control.as_ref(), ctrl => { ctrl.in_required_period(simulation_time_iteration) })
     }
 
     pub fn frac_convective(&self) -> f64 {
@@ -67,15 +67,14 @@ impl AirConditioning {
         // Account for time control where present. If no control present, assume
         // system is always active (except for basic thermostatic control, which
         // is implicit in demand calculation).
-        let cooling_supplied =
-            if self.control.is_none() || self.control.as_ref().unwrap().is_on(simtime) {
-                max_of_2(
-                    cooling_demand,
-                    -self.cooling_capacity_in_kw * self.simulation_timestep,
-                )
-            } else {
-                0.
-            };
+        let cooling_supplied = if self.control.is_on(simtime) {
+            max_of_2(
+                cooling_demand,
+                -self.cooling_capacity_in_kw * self.simulation_timestep,
+            )
+        } else {
+            0.
+        };
 
         self.energy_supply_connection
             .demand_energy(-cooling_supplied / self.efficiency, simtime.index)
@@ -125,7 +124,7 @@ mod tests {
                 0.4,
                 energy_supply_conn,
                 simulation_time.step,
-                Some(Arc::new(Control::SetpointTime(control))),
+                Arc::new(Control::SetpointTime(control)),
             ),
             energy_supply,
         )

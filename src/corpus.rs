@@ -5457,9 +5457,7 @@ fn space_cool_systems_from_input(
             let energy_supply_conn_name = system_name;
             let energy_supply_conn =
                 EnergySupply::connection(energy_supply, energy_supply_conn_name).unwrap();
-            let control = control
-                .as_ref()
-                .and_then(|ctrl| controls.get_with_string(ctrl));
+            let control = controls.get_with_string(control).ok_or_else(|| anyhow!("The control reference '{control}' was expected to refer to a known control."))?;
 
             Ok((
                 (*energy_supply_conn_name).clone(),
