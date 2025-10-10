@@ -4261,13 +4261,19 @@ mod tests {
 
     #[rstest]
     fn test_solar_gains() {
-        assert_eq!(SolarRadiationInteraction::solar_gains(&MockSolarRadiationInteraction(None)), 0.0);
+        assert_eq!(
+            SolarRadiationInteraction::solar_gains(&MockSolarRadiationInteraction(None)),
+            0.0
+        );
     }
 
     #[rstest]
     fn test_shading_factors_direct_diffuse(mut simulation_time: SimulationTimeIterator) {
         assert_eq!(
-             SolarRadiationInteraction::shading_factors_direct_diffuse(&MockSolarRadiationInteraction(None), simulation_time.next().unwrap()),
+            SolarRadiationInteraction::shading_factors_direct_diffuse(
+                &MockSolarRadiationInteraction(None),
+                simulation_time.next().unwrap()
+            ),
             (1.0, 1.0)
         );
     }
@@ -4296,13 +4302,43 @@ mod tests {
 
     #[rstest]
     fn test_convert_g_value() {
-        assert_eq!(MockSolarRadiationInteraction(Some(0.5)).convert_g_value(), 0.45);
+        assert_eq!(
+            MockSolarRadiationInteraction(Some(0.5)).convert_g_value(),
+            0.45
+        );
+    }
+
+    #[rstest]
+    #[ignore = "TODO"]
+    fn test_solar_gains_for_transmitted() {
+        todo!()
     }
 
     #[fixture]
     fn transparent_building_element(
-        external_conditions: Arc<ExternalConditions>,
+        simulation_time: SimulationTimeIterator,
     ) -> BuildingElementTransparent {
+        let external_conditions = Arc::new(ExternalConditions::new(
+            &simulation_time,
+            vec![0.0, 5.0, 10.0, 15.0],
+            vec![],
+            vec![],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.0,
+            None,
+            None,
+            false,
+            false,
+            None,
+        ));
+
         BuildingElementTransparent::new(
             90.,
             0.4,
@@ -4435,6 +4471,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_h_pli_with_treatment_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.0,
+            closing_irradiance_control: None,
+            opening_irradiance_control: None,
+            open_control: None,
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+
+        assert_eq!(
+            transparent_building_element
+                .h_pli_by_index(0, simulation_time.current_iteration())
+                .unwrap(),
+            1.6666666666666665,
+            "incorrect h_pli returned"
+        );
+    }
+
+    #[rstest]
     fn test_k_pli_for_transparent(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.k_pli(),
@@ -4474,6 +4538,24 @@ mod tests {
             transparent_building_element.heat_capacity(),
             0.,
             "incorrect heat capacity returned"
+        );
+    }
+
+    #[rstest]
+    fn test_projected_height(transparent_building_element: BuildingElementTransparent) {
+        assert_eq!(
+            transparent_building_element.projected_height(),
+            1.25,
+            "incorrect projected height returned"
+        );
+    }
+
+    #[rstest]
+    fn test_orientation(transparent_building_element: BuildingElementTransparent) {
+        assert_eq!(
+            transparent_building_element.orientation(),
+            180.,
+            "incorrect orientation returned"
         );
     }
 
