@@ -2929,6 +2929,7 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::controls::time_control::OnOffTimeControl;
     use crate::external_conditions::DaylightSavingsConfig;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
@@ -4519,6 +4520,74 @@ mod tests {
                 "incorrect temp ext returned"
             );
         }
+    }
+
+    // TODO test_solar_gains, test_solar_gains_with_treatment
+
+    #[rstest]
+    fn test_adjust_treatment_open(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)], // control is on
+            0,
+            1.,
+        )));
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(control.clone()),
+            opening_irradiance_control: Some(control.clone()),
+            open_control: Some(control),
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_not_opened(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false)], // control is off
+            0,
+            1.,
+        )));
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(control.clone()),
+            opening_irradiance_control: Some(control.clone()),
+            open_control: Some(control),
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(!transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
     }
 
     #[rstest]
