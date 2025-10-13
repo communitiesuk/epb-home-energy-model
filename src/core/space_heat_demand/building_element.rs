@@ -4310,8 +4310,28 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "TODO"]
-    fn test_solar_gains_for_transmitted() {}
+    fn test_solar_gains_for_transmitted(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![0.5331371, 0., 0., 0.], // surface irradiance 0.5000000601251663
+        );
+        transparent_building_element.g_value = 0.5;
+        transparent_building_element.pitch = 20.;
+        transparent_building_element.area = 5.;
+        transparent_building_element.frame_area_fraction = 0.2;
+        transparent_building_element.external_conditions = external_conditions;
+
+        let solar_gains = SolarRadiationInteractionTransmitted::solar_gains(
+            &transparent_building_element,
+            simulation_time.current_iteration(),
+        )
+        .unwrap();
+
+        assert_relative_eq!(solar_gains, 0.9, max_relative = 1e-6);
+    }
 
     #[fixture]
     fn transparent_building_element(
