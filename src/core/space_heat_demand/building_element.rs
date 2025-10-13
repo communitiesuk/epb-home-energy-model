@@ -4611,22 +4611,13 @@ mod tests {
         ))
     }
     #[rstest]
-    fn test_solar_gains_for_transparent(simulation_time: SimulationTimeIterator) {
-        let transparent_building_element = BuildingElementTransparent::new(
-            90.,
-            0.4,
-            180.,
-            0.75,
-            0.25,
-            1.,
-            1.25,
-            4.,
-            Default::default(),
-            Default::default(),
-            external_conditions_surface_irradiance(
-                simulation_time.clone(),
-                vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
-            ),
+    fn test_solar_gains_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
         );
 
         assert_relative_eq!(
@@ -4639,7 +4630,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_solar_gains_with_treatment_for_transparent(simulation_time: SimulationTimeIterator) {
+    fn test_solar_gains_with_treatment_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
@@ -4652,21 +4646,10 @@ mod tests {
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
-        let mut transparent_building_element = BuildingElementTransparent::new(
-            90.,
-            0.4,
-            180.,
-            0.75,
-            0.25,
-            1.,
-            1.25,
-            4.,
-            Default::default(),
-            vec![window_treatment],
-            external_conditions_surface_irradiance(
-                simulation_time.clone(),
-                vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
-            ),
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
         );
 
         assert_relative_eq!(
@@ -4688,6 +4671,22 @@ mod tests {
         );
     }
 
+    fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(setpnt)], // causes control.setpnt() to return specified value
+                0,
+                1.0,
+                None,
+                None,
+                None,
+                Default::default(),
+                1.0,
+            )
+            .unwrap(),
+        ))
+    }
+
     #[rstest]
     fn test_adjust_treatment_open(
         simulation_time: SimulationTimeIterator,
@@ -4699,19 +4698,24 @@ mod tests {
             0,
             1.,
         )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: None,
-            opening_irradiance_control: None,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
             is_open: Default::default(),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
 
         transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
@@ -4733,19 +4737,24 @@ mod tests {
             0,
             1.,
         )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: None,
-            opening_irradiance_control: None,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
             is_open: Default::default(),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
 
         transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
@@ -4767,19 +4776,24 @@ mod tests {
             0,
             1.,
         )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: None,
-            opening_irradiance_control: None,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
 
         transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
@@ -4795,25 +4809,31 @@ mod tests {
         simulation_time: SimulationTimeIterator,
         mut transparent_building_element: BuildingElementTransparent,
     ) {
+        let external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
+        );
         // Test that adjust_treatment doesn't close when control is on
         let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
             vec![Some(true)], // control is on
             0,
             1.,
         )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: None,
-            opening_irradiance_control: None,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: Some(control),
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
         transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions;
 
         transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
@@ -4825,51 +4845,32 @@ mod tests {
     }
 
     #[rstest]
-    fn test_adjust_treatment_open_irrad(simulation_time: SimulationTimeIterator) {
+    fn test_adjust_treatment_open_irrad(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
         // Test that adjust_treatment opens from irradiance values
-        let control = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(40.)], // causes control.setpnt() to return 40
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ));
+        let setpoint_time_control = create_setpoint_time_control(40.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: Some(control.clone()),
-            opening_irradiance_control: Some(control.clone()),
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: None,
             is_open: Default::default(),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
+
+        transparent_building_element.treatment = vec![window_treatment];
         // The Python test sets the surface irradiance return value to 30, our building element gets
         // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
         // because surface_irradiance < control.setpnt()
-        let transparent_building_element = BuildingElementTransparent::new(
-            90.,
-            0.4,
-            180.,
-            0.75,
-            0.25,
-            1.,
-            1.25,
-            4.,
-            Default::default(),
-            vec![window_treatment],
-            external_conditions_surface_irradiance(
-                simulation_time.clone(),
-                vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
-            ),
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
         );
 
         transparent_building_element
@@ -4882,62 +4883,40 @@ mod tests {
     }
 
     #[rstest]
-    fn test_adjust_treatment_close_irrad(simulation_time: SimulationTimeIterator) {
+    fn test_adjust_treatment_close_irrad(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
         // Test that adjust_treatment closes from irradiance values
-        let control = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(20.)], // causes control.setpnt() to return 20
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ));
+        let setpoint_time_control = create_setpoint_time_control(20.);
         let window_treatment = WindowTreatment {
             _treatment_type: WindowTreatmentType::Curtains,
             controls: WindowTreatmentControl::Manual,
             delta_r: 0.2,
             trans_red: 0.3,
-            closing_irradiance_control: Some(control.clone()),
-            opening_irradiance_control: Some(control.clone()),
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
             open_control: None,
             is_open: AtomicBool::from(true),
             opening_delay_hrs: 0.0,
             time_last_adjusted: Default::default(),
         };
+        transparent_building_element.treatment = vec![window_treatment];
         // The Python test sets the surface irradiance return value to 30, our building element gets
         // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
         // because surface_irradiance > control.setpnt()
-        let transparent_building_element_surface_irradiance = BuildingElementTransparent::new(
-            90.,
-            0.4,
-            180.,
-            0.75,
-            0.25,
-            1.,
-            1.25,
-            4.,
-            Default::default(),
-            vec![window_treatment],
-            external_conditions_surface_irradiance(
-                simulation_time.clone(),
-                vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
-            ),
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
         );
 
-        transparent_building_element_surface_irradiance
+        transparent_building_element
             .adjust_treatment(simulation_time.current_iteration())
             .unwrap();
 
-        assert!(
-            !transparent_building_element_surface_irradiance.treatment[0]
-                .is_open
-                .load(Ordering::SeqCst)
-        )
+        assert!(!transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
     }
 
     #[rstest]
