@@ -60,12 +60,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
 
-pub const HEM_VERSION: &str = "0.34";
-pub const HEM_VERSION_DATE: &str = "2025-01-31";
+pub const HEM_VERSION: &str = "0.36";
+pub const HEM_VERSION_DATE: &str = "2025-06-03";
 #[cfg(feature = "fhs")]
-pub const FHS_VERSION: &str = "0.25";
+pub const FHS_VERSION: &str = "0.27";
 #[cfg(feature = "fhs")]
-pub const FHS_VERSION_DATE: &str = "2025-01-31";
+pub const FHS_VERSION_DATE: &str = "2025-06-03";
 
 #[instrument(skip_all)]
 pub fn run_project(
