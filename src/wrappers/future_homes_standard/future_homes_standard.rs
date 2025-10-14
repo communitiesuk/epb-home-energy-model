@@ -3190,9 +3190,9 @@ fn create_mev_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> {
         let event_start = event
             .get("start")
             .and_then(|v| v.as_f64())
-            .ok_or(json_error(format!(
-                "Event was expected to have a numeric start field. Event comprised: {event:?}",
-            )))?;
+            .ok_or(json_error(
+                "Event was expected to have a numeric start field",
+            ))?;
         let event_duration = event
             .get("duration")
             .and_then(|v| v.as_f64())
