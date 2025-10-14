@@ -4950,8 +4950,10 @@ fn hot_water_source_from_input(
                         .as_immersion_heater();
 
                     if let Some(im) = immersion_heater {
-                        let control_max =
-                            controls.get_with_string(diverter.control_max.as_ref().unwrap());
+                        let control_max = diverter
+                            .control_max
+                            .as_ref()
+                            .and_then(|control_max| controls.get_with_string(control_max));
                         let pv_diverter = PVDiverter::new(
                             &pre_heated_tank,
                             im,

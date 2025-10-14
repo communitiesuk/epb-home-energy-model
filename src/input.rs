@@ -4297,7 +4297,16 @@ impl InputForProcessing {
             .root_object("Events")?
             .iter()
             .filter(|(event_type, _)| event_types.contains(&&***event_type))
-            .flat_map(|(_, events)| events.as_object().map(|events| events.values()))
+            .flat_map(|(_, events)| {
+                events.as_object().map(|events| {
+                    events
+                        .values()
+                        .into_iter()
+                        .map(JsonValue::as_array)
+                        .flatten()
+                })
+            })
+            .flatten()
             .flatten()
             .cloned()
             .collect_vec())
@@ -5301,5 +5310,35 @@ mod accessors_tests {
             json!(input.root_object("ApplianceGains").unwrap()),
             expected_appliance_gains
         );
+    }
+
+    #[rstest]
+    fn test_water_heating_events_of_types(events_input: InputForProcessing) {
+        let actual = events_input
+            .water_heating_events_of_types(&["Shower"])
+            .unwrap();
+        let expected = vec![
+            json!({
+              "start": 4.1,
+              "duration": 6,
+              "temperature": 41.0
+            }),
+            json!({
+              "start": 4.5,
+              "duration": 6,
+              "temperature": 41.0
+            }),
+            json!({
+              "start": 6,
+              "duration": 6,
+              "temperature": 41.0
+            }),
+            json!({
+              "start": 7,
+              "duration": 6,
+              "temperature": 41.0
+            }),
+        ];
+        assert_eq!(actual, expected);
     }
 }
