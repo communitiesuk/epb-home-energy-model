@@ -537,7 +537,7 @@ impl EnergySupply {
                         .store(energy_accepted, Ordering::SeqCst);
 
                     // Informing EnergyImport of imported electricity
-                    self.demand_not_met[t_idx].fetch_add(elec_demand, Ordering::SeqCst);
+                    self.demand_not_met[t_idx].fetch_add(energy_accepted, Ordering::SeqCst);
                     energy_accepted
                 } else {
                     0.0
