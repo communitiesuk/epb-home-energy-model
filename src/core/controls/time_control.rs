@@ -95,13 +95,10 @@ impl ControlBehaviour for Control {
 pub(crate) enum HeatSourceControl {
     HotWaterTimer(Arc<Control>),
     WindowOpening(Arc<Control>),
-    WindowOpeningLivingRoom(Arc<Control>),
-    WindowOpeningRestOfDwelling(Arc<Control>),
-    AlwaysOff(Arc<Control>),
 }
 
 impl HeatSourceControl {
-    pub fn has_type(&self, control_type: HeatSourceControlType) -> bool {
+    pub(crate) fn has_type(&self, control_type: HeatSourceControlType) -> bool {
         match control_type {
             HeatSourceControlType::HotWaterTimer => {
                 matches!(self, HeatSourceControl::HotWaterTimer(_))
@@ -109,23 +106,13 @@ impl HeatSourceControl {
             HeatSourceControlType::WindowOpening => {
                 matches!(self, HeatSourceControl::WindowOpening(_))
             }
-            HeatSourceControlType::WindowOpeningLivingRoom => {
-                matches!(self, HeatSourceControl::WindowOpeningLivingRoom(_))
-            }
-            HeatSourceControlType::WindowOpeningRestOfDwelling => {
-                matches!(self, HeatSourceControl::WindowOpeningRestOfDwelling(_))
-            }
-            HeatSourceControlType::AlwaysOff => matches!(self, HeatSourceControl::AlwaysOff(_)),
         }
     }
 
-    pub fn get(&self) -> Arc<Control> {
+    pub(crate) fn get(&self) -> Arc<Control> {
         match self {
             HeatSourceControl::HotWaterTimer(control) => control.clone(),
             HeatSourceControl::WindowOpening(control) => control.clone(),
-            HeatSourceControl::WindowOpeningLivingRoom(control) => control.clone(),
-            HeatSourceControl::WindowOpeningRestOfDwelling(control) => control.clone(),
-            HeatSourceControl::AlwaysOff(control) => control.clone(),
         }
     }
 }
@@ -719,8 +706,8 @@ impl SmartApplianceControl {
         power_timeseries: &IndexMap<String, Vec<f64>>,
         timeseries_step: f64,
         simulation_time_iterator: &SimulationTimeIterator,
-        non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
-        battery_24hr: Option<SmartApplianceBattery>,
+        non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+        battery_24hr: SmartApplianceBattery,
         energy_supplies: &IndexMap<String, Arc<RwLock<EnergySupply>>>,
         appliance_names: Vec<String>,
     ) -> anyhow::Result<Self> {
@@ -735,12 +722,7 @@ impl SmartApplianceControl {
             .map(|(name, _supply)| {
                 (
                     name.to_owned(),
-                    battery_24hr
-                        .as_ref()
-                        .expect(
-                            "Expected battery 24 h to be set for energy supply that has battery ",
-                        )
-                        .battery_state_of_charge[name]
+                    battery_24hr.battery_state_of_charge[name]
                         .iter()
                         .map(|x| AtomicF64::new(*x))
                         .collect_vec(),
@@ -763,9 +745,8 @@ impl SmartApplianceControl {
             ts_step: timeseries_step,
             simulation_timestep: simulation_time_iterator.step_in_hours(),
             ts_step_ratio: simulation_time_iterator.step_in_hours() / timeseries_step,
-            buffer_length: non_appliance_demand_24hr.clone().expect("Expected non_appliance_demand_24hr to be set").first().as_ref().ok_or_else(|| anyhow!("non_appliance_demand_24hr parameter for SmartApplianceControl cannot be empty."))?.1.len(),
+            buffer_length: non_appliance_demand_24hr.clone().first().as_ref().ok_or_else(|| anyhow!("non_appliance_demand_24hr parameter for SmartApplianceControl cannot be empty."))?.1.len(),
             non_appliance_demand_24hr: non_appliance_demand_24hr.clone()
-                .expect("Expected non_appliance_demand_24hr to be set")
                 .into_iter()
                 .map(|(key, value)| (key, value.iter().map(|x| AtomicF64::new(*x)).collect_vec()))
                 .collect(),
@@ -894,6 +875,7 @@ impl SmartApplianceControl {
 
     /// Controls generally have this method, though this control does not in Python implementation.
     /// Defaulting to returning true for a fallback implementation here.
+    #[allow(dead_code)]
     pub(crate) fn is_on(&self, _simtime: &SimulationTimeIteration) -> bool {
         true
     }
@@ -905,24 +887,18 @@ impl ControlBehaviour for SmartApplianceControl {}
 pub(crate) struct CombinationTimeControl {
     combinations: ControlCombinations,
     controls: IndexMap<String, Arc<Control>>,
-    _start_day: u32,
-    _time_series_step: f64,
 }
 
 impl CombinationTimeControl {
     pub(crate) fn new(
         combinations: ControlCombinations,
         controls: IndexMap<String, Arc<Control>>,
-        start_day: u32,
-        time_series_step: f64,
     ) -> anyhow::Result<Self> {
         Self::validate_combinations(&combinations, &controls)?;
 
         Ok(Self {
             combinations,
             controls,
-            _start_day: start_day,
-            _time_series_step: time_series_step,
         })
     }
 
@@ -1853,18 +1829,18 @@ mod tests {
             // following starts/ends are corrected from Python tests which erroneously use previous
             // "start" field instead of "start360" (which has different origin for angle)
             serde_json::from_value(json!([
-                {"number": 1, "start360": 0, "end360": 45},
-                {"number": 2, "start360": 45, "end360": 90},
-                {"number": 3, "start360": 90, "end360": 135},
-                {"number": 4, "start360": 135, "end360": 180,
+                {"start360": 0, "end360": 45},
+                {"start360": 45, "end360": 90},
+                {"start360": 90, "end360": 135},
+                {"start360": 135, "end360": 180,
                     "shading": [
                         {"type": "obstacle", "height": 10.5, "distance": 12}
                     ]
                 },
-                {"number": 5, "start360": 180, "end360": 225},
-                {"number": 6, "start360": 225, "end360": 270},
-                {"number": 7, "start360": 270, "end360": 315},
-                {"number": 8, "start360": 315, "end360": 360}
+                {"start360": 180, "end360": 225},
+                {"start360": 225, "end360": 270},
+                {"start360": 270, "end360": 315},
+                {"start360": 315, "end360": 360}
             ]))
             .unwrap(),
         );
@@ -2029,18 +2005,18 @@ mod tests {
             // following starts/ends are corrected from Python tests which erroneously use previous
             // "start" field instead of "start360" (which has different origin for angle)
             serde_json::from_value(json!([
-                {"number": 1, "start360": 0, "end360": 45},
-                {"number": 2, "start360": 45, "end360": 90},
-                {"number": 3, "start360": 90, "end360": 135},
-                {"number": 4, "start360": 135, "end360": 180,
+                {"start360": 0, "end360": 45},
+                {"start360": 45, "end360": 90},
+                {"start360": 90, "end360": 135},
+                {"start360": 135, "end360": 180,
                     "shading": [
                         {"type": "obstacle", "height": 10.5, "distance": 12}
                     ]
                 },
-                {"number": 5, "start360": 180, "end360": 225},
-                {"number": 6, "start360": 225, "end360": 270},
-                {"number": 7, "start360": 270, "end360": 315},
-                {"number": 8, "start360": 315, "end360": 360}
+                {"start360": 180, "end360": 225},
+                {"start360": 225, "end360": 270},
+                {"start360": 270, "end360": 315},
+                {"start360": 315, "end360": 360}
             ]))
             .unwrap(),
         );
@@ -2239,7 +2215,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_on_off, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_on_off, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2252,7 +2228,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_setpoint, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_setpoint, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2265,7 +2241,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_req, controls_for_combination, 0, 1.).unwrap()
+        CombinationTimeControl::new(combination_req, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2278,8 +2254,7 @@ mod tests {
         }))
         .unwrap();
 
-        CombinationTimeControl::new(combination_on_off_cost, controls_for_combination, 0, 1.)
-            .unwrap()
+        CombinationTimeControl::new(combination_on_off_cost, controls_for_combination).unwrap()
     }
 
     #[fixture]
@@ -2328,8 +2303,6 @@ mod tests {
             }))
             .unwrap(),
             controls_for_target_charge,
-            0,
-            1.,
         )
         .unwrap()
     }
@@ -2344,8 +2317,6 @@ mod tests {
             }))
             .unwrap(),
             controls_for_target_charge,
-            0,
-            1.,
         )
         .unwrap()
     }
@@ -2495,8 +2466,6 @@ mod tests {
             assert!(CombinationTimeControl::new(
                 serde_json::from_value(invalid_combination).unwrap(),
                 controls_for_invalid_combinations.clone(),
-                0,
-                1.,
             )
             .is_err());
         }

@@ -30,7 +30,7 @@
 			{"number": 1, "start360": 0, "end360": 45},
 			{"number": 2, "start360": 45, "end360": 90},
 			{"number": 3, "start360": 90, "end360": 135},
-			{"number": 4, "start360": 135, "end360": 180, 
+			{"number": 4, "start360": 135, "end360": 180,
 				"shading": [
 					{"type": "obstacle", "height": 10.5, "distance": 12}
 				]
@@ -40,7 +40,7 @@
 			{"number": 7, "start360": 270, "end360": 315},
 			{"number": 8, "start360": 315, "end360": 360}
 		]
-		
+
 	},
 	"InternalGains": {
 		"metabolic gains": {
@@ -134,15 +134,12 @@
 			"type": "StorageTank",
 			"volume": 80.0,
 			"daily_losses": 1.68,
-			"min_temp": 52.0,
-			"setpoint_temp": 55.0,
 			"ColdWaterSource": "header tank",
 			"HeatSource": {
 				"immersion": {
 					"type": "ImmersionHeater",
 					"power": 3.0,
 					"EnergySupply": "mains elec",
-					"Control": "hw timer",
 					"heater_position": 0.1,
 					"thermostat_position": 0.33
 				}
@@ -221,8 +218,7 @@
 			"ColdWaterSource": "header tank",
 			"flow_rates": [5, 7, 9, 11, 13],
 			"efficiencies": [63, 54.9, 48.6, 43.6, 39.6],
-			"utilisation_factor": 0.972,
-			"electrical_consumption": 0
+			"utilisation_factor": 0.972
 		}
 	},
 	"SpaceHeatSystem": {
@@ -260,9 +256,9 @@
 		"storeys_in_building": 1,
 		"build_type": "house"
 	},
-	
+
 	"InfiltrationVentilation": {
-		"cross_vent_factor": true,
+		"cross_vent_possible": true,
 		"shield_class": "Normal",
 		"terrain_class": "OpenField",
 		"ventilation_zone_base_height": 2.5,
@@ -293,19 +289,13 @@
 		"MechanicalVentilation": {
 			"mechvent1":{
 				"sup_air_flw_ctrl": "ODA",
-				"sup_air_temp_ctrl": "CONST",
-				"design_zone_cooling_covered_by_mech_vent": 3.4,
-				"design_zone_heating_covered_by_mech_vent": 1,
+				"sup_air_temp_ctrl": "NO_CTRL",
 				"vent_type": "Centralised continuous MEV",
 				"measured_fan_power": 12.26,
 				"measured_air_flow_rate":37,
 				"EnergySupply": "mains elec",
 				"design_outdoor_air_flow_rate": 0.5
 			}
-		},
-		"PDUs": {
-		},
-		"Cowls": {
 		},
 		"CombustionAppliances":{
 			"Fireplace":{

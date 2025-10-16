@@ -104,12 +104,12 @@ mod tests {
     }
 
     #[fixture]
-    pub fn energy_supply(simtime: SimulationTime) -> EnergySupply {
+    fn energy_supply(simtime: SimulationTime) -> EnergySupply {
         EnergySupplyBuilder::new(FuelType::Electricity, simtime.total_steps()).build()
     }
 
     #[fixture]
-    pub fn point_of_use(energy_supply: EnergySupply) -> PointOfUse {
+    fn point_of_use(energy_supply: EnergySupply) -> PointOfUse {
         let efficiency = 1.;
         let energy_supply = Arc::new(RwLock::new(energy_supply));
         let energy_supply_connection =
@@ -177,5 +177,26 @@ mod tests {
                 .demand_energy(energy_demand, &simulation_time_iterator.current_iteration()),
             2.0
         )
+    }
+
+    #[rstest]
+    fn test_get_cold_water_source(point_of_use: PointOfUse) {
+        let actual = point_of_use.get_cold_water_source();
+        let expected = &point_of_use.cold_feed;
+
+        match (actual, expected) {
+            (
+                WaterSourceWithTemperature::ColdWaterSource(actual),
+                WaterSourceWithTemperature::ColdWaterSource(expected),
+            ) => {
+                assert_eq!(actual, expected);
+            }
+            _ => panic!("Expected ColdWaterSource variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_get_temp_hot_water(point_of_use: PointOfUse) {
+        assert_eq!(point_of_use.get_temp_hot_water(), 55.);
     }
 }

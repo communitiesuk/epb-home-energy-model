@@ -1,4 +1,5 @@
 use crate::core::controls::time_control::{per_control, ControlBehaviour};
+use crate::core::units::HOURS_PER_DAY;
 use crate::{
     core::{
         controls::time_control::Control, energy_supply::energy_supply::EnergySupplyConnection,
@@ -49,7 +50,7 @@ pub(crate) struct ElecStorageHeater {
     storage_capacity: f64,
     air_flow_type: ElectricStorageHeaterAirFlowType,
     frac_convective: f64,
-    n_units: i32,
+    n_units: u32,
     energy_supply_conn: EnergySupplyConnection,
     control: Arc<Control>,
     charge_control: Arc<Control>,
@@ -83,7 +84,7 @@ struct CurrentEnergyProfile {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StorageHeaterDetailedResult {
     timestep_idx: usize,
-    n_units: i32,
+    n_units: u32,
     energy_demand: f64,
     energy_delivered: f64,
     energy_instant: f64,
@@ -229,7 +230,7 @@ impl ElecStorageHeater {
         air_flow_type: ElectricStorageHeaterAirFlowType,
         frac_convective: f64,
         fan_pwr: f64,
-        n_units: i32,
+        n_units: u32,
         zone_setpoint_init: f64,
         zone_internal_air_func: Arc<dyn Fn() -> f64 + Send + Sync>,
         energy_supply_conn: EnergySupplyConnection,
@@ -256,6 +257,23 @@ impl ElecStorageHeater {
         // Convert ESH_min_output to NumPy arrays without sorting
         let soc_min_array = esh_min_output.iter().map(|f| f.0).collect_vec();
         let power_min_array = esh_min_output.iter().map(|f| f.1).collect_vec();
+
+        // Validate that both SOC arrays are in strictly increasing order
+        if !soc_max_array
+            .iter()
+            .zip(soc_max_array.iter().skip(1))
+            .all(|(a, b)| a <= b)
+        {
+            bail!("esh_max_output SOC values must be in increasing order (from 0.0 to 1.0).");
+        }
+
+        if !soc_min_array
+            .iter()
+            .zip(soc_min_array.iter().skip(1))
+            .all(|(a, b)| a <= b)
+        {
+            bail!("esh_min_output SOC values must be in increasing order (from 0.0 to 1.0).");
+        }
 
         // Validate that both SOC arrays start at 0.0 and end at 1.0
         if !is_close!(*soc_max_array.first().unwrap(), 0.) {
@@ -664,7 +682,7 @@ impl ElecStorageHeater {
                 energy_instant,
                 energy_charged,
                 energy_delivered,
-            } = *self.current_energy_profile.read();
+            } = *current_profile;
             let result = StorageHeaterDetailedResult {
                 timestep_idx: simulation_time_iteration.index,
                 n_units: self.n_units,
@@ -735,7 +753,7 @@ impl ElecStorageHeater {
                 // the next day’s heating demand based on external temperature, room temperature
                 // settings and heat demand periods.
 
-                let energy_to_store = charge_control.energy_to_store(
+                let mut energy_to_store = charge_control.energy_to_store(
                     self.demand_met.load(Ordering::SeqCst)
                         + self.demand_unmet.load(Ordering::SeqCst),
                     self.zone_setpoint_init,
@@ -744,10 +762,9 @@ impl ElecStorageHeater {
 
                 // None means not enough past data to do the calculation (Initial 24h of the calculation)
                 // We go for a full load of the hhrsh
-
-                // TODO Python handles a None case from energy_to_store here, which is currently not possible in the Rust
-                // if energy_to_store is None:
-                // energy_to_store = self.__pwr_in * units.hours_per_day
+                if energy_to_store.is_nan() {
+                    energy_to_store = self.pwr_in * HOURS_PER_DAY as f64;
+                }
 
                 let target_charge_hhrsh = if energy_to_store > 0. {
                     let current_state_of_charge = self.state_of_charge.load(Ordering::SeqCst);
@@ -824,27 +841,29 @@ mod tests {
     use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
+    const ESH_MIN_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
+    const ESH_MAX_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 24., 1.)
     }
 
     #[fixture]
-    pub fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
+    fn simulation_time_iterator(simulation_time: SimulationTime) -> SimulationTimeIterator {
         simulation_time.iter()
     }
 
     #[fixture]
-    pub fn simulation_time_iteration(
+    fn simulation_time_iteration(
         simulation_time_iterator: SimulationTimeIterator,
     ) -> SimulationTimeIteration {
         simulation_time_iterator.current_iteration()
     }
 
     #[fixture]
-    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
-        ExternalConditions::new(
+    fn external_conditions(simulation_time: SimulationTime) -> Arc<ExternalConditions> {
+        Arc::new(ExternalConditions::new(
             &simulation_time.iter(),
             vec![
                 19.0, 0.0, 1.0, 2.0, 5.0, 7.0, 6.0, 12.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0,
@@ -882,22 +901,22 @@ mod tests {
             false,
             serde_json::from_value(json!(
                 [
-                    {"number": 1, "start360": 180, "end360": 135},
-                    {"number": 2, "start360": 135, "end360": 90},
-                    {"number": 3, "start360": 90, "end360": 45},
-                    {"number": 4, "start360": 45, "end360": 0,
+                    {"start360": 180, "end360": 135},
+                    {"start360": 135, "end360": 90},
+                    {"start360": 90, "end360": 45},
+                    {"start360": 45, "end360": 0,
                         "shading": [
                             {"type": "obstacle", "height": 10.5, "distance": 12}
                         ]
                     },
-                    {"number": 5, "start360": 0, "end360": -45},
-                    {"number": 6, "start360": -45, "end360": -90},
-                    {"number": 7, "start360": -90, "end360": -135},
-                    {"number": 8, "start360": -135, "end360": -180}
+                    {"start360": 0, "end360": -45},
+                    {"start360": -45, "end360": -90},
+                    {"start360": -90, "end360": -135},
+                    {"start360": -135, "end360": -180}
                 ]
             ))
             .unwrap(),
-        )
+        ))
     }
 
     #[fixture]
@@ -914,10 +933,10 @@ mod tests {
 
     #[fixture]
     fn charge_control(
-        external_conditions: ExternalConditions,
+        external_conditions: Arc<ExternalConditions>,
         external_sensor: ExternalSensor,
-    ) -> Control {
-        Control::Charge(
+    ) -> Arc<Control> {
+        Arc::new(Control::Charge(
             ChargeControl::new(
                 ControlLogicType::Automatic,
                 vec![
@@ -932,37 +951,32 @@ mod tests {
                 None,
                 None,
                 None,
-                external_conditions.into(),
+                external_conditions,
                 Some(external_sensor),
             )
             .unwrap(),
-        )
+        ))
     }
 
     #[fixture]
-    fn control() -> Control {
-        Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.), Some(21.), None, Some(21.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.,
-            )
-            .unwrap(),
-        )
+    fn control() -> Arc<Control> {
+        let mut schedule = vec![Some(21.), Some(21.), None, Some(21.)];
+        schedule.extend(vec![None; 20]);
+
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
+                .unwrap(),
+        ))
     }
 
     fn create_elec_storage_heater(
         simulation_time: SimulationTime,
-        charge_control: Control,
-        control: Control,
-        external_conditions: ExternalConditions,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
         esh_min_output: Vec<(f64, f64)>,
         esh_max_output: Vec<(f64, f64)>,
+        output_detailed_results: Option<bool>,
     ) -> ElecStorageHeater {
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
@@ -982,12 +996,12 @@ mod tests {
             Arc::new(|| 20.),
             energy_supply_conn,
             &simulation_time.iter(),
-            Arc::new(control),
-            Arc::new(charge_control),
+            control,
+            charge_control,
             esh_min_output,
             esh_max_output,
-            Arc::new(external_conditions), // NOTE this is None in Python
-            None,
+            external_conditions, // NOTE this is None in Python
+            output_detailed_results,
         )
         .unwrap();
 
@@ -1001,25 +1015,23 @@ mod tests {
     #[fixture]
     fn elec_storage_heater(
         simulation_time: SimulationTime,
-        charge_control: Control,
-        control: Control,
-        external_conditions: ExternalConditions,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
     ) -> ElecStorageHeater {
-        let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
-
         create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
             external_conditions,
-            esh_min_output,
-            esh_max_output,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
         )
     }
 
     #[rstest]
-    pub fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
+    fn test_initialisation(elec_storage_heater: ElecStorageHeater) {
         assert_eq!(elec_storage_heater.pwr_in, 3.5);
         assert_eq!(elec_storage_heater.storage_capacity, 10.0);
         assert_eq!(
@@ -1036,6 +1048,160 @@ mod tests {
             0.92372001,
             max_relative = EIGHT_DECIMAL_PLACES
         );
+    }
+
+    #[rstest]
+    fn test_initialisation_invalid_soc_arrays(
+        simulation_time: SimulationTime,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
+    ) {
+        let test_cases = vec![
+            (
+                vec![(0.0, 0.0), (0.5, 0.02), (0.3, 0.02), (1.0, 0.05)],
+                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+                "shouldn't allow esh_min_output values in non-increasing order",
+            ),
+            (
+                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
+                vec![(0.0, 0.0), (0.5, 1.5), (0.3, 0.02), (1.0, 3.)],
+                "shouldn't allow esh_max_output values in non-increasing order",
+            ),
+            (
+                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (0.9, 0.05)],
+                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+                "shouldn't allow esh_min_output values not ending in 1.0",
+            ),
+            (
+                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
+                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (0.9, 3.)],
+                "shouldn't allow esh_max_output values not ending in 1.0",
+            ),
+            (
+                vec![(0.2, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
+                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                "shouldn't allow esh_min_output values not starting at 1.0",
+            ),
+            (
+                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
+                vec![(0.2, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                "shouldn't allow esh_max_output values not starting at 1.0",
+            ),
+            (
+                vec![(0.0, 0.0), (1.0, 1.0)],
+                vec![(0.0, 0.0), (1.0, 0.5)],
+                "shouldn't allow any power_max values below power_min",
+            ),
+            (
+                vec![(0.0, 0.0), (1.0, 1.0)],
+                vec![(0.0, 0.0), (0.5, 0.4), (1.0, 1.0)],
+                "shouldn't allow any power_max values below power_min",
+            ),
+        ];
+
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn =
+            EnergySupply::connection(energy_supply.clone(), "storage_heater").unwrap();
+
+        for (esh_min_output, esh_max_output, debug_msg) in test_cases.iter() {
+            assert!(
+                ElecStorageHeater::new(
+                    1.,
+                    1.,
+                    10.,
+                    ElectricStorageHeaterAirFlowType::FanAssisted,
+                    1.,
+                    10.,
+                    1,
+                    21.,
+                    Arc::new(|| 20.),
+                    energy_supply_conn.clone(),
+                    &simulation_time.iter(),
+                    control.clone(),
+                    charge_control.clone(),
+                    esh_min_output.clone(),
+                    esh_max_output.clone(),
+                    external_conditions.clone(), // NOTE this is None in Python
+                    None,
+                )
+                .is_err(),
+                "{}",
+                debug_msg
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_initialisation_detailed_results(
+        simulation_time: SimulationTime,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
+    ) {
+        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
+        let heater_with_detailed_results = create_elec_storage_heater(
+            simulation_time,
+            charge_control.clone(),
+            control.clone(),
+            external_conditions.clone(),
+            ESH_MIN_OUTPUT.to_vec().clone(),
+            esh_max_output.clone(),
+            Some(true),
+        );
+        let heater_without_detailed_results = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            esh_max_output,
+            None,
+        );
+
+        assert!(heater_with_detailed_results.output_esh_results().is_some());
+        assert!(heater_without_detailed_results
+            .output_esh_results()
+            .is_none());
+    }
+
+    #[rstest]
+    fn test_temp_setpnt(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater,
+    ) {
+        let mut expected_setpoints = vec![Some(21.), Some(21.), None, Some(21.)];
+        expected_setpoints.extend(vec![None; 20]);
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            assert_eq!(
+                elec_storage_heater.temp_setpnt(&t_it),
+                expected_setpoints[t_idx],
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_in_required_period(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater,
+    ) {
+        let mut expected_values = vec![true, true, false, true];
+        expected_values.extend(vec![false; 20]);
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            assert_eq!(
+                elec_storage_heater.in_required_period(&t_it),
+                Some(expected_values[t_idx]),
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_frac_convective(elec_storage_heater: ElecStorageHeater) {
+        assert_eq!(elec_storage_heater.frac_convective(), 0.7);
     }
 
     #[rstest]
@@ -1154,19 +1320,19 @@ mod tests {
     fn test_energy_output_max_with_zero_event_single(
         simulation_time: SimulationTime,
         simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Control,
-        control: Control,
-        external_conditions: ExternalConditions,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
     ) {
-        let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
         let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
         let elec_storage_heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
             external_conditions,
-            esh_min_output,
+            ESH_MIN_OUTPUT.to_vec(),
             esh_max_output,
+            None,
         );
 
         let expected_max_energy_output = 7.905696339321716;
@@ -1194,19 +1360,18 @@ mod tests {
     fn test_energy_output_max_with_zero_event(
         simulation_time: SimulationTime,
         simulation_time_iterator: SimulationTimeIterator,
-        charge_control: Control,
-        control: Control,
-        external_conditions: ExternalConditions,
+        charge_control: Arc<Control>,
+        control: Arc<Control>,
+        external_conditions: Arc<ExternalConditions>,
     ) {
-        let esh_min_output = vec![(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
         let elec_storage_heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
             control,
             external_conditions,
-            esh_min_output,
-            esh_max_output,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
         );
 
         // Test maximum energy output calculation across all timesteps.
@@ -1284,7 +1449,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_electric_charge(
+    fn test_electric_charge_automatic(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1323,7 +1488,245 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_demand_energy(
+    fn test_electric_charge_manual(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Manual,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        let expected_target_elec_charge = [
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_electric_charge_celect(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Celect,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        let expected_target_elec_charge = [
+            0.5, 1.0, 0.99, 0.98, 0.95, 0.93, 0.94, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_electric_charge_hhrsh(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        let expected_target_elec_charge = [
+            1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 0., 0.,
+            0., 0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    fn test_electric_charge_hhrsh_negative_heat_retention_ratio(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::Hhrsh,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let mut heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+        heater.heat_retention_ratio = -0.9;
+        heater.state_of_charge.store(0.5, Ordering::SeqCst);
+
+        let expected_target_elec_charge = [
+            1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 0., 0.,
+            0., 0.,
+        ];
+
+        for (t_idx, t_it) in simulation_time.iter().enumerate() {
+            let target_elec_charge = heater.target_electric_charge(t_it).unwrap();
+
+            assert_relative_eq!(target_elec_charge, expected_target_elec_charge[t_idx]);
+        }
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_electric_charge_invalid_logic_type(
+        external_conditions: Arc<ExternalConditions>,
+        external_sensor: ExternalSensor,
+        simulation_time: SimulationTime,
+        control: Arc<Control>,
+    ) {
+        let charge_control = Arc::new(Control::Charge(
+            ChargeControl::new(
+                ControlLogicType::HeatBattery,
+                vec![
+                    true, true, true, true, true, true, true, true, false, false, false, false,
+                    false, false, false, false, true, true, true, true, false, false, false, false,
+                ],
+                1.,
+                0,
+                1.,
+                [1.0, 0.8].into_iter().map(Into::into).collect(),
+                Some(22.),
+                None,
+                None,
+                None,
+                external_conditions.clone(),
+                Some(external_sensor),
+            )
+            .unwrap(),
+        ));
+        let heater = create_elec_storage_heater(
+            simulation_time,
+            charge_control,
+            control,
+            external_conditions,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            None,
+        );
+
+        heater
+            .target_electric_charge(simulation_time.iter().current_iteration())
+            .unwrap();
+    }
+
+    #[rstest]
+    fn test_demand_energy(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1361,8 +1764,401 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "known issue (energy_output)"]
+    fn test_demand_energy_no_demand(
+        simulation_time_iterator: SimulationTimeIterator,
+        elec_storage_heater: ElecStorageHeater,
+    ) {
+        let expected_energy = [
+            0.019999999999999997,
+            0.030419151282454364,
+            0.04762390188197366,
+            0.0488,
+            0.04700000000000001,
+            0.0458,
+            0.046400000000000004,
+            0.038,
+            0.04932504653147142,
+            0.04902998233007885,
+            0.0487366832133454,
+            0.0484451386224712,
+            0.048155338061819486,
+            0.04786727109853878,
+            0.047580927362187296,
+            0.047296296544359594,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.019999999999999997,
+            0.04701336839831551,
+            0.046732132738611196,
+            0.046452579440732555,
+            0.04617469844073066,
+        ]; // Expected energy for each timestep
+
+        for (t_idx, t_it) in simulation_time_iterator.enumerate() {
+            let energy_out = elec_storage_heater.demand_energy(0., &t_it).unwrap();
+            assert_relative_eq!(energy_out, expected_energy[t_idx], max_relative = 1e-1);
+        }
+    }
+
+    #[rstest]
+    fn test_demand_energy_detailed_results(
+        simulation_time: SimulationTime,
+        external_conditions: Arc<ExternalConditions>,
+        control: Arc<Control>,
+        charge_control: Arc<Control>,
+    ) {
+        let energy_supply = Arc::new(RwLock::new(
+            EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
+        ));
+        let energy_supply_conn = EnergySupply::connection(energy_supply, "storage_heater").unwrap();
+
+        let heater = ElecStorageHeater::new(
+            1.,
+            1.,
+            10.,
+            ElectricStorageHeaterAirFlowType::FanAssisted,
+            1.,
+            10.,
+            1,
+            21.,
+            Arc::new(|| 20.),
+            energy_supply_conn,
+            &simulation_time.iter(),
+            control,
+            charge_control,
+            ESH_MIN_OUTPUT.to_vec(),
+            ESH_MAX_OUTPUT.to_vec(),
+            external_conditions, // NOTE this is None in Python
+            Some(true),
+        )
+        .unwrap();
+
+        let expected = [
+            StorageHeaterDetailedResult {
+                timestep_idx: 0,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.1360608282280595,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999999,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.08639391717719404,
+                final_soc: 0.08639391717719405,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 1,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.35997826917949083,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.15039609025924494,
+                final_soc: 0.15039609025924494,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 2,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.525860161130055,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.1978100741462394,
+                final_soc: 0.19781007414623947,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 3,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.6487484969563722,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999997,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.23293522445060216,
+                final_soc: 0.2329352244506022,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 4,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.7397864472877566,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2589565797218265,
+                final_soc: 0.2589565797218265,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 5,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.8072290379637572,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2782336759254508,
+                final_soc: 0.2782336759254508,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 6,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.8571917472765138,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999999,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.29251450119779937,
+                final_soc: 0.29251450119779937,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 7,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.894205037502244,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.3030939974475749,
+                final_soc: 0.303093997447575,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 8,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.7855640835379172,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.2245375890937832,
+                final_soc: 0.2245375890937832,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 9,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.5819603347886747,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.16634155561491576,
+                final_soc: 0.16634155561491573,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 10,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.4311269125454673,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.12322886436036903,
+                final_soc: 0.12322886436036903,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 11,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.3193867248864036,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.09129019187172868,
+                final_soc: 0.09129019187172868,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 12,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.23660753075068583,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.0676294387966601,
+                final_soc: 0.06762943879666009,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 13,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.17528317748916877,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.050101121047743225,
+                final_soc: 0.050101121047743225,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 14,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.1298529738329292,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.037115823664450306,
+                final_soc: 0.037115823664450306,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 15,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.09619745025800532,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.027496078638649776,
+                final_soc: 0.02749607863864978,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 16,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.20732566160442942,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.10676351247820681,
+                final_soc: 0.10676351247820684,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 17,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.41277253407174264,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.16548625907103254,
+                final_soc: 0.16548625907103257,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 18,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.5649711048613184,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.20898914858490067,
+                final_soc: 0.2089891485849007,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 19,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.6777226070926419,
+                energy_instant: 1.0,
+                energy_charged: 0.9999999999999998,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.24121688787563644,
+                final_soc: 0.24121688787563647,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 20,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.625190008414656,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.17869788703417083,
+                final_soc: 0.17869788703417083,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 21,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.46315225418860434,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.1323826616153104,
+                final_soc: 0.13238266161531043,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 22,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.34311168983701723,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.09807149263160868,
+                final_soc: 0.09807149263160866,
+                time_used_max: 1.0,
+            },
+            StorageHeaterDetailedResult {
+                timestep_idx: 23,
+                n_units: 1,
+                energy_demand: 5.0,
+                energy_delivered: 0.25418342247140796,
+                energy_instant: 1.0,
+                energy_charged: 0.0,
+                energy_for_fan: 0.01,
+                state_of_charge: 0.07265315038446787,
+                final_soc: 0.07265315038446787,
+                time_used_max: 1.0,
+            },
+        ];
+
+        for t_it in simulation_time.iter() {
+            heater.demand_energy(5., &t_it).unwrap();
+        }
+
+        let actual = heater.output_esh_results().unwrap();
+
+        let assert_f64 = |expected: f64, actual: f64| {
+            assert_relative_eq!(expected, actual, max_relative = 1e-6);
+        };
+
+        for t_idx in 0..24 {
+            assert_eq!(expected[t_idx].timestep_idx, actual[t_idx].timestep_idx);
+            assert_eq!(expected[t_idx].n_units, actual[t_idx].n_units);
+            assert_f64(expected[t_idx].energy_demand, actual[t_idx].energy_demand);
+            assert_f64(
+                expected[t_idx].energy_delivered,
+                actual[t_idx].energy_delivered,
+            );
+            assert_f64(expected[t_idx].energy_instant, actual[t_idx].energy_instant);
+            assert_f64(expected[t_idx].energy_charged, actual[t_idx].energy_charged);
+            assert_f64(expected[t_idx].energy_for_fan, actual[t_idx].energy_for_fan);
+            assert_f64(
+                expected[t_idx].state_of_charge,
+                actual[t_idx].state_of_charge,
+            );
+            assert_f64(expected[t_idx].final_soc, actual[t_idx].final_soc);
+            assert_f64(expected[t_idx].time_used_max, actual[t_idx].time_used_max);
+        }
+    }
+
+    #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_for_fan(
+    fn test_energy_for_fan(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1406,7 +2202,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_instant(
+    fn test_energy_instant(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1450,7 +2246,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_charged(
+    fn test_energy_charged(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1494,7 +2290,7 @@ mod tests {
 
     #[rstest]
     #[ignore = "known issue"]
-    pub fn test_energy_stored_delivered(
+    fn test_energy_stored_delivered(
         simulation_time_iterator: SimulationTimeIterator,
         elec_storage_heater: ElecStorageHeater,
     ) {
@@ -1537,7 +2333,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_heat_retention_output() {
+    fn test_heat_retention_output() {
         let soc_array = vec![0., 0.5, 1.];
         let power_array = vec![0., 0.02, 0.05];
         let storage_capacity = 10.;

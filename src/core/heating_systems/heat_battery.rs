@@ -304,7 +304,6 @@ impl HeatBatteryServiceSpace {
     }
 }
 
-const HEAT_BATTERY_TIME_UNIT: u32 = SECONDS_PER_HOUR;
 const DEFAULT_N_ZONES: usize = 8;
 const DEFAULT_HB_TIME_STEP: f64 = 20.;
 const DEFAULT_MINIMUM_TIME_REQUIRED_TO_RUN: f64 = 120.;
@@ -475,12 +474,13 @@ impl HeatBattery {
             number_of_units: n_units,
             simultaneous_charging_and_discharging,
             max_temperature,
-            heat_storage_kj_per_k_above,
-            heat_storage_kj_per_k_below,
-            heat_storage_kj_per_k_during,
+            heat_storage_zone_material_k_j_per_k_above_phase_transition: heat_storage_kj_per_k_above,
+            heat_storage_zone_material_k_j_per_k_below_phase_transition: heat_storage_kj_per_k_below,
+            heat_storage_zone_material_k_j_per_k_during_phase_transition:
+                heat_storage_kj_per_k_during,
             phase_transition_temperature_upper,
             phase_transition_temperature_lower,
-            velocity_in_hex_tube,
+            velocity_in_hex_tube_at_1_l_per_min_m_per_s: velocity_in_hex_tube,
             capillary_diameter_m,
             a,
             b,
@@ -1090,7 +1090,7 @@ impl HeatBattery {
 
     /// Charge the battery (update the zones temperature)
     /// It follows the same methodology as energy_demand function
-    fn charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
+    fn _charge_battery_hydraulic(&mut self, inlet_temp_c: f64) -> anyhow::Result<f64> {
         let total_time_s = self.simulation_time.step_in_hours() * SECONDS_PER_HOUR as f64;
         let time_step_s = self.hb_time_step;
 
@@ -2077,8 +2077,8 @@ mod tests {
             // following shading segments are corrected from upstream Python, which uses angles measured from wrong origin
             serde_json::from_value(json!(
                 [
-                    {"number": 1, "start360": 0, "end360": 45},
-                    {"number": 2, "start360": 45, "end360": 90},
+                    {"start360": 0, "end360": 45},
+                    {"start360": 45, "end360": 90},
                 ]
             ))
             .unwrap(),
@@ -2139,13 +2139,13 @@ mod tests {
             number_of_units: 1,
             control_charge: "hb_charge_control".into(),
             simultaneous_charging_and_discharging: false,
-            heat_storage_kj_per_k_above: 47.6875,
-            heat_storage_kj_per_k_below: 38.15,
-            heat_storage_kj_per_k_during: 1539.625,
+            heat_storage_zone_material_k_j_per_k_above_phase_transition: 47.6875,
+            heat_storage_zone_material_k_j_per_k_below_phase_transition: 38.15,
+            heat_storage_zone_material_k_j_per_k_during_phase_transition: 1539.625,
             phase_transition_temperature_upper: 59.,
             phase_transition_temperature_lower: 57.,
             max_temperature: 80.,
-            velocity_in_hex_tube: 0.035,
+            velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
             capillary_diameter_m: 0.0065,
             a: 19.744,
             b: -105.5,

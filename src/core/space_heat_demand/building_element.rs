@@ -419,16 +419,6 @@ pub(crate) trait HeatTransferThrough {
     fn r_se(&self) -> f64;
     fn r_si(&self) -> f64;
 
-    /// Return number of nodes including external and internal layers
-    fn no_of_nodes(&self) -> usize {
-        self.k_pli().len()
-    }
-
-    /// Return number of nodes excluding external and internal layers
-    fn _no_of_inside_nodes(&self) -> isize {
-        (self.no_of_nodes() - 2) as isize
-    }
-
     fn area(&self) -> f64;
 
     /// Return the fabric heat loss for the building element
@@ -934,6 +924,7 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         thermal_transmission_walls,
                         depth_basement_floor,
                         height_basement_walls,
+                        ..
                     } => init_unheated_basement(
                         *thermal_transmittance_of_floor_above_basement,
                         *thermal_transmission_walls,
@@ -1278,8 +1269,7 @@ pub(crate) struct BuildingElementOpaque {
     projected_height: f64,
     width: f64,
     orientation: f64,
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python Opaque elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     k_pli: [f64; 5],
     h_pli: [f64; 4],
     f_sky: f64,
@@ -1336,7 +1326,6 @@ impl BuildingElementOpaque {
             projected_height: Default::default(),
             width,
             orientation,
-            areal_heat_capacity,
             k_m: Default::default(),
             k_pli: Default::default(),
             h_pli: Default::default(),
@@ -1377,10 +1366,6 @@ impl BuildingElementOpaque {
         simtime: SimulationTimeIteration,
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionAbsorbed::shading_factors_direct_diffuse(self, simtime)
-    }
-
-    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
-        self.external_conditions.as_ref()
     }
 
     #[cfg(test)]
@@ -1544,8 +1529,7 @@ pub(crate) struct BuildingElementAdjacentConditionedSpace {
     r_c: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     f_sky: f64,
     therm_rad_to_sky: f64,
     external_pitch: f64,
@@ -1588,7 +1572,6 @@ impl BuildingElementAdjacentConditionedSpace {
             pitch,
             external_conditions,
             r_c: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -1784,8 +1767,7 @@ pub(crate) struct BuildingElementAdjacentUnconditionedSpaceSimple {
     r_u: f64,
     f_sky: f64,
     therm_rad_to_sky: f64,
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python these elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
     r_c: f64,
@@ -1831,7 +1813,6 @@ impl BuildingElementAdjacentUnconditionedSpaceSimple {
             r_u: Default::default(),
             f_sky: Default::default(),
             therm_rad_to_sky: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
@@ -2058,8 +2039,7 @@ pub(crate) struct BuildingElementGround {
     therm_rad_to_sky: f64,
     h_pli: [f64; 4],
     k_pli: [f64; 5],
-    areal_heat_capacity: f64,
-    k_m: f64, // In Python Ground elements now have `areal_heat_capacity` instead of `k_m`, but `HeatTransferThrough` still has a `k_m` field so we need to maintain both fields here to match Python - TODO: possibly erroneous
+    k_m: f64,
     h_pi: f64,
     h_pe: f64,
     h_ce: f64,
@@ -2154,7 +2134,6 @@ impl BuildingElementGround {
             therm_rad_to_sky: Default::default(),
             h_pli: Default::default(),
             k_pli: Default::default(),
-            areal_heat_capacity,
             k_m: Default::default(),
             h_pi: Default::default(),
             h_pe: Default::default(),
@@ -2487,13 +2466,10 @@ pub(crate) struct WindowTreatment {
     #[allow(dead_code)]
     delta_r: f64,
     trans_red: f64,
-    _closing_irradiance: Option<f64>,
-    _opening_irradiance: Option<f64>,
     closing_irradiance_control: Option<Arc<Control>>,
     opening_irradiance_control: Option<Arc<Control>>,
     open_control: Option<Arc<Control>>,
     is_open: AtomicBool,
-    _waking_hour: Option<usize>,
     opening_delay_hrs: f64,
     time_last_adjusted: AtomicF64,
 }
@@ -2509,8 +2485,6 @@ impl WindowTreatment {
             controls: input.controls.into(),
             delta_r: input.delta_r,
             trans_red: input.trans_red,
-            _closing_irradiance: input.closing_irradiance,
-            _opening_irradiance: input.opening_irradiance,
             closing_irradiance_control: input
                 .closing_irradiance_control
                 .as_ref()
@@ -2524,7 +2498,6 @@ impl WindowTreatment {
                 .as_ref()
                 .and_then(|ctrl| controls.get_with_string(ctrl)),
             is_open: input.is_open.unwrap_or_default().into(),
-            _waking_hour: input.waking_hour,
             opening_delay_hrs: input.opening_delay_hrs,
             time_last_adjusted: (current_hour as f64).into(),
         }
@@ -2766,10 +2739,6 @@ impl BuildingElementTransparent {
     ) -> anyhow::Result<(f64, f64)> {
         SolarRadiationInteractionTransmitted::shading_factors_direct_diffuse(self, simtime)
     }
-
-    pub(crate) fn external_conditions(&self) -> &ExternalConditions {
-        self.external_conditions.as_ref()
-    }
 }
 
 impl HeatTransferInternal for BuildingElementTransparent {
@@ -2960,11 +2929,17 @@ fn r_si_for_pitch(pitch: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::external_conditions::DaylightSavingsConfig;
+    use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
+    use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
     use rstest::*;
+
+    #[rstest]
+    fn test_convert_uvalue_to_resistance() {
+        assert_relative_eq!(convert_uvalue_to_resistance(2., 40.), 0.35985829616804244);
+    }
 
     struct MockHeatTransferInternal(f64);
 
@@ -3015,7 +2990,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_convert_uvalue_to_resistance(heat_transfer_internal_a: impl HeatTransferInternal) {
+    fn test_convert_uvalue_to_resistance_for_heat_transfer_internal_a(
+        heat_transfer_internal_a: impl HeatTransferInternal,
+    ) {
         assert_relative_eq!(
             heat_transfer_internal_a.convert_uvalue_to_resistance(1., 180.),
             0.7870483926665635,
@@ -3057,6 +3034,12 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "internal error: entered unreachable code")]
+    fn test_r_si_invalid_pitch(heat_transfer_internal_a: impl HeatTransferInternal) {
+        heat_transfer_internal_a.r_si_with_pitch(f64::NAN);
+    }
+
+    #[rstest]
     fn test_pitch_class(heat_transfer_internal_a: impl HeatTransferInternal) {
         assert_eq!(
             heat_transfer_internal_a.pitch_class(90.0),
@@ -3073,9 +3056,17 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "internal error: entered unreachable code")]
+    fn test_pitch_class_invalid(heat_transfer_internal_a: impl HeatTransferInternal) {
+        heat_transfer_internal_a.pitch_class(f64::NAN);
+    }
+
+    #[rstest]
     fn test_h_ri(heat_transfer_internal_a: impl HeatTransferInternal) {
         assert_eq!(heat_transfer_internal_a.h_ri(), 5.13);
     }
+
+    // skip two tests (`test_init_invalid_mass_distribution_class`) as Rust would not allow invalid mass_distribution_class values
 
     struct MockHeatTransferOtherSide(f64);
 
@@ -3126,6 +3117,8 @@ mod tests {
     ) {
         assert_eq!(heat_transfer_other_side_a.h_re(), 4.14);
     }
+
+    // skip test_fabric_heat_losss as Rust would not allow invalid method call
 
     #[fixture]
     fn simulation_time() -> SimulationTimeIterator {
@@ -3417,11 +3410,9 @@ mod tests {
         }
     }
 
-    #[ignore = "the assertion values here cause failures - upstream fix has been committed to"]
     #[rstest]
     fn test_fabric_heat_loss_for_opaque(opaque_building_elements: [BuildingElementOpaque; 5]) {
-        let results = [43.20, 35.15, 27.10, 27.15, 55.54];
-
+        let results = [43.20, 31.56, 27.10, 29.25, 55.54];
         for (i, be) in opaque_building_elements.iter().enumerate() {
             assert_relative_eq!(be.fabric_heat_loss(), results[i], max_relative = 1e-2);
         }
@@ -3787,6 +3778,7 @@ mod tests {
             thermal_transmission_walls: 0.5,
             depth_basement_floor: 2.3,
             height_basement_walls: 2.3,
+            thermal_resistance_of_basement_walls: 0.5,
         };
         let be_m = BuildingElementGround::new(
             30.0,
@@ -3890,6 +3882,85 @@ mod tests {
             None,
         ))
     }
+
+    // skip test_init_invalid_floor_type and test_init_invalid_edge_type because Rust would not allow invalid values
+
+    fn create_suspended_floor(wind_shield_location: WindShieldLocation) -> FloorData {
+        FloorData::SuspendedFloor {
+            height_upper_surface: 1.,
+            thermal_transmission_walls: 0.5,
+            area_per_perimeter_vent: 1.,
+            shield_fact_location: wind_shield_location,
+            thermal_resistance_of_insulation: 1.,
+        }
+    }
+
+    fn create_building_element_ground(
+        simulation_time: SimulationTime,
+        floor_data: FloorData,
+    ) -> BuildingElementGround {
+        let external_conditions = Arc::new(ExternalConditions::new(
+            &simulation_time.iter(),
+            vec![1.; 8760],
+            vec![1.; 8760],
+            vec![],
+            vec![0.0; 8760],
+            vec![0.0; 8760],
+            vec![],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.,
+            None,
+            Some(DaylightSavingsConfig::NotApplicable),
+            false,
+            false,
+            None,
+        ));
+
+        BuildingElementGround::new(
+            30.0,
+            30.0,
+            0.,
+            1.0,
+            0.3,
+            15000.0,
+            MassDistributionClass::M,
+            &floor_data,
+            0.3,
+            22.0,
+            0.9,
+            external_conditions,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    /// Test that the shield_fact_location affects the wind_s_factor from h_pi and h_pe values
+    fn test_wind_shield_fact(simulation_time_for_ground: SimulationTime) {
+        let suspended_floor_sheltered = create_suspended_floor(WindShieldLocation::Sheltered);
+        let suspended_floor_average = create_suspended_floor(WindShieldLocation::Average);
+        let suspended_floor_exposed = create_suspended_floor(WindShieldLocation::Exposed);
+
+        let be_sheltered =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_sheltered);
+        assert_relative_eq!(be_sheltered.h_pi, 21.76809338521401);
+        assert_relative_eq!(be_sheltered.h_pe, 5208.393950400433);
+
+        let be_average =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_average);
+        assert_relative_eq!(be_average.h_pi, 20.285704885671986);
+        assert_relative_eq!(be_average.h_pe, 26144.01441657715);
+
+        let be_exposed =
+            create_building_element_ground(simulation_time_for_ground, suspended_floor_exposed);
+        assert_relative_eq!(be_exposed.h_pi, 19.75335084679448);
+        assert_relative_eq!(be_exposed.h_pe, 96370.39574909392);
+    }
+
+    // skipping test_wind_shield_fact_invalid_location as Rust would not allow invalid shield factor
 
     #[rstest]
     fn test_no_of_nodes_for_ground(ground_building_elements: [BuildingElementGround; 5]) {
@@ -4105,10 +4176,188 @@ mod tests {
         }
     }
 
+    // skipping test_from_string and test_from_string_invalid for TestWindowTreatmentType & TestWindowTreatmentCtrl as not necessary in Rust
+
+    #[rstest]
+    fn test_is_manual() {
+        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
+        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
+        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
+        let combined_light_blind_hvac: WindowTreatmentControl =
+            WindowTreatmentControl::CombinedLightBlindHvac;
+
+        assert_eq!(manual.is_manual(), true);
+        assert_eq!(manual_motorised.is_manual(), true);
+        assert_eq!(auto_motorised.is_manual(), false);
+        assert_eq!(combined_light_blind_hvac.is_manual(), false);
+    }
+
+    #[rstest]
+    fn test_is_automatic() {
+        let manual: WindowTreatmentControl = WindowTreatmentControl::Manual;
+        let manual_motorised: WindowTreatmentControl = WindowTreatmentControl::ManualMotorised;
+        let auto_motorised: WindowTreatmentControl = WindowTreatmentControl::AutoMotorised;
+        let combined_light_blind_hvac: WindowTreatmentControl =
+            WindowTreatmentControl::CombinedLightBlindHvac;
+
+        assert_eq!(manual.is_automatic(), false);
+        assert_eq!(manual_motorised.is_automatic(), false);
+        assert_eq!(auto_motorised.is_automatic(), true);
+        assert_eq!(combined_light_blind_hvac.is_automatic(), true);
+    }
+
+    struct MockSolarRadiationInteraction(Option<f64>);
+    impl SolarRadiationInteraction for MockSolarRadiationInteraction {
+        fn base_height(&self) -> f64 {
+            unreachable!()
+        }
+        fn external_pitch(&self) -> f64 {
+            unreachable!()
+        }
+        fn orientation(&self) -> f64 {
+            unreachable!()
+        }
+        fn projected_height(&self) -> f64 {
+            unreachable!()
+        }
+        fn set_base_height(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn set_external_pitch(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn set_orientation(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn set_projected_height(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn set_shading(&mut self, _shading: Option<Vec<WindowShadingObject>>) {
+            unreachable!()
+        }
+        fn set_solar_absorption_coeff(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn set_width(&mut self, _: f64) {
+            unreachable!()
+        }
+        fn shading(&self) -> &[WindowShadingObject] {
+            unreachable!()
+        }
+        fn solar_absorption_coeff(&self) -> f64 {
+            unreachable!()
+        }
+        fn width(&self) -> f64 {
+            unreachable!()
+        }
+    }
+
+    #[rstest]
+    fn test_i_sol_dir_dif(mut simulation_time: SimulationTimeIterator) {
+        assert_eq!(
+            MockSolarRadiationInteraction(None).i_sol_dir_dif(simulation_time.next().unwrap()),
+            (0.0, 0.0)
+        );
+    }
+
+    #[rstest]
+    fn test_solar_gains() {
+        assert_eq!(
+            SolarRadiationInteraction::solar_gains(&MockSolarRadiationInteraction(None)),
+            0.0
+        );
+    }
+
+    #[rstest]
+    fn test_shading_factors_direct_diffuse(mut simulation_time: SimulationTimeIterator) {
+        assert_eq!(
+            SolarRadiationInteraction::shading_factors_direct_diffuse(
+                &MockSolarRadiationInteraction(None),
+                simulation_time.next().unwrap()
+            ),
+            (1.0, 1.0)
+        );
+    }
+
+    impl SolarRadiationInteractionTransmitted for MockSolarRadiationInteraction {
+        fn unconverted_g_value(&self) -> f64 {
+            self.0.unwrap()
+        }
+
+        fn external_conditions(&self) -> &ExternalConditions {
+            unreachable!()
+        }
+
+        fn pitch(&self) -> f64 {
+            unreachable!()
+        }
+
+        fn area(&self) -> f64 {
+            unreachable!()
+        }
+
+        fn frame_area_fraction(&self) -> f64 {
+            unreachable!()
+        }
+    }
+
+    #[rstest]
+    fn test_convert_g_value() {
+        assert_eq!(
+            MockSolarRadiationInteraction(Some(0.5)).convert_g_value(),
+            0.45
+        );
+    }
+
+    #[rstest]
+    fn test_solar_gains_for_transmitted(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![0.5331371, 0., 0., 0.], // surface irradiance 0.5000000601251663
+        );
+        transparent_building_element.g_value = 0.5;
+        transparent_building_element.pitch = 20.;
+        transparent_building_element.area = 5.;
+        transparent_building_element.frame_area_fraction = 0.2;
+        transparent_building_element.external_conditions = external_conditions;
+
+        let solar_gains = SolarRadiationInteractionTransmitted::solar_gains(
+            &transparent_building_element,
+            simulation_time.current_iteration(),
+        )
+        .unwrap();
+
+        assert_relative_eq!(solar_gains, 0.9, max_relative = 1e-6);
+    }
+
     #[fixture]
     fn transparent_building_element(
-        external_conditions: Arc<ExternalConditions>,
+        simulation_time: SimulationTimeIterator,
     ) -> BuildingElementTransparent {
+        let external_conditions = Arc::new(ExternalConditions::new(
+            &simulation_time,
+            vec![0.0, 5.0, 10.0, 15.0],
+            vec![],
+            vec![],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.0,
+            None,
+            None,
+            false,
+            false,
+            None,
+        ));
+
         BuildingElementTransparent::new(
             90.,
             0.4,
@@ -4241,6 +4490,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_h_pli_with_treatment_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.0,
+            closing_irradiance_control: None,
+            opening_irradiance_control: None,
+            open_control: None,
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+
+        assert_eq!(
+            transparent_building_element
+                .h_pli_by_index(0, simulation_time.current_iteration())
+                .unwrap(),
+            1.6666666666666665,
+            "incorrect h_pli returned"
+        );
+    }
+
+    #[rstest]
     fn test_k_pli_for_transparent(transparent_building_element: BuildingElementTransparent) {
         assert_eq!(
             transparent_building_element.k_pli(),
@@ -4263,6 +4540,385 @@ mod tests {
         }
     }
 
+    // Can be used to return a specific surface_irradiance
+    fn external_conditions_surface_irradiance(
+        simulation_time: SimulationTimeIterator,
+        diffuse_horizontal_radiations: Vec<f64>,
+    ) -> Arc<ExternalConditions> {
+        let shading_segments = vec![
+            ShadingSegment {
+                start: 180.,
+                end: 135.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: 135.,
+                end: 90.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: 90.,
+                end: 45.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: 45.,
+                end: 0.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: 0.,
+                end: -45.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: -45.,
+                end: -90.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: -90.,
+                end: -135.,
+                shading_objects: None,
+            },
+            ShadingSegment {
+                start: -135.,
+                end: -180.,
+                shading_objects: None,
+            },
+        ]
+        .into();
+
+        Arc::new(ExternalConditions::new(
+            &simulation_time,
+            vec![0.0, 5.0, 10.0, 15.0],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            diffuse_horizontal_radiations,
+            vec![0.0, 0., 0., 0.],
+            vec![0.0; 4],
+            55.0,
+            0.0,
+            0,
+            0,
+            None,
+            1.0,
+            None,
+            None,
+            false,
+            false,
+            shading_segments,
+        ))
+    }
+    #[rstest]
+    fn test_solar_gains_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
+
+        assert_relative_eq!(
+            transparent_building_element
+                .solar_gains(simulation_time.current_iteration())
+                .unwrap(),
+            25.3125,
+            max_relative = 1e-6,
+        );
+    }
+
+    #[rstest]
+    fn test_solar_gains_with_treatment_for_transparent(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: None,
+            opening_irradiance_control: None,
+            open_control: None,
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
+
+        assert_relative_eq!(
+            transparent_building_element
+                .solar_gains(simulation_time.current_iteration())
+                .unwrap(),
+            17.71875,
+            max_relative = 1e-6,
+        );
+
+        transparent_building_element.treatment[0].is_open = AtomicBool::from(true);
+
+        assert_relative_eq!(
+            transparent_building_element
+                .solar_gains(simulation_time.current_iteration())
+                .unwrap(),
+            25.3125,
+            max_relative = 1e-6,
+        );
+    }
+
+    fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
+        Arc::new(Control::SetpointTime(
+            SetpointTimeControl::new(
+                vec![Some(setpnt)], // causes control.setpnt() to return specified value
+                0,
+                1.0,
+                None,
+                None,
+                None,
+                Default::default(),
+                1.0,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_open(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        // Test that adjust_treatment opens when control is on
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)], // control is on
+            0,
+            1.,
+        )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: Some(control),
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_not_opened(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        // Test that adjust_treatment doesn't open when control is off
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false)], // control is off
+            0,
+            1.,
+        )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: Some(control),
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(!transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_close(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        // Test that adjust_treatment closes when control is off
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(false)], // control is off
+            0,
+            1.,
+        )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: Some(control),
+            is_open: AtomicBool::from(true),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![11.87873, 0., 0., 0.], // surface irradiance 9.999995798989683
+        );
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(!transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_not_closed(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        let external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
+        );
+        // Test that adjust_treatment doesn't close when control is on
+        let control = Arc::new(Control::OnOffTime(OnOffTimeControl::new(
+            vec![Some(true)], // control is on
+            0,
+            1.,
+        )));
+        let setpoint_time_control = create_setpoint_time_control(20.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: Some(control),
+            is_open: AtomicBool::from(true),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        transparent_building_element.external_conditions = external_conditions;
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_open_irrad(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        // Test that adjust_treatment opens from irradiance values
+        let setpoint_time_control = create_setpoint_time_control(40.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: None,
+            is_open: Default::default(),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+
+        transparent_building_element.treatment = vec![window_treatment];
+        // The Python test sets the surface irradiance return value to 30, our building element gets
+        // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
+        // because surface_irradiance < control.setpnt()
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
+        );
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst));
+    }
+
+    #[rstest]
+    fn test_adjust_treatment_close_irrad(
+        simulation_time: SimulationTimeIterator,
+        mut transparent_building_element: BuildingElementTransparent,
+    ) {
+        // Test that adjust_treatment closes from irradiance values
+        let setpoint_time_control = create_setpoint_time_control(20.);
+        let window_treatment = WindowTreatment {
+            _treatment_type: WindowTreatmentType::Curtains,
+            controls: WindowTreatmentControl::Manual,
+            delta_r: 0.2,
+            trans_red: 0.3,
+            closing_irradiance_control: Some(setpoint_time_control.clone()),
+            opening_irradiance_control: Some(setpoint_time_control),
+            open_control: None,
+            is_open: AtomicBool::from(true),
+            opening_delay_hrs: 0.0,
+            time_last_adjusted: Default::default(),
+        };
+        transparent_building_element.treatment = vec![window_treatment];
+        // The Python test sets the surface irradiance return value to 30, our building element gets
+        // 29.99986997757254 for surface irradiance. The same conditions are triggered in both tests
+        // because surface_irradiance > control.setpnt()
+        transparent_building_element.external_conditions = external_conditions_surface_irradiance(
+            simulation_time.clone(),
+            vec![19.77, 0., 0., 0.], // surface irradiance 29.99986997757254
+        );
+
+        transparent_building_element
+            .adjust_treatment(simulation_time.current_iteration())
+            .unwrap();
+
+        assert!(!transparent_building_element.treatment[0]
+            .is_open
+            .load(Ordering::SeqCst))
+    }
+
     #[rstest]
     fn test_fabric_heat_loss_for_transparent(
         transparent_building_element: BuildingElementTransparent,
@@ -4280,6 +4936,24 @@ mod tests {
             transparent_building_element.heat_capacity(),
             0.,
             "incorrect heat capacity returned"
+        );
+    }
+
+    #[rstest]
+    fn test_projected_height(transparent_building_element: BuildingElementTransparent) {
+        assert_eq!(
+            transparent_building_element.projected_height(),
+            1.25,
+            "incorrect projected height returned"
+        );
+    }
+
+    #[rstest]
+    fn test_orientation(transparent_building_element: BuildingElementTransparent) {
+        assert_eq!(
+            transparent_building_element.orientation(),
+            180.,
+            "incorrect orientation returned"
         );
     }
 

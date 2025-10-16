@@ -1,9 +1,4 @@
-#![allow(
-    clippy::too_many_arguments,
-    dead_code,
-    unused_variables,
-    clippy::doc_overindented_list_items
-)]
+#![allow(clippy::too_many_arguments, clippy::doc_overindented_list_items)]
 
 mod compare_floats;
 pub mod core;
@@ -65,12 +60,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
 
-pub const HEM_VERSION: &str = "0.34";
-pub const HEM_VERSION_DATE: &str = "2025-01-31";
+pub const HEM_VERSION: &str = "0.36";
+pub const HEM_VERSION_DATE: &str = "2025-06-03";
 #[cfg(feature = "fhs")]
-pub const FHS_VERSION: &str = "0.25";
+pub const FHS_VERSION: &str = "0.27";
 #[cfg(feature = "fhs")]
-pub const FHS_VERSION_DATE: &str = "2025-01-31";
+pub const FHS_VERSION_DATE: &str = "2025-06-03";
 
 #[instrument(skip_all)]
 pub fn run_project(
@@ -373,7 +368,7 @@ pub fn run_project(
                         heat_loss_parameter,
                         heat_capacity_parameter,
                         heat_loss_form_factor,
-                        temp_internal_air: primary_input.temp_internal_air_static_calcs.ok_or_else(|| anyhow!("A value for the temp_internal_air_static_calcs field was expected to have been provided on the input."))?,
+                        temp_internal_air: primary_input.temp_internal_air_static_calcs,
                         temp_external_air: corpus.external_conditions.air_temp_annual_daily_average_min(),
                     },
                 )?;
@@ -1955,17 +1950,6 @@ fn write_core_output_file_hot_water_source_summary(
     // TODO complete when hot water source results defined
 }
 
-const HOURS_TO_END_JAN: f64 = 744.;
-const HOURS_TO_END_FEB: f64 = 1416.;
-const HOURS_TO_END_MAR: f64 = 2160.;
-const HOURS_TO_END_APR: f64 = 2880.;
-const HOURS_TO_END_MAY: f64 = 3624.;
-const HOURS_TO_END_JUN: f64 = 4344.;
-const HOURS_TO_END_JUL: f64 = 5088.;
-const HOURS_TO_END_AUG: f64 = 5832.;
-const HOURS_TO_END_SEP: f64 = 6552.;
-const HOURS_TO_END_OCT: f64 = 7296.;
-const HOURS_TO_END_NOV: f64 = 8016.;
 const HOURS_TO_END_DEC: f64 = 8760.;
 
 struct HourForTimestep {

@@ -6,7 +6,7 @@ use crate::core::units::WATTS_PER_KILOWATT;
 use crate::external_conditions::{
     CalculatedDirectDiffuseTotalIrradiance, ExternalConditions, WindowShadingObject,
 };
-use crate::input::{InverterType, OnSiteGenerationVentilationStrategy};
+use crate::input::{InverterType, PhotovoltaicVentilationStrategy};
 use crate::simulation_time::SimulationTimeIteration;
 use std::f64::consts::{E, PI};
 use std::sync::Arc;
@@ -161,7 +161,7 @@ impl PhotovoltaicSystem {
     /// * `inverter_type` - type of inverter to help with calculation of efficiency of inverter when overshading
     pub fn new(
         peak_power: f64,
-        ventilation_strategy: OnSiteGenerationVentilationStrategy,
+        ventilation_strategy: PhotovoltaicVentilationStrategy,
         pitch: f64,
         orientation: f64,
         base_height: f64,
@@ -179,16 +179,14 @@ impl PhotovoltaicSystem {
         Self {
             peak_power,
             f_perf: match ventilation_strategy {
-                OnSiteGenerationVentilationStrategy::Unventilated => F_PERF_LOOKUP_UNVENTILATED,
-                OnSiteGenerationVentilationStrategy::ModeratelyVentilated => {
+                PhotovoltaicVentilationStrategy::Unventilated => F_PERF_LOOKUP_UNVENTILATED,
+                PhotovoltaicVentilationStrategy::ModeratelyVentilated => {
                     F_PERF_LOOKUP_MODERATELY_VENTILATED
                 }
-                OnSiteGenerationVentilationStrategy::StronglyOrForcedVentilated => {
+                PhotovoltaicVentilationStrategy::StronglyOrForcedVentilated => {
                     F_PERF_LOOKUP_STRONGLY_OR_FORCED_VENTILATED
                 }
-                OnSiteGenerationVentilationStrategy::RearSurfaceFree => {
-                    F_PERF_LOOKUP_REAR_SURFACE_FREE
-                }
+                PhotovoltaicVentilationStrategy::RearSurfaceFree => F_PERF_LOOKUP_REAR_SURFACE_FREE,
             },
             pitch,
             orientation,
@@ -342,12 +340,12 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
         ExternalConditions::new(
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
@@ -368,13 +366,11 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    number: 1,
                     start: 180.,
                     end: 135.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 2,
                     start: 135.,
                     end: 90.,
                     shading_objects: Some(vec![ShadingObject {
@@ -382,16 +378,13 @@ mod tests {
                         height: 2.2,
                         distance: 6.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 3,
                     start: 90.,
                     end: 45.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 4,
                     start: 45.,
                     end: 0.,
                     shading_objects: Some(vec![
@@ -406,10 +399,8 @@ mod tests {
                             distance: 7.,
                         },
                     ]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 5,
                     start: 0.,
                     end: -45.,
                     shading_objects: Some(vec![ShadingObject {
@@ -417,22 +408,18 @@ mod tests {
                         height: 3.,
                         distance: 8.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 6,
                     start: -45.,
                     end: -90.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 7,
                     start: -90.,
                     end: -135.,
                     ..Default::default()
                 },
                 ShadingSegment {
-                    number: 8,
                     start: -135.,
                     end: -180.,
                     ..Default::default()
@@ -443,7 +430,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn pv(
+    fn pv(
         simulation_time: SimulationTime,
         external_conditions: ExternalConditions,
     ) -> (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>) {
@@ -455,7 +442,7 @@ mod tests {
                 .unwrap();
         let pv = PhotovoltaicSystem::new(
             2.5,
-            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
             0.,
             10.,
@@ -485,7 +472,7 @@ mod tests {
             EnergySupply::connection(energy_supply.clone(), "pv generation with shading").unwrap();
         let pv = PhotovoltaicSystem::new(
             2.5,
-            OnSiteGenerationVentilationStrategy::ModeratelyVentilated,
+            PhotovoltaicVentilationStrategy::ModeratelyVentilated,
             30.,
             0.,
             10.,
@@ -618,5 +605,43 @@ mod tests {
                 max_relative = 1e-6
             );
         }
+    }
+
+    #[rstest]
+    fn test_inverter_efficiency_lookup(pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>)) {
+        let (pv, _) = pv;
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::StringInverter, 0.9),
+            0.8613180000000007
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::StringInverter, 0.5),
+            0.7419000000000002
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::OptimisedInverter, 0.9),
+            0.993716
+        );
+
+        assert_relative_eq!(
+            pv.inverter_efficiency_lookup(&InverterType::OptimisedInverter, 0.3),
+            1.
+        );
+    }
+
+    #[rstest]
+    fn test_produce_energy_zero_ratio_of_rated_output(
+        pv: (PhotovoltaicSystem, Arc<RwLock<EnergySupply>>),
+        simulation_time: SimulationTime,
+    ) {
+        // Test that ratio_of_rated_output of 0 returns 0 energy
+        let (mut pv, _) = pv;
+        let simulation_time = simulation_time.iter().next().unwrap();
+        pv.peak_power = 0.;
+
+        assert_eq!(pv.produce_energy(simulation_time), (0., 0.));
     }
 }

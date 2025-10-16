@@ -10,9 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, OtherWaterUseDetails, OtherWaterUses as OtherWaterUseInput,
+    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
     Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput,
-    WaterPipeContentsType, WaterPipeworkLoose,
+    WaterPipeContentsType, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -395,7 +395,7 @@ fn shower_from_input(
     Ok(match input {
         ShowerInput::MixerShower {
             cold_water_source,
-            waste_water_heat_recovery,
+            waste_water_heat_recovery_system: waste_water_heat_recovery,
             flowrate,
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
@@ -443,7 +443,7 @@ fn input_to_bath(input: &BathDetails, cold_water_sources: &ColdWaterSources) -> 
 }
 
 fn input_to_other_water_events(
-    input: &OtherWaterUseDetails,
+    input: &OtherWaterUse,
     cold_water_sources: &ColdWaterSources,
 ) -> OtherHotWater {
     let cold_water_source = cold_water_sources
@@ -455,7 +455,7 @@ fn input_to_other_water_events(
 }
 
 fn input_to_water_distribution_pipework(
-    input: &WaterPipeworkLoose,
+    input: &WaterPipeworkSimple,
     total_number_tapping_points: usize,
 ) -> anyhow::Result<PipeworkSimple> {
     // Calculate average length of pipework between HW system and tapping point
@@ -463,10 +463,7 @@ fn input_to_water_distribution_pipework(
 
     PipeworkSimple::new(
         input.location.into(),
-        input
-            .internal_diameter_mm
-            .ok_or_else(|| anyhow!("Internal diameter expected to be set"))?
-            / MILLIMETRES_IN_METRE as f64,
+        input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
         length_average,
         WaterPipeContentsType::Water,
     )
@@ -525,7 +522,7 @@ mod tests {
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    waste_water_heat_recovery: Some("Example_Inst_WWHRS".into()),
+                    waste_water_heat_recovery_system: Some("Example_Inst_WWHRS".into()),
                 },
             ),
             (
@@ -549,16 +546,16 @@ mod tests {
 
         let other_input = OtherWaterUses(IndexMap::from([(
             "other".into(),
-            OtherWaterUseDetails {
+            OtherWaterUse {
                 flowrate: 8.0,
                 cold_water_source: ColdWaterSourceType::MainsWater,
             },
         )]));
 
         let hw_pipework = Some(vec![
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: Some(30.),
+                internal_diameter_mm: 30.,
                 length: 10.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -566,9 +563,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
-                internal_diameter_mm: Some(28.),
+                internal_diameter_mm: 28.,
                 length: 9.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -576,9 +573,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: Some(32.),
+                internal_diameter_mm: 32.,
                 length: 5.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -586,9 +583,9 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-            WaterPipeworkLoose {
+            WaterPipeworkSimple {
                 location: WaterPipeworkLocation::External,
-                internal_diameter_mm: Some(31.),
+                internal_diameter_mm: 31.,
                 length: 8.0,
                 external_diameter_mm: None,
                 insulation_thermal_conductivity: None,
@@ -685,7 +682,7 @@ mod tests {
                     start: 8.,
                     duration: Some(3.),
                     temperature: 41.0,
-                    name: "mixer".to_string(), // NB. the anomalous name here is copied from the upstream Python
+                    name: "medium".to_string(),
                     event_type: WaterScheduleEventType::Bath,
                     volume: None,
                     warm_volume: None,
@@ -902,27 +899,27 @@ mod tests {
                         vol_hot_water_equiv_elec_shower: 0.0
                     },
                     DomesticHotWaterDemandData {
-                        hw_demand_vol: 39.92207133670446,
+                        hw_demand_vol: 64.89041357202146,
                         hw_demand_vol_target: IndexMap::from([
                             (
                                 41.0.into(),
                                 VolumeReference {
                                     warm_temp: 41.0,
-                                    warm_vol: 48.0
+                                    warm_vol: 72.0
                                 }
                             ),
                             (
                                 DemandVolTargetKey::TempHotWater,
                                 VolumeReference {
                                     warm_temp: 55.0,
-                                    warm_vol: 39.92207133670446
+                                    warm_vol: 64.89041357202146
                                 }
                             ),
                         ]),
-                        hw_vol_at_tapping_points: 32.365493807269814,
-                        hw_duration: 6.0,
-                        all_events: 1,
-                        hw_energy_demand: 1.9184107029362394,
+                        hw_vol_at_tapping_points: 49.77725851315216,
+                        hw_duration: 9.0,
+                        all_events: 2,
+                        hw_energy_demand: 2.9504640362695724,
                         usage_events: Some(vec![
                             TypedScheduleEvent {
                                 start: 8.,
@@ -938,10 +935,10 @@ mod tests {
                                 start: 8.,
                                 duration: Some(3.),
                                 temperature: 41.0,
-                                name: "mixer".to_string(),
+                                name: "medium".to_string(),
                                 event_type: WaterScheduleEventType::Bath,
                                 volume: None,
-                                warm_volume: None,
+                                warm_volume: Some(24.),
                                 pipework_volume: Some(7.556577529434648),
                             }
                         ]),
@@ -1146,6 +1143,21 @@ mod tests {
                     (0.0, 0.0),
                     (0.0, 0.0)
                 ][t_idx]
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_calc_pipework_losses_with_no_pipework(
+        mut dhw_demand: DomesticHotWaterDemand,
+        simulation_time: SimulationTime,
+    ) {
+        dhw_demand.hot_water_distribution_pipework = vec![];
+
+        for _ in simulation_time.iter() {
+            assert_eq!(
+                dhw_demand.calc_pipework_losses(1., 0., 0, 55., 20., 5.),
+                (0., 0.)
             );
         }
     }

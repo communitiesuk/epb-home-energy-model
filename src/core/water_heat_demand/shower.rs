@@ -176,6 +176,9 @@ impl InstantElectricShower {
 mod tests {
     use super::*;
     use crate::core::energy_supply::energy_supply::{EnergySupply, EnergySupplyBuilder};
+    use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemA;
+    use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemB;
+    use crate::core::heating_systems::wwhrs::WWHRSInstantaneousSystemC;
     use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use parking_lot::RwLock;
@@ -183,12 +186,23 @@ mod tests {
     use rstest::*;
     use std::sync::Arc;
 
-    #[rstest]
-    pub fn should_calculate_correct_hot_water_demand_for_mixer() {
-        let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
+    #[fixture]
+    fn simulation_time() -> SimulationTime {
+        SimulationTime::new(0f64, 3f64, 1f64)
+    }
+
+    #[fixture]
+    fn mixer_shower() -> MixerShower {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
-        let mixer_shower = MixerShower::new(6.5, cold_water_source.into(), None);
+        MixerShower::new(6.5, cold_water_source.into(), None)
+    }
+
+    #[rstest]
+    fn should_calculate_correct_hot_water_demand_for_mixer(
+        simulation_time: SimulationTime,
+        mixer_shower: MixerShower,
+    ) {
         let expected_demands = [24.7, 24.54081632653061, 24.375];
         for (idx, t_it) in simulation_time.iter().enumerate() {
             assert_eq!(
@@ -200,8 +214,103 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_calculate_correct_hot_water_demand_for_instant() {
-        let simulation_time = SimulationTime::new(0f64, 3f64, 1f64);
+    fn test_vol_warm_water_for_mixer(simulation_time: SimulationTime, mixer_shower: MixerShower) {
+        let expected_volumes = [32.5, 32.5, 32.5];
+
+        for (idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                mixer_shower.hot_water_demand(40., 52., 5., t_it).1,
+                expected_volumes[idx],
+                "incorrect volume of warm water returned"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_wwhrs_instantaneous_system_b_for_mixer(
+        simulation_time: SimulationTime,
+        mut mixer_shower: MixerShower,
+    ) {
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let wwhrs = Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
+            WWHRSInstantaneousSystemB::new(
+                mixer_shower.cold_water_source.clone(),
+                flow_rates,
+                efficiencies,
+                0.7,
+            ),
+        )));
+        mixer_shower.wwhrs = Some(wwhrs);
+        let expected_volumes = [22.903242227702766, 22.731048233573134, 22.552562007290966];
+
+        for (idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                mixer_shower.hot_water_demand(40., 52., 5., t_it).0,
+                expected_volumes[idx],
+                "incorrect volume of hot water returned"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_wwhrs_instantaneous_system_c_for_mixer(
+        simulation_time: SimulationTime,
+        mut mixer_shower: MixerShower,
+    ) {
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let wwhrs = Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemC(
+            WWHRSInstantaneousSystemC::new(
+                flow_rates,
+                efficiencies,
+                mixer_shower.cold_water_source.clone(),
+                0.7,
+                simulation_time.iter().current_iteration(),
+            ),
+        )));
+        mixer_shower.wwhrs = Some(wwhrs);
+        let expected_volumes = [24.7, 24.54081632653061, 24.375];
+
+        for (idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                mixer_shower.hot_water_demand(40., 52., 5., t_it).0,
+                expected_volumes[idx],
+                "incorrect volume of hot water returned"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_wwhrs_instantaneous_system_a_for_mixer(
+        simulation_time: SimulationTime,
+        mut mixer_shower: MixerShower,
+    ) {
+        let flow_rates = vec![5., 7., 9., 11., 13.];
+        let efficiencies = vec![44.8, 39.1, 34.8, 31.4, 28.6];
+        let wwhrs = Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemA(
+            WWHRSInstantaneousSystemA::new(
+                flow_rates,
+                efficiencies,
+                mixer_shower.cold_water_source.clone(),
+                0.7,
+                simulation_time.iter().current_iteration(),
+            ),
+        )));
+        mixer_shower.wwhrs = Some(wwhrs);
+        let expected_volumes = [22.903242227702766, 22.731048233573134, 22.552562007290966];
+
+        for (idx, t_it) in simulation_time.iter().enumerate() {
+            assert_eq!(
+                mixer_shower.hot_water_demand(40., 52., 5., t_it).0,
+                expected_volumes[idx],
+                "incorrect volume of hot water returned"
+            );
+        }
+    }
+
+    #[rstest]
+    fn should_calculate_correct_hot_water_demand_for_instant(simulation_time: SimulationTime) {
         let cold_water_temps = [2.0, 3.0, 4.0];
         let cold_water_source = ColdWaterSource::new(cold_water_temps.into(), 0, 1.0);
         let energy_supply = Arc::new(RwLock::new(

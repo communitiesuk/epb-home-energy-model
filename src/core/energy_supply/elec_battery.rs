@@ -353,12 +353,12 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTime {
+    fn simulation_time() -> SimulationTime {
         SimulationTime::new(0., 8., 1.)
     }
 
     #[fixture]
-    pub fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
+    fn external_conditions(simulation_time: SimulationTime) -> ExternalConditions {
         ExternalConditions::new(
             &simulation_time.iter(),
             vec![0.0, 2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0],
@@ -379,14 +379,11 @@ mod tests {
             false,
             vec![
                 ShadingSegment {
-                    number: 1,
                     start: 180.,
                     end: 135.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 2,
                     start: 135.,
                     end: 90.,
                     shading_objects: Some(vec![ShadingObject {
@@ -394,17 +391,13 @@ mod tests {
                         height: 2.2,
                         distance: 6.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 3,
                     start: 90.,
                     end: 45.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 4,
                     start: 45.,
                     end: 0.,
                     shading_objects: Some(vec![
@@ -419,10 +412,8 @@ mod tests {
                             distance: 7.,
                         },
                     ]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 5,
                     start: 0.,
                     end: -45.,
                     shading_objects: Some(vec![ShadingObject {
@@ -430,28 +421,21 @@ mod tests {
                         height: 3.,
                         distance: 8.,
                     }]),
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 6,
                     start: -45.,
                     end: -90.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 7,
                     start: -90.,
                     end: -135.,
                     shading_objects: None,
-                    ..Default::default()
                 },
                 ShadingSegment {
-                    number: 8,
                     start: -135.,
                     end: -180.,
                     shading_objects: None,
-                    ..Default::default()
                 },
             ]
             .into(),
@@ -459,7 +443,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn electric_battery(
+    fn electric_battery(
         external_conditions: ExternalConditions,
         simulation_time: SimulationTime,
     ) -> ElectricBattery {
@@ -478,7 +462,87 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_charge_discharge_battery(
+    fn test_get_charge_efficiency(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.get_charge_efficiency(simulation_time),
+            0.6687167004967052
+        );
+    }
+
+    #[rstest]
+    fn test_get_discharge_efficiency(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.get_discharge_efficiency(simulation_time),
+            0.8358958756208815
+        );
+    }
+
+    #[rstest]
+    fn test_get_charge_discharge_efficiency(electric_battery: ElectricBattery) {
+        assert_relative_eq!(electric_battery.get_charge_discharge_efficiency(), 0.8);
+    }
+
+    #[rstest]
+    fn test_get_max_capacity(electric_battery: ElectricBattery) {
+        assert_relative_eq!(electric_battery.get_max_capacity(), 1.76);
+    }
+
+    #[rstest]
+    fn test_timestep_end(electric_battery: ElectricBattery) {
+        electric_battery
+            .total_time_charging_current_timestep
+            .store(10., Ordering::SeqCst);
+        electric_battery.timestep_end();
+
+        assert_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+    }
+
+    #[rstest]
+    fn test_limit_capacity_due_to_temp(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+
+        assert_relative_eq!(
+            electric_battery.limit_capacity_due_to_temp(simulation_time),
+            0.8496
+        );
+
+        let mut electric_battery_inside = electric_battery;
+        electric_battery_inside.battery_location = BatteryLocation::Inside;
+
+        assert_relative_eq!(
+            electric_battery_inside.limit_capacity_due_to_temp(simulation_time),
+            1.
+        );
+    }
+
+    #[rstest]
+    fn test_capacity_temp_equ() {
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(5.), 0.9043);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(10.), 0.9476);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(20.), 1.);
+        assert_relative_eq!(ElectricBattery::capacity_temp_equ(30.), 1.);
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery(
         electric_battery: ElectricBattery,
         simulation_time: SimulationTime,
     ) {
@@ -506,6 +570,121 @@ mod tests {
             electric_battery.charge_discharge_battery(0.1, false, simulation_time),
             0.0747648,
             max_relative = 1e-7
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_below_minimum_charge_rate(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        // Test that the battery is not charged when below the minimum charge rate
+        let simulation_time = simulation_time.iter().next().unwrap();
+        let mut electric_battery = electric_battery;
+        electric_battery.minimum_charge_rate = 20.;
+        electric_battery.charge_discharge_battery(-10., false, simulation_time);
+
+        assert_eq!(
+            electric_battery.charge_discharge_battery(10., false, simulation_time),
+            0.
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_no_grid(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(-10., true, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery.charge_discharge_battery(10., true, simulation_time),
+            0.,
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_grid(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(-10., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery.charge_discharge_battery(10., false, simulation_time),
+            1.121472,
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_total_time(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.,
+        );
+
+        electric_battery.charge_discharge_battery(-1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            2. / 3.
+        );
+
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            2. / 3.
+        );
+    }
+
+    #[rstest]
+    fn test_charge_discharge_battery_total_time_no_charge(
+        electric_battery: ElectricBattery,
+        simulation_time: SimulationTime,
+    ) {
+        let simulation_time = simulation_time.iter().next().unwrap();
+        let mut electric_battery = electric_battery;
+        electric_battery.minimum_charge_rate = 20.;
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+
+        electric_battery.charge_discharge_battery(-1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
+        );
+
+        electric_battery.charge_discharge_battery(1., false, simulation_time);
+
+        assert_relative_eq!(
+            electric_battery
+                .total_time_charging_current_timestep
+                .load(Ordering::SeqCst),
+            0.
         );
     }
 }

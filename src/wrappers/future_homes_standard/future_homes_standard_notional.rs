@@ -1303,9 +1303,7 @@ fn edit_hot_water_distribution(
         let length = min_of_2(length_actual, length_max);
 
         // Update internal diameter to minimum if not present and should not be lower than the minimum
-        let internal_diameter_mm = hot_water_distribution_inner
-            .internal_diameter_mm
-            .unwrap_or(internal_diameter_mm_min);
+        let internal_diameter_mm = hot_water_distribution_inner.internal_diameter_mm;
         let internal_diameter_mm = internal_diameter_mm.max(internal_diameter_mm_min);
 
         // Update external diameter to minimum if not present and should not be lower than the minimum
@@ -1546,7 +1544,7 @@ mod tests {
 
     use super::*;
     use crate::input::{
-        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkLoose,
+        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
     };
     use crate::input::{HotWaterSource, WasteWaterHeatRecovery};
     use approx::assert_relative_eq;
@@ -1560,7 +1558,7 @@ mod tests {
         let reader = BufReader::new(Cursor::new(include_str!(
             "./test_future_homes_standard_notional_input_data.json"
         )));
-        InputForProcessing::init_with_json(reader).expect(
+        InputForProcessing::init_with_json_skip_validation(reader).expect(
             "expected valid test_future_homes_standard_notional_input_data.json to be present",
         )
     }
@@ -1602,129 +1600,6 @@ mod tests {
                 120.
             )
         }
-    }
-
-    #[rstest]
-    // this test does not exist in Python HEM
-    fn test_edit_infiltration_ventilation_for_notional_a(mut test_input: InputForProcessing) {
-        let is_notional_a = true;
-        let minimum_airflow_rate = 12.3;
-        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
-            .unwrap();
-
-        let expected = json!({
-            "cross_vent_factor": true,
-            "shield_class": "Normal",
-            "terrain_class": "OpenField",
-            "altitude": 30,
-            "noise_nuisance": true,
-            "Vents": {
-                "vent1": {
-                    "mid_height_air_flow_path": 1.5,
-                    "area_cm2": 100,
-                    "pressure_difference_ref": 20,
-                    "orientation360": 180,
-                    "pitch": 60
-                },
-                "vent2": {
-                    "mid_height_air_flow_path": 1.5,
-                    "area_cm2": 100,
-                    "pressure_difference_ref": 20,
-                    "orientation360": 0,
-                    "pitch": 60
-                }
-            },
-            "Leaks": {
-                "ventilation_zone_height": 6,
-                "test_pressure": 50.,
-                "test_result": 4.,
-                "env_area": 220
-            },
-            "MechanicalVentilation": {
-                "Decentralised_Continuous_MEV_for_notional": {
-                    "sup_air_flw_ctrl": "ODA",
-                    "sup_air_temp_ctrl": "CONST",
-                    "vent_type": "Decentralised continuous MEV",
-                    "SFP": 0.15,
-                    "EnergySupply": "mains elec",
-                    "design_outdoor_air_flow_rate": 12.3
-                }
-            },
-            "PDUs": {},
-            "Cowls": {},
-            "CombustionAppliances": {},
-            "ventilation_zone_base_height": 2.5
-        }
-        );
-
-        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
-
-        assert_eq!(expected, infiltration_ventilation)
-    }
-
-    #[rstest]
-    // this test does not exist in Python HEM
-    fn test_edit_infiltration_ventilation_for_not_notional_a(mut test_input: InputForProcessing) {
-        let is_notional_a = false;
-        let minimum_airflow_rate = 12.3;
-        edit_infiltration_ventilation(&mut test_input, is_notional_a, minimum_airflow_rate)
-            .unwrap();
-
-        let expected = json!({
-            "cross_vent_factor": true,
-            "shield_class": "Normal",
-            "terrain_class": "OpenField",
-            "altitude": 30,
-            "noise_nuisance": true,
-            "Vents": {
-                "vent1": {
-                    "mid_height_air_flow_path": 1.5,
-                    "area_cm2": 100,
-                    "pressure_difference_ref": 20,
-                    "orientation360": 180,
-                    "pitch": 60
-                },
-                "vent2": {
-                    "mid_height_air_flow_path": 1.5,
-                    "area_cm2": 100,
-                    "pressure_difference_ref": 20,
-                    "orientation360": 0,
-                    "pitch": 60
-                }
-            },
-            "Leaks": {
-                "ventilation_zone_height": 6,
-                "test_pressure": 50.,
-                "test_result": 5.,
-                "env_area": 220
-            },
-            "MechanicalVentilation": {
-                "0": {
-                    "sup_air_flw_ctrl": "ODA",
-                    "sup_air_temp_ctrl": "CONST",
-                    "vent_type": "Intermittent MEV",
-                    "SFP": 0.15,
-                    "EnergySupply": "mains elec",
-                    "design_outdoor_air_flow_rate": 80
-                },
-                "1": {
-                    "sup_air_flw_ctrl": "ODA",
-                    "sup_air_temp_ctrl": "CONST",
-                    "vent_type": "Intermittent MEV",
-                    "SFP": 0.15,
-                    "EnergySupply": "mains elec",
-                    "design_outdoor_air_flow_rate": 80
-                }
-            },
-            "PDUs": {},
-            "Cowls": {},
-            "CombustionAppliances": {},
-            "ventilation_zone_base_height": 2.5
-        });
-
-        let infiltration_ventilation = test_input.infiltration_ventilation().unwrap().clone();
-
-        assert_eq!(expected, infiltration_ventilation)
     }
 
     #[rstest]
@@ -1957,8 +1832,12 @@ mod tests {
                     "orientation360": 0.0,
                     "g_value": 0.0,
                     "frame_area_fraction": 0.0,
+                    "free_area_height": 0.0,
                     "base_height": 0.0,
+                    "max_window_open_area": 3,
+                    "mid_height": 1.5,
                     "shading": [],
+                    "window_part_list": []
                 }
             },
             "ThermalBridging": 1.0,
@@ -2618,7 +2497,7 @@ mod tests {
         let tfa = calc_tfa(&test_input).unwrap();
         edit_hot_water_distribution(&mut test_input, tfa).unwrap();
 
-        let expected_hot_water_distribution_inner: WaterPipeworkLoose =
+        let expected_hot_water_distribution_inner: WaterPipeworkSimple =
             serde_json::from_value(json!(
                     {
                         "location": "internal",

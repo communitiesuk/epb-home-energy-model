@@ -8,35 +8,27 @@
 	"ExternalConditions": {
 		"air_temperatures": [19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0, 19.0],
 		"wind_speeds": [3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1, 3.9, 3.8, 3.9, 4.1, 3.8, 4.2, 4.3, 4.1],
-		"ground_temperatures": [8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7, 8.0, 8.7, 9.4, 10.1, 10.8, 10.5, 11.0, 12.7],
 		"diffuse_horizontal_radiation": [0, 0, 0, 0, 35, 73, 139, 244, 320, 361, 369, 348, 318, 249, 225, 198, 121, 68, 19, 0, 0, 0, 0, 0],
 		"direct_beam_radiation": [0, 0, 0, 0, 0, 0, 7, 53, 63, 164, 339, 242, 315, 577, 385, 285, 332, 126, 7, 0, 0, 0, 0, 0],
 		"solar_reflectivity_of_ground": [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
 		"latitude": 51.383,
 		"longitude": -0.783,
-		"timezone": 0,
-		"start_day": 212,
-		"end_day": 212,
-		"time_series_step": 1,
-		"january_first": 1,
-		"daylight_savings": "not applicable",
-		"leap_day_included": false,
 		"direct_beam_conversion_needed": false,
 		"shading_segments": [
-			{"number": 1, "start360": 0, "end360": 45},
-			{"number": 2, "start360": 45, "end360": 90},
-			{"number": 3, "start360": 90, "end360": 135},
-			{"number": 4, "start360": 135, "end360": 180, 
+			{"start360": 0, "end360": 45},
+			{"start360": 45, "end360": 90},
+			{"start360": 90, "end360": 135},
+			{"start360": 135, "end360": 180,
 				"shading": [
 					{"type": "obstacle", "height": 10.5, "distance": 12}
 				]
 			},
-			{"number": 5, "start360": 180, "end360": 225},
-			{"number": 6, "start360": 225, "end360": 270},
-			{"number": 7, "start360": 270, "end360": 315},
-			{"number": 8, "start360": 315, "end360": 360}
+			{"start360": 180, "end360": 225},
+			{"start360": 225, "end360": 270},
+			{"start360": 270, "end360": 315},
+			{"start360": 315, "end360": 360}
 		]
-		
+
 	},
 	"InternalGains": {
 		"metabolic gains":{
@@ -135,7 +127,7 @@
 			"start_day": 212,
 			"time_series_step": 1,
 			"schedule":{
-				"main": [null, 52, null, 52, {"value": 52.0, "repeat": 20}] 
+				"main": [null, 52, null, 52, {"value": 52.0, "repeat": 20}]
 			}
 		},
 		"setpoint_temp_max":{
@@ -143,7 +135,7 @@
 			"start_day": 212,
 			"time_series_step": 1,
 			"schedule":{
-				"main": [null, 55, null, 55, {"value": 55.0, "repeat": 20}] 
+				"main": [null, 55, null, 55, {"value": 55.0, "repeat": 20}]
 			}
 		},
 		"controlmax_diverter" : {
@@ -408,7 +400,6 @@
 	"SpaceHeatSystem": {
 		"main": {
 			"type": "WetDistribution",
-			"wet_emitter_type": "radiator",
 			"thermal_mass": 0.14,
 			"emitters":[
 				{
@@ -446,13 +437,9 @@
 			"Control": "cooling system 1 ctrl"
 		}
 	},
-	"General": {
-		"storeys_in_building": 1,
-		"build_type": "house"
-	},
-	
+
 	"InfiltrationVentilation": {
-		"cross_vent_factor": true,
+		"cross_vent_possible": true,
 		"shield_class": "Normal",
 		"terrain_class": "OpenField",
 		"ventilation_zone_base_height": 2.5,
@@ -470,32 +457,16 @@
 			"ventilation_zone_height" : 6,
 			"test_pressure": 50,
 			"test_result": 1.2,
-			"area_roof": 100,
-			"area_facades":50,
 			"env_area":220
 		},
 		"MechanicalVentilation": {
 			"mechvent1":{
 				"sup_air_flw_ctrl": "ODA",
-				"sup_air_temp_ctrl": "CONST",
-				"design_zone_cooling_covered_by_mech_vent": 3.4,
-				"design_zone_heating_covered_by_mech_vent": 1,
+				"sup_air_temp_ctrl": "NO_CTRL",
 				"vent_type": "Centralised continuous MEV",
 				"SFP":1.5,
 				"EnergySupply": "mains elec",
 				"design_outdoor_air_flow_rate": 80
-			}
-		},
-		"PDUs": {
-		},
-		"Cowls": {
-		},
-		"CombustionAppliances":{
-			"Fireplace":{
-				"supply_situation":"room_air",
-				"exhaust_situation": "into_separate_duct",
-				"fuel_type": "wood",
-				"appliance_type": "open_fireplace"
 			}
 		}
 	},

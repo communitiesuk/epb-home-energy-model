@@ -3,7 +3,7 @@ use crate::core::energy_supply::elec_battery::ElectricBattery;
 use crate::core::energy_supply::tariff_data::TariffData;
 use crate::core::heating_systems::storage_tank::SurplusDiverting;
 use crate::errors::NotImplementedError;
-use crate::input::{EnergySupplyTariff, FuelType, SecondarySupplyType};
+use crate::input::{EnergySupplyPriorityEntry, EnergySupplyTariff, FuelType};
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
@@ -38,7 +38,7 @@ impl EnergySupplyConnection {
     }
 
     /// Forwards the amount of energy out (in kWh) to the relevant EnergySupply object
-    pub(crate) fn energy_out(
+    pub(crate) fn _energy_out(
         &self,
         amount_demanded: f64,
         timestep_idx: usize,
@@ -129,7 +129,7 @@ pub(crate) struct EnergySupply {
     electric_battery: Option<ElectricBattery>,
     #[derivative(Debug = "ignore")]
     diverter: Option<Arc<RwLock<dyn SurplusDiverting>>>,
-    priority: Option<Vec<SecondarySupplyType>>,
+    priority: Option<Vec<EnergySupplyPriorityEntry>>,
     is_export_capable: bool,
     demand_total: Vec<AtomicF64>,
     demand_by_end_user: IndexMap<String, Vec<AtomicF64>>,
@@ -157,7 +157,7 @@ impl EnergySupply {
         simulation_timesteps: usize,
         tariff_input: Option<EnergySupplyTariffInput>,
         electric_battery: Option<ElectricBattery>,
-        priority: Option<Vec<SecondarySupplyType>>,
+        priority: Option<Vec<EnergySupplyPriorityEntry>>,
         is_export_capable: Option<bool>,
     ) -> anyhow::Result<Self> {
         let tariff_info = if electric_battery
@@ -654,7 +654,7 @@ impl EnergySupply {
             }
             Some(priority) => {
                 for item in priority {
-                    if matches!(item, SecondarySupplyType::ElectricBattery)
+                    if matches!(item, EnergySupplyPriorityEntry::ElectricBattery)
                         && self.electric_battery.is_some()
                     {
                         let electric_battery = self.electric_battery.as_ref().unwrap();
@@ -681,7 +681,7 @@ impl EnergySupply {
                         demand_not_met -= energy_out_of_battery;
                         self.energy_out_of_battery[simtime.index]
                             .store(-energy_out_of_battery, Ordering::SeqCst);
-                    } else if matches!(item, SecondarySupplyType::Diverter)
+                    } else if matches!(item, EnergySupplyPriorityEntry::Diverter)
                         && self.diverter.is_some()
                     {
                         let diverter = self.diverter.as_ref().unwrap();
@@ -789,7 +789,7 @@ impl EnergySupplyBuilder {
         self
     }
 
-    pub(crate) fn with_priority(mut self, priority: Vec<SecondarySupplyType>) -> Self {
+    pub(crate) fn with_priority(mut self, priority: Vec<EnergySupplyPriorityEntry>) -> Self {
         self.energy_supply.priority = Some(priority);
         self
     }
@@ -1108,27 +1108,27 @@ mod tests {
             false,
             serde_json::from_value(json!([
                 // upstream Python gives old 'start' fields, but we need 'start360' here
-                {"number": 1, "start360": 0, "end360": 45},
-                {"number": 2, "start360": 45, "end360": 90,
+                {"start360": 0, "end360": 45},
+                {"start360": 45, "end360": 90,
                  "shading": [
                      {"type": "overhang", "height": 2.2, "distance": 6}
                      ]
                  },
-                {"number": 3, "start360": 90, "end360": 135},
-                {"number": 4, "start360": 135, "end360": 180,
+                {"start360": 90, "end360": 135},
+                {"start360": 135, "end360": 180,
                  "shading": [
                      {"type": "obstacle", "height": 40, "distance": 4},
                      {"type": "overhang", "height": 3, "distance": 7}
                      ]
                  },
-                {"number": 5, "start360": 180, "end360": 225,
+                {"start360": 180, "end360": 225,
                  "shading": [
                      {"type": "obstacle", "height": 3, "distance": 8},
                      ]
                  },
-                {"number": 6, "start360": 225, "end360": 270},
-                {"number": 7, "start360": 270, "end360": 315},
-                {"number": 8, "start360": 315, "end360": 360}
+                {"start360": 225, "end360": 270},
+                {"start360": 270, "end360": 315},
+                {"start360": 315, "end360": 360}
             ]))
             .unwrap(),
         )
@@ -1449,8 +1449,8 @@ mod tests {
 
         // Set priority
         let priority = vec![
-            SecondarySupplyType::Diverter,
-            SecondarySupplyType::ElectricBattery,
+            EnergySupplyPriorityEntry::Diverter,
+            EnergySupplyPriorityEntry::ElectricBattery,
         ];
 
         let mut builder =

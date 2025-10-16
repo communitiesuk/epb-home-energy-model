@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use thiserror::Error;
 
 // Set default values for the heat transfer coefficients inside the pipe, in W / m^2 K
-const INTERNAL_HTC_AIR: f64 = 15.5; // CIBSE Guide C, Table 3.25, air flow rate approx 3 m/s
+// (Python has an internal_htc_air constant here but this is gone in later versions)
 const INTERNAL_HTC_WATER: f64 = 1500.0; // CIBSE Guide C, Table 3.32 #Note, consider changing to 1478.4
 const INTERNAL_HTC_GLYCOL25: f64 = INTERNAL_HTC_WATER;
 // TODO (from Python) In the absence of a specific figure, use same value for water/glycol mix as for water.
@@ -35,7 +35,7 @@ impl From<WaterPipeworkLocation> for PipeworkLocation {
 /// A trait to mark that which can be considered "pipeworkesque", analogous to the PipeworkSimple
 /// type in the upstream Python, which both the concrete PipeworkSimple and Pipework can be considered
 /// to belong to.
-pub trait Pipeworkesque {
+pub(crate) trait Pipeworkesque {
     fn location(&self) -> PipeworkLocation;
 
     fn volume_litres(&self) -> f64;
@@ -45,7 +45,7 @@ pub trait Pipeworkesque {
 
 /// An object to represent heat loss from pipework after flow has stopped
 #[derive(Debug)]
-pub struct PipeworkSimple {
+pub(crate) struct PipeworkSimple {
     location: PipeworkLocation,
     length_in_m: f64,
     volume_litres: f64,
@@ -53,7 +53,7 @@ pub struct PipeworkSimple {
 }
 
 impl PipeworkSimple {
-    pub fn new(
+    pub(crate) fn new(
         location: PipeworkLocation,
         internal_diameter: f64,
         length: f64,
@@ -67,11 +67,6 @@ impl PipeworkSimple {
         let contents_properties = match contents {
             WaterPipeContentsType::Water => *WATER,
             WaterPipeContentsType::Glycol25 => *GLYCOL25,
-            content_type => {
-                return Err(InvalidPipeworkInput::IllegalWaterPipeContentsType(
-                    content_type,
-                ))
-            }
         };
         Ok(Self {
             location,
@@ -135,8 +130,6 @@ pub enum InvalidPipeworkInput {
         external_diameter_in_m: f64,
         internal_diameter_in_m: f64,
     },
-    #[error("Pipework: {0:?} is not accepted as a valid pipework contents type")]
-    IllegalWaterPipeContentsType(WaterPipeContentsType),
 }
 
 impl Pipework {
@@ -170,7 +163,6 @@ impl Pipework {
 
         // Set the heat transfer coefficient inside the pipe, in W / m^2 K
         let internal_htc = match contents {
-            WaterPipeContentsType::Air => INTERNAL_HTC_AIR,
             WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
             WaterPipeContentsType::Glycol25 => INTERNAL_HTC_GLYCOL25,
         };
@@ -266,12 +258,12 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    pub fn simulation_time() -> SimulationTimeIterator {
+    fn simulation_time() -> SimulationTimeIterator {
         SimulationTime::new(0.0, 8.0, 1.0).iter()
     }
 
     #[fixture]
-    pub fn pipework() -> Pipework {
+    fn pipework() -> Pipework {
         Pipework::new(
             PipeworkLocation::Internal,
             0.025,
@@ -286,7 +278,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_interior_surface_resistance(pipework: Pipework) {
+    fn should_have_correct_interior_surface_resistance(pipework: Pipework) {
         assert_relative_eq!(
             pipework.interior_surface_resistance,
             0.00849,
@@ -295,12 +287,12 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_insulation_resistance(pipework: Pipework) {
+    fn should_have_correct_insulation_resistance(pipework: Pipework) {
         assert_relative_eq!(pipework.insulation_resistance, 6.43829, max_relative = 1e-4);
     }
 
     #[rstest]
-    pub fn should_have_correct_external_surface_resistance(pipework: Pipework) {
+    fn should_have_correct_external_surface_resistance(pipework: Pipework) {
         assert_relative_eq!(
             pipework.external_surface_resistance,
             0.30904,
@@ -309,10 +301,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_heat_loss(
-        pipework: Pipework,
-        simulation_time: SimulationTimeIterator,
-    ) {
+    fn should_have_correct_heat_loss(pipework: Pipework, simulation_time: SimulationTimeIterator) {
         let temps_inside = [50.0, 51.0, 52.0, 52.0, 51.0, 50.0, 51.0, 52.0];
         let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
         let expected_losses = [
@@ -328,10 +317,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_temp_drop(
-        pipework: Pipework,
-        simulation_time: SimulationTimeIterator,
-    ) {
+    fn should_have_correct_temp_drop(pipework: Pipework, simulation_time: SimulationTimeIterator) {
         let temps_inside = [50.0, 51.0, 52.0, 52.0, 51.0, 50.0, 51.0, 52.0];
         let temps_outside = [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 21.0];
         let expected_drops = [35.0, 35.0, 35.0, 34.0, 32.0, 30.0, 30.0, 31.0];
@@ -345,7 +331,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_have_correct_cool_down_loss(
+    fn should_have_correct_cool_down_loss(
         pipework: Pipework,
         simulation_time: SimulationTimeIterator,
     ) {
@@ -385,15 +371,17 @@ mod tests {
         .unwrap()
     }
 
-    #[rstest]
-    fn test_invalid_contents() {
-        assert!(PipeworkSimple::new(
-            PipeworkLocation::External,
+    #[test]
+    fn test_glycol() {
+        let pipe = PipeworkSimple::new(
+            PipeworkLocation::Internal,
             0.05,
             7.,
-            WaterPipeContentsType::Air
+            WaterPipeContentsType::Glycol25,
         )
-        .is_err());
+        .unwrap();
+
+        assert_eq!(pipe.contents_properties, *GLYCOL25);
     }
 
     #[rstest]
@@ -439,6 +427,95 @@ mod tests {
             internal_simple_pipe.cool_down_loss(25.0, 30.0),
             -0.007131306240570581,
             max_relative = 1e-7
+        );
+    }
+
+    #[test]
+    fn test_invalid_diameter() {
+        assert!(Pipework::new(
+            PipeworkLocation::Internal,
+            2.,
+            1.,
+            1.0,
+            0.035,
+            0.038,
+            false,
+            WaterPipeContentsType::Water,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_interior_surface_resistance_from_contents() {
+        let pipework = Pipework::new(
+            PipeworkLocation::Internal,
+            1.,
+            2.,
+            1.,
+            1.,
+            1.,
+            false,
+            WaterPipeContentsType::Water,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pipework.interior_surface_resistance,
+            1. / (INTERNAL_HTC_WATER * PI)
+        );
+
+        let pipework = Pipework::new(
+            PipeworkLocation::Internal,
+            1.,
+            2.,
+            1.,
+            1.,
+            1.,
+            false,
+            WaterPipeContentsType::Glycol25,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pipework.interior_surface_resistance,
+            1. / (INTERNAL_HTC_GLYCOL25 * PI)
+        );
+    }
+
+    #[test]
+    fn test_external_surface_resistance_from_reflective() {
+        let pipework = Pipework::new(
+            PipeworkLocation::Internal,
+            1.,
+            2.,
+            1.,
+            1.,
+            1.,
+            false,
+            WaterPipeContentsType::Water,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pipework.external_surface_resistance,
+            1. / (EXTERNAL_NONREFLECTIVE_HTC * PI * 4.)
+        );
+
+        let pipework = Pipework::new(
+            PipeworkLocation::Internal,
+            1.,
+            2.,
+            1.,
+            1.,
+            1.,
+            true,
+            WaterPipeContentsType::Water,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pipework.external_surface_resistance,
+            1. / (EXTERNAL_REFLECTIVE_HTC * PI * 4.)
         );
     }
 }

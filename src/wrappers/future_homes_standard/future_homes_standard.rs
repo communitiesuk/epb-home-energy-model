@@ -347,9 +347,9 @@ pub(super) fn calc_final_rates(
                 FuelType::Custom => {
                     let factor = energy_supply_details.factor.expect("Expected custom fuel type to have associated factor values as part of energy supply input.");
                     (
-                        vec![factor.emissions],
-                        vec![factor.emissions_including_out_of_scope],
-                        vec![factor.primary_energy_factor],
+                        vec![factor.emissions_factor_kg_co2e_k_wh],
+                        vec![factor.emissions_factor_kg_co2e_k_wh_including_out_of_scope_emissions],
+                        vec![factor.primary_energy_factor_k_wh_k_wh_delivered],
                     )
                 }
                 FuelType::Electricity => {
@@ -1612,19 +1612,19 @@ fn create_lighting_gains(
                 .get("efficacy")
                 .and_then(|e| e.as_f64())
                 .ok_or(json_error(
-                    "Bulb efficacy for bulb with name '{bulb_name}' should have been expressed as a number",
+                    format!("Bulb efficacy for bulb with name '{bulb_name}' should have been expressed as a number"),
                 ))?;
             let bulb_power = bulb
                 .get("power")
                 .and_then(|e| e.as_f64())
                 .ok_or(json_error(
-                    "Bulb power for bulb with name '{bulb_name}' should have been expressed as a number",
+                    format!("Bulb power for bulb with name '{bulb_name}' should have been expressed as a number"),
                 ))?;
             let bulb_count = bulb
                 .get("count")
                 .and_then(|e| e.as_u64())
                 .ok_or(json_error(
-                    "Bulb count for bulb with name '{bulb_name}' should have been expressed as an integer",
+                    format!("Bulb count for bulb with name '{bulb_name}' should have been expressed as an integer"),
                 ))?;
 
             // Calculate total lumens and wattage for the bulb

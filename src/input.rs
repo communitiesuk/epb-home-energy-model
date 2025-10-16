@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
 use crate::corpus::Corpus;
@@ -6,12 +8,13 @@ use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use jsonschema::Validator;
+use jsonschema::{BasicOutput, Validator};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use serde_valid::json::ToJsonString;
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use smartstring::alias::String;
@@ -32,17 +35,14 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Input {
-    #[serde(
-        rename = "temp_internal_air_static_calcs",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) temp_internal_air_static_calcs: Option<f64>,
-    pub simulation_time: SimulationTime,
-    pub external_conditions: Arc<ExternalConditionsInput>,
+    #[serde(rename = "temp_internal_air_static_calcs")]
+    pub(crate) temp_internal_air_static_calcs: f64,
+    pub(crate) simulation_time: SimulationTime,
+    pub(crate) external_conditions: Arc<ExternalConditionsInput>,
     pub(crate) internal_gains: InternalGains,
     #[serde(default)]
     pub(crate) appliance_gains: ApplianceGains,
-    pub cold_water_source: ColdWaterSourceInput,
+    pub(crate) cold_water_source: ColdWaterSourceInput,
     #[serde(default)]
     #[validate(custom = validate_only_storage_tanks)]
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
@@ -50,57 +50,23 @@ pub struct Input {
     pub(crate) control: Control,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub(crate) smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
-    pub hot_water_source: HotWaterSource,
-    pub hot_water_demand: HotWaterDemand,
+    pub(crate) hot_water_source: HotWaterSource,
+    pub(crate) hot_water_demand: HotWaterDemand,
     #[serde(rename = "Events")]
     pub(crate) water_heating_events: WaterHeatingEvents,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub space_cool_system: Option<SpaceCoolSystem>,
-    pub zone: ZoneDictionary,
+    pub(crate) space_cool_system: Option<SpaceCoolSystem>,
+    pub(crate) zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
-    #[allow(dead_code)]
-    #[serde(rename = "PartGcompliance", skip_serializing_if = "Option::is_none")]
-    part_g_compliance: Option<bool>,
-    #[allow(dead_code)]
-    #[serde(
-        rename = "PartO_active_cooling_required",
-        skip_serializing_if = "Option::is_none"
-    )]
-    part_o_active_cooling_required: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ground_floor_area: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    number_of_bedrooms: Option<usize>,
-    #[allow(dead_code)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    number_of_wet_rooms: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    heating_control_type: Option<HeatingControlType>,
-    #[allow(dead_code)]
-    #[serde(
-        rename = "WaterHeatSchedDefault",
-        skip_serializing_if = "Option::is_none"
-    )]
-    default_water_heating_schedule: Option<WaterHeatingSchedule>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) heat_source_wet: Option<HeatSourceWet>,
     #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
-    pub waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
+    pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_site_generation: Option<OnSiteGeneration>,
-    #[serde(
-        rename = "Window_Opening_For_Cooling",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub window_opening_for_cooling: Option<WindowOpeningForCooling>,
-    pub general: General,
-    pub infiltration_ventilation: InfiltrationVentilation,
-    #[serde(rename = "Appliances", skip_serializing_if = "Option::is_none")]
-    pub(crate) appliances: Option<IndexMap<ApplianceKey, ApplianceEntry>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tariff: Option<Tariff>,
+    pub(crate) on_site_generation: Option<OnSiteGeneration>,
+    pub(crate) infiltration_ventilation: InfiltrationVentilation,
 }
 
 fn validate_only_storage_tanks(
@@ -116,50 +82,54 @@ fn validate_only_storage_tanks(
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ExternalConditionsInput {
+pub(crate) struct ExternalConditionsInput {
+    /// List of external air temperatures, one entry per hour (unit: ˚C)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub air_temperatures: Option<Vec<f64>>,
+    pub(crate) air_temperatures: Option<Vec<f64>>,
+    /// List of wind speeds, one entry per hour (unit: m/s)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wind_speeds: Option<Vec<f64>>,
+    pub(crate) wind_speeds: Option<Vec<f64>>,
+    /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wind_directions: Option<Vec<f64>>,
-    // check upstream whether anything uses this
-    #[serde(
-        rename = "ground_temperatures",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) _ground_temperatures: Option<Vec<f64>>,
+    pub(crate) wind_directions: Option<Vec<f64>>,
+    /// List of diffuse horizontal radiation values, one entry per hour (unit: W/m²)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub diffuse_horizontal_radiation: Option<Vec<f64>>,
+    pub(crate) diffuse_horizontal_radiation: Option<Vec<f64>>,
+    /// List of direct beam radiation values, one entry per hour (unit: W/m²)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direct_beam_radiation: Option<Vec<f64>>,
+    pub(crate) direct_beam_radiation: Option<Vec<f64>>,
+    /// List of ground reflectivity values, 0 to 1, one entry per hour
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub solar_reflectivity_of_ground: Option<Vec<f64>>,
+    pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
+    /// Latitude of weather station, angle from south (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub latitude: Option<f64>,
+    pub(crate) latitude: Option<f64>,
+    /// Longitude of weather station, easterly +ve westerly -ve (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub longitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<i32>,
+    pub(crate) timezone: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_day: Option<u32>,
+    pub(crate) start_day: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_day: Option<u32>,
+    pub(crate) end_day: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_series_step: Option<f64>,
+    pub(crate) time_series_step: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub january_first: Option<u32>,
+    pub(crate) january_first: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub daylight_savings: Option<DaylightSavingsConfig>,
+    pub(crate) daylight_savings: Option<DaylightSavingsConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub leap_day_included: Option<bool>,
+    pub(crate) leap_day_included: Option<bool>,
+    /// A flag to indicate whether direct beam radiation from climate data needs to be converted from horizontal to normal incidence; if normal direct beam radiation values are provided then no conversion is needed
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direct_beam_conversion_needed: Option<bool>,
+    pub(crate) direct_beam_conversion_needed: Option<bool>,
+    /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shading_segments: Option<Vec<ShadingSegment>>,
+    pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
@@ -168,6 +138,7 @@ pub(crate) struct InternalGains {
         alias = "total internal gains",
         skip_serializing_if = "Option::is_none"
     )]
+    #[validate]
     pub total_internal_gains: Option<InternalGainsDetails>,
     #[serde(rename = "metabolic gains", skip_serializing_if = "Option::is_none")]
     pub metabolic_gains: Option<InternalGainsDetails>,
@@ -179,40 +150,44 @@ pub(crate) struct InternalGains {
     pub other: Option<InternalGainsDetails>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct InternalGainsDetails {
-    pub start_day: u32,
-    pub time_series_step: f64,
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
+    pub(crate) start_day: u32,
+    pub(crate) time_series_step: f64,
     pub(crate) schedule: NumericSchedule,
 }
 
 pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceGainsDetails {
-    #[serde(rename = "type")]
-    _gain_type: Option<String>,
-    pub start_day: u32,
-    pub time_series_step: f64,
-    pub gains_fraction: f64,
+    /// First day of the time series, day of the year, 0 to 365
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
+    pub(crate) start_day: u32,
+    /// Timestep of the time series data (unit: hours)
+    pub(crate) time_series_step: f64,
+    /// Proportion of appliance demand turned into heat gains (no unit)
+    pub(crate) gains_fraction: f64,
     #[serde(rename = "EnergySupply")]
-    pub energy_supply: String,
+    pub(crate) energy_supply: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) schedule: Option<NumericSchedule>,
-    // In the Python code these fields are
-    // set in the FHS wrapper
+    /// Appliance power consumption when not in use (unit: W)
     #[serde(rename = "Standby", skip_serializing_if = "Option::is_none")]
-    pub standby: Option<f64>,
+    pub(crate) standby: Option<f64>,
     #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
-    pub events: Option<Vec<ApplianceGainsDetailsEvent>>,
+    pub(crate) events: Option<Vec<ApplianceGainsEvent>>,
     #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
-    pub load_shifting: Option<ApplianceLoadShifting>,
+    pub(crate) load_shifting: Option<ApplianceLoadShifting>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
 }
@@ -220,7 +195,7 @@ pub(crate) struct ApplianceGainsDetails {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct ApplianceGainsDetailsEvent {
+pub struct ApplianceGainsEvent {
     pub start: f64,
     pub duration: f64,
     #[serde(rename = "demand_W")]
@@ -232,22 +207,23 @@ pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub struct EnergySupplyDetails {
-    pub fuel: FuelType,
+pub(crate) struct EnergySupplyDetails {
+    pub(crate) fuel: FuelType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diverter: Option<EnergyDiverter>,
     #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
-    pub electric_battery: Option<ElectricBattery>,
+    pub(crate) electric_battery: Option<ElectricBattery>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub factor: Option<CustomEnergySourceFactor>,
+    pub(crate) factor: Option<CustomEnergySourceFactor>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<Vec<SecondarySupplyType>>,
+    pub(crate) priority: Option<Vec<EnergySupplyPriorityEntry>>,
+    /// Denotes that this energy supply can export its surplus supply
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_export_capable: Option<bool>,
+    pub(crate) is_export_capable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub threshold_charges: Option<[f64; 12]>,
+    pub(crate) threshold_charges: Option<[f64; 12]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub threshold_prices: Option<[f64; 12]>,
+    pub(crate) threshold_prices: Option<[f64; 12]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tariff: Option<EnergySupplyTariff>,
 }
@@ -283,7 +259,7 @@ pub(crate) enum EnergySupplyTariff {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum SecondarySupplyType {
+pub(crate) enum EnergySupplyPriorityEntry {
     ElectricBattery,
     #[serde(rename = "diverter")]
     Diverter,
@@ -297,7 +273,7 @@ pub enum SecondarySupplyType {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
-pub enum FuelType {
+pub(crate) enum FuelType {
     Electricity,
     MainsGas,
     Custom,
@@ -403,7 +379,6 @@ impl From<EnergySupplyType> for String {
 #[serde(rename_all = "PascalCase")]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnergyDiverter {
-    pub(crate) storage_tank: Option<StorageTankType>,
     pub(crate) heat_source: DiverterHeatSourceType,
     #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
     pub(crate) control_max: Option<String>,
@@ -412,7 +387,6 @@ pub(crate) struct EnergyDiverter {
 impl Default for EnergyDiverter {
     fn default() -> Self {
         Self {
-            storage_tank: None,
             heat_source: DiverterHeatSourceType::Immersion,
             control_max: None,
         }
@@ -479,24 +453,27 @@ pub enum BatteryLocation {
 #[serde(deny_unknown_fields)]
 pub struct CustomEnergySourceFactor {
     #[serde(rename = "Emissions Factor kgCO2e/kWh")]
-    pub emissions: f64,
+    pub emissions_factor_kg_co2e_k_wh: f64,
     #[serde(rename = "Emissions Factor kgCO2e/kWh including out-of-scope emissions")]
-    pub emissions_including_out_of_scope: f64,
+    pub emissions_factor_kg_co2e_k_wh_including_out_of_scope_emissions: f64,
     #[serde(rename = "Primary Energy Factor kWh/kWh delivered")]
-    pub primary_energy_factor: f64,
+    pub primary_energy_factor_k_wh_k_wh_delivered: f64,
 }
 
 pub(crate) type ColdWaterSourceInput = IndexMap<ColdWaterSourceType, ColdWaterSourceDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct ColdWaterSourceDetails {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    _source_type: Option<String>,
+    /// First day of the time series, day of the year, 0 to 365
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
     pub(crate) start_day: u32,
+    /// List of cold water temperatures, one entry per hour (unit: ˚C)
     pub(crate) temperatures: Vec<f64>,
+    /// Timestep of the time series data (unit: hours)
     pub(crate) time_series_step: f64,
 }
 
@@ -524,57 +501,67 @@ impl Control {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum ControlDetails {
     #[serde(rename = "OnOffTimeControl")]
-    OnOffTime {
+    OnOffTimer {
         #[serde(skip_serializing_if = "Option::is_none")]
         allow_null: Option<bool>,
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
         start_day: u32,
         time_series_step: f64,
-        #[allow(dead_code)]
-        #[serde(skip_serializing_if = "Option::is_none")]
-        logic_type: Option<ControlLogicType>,
         schedule: BooleanSchedule,
     },
     #[serde(rename = "OnOffCostMinimisingTimeControl")]
-    OnOffCostMinimisingTime {
+    OnOffCostMinimising {
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
         start_day: u32,
+        /// Timestep of the time series data (unit: hours)
         time_series_step: f64,
-        #[allow(dead_code)]
-        #[serde(skip_serializing_if = "Option::is_none")]
-        logic_type: Option<ControlLogicType>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        time_on_daily: Option<f64>,
+        /// Number of 'on' hours to be set per day
+        time_on_daily: f64,
         schedule: NumericSchedule,
     },
     #[serde(rename = "SetpointTimeControl")]
-    SetpointTime {
+    SetpointTimer {
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
         start_day: u32,
+        /// Timestep of the time series data (unit: hours)
         time_series_step: f64,
+        /// How long before heating period the system should switch on (unit: hours)
         #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
-        #[allow(dead_code)]
-        #[serde(skip_serializing_if = "Option::is_none")]
-        logic_type: Option<ControlLogicType>,
+        /// Minimum setpoint allowed
         #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_min: Option<f64>,
+        /// Maximum setpoint allowed
         #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_max: Option<f64>,
+        /// If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)
         #[serde(skip_serializing_if = "Option::is_none")]
         default_to_max: Option<bool>,
+        /// list of float values (one entry per hour)
         schedule: NumericSchedule,
     },
     #[serde(rename = "ChargeControl")]
-    Charge {
+    ChargeTarget {
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
         start_day: u32,
         time_series_step: f64,
-        #[allow(dead_code)]
         #[serde(skip_serializing_if = "Option::is_none")]
         logic_type: Option<ControlLogicType>,
+        /// Proportion of the charge targeted for each day
         #[serde(skip_serializing_if = "Option::is_none")]
         charge_level: Option<ChargeLevel>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -583,20 +570,11 @@ pub(crate) enum ControlDetails {
         temp_charge_cut: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         temp_charge_cut_delta: Option<NumericSchedule>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_target_charge_factor: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        full_charge_temp_diff: Option<f64>,
-        #[serde(rename = "target_charge", skip_serializing_if = "Option::is_none")]
-        _target_charge: Option<f64>,
+        /// List of boolean values where true means 'on' (one entry per hour)
         schedule: BooleanSchedule,
     },
     #[serde(rename = "CombinationTimeControl")]
-    CombinationTime {
-        start_day: u32,
-        time_series_step: f64,
-        combination: ControlCombinations,
-    },
+    CombinationTime { combination: ControlCombinations },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -661,12 +639,12 @@ pub(crate) struct ControlCombination {
     pub(crate) operation: ControlCombinationOperation,
     // unable currently to use serde_valid built-in validations to validate length of string from
     // smartstring crate, so using custom validation instead
-    #[validate(custom = validate_length_minimum_two)]
+    #[validate(custom = validate_length_minimum_one)]
     pub(crate) controls: Vec<String>,
 }
 
-fn validate_length_minimum_two(sources: &[String]) -> Result<(), serde_valid::validation::Error> {
-    validate_length_minimum::<2>(sources)
+fn validate_length_minimum_one(sources: &[String]) -> Result<(), serde_valid::validation::Error> {
+    validate_length_minimum::<1>(sources)
 }
 
 fn validate_length_minimum<const T: usize>(
@@ -687,7 +665,7 @@ fn validate_length_minimum<const T: usize>(
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "UPPERCASE")]
-pub enum ControlCombinationOperation {
+pub(crate) enum ControlCombinationOperation {
     And,
     Or,
     Xor,
@@ -711,57 +689,53 @@ pub(crate) struct SmartApplianceBattery {
 }
 
 impl ControlDetails {
-    pub(crate) fn start_day(&self) -> u32 {
+    pub(crate) fn start_day(&self) -> anyhow::Result<u32> {
         match self {
-            ControlDetails::OnOffTime { start_day, .. } => *start_day,
-            ControlDetails::OnOffCostMinimisingTime { start_day, .. } => *start_day,
-            ControlDetails::SetpointTime { start_day, .. } => *start_day,
-            ControlDetails::Charge { start_day, .. } => *start_day,
-            ControlDetails::CombinationTime { start_day, .. } => *start_day,
+            ControlDetails::OnOffTimer { start_day, .. } => Ok(*start_day),
+            ControlDetails::OnOffCostMinimising { start_day, .. } => Ok(*start_day),
+            ControlDetails::SetpointTimer { start_day, .. } => Ok(*start_day),
+            ControlDetails::ChargeTarget { start_day, .. } => Ok(*start_day),
+            _ => Err(anyhow!("Start day was not available")),
         }
     }
 
-    pub(crate) fn time_series_step(&self) -> f64 {
+    pub(crate) fn time_series_step(&self) -> anyhow::Result<f64> {
         match self {
-            ControlDetails::OnOffTime {
+            ControlDetails::OnOffTimer {
                 time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::OnOffCostMinimisingTime {
+            } => Ok(*time_series_step),
+            ControlDetails::OnOffCostMinimising {
                 time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::SetpointTime {
+            } => Ok(*time_series_step),
+            ControlDetails::SetpointTimer {
                 time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::Charge {
+            } => Ok(*time_series_step),
+            ControlDetails::ChargeTarget {
                 time_series_step, ..
-            } => *time_series_step,
-            ControlDetails::CombinationTime {
-                time_series_step, ..
-            } => *time_series_step,
+            } => Ok(*time_series_step),
+            _ => Err(anyhow!("Time series step was not available")),
         }
     }
 
     pub(crate) fn numeric_schedule(&self) -> anyhow::Result<&NumericSchedule> {
         match self {
-            ControlDetails::OnOffCostMinimisingTime { schedule, .. } => Ok(schedule),
-            ControlDetails::SetpointTime { schedule, .. } => Ok(schedule),
-            _ => Err(anyhow::anyhow!("Numeric schedule was not available")),
+            ControlDetails::OnOffCostMinimising { schedule, .. } => Ok(schedule),
+            ControlDetails::SetpointTimer { schedule, .. } => Ok(schedule),
+            _ => Err(anyhow!("Numeric schedule was not available")),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum ControlLogicType {
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ControlLogicType {
     #[default]
     Manual,
     Automatic,
-    #[serde(rename = "celect")]
     Celect,
     // high heat retention storage heater
-    #[serde(rename = "hhrsh")]
     Hhrsh,
-    #[serde(rename = "heat_battery")]
     HeatBattery,
 }
 
@@ -772,8 +746,8 @@ pub(crate) struct SmartApplianceControlDetails {
     #[serde(rename = "Appliances")]
     pub(crate) appliances: Vec<ApplianceKey>,
     #[serde(rename = "battery24hr")]
-    pub(crate) battery_24hr: Option<SmartApplianceBattery>,
-    pub(crate) non_appliance_demand_24hr: Option<IndexMap<String, Vec<f64>>>,
+    pub(crate) battery_24hr: SmartApplianceBattery,
+    pub(crate) non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
     pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
     pub(crate) time_series_step: f64,
 }
@@ -781,9 +755,9 @@ pub(crate) struct SmartApplianceControlDetails {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct HotWaterSource {
+pub(crate) struct HotWaterSource {
     #[serde(rename = "hw cylinder")]
-    pub hot_water_cylinder: HotWaterSourceDetails,
+    pub(crate) hot_water_cylinder: HotWaterSourceDetails,
 }
 
 impl HotWaterSource {
@@ -805,30 +779,29 @@ pub enum BoilerHotWaterTest {
     NoAdditionalTests,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum HotWaterSourceDetails {
+pub(crate) enum HotWaterSourceDetails {
     StorageTank {
+        /// Total volume of tank (unit: litre)
+        #[validate(minimum = 0.0)]
         volume: f64,
+        /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
         daily_losses: f64,
+        /// Surface area of the heat exchanger within the storage tank (unit: m²)
         #[serde(skip_serializing_if = "Option::is_none")]
         heat_exchanger_surface_area: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         min_temp: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        init_temp: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        setpoint_temp: Option<f64>,
-        #[serde(
-            rename = "Control_hold_at_setpnt",
-            skip_serializing_if = "Option::is_none"
-        )]
-        control_hold_at_setpoint: Option<String>,
+        /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
+        init_temp: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceReference,
+        /// Map of heating systems connected to the storage tank
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
+        /// List of primary pipework components connected to the storage tank
         #[serde(skip_serializing_if = "Option::is_none")]
         primary_pipework: Option<Vec<WaterPipework>>,
     },
@@ -837,19 +810,18 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
-        #[serde(rename = "Control")]
-        control: HeatSourceControlType,
         #[serde(rename = "separate_DHW_tests")]
         separate_dhw_tests: BoilerHotWaterTest,
-        rejected_energy_1: f64,
-        fuel_energy_2: f64,
-        rejected_energy_2: f64,
-        storage_loss_factor_2: f64,
-        rejected_factor_3: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rejected_energy_1: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        storage_loss_factor_2: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rejected_factor_3: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
         #[serde(rename = "daily_HW_usage")]
-        daily_hot_water_usage: f64,
+        daily_hw_usage: f64,
     },
     #[serde(rename = "HIU")]
     Hiu {
@@ -857,8 +829,6 @@ pub enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<HeatSourceControlType>,
         #[serde(skip_serializing_if = "Option::is_none")]
         setpoint_temp: Option<f64>,
     },
@@ -868,8 +838,7 @@ pub enum HotWaterSourceDetails {
         energy_supply: String,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        setpoint_temp: Option<f64>,
+        setpoint_temp: f64,
     },
     SmartHotWaterTank {
         volume: f64,
@@ -877,6 +846,7 @@ pub enum HotWaterSourceDetails {
         power_pump_kw: f64,
         max_flow_rate_pump_l_per_min: f64,
         temp_usable: f64,
+        /// Reference to a control schedule of maximum state of charge values
         temp_setpnt_max: String,
         daily_losses: f64,
         init_temp: f64,
@@ -887,15 +857,13 @@ pub enum HotWaterSourceDetails {
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        primary_pipework: Option<Vec<WaterPipeworkLoose>>,
+        primary_pipework: Option<Vec<WaterPipeworkSimple>>,
     },
     HeatBattery {
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: String,
-        #[serde(rename = "Control")]
-        control: String,
     },
 }
 
@@ -915,7 +883,6 @@ pub(crate) trait HotWaterSourceDetailsForProcessing {
     fn is_hiu(&self) -> bool;
     fn is_point_of_use(&self) -> bool;
     fn is_smart_hot_water_tank(&self) -> bool;
-    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>);
     fn set_control_min_name_for_storage_tank_heat_sources(
         &mut self,
         control_name: &str,
@@ -976,18 +943,6 @@ impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
             .get("type")
             .and_then(|source_type| source_type.as_str())
             .is_some_and(|source_type| source_type == "SmartHotWaterTank")
-    }
-
-    fn set_control_hold_at_setpoint(&mut self, control_name: impl Into<String>) {
-        if self
-            .0
-            .get("type")
-            .and_then(|v| v.as_str())
-            .is_some_and(|source_type| source_type == "StorageTank")
-        {
-            self.0
-                .insert("Control_hold_at_setpnt".into(), json!(control_name.into()));
-        }
     }
 
     fn set_control_min_name_for_storage_tank_heat_sources(
@@ -1114,45 +1069,36 @@ impl HeatSourceWetType {
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum HeatSourceControlType {
+pub(crate) enum HeatSourceControlType {
     #[serde(rename = "hw timer")]
     HotWaterTimer,
     #[serde(rename = "window opening")]
     WindowOpening,
-    #[serde(rename = "WindowOpening_LivingRoom")]
-    WindowOpeningLivingRoom,
-    #[serde(rename = "WindowOpening_RestOfDwelling")]
-    WindowOpeningRestOfDwelling,
-    #[serde(rename = "always off")]
-    AlwaysOff,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum HeatSource {
+pub(crate) enum HeatSource {
     ImmersionHeater {
         power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
         control_min: Option<String>,
+        /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<HeatSourceControlType>,
         heater_position: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         thermostat_position: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        solar_cell_location: Option<SolarCellLocation>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setpnt_max: Option<String>,
     },
     SolarThermalSystem {
         #[serde(rename = "sol_loc")]
-        solar_cell_location: SolarCellLocation,
+        solar_cell_location: SolarCollectorLoopLocation,
         area_module: f64,
+        #[validate(minimum = 1)]
         modules: usize,
         peak_collector_efficiency: f64,
         incidence_angle_modifier: f64,
@@ -1172,34 +1118,30 @@ pub enum HeatSource {
         orientation: f64,
         solar_loop_piping_hlc: f64,
         heater_position: f64,
-        thermostat_position: f64,
+        /// Required for StorageTank but not for SmartHotWaterTank
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thermostat_position: Option<f64>,
+        /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax")]
         control_max: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setpnt_max: Option<String>,
     },
     #[serde(rename = "HeatSourceWet")]
-    Wet {
+    ServiceWaterRegular {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         temp_flow_limit_upper: Option<f64>,
-        #[serde(rename = "ColdWaterSource", skip_serializing_if = "Option::is_none")]
-        cold_water_source: Option<ColdWaterSourceType>,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin", skip_serializing_if = "Option::is_none")]
         control_min: Option<String>,
+        /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<HeatSourceControlType>,
         heater_position: f64,
+        /// Required for StorageTank but not for SmartHotWaterTank
         #[serde(skip_serializing_if = "Option::is_none")]
         thermostat_position: Option<f64>,
-        #[serde(rename = "temp_return", skip_serializing_if = "Option::is_none")]
-        temperature_return: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setpnt_max: Option<String>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
@@ -1212,19 +1154,19 @@ pub enum HeatSource {
         test_data: HeatPumpHotWaterTestData,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// Reference to a control schedule of minimum temperature setpoints
         #[serde(rename = "Controlmin")]
         control_min: String,
+        /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax")]
         control_max: String,
         heater_position: f64,
         thermostat_position: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setpnt_max: Option<String>,
     },
 }
 
 impl HeatSource {
-    pub fn heater_position(&self) -> f64 {
+    pub(crate) fn heater_position(&self) -> f64 {
         match self {
             HeatSource::ImmersionHeater {
                 heater_position, ..
@@ -1232,7 +1174,7 @@ impl HeatSource {
             HeatSource::SolarThermalSystem {
                 heater_position, ..
             } => *heater_position,
-            HeatSource::Wet {
+            HeatSource::ServiceWaterRegular {
                 heater_position, ..
             } => *heater_position,
             HeatSource::HeatPumpHotWaterOnly {
@@ -1241,7 +1183,7 @@ impl HeatSource {
         }
     }
 
-    pub fn thermostat_position(&self) -> Option<f64> {
+    pub(crate) fn thermostat_position(&self) -> Option<f64> {
         match self {
             HeatSource::ImmersionHeater {
                 thermostat_position,
@@ -1250,8 +1192,8 @@ impl HeatSource {
             HeatSource::SolarThermalSystem {
                 thermostat_position,
                 ..
-            } => Some(*thermostat_position),
-            HeatSource::Wet {
+            } => *thermostat_position,
+            HeatSource::ServiceWaterRegular {
                 thermostat_position,
                 ..
             } => *thermostat_position,
@@ -1262,81 +1204,23 @@ impl HeatSource {
         }
     }
 
-    pub fn energy_supply_name(&self) -> &str {
+    pub(crate) fn energy_supply_name(&self) -> &str {
         match self {
             HeatSource::ImmersionHeater { energy_supply, .. } => energy_supply,
             HeatSource::SolarThermalSystem { energy_supply, .. } => energy_supply,
-            HeatSource::Wet { energy_supply, .. } => energy_supply,
+            HeatSource::ServiceWaterRegular { energy_supply, .. } => energy_supply,
             HeatSource::HeatPumpHotWaterOnly { energy_supply, .. } => energy_supply,
         }
     }
-
-    pub(crate) fn set_control_min(&mut self, control_min_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater { control_min, .. } => {
-                *control_min = Some(control_min_name.into());
-            }
-            HeatSource::SolarThermalSystem { .. } => {
-                unreachable!()
-            }
-            HeatSource::Wet { control_min, .. } => {
-                *control_min = Some(control_min_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly { control_min, .. } => {
-                *control_min = control_min_name.into();
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn set_control_max(&mut self, control_max_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater { control_max, .. } => {
-                *control_max = Some(control_max_name.into());
-            }
-            HeatSource::SolarThermalSystem { control_max, .. } => {
-                *control_max = control_max_name.into();
-            }
-            HeatSource::Wet { control_max, .. } => {
-                *control_max = Some(control_max_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly { control_max, .. } => {
-                *control_max = control_max_name.into();
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn set_temp_setpnt_max(&mut self, temp_setpnt_max_name: &str) -> anyhow::Result<()> {
-        match self {
-            HeatSource::ImmersionHeater {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::SolarThermalSystem {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::Wet {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-            HeatSource::HeatPumpHotWaterOnly {
-                temp_setpnt_max, ..
-            } => {
-                *temp_setpnt_max = Some(temp_setpnt_max_name.into());
-            }
-        }
-        Ok(())
-    }
 }
 
+/// Location of the main part of the solar thermal collector loop piping.
+///
+/// This affects the ambient temperature used for heat loss calculations
+/// in the collector loop piping.
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum SolarCellLocation {
+pub(crate) enum SolarCollectorLoopLocation {
     #[serde(rename = "OUT")]
     Out,
     #[serde(rename = "HS")]
@@ -1348,44 +1232,43 @@ pub enum SolarCellLocation {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct HeatPumpHotWaterTestData {
+pub(crate) struct HeatPumpHotWaterTestData {
     #[serde(rename = "L", skip_serializing_if = "Option::is_none")]
-    pub l: Option<HeatPumpHotWaterOnlyTestDatum>,
+    pub(crate) l: Option<HeatPumpHotWaterOnlyTestDatum>,
     #[serde(rename = "M")]
-    pub m: HeatPumpHotWaterOnlyTestDatum,
+    pub(crate) m: HeatPumpHotWaterOnlyTestDatum,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct HeatPumpHotWaterOnlyTestDatum {
-    // CoP measured during EN 16147 test
-    pub cop_dhw: f64,
-    // daily energy requirement (kWh/day) for tapping profile used for test
-    #[serde(rename = "hw_tapping_prof_daily_total")]
-    pub hw_tapping_prof_daily: f64,
-    // electrical input energy (kWh) measured in EN 16147 test over 24 hrs
-    pub energy_input_measured: f64,
-    // standby power (W) measured in EN 16147 test
-    pub power_standby: f64,
-    // daily hot water vessel heat loss
-    // (kWh/day) for a 45 K temperature difference between vessel
-    // and surroundings, tested in accordance with BS 1566 or
-    // EN 12897 or any equivalent standard. Vessel must be same
-    // as that used during EN 16147 test
-    pub hw_vessel_loss_daily: f64,
+pub(crate) struct HeatPumpHotWaterOnlyTestDatum {
+    /// CoP measured during EN 16147 test
+    pub(crate) cop_dhw: f64,
+    /// daily energy requirement (kWh/day) for tapping profile used for test
+    pub(crate) hw_tapping_prof_daily_total: f64,
+    /// electrical input energy (kWh) measured in EN 16147 test over 24 hrs
+    pub(crate) energy_input_measured: f64,
+    /// standby power (W) measured in EN 16147 test
+    pub(crate) power_standby: f64,
+    /// daily hot water vessel heat loss
+    /// (kWh/day) for a 45 K temperature difference between vessel
+    /// and surroundings, tested in accordance with BS 1566 or
+    /// EN 12897 or any equivalent standard. Vessel must be same
+    /// as that used during EN 16147 test
+    pub(crate) hw_vessel_loss_daily: f64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct WaterPipeworkLoose {
+pub struct WaterPipeworkSimple {
     pub location: WaterPipeworkLocation,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub internal_diameter_mm: Option<f64>,
+    pub internal_diameter_mm: f64,
+    pub length: f64,
+    // remainder of fields are not in the input definition for Python HEM 0.36 but storage tank logic seems to need them for now
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_diameter_mm: Option<f64>,
-    pub length: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub insulation_thermal_conductivity: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1410,15 +1293,13 @@ pub struct WaterPipework {
     pub pipe_contents: WaterPipeContentsType,
 }
 
-impl TryFrom<WaterPipeworkLoose> for WaterPipework {
+impl TryFrom<WaterPipeworkSimple> for WaterPipework {
     type Error = anyhow::Error;
 
-    fn try_from(loose: WaterPipeworkLoose) -> Result<Self, Self::Error> {
+    fn try_from(loose: WaterPipeworkSimple) -> Result<Self, Self::Error> {
         Ok(Self {
             location: loose.location,
-            internal_diameter_mm: loose
-                .internal_diameter_mm
-                .ok_or_else(|| anyhow!("Missing internal_diameter_mm value in water pipework."))?,
+            internal_diameter_mm: loose.internal_diameter_mm,
             external_diameter_mm: loose
                 .external_diameter_mm
                 .ok_or_else(|| anyhow!("Missing external_diameter_mm value in water pipework."))?,
@@ -1453,8 +1334,6 @@ pub enum WaterPipeworkLocation {
 pub enum WaterPipeContentsType {
     #[serde(rename = "water")]
     Water,
-    #[serde(rename = "air")]
-    Air,
     #[serde(rename = "glycol25")]
     Glycol25,
 }
@@ -1463,15 +1342,15 @@ pub enum WaterPipeContentsType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct HotWaterDemand {
+pub(crate) struct HotWaterDemand {
     #[serde(rename = "Shower", skip_serializing_if = "Option::is_none")]
-    pub shower: Option<Showers>,
+    pub(crate) shower: Option<Showers>,
     #[serde(rename = "Bath", skip_serializing_if = "Option::is_none")]
-    pub bath: Option<Baths>,
+    pub(crate) bath: Option<Baths>,
     #[serde(rename = "Other", skip_serializing_if = "Option::is_none")]
-    pub other_water_use: Option<OtherWaterUses>,
+    pub(crate) other_water_use: Option<OtherWaterUses>,
     #[serde(rename = "Distribution", skip_serializing_if = "Option::is_none")]
-    pub water_distribution: Option<WaterDistribution>,
+    pub(crate) water_distribution: Option<WaterDistribution>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -1496,11 +1375,13 @@ impl Showers {
 #[serde(deny_unknown_fields, tag = "type")]
 pub enum Shower {
     MixerShower {
+        /// Shower flow rate (unit: litre/minute)
         flowrate: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
+        /// Reference to a key in Input.WWHRS
         #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
-        waste_water_heat_recovery: Option<String>,
+        waste_water_heat_recovery_system: Option<String>,
     },
     #[serde(rename = "InstantElecShower")]
     InstantElectricShower {
@@ -1515,81 +1396,48 @@ pub enum Shower {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct Baths(pub IndexMap<String, BathDetails>);
-
-impl Baths {
-    /// Provide bath field names as strings.
-    fn keys(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
-    }
-
-    fn size_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|bath| bath.size)
-    }
-
-    fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|bath| bath.flowrate)
-    }
-}
+pub(crate) struct Baths(pub IndexMap<String, BathDetails>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct BathDetails {
-    pub size: f64,
+pub(crate) struct BathDetails {
+    /// Volume held by bath (unit: litre)
+    pub(crate) size: f64,
     #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: ColdWaterSourceType,
-    pub flowrate: f64,
+    pub(crate) cold_water_source: ColdWaterSourceType,
+    /// Tap/outlet flow rate (unit: litre/minute)
+    pub(crate) flowrate: f64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct OtherWaterUses(pub IndexMap<String, OtherWaterUseDetails>);
-
-impl OtherWaterUses {
-    /// Provide other water use field names as strings.
-    pub fn keys(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
-    }
-
-    pub fn flowrate_for_field(&self, field: &str) -> Option<f64> {
-        self.0.get(field).map(|other| other.flowrate)
-    }
-}
+pub(crate) struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct OtherWaterUseDetails {
-    pub flowrate: f64,
+pub(crate) struct OtherWaterUse {
+    /// Tap/outlet flow rate (unit: litre/minute)
+    pub(crate) flowrate: f64,
     #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: ColdWaterSourceType,
+    pub(crate) cold_water_source: ColdWaterSourceType,
 }
 
-pub type WaterDistribution = Vec<WaterPipeworkLoose>;
+pub(crate) type WaterDistribution = Vec<WaterPipeworkSimple>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-pub(crate) struct WaterHeatingEvents(
-    pub(crate) IndexMap<WaterHeatingEventType, IndexMap<String, Vec<WaterHeatingEvent>>>,
-);
-
-impl WaterHeatingEvents {
-    fn add_event_for_type_and_name(
-        &mut self,
-        event_type: WaterHeatingEventType,
-        name: &str,
-        event: WaterHeatingEvent,
-    ) {
-        self.0
-            .entry(event_type)
-            .or_default()
-            .entry(name.into())
-            .or_default()
-            .push(event);
-    }
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct WaterHeatingEvents {
+    #[serde(default)]
+    pub(crate) shower: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[serde(default)]
+    pub(crate) bath: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[serde(default)]
+    pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -1621,43 +1469,34 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        advanced_start: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setback: Option<f64>,
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
-        heat_source: Option<SpaceHeatSystemHeatSource>,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<String>,
-        // not sure what the possible options are here yet
+        #[serde(rename = "Control")]
+        control: String,
+        /// Convective fraction for heating
         frac_convective: f64,
-        #[serde(rename = "Zone", skip_serializing_if = "Option::is_none")]
-        _zone: Option<String>,
     },
     #[serde(rename = "ElecStorageHeater")]
     ElectricStorageHeater {
-        pwr_in: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         advanced_start: Option<f64>,
+        pwr_in: f64,
+        /// (instant backup) (unit: kW)
         rated_power_instant: f64,
         storage_capacity: f64,
         air_flow_type: ElectricStorageHeaterAirFlowType,
         frac_convective: f64,
+        /// Fan power (unit: W)
         fan_pwr: f64,
-        n_units: i32,
+        n_units: u32,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        #[serde(rename = "HeatSource", skip_serializing_if = "Option::is_none")]
-        heat_source: Option<SpaceHeatSystemHeatSource>,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<String>,
-        // don't know possible options here
+        #[serde(rename = "Control")]
+        control: String,
         #[serde(rename = "ControlCharger")]
         control_charger: String,
-        // don't know possible options here
+        /// The zone where the unit(s) is/are installed
         #[serde(rename = "Zone")]
         zone: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1669,17 +1508,13 @@ pub(crate) enum SpaceHeatSystemDetails {
     },
     WetDistribution {
         #[serde(skip_serializing_if = "Option::is_none")]
-        wet_emitter_type: Option<String>,
-        advanced_start: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         thermal_mass: Option<f64>,
         #[serde(default)]
         emitters: Vec<WetEmitter>,
         #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
         energy_supply: Option<String>,
         temp_diff_emit_dsgn: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        variable_flow: Option<bool>,
+        variable_flow: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         design_flow_rate: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1690,172 +1525,22 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         bypass_percentage_recirculated: Option<f64>,
-        // unclear which values are possible here
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<String>,
-        // check upstream if this is used
+        #[serde(rename = "Control")]
+        control: String,
         ecodesign_controller: EcoDesignController,
         design_flow_temp: i32,
         #[serde(rename = "Zone")]
         zone: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setback: Option<f64>,
     },
     WarmAir {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        advanced_start: Option<f64>,
-        temp_diff_emit_dsgn: f64,
         frac_convective: f64,
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
-        #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-        control: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setback: Option<f64>,
+        #[serde(rename = "Control")]
+        control: String,
     },
-}
-
-impl SpaceHeatSystemDetails {
-    pub(crate) fn set_control(
-        &mut self,
-        control_string: impl Into<String>,
-    ) -> anyhow::Result<&Self> {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater {
-                ref mut control, ..
-            } => {
-                *control = Some(control_string.into());
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater {
-                ref mut control, ..
-            } => {
-                *control = Some(control_string.into());
-            }
-            SpaceHeatSystemDetails::WetDistribution {
-                ref mut control, ..
-            } => {
-                *control = Some(control_string.into());
-            }
-            SpaceHeatSystemDetails::WarmAir {
-                ref mut control, ..
-            } => {
-                *control = Some(control_string.into());
-            }
-        }
-        Ok(self)
-    }
-
-    pub fn temp_setback(&self) -> Option<f64> {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater { temp_setback, .. } => *temp_setback,
-            SpaceHeatSystemDetails::WetDistribution { temp_setback, .. } => *temp_setback,
-            SpaceHeatSystemDetails::ElectricStorageHeater { temp_setback, .. } => *temp_setback,
-            SpaceHeatSystemDetails::WarmAir { temp_setback, .. } => *temp_setback,
-        }
-    }
-
-    pub(crate) fn set_temp_setback(&mut self, new_temp_setback: Option<f64>) {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater { temp_setback, .. } => {
-                *temp_setback = new_temp_setback;
-            }
-            SpaceHeatSystemDetails::WetDistribution { temp_setback, .. } => {
-                *temp_setback = new_temp_setback;
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater { temp_setback, .. } => {
-                *temp_setback = new_temp_setback;
-            }
-            SpaceHeatSystemDetails::WarmAir { temp_setback, .. } => {
-                *temp_setback = new_temp_setback;
-            }
-        }
-    }
-
-    #[cfg(feature = "fhs")]
-    pub(crate) fn advanced_start(&self) -> Option<f64> {
-        match self {
-            SpaceHeatSystemDetails::WetDistribution { advanced_start, .. } => *advanced_start,
-            SpaceHeatSystemDetails::InstantElectricHeater { advanced_start, .. } => *advanced_start,
-            SpaceHeatSystemDetails::ElectricStorageHeater { advanced_start, .. } => *advanced_start,
-            SpaceHeatSystemDetails::WarmAir { advanced_start, .. } => *advanced_start,
-        }
-    }
-
-    pub(crate) fn set_advanced_start(&mut self, new_advance_start: f64) {
-        match self {
-            SpaceHeatSystemDetails::WetDistribution {
-                ref mut advanced_start,
-                ..
-            } => {
-                *advanced_start = Some(new_advance_start);
-            }
-            SpaceHeatSystemDetails::InstantElectricHeater {
-                ref mut advanced_start,
-                ..
-            } => {
-                *advanced_start = Some(new_advance_start);
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater {
-                ref mut advanced_start,
-                ..
-            } => {
-                *advanced_start = Some(new_advance_start);
-            }
-            SpaceHeatSystemDetails::WarmAir {
-                ref mut advanced_start,
-                ..
-            } => {
-                *advanced_start = Some(new_advance_start);
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn heat_source(&self) -> Option<SpaceHeatSystemHeatSource> {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater { heat_source, .. } => {
-                heat_source.clone()
-            }
-            SpaceHeatSystemDetails::WetDistribution { heat_source, .. } => {
-                Some(heat_source.clone())
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater { heat_source, .. } => {
-                heat_source.clone()
-            }
-            SpaceHeatSystemDetails::WarmAir { heat_source, .. } => Some(heat_source.clone()),
-        }
-    }
-
-    pub(crate) fn set_heat_source(&mut self, new_heat_source: SpaceHeatSystemHeatSource) {
-        match self {
-            SpaceHeatSystemDetails::InstantElectricHeater {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = Some(new_heat_source);
-            }
-            SpaceHeatSystemDetails::WetDistribution {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = new_heat_source;
-            }
-            SpaceHeatSystemDetails::ElectricStorageHeater {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = Some(new_heat_source);
-            }
-            SpaceHeatSystemDetails::WarmAir {
-                ref mut heat_source,
-                ..
-            } => {
-                *heat_source = new_heat_source;
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1878,10 +1563,15 @@ pub(crate) enum WetEmitter {
         frac_convective: f64,
     },
     Fancoil {
-        n_units: Option<usize>,
+        #[serde(default = "default_n_units")]
+        n_units: usize,
         frac_convective: f64,
         fancoil_test_data: FancoilTestData,
     },
+}
+
+const fn default_n_units() -> usize {
+    1
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1927,14 +1617,21 @@ pub(crate) struct EcoDesignController {
 #[repr(u8)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) enum EcoDesignControllerClass {
-    // exact possible classes tbc
+    /// On/off room thermostat
     ClassI = 1,
+    /// Weather compensator with modulating heaters
     ClassII = 2,
+    /// Weather compensator with on/off heaters
     ClassIII = 3,
+    /// TPI room thermostat with on/off heaters
     ClassIV = 4,
+    /// Modulating room thermostat with modulating heaters
     ClassV = 5,
+    /// Weather compensator with room sensor for modulating heaters
     ClassVI = 6,
+    /// Weather compensator with room sensor for on/off heaters
     ClassVII = 7,
+    /// Multi room temperature control with modulating heaters
     ClassVIII = 8,
 }
 
@@ -1954,59 +1651,53 @@ pub(crate) enum ElectricStorageHeaterAirFlowType {
     DamperOnly,
 }
 
-pub type ZoneDictionary = IndexMap<String, ZoneInput>;
+pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ZoneInput {
+pub(crate) struct ZoneInput {
+    /// Heating system details of the zone. References a key in $.SpaceHeatSystem
     #[serde(
         rename = "SpaceHeatSystem",
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
     pub(crate) space_heat_system: SystemReference,
+    /// Cooling system details of the zone. References a key in $.SpaceCoolSystem
     #[serde(
         rename = "SpaceCoolSystem",
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
     pub(crate) space_cool_system: SystemReference,
-    #[serde(rename = "SpaceHeatControl", skip_serializing_if = "Option::is_none")]
-    pub(crate) space_heat_control: Option<SpaceHeatControlType>,
-    // don't know what the options are yet
-    #[serde(
-        rename = "Control_WindowOpening",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) control_window_opening: Option<HeatSourceControlType>,
+    /// Useful floor area of the zone. (Unit: m²)
+    #[validate(minimum = 0.)]
     pub(crate) area: f64,
+    /// Total volume of the zone. (Unit: m³)
+    #[validate(minimum = 0.)]
     pub(crate) volume: f64,
-    // check upstream whether this is used
-    #[serde(rename = "Lighting", skip_serializing_if = "Option::is_none")]
-    pub(crate) lighting: Option<ZoneLighting>,
-    // check upstream whether these two are used
-    #[serde(rename = "temp_setpnt_heat", skip_serializing_if = "Option::is_none")]
-    _temp_setpnt_heat: Option<f64>,
-    #[serde(rename = "temp_setpnt_cool", skip_serializing_if = "Option::is_none")]
-    _temp_setpnt_cool: Option<f64>,
+    /// Basis for zone temperature control.
     #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
     pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) temp_setpnt_init: Option<f64>,
+    /// Setpoint temperature to use during initialisation (unit: ˚C)
+    pub(crate) temp_setpnt_init: f64,
+    /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
     #[serde(rename = "BuildingElement")]
     pub(crate) building_elements: IndexMap<String, BuildingElement>,
+    /// Overall heat transfer coefficient of the thermal bridge (in W/K), or dictionary of linear thermal transmittance details of the thermal bridges in the zone.
     #[serde(rename = "ThermalBridging")]
     pub(crate) thermal_bridging: ThermalBridging,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
-pub enum SystemReference {
+pub(crate) enum SystemReference {
     None(()),
     Single(String),
+    #[validate(unique_items)]
     Multiple(Vec<String>),
 }
 
@@ -2082,14 +1773,19 @@ pub(crate) enum BuildingElement {
     Opaque {
         #[serde(skip_serializing_if = "Option::is_none")]
         is_unheated_pitched_roof: Option<bool>,
+        /// Solar absorption coefficient at the external surface (dimensionless)
         solar_absorption_coeff: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        /// Thermal resistance (unit: m².K/W)
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
+        /// Areal heat capacity (unit: J/m².K)
         areal_heat_capacity: f64,
+        /// Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
+        /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -2097,26 +1793,19 @@ pub(crate) enum BuildingElement {
             serialize_with = "serialize_orientation"
         )]
         orientation: f64,
+        /// The distance between the ground and the lowest edge of the element (unit: m)
         base_height: f64,
+        /// The height of the building element (unit: m)
         height: f64,
+        /// The width of the building element (unit: m)
         width: f64,
+        /// Net area of the opaque building element (i.e. minus any windows / doors / etc.) (unit: m²)
         area: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        h_ci: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        h_ri: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        h_ce: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        h_re: Option<f64>,
     },
     #[serde(rename = "BuildingElementTransparent")]
     Transparent {
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
-        #[serde(rename = "area", skip_serializing_if = "Option::is_none")]
-        // area is sometimes present but not expected to be used
-        _area: Option<f64>,
         #[serde(
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
@@ -2124,6 +1813,7 @@ pub(crate) enum BuildingElement {
         window_openable_control: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
+        /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -2131,38 +1821,45 @@ pub(crate) enum BuildingElement {
             serialize_with = "serialize_orientation"
         )]
         orientation: f64,
+        /// Total solar energy transmittance of the transparent part of the window
         g_value: f64,
+        /// The frame area fraction of window, ratio of the projected frame area to the overall projected area of the glazed element of the window
         frame_area_fraction: f64,
+        /// The distance between the ground and the lowest edge of the element (unit: m)
         base_height: f64,
+        /// The height of the building element (unit: m)
         height: f64,
+        /// The width of the building element (unit: m)
         width: f64,
-        // following attributes may be FHS only
-        #[serde(skip_serializing_if = "Option::is_none")]
-        free_area_height: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        mid_height: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        max_window_open_area: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        security_risk: Option<bool>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        window_part_list: Option<Vec<WindowPart>>,
-        // end possible FHS only attributes
+        free_area_height: f64,
+        mid_height: f64,
+        max_window_open_area: f64,
+        window_part_list: Vec<WindowPart>,
         shading: Vec<WindowShadingObject>,
         #[serde(default)]
         treatment: Option<Vec<WindowTreatment>>,
     },
     #[serde(rename = "BuildingElementGround")]
     Ground {
+        /// Area of this building element within the zone (unit: m²)
         area: f64,
+        /// Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m²)
         total_area: f64,
+        /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         pitch: f64,
+        /// Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)
         u_value: f64,
+        /// Total thermal resistance of all layers in the floor construction (unit: m².K/W)
         thermal_resistance_floor_construction: f64,
+        /// Areal heat capacity of the ground floor element (unit: J/m2.K)
         areal_heat_capacity: f64,
+        /// Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)
         mass_distribution_class: MassDistributionClass,
+        /// Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)
         perimeter: f64,
+        /// Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)
         psi_wall_floor_junc: f64,
+        /// Thickness of the walls (unit: m)
         thickness_walls: f64,
         #[serde(flatten)]
         floor_data: FloorData,
@@ -2170,9 +1867,11 @@ pub(crate) enum BuildingElement {
     #[serde(rename = "BuildingElementAdjacentConditionedSpace")]
     AdjacentConditionedSpace {
         area: f64,
+        /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        /// Thermal resistance (unit: m².K/W)
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
         areal_heat_capacity: f64,
@@ -2180,13 +1879,18 @@ pub(crate) enum BuildingElement {
     },
     #[serde(rename = "BuildingElementAdjacentUnconditionedSpace_Simple")]
     AdjacentUnconditionedSpace {
+        /// Area of this building element (unit: m²)
         area: f64,
+        /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
+        /// Thermal resistance (unit: m2.K/W)
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
+        /// Effective thermal resistance of unheated space (unit: m².K/W)
         thermal_resistance_unconditioned_space: f64,
+        /// Areal heat capacity (unit: J/m2.K)
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
     },
@@ -2242,9 +1946,6 @@ pub(crate) trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
     fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
-    fn height(&self) -> JsonAccessResult<f64>;
-    fn width(&self) -> JsonAccessResult<f64>;
-    fn pitch(&self) -> JsonAccessResult<f64>;
 }
 
 pub(crate) struct TransparentBuildingElementJsonValue<'a>(
@@ -2269,33 +1970,6 @@ impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
             .get_mut("treatment")
             .and_then(|v| v.as_array_mut())
             .map(|v| v.iter_mut().flat_map(|v| v.as_object_mut()).collect())
-    }
-
-    fn height(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("height")
-            .and_then(|height| height.as_f64())
-            .ok_or(json_error(
-                "Could not access height as a number in a transparent building element",
-            ))
-    }
-
-    fn width(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("width")
-            .and_then(|width| width.as_f64())
-            .ok_or(json_error(
-                "Could not access width as a number in a transparent building element",
-            ))
-    }
-
-    fn pitch(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("pitch")
-            .and_then(|pitch| pitch.as_f64())
-            .ok_or(json_error(
-                "Could not access pitch as a number in a transparent building element",
-            ))
     }
 }
 
@@ -2413,7 +2087,7 @@ pub(crate) fn init_orientation(value: f64) -> f64 {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum MassDistributionClass {
+pub(crate) enum MassDistributionClass {
     D,
     E,
     I,
@@ -2424,8 +2098,8 @@ pub enum MassDistributionClass {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct WindowPart {
-    pub mid_height_air_flow_path: f64,
+pub(crate) struct WindowPart {
+    pub(crate) mid_height_air_flow_path: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2437,10 +2111,6 @@ pub(crate) struct WindowTreatment {
     pub(crate) controls: WindowTreatmentControl,
     pub(crate) delta_r: f64,
     pub(crate) trans_red: f64,
-    #[serde(rename = "closing_irrad", skip_serializing_if = "Option::is_none")]
-    pub(crate) closing_irradiance: Option<f64>,
-    #[serde(rename = "opening_irrad", skip_serializing_if = "Option::is_none")]
-    pub(crate) opening_irradiance: Option<f64>,
     #[serde(
         rename = "Control_closing_irrad",
         skip_serializing_if = "Option::is_none"
@@ -2459,32 +2129,8 @@ pub(crate) struct WindowTreatment {
         default
     )]
     pub(crate) is_open: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) waking_hour: Option<usize>,
     #[serde(default)]
     pub(crate) opening_delay_hrs: f64,
-}
-
-impl WindowTreatment {
-    pub(crate) fn set_is_open(&mut self, is_open: bool) {
-        self.is_open = Some(is_open);
-    }
-
-    pub(crate) fn set_open_control(&mut self, control: &str) {
-        self.open_control = Some(control.into())
-    }
-
-    pub(crate) fn set_closing_irradiance_control(&mut self, control: &str) {
-        self.closing_irradiance_control = Some(control.into())
-    }
-
-    pub(crate) fn set_opening_irradiance_control(&mut self, control: &str) {
-        self.opening_irradiance_control = Some(control.into())
-    }
-
-    pub(crate) fn set_opening_delay_hrs(&mut self, delay: f64) {
-        self.opening_delay_hrs = delay;
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -2506,12 +2152,6 @@ pub enum WindowTreatmentControl {
     CombinedLightBlindHvac,
 }
 
-impl WindowTreatmentControl {
-    pub(crate) fn is_manual(&self) -> bool {
-        [Self::Manual, Self::ManualMotorised].contains(self)
-    }
-}
-
 pub(crate) fn deserialize_possible_string_for_boolean<'de, D>(
     deserializer: D,
 ) -> Result<Option<bool>, D::Error>
@@ -2531,33 +2171,6 @@ where
     })
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum FloorType {
-    #[serde(rename = "Slab_no_edge_insulation")]
-    SlabNoEdgeInsulation,
-    #[serde(rename = "Slab_edge_insulation")]
-    SlabEdgeInsulation,
-    #[serde(rename = "Suspended_floor")]
-    SuspendedFloor,
-    #[serde(rename = "Heated_basement")]
-    HeatedBasement,
-    #[serde(rename = "Unheated_basement")]
-    UnheatedBasement,
-}
-
-impl From<&FloorData> for FloorType {
-    fn from(value: &FloorData) -> Self {
-        match value {
-            FloorData::SlabNoEdgeInsulation => FloorType::SlabNoEdgeInsulation,
-            FloorData::SlabEdgeInsulation { .. } => FloorType::SlabEdgeInsulation,
-            FloorData::SuspendedFloor { .. } => FloorType::SuspendedFloor,
-            FloorData::HeatedBasement { .. } => FloorType::HeatedBasement,
-            FloorData::UnheatedBasement { .. } => FloorType::UnheatedBasement,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
@@ -2569,30 +2182,44 @@ pub(crate) enum FloorData {
         #[validate(min_items = 1)]
         edge_insulation: Vec<EdgeInsulation>,
     },
+    // (non-optional fields in the schema for SuspendedFloor, but values do seem expected)
     #[serde(rename = "Suspended_floor")]
     SuspendedFloor {
         height_upper_surface: f64,
+        /// Thermal transmittance of walls above ground (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
         thermal_transmission_walls: f64,
+        /// Area of ventilation openings per perimeter (unit: m²/m)
         area_per_perimeter_vent: f64,
+        /// Wind shielding factor
         shield_fact_location: WindShieldLocation,
+        /// Thermal resistance of insulation on base of underfloor space (unit: m².K/W)
         #[serde(rename = "thermal_resist_insul")]
         thermal_resistance_of_insulation: f64,
     },
     #[serde(rename = "Heated_basement")]
     HeatedBasement {
+        /// Depth of basement floor below ground level (unit: m)
         depth_basement_floor: f64,
+        /// Thermal resistance of walls of the basement (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
         thermal_resistance_of_basement_walls: f64,
     },
     #[serde(rename = "Unheated_basement")]
     UnheatedBasement {
+        /// Thermal transmittance of floor above basement (unit: W/m².K)
         #[serde(rename = "thermal_transm_envi_base")]
         thermal_transmittance_of_floor_above_basement: f64,
+        /// Thermal transmittance of walls above ground (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
         thermal_transmission_walls: f64,
+        /// Depth of basement floor below ground level (unit: m)
         depth_basement_floor: f64,
+        /// Height of the basement walls above ground level (unit: m)
         height_basement_walls: f64,
+        /// Thermal resistance of walls of the basement (unit: m².K/W)
+        #[serde(rename = "thermal_resist_walls_base")]
+        thermal_resistance_of_basement_walls: f64,
     },
 }
 
@@ -2638,8 +2265,6 @@ pub enum ThermalBridgingDetails {
     Linear {
         linear_thermal_transmittance: f64,
         length: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        junction_type: Option<String>,
     },
     #[serde(rename = "ThermalBridgePoint")]
     Point {
@@ -2657,59 +2282,22 @@ pub enum HeatingControlType {
     SeparateTemperatureControl,
 }
 
-pub type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
+pub(crate) type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
-pub struct SpaceCoolSystemDetails {
-    #[serde(rename = "type")]
-    pub system_type: SpaceCoolSystemType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    advanced_start: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temp_setback: Option<f64>,
-    pub cooling_capacity: f64,
-    pub efficiency: f64,
-    pub frac_convective: f64,
-    #[serde(rename = "EnergySupply")]
-    pub energy_supply: String,
-    #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
-    pub control: Option<String>,
-}
-
-impl SpaceCoolSystemDetails {
-    pub fn set_control(&mut self, control_string: impl Into<String>) -> anyhow::Result<&Self> {
-        self.control = Some(control_string.into());
-        Ok(self)
-    }
-
-    pub(crate) fn set_efficiency(&mut self, efficiency: f64) {
-        self.efficiency = efficiency;
-    }
-
-    pub(crate) fn set_frac_convective(&mut self, frac_convective: f64) {
-        self.frac_convective = frac_convective;
-    }
-
-    pub(crate) fn set_energy_supply(&mut self, energy_supply_type: &str) {
-        self.energy_supply = energy_supply_type.into();
-    }
-
-    pub fn advanced_start(&self) -> Option<f64> {
-        self.advanced_start
-    }
-
-    pub fn temp_setback(&self) -> Option<f64> {
-        self.temp_setback
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum SpaceCoolSystemType {
-    AirConditioning,
+#[serde(tag = "type", deny_unknown_fields)]
+pub(crate) enum SpaceCoolSystemDetails {
+    AirConditioning {
+        cooling_capacity: f64,
+        efficiency: f64,
+        frac_convective: f64,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+        #[serde(rename = "Control")]
+        control: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -2721,7 +2309,7 @@ pub enum WaterHeatingSchedule {
 
 pub(crate) type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 
-#[derive(Clone, Debug, Deserialize, Validate, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -2735,13 +2323,13 @@ pub(crate) enum HeatSourceWetDetails {
             skip_serializing_if = "Option::is_none"
         )]
         energy_supply_heat_network: Option<String>,
-        // unclear what this is
         #[serde(skip_serializing_if = "Option::is_none")]
         temp_distribution_heat_network: Option<f64>,
         sink_type: HeatPumpSinkType,
         #[serde(rename = "backup_ctrl_type")]
         backup_control_type: HeatPumpBackupControlType,
-        time_delay_backup: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time_delay_backup: Option<f64>,
         modulating_control: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         min_modulation_rate_20: Option<f64>,
@@ -2750,13 +2338,15 @@ pub(crate) enum HeatSourceWetDetails {
         #[serde(skip_serializing_if = "Option::is_none")]
         min_modulation_rate_55: Option<f64>,
         time_constant_onoff_operation: f64,
-        temp_return_feed_max: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_return_feed_max: Option<f64>,
         temp_lower_operating_limit: f64,
         min_temp_diff_flow_return_for_hp_to_operate: f64,
         var_flow_temp_ctrl_during_test: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         power_heating_warm_air_fan: Option<f64>,
-        power_heating_circ_pump: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        power_heating_circ_pump: Option<f64>,
         power_source_circ_pump: f64,
         power_standby: f64,
         power_crankcase_heater: f64,
@@ -2775,6 +2365,7 @@ pub(crate) enum HeatSourceWetDetails {
         #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
         #[serde(rename = "test_data_EN14825")]
+        #[validate]
         test_data: Vec<HeatPumpTestDatum>,
         boiler: Option<Box<HeatPumpBoiler>>,
     },
@@ -2782,7 +2373,7 @@ pub(crate) enum HeatSourceWetDetails {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
         #[serde(rename = "EnergySupply_aux")]
-        energy_supply_auxiliary: String,
+        energy_supply_aux: String,
         rated_power: f64,
         efficiency_full_load: f64,
         efficiency_part_load: f64,
@@ -2810,16 +2401,16 @@ pub(crate) enum HeatSourceWetDetails {
         #[serde(rename = "ControlCharge")]
         control_charge: String,
         #[serde(rename = "heat_storage_zone_material_kJ_per_K_above_Phase_transition")]
-        heat_storage_kj_per_k_above: f64,
+        heat_storage_zone_material_k_j_per_k_above_phase_transition: f64,
         #[serde(rename = "heat_storage_zone_material_kJ_per_K_below_Phase_transition")]
-        heat_storage_kj_per_k_below: f64,
+        heat_storage_zone_material_k_j_per_k_below_phase_transition: f64,
         #[serde(rename = "heat_storage_zone_material_kJ_per_K_during_Phase_transition")]
-        heat_storage_kj_per_k_during: f64,
+        heat_storage_zone_material_k_j_per_k_during_phase_transition: f64,
         phase_transition_temperature_upper: f64,
         phase_transition_temperature_lower: f64,
         max_temperature: f64,
         #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
-        velocity_in_hex_tube: f64,
+        velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
         capillary_diameter_m: f64,
         #[serde(rename = "A")]
         a: f64,
@@ -2843,7 +2434,7 @@ impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
     fn from(value: &HeatPumpBoiler) -> Self {
         HeatSourceWetDetails::Boiler {
             energy_supply: value.energy_supply.clone(),
-            energy_supply_auxiliary: value.energy_supply_auxiliary.clone(),
+            energy_supply_aux: value.energy_supply_aux.clone(),
             rated_power: value.rated_power,
             efficiency_full_load: value.efficiency_full_load,
             efficiency_part_load: value.efficiency_part_load,
@@ -2896,37 +2487,38 @@ pub struct HeatPumpBufferTank {
     pub pump_power_at_flow_rate: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, Validate, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Validate, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct HeatPumpTestDatum {
+pub(crate) struct HeatPumpTestDatum {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub air_flow_rate: Option<f64>,
+    pub(crate) air_flow_rate: Option<f64>,
     pub(crate) test_letter: TestLetter,
-    pub capacity: f64,
-    pub cop: f64,
+    pub(crate) capacity: f64,
+    pub(crate) cop: f64,
     #[serde(rename = "degradation_coeff")]
-    pub degradation_coefficient: f64,
-    pub design_flow_temp: f64,
+    pub(crate) degradation_coefficient: f64,
+    pub(crate) design_flow_temp: f64,
     #[validate(minimum = -273.15)]
-    pub temp_outlet: f64,
+    pub(crate) temp_outlet: f64,
     #[validate(minimum = -273.15)]
-    pub temp_source: f64,
-    pub temp_test: f64,
+    pub(crate) temp_source: f64,
+    pub(crate) temp_test: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub eahp_mixed_ext_air_ratio: Option<f64>,
-    #[serde(skip)]
-    pub ext_air_ratio: Option<f64>,
+    pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
+    // // following is not defined in Python input, but
+    // #[serde(skip)]
+    // pub(crate) ext_air_ratio: Option<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBoiler {
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: String,
     #[serde(rename = "EnergySupply_aux")]
-    pub(crate) energy_supply_auxiliary: String,
+    pub(crate) energy_supply_aux: String,
     rated_power: f64,
     efficiency_full_load: f64,
     efficiency_part_load: f64,
@@ -2937,13 +2529,16 @@ pub struct HeatPumpBoiler {
     electricity_full_load: f64,
     electricity_standby: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) cost_schedule_hybrid: Option<BoilerCostScheduleHybrid>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BoilerCostScheduleHybrid {
+    #[validate(minimum = 0)]
+    #[validate(maximum = 365)]
     pub cost_schedule_start_day: u32,
     pub cost_schedule_time_series_step: f64,
     pub cost_schedule_hp: NumericSchedule,
@@ -2964,21 +2559,19 @@ pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecovery
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct WasteWaterHeatRecoveryDetails {
+pub(crate) struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
-    pub system_type: WwhrsType,
+    pub(crate) system_type: WasteWaterHeatRecoverySystemType,
     #[serde(rename = "ColdWaterSource")]
-    pub cold_water_source: ColdWaterSourceType,
-    pub flow_rates: Vec<f64>,
-    pub efficiencies: Vec<f64>,
-    pub utilisation_factor: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub electrical_consumption: Option<f64>,
+    pub(crate) cold_water_source: ColdWaterSourceType,
+    pub(crate) flow_rates: Vec<f64>,
+    pub(crate) efficiencies: Vec<f64>,
+    pub(crate) utilisation_factor: f64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum WwhrsType {
+pub enum WasteWaterHeatRecoverySystemType {
     #[serde(rename = "WWHRS_InstantaneousSystemA")]
     SystemA,
     #[serde(rename = "WWHRS_InstantaneousSystemB")]
@@ -2987,15 +2580,17 @@ pub enum WwhrsType {
     SystemC,
 }
 
-pub type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
+pub(crate) type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum OnSiteGenerationDetails {
+pub(crate) enum OnSiteGenerationDetails {
     PhotovoltaicSystem {
+        /// Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees) (unit: kW)
         peak_power: f64,
-        ventilation_strategy: OnSiteGenerationVentilationStrategy,
+        ventilation_strategy: PhotovoltaicVentilationStrategy,
+        /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -3003,27 +2598,26 @@ pub enum OnSiteGenerationDetails {
             serialize_with = "serialize_orientation"
         )]
         orientation: f64,
+        /// The distance between the ground and the lowest edge of the PV array (unit: m)
         base_height: f64,
+        /// Height of the PV array (unit: m)
         height: f64,
+        /// Width of the PV panel (unit: m)
         width: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
         shading: Vec<WindowShadingObject>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        inverter_peak_power: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        inverter_peak_power_ac: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        inverter_peak_power_dc: Option<f64>,
+        inverter_peak_power_ac: f64,
+        inverter_peak_power_dc: f64,
+        /// Whether the inverter is considered inside the building
         inverter_is_inside: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        inverter_type: Option<InverterType>,
+        inverter_type: InverterType,
     },
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum OnSiteGenerationVentilationStrategy {
+pub enum PhotovoltaicVentilationStrategy {
     #[serde(rename = "unventilated")]
     Unventilated,
     #[serde(rename = "moderately_ventilated")]
@@ -3037,7 +2631,7 @@ pub enum OnSiteGenerationVentilationStrategy {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
-pub enum InverterType {
+pub(crate) enum InverterType {
     OptimisedInverter,
     StringInverter,
 }
@@ -3069,51 +2663,52 @@ pub enum BuildType {
     Flat,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct InfiltrationVentilation {
-    pub(crate) cross_vent_factor: bool,
+    pub(crate) cross_vent_possible: bool,
+    /// Indicates the exposure to wind of an air flow path on a facade (can can be open, normal and shielded)
     pub(crate) shield_class: VentilationShieldClass,
     pub(crate) terrain_class: TerrainClass,
+    /// Altitude of dwelling above sea level (unit: m)
     pub(crate) altitude: f64,
+    /// Minimum ACH (Air Changes per Hour) limit
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub(crate) ach_min_static_calcs: Option<f64>,
+    /// Maximum ACH (Air Changes per Hour) limit
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub(crate) ach_max_static_calcs: Option<f64>,
     #[serde(
         rename = "Control_VentAdjustMin",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) vent_adjust_min_control: Option<String>,
+    pub(crate) control_vent_adjust_min: Option<String>,
     #[serde(
         rename = "Control_VentAdjustMax",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) vent_adjust_max_control: Option<String>,
+    pub(crate) control_vent_adjust_max: Option<String>,
+    /// Initial vent position, 0 = vents closed and 1 = vents fully open
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vent_opening_ratio_init: Option<f64>,
     #[serde(
         rename = "Control_WindowAdjust",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) window_adjust_control: Option<String>, // don't know what this can be
-    #[serde(skip_serializing_if = "Option::is_none")]
-    noise_nuisance: Option<bool>,
+    pub(crate) control_window_adjust: Option<String>,
+    /// Provides details about available non-mechanical ventilation systems
     #[serde(rename = "Vents")]
     pub(crate) vents: IndexMap<String, Vent>,
+    /// List of the required inputs for Leaks
     #[serde(rename = "Leaks")]
     pub(crate) leaks: VentilationLeaks,
+    /// Provides details about available mechanical ventilation systems
     #[serde(rename = "MechanicalVentilation", default)]
     pub(crate) mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
-    #[serde(rename = "AirTerminalDevices", skip_serializing_if = "Option::is_none")]
-    _air_terminal_devices: Option<IndexMap<String, AirTerminalDevice>>,
-    #[serde(rename = "PDUs")]
-    pub(crate) pdus: IndexMap<String, ()>, // don't know what this looks like yet
-    #[serde(rename = "Cowls")]
-    pub(crate) cowls: IndexMap<String, ()>, // don't know what this looks like yet
-    #[serde(rename = "CombustionAppliances")]
-    pub(crate) combustion_appliances: IndexMap<String, CombustionAppliance>,
+    /// Base height of the ventilation zone relative to ground (m)
     pub(crate) ventilation_zone_base_height: f64,
 }
 
@@ -3140,6 +2735,7 @@ pub enum TerrainClass {
 pub struct Vent {
     pub(crate) mid_height_air_flow_path: f64,
     pub(crate) area_cm2: f64,
+    /// Reference pressure difference for an air terminal device (unit: Pa)
     pub(crate) pressure_difference_ref: f64,
     #[serde(
         rename = "orientation360",
@@ -3147,6 +2743,7 @@ pub struct Vent {
         serialize_with = "serialize_orientation"
     )]
     pub(crate) orientation: f64,
+    /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
     pub(crate) pitch: f64,
 }
 
@@ -3155,54 +2752,35 @@ pub struct Vent {
 #[serde(deny_unknown_fields)]
 pub struct VentilationLeaks {
     pub ventilation_zone_height: f64,
+    /// Reference pressure difference (unit: Pa)
     pub test_pressure: f64,
+    /// Flow rate through
     pub test_result: f64,
+    /// Reference area of the envelope airtightness index
     pub env_area: f64,
-    // following values appear to be usually overridden
-    #[serde(rename = "area_roof", skip_serializing_if = "Option::is_none")]
-    _area_roof: Option<f64>,
-    #[serde(rename = "area_facades", skip_serializing_if = "Option::is_none")]
-    _area_facades: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilation {
-    #[serde(rename = "vent_sys_op", skip_serializing_if = "Option::is_none")]
-    _vent_sys_op: Option<String>, // this seems useless/unreferenced
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
-    pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
-    #[serde(
-        rename = "design_zone_cooling_covered_by_mech_vent",
-        skip_serializing_if = "Option::is_none"
-    )]
-    _design_zone_cooling_covered_by_mechanical_vent: Option<f64>,
-    #[serde(
-        rename = "design_zone_heating_covered_by_mech_vent",
-        skip_serializing_if = "Option::is_none"
-    )]
-    _design_zone_heating_covered_by_mechanical_vent: Option<f64>,
-    pub(crate) vent_type: VentType,
+    pub(crate) supply_air_temperature_control_type: AcceptedSupplyAirTemperatureControlType,
+    pub(crate) vent_type: MechVentType,
     #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_efficiency: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_location: Option<MVHRLocation>,
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub(crate) control: Option<String>,
-    #[serde(rename = "SFP", skip_serializing_if = "Option::is_none")]
-    pub(crate) sfp: Option<f64>,
-    #[serde(rename = "measured_fan_power", skip_serializing_if = "Option::is_none")]
-    pub(crate) measured_fan_power: Option<f64>,
-    #[serde(
-        rename = "measured_air_flow_rate",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) measured_air_flow_rate: Option<f64>,
+    /// Specific fan power, inclusive of any in use factors (unit: W/l/s)
+    #[serde(rename = "SFP")]
+    pub(crate) sfp: f64,
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: String,
+    /// unit: m³/hour
     pub(crate) design_outdoor_air_flow_rate: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
@@ -3249,15 +2827,14 @@ impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum SupplyAirFlowRateControlType {
-    ODA,
-    #[serde(rename = "LOAD")]
-    Load,
+pub(crate) enum SupplyAirFlowRateControlType {
+    #[serde(rename = "ODA")]
+    Oda,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum SupplyAirTemperatureControlType {
+pub(crate) enum SupplyAirTemperatureControlType {
     #[serde(rename = "CONST")]
     Constant,
     #[serde(rename = "NO_CTRL")]
@@ -3266,9 +2843,27 @@ pub enum SupplyAirTemperatureControlType {
     LoadCom,
 }
 
+// The SupplyAirTemperatureControlType values that are currently accepted/ implemented.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum VentType {
+pub(crate) enum AcceptedSupplyAirTemperatureControlType {
+    #[serde(rename = "NO_CTRL")]
+    NoControl,
+}
+
+impl From<AcceptedSupplyAirTemperatureControlType> for SupplyAirTemperatureControlType {
+    fn from(value: AcceptedSupplyAirTemperatureControlType) -> Self {
+        match value {
+            AcceptedSupplyAirTemperatureControlType::NoControl => {
+                SupplyAirTemperatureControlType::NoControl
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) enum MechVentType {
     #[serde(rename = "Intermittent MEV")]
     IntermittentMev,
     #[serde(rename = "Centralised continuous MEV")]
@@ -3281,7 +2876,7 @@ pub enum VentType {
     Piv,
 }
 
-impl Display for VentType {
+impl Display for MechVentType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -3330,8 +2925,6 @@ pub enum DuctType {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-// type is not read in 0.30 version of code - please remove following once data is used
-#[allow(dead_code)]
 pub struct AirTerminalDevice {
     area_cm2: f64,
     pressure_difference_ref: f64,
@@ -3411,12 +3004,6 @@ pub(crate) enum ApplianceKey {
     Lighting,
 }
 
-impl ApplianceKey {
-    pub(crate) fn is_clothes_appliance(&self) -> bool {
-        [Self::ClothesWashing, Self::ClothesDrying].contains(self)
-    }
-}
-
 impl Display for ApplianceKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
@@ -3482,56 +3069,6 @@ pub struct Appliance {
     pub(crate) standard_use: Option<f64>,
 }
 
-impl Appliance {
-    pub(crate) fn with_energy_supply(energy_supply: EnergySupplyType, kwh_per_cycle: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: None,
-            energy_supply: Some(energy_supply),
-            kwh_per_cycle: Some(kwh_per_cycle),
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_cycle(kwh_per_cycle: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: None,
-            energy_supply: None,
-            kwh_per_cycle: Some(kwh_per_cycle),
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_annum(kwh_per_annum: f64) -> Self {
-        Self {
-            kwh_per_100_cycle: None,
-            load_shifting: None,
-            kg_load: None,
-            kwh_per_annum: Some(kwh_per_annum),
-            energy_supply: None,
-            kwh_per_cycle: None,
-            standard_use: None,
-        }
-    }
-
-    pub(crate) fn with_kwh_per_100_cycle(kwh_per_100_cycle: f64, kg_load: Option<f64>) -> Self {
-        Self {
-            kwh_per_100_cycle: Some(kwh_per_100_cycle),
-            load_shifting: None,
-            kg_load,
-            kwh_per_annum: None,
-            energy_supply: None,
-            kwh_per_cycle: None,
-            standard_use: None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -3543,17 +3080,7 @@ pub(crate) struct ApplianceLoadShifting {
     pub(crate) priority: Option<isize>,
     pub(crate) max_shift_hrs: f64,
     pub(crate) demand_limit_weighted: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) weight: Option<WeightLabel>,
-    // In Python these are set from the FHS wrapper
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) weight_timeseries: Option<Vec<f64>>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum WeightLabel {
-    Tariff,
+    pub(crate) weight_timeseries: Vec<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -3600,13 +3127,25 @@ pub struct InputForProcessing {
 /// underlying structure without breaking wrappers.
 impl InputForProcessing {
     pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
+        let input_for_processing = Self::init_with_json_skip_validation(json)?;
+
+        if let BasicOutput::Invalid(errors) = FHS_SCHEMA_VALIDATOR
+            .apply(&input_for_processing.input)
+            .basic()
+        {
+            bail!(
+                "Invalid JSON against the FHS schema: {}",
+                serde_json::to_value(errors)?.to_json_string_pretty()?
+            ); // TODO build this handling logic out
+        }
+
+        Ok(input_for_processing)
+    }
+
+    pub(crate) fn init_with_json_skip_validation(json: impl Read) -> Result<Self, anyhow::Error> {
         let reader = BufReader::new(json);
 
         let input: JsonValue = serde_json::from_reader(reader)?;
-
-        if !FHS_SCHEMA_VALIDATOR.is_valid(&input) {
-            bail!("Invalid JSON against the FHS schema"); // TODO build this handling logic out
-        }
 
         Ok(Self { input })
     }
@@ -3683,12 +3222,6 @@ impl InputForProcessing {
         root_key: &str,
     ) -> JsonAccessResult<Option<&Map<std::string::String, JsonValue>>> {
         Ok(self.root()?.get(root_key).and_then(|v| v.as_object()))
-    }
-
-    fn root_value(&self, root_key: &str) -> JsonAccessResult<&JsonValue> {
-        self.root()?
-            .get(root_key)
-            .ok_or(json_error(format!("No {root_key} node found")))
     }
 
     pub(crate) fn set_simulation_time(
@@ -4475,12 +4008,6 @@ impl InputForProcessing {
             })
     }
 
-    pub(crate) fn reset_appliance_gains_field(&mut self, field: &str) -> anyhow::Result<()> {
-        self.root_object_entry_mut("ApplianceGains")?.remove(field);
-
-        Ok(())
-    }
-
     pub(crate) fn clear_appliance_gains(&mut self) -> JsonAccessResult<&mut Self> {
         self.set_on_root_key("ApplianceGains", json!({}))
     }
@@ -4785,10 +4312,6 @@ impl InputForProcessing {
             .collect_vec())
     }
 
-    pub(crate) fn defines_window_opening_for_cooling(&self) -> JsonAccessResult<bool> {
-        Ok(self.root()?.contains_key("Window_Opening_For_Cooling"))
-    }
-
     pub(crate) fn cold_water_source_has_header_tank(&self) -> JsonAccessResult<bool> {
         Ok(self
             .root_object("ColdWaterSource")?
@@ -5088,7 +4611,7 @@ impl InputForProcessing {
             .values_mut()
             .filter_map(|zone| zone.get_mut("BuildingElement").and_then(|el| el.as_object_mut()))
             .flatten()
-            .find(|(name, value)| *name == building_element_reference)
+            .find(|(name, _value)| *name == building_element_reference)
             .ok_or(anyhow!("Could not find building element with reference '{building_element_reference}'"))?
             .1
             .get_mut(field)
@@ -5124,27 +4647,6 @@ impl InputForProcessing {
                 "BuildingElement with name {key} was not present"
             )))?
             .as_object()
-            .ok_or(json_error(
-                "Building element with name {key} not provided as an object",
-            ))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn building_element_by_key_mut(
-        &mut self,
-        zone_key: &str,
-        key: &str,
-    ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
-        self.specific_zone_mut(zone_key)?
-            .get_mut("BuildingElement")
-            .ok_or(json_error("BuildingElement node not present"))?
-            .as_object_mut()
-            .ok_or(json_error("BuildingElement node was not an object"))?
-            .get_mut(key)
-            .ok_or(json_error(format!(
-                "BuildingElement with name {key} was not present"
-            )))?
-            .as_object_mut()
             .ok_or(json_error(
                 "Building element with name {key} not provided as an object",
             ))
@@ -5289,12 +4791,6 @@ impl InputForProcessing {
         Ok(())
     }
 
-    fn infiltration_ventilation_node(
-        &self,
-    ) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
-        self.root_object("InfiltrationVentilation")
-    }
-
     fn infiltration_ventilation_node_mut(
         &mut self,
     ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
@@ -5376,7 +4872,7 @@ impl InputForProcessing {
 
     pub(crate) fn appliance_gains_events(
         &self,
-    ) -> anyhow::Result<IndexMap<String, Vec<ApplianceGainsDetailsEvent>>> {
+    ) -> anyhow::Result<IndexMap<String, Vec<ApplianceGainsEvent>>> {
         let appliance_gains = match self.root_object("ApplianceGains") {
             Ok(appliance_gains) => appliance_gains,
             Err(_) => return Ok(IndexMap::new()),
@@ -5384,7 +4880,7 @@ impl InputForProcessing {
         appliance_gains
             .iter()
             .map(
-                |(name, gain)| -> Result<(String, Vec<ApplianceGainsDetailsEvent>), _> {
+                |(name, gain)| -> Result<(String, Vec<ApplianceGainsEvent>), _> {
                     Ok((
                         String::from(name),
                         serde_json::from_value(
@@ -5432,11 +4928,6 @@ impl InputForProcessing {
             .and_then(|infiltration| infiltration.get("noise_nuisance"))
             .and_then(|nuisance| nuisance.as_bool())
             .unwrap_or(false)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn infiltration_ventilation(&self) -> JsonAccessResult<&JsonValue> {
-        self.root_value("InfiltrationVentilation")
     }
 
     pub(crate) fn infiltration_ventilation_mut(
@@ -5601,8 +5092,8 @@ mod tests {
     use walkdir::{DirEntry, WalkDir};
 
     #[fixture]
-    fn files() -> Vec<DirEntry> {
-        WalkDir::new("./examples/input")
+    fn core_files() -> Vec<DirEntry> {
+        WalkDir::new("./examples/input/core")
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| {
@@ -5620,8 +5111,8 @@ mod tests {
     }
 
     #[rstest]
-    fn should_successfully_parse_all_demo_files(files: Vec<DirEntry>) {
-        for entry in files {
+    fn should_successfully_parse_all_demo_files(core_files: Vec<DirEntry>) {
+        for entry in core_files {
             let parsed = ingest_for_processing(File::open(entry.path()).unwrap());
             assert!(
                 parsed.is_ok(),
@@ -5635,14 +5126,11 @@ mod tests {
     /// this test should become redundant once there is an official JSON Schema definition for HEM.
     /// until that is the case, this checks each example input JSON against the schema generated by the schema-gen package.
     #[rstest]
-    fn test_all_demo_files_pass_input_schema(files: Vec<DirEntry>) {
-        let schema = serde_json::from_str(include_str!("../schemas/input.schema.json")).unwrap();
-        let validator = jsonschema::validator_for(&schema).unwrap();
-
+    fn test_all_demo_files_pass_input_schema(core_files: Vec<DirEntry>) {
         let mut erroring_files: usize = Default::default();
         let mut error_outputs: Vec<std::string::String> = Default::default();
 
-        for entry in files {
+        for entry in core_files {
             let json_to_validate =
                 serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).unwrap();
             let errors = FHS_SCHEMA_VALIDATOR.iter_errors(&json_to_validate);
@@ -5670,10 +5158,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_all_demo_files_deserialize_and_serialize(files: Vec<DirEntry>) {
-        for entry in files {
+    fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
+        for entry in core_files {
             let input: Input =
-                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).unwrap();
+                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).expect(
+                    format!(
+                        "Failed deserializing {}",
+                        entry.file_name().to_str().unwrap()
+                    )
+                    .as_str(),
+                );
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);

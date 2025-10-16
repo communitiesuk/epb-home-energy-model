@@ -26,45 +26,39 @@ pub enum DaylightSavingsConfig {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ShadingSegment {
-    pub number: usize,
+pub(crate) struct ShadingSegment {
     #[serde(rename = "start360")]
     #[serde(
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
-    pub start: f64,
-    // some upstream example files contain this field, which should therefore be allowed but ignored
-    #[serde(rename = "start")]
-    pub(crate) _start: Option<f64>,
+    pub(crate) start: f64,
     #[serde(rename = "end360")]
     #[serde(
         deserialize_with = "deserialize_orientation",
         serialize_with = "serialize_orientation"
     )]
-    pub end: f64,
-    #[serde(rename = "end")]
-    pub(crate) _end: Option<f64>,
+    pub(crate) end: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "shading")]
-    pub shading_objects: Option<Vec<ShadingObject>>,
+    pub(crate) shading_objects: Option<Vec<ShadingObject>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub struct ShadingObject {
+pub(crate) struct ShadingObject {
     #[serde(rename = "type")]
-    pub object_type: ShadingObjectType,
-    pub height: f64,
-    pub distance: f64,
+    pub(crate) object_type: ShadingObjectType,
+    pub(crate) height: f64,
+    pub(crate) distance: f64,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
-pub enum WindowShadingObject {
+pub(crate) enum WindowShadingObject {
     Obstacle {
         height: f64,
         distance: f64,
@@ -91,7 +85,7 @@ pub enum WindowShadingObject {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "lowercase")]
-pub enum ShadingObjectType {
+pub(crate) enum ShadingObjectType {
     Obstacle,
     Overhang,
 }
@@ -104,15 +98,11 @@ pub struct ExternalConditions {
     diffuse_horizontal_radiations: Vec<f64>,
     direct_beam_radiations: Vec<f64>,
     solar_reflectivity_of_ground: Vec<f64>,
-    pub latitude: f64,
-    pub longitude: f64,
-    pub timezone: i32,
-    pub start_day: u32,
-    pub end_day: Option<u32>,
+    pub(crate) latitude: f64,
+    pub(crate) longitude: f64,
+    pub(crate) timezone: i32,
+    pub(crate) start_day: u32,
     time_series_step: f64,
-    pub january_first: Option<u32>,
-    pub daylight_savings: Option<DaylightSavingsConfig>,
-    pub leap_day_included: bool,
     shading_segments: Option<Vec<ShadingSegment>>,
     solar_declinations: Vec<f64>,
     solar_hour_angles: Vec<f64>,
@@ -130,7 +120,7 @@ pub struct ExternalConditions {
 /// * `wind_directions` - list of wind directions in degrees where North=0, East=90,
 ///                       South=180, West=270. Values range: 0 to 360.
 ///                       Wind direction is reported by the direction from which it originates.
-///                       E.g, a southernly (180 degree) wind blows from the south to the north.
+///                       E.g, a southerly (180 degree) wind blows from the south to the north.
 /// * `diffuse_horizontal_radiation` - list of diffuse horizontal radiation values, in W/m2 (one entry per hour)
 /// * `direct_beam_radiation` - list of direct beam radiation values, in W/m2 (one entry per hour)
 /// * `solar_reflectivity_of_ground` - list of ground reflectivity values, 0 to 1 (one entry per hour)
@@ -152,7 +142,7 @@ pub struct ExternalConditions {
 /// * `shading_segments` - data splitting the ground plane into segments (8-36) and giving height
 ///                        and distance to shading objects surrounding the building
 impl ExternalConditions {
-    pub fn new(
+    pub(crate) fn new(
         simulation_time: &SimulationTimeIterator,
         air_temps: Vec<f64>,
         wind_speeds: Vec<f64>,
@@ -164,10 +154,10 @@ impl ExternalConditions {
         longitude: f64,
         timezone: i32,
         start_day: u32,
-        end_day: Option<u32>,
+        _end_day: Option<u32>,
         time_series_step: f64,
-        january_first: Option<u32>,
-        daylight_savings: Option<DaylightSavingsConfig>,
+        _january_first: Option<u32>,
+        _daylight_savings: Option<DaylightSavingsConfig>,
         leap_day_included: bool,
         direct_beam_conversion_needed: bool,
         shading_segments: Option<Vec<ShadingSegment>>,
@@ -313,11 +303,7 @@ impl ExternalConditions {
             longitude,
             timezone,
             start_day,
-            end_day,
             time_series_step,
-            january_first,
-            daylight_savings,
-            leap_day_included,
             shading_segments,
             solar_declinations,
             solar_hour_angles,
@@ -2699,25 +2685,21 @@ mod tests {
     fn shading_segments() -> Option<Vec<ShadingSegment>> {
         vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 90.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 4,
                 start: 45.,
                 end: 0.,
                 shading_objects: Some(vec![ShadingObject {
@@ -2725,28 +2707,23 @@ mod tests {
                     height: 10.5,
                     distance: 12.,
                 }]),
-                ..Default::default()
             },
             ShadingSegment {
-                number: 5,
                 start: 0.,
                 end: -45.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 6,
                 start: -45.,
                 end: -90.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 7,
                 start: -90.,
                 end: -135.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 8,
                 start: -135.,
                 end: -180.,
                 ..Default::default()
@@ -4294,19 +4271,16 @@ mod tests {
                 external_conditions.get_segment(&t_it).unwrap(),
                 [
                     ShadingSegment {
-                        number: 3,
                         start: 90.,
                         end: 45.,
                         ..Default::default()
                     },
                     ShadingSegment {
-                        number: 3,
                         start: 90.,
                         end: 45.,
                         ..Default::default()
                     },
                     ShadingSegment {
-                        number: 4,
                         start: 45.,
                         end: 0.,
                         shading_objects: Some(vec![ShadingObject {
@@ -4314,10 +4288,8 @@ mod tests {
                             height: 10.5,
                             distance: 12.
                         }]),
-                        ..Default::default()
                     },
                     ShadingSegment {
-                        number: 4,
                         start: 45.,
                         end: 0.,
                         shading_objects: Some(vec![ShadingObject {
@@ -4325,10 +4297,8 @@ mod tests {
                             height: 10.5,
                             distance: 12.
                         }]),
-                        ..Default::default()
                     },
                     ShadingSegment {
-                        number: 4,
                         start: 45.,
                         end: 0.,
                         shading_objects: Some(vec![ShadingObject {
@@ -4336,22 +4306,18 @@ mod tests {
                             height: 10.5,
                             distance: 12.
                         }]),
-                        ..Default::default()
                     },
                     ShadingSegment {
-                        number: 5,
                         start: 0.,
                         end: -45.,
                         ..Default::default()
                     },
                     ShadingSegment {
-                        number: 5,
                         start: 0.,
                         end: -45.,
                         ..Default::default()
                     },
                     ShadingSegment {
-                        number: 5,
                         start: 0.,
                         end: -45.,
                         ..Default::default()
@@ -4363,19 +4329,16 @@ mod tests {
         // For the gap in second shading segment
         external_conditions.shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 50.,
                 end: 90.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 ..Default::default()
@@ -4390,19 +4353,16 @@ mod tests {
         // For the value of end > start in second shading segment
         external_conditions.shading_segments = vec![
             ShadingSegment {
-                number: 1,
                 start: 180.,
                 end: 135.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 2,
                 start: 135.,
                 end: 140.,
                 ..Default::default()
             },
             ShadingSegment {
-                number: 3,
                 start: 90.,
                 end: 45.,
                 ..Default::default()

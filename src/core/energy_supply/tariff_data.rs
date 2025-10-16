@@ -68,17 +68,86 @@ mod tests {
     use rstest::*;
     use std::io::{BufReader, Cursor};
 
-    #[rstest]
-    fn test_parse_fixture_file() {
+    #[fixture]
+    fn tariff_data() -> TariffData {
         let data = BufReader::new(Cursor::new(include_str!(
             "../../../examples/tariff_data/tariff_data_25-06-2024.csv"
         )));
-        let tariff_data = TariffData::new(data).unwrap();
+
+        TariffData::new(data).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_fixture_file(tariff_data: TariffData) {
         assert_eq!(
             tariff_data
                 .price(&EnergySupplyTariff::VariableTimeOfDay, 10644)
                 .unwrap(),
             22.92342657
         );
+    }
+
+    #[rstest]
+    fn test_price(tariff_data: TariffData) {
+        assert_eq!(
+            tariff_data.price(&EnergySupplyTariff::Standard, 0).unwrap(),
+            25.16
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::SevenHourOffPeak, 0)
+                .unwrap(),
+            14.6
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::TenHourOffPeak, 0)
+                .unwrap(),
+            16.04
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::VariableTimeOfDay, 0)
+                .unwrap(),
+            10.87017271
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::Standard, 17519)
+                .unwrap(),
+            25.16
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::SevenHourOffPeak, 17519)
+                .unwrap(),
+            29.8
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::TenHourOffPeak, 17519)
+                .unwrap(),
+            35.01
+        );
+
+        assert_eq!(
+            tariff_data
+                .price(&EnergySupplyTariff::VariableTimeOfDay, 17519)
+                .unwrap(),
+            17.75781834
+        );
+    }
+
+    #[rstest]
+    fn test_price_out_of_range(tariff_data: TariffData) {
+        assert!(tariff_data
+            .price(&EnergySupplyTariff::Standard, 18000)
+            .is_err());
     }
 }

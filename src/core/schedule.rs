@@ -410,7 +410,7 @@ mod tests {
     use serde_json::json;
 
     #[fixture]
-    pub fn boolean_schedule() -> BooleanSchedule {
+    fn boolean_schedule() -> BooleanSchedule {
         serde_json::from_value(json!({
             "main": [
                 {"value": "weekday", "repeat": 5},
@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn boolean_schedule_expanded() -> Vec<bool> {
+    fn boolean_schedule_expanded() -> Vec<bool> {
         vec![
             // Weekday schedule (Mon)
             false, false, false, false, false, false, false, true, true, false, false, false, false,
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_expand_boolean_schedule_correctly(
+    fn should_expand_boolean_schedule_correctly(
         boolean_schedule: BooleanSchedule,
         boolean_schedule_expanded: Vec<bool>,
     ) {
@@ -471,8 +471,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_expand_boolean_schedule_with_nullable_allowed() {
+        let schedule: BooleanSchedule = serde_json::from_value(json!({
+            "main": [{"value": null, "repeat": 2}],
+        }))
+        .unwrap();
+
+        assert_eq!(expand_boolean_schedule(&schedule), [None, None]);
+    }
+
+    #[test]
+    fn test_expand_boolean_schedule_with_nullable_not_allowed() {
+        let schedule: BooleanSchedule = serde_json::from_value(json!({
+            "main": [{"value": null, "repeat": 2}],
+        }))
+        .unwrap();
+
+        assert!(reject_nulls(expand_boolean_schedule(&schedule)).is_err());
+    }
+
     #[fixture]
-    pub fn numeric_schedule() -> NumericSchedule {
+    fn numeric_schedule() -> NumericSchedule {
         serde_json::from_value(json!({
             "main": [300.0, 120.0, 220.0, 750.0, 890.0, 150.0, 550.0, 280.0]
         }))
@@ -480,7 +500,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn numeric_schedule_expanded() -> Vec<Option<f64>> {
+    fn numeric_schedule_expanded() -> Vec<Option<f64>> {
         vec![
             Some(300.0),
             Some(120.0),
@@ -494,7 +514,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_expand_numeric_schedule_correctly(
+    fn should_expand_numeric_schedule_correctly(
         numeric_schedule: NumericSchedule,
         numeric_schedule_expanded: Vec<Option<f64>>,
     ) {
@@ -506,7 +526,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn gappy_numeric_schedule() -> NumericSchedule {
+    fn gappy_numeric_schedule() -> NumericSchedule {
         serde_json::from_value(json!({
             "main": [300.0, 120.0, null, 750.0, 890.0, null, 550.0, 280.0]
         }))
@@ -514,7 +534,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn gappy_numeric_schedule_expanded() -> Vec<Option<f64>> {
+    fn gappy_numeric_schedule_expanded() -> Vec<Option<f64>> {
         vec![
             Some(300.0),
             Some(120.0),
@@ -528,7 +548,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn should_expand_gappy_numeric_schedule_correctly(
+    fn should_expand_gappy_numeric_schedule_correctly(
         gappy_numeric_schedule: NumericSchedule,
         gappy_numeric_schedule_expanded: Vec<Option<f64>>,
     ) {
@@ -540,7 +560,7 @@ mod tests {
     }
 
     #[fixture]
-    pub fn events() -> Vec<Value> {
+    fn events() -> Vec<Value> {
         json!([
             {"start": 2, "duration": 6, "temperature": 52},
             {"start": 2.1, "duration": 6, "temperature": 52},
@@ -552,17 +572,17 @@ mod tests {
     }
 
     #[fixture]
-    pub fn simulation_timestep() -> f64 {
+    fn simulation_timestep() -> f64 {
         0.5
     }
 
     #[fixture]
-    pub fn total_timesteps() -> usize {
+    fn total_timesteps() -> usize {
         10
     }
 
     #[fixture]
-    pub fn events_schedule() -> Vec<Option<Vec<TypedScheduleEvent>>> {
+    fn events_schedule() -> Vec<Option<Vec<TypedScheduleEvent>>> {
         vec![
             None,
             None,
@@ -608,7 +628,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_expand_events(
+    fn test_expand_events(
         events: Vec<Value>,
         simulation_timestep: f64,
         total_timesteps: usize,
