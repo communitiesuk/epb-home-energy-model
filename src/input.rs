@@ -92,7 +92,7 @@ fn validate_only_storage_tanks(
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ExternalConditionsInput {
+pub struct ExternalConditionsInput {
     /// List of external air temperatures, one entry per hour (unit: ˚C)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) air_temperatures: Option<Vec<f64>>,
@@ -217,7 +217,7 @@ pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub(crate) struct EnergySupplyDetails {
+pub struct EnergySupplyDetails {
     pub(crate) fuel: FuelType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diverter: Option<EnergyDiverter>,
@@ -492,7 +492,7 @@ pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-pub(crate) struct Control {
+pub struct Control {
     #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
     pub(crate) hot_water_timer: Option<ControlDetails>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "window opening")]
@@ -1667,7 +1667,7 @@ pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ZoneInput {
+pub struct ZoneInput {
     /// Heating system details of the zone. References a key in $.SpaceHeatSystem
     #[serde(
         rename = "SpaceHeatSystem",
@@ -3091,6 +3091,50 @@ pub enum ApplianceReference {
 pub struct Tariff {
     #[serde(rename = "schedule")]
     schedule: NumericSchedule,
+}
+
+// The calc_htc_hlp function in the corpus module needs reduced access to an input
+// though this may be in the context of a wrapper which cannot guarantee that other data is in the
+// right shape. Abstracting this to a trait allows us to define an input that allows partial deserialisation
+// from the underlying JSON, and so can ignore areas of the input that it does not refer to.
+pub trait InputForCalcHtcHlp {
+    fn simulation_time(&self) -> &SimulationTime;
+    fn energy_supply(&self) -> &EnergySupplyInput;
+    fn external_conditions(&self) -> &ExternalConditionsInput;
+    fn control(&self) -> &Control;
+    fn infiltration_ventilation(&self) -> &InfiltrationVentilation;
+    fn zone(&self) -> &ZoneDictionary;
+    fn temp_internal_air_static_calcs(&self) -> f64;
+}
+
+impl InputForCalcHtcHlp for Input {
+    fn simulation_time(&self) -> &SimulationTime {
+        &self.simulation_time
+    }
+
+    fn energy_supply(&self) -> &EnergySupplyInput {
+        &self.energy_supply
+    }
+
+    fn external_conditions(&self) -> &ExternalConditionsInput {
+        self.external_conditions.as_ref()
+    }
+
+    fn control(&self) -> &Control {
+        &self.control
+    }
+
+    fn infiltration_ventilation(&self) -> &InfiltrationVentilation {
+        &self.infiltration_ventilation
+    }
+
+    fn zone(&self) -> &ZoneDictionary {
+        &self.zone
+    }
+
+    fn temp_internal_air_static_calcs(&self) -> f64 {
+        self.temp_internal_air_static_calcs
+    }
 }
 
 static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {

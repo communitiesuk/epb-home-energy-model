@@ -11,7 +11,7 @@ const MONTH_START_END_HOURS: [u32; 13] = [
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct SimulationTime {
+pub struct SimulationTime {
     #[serde(rename = "start")]
     start_time: f64,
     #[serde(rename = "end")]

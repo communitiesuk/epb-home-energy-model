@@ -66,13 +66,13 @@ use crate::input::{
     EnergySupplyInput, ExternalConditionsInput, FuelType, HeatPumpSourceType,
     HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
     HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType, OnSiteGeneration,
-    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WasteWaterHeatRecoverySystemType,
-    WaterHeatingEvent, WaterHeatingEvents, WaterPipework, ZoneDictionary, ZoneInput,
-    ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType,
+    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails,
+    WasteWaterHeatRecoverySystemType, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
+    ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::{ProjectFlags, StringOrNumber};
@@ -437,10 +437,10 @@ fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f
 
 /// Calculate heat transfer coefficient (HTC) and heat loss parameter (HLP)
 /// according to the SAP10.2 specification
-pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
-    let simtime = input.simulation_time;
+pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCalculation> {
+    let simtime = input.simulation_time();
     let external_conditions = Arc::from(create_external_conditions(
-        (*input.external_conditions.as_ref()).clone(),
+        (*input.external_conditions()).clone(),
         &simtime.iter(),
     )?);
     let energy_supply_unmet_demand =
@@ -450,7 +450,7 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
         Arc::new(RwLock::new(energy_supply_unmet_demand)),
     )]
     .into();
-    for (name, data) in input.energy_supply.iter() {
+    for (name, data) in input.energy_supply().iter() {
         energy_supplies.insert(
             name.clone(),
             Arc::new(RwLock::new(
@@ -459,12 +459,15 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
         );
     }
 
-    let controls =
-        control_from_input(&input.control, external_conditions.clone(), &simtime.iter())?;
+    let controls = control_from_input(
+        &input.control(),
+        external_conditions.clone(),
+        &simtime.iter(),
+    )?;
 
     let ventilation = InfiltrationVentilation::create(
-        &input.infiltration_ventilation,
-        &input.zone,
+        &input.infiltration_ventilation(),
+        &input.zone(),
         false,
         &energy_supplies,
         &controls,
@@ -529,12 +532,12 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
             anyhow!("Expected external conditions to contain data for entire year")
         })?;
         let wind_direction = external_conditions.wind_direction_annual();
-        let temp_int_air = input.temp_internal_air_static_calcs;
+        let temp_int_air = input.temp_internal_air_static_calcs();
         let temp_ext_air = external_conditions.air_temp_annual_daily_average_min();
-        let ach_min = input.infiltration_ventilation.ach_min_static_calcs;
-        let ach_max = input.infiltration_ventilation.ach_max_static_calcs;
+        let ach_min = input.infiltration_ventilation().ach_min_static_calcs;
+        let ach_max = input.infiltration_ventilation().ach_max_static_calcs;
         let initial_r_v_arg = input
-            .infiltration_ventilation
+            .infiltration_ventilation()
             .vent_opening_ratio_init
             .unwrap_or(1.);
 
@@ -591,7 +594,7 @@ pub(super) fn calc_htc_hlp(input: &Input) -> anyhow::Result<HtcHlpCalculation> {
     let mut hlp_map: IndexMap<String, f64> = Default::default();
     let mut zone_area: IndexMap<String, f64> = Default::default();
 
-    for (z_name, zone) in input.zone.iter() {
+    for (z_name, zone) in input.zone().iter() {
         let (fabric_heat_loss, thermal_bridges, vent_heat_loss) = calc_htc(zone)?;
         // Calculate the heat transfer coefficent (HTC), in W / K
         // TODO (from Python) check ventilation losses are correct
