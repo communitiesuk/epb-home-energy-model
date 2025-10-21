@@ -30,7 +30,7 @@ use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingE
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ingest_for_processing, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
-    InputForProcessing,
+    InputForProcessing, SchemaReference,
 };
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
@@ -81,16 +81,32 @@ pub fn run_project(
         fn ingest_input_and_start_preprocessing(
             input: impl Read,
             external_conditions_data: Option<&ExternalConditionsFromFile>,
+            schema_reference: &SchemaReference,
         ) -> anyhow::Result<InputForProcessing> {
-            let mut input_for_processing = ingest_for_processing(input)?;
+            let mut input_for_processing = ingest_for_processing(input, schema_reference)?;
 
             input_for_processing
                 .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
             Ok(input_for_processing)
         }
 
+        fn choose_schema_reference(flags: &ProjectFlags) -> SchemaReference {
+            let mut schema_reference = SchemaReference::Core;
+            #[cfg(feature = "fhs")]
+            if flags.intersects(ProjectFlags::FHS_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_ASSUMPTIONS
+                | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS | ProjectFlags::FHS_COMPLIANCE) {
+                schema_reference = SchemaReference::Fhs;
+            }
+
+            schema_reference
+        }
+
         let input_for_processing =
-            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
+            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref(), &choose_schema_reference(flags))?;
 
         fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
             #[cfg(feature = "fhs")]

@@ -1,0 +1,6459 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "title": "Input",
+  "type": "object",
+  "required": [
+    "ColdWaterSource",
+    "Control",
+    "EnergySupply",
+    "Events",
+    "ExternalConditions",
+    "HotWaterDemand",
+    "HotWaterSource",
+    "InfiltrationVentilation",
+    "InternalGains",
+    "SimulationTime",
+    "Zone",
+    "temp_internal_air_static_calcs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "ApplianceGains": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/ApplianceGains"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Appliancegains"
+    },
+    "ColdWaterSource": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ColdWaterSource"
+      },
+      "title": "Coldwatersource",
+      "type": "object"
+    },
+    "Control": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "ChargeControl": "#/$defs/ControlChargeTarget",
+                "CombinationTimeControl": "#/$defs/ControlCombinationTime",
+                "OnOffCostMinimisingTimeControl": "#/$defs/ControlOnOffCostMinimising",
+                "OnOffTimeControl": "#/$defs/ControlOnOffTimer",
+                "SetpointTimeControl": "#/$defs/ControlSetpointTimer"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ControlOnOffTimer"
+              },
+              {
+                "$ref": "#/$defs/ControlOnOffCostMinimising"
+              },
+              {
+                "$ref": "#/$defs/ControlSetpointTimer"
+              },
+              {
+                "$ref": "#/$defs/ControlChargeTarget"
+              },
+              {
+                "$ref": "#/$defs/ControlCombinationTime"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Control"
+    },
+    "EnergySupply": {
+      "additionalProperties": {
+        "$ref": "#/$defs/EnergySupply"
+      },
+      "title": "Energysupply",
+      "type": "object"
+    },
+    "Events": {
+      "$ref": "#/$defs/WaterHeatingEvents"
+    },
+    "ExternalConditions": {
+      "$ref": "#/$defs/ExternalConditionsInput"
+    },
+    "HeatSourceWet": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "Boiler": "#/$defs/HeatSourceWetBoiler",
+                "HIU": "#/$defs/HeatSourceWetHIU",
+                "HeatBattery": "#/$defs/HeatSourceWetHeatBattery",
+                "HeatPump": "#/$defs/HeatSourceWetHeatPump"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/HeatSourceWetHeatPump"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceWetBoiler"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceWetHeatBattery"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceWetHIU"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Heatsourcewet"
+    },
+    "HotWaterDemand": {
+      "$ref": "#/$defs/HotWaterDemand"
+    },
+    "HotWaterSource": {
+      "$ref": "#/$defs/HotWaterSource"
+    },
+    "InfiltrationVentilation": {
+      "$ref": "#/$defs/InfiltrationVentilation"
+    },
+    "InternalGains": {
+      "$ref": "#/$defs/InternalGains"
+    },
+    "OnSiteGeneration": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "PhotovoltaicSystem": "#/$defs/PhotovoltaicSystem"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PhotovoltaicSystem"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Onsitegeneration"
+    },
+    "PreHeatedWaterSource": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/StorageTank"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preheatedwatersource"
+    },
+    "SimulationTime": {
+      "$ref": "#/$defs/SimulationTime"
+    },
+    "SmartApplianceControls": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/SmartApplianceControl"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Smartappliancecontrols"
+    },
+    "SpaceCoolSystem": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "AirConditioning": "#/$defs/SpaceCoolSystemAirConditioning"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SpaceCoolSystemAirConditioning"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spacecoolsystem"
+    },
+    "SpaceHeatSystem": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "ElecStorageHeater": "#/$defs/SpaceHeatSystemElectricStorageHeater",
+                "InstantElecHeater": "#/$defs/SpaceHeatSystemInstantElectricHeater",
+                "WarmAir": "#/$defs/SpaceHeatSystemWarmAir",
+                "WetDistribution": "#/$defs/SpaceHeatSystemWetDistribution"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SpaceHeatSystemInstantElectricHeater"
+              },
+              {
+                "$ref": "#/$defs/SpaceHeatSystemElectricStorageHeater"
+              },
+              {
+                "$ref": "#/$defs/SpaceHeatSystemWetDistribution"
+              },
+              {
+                "$ref": "#/$defs/SpaceHeatSystemWarmAir"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spaceheatsystem"
+    },
+    "WWHRS": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/WasteWaterHeatRecoverySystem"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Wwhrs"
+    },
+    "Zone": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Zone"
+      },
+      "title": "Zone",
+      "type": "object"
+    },
+    "temp_internal_air_static_calcs": {
+      "title": "Temp Internal Air Static Calcs",
+      "type": "number"
+    }
+  },
+  "$defs": {
+    "AirFlowType": {
+      "enum": [
+        "fan-assisted",
+        "damper-only"
+      ],
+      "title": "AirFlowType",
+      "type": "string"
+    },
+    "ApplianceGains": {
+      "additionalProperties": false,
+      "properties": {
+        "Events": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ApplianceGainsEvent"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of appliance usage events",
+          "title": "Events"
+        },
+        "Standby": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Appliance power consumption when not in use (unit: W)",
+          "title": "Standby"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "gains_fraction": {
+          "description": "Proportion of appliance demand turned into heat gains (no unit)",
+          "title": "Gains Fraction",
+          "type": "number"
+        },
+        "loadshifting": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplianceLoadShifting"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleForDouble"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "EnergySupply",
+        "gains_fraction",
+        "start_day",
+        "time_series_step"
+      ],
+      "title": "ApplianceGains",
+      "type": "object"
+    },
+    "ApplianceGainsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "demand_W": {
+          "title": "Demand W",
+          "type": "number"
+        },
+        "duration": {
+          "title": "Duration",
+          "type": "number"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        }
+      },
+      "required": [
+        "demand_W",
+        "duration",
+        "start"
+      ],
+      "title": "ApplianceGainsEvent",
+      "type": "object"
+    },
+    "ApplianceLoadShifting": {
+      "additionalProperties": false,
+      "properties": {
+        "Control": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "demand_limit_weighted": {
+          "title": "Demand Limit Weighted",
+          "type": "number"
+        },
+        "max_shift_hrs": {
+          "title": "Max Shift Hrs",
+          "type": "number"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "weight_timeseries": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Weight Timeseries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "demand_limit_weighted",
+        "max_shift_hrs",
+        "weight_timeseries"
+      ],
+      "title": "ApplianceLoadShifting",
+      "type": "object"
+    },
+    "Bath": {
+      "additionalProperties": false,
+      "properties": {
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "flowrate": {
+          "description": "Tap/outlet flow rate (unit: litre/minute)",
+          "title": "Flowrate",
+          "type": "number"
+        },
+        "size": {
+          "description": "Volume held by bath (unit: litre)",
+          "title": "Size",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ColdWaterSource",
+        "flowrate",
+        "size"
+      ],
+      "title": "Bath",
+      "type": "object"
+    },
+    "BatteryLocation": {
+      "enum": [
+        "inside",
+        "outside"
+      ],
+      "title": "BatteryLocation",
+      "type": "string"
+    },
+    "BoilerCostScheduleHybrid": {
+      "additionalProperties": false,
+      "properties": {
+        "cost_schedule_boiler": {
+          "$ref": "#/$defs/ScheduleForDouble"
+        },
+        "cost_schedule_hp": {
+          "$ref": "#/$defs/ScheduleForDouble"
+        },
+        "cost_schedule_start_day": {
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Cost Schedule Start Day",
+          "type": "integer"
+        },
+        "cost_schedule_time_series_step": {
+          "title": "Cost Schedule Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cost_schedule_boiler",
+        "cost_schedule_hp",
+        "cost_schedule_start_day",
+        "cost_schedule_time_series_step"
+      ],
+      "title": "BoilerCostScheduleHybrid",
+      "type": "object"
+    },
+    "BoilerHotWaterTest": {
+      "enum": [
+        "M&L",
+        "M&S",
+        "M_only",
+        "No_additional_tests"
+      ],
+      "title": "BoilerHotWaterTest",
+      "type": "string"
+    },
+    "BuildingElementAdjacentConditionedSpace": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "BuildingElementAdjacentConditionedSpace",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (unit: J/m\u00b2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Construction"
+        },
+        "u_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "U Value"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
+        "pitch"
+      ],
+      "title": "BuildingElementAdjacentConditionedSpace",
+      "type": "object"
+    },
+    "BuildingElementAdjacentUnconditionedSpace_Simple": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "BuildingElementAdjacentUnconditionedSpace_Simple",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (unit: m2.K/W)",
+          "title": "Thermal Resistance Construction"
+        },
+        "thermal_resistance_unconditioned_space": {
+          "description": "Effective thermal resistance of unheated space (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Unconditioned Space",
+          "type": "number"
+        },
+        "u_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "U Value"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "areal_heat_capacity",
+        "mass_distribution_class",
+        "pitch",
+        "thermal_resistance_unconditioned_space"
+      ],
+      "title": "BuildingElementAdjacentUnconditionedSpace_Simple",
+      "type": "object"
+    },
+    "BuildingElementGroundHeatedBasement": {
+      "additionalProperties": false,
+      "description": "Heated basement - uses init_heated_basement()",
+      "properties": {
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
+          "title": "U Value",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thickness_walls": {
+          "description": "Thickness of the walls (unit: m)",
+          "title": "Thickness Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Upper Surface"
+        },
+        "shield_fact_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor"
+        },
+        "floor_type": {
+          "const": "Heated_basement",
+          "title": "Floor Type",
+          "type": "string"
+        },
+        "depth_basement_floor": {
+          "description": "Depth of basement floor below ground level (unit: m)",
+          "title": "Depth Basement Floor",
+          "type": "number"
+        },
+        "thermal_resist_walls_base": {
+          "description": "Thermal resistance of walls of the basement (unit: m\u00b2.K/W)",
+          "title": "Thermal Resist Walls Base",
+          "type": "number"
+        },
+        "height_basement_walls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height of the basement walls above ground level (unit: m)",
+          "title": "Height Basement Walls"
+        },
+        "thermal_transm_envi_base": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal transmittance of floor above basement (unit: W/m\u00b2.K)",
+          "title": "Thermal Transm Envi Base"
+        },
+        "thermal_transm_walls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
+          "title": "Thermal Transm Walls"
+        },
+        "edge_insulation": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
+                    "vertical": "#/$defs/EdgeInsulationVertical"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EdgeInsulationHorizontal"
+                  },
+                  {
+                    "$ref": "#/$defs/EdgeInsulationVertical"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Insulation"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "total_area",
+        "perimeter",
+        "areal_heat_capacity",
+        "thermal_resistance_floor_construction",
+        "u_value",
+        "psi_wall_floor_junc",
+        "mass_distribution_class",
+        "pitch",
+        "thickness_walls",
+        "floor_type",
+        "depth_basement_floor",
+        "thermal_resist_walls_base"
+      ],
+      "title": "BuildingElementGroundHeatedBasement",
+      "type": "object"
+    },
+    "BuildingElementGroundSlabEdgeInsulation": {
+      "additionalProperties": false,
+      "description": "Slab floor with edge insulation - uses init_slab_on_ground_floor_edge_insulated()",
+      "properties": {
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
+          "title": "U Value",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thickness_walls": {
+          "description": "Thickness of the walls (unit: m)",
+          "title": "Thickness Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Upper Surface"
+        },
+        "shield_fact_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor"
+        },
+        "floor_type": {
+          "const": "Slab_edge_insulation",
+          "title": "Floor Type",
+          "type": "string"
+        },
+        "edge_insulation": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
+                    "vertical": "#/$defs/EdgeInsulationVertical"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EdgeInsulationHorizontal"
+                  },
+                  {
+                    "$ref": "#/$defs/EdgeInsulationVertical"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Insulation"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "total_area",
+        "perimeter",
+        "areal_heat_capacity",
+        "thermal_resistance_floor_construction",
+        "u_value",
+        "psi_wall_floor_junc",
+        "mass_distribution_class",
+        "pitch",
+        "thickness_walls",
+        "floor_type"
+      ],
+      "title": "BuildingElementGroundSlabEdgeInsulation",
+      "type": "object"
+    },
+    "BuildingElementGroundSlabNoEdgeInsulation": {
+      "additionalProperties": false,
+      "description": "Slab floor with no edge insulation - uses init_slab_on_ground_floor_uninsulated_or_all_insulation()",
+      "properties": {
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
+          "title": "U Value",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thickness_walls": {
+          "description": "Thickness of the walls (unit: m)",
+          "title": "Thickness Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Upper Surface"
+        },
+        "shield_fact_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor"
+        },
+        "floor_type": {
+          "const": "Slab_no_edge_insulation",
+          "title": "Floor Type",
+          "type": "string"
+        },
+        "edge_insulation": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
+                    "vertical": "#/$defs/EdgeInsulationVertical"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EdgeInsulationHorizontal"
+                  },
+                  {
+                    "$ref": "#/$defs/EdgeInsulationVertical"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Insulation"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "total_area",
+        "perimeter",
+        "areal_heat_capacity",
+        "thermal_resistance_floor_construction",
+        "u_value",
+        "psi_wall_floor_junc",
+        "mass_distribution_class",
+        "pitch",
+        "thickness_walls",
+        "floor_type"
+      ],
+      "title": "BuildingElementGroundSlabNoEdgeInsulation",
+      "type": "object"
+    },
+    "BuildingElementGroundSuspendedFloor": {
+      "additionalProperties": false,
+      "description": "Suspended floor - uses init_suspended_floor()",
+      "properties": {
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
+          "title": "U Value",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thickness_walls": {
+          "description": "Thickness of the walls (unit: m)",
+          "title": "Thickness Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Upper Surface"
+        },
+        "shield_fact_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor"
+        },
+        "floor_type": {
+          "const": "Suspended_floor",
+          "title": "Floor Type",
+          "type": "string"
+        },
+        "area_per_perimeter_vent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Area of ventilation openings per perimeter (unit: m\u00b2/m)",
+          "title": "Area Per Perimeter Vent"
+        },
+        "thermal_resist_insul": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance of insulation on base of underfloor space (unit: m\u00b2.K/W)",
+          "title": "Thermal Resist Insul"
+        },
+        "thermal_transm_walls": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
+          "title": "Thermal Transm Walls"
+        },
+        "edge_insulation": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
+                    "vertical": "#/$defs/EdgeInsulationVertical"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EdgeInsulationHorizontal"
+                  },
+                  {
+                    "$ref": "#/$defs/EdgeInsulationVertical"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Insulation"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "total_area",
+        "perimeter",
+        "areal_heat_capacity",
+        "thermal_resistance_floor_construction",
+        "u_value",
+        "psi_wall_floor_junc",
+        "mass_distribution_class",
+        "pitch",
+        "thickness_walls",
+        "floor_type"
+      ],
+      "title": "BuildingElementGroundSuspendedFloor",
+      "type": "object"
+    },
+    "BuildingElementGroundUnheatedBasement": {
+      "additionalProperties": false,
+      "description": "Unheated basement - uses init_unheated_basement()",
+      "properties": {
+        "type": {
+          "const": "BuildingElementGround",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Area of this building element within the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "total_area": {
+          "description": "Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m\u00b2)",
+          "title": "Total Area",
+          "type": "number"
+        },
+        "perimeter": {
+          "description": "Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)",
+          "title": "Perimeter",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity of the ground floor element (unit: J/m2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "thermal_resistance_floor_construction": {
+          "description": "Total thermal resistance of all layers in the floor construction (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Floor Construction",
+          "type": "number"
+        },
+        "u_value": {
+          "description": "Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)",
+          "title": "U Value",
+          "type": "number"
+        },
+        "psi_wall_floor_junc": {
+          "description": "Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)",
+          "title": "Psi Wall Floor Junc",
+          "type": "number"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "thickness_walls": {
+          "description": "Thickness of the walls (unit: m)",
+          "title": "Thickness Walls",
+          "type": "number"
+        },
+        "height_upper_surface": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Upper Surface"
+        },
+        "shield_fact_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindShieldLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wind shielding factor"
+        },
+        "floor_type": {
+          "const": "Unheated_basement",
+          "title": "Floor Type",
+          "type": "string"
+        },
+        "depth_basement_floor": {
+          "description": "Depth of basement floor below ground level (unit: m)",
+          "title": "Depth Basement Floor",
+          "type": "number"
+        },
+        "height_basement_walls": {
+          "description": "Height of the basement walls above ground level (unit: m)",
+          "title": "Height Basement Walls",
+          "type": "number"
+        },
+        "thermal_resist_walls_base": {
+          "description": "Thermal resistance of walls of the basement (unit: m\u00b2.K/W)",
+          "title": "Thermal Resist Walls Base",
+          "type": "number"
+        },
+        "thermal_transm_envi_base": {
+          "description": "Thermal transmittance of floor above basement (unit: W/m\u00b2.K)",
+          "title": "Thermal Transm Envi Base",
+          "type": "number"
+        },
+        "thermal_transm_walls": {
+          "description": "Thermal transmittance of walls above ground (unit: W/m\u00b2.K)",
+          "title": "Thermal Transm Walls",
+          "type": "number"
+        },
+        "edge_insulation": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "horizontal": "#/$defs/EdgeInsulationHorizontal",
+                    "vertical": "#/$defs/EdgeInsulationVertical"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/EdgeInsulationHorizontal"
+                  },
+                  {
+                    "$ref": "#/$defs/EdgeInsulationVertical"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edge Insulation"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "total_area",
+        "perimeter",
+        "areal_heat_capacity",
+        "thermal_resistance_floor_construction",
+        "u_value",
+        "psi_wall_floor_junc",
+        "mass_distribution_class",
+        "pitch",
+        "thickness_walls",
+        "floor_type",
+        "depth_basement_floor",
+        "height_basement_walls",
+        "thermal_resist_walls_base",
+        "thermal_transm_envi_base",
+        "thermal_transm_walls"
+      ],
+      "title": "BuildingElementGroundUnheatedBasement",
+      "type": "object"
+    },
+    "BuildingElementOpaque": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "BuildingElementOpaque",
+          "title": "Type",
+          "type": "string"
+        },
+        "area": {
+          "description": "Net area of the opaque building element (i.e. minus any windows / doors / etc.) (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "areal_heat_capacity": {
+          "description": "Areal heat capacity (unit: J/m\u00b2.K)",
+          "title": "Areal Heat Capacity",
+          "type": "number"
+        },
+        "base_height": {
+          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
+          "title": "Base Height",
+          "type": "number"
+        },
+        "height": {
+          "description": "The height of the building element (unit: m)",
+          "title": "Height",
+          "type": "number"
+        },
+        "is_unheated_pitched_roof": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Unheated Pitched Roof"
+        },
+        "mass_distribution_class": {
+          "$ref": "#/$defs/MassDistributionClass",
+          "description": "Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)."
+        },
+        "orientation360": {
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "solar_absorption_coeff": {
+          "description": "Solar absorption coefficient at the external surface (dimensionless)",
+          "title": "Solar Absorption Coeff",
+          "type": "number"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Construction"
+        },
+        "u_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "U Value"
+        },
+        "width": {
+          "description": "The width of the building element (unit: m)",
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "area",
+        "areal_heat_capacity",
+        "base_height",
+        "height",
+        "mass_distribution_class",
+        "orientation360",
+        "pitch",
+        "solar_absorption_coeff",
+        "width"
+      ],
+      "title": "BuildingElementOpaque",
+      "type": "object"
+    },
+    "BuildingElementTransparent": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "BuildingElementTransparent",
+          "title": "Type",
+          "type": "string"
+        },
+        "Control_WindowOpenable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Windowopenable"
+        },
+        "base_height": {
+          "description": "The distance between the ground and the lowest edge of the element (unit: m)",
+          "title": "Base Height",
+          "type": "number"
+        },
+        "frame_area_fraction": {
+          "description": "The frame area fraction of window, ratio of the projected frame area to the overall projected area of the glazed element of the window",
+          "title": "Frame Area Fraction",
+          "type": "number"
+        },
+        "free_area_height": {
+          "title": "Free Area Height",
+          "type": "number"
+        },
+        "g_value": {
+          "description": "Total solar energy transmittance of the transparent part of the window",
+          "title": "G Value",
+          "type": "number"
+        },
+        "height": {
+          "description": "The height of the building element (unit: m)",
+          "title": "Height",
+          "type": "number"
+        },
+        "max_window_open_area": {
+          "title": "Max Window Open Area",
+          "type": "number"
+        },
+        "mid_height": {
+          "title": "Mid Height",
+          "type": "number"
+        },
+        "orientation360": {
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "shading": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WindowShadingObject"
+              },
+              {
+                "$ref": "#/$defs/WindowShadingObstacle"
+              }
+            ]
+          },
+          "title": "Shading",
+          "type": "array"
+        },
+        "thermal_resistance_construction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Thermal resistance (unit: m\u00b2.K/W)",
+          "title": "Thermal Resistance Construction"
+        },
+        "treatment": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WindowTreatment"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Treatment"
+        },
+        "u_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "U Value"
+        },
+        "width": {
+          "description": "The width of the building element (unit: m)",
+          "title": "Width",
+          "type": "number"
+        },
+        "window_part_list": {
+          "items": {
+            "$ref": "#/$defs/WindowPart"
+          },
+          "title": "Window Part List",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "base_height",
+        "frame_area_fraction",
+        "free_area_height",
+        "g_value",
+        "height",
+        "max_window_open_area",
+        "mid_height",
+        "orientation360",
+        "pitch",
+        "shading",
+        "width",
+        "window_part_list"
+      ],
+      "title": "BuildingElementTransparent",
+      "type": "object"
+    },
+    "ChargeLevel": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/ScheduleForDouble"
+        }
+      ],
+      "title": "ChargeLevel"
+    },
+    "ColdWaterSource": {
+      "additionalProperties": false,
+      "properties": {
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "temperatures": {
+          "description": "List of cold water temperatures, one entry per hour (unit: \u02daC)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Temperatures",
+          "type": "array"
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start_day",
+        "temperatures",
+        "time_series_step"
+      ],
+      "title": "ColdWaterSource",
+      "type": "object"
+    },
+    "ControlChargeTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ChargeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "charge_level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChargeLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Proportion of the charge targeted for each day"
+        },
+        "external_sensor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalSensor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "logic_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ControlLogicType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleForBoolean",
+          "description": "List of boolean values where true means 'on' (one entry per hour)"
+        },
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "temp_charge_cut": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Charge Cut"
+        },
+        "temp_charge_cut_delta": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleForDouble"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "schedule",
+        "start_day",
+        "time_series_step"
+      ],
+      "title": "ControlChargeTarget",
+      "type": "object"
+    },
+    "ControlCombination": {
+      "additionalProperties": false,
+      "properties": {
+        "controls": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Controls",
+          "type": "array"
+        },
+        "operation": {
+          "$ref": "#/$defs/ControlCombinationOperation"
+        }
+      },
+      "required": [
+        "controls",
+        "operation"
+      ],
+      "title": "ControlCombination",
+      "type": "object"
+    },
+    "ControlCombinationOperation": {
+      "enum": [
+        "AND",
+        "OR",
+        "XOR",
+        "NOT",
+        "MAX",
+        "MIN",
+        "MEAN"
+      ],
+      "title": "ControlCombinationOperation",
+      "type": "string"
+    },
+    "ControlCombinationTime": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "CombinationTimeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "combination": {
+          "$ref": "#/$defs/ControlCombinations"
+        }
+      },
+      "required": [
+        "type",
+        "combination"
+      ],
+      "title": "ControlCombinationTime",
+      "type": "object"
+    },
+    "ControlCombinations": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ControlCombination"
+      },
+      "description": "A dictionary of control combinations where:\n- Keys are user-defined names (e.g., \"main\", \"week\", \"weekday\", \"weekend\")\n- Values conform to the ControlCombination schema\n- The \"main\" entry is required",
+      "title": "ControlCombinations",
+      "type": "object"
+    },
+    "ControlLogicType": {
+      "enum": [
+        "celect",
+        "heat_battery",
+        "hhrsh",
+        "automatic",
+        "manual"
+      ],
+      "title": "ControlLogicType",
+      "type": "string"
+    },
+    "ControlOnOffCostMinimising": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "OnOffCostMinimisingTimeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleForDouble",
+          "description": "List of cost values (one entry per time_series_step)"
+        },
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_on_daily": {
+          "description": "Number of 'on' hours to be set per day",
+          "title": "Time On Daily",
+          "type": "number"
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "schedule",
+        "start_day",
+        "time_on_daily",
+        "time_series_step"
+      ],
+      "title": "ControlOnOffCostMinimising",
+      "type": "object"
+    },
+    "ControlOnOffTimer": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "OnOffTimeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "allow_null": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allow Null"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleForBoolean",
+          "description": "List of boolean values where true means on, one entry per hour"
+        },
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "schedule",
+        "start_day",
+        "time_series_step"
+      ],
+      "title": "ControlOnOffTimer",
+      "type": "object"
+    },
+    "ControlSetpointTimer": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "SetpointTimeControl",
+          "title": "Type",
+          "type": "string"
+        },
+        "advanced_start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long before heating period the system should switch on (unit: hours)",
+          "title": "Advanced Start"
+        },
+        "default_to_max": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)",
+          "title": "Default To Max"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleForDouble",
+          "description": "list of float values (one entry per hour)"
+        },
+        "setpoint_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum setpoint allowed",
+          "title": "Setpoint Max"
+        },
+        "setpoint_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Minimum setpoint allowed",
+          "title": "Setpoint Min"
+        },
+        "start_day": {
+          "description": "First day of the time series, day of the year, 0 to 365",
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_series_step": {
+          "description": "Timestep of the time series data (unit: hours)",
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "schedule",
+        "start_day",
+        "time_series_step"
+      ],
+      "title": "ControlSetpointTimer",
+      "type": "object"
+    },
+    "CustomEnergySourceFactor": {
+      "additionalProperties": false,
+      "properties": {
+        "Emissions Factor kgCO2e/kWh": {
+          "title": "Emissions Factor Kgco2E/Kwh",
+          "type": "number"
+        },
+        "Emissions Factor kgCO2e/kWh including out-of-scope emissions": {
+          "title": "Emissions Factor Kgco2E/Kwh Including Out-Of-Scope Emissions",
+          "type": "number"
+        },
+        "Primary Energy Factor kWh/kWh delivered": {
+          "title": "Primary Energy Factor Kwh/Kwh Delivered",
+          "type": "number"
+        }
+      },
+      "required": [
+        "Emissions Factor kgCO2e/kWh",
+        "Emissions Factor kgCO2e/kWh including out-of-scope emissions",
+        "Primary Energy Factor kWh/kWh delivered"
+      ],
+      "title": "CustomEnergySourceFactor",
+      "type": "object"
+    },
+    "DuctShape": {
+      "enum": [
+        "circular",
+        "rectangular"
+      ],
+      "title": "DuctShape",
+      "type": "string"
+    },
+    "DuctType": {
+      "enum": [
+        "intake",
+        "supply",
+        "extract",
+        "exhaust"
+      ],
+      "title": "DuctType",
+      "type": "string"
+    },
+    "EcoDesignController": {
+      "additionalProperties": false,
+      "properties": {
+        "ecodesign_control_class": {
+          "$ref": "#/$defs/EcoDesignControllerClass"
+        },
+        "max_outdoor_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Outdoor Temp"
+        },
+        "min_flow_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Flow Temp"
+        },
+        "min_outdoor_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Outdoor Temp"
+        }
+      },
+      "required": [
+        "ecodesign_control_class"
+      ],
+      "title": "EcoDesignController",
+      "type": "object"
+    },
+    "EcoDesignControllerClass": {
+      "enum": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "title": "EcoDesignControllerClass",
+      "type": "integer"
+    },
+    "EdgeInsulationHorizontal": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "horizontal",
+          "title": "Type",
+          "type": "string"
+        },
+        "edge_thermal_resistance": {
+          "title": "Edge Thermal Resistance",
+          "type": "number"
+        },
+        "width": {
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "edge_thermal_resistance",
+        "width"
+      ],
+      "title": "EdgeInsulationHorizontal",
+      "type": "object"
+    },
+    "EdgeInsulationVertical": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "vertical",
+          "title": "Type",
+          "type": "string"
+        },
+        "edge_thermal_resistance": {
+          "title": "Edge Thermal Resistance",
+          "type": "number"
+        },
+        "depth": {
+          "title": "Depth",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "edge_thermal_resistance",
+        "depth"
+      ],
+      "title": "EdgeInsulationVertical",
+      "type": "object"
+    },
+    "ElectricBattery": {
+      "additionalProperties": false,
+      "properties": {
+        "battery_age": {
+          "title": "Battery Age",
+          "type": "number"
+        },
+        "battery_location": {
+          "$ref": "#/$defs/BatteryLocation"
+        },
+        "capacity": {
+          "title": "Capacity",
+          "type": "number"
+        },
+        "charge_discharge_efficiency_round_trip": {
+          "title": "Charge Discharge Efficiency Round Trip",
+          "type": "number"
+        },
+        "grid_charging_possible": {
+          "title": "Grid Charging Possible",
+          "type": "boolean"
+        },
+        "maximum_charge_rate_one_way_trip": {
+          "title": "Maximum Charge Rate One Way Trip",
+          "type": "number"
+        },
+        "maximum_discharge_rate_one_way_trip": {
+          "title": "Maximum Discharge Rate One Way Trip",
+          "type": "number"
+        },
+        "minimum_charge_rate_one_way_trip": {
+          "title": "Minimum Charge Rate One Way Trip",
+          "type": "number"
+        }
+      },
+      "required": [
+        "battery_age",
+        "battery_location",
+        "capacity",
+        "charge_discharge_efficiency_round_trip",
+        "grid_charging_possible",
+        "maximum_charge_rate_one_way_trip",
+        "maximum_discharge_rate_one_way_trip",
+        "minimum_charge_rate_one_way_trip"
+      ],
+      "title": "ElectricBattery",
+      "type": "object"
+    },
+    "EnergyDiverter": {
+      "additionalProperties": false,
+      "properties": {
+        "Controlmax": {
+          "title": "Controlmax",
+          "type": "string"
+        },
+        "HeatSource": {
+          "title": "Heatsource",
+          "type": "string"
+        }
+      },
+      "required": [
+        "Controlmax",
+        "HeatSource"
+      ],
+      "title": "EnergyDiverter",
+      "type": "object"
+    },
+    "EnergySupply": {
+      "additionalProperties": false,
+      "properties": {
+        "ElectricBattery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElectricBattery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "diverter": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnergyDiverter"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "factor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CustomEnergySourceFactor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fuel": {
+          "$ref": "#/$defs/FuelType"
+        },
+        "is_export_capable": {
+          "description": "Denotes that this energy supply can export its surplus supply",
+          "title": "Is Export Capable",
+          "type": "boolean"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/EnergySupplyPriorityEntry"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "tariff": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tariff"
+        },
+        "threshold_charges": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 12,
+              "minItems": 12,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold Charges"
+        },
+        "threshold_prices": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 12,
+              "minItems": 12,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold Prices"
+        }
+      },
+      "required": [
+        "fuel",
+        "is_export_capable"
+      ],
+      "title": "EnergySupply",
+      "type": "object"
+    },
+    "EnergySupplyPriorityEntry": {
+      "enum": [
+        "ElectricBattery",
+        "diverter"
+      ],
+      "title": "EnergySupplyPriorityEntry",
+      "type": "string"
+    },
+    "ExternalConditionsInput": {
+      "additionalProperties": false,
+      "properties": {
+        "air_temperatures": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of external air temperatures, one entry per hour (unit: \u02daC)",
+          "title": "Air Temperatures"
+        },
+        "diffuse_horizontal_radiation": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of diffuse horizontal radiation values, one entry per hour (unit: W/m\u00b2)",
+          "title": "Diffuse Horizontal Radiation"
+        },
+        "direct_beam_conversion_needed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A flag to indicate whether direct beam radiation from climate data needs to be converted from horizontal to normal incidence; if normal direct beam radiation values are provided then no conversion is needed",
+          "title": "Direct Beam Conversion Needed"
+        },
+        "direct_beam_radiation": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of direct beam radiation values, one entry per hour (unit: W/m\u00b2)",
+          "title": "Direct Beam Radiation"
+        },
+        "latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Latitude of weather station, angle from south (unit: \u02da)",
+          "title": "Latitude"
+        },
+        "longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Longitude of weather station, easterly +ve westerly -ve (unit: \u02da)",
+          "title": "Longitude"
+        },
+        "shading_segments": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ShadingSegment"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building",
+          "title": "Shading Segments"
+        },
+        "solar_reflectivity_of_ground": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of ground reflectivity values, 0 to 1, one entry per hour",
+          "title": "Solar Reflectivity Of Ground"
+        },
+        "wind_directions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: \u02da)",
+          "title": "Wind Directions"
+        },
+        "wind_speeds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of wind speeds, one entry per hour (unit: m/s)",
+          "title": "Wind Speeds"
+        }
+      },
+      "title": "ExternalConditionsInput",
+      "type": "object"
+    },
+    "ExternalSensor": {
+      "additionalProperties": false,
+      "properties": {
+        "correlation": {
+          "items": {
+            "$ref": "#/$defs/ExternalSensorCorrelation"
+          },
+          "title": "Correlation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "correlation"
+      ],
+      "title": "ExternalSensor",
+      "type": "object"
+    },
+    "ExternalSensorCorrelation": {
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_charge": {
+          "title": "Max Charge",
+          "type": "number"
+        }
+      },
+      "required": [
+        "temperature",
+        "max_charge"
+      ],
+      "title": "ExternalSensorCorrelation",
+      "type": "object"
+    },
+    "FanSpeedData": {
+      "additionalProperties": false,
+      "properties": {
+        "power_output": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Power Output",
+          "type": "array"
+        },
+        "temperature_diff": {
+          "title": "Temperature Diff",
+          "type": "number"
+        }
+      },
+      "required": [
+        "power_output",
+        "temperature_diff"
+      ],
+      "title": "FanSpeedData",
+      "type": "object"
+    },
+    "FancoilTestData": {
+      "additionalProperties": false,
+      "properties": {
+        "fan_power_W": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Fan Power W",
+          "type": "array"
+        },
+        "fan_speed_data": {
+          "items": {
+            "$ref": "#/$defs/FanSpeedData"
+          },
+          "title": "Fan Speed Data",
+          "type": "array"
+        }
+      },
+      "required": [
+        "fan_power_W",
+        "fan_speed_data"
+      ],
+      "title": "FancoilTestData",
+      "type": "object"
+    },
+    "FuelType": {
+      "enum": [
+        "LPG_bottled",
+        "LPG_bulk",
+        "LPG_condition_11F",
+        "custom",
+        "electricity",
+        "energy_from_environment",
+        "mains_gas",
+        "unmet_demand"
+      ],
+      "title": "FuelType",
+      "type": "string"
+    },
+    "HeatPumpBackupControlType": {
+      "enum": [
+        "None",
+        "TopUp",
+        "Substitute"
+      ],
+      "title": "HeatPumpBackupControlType",
+      "type": "string"
+    },
+    "HeatPumpBoiler": {
+      "additionalProperties": false,
+      "description": "Boiler used as backup for heat pump systems",
+      "properties": {
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "EnergySupply_aux": {
+          "title": "Energysupply Aux",
+          "type": "string"
+        },
+        "boiler_location": {
+          "$ref": "#/$defs/HeatSourceLocation"
+        },
+        "efficiency_full_load": {
+          "title": "Efficiency Full Load",
+          "type": "number"
+        },
+        "efficiency_part_load": {
+          "title": "Efficiency Part Load",
+          "type": "number"
+        },
+        "electricity_circ_pump": {
+          "title": "Electricity Circ Pump",
+          "type": "number"
+        },
+        "electricity_full_load": {
+          "title": "Electricity Full Load",
+          "type": "number"
+        },
+        "electricity_part_load": {
+          "title": "Electricity Part Load",
+          "type": "number"
+        },
+        "electricity_standby": {
+          "title": "Electricity Standby",
+          "type": "number"
+        },
+        "modulation_load": {
+          "title": "Modulation Load",
+          "type": "number"
+        },
+        "rated_power": {
+          "title": "Rated Power",
+          "type": "number"
+        },
+        "cost_schedule_hybrid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoilerCostScheduleHybrid"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "EnergySupply",
+        "EnergySupply_aux",
+        "boiler_location",
+        "efficiency_full_load",
+        "efficiency_part_load",
+        "electricity_circ_pump",
+        "electricity_full_load",
+        "electricity_part_load",
+        "electricity_standby",
+        "modulation_load",
+        "rated_power"
+      ],
+      "title": "HeatPumpBoiler",
+      "type": "object"
+    },
+    "HeatPumpBufferTank": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_losses": {
+          "title": "Daily Losses",
+          "type": "number"
+        },
+        "pump_fixed_flow_rate": {
+          "title": "Pump Fixed Flow Rate",
+          "type": "number"
+        },
+        "pump_power_at_flow_rate": {
+          "title": "Pump Power At Flow Rate",
+          "type": "number"
+        },
+        "volume": {
+          "title": "Volume",
+          "type": "number"
+        }
+      },
+      "required": [
+        "daily_losses",
+        "pump_fixed_flow_rate",
+        "pump_power_at_flow_rate",
+        "volume"
+      ],
+      "title": "HeatPumpBufferTank",
+      "type": "object"
+    },
+    "HeatPumpHotWaterOnly": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HeatPump_HWOnly",
+          "title": "Type",
+          "type": "string"
+        },
+        "Controlmax": {
+          "description": "Reference to a control schedule of maximum temperature setpoints",
+          "title": "Controlmax",
+          "type": "string"
+        },
+        "Controlmin": {
+          "description": "Reference to a control schedule of minimum temperature setpoints",
+          "title": "Controlmin",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "daily_losses_declared": {
+          "title": "Daily Losses Declared",
+          "type": "number"
+        },
+        "heat_exchanger_surface_area_declared": {
+          "title": "Heat Exchanger Surface Area Declared",
+          "type": "number"
+        },
+        "heater_position": {
+          "title": "Heater Position",
+          "type": "number"
+        },
+        "in_use_factor_mismatch": {
+          "title": "In Use Factor Mismatch",
+          "type": "number"
+        },
+        "power_max": {
+          "title": "Power Max",
+          "type": "number"
+        },
+        "tank_volume_declared": {
+          "title": "Tank Volume Declared",
+          "type": "number"
+        },
+        "test_data": {
+          "$ref": "#/$defs/HeatPumpHotWaterTestData"
+        },
+        "thermostat_position": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for StorageTank but not for SmartHotWaterTank",
+          "title": "Thermostat Position"
+        },
+        "vol_hw_daily_average": {
+          "title": "Vol Hw Daily Average",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "Controlmax",
+        "Controlmin",
+        "EnergySupply",
+        "daily_losses_declared",
+        "heat_exchanger_surface_area_declared",
+        "heater_position",
+        "in_use_factor_mismatch",
+        "power_max",
+        "tank_volume_declared",
+        "test_data",
+        "vol_hw_daily_average"
+      ],
+      "title": "HeatPumpHotWaterOnly",
+      "type": "object"
+    },
+    "HeatPumpHotWaterOnlyTestDatum": {
+      "additionalProperties": false,
+      "properties": {
+        "cop_dhw": {
+          "title": "Cop Dhw",
+          "type": "number"
+        },
+        "energy_input_measured": {
+          "title": "Energy Input Measured",
+          "type": "number"
+        },
+        "hw_tapping_prof_daily_total": {
+          "title": "Hw Tapping Prof Daily Total",
+          "type": "number"
+        },
+        "hw_vessel_loss_daily": {
+          "title": "Hw Vessel Loss Daily",
+          "type": "number"
+        },
+        "power_standby": {
+          "title": "Power Standby",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cop_dhw",
+        "energy_input_measured",
+        "hw_tapping_prof_daily_total",
+        "hw_vessel_loss_daily",
+        "power_standby"
+      ],
+      "title": "HeatPumpHotWaterOnlyTestDatum",
+      "type": "object"
+    },
+    "HeatPumpHotWaterTestData": {
+      "additionalProperties": false,
+      "properties": {
+        "L": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HeatPumpHotWaterOnlyTestDatum"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "M": {
+          "$ref": "#/$defs/HeatPumpHotWaterOnlyTestDatum"
+        }
+      },
+      "required": [
+        "M"
+      ],
+      "title": "HeatPumpHotWaterTestData",
+      "type": "object"
+    },
+    "HeatPumpSinkType": {
+      "enum": [
+        "Water",
+        "Air",
+        "Glycol25"
+      ],
+      "title": "HeatPumpSinkType",
+      "type": "string"
+    },
+    "HeatPumpSourceType": {
+      "enum": [
+        "Ground",
+        "OutsideAir",
+        "ExhaustAirMEV",
+        "ExhaustAirMVHR",
+        "ExhaustAirMixed",
+        "WaterGround",
+        "WaterSurface",
+        "HeatNetwork"
+      ],
+      "title": "HeatPumpSourceType",
+      "type": "string"
+    },
+    "HeatPumpTestDatum": {
+      "additionalProperties": false,
+      "properties": {
+        "air_flow_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Air Flow Rate"
+        },
+        "capacity": {
+          "title": "Capacity",
+          "type": "number"
+        },
+        "cop": {
+          "title": "Cop",
+          "type": "number"
+        },
+        "degradation_coeff": {
+          "title": "Degradation Coeff",
+          "type": "number"
+        },
+        "design_flow_temp": {
+          "title": "Design Flow Temp",
+          "type": "number"
+        },
+        "eahp_mixed_ext_air_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eahp Mixed Ext Air Ratio"
+        },
+        "temp_outlet": {
+          "title": "Temp Outlet",
+          "type": "number"
+        },
+        "temp_source": {
+          "title": "Temp Source",
+          "type": "number"
+        },
+        "temp_test": {
+          "title": "Temp Test",
+          "type": "number"
+        },
+        "test_letter": {
+          "$ref": "#/$defs/TestLetter"
+        }
+      },
+      "required": [
+        "capacity",
+        "cop",
+        "degradation_coeff",
+        "design_flow_temp",
+        "temp_outlet",
+        "temp_source",
+        "temp_test",
+        "test_letter"
+      ],
+      "title": "HeatPumpTestDatum",
+      "type": "object"
+    },
+    "HeatSourceLocation": {
+      "enum": [
+        "internal",
+        "external"
+      ],
+      "title": "HeatSourceLocation",
+      "type": "string"
+    },
+    "HeatSourceWetBoiler": {
+      "additionalProperties": false,
+      "description": "Standalone boiler heat source",
+      "properties": {
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "EnergySupply_aux": {
+          "title": "Energysupply Aux",
+          "type": "string"
+        },
+        "boiler_location": {
+          "$ref": "#/$defs/HeatSourceLocation"
+        },
+        "efficiency_full_load": {
+          "title": "Efficiency Full Load",
+          "type": "number"
+        },
+        "efficiency_part_load": {
+          "title": "Efficiency Part Load",
+          "type": "number"
+        },
+        "electricity_circ_pump": {
+          "title": "Electricity Circ Pump",
+          "type": "number"
+        },
+        "electricity_full_load": {
+          "title": "Electricity Full Load",
+          "type": "number"
+        },
+        "electricity_part_load": {
+          "title": "Electricity Part Load",
+          "type": "number"
+        },
+        "electricity_standby": {
+          "title": "Electricity Standby",
+          "type": "number"
+        },
+        "modulation_load": {
+          "title": "Modulation Load",
+          "type": "number"
+        },
+        "rated_power": {
+          "title": "Rated Power",
+          "type": "number"
+        },
+        "type": {
+          "const": "Boiler",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "EnergySupply",
+        "EnergySupply_aux",
+        "boiler_location",
+        "efficiency_full_load",
+        "efficiency_part_load",
+        "electricity_circ_pump",
+        "electricity_full_load",
+        "electricity_part_load",
+        "electricity_standby",
+        "modulation_load",
+        "rated_power",
+        "type"
+      ],
+      "title": "HeatSourceWetBoiler",
+      "type": "object"
+    },
+    "HeatSourceWetHIU": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HIU",
+          "title": "Type",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "HIU_daily_loss": {
+          "title": "Hiu Daily Loss",
+          "type": "number"
+        },
+        "building_level_distribution_losses": {
+          "title": "Building Level Distribution Losses",
+          "type": "number"
+        },
+        "power_max": {
+          "title": "Power Max",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "HIU_daily_loss",
+        "building_level_distribution_losses",
+        "power_max"
+      ],
+      "title": "HeatSourceWetHIU",
+      "type": "object"
+    },
+    "HeatSourceWetHeatBattery": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HeatBattery",
+          "title": "Type",
+          "type": "string"
+        },
+        "A": {
+          "title": "A",
+          "type": "number"
+        },
+        "B": {
+          "title": "B",
+          "type": "number"
+        },
+        "ControlCharge": {
+          "title": "Controlcharge",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "capillary_diameter_m": {
+          "title": "Capillary Diameter M",
+          "type": "number"
+        },
+        "electricity_circ_pump": {
+          "title": "Electricity Circ Pump",
+          "type": "number"
+        },
+        "electricity_standby": {
+          "title": "Electricity Standby",
+          "type": "number"
+        },
+        "flow_rate_l_per_min": {
+          "title": "Flow Rate L Per Min",
+          "type": "number"
+        },
+        "heat_exchanger_surface_area_m2": {
+          "title": "Heat Exchanger Surface Area M2",
+          "type": "number"
+        },
+        "heat_storage_zone_material_kJ_per_K_above_Phase_transition": {
+          "title": "Heat Storage Zone Material Kj Per K Above Phase Transition",
+          "type": "number"
+        },
+        "heat_storage_zone_material_kJ_per_K_below_Phase_transition": {
+          "title": "Heat Storage Zone Material Kj Per K Below Phase Transition",
+          "type": "number"
+        },
+        "heat_storage_zone_material_kJ_per_K_during_Phase_transition": {
+          "title": "Heat Storage Zone Material Kj Per K During Phase Transition",
+          "type": "number"
+        },
+        "max_rated_losses": {
+          "title": "Max Rated Losses",
+          "type": "number"
+        },
+        "max_temperature": {
+          "title": "Max Temperature",
+          "type": "number"
+        },
+        "number_of_units": {
+          "minimum": 0,
+          "title": "Number Of Units",
+          "type": "integer"
+        },
+        "phase_transition_temperature_upper": {
+          "title": "Phase Transition Temperature Upper",
+          "type": "number"
+        },
+        "phase_transition_temperature_lower": {
+          "title": "Phase Transition Temperature Lower",
+          "type": "number"
+        },
+        "rated_charge_power": {
+          "title": "Rated Charge Power",
+          "type": "number"
+        },
+        "simultaneous_charging_and_discharging": {
+          "title": "Simultaneous Charging And Discharging",
+          "type": "boolean"
+        },
+        "velocity_in_HEX_tube_at_1_l_per_min_m_per_s": {
+          "title": "Velocity In Hex Tube At 1 L Per Min M Per S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "A",
+        "B",
+        "ControlCharge",
+        "EnergySupply",
+        "capillary_diameter_m",
+        "electricity_circ_pump",
+        "electricity_standby",
+        "flow_rate_l_per_min",
+        "heat_exchanger_surface_area_m2",
+        "heat_storage_zone_material_kJ_per_K_above_Phase_transition",
+        "heat_storage_zone_material_kJ_per_K_below_Phase_transition",
+        "heat_storage_zone_material_kJ_per_K_during_Phase_transition",
+        "max_rated_losses",
+        "max_temperature",
+        "number_of_units",
+        "phase_transition_temperature_upper",
+        "phase_transition_temperature_lower",
+        "rated_charge_power",
+        "simultaneous_charging_and_discharging",
+        "velocity_in_HEX_tube_at_1_l_per_min_m_per_s"
+      ],
+      "title": "HeatSourceWetHeatBattery",
+      "type": "object"
+    },
+    "HeatSourceWetHeatPump": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HeatPump",
+          "title": "Type",
+          "type": "string"
+        },
+        "BufferTank": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HeatPumpBufferTank"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "EnergySupply_heat_network": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energysupply Heat Network"
+        },
+        "MechanicalVentilation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mechanicalventilation"
+        },
+        "backup_ctrl_type": {
+          "$ref": "#/$defs/HeatPumpBackupControlType"
+        },
+        "boiler": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HeatPumpBoiler"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "eahp_mixed_max_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eahp Mixed Max Temp"
+        },
+        "eahp_mixed_min_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eahp Mixed Min Temp"
+        },
+        "min_modulation_rate_20": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Modulation Rate 20"
+        },
+        "min_modulation_rate_35": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Modulation Rate 35"
+        },
+        "min_modulation_rate_55": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Modulation Rate 55"
+        },
+        "min_temp_diff_flow_return_for_hp_to_operate": {
+          "title": "Min Temp Diff Flow Return For Hp To Operate",
+          "type": "number"
+        },
+        "modulating_control": {
+          "title": "Modulating Control",
+          "type": "boolean"
+        },
+        "power_crankcase_heater": {
+          "title": "Power Crankcase Heater",
+          "type": "number"
+        },
+        "power_heating_circ_pump": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Heating Circ Pump"
+        },
+        "power_heating_warm_air_fan": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Heating Warm Air Fan"
+        },
+        "power_max_backup": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Max Backup"
+        },
+        "power_off": {
+          "title": "Power Off",
+          "type": "number"
+        },
+        "power_source_circ_pump": {
+          "title": "Power Source Circ Pump",
+          "type": "number"
+        },
+        "power_standby": {
+          "title": "Power Standby",
+          "type": "number"
+        },
+        "sink_type": {
+          "$ref": "#/$defs/HeatPumpSinkType"
+        },
+        "source_type": {
+          "$ref": "#/$defs/HeatPumpSourceType"
+        },
+        "temp_distribution_heat_network": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Distribution Heat Network"
+        },
+        "temp_lower_operating_limit": {
+          "title": "Temp Lower Operating Limit",
+          "type": "number"
+        },
+        "temp_return_feed_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Return Feed Max"
+        },
+        "test_data_EN14825": {
+          "items": {
+            "$ref": "#/$defs/HeatPumpTestDatum"
+          },
+          "title": "Test Data En14825",
+          "type": "array"
+        },
+        "time_constant_onoff_operation": {
+          "title": "Time Constant Onoff Operation",
+          "type": "number"
+        },
+        "time_delay_backup": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Delay Backup"
+        },
+        "var_flow_temp_ctrl_during_test": {
+          "title": "Var Flow Temp Ctrl During Test",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "backup_ctrl_type",
+        "min_temp_diff_flow_return_for_hp_to_operate",
+        "modulating_control",
+        "power_crankcase_heater",
+        "power_off",
+        "power_source_circ_pump",
+        "power_standby",
+        "sink_type",
+        "source_type",
+        "temp_lower_operating_limit",
+        "test_data_EN14825",
+        "time_constant_onoff_operation",
+        "var_flow_temp_ctrl_during_test"
+      ],
+      "title": "HeatSourceWetHeatPump",
+      "type": "object"
+    },
+    "HeatSourceWetServiceWaterRegular": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HeatSourceWet",
+          "title": "Type",
+          "type": "string"
+        },
+        "Controlmax": {
+          "description": "Reference to a control schedule of maximum temperature setpoints",
+          "title": "Controlmax",
+          "type": "string"
+        },
+        "Controlmin": {
+          "description": "Reference to a control schedule of minimum temperature setpoints",
+          "title": "Controlmin",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "heater_position": {
+          "title": "Heater Position",
+          "type": "number"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "temp_flow_limit_upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Flow Limit Upper"
+        },
+        "thermostat_position": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for StorageTank but not for SmartHotWaterTank",
+          "title": "Thermostat Position"
+        }
+      },
+      "required": [
+        "type",
+        "Controlmax",
+        "Controlmin",
+        "EnergySupply",
+        "heater_position",
+        "name"
+      ],
+      "title": "HeatSourceWetServiceWaterRegular",
+      "type": "object"
+    },
+    "HotWaterDemand": {
+      "additionalProperties": false,
+      "properties": {
+        "Bath": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Bath"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bath"
+        },
+        "Distribution": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WaterPipeworkSimple"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Distribution"
+        },
+        "Other": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/OtherWaterUse"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Other"
+        },
+        "Shower": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "discriminator": {
+                  "mapping": {
+                    "InstantElecShower": "#/$defs/ShowerInstantElectric",
+                    "MixerShower": "#/$defs/ShowerMixer"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/ShowerMixer"
+                  },
+                  {
+                    "$ref": "#/$defs/ShowerInstantElectric"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shower"
+        }
+      },
+      "title": "HotWaterDemand",
+      "type": "object"
+    },
+    "HotWaterSource": {
+      "additionalProperties": false,
+      "properties": {
+        "hw cylinder": {
+          "discriminator": {
+            "mapping": {
+              "CombiBoiler": "#/$defs/HotWaterSourceCombiBoiler",
+              "HIU": "#/$defs/HotWaterSourceHUI",
+              "HeatBattery": "#/$defs/HotWaterSourceHeatBattery",
+              "PointOfUse": "#/$defs/HotWaterSourcePointOfUse",
+              "SmartHotWaterTank": "#/$defs/HotWaterSourceSmartHotWaterTank",
+              "StorageTank": "#/$defs/StorageTank"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StorageTank"
+            },
+            {
+              "$ref": "#/$defs/HotWaterSourceCombiBoiler"
+            },
+            {
+              "$ref": "#/$defs/HotWaterSourceHUI"
+            },
+            {
+              "$ref": "#/$defs/HotWaterSourcePointOfUse"
+            },
+            {
+              "$ref": "#/$defs/HotWaterSourceSmartHotWaterTank"
+            },
+            {
+              "$ref": "#/$defs/HotWaterSourceHeatBattery"
+            }
+          ],
+          "title": "Hw Cylinder"
+        }
+      },
+      "required": [
+        "hw cylinder"
+      ],
+      "title": "HotWaterSource",
+      "type": "object"
+    },
+    "HotWaterSourceCombiBoiler": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "CombiBoiler",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "HeatSourceWet": {
+          "title": "Heatsourcewet",
+          "type": "string"
+        },
+        "daily_HW_usage": {
+          "title": "Daily Hw Usage",
+          "type": "number"
+        },
+        "rejected_energy_1": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rejected Energy 1"
+        },
+        "rejected_factor_3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rejected Factor 3"
+        },
+        "separate_DHW_tests": {
+          "$ref": "#/$defs/BoilerHotWaterTest"
+        },
+        "setpoint_temp": {
+          "title": "Setpoint Temp",
+          "type": "number"
+        },
+        "storage_loss_factor_2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Storage Loss Factor 2"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "HeatSourceWet",
+        "daily_HW_usage",
+        "separate_DHW_tests",
+        "setpoint_temp"
+      ],
+      "title": "HotWaterSourceCombiBoiler",
+      "type": "object"
+    },
+    "HotWaterSourceHUI": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HIU",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "HeatSourceWet": {
+          "title": "Heatsourcewet",
+          "type": "string"
+        },
+        "setpoint_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Setpoint Temp"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "HeatSourceWet"
+      ],
+      "title": "HotWaterSourceHUI",
+      "type": "object"
+    },
+    "HotWaterSourceHeatBattery": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "HeatBattery",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "HeatSourceWet": {
+          "title": "Heatsourcewet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "HeatSourceWet"
+      ],
+      "title": "HotWaterSourceHeatBattery",
+      "type": "object"
+    },
+    "HotWaterSourcePointOfUse": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "PointOfUse",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "efficiency": {
+          "title": "Efficiency",
+          "type": "number"
+        },
+        "setpoint_temp": {
+          "title": "Setpoint Temp",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "EnergySupply",
+        "efficiency",
+        "setpoint_temp"
+      ],
+      "title": "HotWaterSourcePointOfUse",
+      "type": "object"
+    },
+    "HotWaterSourceSmartHotWaterTank": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "SmartHotWaterTank",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "EnergySupply_pump": {
+          "title": "Energysupply Pump",
+          "type": "string"
+        },
+        "HeatSource": {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "HeatPump_HWOnly": "#/$defs/HeatPumpHotWaterOnly",
+                "HeatSourceWet": "#/$defs/HeatSourceWetServiceWaterRegular",
+                "ImmersionHeater": "#/$defs/ImmersionHeater",
+                "SolarThermalSystem": "#/$defs/SolarThermalSystem"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ImmersionHeater"
+              },
+              {
+                "$ref": "#/$defs/SolarThermalSystem"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceWetServiceWaterRegular"
+              },
+              {
+                "$ref": "#/$defs/HeatPumpHotWaterOnly"
+              }
+            ]
+          },
+          "title": "Heatsource",
+          "type": "object"
+        },
+        "daily_losses": {
+          "title": "Daily Losses",
+          "type": "number"
+        },
+        "init_temp": {
+          "title": "Init Temp",
+          "type": "number"
+        },
+        "max_flow_rate_pump_l_per_min": {
+          "title": "Max Flow Rate Pump L Per Min",
+          "type": "number"
+        },
+        "power_pump_kW": {
+          "title": "Power Pump Kw",
+          "type": "number"
+        },
+        "primary_pipework": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WaterPipework"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Pipework"
+        },
+        "temp_setpnt_max": {
+          "description": "Reference to a control schedule of maximum state of charge values",
+          "title": "Temp Setpnt Max",
+          "type": "string"
+        },
+        "temp_usable": {
+          "title": "Temp Usable",
+          "type": "number"
+        },
+        "volume": {
+          "title": "Volume",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "EnergySupply_pump",
+        "HeatSource",
+        "daily_losses",
+        "init_temp",
+        "max_flow_rate_pump_l_per_min",
+        "power_pump_kW",
+        "temp_setpnt_max",
+        "temp_usable",
+        "volume"
+      ],
+      "title": "HotWaterSourceSmartHotWaterTank",
+      "type": "object"
+    },
+    "ImmersionHeater": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ImmersionHeater",
+          "title": "Type",
+          "type": "string"
+        },
+        "Controlmax": {
+          "description": "Reference to a control schedule of maximum temperature setpoints",
+          "title": "Controlmax",
+          "type": "string"
+        },
+        "Controlmin": {
+          "description": "Reference to a control schedule of minimum temperature setpoints",
+          "title": "Controlmin",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "heater_position": {
+          "title": "Heater Position",
+          "type": "number"
+        },
+        "power": {
+          "title": "Power",
+          "type": "number"
+        },
+        "thermostat_position": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thermostat Position"
+        }
+      },
+      "required": [
+        "type",
+        "Controlmax",
+        "Controlmin",
+        "EnergySupply",
+        "heater_position",
+        "power"
+      ],
+      "title": "ImmersionHeater",
+      "type": "object"
+    },
+    "InfiltrationVentilation": {
+      "additionalProperties": false,
+      "properties": {
+        "Control_VentAdjustMax": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ventadjustmax"
+        },
+        "Control_VentAdjustMin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ventadjustmin"
+        },
+        "Control_WindowAdjust": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Windowadjust"
+        },
+        "Leaks": {
+          "$ref": "#/$defs/VentilationLeaks"
+        },
+        "MechanicalVentilation": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/MechanicalVentilation"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mechanicalventilation"
+        },
+        "Vents": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Vent"
+          },
+          "title": "Vents",
+          "type": "object"
+        },
+        "ach_max_static_calcs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ach Max Static Calcs"
+        },
+        "ach_min_static_calcs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ach Min Static Calcs"
+        },
+        "altitude": {
+          "title": "Altitude",
+          "type": "number"
+        },
+        "cross_vent_possible": {
+          "title": "Cross Vent Possible",
+          "type": "boolean"
+        },
+        "shield_class": {
+          "$ref": "#/$defs/VentilationShieldClass"
+        },
+        "terrain_class": {
+          "$ref": "#/$defs/TerrainClass"
+        },
+        "ventilation_zone_base_height": {
+          "description": "Base height of the ventilation zone relative to ground (m)",
+          "title": "Ventilation Zone Base Height",
+          "type": "number"
+        },
+        "vent_opening_ratio_init": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vent Opening Ratio Init"
+        }
+      },
+      "required": [
+        "Leaks",
+        "Vents",
+        "altitude",
+        "cross_vent_possible",
+        "shield_class",
+        "terrain_class",
+        "ventilation_zone_base_height"
+      ],
+      "title": "InfiltrationVentilation",
+      "type": "object"
+    },
+    "InternalGains": {
+      "additionalProperties": {
+        "$ref": "#/$defs/InternalGainsDetails"
+      },
+      "description": "A dictionary of internal gains entries where:\n- Keys are user-defined names (e.g., \"ColdWaterLosses\", \"EvaporativeLosses\", \"metabolic gains\", etc.)\n- Values conform to the InternalGainsDetails schema\n- No specific entries are required - all entries are optional and user-defined",
+      "title": "InternalGains",
+      "type": "object"
+    },
+    "InternalGainsDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/ScheduleForDouble"
+        },
+        "start_day": {
+          "maximum": 365,
+          "minimum": 0,
+          "title": "Start Day",
+          "type": "integer"
+        },
+        "time_series_step": {
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "schedule",
+        "start_day",
+        "time_series_step"
+      ],
+      "title": "InternalGainsDetails",
+      "type": "object"
+    },
+    "InverterType": {
+      "enum": [
+        "optimised_inverter",
+        "string_inverter"
+      ],
+      "title": "InverterType",
+      "type": "string"
+    },
+    "MVHRLocation": {
+      "enum": [
+        "inside",
+        "outside"
+      ],
+      "title": "MVHRLocation",
+      "type": "string"
+    },
+    "MassDistributionClass": {
+      "enum": [
+        "D",
+        "E",
+        "I",
+        "IE",
+        "M"
+      ],
+      "title": "MassDistributionClass",
+      "type": "string"
+    },
+    "MechVentType": {
+      "enum": [
+        "Intermittent MEV",
+        "Centralised continuous MEV",
+        "Decentralised continuous MEV",
+        "MVHR"
+      ],
+      "title": "MechVentType",
+      "type": "string"
+    },
+    "MechanicalVentilation": {
+      "additionalProperties": false,
+      "properties": {
+        "Control": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "SFP": {
+          "description": "Specific fan power, inclusive of any in use factors (unit: W/l/s)",
+          "title": "Sfp",
+          "type": "number"
+        },
+        "design_outdoor_air_flow_rate": {
+          "description": "(unit: m\u00b3/hour)",
+          "title": "Design Outdoor Air Flow Rate",
+          "type": "number"
+        },
+        "ductwork": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MechanicalVentilationDuctwork"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ductwork"
+        },
+        "mvhr_eff": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MVHR efficiency",
+          "title": "Mvhr Eff"
+        },
+        "mvhr_location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MVHRLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sup_air_flw_ctrl": {
+          "$ref": "#/$defs/SupplyAirFlowRateControlType"
+        },
+        "sup_air_temp_ctrl": {
+          "$ref": "#/$defs/SupplyAirTemperatureControlType"
+        },
+        "vent_type": {
+          "$ref": "#/$defs/MechVentType"
+        }
+      },
+      "required": [
+        "EnergySupply",
+        "SFP",
+        "design_outdoor_air_flow_rate",
+        "sup_air_flw_ctrl",
+        "sup_air_temp_ctrl",
+        "vent_type"
+      ],
+      "title": "MechanicalVentilation",
+      "type": "object"
+    },
+    "MechanicalVentilationDuctwork": {
+      "additionalProperties": false,
+      "properties": {
+        "cross_section_shape": {
+          "$ref": "#/$defs/DuctShape"
+        },
+        "duct_perimeter_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duct Perimeter Mm"
+        },
+        "duct_type": {
+          "$ref": "#/$defs/DuctType"
+        },
+        "external_diameter_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Diameter Mm"
+        },
+        "insulation_thermal_conductivity": {
+          "title": "Insulation Thermal Conductivity",
+          "type": "number"
+        },
+        "insulation_thickness_mm": {
+          "title": "Insulation Thickness Mm",
+          "type": "number"
+        },
+        "internal_diameter_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Internal Diameter Mm"
+        },
+        "length": {
+          "title": "Length",
+          "type": "number"
+        },
+        "reflective": {
+          "title": "Reflective",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cross_section_shape",
+        "duct_type",
+        "insulation_thermal_conductivity",
+        "insulation_thickness_mm",
+        "length",
+        "reflective"
+      ],
+      "title": "MechanicalVentilationDuctwork",
+      "type": "object"
+    },
+    "OtherWaterUse": {
+      "additionalProperties": false,
+      "properties": {
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "flowrate": {
+          "description": "Tap/outlet flow rate (unit: litre/minute)",
+          "title": "Flowrate",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ColdWaterSource",
+        "flowrate"
+      ],
+      "title": "OtherWaterUse",
+      "type": "object"
+    },
+    "PhotovoltaicSystem": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "PhotovoltaicSystem",
+          "title": "Type",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "base_height": {
+          "description": "The distance between the ground and the lowest edge of the PV array (unit: m)",
+          "title": "Base Height",
+          "type": "number"
+        },
+        "height": {
+          "description": "Height of the PV array (unit: m)",
+          "title": "Height",
+          "type": "number"
+        },
+        "inverter_is_inside": {
+          "description": "Whether the inverter is considered inside the building",
+          "title": "Inverter Is Inside",
+          "type": "boolean"
+        },
+        "inverter_peak_power_ac": {
+          "title": "Inverter Peak Power Ac",
+          "type": "number"
+        },
+        "inverter_peak_power_dc": {
+          "title": "Inverter Peak Power Dc",
+          "type": "number"
+        },
+        "inverter_type": {
+          "$ref": "#/$defs/InverterType"
+        },
+        "orientation360": {
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "peak_power": {
+          "description": "Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m\u00b2 on this surface (at 25 degrees) (unit: kW)",
+          "title": "Peak Power",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "shading": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WindowShadingObject"
+              },
+              {
+                "$ref": "#/$defs/WindowShadingObstacle"
+              }
+            ]
+          },
+          "title": "Shading",
+          "type": "array"
+        },
+        "ventilation_strategy": {
+          "$ref": "#/$defs/PhotovoltaicVentilationStrategy"
+        },
+        "width": {
+          "description": "Width of the PV panel (unit: m)",
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "base_height",
+        "height",
+        "inverter_is_inside",
+        "inverter_peak_power_ac",
+        "inverter_peak_power_dc",
+        "inverter_type",
+        "orientation360",
+        "peak_power",
+        "pitch",
+        "shading",
+        "ventilation_strategy",
+        "width"
+      ],
+      "title": "PhotovoltaicSystem",
+      "type": "object"
+    },
+    "PhotovoltaicVentilationStrategy": {
+      "enum": [
+        "unventilated",
+        "moderately_ventilated",
+        "strongly_or_forced_ventilated",
+        "rear_surface_free"
+      ],
+      "title": "PhotovoltaicVentilationStrategy",
+      "type": "string"
+    },
+    "ScheduleEntryForBoolean": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/ScheduleRepeaterForBoolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "ScheduleEntryForBoolean"
+    },
+    "ScheduleEntryForDouble": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/ScheduleRepeaterForDouble"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "ScheduleEntryForDouble"
+    },
+    "ScheduleForBoolean": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/ScheduleEntryForBoolean"
+        },
+        "type": "array"
+      },
+      "description": "A dictionary of schedule entries where:\n- Keys are user-defined names (e.g., \"main\", \"week\", \"weekday\", \"weekend\")\n- Values are lists of ScheduleEntryForBoolean\n- The \"main\" entry is required",
+      "title": "ScheduleForBoolean",
+      "type": "object"
+    },
+    "ScheduleForDouble": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/ScheduleEntryForDouble"
+        },
+        "type": "array"
+      },
+      "description": "A dictionary of schedule entries where:\n- Keys are user-defined names (e.g., \"main\", \"week\", \"weekday\", \"weekend\")\n- Values are lists of ScheduleEntryForDouble\n- The \"main\" entry is required",
+      "title": "ScheduleForDouble",
+      "type": "object"
+    },
+    "ScheduleRepeaterEntryForBoolean": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "ScheduleRepeaterEntryForBoolean"
+    },
+    "ScheduleRepeaterEntryForDouble": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "ScheduleRepeaterEntryForDouble"
+    },
+    "ScheduleRepeaterForBoolean": {
+      "additionalProperties": false,
+      "properties": {
+        "repeat": {
+          "minimum": 0,
+          "title": "Repeat",
+          "type": "integer"
+        },
+        "value": {
+          "$ref": "#/$defs/ScheduleRepeaterValueForBoolean"
+        }
+      },
+      "required": [
+        "repeat",
+        "value"
+      ],
+      "title": "ScheduleRepeaterForBoolean",
+      "type": "object"
+    },
+    "ScheduleRepeaterForDouble": {
+      "additionalProperties": false,
+      "properties": {
+        "repeat": {
+          "minimum": 0,
+          "title": "Repeat",
+          "type": "integer"
+        },
+        "value": {
+          "$ref": "#/$defs/ScheduleRepeaterValueForDouble"
+        }
+      },
+      "required": [
+        "repeat",
+        "value"
+      ],
+      "title": "ScheduleRepeaterForDouble",
+      "type": "object"
+    },
+    "ScheduleRepeaterValueForBoolean": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ScheduleRepeaterEntryForBoolean"
+        }
+      ],
+      "title": "ScheduleRepeaterValueForBoolean"
+    },
+    "ScheduleRepeaterValueForDouble": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ScheduleRepeaterEntryForDouble"
+        }
+      ],
+      "title": "ScheduleRepeaterValueForDouble"
+    },
+    "ShadingObject": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "height": {
+          "title": "Height",
+          "type": "number"
+        },
+        "type": {
+          "$ref": "#/$defs/ShadingObjectType"
+        }
+      },
+      "required": [
+        "distance",
+        "height",
+        "type"
+      ],
+      "title": "ShadingObject",
+      "type": "object"
+    },
+    "ShadingObjectType": {
+      "enum": [
+        "obstacle",
+        "overhang"
+      ],
+      "title": "ShadingObjectType",
+      "type": "string"
+    },
+    "ShadingSegment": {
+      "additionalProperties": false,
+      "properties": {
+        "end360": {
+          "title": "End360",
+          "type": "number"
+        },
+        "shading": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ShadingObject"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shading"
+        },
+        "start360": {
+          "title": "Start360",
+          "type": "number"
+        }
+      },
+      "required": [
+        "end360",
+        "start360"
+      ],
+      "title": "ShadingSegment",
+      "type": "object"
+    },
+    "ShowerInstantElectric": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "InstantElecShower",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "rated_power": {
+          "title": "Rated Power",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "EnergySupply",
+        "rated_power"
+      ],
+      "title": "ShowerInstantElectric",
+      "type": "object"
+    },
+    "ShowerMixer": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "MixerShower",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "WWHRS": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reference to a key in Input.WWHRS",
+          "title": "Wwhrs"
+        },
+        "flowrate": {
+          "description": "Shower flow rate (unit: litre/minute)",
+          "title": "Flowrate",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "flowrate"
+      ],
+      "title": "ShowerMixer",
+      "type": "object"
+    },
+    "SimulationTime": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "title": "End",
+          "type": "number"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "step": {
+          "title": "Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "end",
+        "start",
+        "step"
+      ],
+      "title": "SimulationTime",
+      "type": "object"
+    },
+    "SmartApplianceBattery": {
+      "additionalProperties": false,
+      "properties": {
+        "battery_state_of_charge": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Battery State Of Charge",
+          "type": "object"
+        },
+        "energy_into_battery_from_generation": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Energy Into Battery From Generation",
+          "type": "object"
+        },
+        "energy_into_battery_from_grid": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Energy Into Battery From Grid",
+          "type": "object"
+        },
+        "energy_out_of_battery": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Energy Out Of Battery",
+          "type": "object"
+        }
+      },
+      "required": [
+        "battery_state_of_charge",
+        "energy_into_battery_from_generation",
+        "energy_into_battery_from_grid",
+        "energy_out_of_battery"
+      ],
+      "title": "SmartApplianceBattery",
+      "type": "object"
+    },
+    "SmartApplianceControl": {
+      "additionalProperties": false,
+      "properties": {
+        "Appliances": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Appliances",
+          "type": "array"
+        },
+        "battery24hr": {
+          "$ref": "#/$defs/SmartApplianceBattery"
+        },
+        "non_appliance_demand_24hr": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Non Appliance Demand 24Hr",
+          "type": "object"
+        },
+        "power_timeseries": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Power Timeseries",
+          "type": "object"
+        },
+        "time_series_step": {
+          "title": "Time Series Step",
+          "type": "number"
+        }
+      },
+      "required": [
+        "Appliances",
+        "battery24hr",
+        "non_appliance_demand_24hr",
+        "power_timeseries",
+        "time_series_step"
+      ],
+      "title": "SmartApplianceControl",
+      "type": "object"
+    },
+    "SolarCollectorLoopLocation": {
+      "description": "Location of the main part of the solar thermal collector loop piping.\n\nThis affects the ambient temperature used for heat loss calculations\nin the collector loop piping.",
+      "enum": [
+        "OUT",
+        "HS",
+        "NHS"
+      ],
+      "title": "SolarCollectorLoopLocation",
+      "type": "string"
+    },
+    "SolarThermalSystem": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "SolarThermalSystem",
+          "title": "Type",
+          "type": "string"
+        },
+        "Controlmax": {
+          "description": "Reference to a control schedule of maximum temperature setpoints",
+          "title": "Controlmax",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "area_module": {
+          "title": "Area Module",
+          "type": "number"
+        },
+        "collector_mass_flow_rate": {
+          "title": "Collector Mass Flow Rate",
+          "type": "number"
+        },
+        "first_order_hlc": {
+          "title": "First Order Hlc",
+          "type": "number"
+        },
+        "heater_position": {
+          "title": "Heater Position",
+          "type": "number"
+        },
+        "incidence_angle_modifier": {
+          "title": "Incidence Angle Modifier",
+          "type": "number"
+        },
+        "modules": {
+          "minimum": 1,
+          "title": "Modules",
+          "type": "integer"
+        },
+        "orientation360": {
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "peak_collector_efficiency": {
+          "title": "Peak Collector Efficiency",
+          "type": "number"
+        },
+        "power_pump": {
+          "title": "Power Pump",
+          "type": "number"
+        },
+        "power_pump_control": {
+          "title": "Power Pump Control",
+          "type": "number"
+        },
+        "second_order_hlc": {
+          "title": "Second Order Hlc",
+          "type": "number"
+        },
+        "sol_loc": {
+          "$ref": "#/$defs/SolarCollectorLoopLocation"
+        },
+        "solar_loop_piping_hlc": {
+          "title": "Solar Loop Piping Hlc",
+          "type": "number"
+        },
+        "thermostat_position": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for StorageTank but not for SmartHotWaterTank",
+          "title": "Thermostat Position"
+        },
+        "tilt": {
+          "title": "Tilt",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "Controlmax",
+        "EnergySupply",
+        "area_module",
+        "collector_mass_flow_rate",
+        "first_order_hlc",
+        "heater_position",
+        "incidence_angle_modifier",
+        "modules",
+        "orientation360",
+        "peak_collector_efficiency",
+        "power_pump",
+        "power_pump_control",
+        "second_order_hlc",
+        "sol_loc",
+        "solar_loop_piping_hlc",
+        "tilt"
+      ],
+      "title": "SolarThermalSystem",
+      "type": "object"
+    },
+    "SpaceCoolSystemAirConditioning": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "AirConditioning",
+          "title": "Type",
+          "type": "string"
+        },
+        "Control": {
+          "title": "Control",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "cooling_capacity": {
+          "description": "Maximum cooling capacity of the system (unit: kW)",
+          "title": "Cooling Capacity",
+          "type": "number"
+        },
+        "efficiency": {
+          "title": "Efficiency",
+          "type": "number"
+        },
+        "frac_convective": {
+          "description": "Convective fraction for cooling",
+          "title": "Frac Convective",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "Control",
+        "EnergySupply",
+        "cooling_capacity",
+        "efficiency",
+        "frac_convective"
+      ],
+      "title": "SpaceCoolSystemAirConditioning",
+      "type": "object"
+    },
+    "SpaceHeatSystemElectricStorageHeater": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ElecStorageHeater",
+          "title": "Type",
+          "type": "string"
+        },
+        "ControlCharger": {
+          "title": "Controlcharger",
+          "type": "string"
+        },
+        "ESH_max_output": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "title": "Esh Max Output",
+          "type": "array"
+        },
+        "ESH_min_output": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "title": "Esh Min Output",
+          "type": "array"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "air_flow_type": {
+          "$ref": "#/$defs/AirFlowType"
+        },
+        "Control": {
+          "title": "Control",
+          "type": "string"
+        },
+        "fan_pwr": {
+          "description": "Fan power (unit: W)",
+          "title": "Fan Pwr",
+          "type": "number"
+        },
+        "frac_convective": {
+          "description": "Convective fraction for heating",
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "n_units": {
+          "minimum": 0,
+          "title": "N Units",
+          "type": "integer"
+        },
+        "pwr_in": {
+          "title": "Pwr In",
+          "type": "number"
+        },
+        "rated_power_instant": {
+          "description": "(instant backup) (unit: kW)",
+          "title": "Rated Power Instant",
+          "type": "number"
+        },
+        "storage_capacity": {
+          "title": "Storage Capacity",
+          "type": "number"
+        },
+        "Zone": {
+          "description": "The zone where the unit(s) is/are installed",
+          "title": "Zone",
+          "type": "string"
+        },
+        "temp_setback": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Setback"
+        },
+        "advanced_start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Advanced Start"
+        }
+      },
+      "required": [
+        "type",
+        "ControlCharger",
+        "ESH_max_output",
+        "ESH_min_output",
+        "EnergySupply",
+        "air_flow_type",
+        "Control",
+        "fan_pwr",
+        "frac_convective",
+        "n_units",
+        "pwr_in",
+        "rated_power_instant",
+        "storage_capacity",
+        "Zone"
+      ],
+      "title": "SpaceHeatSystemElectricStorageHeater",
+      "type": "object"
+    },
+    "SpaceHeatSystemHeatSource": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "temp_flow_limit_upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Flow Limit Upper"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SpaceHeatSystemHeatSource",
+      "type": "object"
+    },
+    "SpaceHeatSystemInstantElectricHeater": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "InstantElecHeater",
+          "title": "Type",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "title": "Energysupply",
+          "type": "string"
+        },
+        "Control": {
+          "title": "Control",
+          "type": "string"
+        },
+        "frac_convective": {
+          "description": "Convective fraction for heating",
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "rated_power": {
+          "description": "(unit: kW)",
+          "title": "Rated Power",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "EnergySupply",
+        "Control",
+        "frac_convective",
+        "rated_power"
+      ],
+      "title": "SpaceHeatSystemInstantElectricHeater",
+      "type": "object"
+    },
+    "SpaceHeatSystemWarmAir": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "WarmAir",
+          "title": "Type",
+          "type": "string"
+        },
+        "HeatSource": {
+          "$ref": "#/$defs/SpaceHeatSystemHeatSource"
+        },
+        "Control": {
+          "title": "Control",
+          "type": "string"
+        },
+        "frac_convective": {
+          "title": "Frac Convective",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "HeatSource",
+        "Control",
+        "frac_convective"
+      ],
+      "title": "SpaceHeatSystemWarmAir",
+      "type": "object"
+    },
+    "SpaceHeatSystemWetDistribution": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "WetDistribution",
+          "title": "Type",
+          "type": "string"
+        },
+        "HeatSource": {
+          "$ref": "#/$defs/SpaceHeatSystemHeatSource"
+        },
+        "bypass_percentage_recirculated": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bypass Percentage Recirculated"
+        },
+        "design_flow_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Design Flow Rate"
+        },
+        "design_flow_temp": {
+          "title": "Design Flow Temp",
+          "type": "integer"
+        },
+        "emitters": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "fancoil": "#/$defs/WetEmitterFanCoil",
+                "radiator": "#/$defs/WetEmitterRadiator",
+                "ufh": "#/$defs/WetEmitterUFH"
+              },
+              "propertyName": "wet_emitter_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/WetEmitterRadiator"
+              },
+              {
+                "$ref": "#/$defs/WetEmitterUFH"
+              },
+              {
+                "$ref": "#/$defs/WetEmitterFanCoil"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Emitters",
+          "type": "array"
+        },
+        "ecodesign_controller": {
+          "$ref": "#/$defs/EcoDesignController"
+        },
+        "max_flow_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Flow Rate"
+        },
+        "min_flow_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Flow Rate"
+        },
+        "temp_diff_emit_dsgn": {
+          "title": "Temp Diff Emit Dsgn",
+          "type": "number"
+        },
+        "thermal_mass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thermal Mass"
+        },
+        "variable_flow": {
+          "title": "Variable Flow",
+          "type": "boolean"
+        },
+        "Control": {
+          "title": "Control",
+          "type": "string"
+        },
+        "EnergySupply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energysupply"
+        },
+        "Zone": {
+          "title": "Zone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "HeatSource",
+        "design_flow_temp",
+        "emitters",
+        "ecodesign_controller",
+        "temp_diff_emit_dsgn",
+        "variable_flow",
+        "Control",
+        "Zone"
+      ],
+      "title": "SpaceHeatSystemWetDistribution",
+      "type": "object"
+    },
+    "StorageTank": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "StorageTank",
+          "title": "Type",
+          "type": "string"
+        },
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "HeatSource": {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "HeatPump_HWOnly": "#/$defs/HeatPumpHotWaterOnly",
+                "HeatSourceWet": "#/$defs/HeatSourceWetServiceWaterRegular",
+                "ImmersionHeater": "#/$defs/ImmersionHeater",
+                "SolarThermalSystem": "#/$defs/SolarThermalSystem"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ImmersionHeater"
+              },
+              {
+                "$ref": "#/$defs/SolarThermalSystem"
+              },
+              {
+                "$ref": "#/$defs/HeatSourceWetServiceWaterRegular"
+              },
+              {
+                "$ref": "#/$defs/HeatPumpHotWaterOnly"
+              }
+            ]
+          },
+          "title": "Heatsource",
+          "type": "object"
+        },
+        "daily_losses": {
+          "description": "Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)",
+          "title": "Daily Losses",
+          "type": "number"
+        },
+        "heat_exchanger_surface_area": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heat Exchanger Surface Area"
+        },
+        "init_temp": {
+          "title": "Init Temp",
+          "type": "number"
+        },
+        "primary_pipework": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WaterPipework"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Pipework"
+        },
+        "volume": {
+          "description": "Total volume of tank (unit: litre)",
+          "title": "Volume",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "ColdWaterSource",
+        "HeatSource",
+        "daily_losses",
+        "init_temp",
+        "volume"
+      ],
+      "title": "StorageTank",
+      "type": "object"
+    },
+    "SupplyAirFlowRateControlType": {
+      "enum": [
+        "ODA"
+      ],
+      "title": "SupplyAirFlowRateControlType",
+      "type": "string"
+    },
+    "SupplyAirTemperatureControlType": {
+      "enum": [
+        "CONST",
+        "NO_CTRL",
+        "LOAD_COM"
+      ],
+      "title": "SupplyAirTemperatureControlType",
+      "type": "string"
+    },
+    "TerrainClass": {
+      "enum": [
+        "OpenWater",
+        "OpenField",
+        "Suburban",
+        "Urban"
+      ],
+      "title": "TerrainClass",
+      "type": "string"
+    },
+    "TestLetter": {
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F"
+      ],
+      "title": "TestLetter",
+      "type": "string"
+    },
+    "ThermalBridgingLinear": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ThermalBridgeLinear",
+          "title": "Type",
+          "type": "string"
+        },
+        "length": {
+          "title": "Length",
+          "type": "number"
+        },
+        "linear_thermal_transmittance": {
+          "title": "Linear Thermal Transmittance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "length",
+        "linear_thermal_transmittance"
+      ],
+      "title": "ThermalBridgingLinear",
+      "type": "object"
+    },
+    "ThermalBridgingPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "ThermalBridgePoint",
+          "title": "Type",
+          "type": "string"
+        },
+        "heat_transfer_coeff": {
+          "title": "Heat Transfer Coeff",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "heat_transfer_coeff"
+      ],
+      "title": "ThermalBridgingPoint",
+      "type": "object"
+    },
+    "Vent": {
+      "additionalProperties": false,
+      "properties": {
+        "area_cm2": {
+          "title": "Area Cm2",
+          "type": "number"
+        },
+        "mid_height_air_flow_path": {
+          "title": "Mid Height Air Flow Path",
+          "type": "number"
+        },
+        "orientation360": {
+          "description": "The orientation angle of the inclined surface, expressed as the geographical azimuth angle of the horizontal projection of the inclined surface normal, 0 to 360 (unit: \u02da)",
+          "title": "Orientation360",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: \u02da)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "pressure_difference_ref": {
+          "description": "Reference pressure difference for an air terminal device (unit: Pa)",
+          "title": "Pressure Difference Ref",
+          "type": "number"
+        }
+      },
+      "required": [
+        "area_cm2",
+        "mid_height_air_flow_path",
+        "orientation360",
+        "pitch",
+        "pressure_difference_ref"
+      ],
+      "title": "Vent",
+      "type": "object"
+    },
+    "VentilationLeaks": {
+      "additionalProperties": false,
+      "properties": {
+        "env_area": {
+          "description": "Reference area of the envelope airtightness index",
+          "title": "Env Area",
+          "type": "number"
+        },
+        "test_pressure": {
+          "description": "Reference pressure difference (unit: Pa)",
+          "title": "Test Pressure",
+          "type": "number"
+        },
+        "test_result": {
+          "description": "Flow rate through",
+          "title": "Test Result",
+          "type": "number"
+        },
+        "ventilation_zone_height": {
+          "title": "Ventilation Zone Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "env_area",
+        "test_pressure",
+        "test_result",
+        "ventilation_zone_height"
+      ],
+      "title": "VentilationLeaks",
+      "type": "object"
+    },
+    "VentilationShieldClass": {
+      "enum": [
+        "Open",
+        "Normal",
+        "Shielded"
+      ],
+      "title": "VentilationShieldClass",
+      "type": "string"
+    },
+    "WasteWaterHeatRecoverySystem": {
+      "additionalProperties": false,
+      "properties": {
+        "ColdWaterSource": {
+          "title": "Coldwatersource",
+          "type": "string"
+        },
+        "efficiencies": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Efficiencies",
+          "type": "array"
+        },
+        "flow_rates": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Flow Rates",
+          "type": "array"
+        },
+        "type": {
+          "$ref": "#/$defs/WasteWaterHeatRecoverySystemType"
+        },
+        "utilisation_factor": {
+          "title": "Utilisation Factor",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ColdWaterSource",
+        "efficiencies",
+        "flow_rates",
+        "type",
+        "utilisation_factor"
+      ],
+      "title": "WasteWaterHeatRecoverySystem",
+      "type": "object"
+    },
+    "WasteWaterHeatRecoverySystemType": {
+      "enum": [
+        "WWHRS_InstantaneousSystemA",
+        "WWHRS_InstantaneousSystemB",
+        "WWHRS_InstantaneousSystemC"
+      ],
+      "title": "WasteWaterHeatRecoverySystemType",
+      "type": "string"
+    },
+    "WaterHeatingEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "temperature": {
+          "title": "Temperature",
+          "type": "number"
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume"
+        }
+      },
+      "required": [
+        "start",
+        "temperature"
+      ],
+      "title": "WaterHeatingEvent",
+      "type": "object"
+    },
+    "WaterHeatingEvents": {
+      "additionalProperties": false,
+      "properties": {
+        "Shower": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/WaterHeatingEvent"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shower"
+        },
+        "Bath": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/WaterHeatingEvent"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bath"
+        },
+        "Other": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/$defs/WaterHeatingEvent"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Other"
+        }
+      },
+      "title": "WaterHeatingEvents",
+      "type": "object"
+    },
+    "WaterPipeContentsType": {
+      "enum": [
+        "water",
+        "glycol25"
+      ],
+      "title": "WaterPipeContentsType",
+      "type": "string"
+    },
+    "WaterPipework": {
+      "additionalProperties": false,
+      "properties": {
+        "external_diameter_mm": {
+          "title": "External Diameter Mm",
+          "type": "number"
+        },
+        "insulation_thermal_conductivity": {
+          "title": "Insulation Thermal Conductivity",
+          "type": "number"
+        },
+        "insulation_thickness_mm": {
+          "title": "Insulation Thickness Mm",
+          "type": "number"
+        },
+        "internal_diameter_mm": {
+          "title": "Internal Diameter Mm",
+          "type": "number"
+        },
+        "length": {
+          "title": "Length",
+          "type": "number"
+        },
+        "location": {
+          "$ref": "#/$defs/WaterPipeworkLocation"
+        },
+        "pipe_contents": {
+          "$ref": "#/$defs/WaterPipeContentsType"
+        },
+        "surface_reflectivity": {
+          "title": "Surface Reflectivity",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "external_diameter_mm",
+        "insulation_thermal_conductivity",
+        "insulation_thickness_mm",
+        "internal_diameter_mm",
+        "length",
+        "location",
+        "pipe_contents",
+        "surface_reflectivity"
+      ],
+      "title": "WaterPipework",
+      "type": "object"
+    },
+    "WaterPipeworkLocation": {
+      "enum": [
+        "internal",
+        "external"
+      ],
+      "title": "WaterPipeworkLocation",
+      "type": "string"
+    },
+    "WaterPipeworkSimple": {
+      "additionalProperties": false,
+      "properties": {
+        "internal_diameter_mm": {
+          "title": "Internal Diameter Mm",
+          "type": "number"
+        },
+        "length": {
+          "title": "Length",
+          "type": "number"
+        },
+        "location": {
+          "$ref": "#/$defs/WaterPipeworkLocation"
+        }
+      },
+      "required": [
+        "internal_diameter_mm",
+        "length",
+        "location"
+      ],
+      "title": "WaterPipeworkSimple",
+      "type": "object"
+    },
+    "WetEmitterFanCoil": {
+      "additionalProperties": false,
+      "properties": {
+        "wet_emitter_type": {
+          "const": "fancoil",
+          "title": "Wet Emitter Type",
+          "type": "string"
+        },
+        "fancoil_test_data": {
+          "$ref": "#/$defs/FancoilTestData"
+        },
+        "frac_convective": {
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "n_units": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "title": "N Units"
+        }
+      },
+      "required": [
+        "wet_emitter_type",
+        "fancoil_test_data",
+        "frac_convective"
+      ],
+      "title": "WetEmitterFanCoil",
+      "type": "object"
+    },
+    "WetEmitterRadiator": {
+      "additionalProperties": false,
+      "properties": {
+        "wet_emitter_type": {
+          "const": "radiator",
+          "title": "Wet Emitter Type",
+          "type": "string"
+        },
+        "c": {
+          "title": "C",
+          "type": "number"
+        },
+        "frac_convective": {
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "n": {
+          "title": "N",
+          "type": "number"
+        }
+      },
+      "required": [
+        "wet_emitter_type",
+        "c",
+        "frac_convective",
+        "n"
+      ],
+      "title": "WetEmitterRadiator",
+      "type": "object"
+    },
+    "WetEmitterUFH": {
+      "additionalProperties": false,
+      "properties": {
+        "wet_emitter_type": {
+          "const": "ufh",
+          "title": "Wet Emitter Type",
+          "type": "string"
+        },
+        "emitter_floor_area": {
+          "title": "Emitter Floor Area",
+          "type": "number"
+        },
+        "equivalent_specific_thermal_mass": {
+          "title": "Equivalent Specific Thermal Mass",
+          "type": "number"
+        },
+        "frac_convective": {
+          "title": "Frac Convective",
+          "type": "number"
+        },
+        "system_performance_factor": {
+          "title": "System Performance Factor",
+          "type": "number"
+        }
+      },
+      "required": [
+        "wet_emitter_type",
+        "emitter_floor_area",
+        "equivalent_specific_thermal_mass",
+        "frac_convective",
+        "system_performance_factor"
+      ],
+      "title": "WetEmitterUFH",
+      "type": "object"
+    },
+    "WindShieldLocation": {
+      "enum": [
+        "Sheltered",
+        "Average",
+        "Exposed"
+      ],
+      "title": "WindShieldLocation",
+      "type": "string"
+    },
+    "WindowPart": {
+      "additionalProperties": false,
+      "properties": {
+        "mid_height_air_flow_path": {
+          "title": "Mid Height Air Flow Path",
+          "type": "number"
+        }
+      },
+      "required": [
+        "mid_height_air_flow_path"
+      ],
+      "title": "WindowPart",
+      "type": "object"
+    },
+    "WindowShadingObject": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/WindowShadingType"
+        },
+        "depth": {
+          "title": "Depth",
+          "type": "number"
+        },
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "depth",
+        "distance"
+      ],
+      "title": "WindowShadingObject",
+      "type": "object"
+    },
+    "WindowShadingObstacle": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "obstacle",
+          "title": "Type",
+          "type": "string"
+        },
+        "height": {
+          "title": "Height",
+          "type": "number"
+        },
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "transparency": {
+          "title": "Transparency",
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "height",
+        "distance",
+        "transparency"
+      ],
+      "title": "WindowShadingObstacle",
+      "type": "object"
+    },
+    "WindowShadingType": {
+      "enum": [
+        "overhang",
+        "sidefinright",
+        "sidefinleft",
+        "reveal"
+      ],
+      "title": "WindowShadingType",
+      "type": "string"
+    },
+    "WindowTreatment": {
+      "additionalProperties": false,
+      "properties": {
+        "Control_closing_irrad": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Closing Irrad"
+        },
+        "Control_open": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Open"
+        },
+        "Control_opening_irrad": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Opening Irrad"
+        },
+        "controls": {
+          "$ref": "#/$defs/WindowTreatmentControl"
+        },
+        "delta_r": {
+          "title": "Delta R",
+          "type": "number"
+        },
+        "is_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "This field should be a boolean - any string provided will be ignored and treated as a null.",
+          "title": "Is Open"
+        },
+        "opening_delay_hrs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opening Delay Hrs"
+        },
+        "trans_red": {
+          "title": "Trans Red",
+          "type": "number"
+        },
+        "type": {
+          "$ref": "#/$defs/WindowTreatmentType"
+        }
+      },
+      "required": [
+        "controls",
+        "delta_r",
+        "trans_red",
+        "type"
+      ],
+      "title": "WindowTreatment",
+      "type": "object"
+    },
+    "WindowTreatmentControl": {
+      "enum": [
+        "auto_motorised",
+        "combined_light_blind_HVAC",
+        "manual",
+        "manual_motorised"
+      ],
+      "title": "WindowTreatmentControl",
+      "type": "string"
+    },
+    "WindowTreatmentType": {
+      "enum": [
+        "blinds",
+        "curtains"
+      ],
+      "title": "WindowTreatmentType",
+      "type": "string"
+    },
+    "Zone": {
+      "additionalProperties": false,
+      "properties": {
+        "BuildingElement": {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "BuildingElementAdjacentConditionedSpace": "#/$defs/BuildingElementAdjacentConditionedSpace",
+                "BuildingElementAdjacentUnconditionedSpace_Simple": "#/$defs/BuildingElementAdjacentUnconditionedSpace_Simple",
+                "BuildingElementGround": {
+                  "discriminator": {
+                    "mapping": {
+                      "Heated_basement": "#/$defs/BuildingElementGroundHeatedBasement",
+                      "Slab_edge_insulation": "#/$defs/BuildingElementGroundSlabEdgeInsulation",
+                      "Slab_no_edge_insulation": "#/$defs/BuildingElementGroundSlabNoEdgeInsulation",
+                      "Suspended_floor": "#/$defs/BuildingElementGroundSuspendedFloor",
+                      "Unheated_basement": "#/$defs/BuildingElementGroundUnheatedBasement"
+                    },
+                    "propertyName": "floor_type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/BuildingElementGroundSlabNoEdgeInsulation"
+                    },
+                    {
+                      "$ref": "#/$defs/BuildingElementGroundSlabEdgeInsulation"
+                    },
+                    {
+                      "$ref": "#/$defs/BuildingElementGroundSuspendedFloor"
+                    },
+                    {
+                      "$ref": "#/$defs/BuildingElementGroundHeatedBasement"
+                    },
+                    {
+                      "$ref": "#/$defs/BuildingElementGroundUnheatedBasement"
+                    }
+                  ]
+                },
+                "BuildingElementOpaque": "#/$defs/BuildingElementOpaque",
+                "BuildingElementTransparent": "#/$defs/BuildingElementTransparent"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BuildingElementOpaque"
+              },
+              {
+                "$ref": "#/$defs/BuildingElementTransparent"
+              },
+              {
+                "discriminator": {
+                  "mapping": {
+                    "Heated_basement": "#/$defs/BuildingElementGroundHeatedBasement",
+                    "Slab_edge_insulation": "#/$defs/BuildingElementGroundSlabEdgeInsulation",
+                    "Slab_no_edge_insulation": "#/$defs/BuildingElementGroundSlabNoEdgeInsulation",
+                    "Suspended_floor": "#/$defs/BuildingElementGroundSuspendedFloor",
+                    "Unheated_basement": "#/$defs/BuildingElementGroundUnheatedBasement"
+                  },
+                  "propertyName": "floor_type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/BuildingElementGroundSlabNoEdgeInsulation"
+                  },
+                  {
+                    "$ref": "#/$defs/BuildingElementGroundSlabEdgeInsulation"
+                  },
+                  {
+                    "$ref": "#/$defs/BuildingElementGroundSuspendedFloor"
+                  },
+                  {
+                    "$ref": "#/$defs/BuildingElementGroundHeatedBasement"
+                  },
+                  {
+                    "$ref": "#/$defs/BuildingElementGroundUnheatedBasement"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/BuildingElementAdjacentConditionedSpace"
+              },
+              {
+                "$ref": "#/$defs/BuildingElementAdjacentUnconditionedSpace_Simple"
+              }
+            ]
+          },
+          "title": "Buildingelement",
+          "type": "object"
+        },
+        "SpaceCoolSystem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spacecoolsystem"
+        },
+        "SpaceHeatSystem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spaceheatsystem"
+        },
+        "ThermalBridging": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "additionalProperties": {
+                "discriminator": {
+                  "mapping": {
+                    "ThermalBridgeLinear": "#/$defs/ThermalBridgingLinear",
+                    "ThermalBridgePoint": "#/$defs/ThermalBridgingPoint"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/ThermalBridgingLinear"
+                  },
+                  {
+                    "$ref": "#/$defs/ThermalBridgingPoint"
+                  }
+                ]
+              },
+              "type": "object"
+            }
+          ],
+          "title": "Thermalbridging"
+        },
+        "area": {
+          "description": "Useful floor area of the zone (unit: m\u00b2)",
+          "title": "Area",
+          "type": "number"
+        },
+        "temp_setpnt_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneTemperatureControlBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "temp_setpnt_init": {
+          "description": "Setpoint temperature to use during initialisation (unit: \u02daC)",
+          "title": "Temp Setpnt Init",
+          "type": "number"
+        },
+        "volume": {
+          "title": "Volume",
+          "type": "number"
+        }
+      },
+      "required": [
+        "BuildingElement",
+        "ThermalBridging",
+        "area",
+        "temp_setpnt_init",
+        "volume"
+      ],
+      "title": "Zone",
+      "type": "object"
+    },
+    "ZoneTemperatureControlBasis": {
+      "enum": [
+        "air",
+        "operative"
+      ],
+      "title": "ZoneTemperatureControlBasis",
+      "type": "string"
+    }
+  }
+}
