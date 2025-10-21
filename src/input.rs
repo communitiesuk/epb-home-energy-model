@@ -33,7 +33,7 @@ pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyh
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")] // TODO: add `deny_unknown_fields` declaration back in for versions newer than 0.36
 pub struct Input {
     #[serde(rename = "temp_internal_air_static_calcs")]
     pub(crate) temp_internal_air_static_calcs: f64,
@@ -167,7 +167,7 @@ pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO: add back in for versions after 0.36
 pub(crate) struct ApplianceGainsDetails {
     /// First day of the time series, day of the year, 0 to 365
     #[validate(minimum = 0)]
@@ -2665,7 +2665,7 @@ pub enum BuildType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO: restore `deny_unknown_fields` declaration after 0.36
 pub struct InfiltrationVentilation {
     pub(crate) cross_vent_possible: bool,
     /// Indicates the exposure to wind of an air flow path on a facade (can can be open, normal and shielded)
@@ -2767,7 +2767,7 @@ pub struct MechanicalVentilation {
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
     #[serde(rename = "sup_air_temp_ctrl")]
-    pub(crate) supply_air_temperature_control_type: AcceptedSupplyAirTemperatureControlType,
+    pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
     pub(crate) vent_type: MechVentType,
     #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_efficiency: Option<f64>,
@@ -2841,24 +2841,6 @@ pub(crate) enum SupplyAirTemperatureControlType {
     NoControl,
     #[serde(rename = "LOAD_COM")]
     LoadCom,
-}
-
-// The SupplyAirTemperatureControlType values that are currently accepted/ implemented.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum AcceptedSupplyAirTemperatureControlType {
-    #[serde(rename = "NO_CTRL")]
-    NoControl,
-}
-
-impl From<AcceptedSupplyAirTemperatureControlType> for SupplyAirTemperatureControlType {
-    fn from(value: AcceptedSupplyAirTemperatureControlType) -> Self {
-        match value {
-            AcceptedSupplyAirTemperatureControlType::NoControl => {
-                SupplyAirTemperatureControlType::NoControl
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -3117,7 +3099,7 @@ pub(crate) type JsonAccessResult<T> = Result<T, JsonAccessError>;
 
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
-    input: JsonValue,
+    pub(crate) input: JsonValue,
 }
 
 /// This type makes methods available for restricted access by wrappers,
@@ -3915,6 +3897,10 @@ impl InputForProcessing {
                 system_details.insert("HeatSource".into(), json!(heat_source));
             });
         Ok(())
+    }
+
+    pub(crate) fn remove_hot_water_source_root(&mut self) -> JsonAccessResult<&mut Self> {
+        self.remove_root_key("HotWaterSource")
     }
 
     pub(crate) fn set_hot_water_source(

@@ -1397,6 +1397,9 @@ fn calc_design_capacity(
     // which will raise warning when called second time
     let mut clone = input.clone();
 
+    // (Rust only) remove nodes from clone that aren't used in calc_htc_hlp but that might be in the wrong shape for the core input definition
+    let _ = clone.remove_hot_water_source_root();
+
     // Calculate heat transfer coefficients and heat loss parameters
     set_temp_internal_static_calcs(&mut clone)?;
     let HtcHlpCalculation {

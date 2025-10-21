@@ -2338,7 +2338,7 @@ impl InfiltrationVentilation {
                 EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
 
             mechanical_ventilations.push(
-                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type.into(), 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
+                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
                     MechVentType::Mvhr => mech_vents_data.mvhr_efficiency,
                     MechVentType::IntermittentMev
                     | MechVentType::CentralisedContinuousMev
