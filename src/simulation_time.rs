@@ -59,10 +59,12 @@ impl SimulationTimeIterator {
         }
     }
 
+    #[allow(dead_code)]
     pub fn current_index(&self) -> usize {
         self.current_index
     }
 
+    #[allow(dead_code)]
     pub fn time_series_idx(&self, start_day: u32, step: f64) -> usize {
         ((self.current_time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
@@ -71,6 +73,7 @@ impl SimulationTimeIterator {
         self.current_time.floor() as u32
     }
 
+    #[allow(dead_code)]
     pub fn current_day(&self) -> u32 {
         self.current_time as u32 / HOURS_IN_DAY
     }

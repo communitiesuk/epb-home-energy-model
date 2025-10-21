@@ -1101,6 +1101,7 @@ impl CombustionAppliances {
     /// exhaust_situation - flue gas exhaust situation: 'into_room', 'into_separate_duct' or 'into_mech_vent'
     /// f_ff -- combustion air flow factor
     /// p_h_fi - Combustion appliance heating fuel input power (kW)
+    #[allow(dead_code)]
     pub(crate) fn new(
         supply_situation: CombustionAirSupplySituation,
         exhaust_situation: FlueGasExhaustSituation,
@@ -1403,6 +1404,7 @@ pub(crate) struct InfiltrationVentilation {
     calc_air_changes_fn: Option<CalcAirChangesFn>,
 }
 
+#[cfg(test)]
 type CalcAirChangesFn = fn(
     &InfiltrationVentilation,
     f64,

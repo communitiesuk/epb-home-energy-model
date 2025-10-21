@@ -264,7 +264,8 @@ impl EnergySupply {
         ))
     }
 
-    pub fn energy_out(
+    #[allow(dead_code)]
+    fn energy_out(
         &self,
         end_user_name: &str,
         amount_demanded: f64,

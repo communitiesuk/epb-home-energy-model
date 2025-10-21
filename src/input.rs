@@ -1933,6 +1933,7 @@ impl BuildingElement {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn u_value(&self) -> Option<f64> {
         match self {
             BuildingElement::Opaque { u_value, .. } => *u_value,
@@ -3623,6 +3624,7 @@ impl InputForProcessing {
         Ok(self)
     }
 
+    #[cfg(test)]
     pub(crate) fn lighting_efficacy_for_zone(&self, zone: &str) -> JsonAccessResult<Option<f64>> {
         Ok(self
             .specific_zone(zone)?
@@ -4456,6 +4458,7 @@ impl InputForProcessing {
         self.remove_root_key("OnSiteGeneration")
     }
 
+    #[cfg(test)]
     pub(crate) fn on_site_generation(
         &self,
     ) -> JsonAccessResult<Option<&Map<std::string::String, JsonValue>>> {

@@ -399,6 +399,7 @@ pub struct HeatBattery {
     service_results: Arc<RwLock<Vec<HeatBatteryResult>>>,
     total_time_running_current_timestep: AtomicF64,
     flag_first_call: AtomicBool,
+    #[allow(dead_code)]
     charge_level: f64,
     n_zones: usize,
     hb_time_step: f64,

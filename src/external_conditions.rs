@@ -99,7 +99,9 @@ pub struct ExternalConditions {
     direct_beam_radiations: Vec<f64>,
     solar_reflectivity_of_ground: Vec<f64>,
     pub(crate) latitude: f64,
+    #[allow(dead_code)]
     pub(crate) longitude: f64,
+    #[allow(dead_code)]
     pub(crate) timezone: i32,
     pub(crate) start_day: u32,
     time_series_step: f64,

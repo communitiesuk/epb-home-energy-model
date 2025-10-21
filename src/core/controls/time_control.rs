@@ -1253,6 +1253,7 @@ impl CombinationTimeControl {
         )
     }
 
+    #[cfg(test)]
     fn evaluate_control_target_charge(
         &self,
         control_name: &str,
@@ -1268,6 +1269,7 @@ impl CombinationTimeControl {
     }
 
     /// Evaluate the combination for target charge
+    #[cfg(test)]
     fn evaluate_combination_target_charge(
         &self,
         combination_name: &str,
