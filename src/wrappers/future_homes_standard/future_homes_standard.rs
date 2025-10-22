@@ -2619,7 +2619,7 @@ fn sim_24h(input: &mut InputForProcessing, sim_settings: SimSettings) -> anyhow:
     };
 
     let corpus = Corpus::from_inputs(
-        &input_24h.as_input(),
+        &input_24h.as_input()?,
         None,
         sim_settings.tariff_data_filename.as_deref(),
         &output_options,

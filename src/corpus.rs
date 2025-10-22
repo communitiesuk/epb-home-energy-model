@@ -3677,7 +3677,9 @@ fn zone_from_input(
         thermal_bridging_from_input(&input.thermal_bridging),
         infiltration_ventilation,
         external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
-        input.temp_setpnt_init,
+        input
+            .temp_setpnt_init
+            .ok_or_else(|| anyhow!("Missing temp_setpnt_init value in core zone"))?,
         temp_setpnt_basis,
         window_adjust_control,
         print_heat_balance,
@@ -5383,7 +5385,7 @@ fn space_heat_systems_from_input(
                             *thermal_mass,
                             emitters,
                             *temp_diff_emit_dsgn,
-                            *variable_flow,
+                            variable_flow.unwrap_or(false),
                             *design_flow_rate,
                             *min_flow_rate,
                             *max_flow_rate,

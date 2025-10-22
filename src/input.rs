@@ -1088,7 +1088,7 @@ pub(crate) enum HeatSourceControlType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` annotation after 0.36
 pub(crate) enum HeatSource {
     ImmersionHeater {
         power: f64,
@@ -1475,7 +1475,7 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields, tag = "type")]
+#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` annotation after 0.36
 pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
@@ -1524,7 +1524,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
         energy_supply: Option<String>,
         temp_diff_emit_dsgn: f64,
-        variable_flow: bool,
+        variable_flow: Option<bool>, // TODO: restore as non-Option after 0.36 if possible
         #[serde(skip_serializing_if = "Option::is_none")]
         design_flow_rate: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1666,7 +1666,7 @@ pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO: restore after 0.36 if possible
 pub struct ZoneInput {
     /// Heating system details of the zone. References a key in $.SpaceHeatSystem
     #[serde(
@@ -1692,7 +1692,7 @@ pub struct ZoneInput {
     #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
     pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
     /// Setpoint temperature to use during initialisation (unit: ˚C)
-    pub(crate) temp_setpnt_init: f64,
+    pub(crate) temp_setpnt_init: Option<f64>, // restore as non `Option` after 0.36
     /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
     #[serde(rename = "BuildingElement")]
     pub(crate) building_elements: IndexMap<String, BuildingElement>,
@@ -2270,7 +2270,7 @@ pub enum ThermalBridging {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
 pub enum ThermalBridgingDetails {
     #[serde(rename = "ThermalBridgeLinear")]
     Linear {
@@ -2298,7 +2298,7 @@ pub(crate) type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
 pub(crate) enum SpaceCoolSystemDetails {
     AirConditioning {
         cooling_capacity: f64,
@@ -2773,7 +2773,7 @@ pub struct VentilationLeaks {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO: possibly restore `deny_unknown_fields` declaration after 0.36
 pub struct MechanicalVentilation {
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
@@ -3065,7 +3065,7 @@ pub struct Appliance {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO: possibly restore `deny_unknown_fields` declaration after 0.36
 pub(crate) struct ApplianceLoadShifting {
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub(crate) control: Option<String>,
@@ -3108,6 +3108,54 @@ pub trait InputForCalcHtcHlp {
 }
 
 impl InputForCalcHtcHlp for Input {
+    fn simulation_time(&self) -> &SimulationTime {
+        &self.simulation_time
+    }
+
+    fn energy_supply(&self) -> &EnergySupplyInput {
+        &self.energy_supply
+    }
+
+    fn external_conditions(&self) -> &ExternalConditionsInput {
+        self.external_conditions.as_ref()
+    }
+
+    fn control(&self) -> &Control {
+        &self.control
+    }
+
+    fn infiltration_ventilation(&self) -> &InfiltrationVentilation {
+        &self.infiltration_ventilation
+    }
+
+    fn zone(&self) -> &ZoneDictionary {
+        &self.zone
+    }
+
+    fn temp_internal_air_static_calcs(&self) -> f64 {
+        self.temp_internal_air_static_calcs
+    }
+}
+
+// The purpose of this struct is to allow deserialisation of an input just containing the data needed for the
+// calc_htc_hlp function in the corpus module, so that we can ignore other areas of the data that may not be in the
+// expected shape for a core input.
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(test, derive(PartialEq))]
+#[serde(rename_all = "PascalCase")]
+pub struct ReducedInputForCalcHtcHlp {
+    #[serde(rename = "temp_internal_air_static_calcs")]
+    pub(crate) temp_internal_air_static_calcs: f64,
+    pub(crate) simulation_time: SimulationTime,
+    pub(crate) external_conditions: Arc<ExternalConditionsInput>,
+    pub(crate) energy_supply: EnergySupplyInput,
+    pub(crate) control: Control,
+    pub(crate) zone: ZoneDictionary,
+    pub(crate) infiltration_ventilation: InfiltrationVentilation,
+}
+
+impl InputForCalcHtcHlp for ReducedInputForCalcHtcHlp {
     fn simulation_time(&self) -> &SimulationTime {
         &self.simulation_time
     }
@@ -3198,8 +3246,12 @@ impl InputForProcessing {
         Ok(Self { input })
     }
 
-    pub(crate) fn as_input(&self) -> Input {
-        serde_json::from_value(self.input.to_owned()).unwrap()
+    pub(crate) fn as_input(&self) -> anyhow::Result<Input> {
+        serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
+    }
+
+    pub(crate) fn as_input_for_calc_htc_hlp(&self) -> anyhow::Result<ReducedInputForCalcHtcHlp> {
+        serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
     }
 
     pub(crate) fn finalize(self) -> Result<Input, serde_json::Error> {
@@ -3964,10 +4016,6 @@ impl InputForProcessing {
                 system_details.insert("HeatSource".into(), json!(heat_source));
             });
         Ok(())
-    }
-
-    pub(crate) fn remove_hot_water_source_root(&mut self) -> JsonAccessResult<&mut Self> {
-        self.remove_root_key("HotWaterSource")
     }
 
     pub(crate) fn set_hot_water_source(

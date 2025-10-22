@@ -938,7 +938,7 @@ impl ExternalConditions {
         let mut wfinl = 0.0;
 
         // #first process the distant (environment) shading for this building element
-        let segment = self.get_segment(&simulation_time).unwrap();
+        let segment = self.get_segment(&simulation_time)?;
 
         if let Some(shading_objects) = segment.shading_objects {
             for shading_object in shading_objects {

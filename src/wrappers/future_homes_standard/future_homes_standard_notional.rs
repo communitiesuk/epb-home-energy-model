@@ -1397,14 +1397,11 @@ fn calc_design_capacity(
     // which will raise warning when called second time
     let mut clone = input.clone();
 
-    // (Rust only) remove nodes from clone that aren't used in calc_htc_hlp but that might be in the wrong shape for the core input definition
-    let _ = clone.remove_hot_water_source_root();
-
     // Calculate heat transfer coefficients and heat loss parameters
     set_temp_internal_static_calcs(&mut clone)?;
     let HtcHlpCalculation {
         htc_map: htc_dict, ..
-    } = calc_htc_hlp(&clone.as_input())?;
+    } = calc_htc_hlp(&clone.as_input_for_calc_htc_hlp()?)?;
 
     // Calculate design capacity
     let min_air_temp = *input.external_conditions()?.air_temperatures.as_ref().ok_or_else(|| anyhow!("FHS Notional wrapper expected to have air temperatures merged onto the input structure."))?.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("FHS Notional wrapper expects air temperature list set on input structure not to be empty."))?;
