@@ -1745,9 +1745,11 @@ impl Corpus {
             let z_name = z_name.as_str();
             let c_name_list_hashset = c_name_list_sorted_zone[z_name]
                 .iter()
+                .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
                 .collect::<HashSet<_>>();
             let h_name_list_hashset = h_name_list_sorted_zone[z_name]
                 .iter()
+                .filter(|name| !name.is_empty()) // Ignore the "" placeholder to ensure zones with no system don't trigger the uniqueness error
                 .collect::<HashSet<_>>();
             let intersection = h_name_list_hashset
                 .intersection(&c_name_list_hashset)
