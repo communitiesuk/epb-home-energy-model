@@ -1,32 +1,32 @@
-use crate::core::schedule::{expand_numeric_schedule, reject_nulls};
-use crate::core::units::{
+use crate::future_homes_standard::fhs_appliance::FhsAppliance;
+use crate::future_homes_standard::fhs_hw_events::{
+    HotWaterEventGenerator, reset_events_and_provide_drawoff_generator,
+};
+use anyhow::{anyhow, bail};
+use csv::{Reader, WriterBuilder};
+use hem::HOURS_TO_END_DEC;
+use hem::core::schedule::{expand_numeric_schedule, reject_nulls};
+use hem::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
     SECONDS_PER_HOUR, WATTS_PER_KILOWATT,
 };
-use crate::corpus::{Corpus, OutputOptions, ResultsEndUser};
-use crate::external_conditions::{
-    create_external_conditions, ExternalConditions, WindowShadingObject,
+use hem::corpus::{Corpus, OutputOptions, ResultsEndUser};
+use hem::external_conditions::{
+    ExternalConditions, WindowShadingObject, create_external_conditions,
 };
-use crate::input::{
-    json_error, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+use hem::input::{
+    EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
     HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
     JsonAccessResult, MechanicalVentilationForProcessing, MechanicalVentilationJsonValue,
     SmartApplianceBattery, TransparentBuildingElement, TransparentBuildingElementJsonValue,
-    WaterHeatingEventType,
+    WaterHeatingEventType, json_error,
 };
-use crate::output::Output;
-use crate::simulation_time::SimulationTime;
-use crate::wrappers::future_homes_standard::fhs_appliance::FhsAppliance;
-use crate::wrappers::future_homes_standard::fhs_hw_events::{
-    reset_events_and_provide_drawoff_generator, HotWaterEventGenerator,
-};
-use crate::HOURS_TO_END_DEC;
-use anyhow::{anyhow, bail};
-use csv::{Reader, WriterBuilder};
+use hem::output::Output;
+use hem::simulation_time::SimulationTime;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
@@ -865,15 +865,20 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
 
     for zone in input.zone_keys()? {
         match (
-            input.space_heat_control_for_zone(zone.as_str())?.as_ref().map(|v| v.as_str()),
+            input
+                .space_heat_control_for_zone(zone.as_str())?
+                .as_ref()
+                .map(|v| v.as_str()),
             control_type,
         ) {
             (Some("livingroom"), _) => {
                 input.set_init_temp_setpoint_for_zone(zone.as_str(), LIVING_ROOM_SETPOINT_FHS)?;
-                let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
+                let space_heat_system_references =
+                    input.space_heat_system_for_zone(zone.as_str())?;
                 for space_heat_system in space_heat_system_references {
                     let ctrlname = format!("HeatingPattern_{space_heat_system}");
-                    input.set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
+                    input
+                        .set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
                     let mut living_room_control = json!(
                         {
                             "type": "SetpointTimeControl",
@@ -889,21 +894,30 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                         }
                     );
                     let control_json = living_room_control.as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(&space_heat_system)? {
+                    if let Some(temp_setback) =
+                        input.temperature_setback_for_space_heat_system(&space_heat_system)?
+                    {
                         control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(&space_heat_system)? {
+                    if let Some(advanced_start) =
+                        input.advanced_start_for_space_heat_system(&space_heat_system)?
+                    {
                         control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
                     input.add_control(&ctrlname, living_room_control)?;
                 }
             }
             (Some("restofdwelling"), control_type) => {
-                input.set_init_temp_setpoint_for_zone(zone.as_str(), REST_OF_DWELLING_SETPOINT_FHS)?;
-                let space_heat_system_references = input.space_heat_system_for_zone(zone.as_str())?;
+                input.set_init_temp_setpoint_for_zone(
+                    zone.as_str(),
+                    REST_OF_DWELLING_SETPOINT_FHS,
+                )?;
+                let space_heat_system_references =
+                    input.space_heat_system_for_zone(zone.as_str())?;
                 for space_heat_system in space_heat_system_references {
                     let ctrlname = format!("HeatingPattern_{space_heat_system}");
-                    input.set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
+                    input
+                        .set_control_string_for_space_heat_system(&space_heat_system, &ctrlname)?;
                     let mut rest_of_dwelling_control = json!(
                         {
                             "type": "SetpointTimeControl",
@@ -922,17 +936,25 @@ fn create_heating_pattern(input: &mut InputForProcessing) -> anyhow::Result<()> 
                         }
                     );
                     let control_json = rest_of_dwelling_control.as_object_mut().unwrap();
-                    if let Some(temp_setback) = input.temperature_setback_for_space_heat_system(&space_heat_system)? {
+                    if let Some(temp_setback) =
+                        input.temperature_setback_for_space_heat_system(&space_heat_system)?
+                    {
                         control_json.insert("setpoint_min".to_string(), temp_setback.into());
                     }
-                    if let Some(advanced_start) = input.advanced_start_for_space_heat_system(&space_heat_system)? {
+                    if let Some(advanced_start) =
+                        input.advanced_start_for_space_heat_system(&space_heat_system)?
+                    {
                         control_json.insert("advanced_start".to_string(), advanced_start.into());
                     }
                     input.add_control(&ctrlname, rest_of_dwelling_control)?;
                 }
             }
-            (Some(unknown_space_heat_control_type), _) => bail!("Encountered unknown space heat control type: {unknown_space_heat_control_type}"),
-            (None, _) => bail!("FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"),
+            (Some(unknown_space_heat_control_type), _) => bail!(
+                "Encountered unknown space heat control type: {unknown_space_heat_control_type}"
+            ),
+            (None, _) => bail!(
+                "FHS does not yet have a condition to deal with zone that doesn't have specified living room/rest of dwelling"
+            ),
         }
     }
 
@@ -1450,25 +1472,33 @@ impl AppliancePropensities<AsDataFile> {
             ..
         } = self;
 
-        let [cleaning_washing_machine, cleaning_tumble_dryer, cleaning_dishwasher, cooking_electric_oven, cooking_microwave, cooking_kettle, cooking_gas_cooker, consumer_electronics] =
-            [
-                cleaning_washing_machine,
-                cleaning_tumble_dryer,
-                cleaning_dishwasher,
-                cooking_electric_oven,
-                cooking_microwave,
-                cooking_kettle,
-                cooking_gas_cooker,
-                consumer_electronics,
-            ]
-            .into_iter()
-            .map(|probabilities| -> [f64; 24] {
-                let sumcol = probabilities.iter().sum::<f64>();
-                probabilities.map(|x| x / sumcol)
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("Problem normalising appliance propensities.");
+        let [
+            cleaning_washing_machine,
+            cleaning_tumble_dryer,
+            cleaning_dishwasher,
+            cooking_electric_oven,
+            cooking_microwave,
+            cooking_kettle,
+            cooking_gas_cooker,
+            consumer_electronics,
+        ] = [
+            cleaning_washing_machine,
+            cleaning_tumble_dryer,
+            cleaning_dishwasher,
+            cooking_electric_oven,
+            cooking_microwave,
+            cooking_kettle,
+            cooking_gas_cooker,
+            consumer_electronics,
+        ]
+        .into_iter()
+        .map(|probabilities| -> [f64; 24] {
+            let sumcol = probabilities.iter().sum::<f64>();
+            probabilities.map(|x| x / sumcol)
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("Problem normalising appliance propensities.");
 
         AppliancePropensities {
             hour: self.hour,
@@ -1928,7 +1958,10 @@ fn create_appliance_gains(
                     >= 24.
                 {
                     // could instead change length of buffers/initial simulation match this, but unclear what benefit this would have
-                    bail!("{} max_shift_hrs too high, FHS wrapper cannot handle max shift >= 24 hours", appliance_key);
+                    bail!(
+                        "{} max_shift_hrs too high, FHS wrapper cannot handle max shift >= 24 hours",
+                        appliance_key
+                    );
                 }
 
                 // establish priority between appliances based on user defined priority,
@@ -2545,12 +2578,14 @@ fn appliance_kwh_cycle_loading_factor(
             None => {
                 return Err(anyhow!(
                     "Appliance '{appliance_key}' does not have a standard_use value"
-                ))
+                ));
             }
         };
         kwh_per_annum / standard_use
     } else {
-        bail!("Appliance '{appliance_key}' demand must be specified as one of 'kWh_per_cycle', 'kWh_per_100cycle' or 'kWh_per_annum'");
+        bail!(
+            "Appliance '{appliance_key}' demand must be specified as one of 'kWh_per_cycle', 'kWh_per_100cycle' or 'kWh_per_annum'"
+        );
     };
 
     let map_appliance = appliance_map.get(appliance_key).ok_or_else(|| anyhow!("The appliance name '{appliance_key}' was expected to be found within the appliance map: {appliance_map:?}."))?;
@@ -2786,11 +2821,7 @@ pub(super) fn create_hot_water_use_pattern(
 
     // if part G has been complied with, apply 5% reduction to duration of Other events
     let part_g_bonus = if let Some(part_g_compliance) = input.part_g_compliance()? {
-        if part_g_compliance {
-            0.95
-        } else {
-            1.0
-        }
+        if part_g_compliance { 0.95 } else { 1.0 }
     } else {
         bail!("Part G compliance missing from input file");
     };

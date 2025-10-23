@@ -3254,7 +3254,7 @@ impl InputForProcessing {
         serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
     }
 
-    pub(crate) fn finalize(self) -> Result<Input, serde_json::Error> {
+    pub fn finalize(self) -> Result<Input, serde_json::Error> {
         // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
         serde_json::from_value(self.input)
     }

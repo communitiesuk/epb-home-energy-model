@@ -1,5 +1,5 @@
 use super::future_homes_standard::{apply_fhs_preprocessing, calc_tfa, minimum_air_change_rate};
-use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
+use crate::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
 use crate::{input::InputForProcessing, output::Output};
 use anyhow::anyhow;
 use csv::WriterBuilder;

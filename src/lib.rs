@@ -10,7 +10,6 @@ pub mod output;
 pub mod read_weather_file;
 mod simulation_time;
 mod statistics;
-mod wrappers;
 
 #[macro_use]
 extern crate is_close;
@@ -36,10 +35,6 @@ use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
-#[cfg(feature = "fhs")]
-use crate::wrappers::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-pub use crate::wrappers::HemResponse;
-use crate::wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
 use anyhow::anyhow;
 use bitflags::bitflags;
 use chrono::prelude::*;
@@ -59,6 +54,10 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
+pub use wrappers::HemResponse;
+use wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
+#[cfg(feature = "fhs")]
+use wrappers::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";
@@ -441,7 +440,7 @@ pub(crate) struct CalculationContext<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct CalculationResultsWithContext<'a> {
+pub struct CalculationResultsWithContext<'a> {
     results: &'a RunResults,
     context: CalculationContext<'a>,
 }
@@ -506,7 +505,7 @@ bitflags! {
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CalculationKey {
+pub enum CalculationKey {
     Primary,
     #[cfg(feature = "fhs")]
     Fhs,

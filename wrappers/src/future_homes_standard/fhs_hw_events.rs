@@ -1,8 +1,8 @@
-use crate::core::water_heat_demand::misc::frac_hot_water;
-use crate::input::{InputForProcessing, WaterHeatingEventType};
-use crate::wrappers::future_homes_standard::future_homes_standard::HourlyHotWaterEvent;
+use crate::future_homes_standard::HourlyHotWaterEvent;
 use anyhow::{anyhow, bail};
 use csv::Reader;
+use hem::core::water_heat_demand::misc::frac_hot_water;
+use hem::input::{InputForProcessing, WaterHeatingEventType};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use partial_application::partial;
@@ -150,7 +150,11 @@ pub fn reset_events_and_provide_drawoff_generator(
     }
 
     for other_name in input.other_water_use_keys()? {
-        let other_flow_rate = input.flow_rate_for_other_water_use_field(other_name.as_str())?.ok_or(anyhow!("Tried to access an input for other water use with a nonexistent key '{other_name}'"))?;
+        let other_flow_rate = input
+            .flow_rate_for_other_water_use_field(other_name.as_str())?
+            .ok_or(anyhow!(
+                "Tried to access an input for other water use with a nonexistent key '{other_name}'"
+            ))?;
         let other_duration_func = other_duration_func_gen();
         other.push(Drawoff {
             event_type: "Other".into(),

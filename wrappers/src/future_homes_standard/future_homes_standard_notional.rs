@@ -1,46 +1,43 @@
-use crate::compare_floats::min_of_2;
-use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
-use crate::core::schedule::{expand_events, TypedScheduleEvent};
-use crate::core::units::{
-    convert_profile_to_daily, JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT,
+use super::future_homes_standard::{
+    ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE, LIVING_ROOM_SETPOINT_FHS,
+    REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START, SIMTIME_STEP, calc_n_occupants,
+    calc_nbeds, calc_tfa, create_cold_water_feed_temps, create_hot_water_use_pattern,
+    minimum_air_change_rate, set_temp_internal_static_calcs,
 };
-use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-use crate::core::water_heat_demand::dhw_demand::{
+use crate::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
+use anyhow::{anyhow, bail};
+use hem::compare_floats::min_of_2;
+use hem::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
+use hem::core::schedule::{TypedScheduleEvent, expand_events};
+use hem::core::units::{
+    JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT, convert_profile_to_daily,
+};
+use hem::core::water_heat_demand::cold_water_source::ColdWaterSource;
+use hem::core::water_heat_demand::dhw_demand::{
     DomesticHotWaterDemand, DomesticHotWaterDemandData,
 };
-use crate::core::water_heat_demand::misc::water_demand_to_kwh;
-use crate::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
-use crate::input::{
+use hem::core::water_heat_demand::misc::water_demand_to_kwh;
+use hem::corpus::{ColdWaterSources, HtcHlpCalculation, calc_htc_hlp};
+use hem::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
     SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
     UValueEditableBuildingElementJsonValue, WaterPipeContentsType, WaterPipework,
     WaterPipeworkLocation,
 };
-use crate::simulation_time::SimulationTime;
-use crate::statistics::{np_interp, percentile};
-use crate::wrappers::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
-use crate::wrappers::future_homes_standard::future_homes_standard::{
-    calc_n_occupants, calc_nbeds, create_cold_water_feed_temps, create_hot_water_use_pattern,
-    minimum_air_change_rate, ENERGY_SUPPLY_NAME_ELECTRICITY, HW_TEMPERATURE,
-    LIVING_ROOM_SETPOINT_FHS, REST_OF_DWELLING_SETPOINT_FHS, SIMTIME_END, SIMTIME_START,
-    SIMTIME_STEP,
-};
-use crate::{
+use hem::simulation_time::SimulationTime;
+use hem::statistics::{np_interp, percentile};
+use hem::{
     compare_floats::max_of_2,
-    core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection},
-    wrappers::future_homes_standard::future_homes_standard::calc_tfa,
+    core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class},
 };
-use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use smartstring::alias::String;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use tracing::instrument;
-
-use super::future_homes_standard::set_temp_internal_static_calcs;
 
 const NOTIONAL_WWHRS: &str = "Notional_Inst_WWHRS";
 const NOTIONAL_HIU: &str = "notionalHIU";
@@ -261,7 +258,9 @@ fn edit_opaque_adjztu_elements(input: &mut InputForProcessing) -> anyhow::Result
                 if building_element.is_opaque() {
                     match building_element.is_external_door() {
                         None => {
-                            bail!("Opaque building element input needed value for is_external_door field.");
+                            bail!(
+                                "Opaque building element input needed value for is_external_door field."
+                            );
                         }
                         Some(true) => {
                             building_element.set_u_value(1.0);
@@ -453,7 +452,11 @@ fn calc_max_glazing_area_fraction(
             ..
         } = element
         {
-            let u_value = u_value.ok_or_else(|| anyhow!("FHS notional wrapper needs transparent building elements to have u values set."))?;
+            let u_value = u_value.ok_or_else(|| {
+                anyhow!(
+                    "FHS notional wrapper needs transparent building elements to have u values set."
+                )
+            })?;
             let rooflight_area = height * width;
 
             total_rooflight_area += rooflight_area;
@@ -582,9 +585,14 @@ pub(crate) fn edit_thermal_bridging(input: &mut InputForProcessing) -> anyhow::R
             }
             "ThermalBridgeLinear" => {
                 let junction_type = element.get("junction_type").and_then(|junc| junc.as_str()).and_then(|junc| if TABLE_R2.contains_key(junc) {Some(junc)} else {None}).ok_or_else(|| anyhow!("Thermal bridging junction type was expected to be set and one of the values in SAP10.2 Table R2."))?;
-                element.insert("linear_thermal_transmittance".into(), json!(TABLE_R2[junction_type]));
+                element.insert(
+                    "linear_thermal_transmittance".into(),
+                    json!(TABLE_R2[junction_type]),
+                );
             }
-            unknown_type => bail!("Thermal bridging type was expected to be set and either ThermalBridgePoint or ThermalBridgeLinear was expected, but {unknown_type} was found."),
+            unknown_type => bail!(
+                "Thermal bridging type was expected to be set and either ThermalBridgePoint or ThermalBridgeLinear was expected, but {unknown_type} was found."
+            ),
         }
     }
 
@@ -1540,7 +1548,7 @@ fn round_by_precision(src: f64, precision: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
+    use crate::core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class};
 
     use super::*;
     use crate::input::{
@@ -1654,9 +1662,11 @@ mod tests {
                 .and_then(|v| v.as_f64()),
             Some(1.2)
         );
-        assert!(zone_1_window_0_element
-            .get("thermal_resistance_construction")
-            .is_none());
+        assert!(
+            zone_1_window_0_element
+                .get("thermal_resistance_construction")
+                .is_none()
+        );
 
         let zone_2_window_0_element = test_input
             .building_element_by_key("zone 2", "window 0")
@@ -1668,9 +1678,11 @@ mod tests {
                 .and_then(|v| v.as_f64()),
             Some(1.2)
         );
-        assert!(zone_2_window_0_element
-            .get("thermal_resistance_construction")
-            .is_none());
+        assert!(
+            zone_2_window_0_element
+                .get("thermal_resistance_construction")
+                .is_none()
+        );
     }
 
     #[rstest]
@@ -1804,9 +1816,11 @@ mod tests {
     fn test_calculate_area_diff_and_adjust_glazing_area(mut test_input: InputForProcessing) {
         let linear_reduction_factor: f64 = 0.7001400420140049;
 
-        let window: BuildingElement = serde_json::from_value(json!(test_input
-            .building_element_by_key("zone 1", "window 0")
-            .unwrap()))
+        let window: BuildingElement = serde_json::from_value(json!(
+            test_input
+                .building_element_by_key("zone 1", "window 0")
+                .unwrap()
+        ))
         .unwrap();
 
         let area_diff = calculate_area_diff_and_adjust_glazing_area(

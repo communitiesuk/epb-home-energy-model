@@ -1,15 +1,12 @@
-use crate::input::{Input, InputForProcessing};
-use crate::output::Output;
-use crate::wrappers::future_homes_standard::fhs_compliance_response::{
+use crate::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
-use crate::wrappers::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
-use crate::wrappers::{HemResponse, HemWrapper, PassthroughHemWrapper};
-use crate::{
-    CalculationContext, CalculationKey, CalculationResultsWithContext, ProjectFlags, RunResults,
-};
+use crate::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
+use crate::{HemResponse, HemWrapper, PassthroughHemWrapper};
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
+use hem::input::{Input, InputForProcessing};
+use hem::output::Output;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -18,15 +15,15 @@ mod fhs_appliance;
 mod fhs_compliance_response;
 mod fhs_hw_events;
 #[allow(clippy::module_inception)]
-pub(crate) mod future_homes_standard;
+pub mod future_homes_standard;
 pub(crate) mod future_homes_standard_fee;
 pub(crate) mod future_homes_standard_notional;
 
 /// A HEM wrapper for all single calculations using the FHS wrapper.
-pub(crate) struct FhsSingleCalcWrapper;
+pub struct FhsSingleCalcWrapper;
 
 impl FhsSingleCalcWrapper {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -60,10 +57,10 @@ impl HemWrapper for FhsSingleCalcWrapper {
 }
 
 /// A HEM wrapper for full FHS compliance calculations.
-pub(crate) struct FhsComplianceWrapper;
+pub struct FhsComplianceWrapper;
 
 impl FhsComplianceWrapper {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }

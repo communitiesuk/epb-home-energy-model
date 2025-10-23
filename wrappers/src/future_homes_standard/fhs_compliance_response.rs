@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use crate::wrappers::future_homes_standard::future_homes_standard::{calc_final_rates, FinalRates};
-use crate::wrappers::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
-use crate::{build_summary_data, CalculationKey, CalculationResultsWithContext, SummaryData};
+use crate::future_homes_standard::future_homes_standard::{FinalRates, calc_final_rates};
+use crate::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
 use anyhow::anyhow;
+use hem::{CalculationKey, CalculationResultsWithContext, SummaryData, build_summary_data};
 use indexmap::IndexMap;
 use serde::Serialize;
 use smartstring::alias::String;
