@@ -1,4 +1,3 @@
-use crate::HOURS_TO_END_DEC;
 use crate::future_homes_standard::fhs_appliance::FhsAppliance;
 use crate::future_homes_standard::fhs_hw_events::{
     HotWaterEventGenerator, reset_events_and_provide_drawoff_generator,
@@ -37,6 +36,7 @@ use std::sync::LazyLock;
 const _EMIS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh";
 const _EMIS_OOS_FACTOR_NAME: &str = "Emissions Factor kgCO2e/kWh including out-of-scope emissions";
 const _PE_FACTOR_NAME: &str = "Primary Energy Factor kWh/kWh delivered";
+const HOURS_TO_END_DEC: f64 = 8760.;
 
 pub(crate) const ENERGY_SUPPLY_NAME_GAS: &str = "mains gas";
 pub(crate) const ENERGY_SUPPLY_NAME_ELECTRICITY: &str = "mains elec";

@@ -1,15 +1,15 @@
 #![allow(clippy::too_many_arguments, clippy::doc_overindented_list_items)]
 
-mod compare_floats;
+pub mod compare_floats;
 pub mod core;
 pub mod corpus;
 pub mod errors;
-mod external_conditions;
+pub mod external_conditions;
 pub mod input;
 pub mod output;
 pub mod read_weather_file;
-mod simulation_time;
-mod statistics;
+pub mod simulation_time;
+pub mod statistics;
 
 #[macro_use]
 extern crate is_close;
@@ -1964,8 +1964,6 @@ fn write_core_output_file_hot_water_source_summary(
 ) {
     // TODO complete when hot water source results defined
 }
-
-const HOURS_TO_END_DEC: f64 = 8760.;
 
 struct HourForTimestep {
     month: String,

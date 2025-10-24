@@ -3,11 +3,12 @@ pub use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrappe
 use erased_serde::Serialize as ErasedSerialize;
 use hem::input::{Input, InputForProcessing};
 use hem::output::Output;
-use hem::{CalculationKey, CalculationResultsWithContext, ProjectFlags};
-use serde::{Serialize, Serializer};
+use hem::{
+    CalculationKey, CalculationResultsWithContext, HemResponse, HemWrapper, PassthroughHemWrapper,
+    ProjectFlags,
+};
 use std::collections::HashMap;
 
-#[cfg(feature = "fhs")]
 pub mod future_homes_standard;
 
 /// Common trait for a wrapper of the HEM methodology, which in its preprocessing stage is able to
