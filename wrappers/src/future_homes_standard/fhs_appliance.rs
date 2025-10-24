@@ -1,11 +1,10 @@
-use rand::{Rng, SeedableRng};
-use rand_distr::{Distribution, Normal, Poisson};
-use rand_pcg::Pcg64;
-
-use crate::{
+use hem::{
     core::units::{DAYS_PER_YEAR, HOURS_PER_DAY, WATTS_PER_KILOWATT},
     input::ApplianceGainsEvent,
 };
+use rand::{Rng, SeedableRng};
+use rand_distr::{Distribution, Normal, Poisson};
+use rand_pcg::Pcg64;
 
 pub(super) struct FhsAppliance {
     pub(super) standby_w: f64,

@@ -1,10 +1,10 @@
+use crate::HOURS_TO_END_DEC;
 use crate::future_homes_standard::fhs_appliance::FhsAppliance;
 use crate::future_homes_standard::fhs_hw_events::{
     HotWaterEventGenerator, reset_events_and_provide_drawoff_generator,
 };
 use anyhow::{anyhow, bail};
 use csv::{Reader, WriterBuilder};
-use hem::HOURS_TO_END_DEC;
 use hem::core::schedule::{expand_numeric_schedule, reject_nulls};
 use hem::core::units::{
     DAYS_IN_MONTH, DAYS_PER_YEAR, HOURS_PER_DAY, LITRES_PER_CUBIC_METRE, MINUTES_PER_HOUR,
@@ -3669,7 +3669,7 @@ fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow:
         .all_building_elements()?
         .values()
         .filter_map(|el| match el {
-            crate::input::BuildingElement::Transparent {
+            hem::input::BuildingElement::Transparent {
                 orientation,
                 g_value,
                 frame_area_fraction,

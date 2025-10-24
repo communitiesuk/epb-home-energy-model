@@ -4,7 +4,7 @@ use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 #[cfg(test)]
 use serde_json::Value;
 
-pub(crate) fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
+pub fn reject_nulls<T>(vec_of_options: Vec<Option<T>>) -> anyhow::Result<Vec<T>> {
     vec_of_options
         .into_iter()
         .collect::<Option<Vec<_>>>()
@@ -22,7 +22,7 @@ pub(crate) fn expand_boolean_schedule(schedule: &BooleanSchedule) -> Vec<Option<
     schedule.expand()
 }
 
-pub(crate) fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
+pub fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
     schedule.expand()
 }
 
@@ -52,7 +52,7 @@ impl From<WaterHeatingEventType> for WaterScheduleEventType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TypedScheduleEvent {
+pub struct TypedScheduleEvent {
     pub(crate) start: f64,
     pub(crate) duration: Option<f64>,
     pub(crate) temperature: f64,
@@ -156,7 +156,7 @@ pub(crate) fn expand_events_from_json_values(
 /// * `name`
 /// * `event_type` - type of the events being processed (e.g., "Shower", "Bath", "Others")
 /// * `schedule` - the existing schedule dictionary to update
-pub(crate) fn expand_events(
+pub fn expand_events(
     events: Vec<ScheduleEvent>,
     simulation_timestep: f64,
     total_timesteps: usize,

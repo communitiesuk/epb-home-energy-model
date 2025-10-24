@@ -2902,7 +2902,7 @@ impl SolarRadiationInteractionTransmitted for BuildingElementTransparent {
     }
 }
 
-pub(crate) fn pitch_class(pitch: f64) -> HeatFlowDirection {
+pub fn pitch_class(pitch: f64) -> HeatFlowDirection {
     match pitch {
         PITCH_LIMIT_HORIZ_CEILING..=PITCH_LIMIT_HORIZ_FLOOR => HeatFlowDirection::Horizontal,
         ..PITCH_LIMIT_HORIZ_CEILING => HeatFlowDirection::Upwards,

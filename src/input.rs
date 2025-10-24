@@ -18,6 +18,7 @@ use serde_valid::json::ToJsonString;
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use smartstring::alias::String;
+#[cfg(feature = "fhs")]
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Read};
@@ -56,7 +57,7 @@ pub struct Input {
     #[serde(default)]
     #[validate(custom = validate_only_storage_tanks)]
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
-    pub(crate) energy_supply: EnergySupplyInput,
+    pub energy_supply: EnergySupplyInput,
     pub(crate) control: Control,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub(crate) smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
@@ -68,7 +69,7 @@ pub struct Input {
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) space_cool_system: Option<SpaceCoolSystem>,
-    pub(crate) zone: ZoneDictionary,
+    pub zone: ZoneDictionary,
     // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) heat_source_wet: Option<HeatSourceWet>,
@@ -95,28 +96,28 @@ fn validate_only_storage_tanks(
 pub struct ExternalConditionsInput {
     /// List of external air temperatures, one entry per hour (unit: ˚C)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) air_temperatures: Option<Vec<f64>>,
+    pub air_temperatures: Option<Vec<f64>>,
     /// List of wind speeds, one entry per hour (unit: m/s)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) wind_speeds: Option<Vec<f64>>,
+    pub wind_speeds: Option<Vec<f64>>,
     /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) wind_directions: Option<Vec<f64>>,
+    pub wind_directions: Option<Vec<f64>>,
     /// List of diffuse horizontal radiation values, one entry per hour (unit: W/m²)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) diffuse_horizontal_radiation: Option<Vec<f64>>,
+    pub diffuse_horizontal_radiation: Option<Vec<f64>>,
     /// List of direct beam radiation values, one entry per hour (unit: W/m²)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) direct_beam_radiation: Option<Vec<f64>>,
+    pub direct_beam_radiation: Option<Vec<f64>>,
     /// List of ground reflectivity values, 0 to 1, one entry per hour
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
+    pub solar_reflectivity_of_ground: Option<Vec<f64>>,
     /// Latitude of weather station, angle from south (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) latitude: Option<f64>,
+    pub latitude: Option<f64>,
     /// Longitude of weather station, easterly +ve westerly -ve (unit: ˚)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) longitude: Option<f64>,
+    pub longitude: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) timezone: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,10 +134,10 @@ pub struct ExternalConditionsInput {
     pub(crate) leap_day_included: Option<bool>,
     /// A flag to indicate whether direct beam radiation from climate data needs to be converted from horizontal to normal incidence; if normal direct beam radiation values are provided then no conversion is needed
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) direct_beam_conversion_needed: Option<bool>,
+    pub direct_beam_conversion_needed: Option<bool>,
     /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
+    pub shading_segments: Option<Vec<ShadingSegment>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
@@ -218,13 +219,13 @@ pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
-    pub(crate) fuel: FuelType,
+    pub fuel: FuelType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diverter: Option<EnergyDiverter>,
     #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
     pub(crate) electric_battery: Option<ElectricBattery>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) factor: Option<CustomEnergySourceFactor>,
+    pub factor: Option<CustomEnergySourceFactor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<Vec<EnergySupplyPriorityEntry>>,
     /// Denotes that this energy supply can export its surplus supply
@@ -239,7 +240,8 @@ pub struct EnergySupplyDetails {
 }
 
 impl EnergySupplyDetails {
-    pub(crate) fn with_fuel(fuel_type: FuelType) -> Self {
+    #[cfg(feature = "fhs")]
+    pub fn with_fuel(fuel_type: FuelType) -> Self {
         Self {
             fuel: fuel_type,
             diverter: None,
@@ -283,7 +285,7 @@ pub(crate) enum EnergySupplyPriorityEntry {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FuelType {
+pub enum FuelType {
     Electricity,
     MainsGas,
     Custom,
@@ -342,7 +344,7 @@ impl TryFrom<EnergySupplyType> for FuelType {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum EnergySupplyType {
+pub enum EnergySupplyType {
     #[serde(rename = "mains elec")]
     Electricity,
     #[serde(rename = "mains gas", alias = "mains_gas")]
@@ -688,14 +690,14 @@ pub(crate) enum ControlCombinationOperation {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SmartApplianceBattery {
-    pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+pub struct SmartApplianceBattery {
+    pub battery_state_of_charge: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    pub(crate) energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    pub energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    pub(crate) energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    pub energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
     #[serde(default)]
-    pub(crate) energy_out_of_battery: IndexMap<String, Vec<f64>>,
+    pub energy_out_of_battery: IndexMap<String, Vec<f64>>,
 }
 
 impl ControlDetails {
@@ -887,7 +889,7 @@ impl HotWaterSourceDetails {
     }
 }
 
-pub(crate) trait HotWaterSourceDetailsForProcessing {
+pub trait HotWaterSourceDetailsForProcessing {
     fn is_storage_tank(&self) -> bool;
     fn is_combi_boiler(&self) -> bool;
     fn is_hiu(&self) -> bool;
@@ -915,9 +917,7 @@ pub(crate) trait HotWaterSourceDetailsForProcessing {
     ) -> anyhow::Result<()>;
 }
 
-pub(crate) struct HotWaterSourceDetailsJsonMap<'a>(
-    pub(crate) &'a mut Map<std::string::String, JsonValue>,
-);
+pub struct HotWaterSourceDetailsJsonMap<'a>(pub(crate) &'a mut Map<std::string::String, JsonValue>);
 
 impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
     fn is_storage_tank(&self) -> bool {
@@ -1684,7 +1684,7 @@ pub struct ZoneInput {
     pub(crate) space_cool_system: SystemReference,
     /// Useful floor area of the zone. (Unit: m²)
     #[validate(minimum = 0.)]
-    pub(crate) area: f64,
+    pub area: f64,
     /// Total volume of the zone. (Unit: m³)
     #[validate(minimum = 0.)]
     pub(crate) volume: f64,
@@ -1778,7 +1778,7 @@ pub enum ZoneTemperatureControlBasis {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
-pub(crate) enum BuildingElement {
+pub enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1953,13 +1953,13 @@ impl BuildingElement {
     }
 }
 
-pub(crate) trait TransparentBuildingElement {
+pub trait TransparentBuildingElement {
     fn set_window_openable_control(&mut self, control: &str);
     fn is_security_risk(&self) -> bool;
     fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
 }
 
-pub(crate) struct TransparentBuildingElementJsonValue<'a>(
+pub struct TransparentBuildingElementJsonValue<'a>(
     pub(crate) &'a mut Map<std::string::String, JsonValue>,
 );
 
@@ -1984,13 +1984,13 @@ impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
     }
 }
 
-pub(crate) trait GroundBuildingElement {
+pub trait GroundBuildingElement {
     fn set_u_value(&mut self, new_u_value: f64);
     fn set_thermal_resistance_floor_construction(&mut self, new_r_f: f64);
     fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64);
 }
 
-pub(crate) struct GroundBuildingElementJsonValue<'a>(
+pub struct GroundBuildingElementJsonValue<'a>(
     pub(crate) &'a mut Map<std::string::String, JsonValue>,
 );
 
@@ -2017,7 +2017,7 @@ impl GroundBuildingElement for GroundBuildingElementJsonValue<'_> {
     }
 }
 
-pub(crate) trait UValueEditableBuildingElement {
+pub trait UValueEditableBuildingElement {
     fn set_u_value(&mut self, new_u_value: f64);
     fn pitch(&self) -> JsonAccessResult<f64>;
     fn is_opaque(&self) -> bool;
@@ -2028,7 +2028,7 @@ pub(crate) trait UValueEditableBuildingElement {
     fn u_value(&self) -> Option<f64>;
 }
 
-pub(crate) struct UValueEditableBuildingElementJsonValue<'a>(
+pub struct UValueEditableBuildingElementJsonValue<'a>(
     pub(crate) &'a mut Map<std::string::String, JsonValue>,
 );
 
@@ -2324,7 +2324,7 @@ pub(crate) type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "type", deny_unknown_fields)]
-pub(crate) enum HeatSourceWetDetails {
+pub enum HeatSourceWetDetails {
     HeatPump {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -2461,7 +2461,7 @@ impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum HeatPumpSourceType {
+pub enum HeatPumpSourceType {
     Ground,
     OutsideAir,
     ExhaustAirMEV,
@@ -2797,7 +2797,7 @@ pub struct MechanicalVentilation {
     pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
 }
 
-pub(crate) trait MechanicalVentilationForProcessing {
+pub trait MechanicalVentilationForProcessing {
     fn vent_is_type(&self, vent_type: &str) -> bool;
     fn measured_fan_power(&self) -> Option<f64>;
     fn measured_air_flow_rate(&self) -> Option<f64>;
@@ -2805,7 +2805,7 @@ pub(crate) trait MechanicalVentilationForProcessing {
     fn set_control(&mut self, control: &str);
 }
 
-pub(crate) struct MechanicalVentilationJsonValue<'a>(
+pub struct MechanicalVentilationJsonValue<'a>(
     pub(crate) &'a mut Map<std::string::String, JsonValue>,
 );
 
@@ -3199,11 +3199,11 @@ static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
 #[error("Error accessing JSON during FHS preprocessing: {0}")]
 pub(crate) struct JsonAccessError(String);
 
-pub(crate) fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
+pub fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
     JsonAccessError(message.into())
 }
 
-pub(crate) type JsonAccessResult<T> = Result<T, JsonAccessError>;
+pub type JsonAccessResult<T> = Result<T, JsonAccessError>;
 
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
@@ -3246,7 +3246,8 @@ impl InputForProcessing {
         Ok(Self { input })
     }
 
-    pub(crate) fn as_input(&self) -> anyhow::Result<Input> {
+    #[cfg(feature = "fhs")]
+    pub fn as_input(&self) -> anyhow::Result<Input> {
         serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
     }
 
@@ -3324,7 +3325,7 @@ impl InputForProcessing {
         Ok(self.root()?.get(root_key).and_then(|v| v.as_object()))
     }
 
-    pub(crate) fn set_simulation_time(
+    pub fn set_simulation_time(
         &mut self,
         simulation_time: SimulationTime,
     ) -> anyhow::Result<&mut Self> {
@@ -3332,7 +3333,8 @@ impl InputForProcessing {
             .map_err(Into::into)
     }
 
-    pub(crate) fn set_temp_internal_air_static_calcs(
+    #[cfg(feature = "fhs")]
+    pub fn set_temp_internal_air_static_calcs(
         &mut self,
         temp_internal_air_static_calcs: Option<f64>,
     ) -> JsonAccessResult<&mut Self> {
@@ -3361,7 +3363,8 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn reset_internal_gains(&mut self) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn reset_internal_gains(&mut self) -> JsonAccessResult<&Self> {
         *(self.root_object_mut("InternalGains")?) = Map::new();
 
         Ok(self)
@@ -3399,7 +3402,8 @@ impl InputForProcessing {
             .ok_or(json_error("Zone node was not an object"))
     }
 
-    pub(crate) fn total_zone_area(&self) -> JsonAccessResult<f64> {
+    #[cfg(feature = "fhs")]
+    pub fn total_zone_area(&self) -> JsonAccessResult<f64> {
         self.zone_node()?
             .values()
             .map(|z| {
@@ -3411,7 +3415,8 @@ impl InputForProcessing {
             .sum::<JsonAccessResult<f64>>()
     }
 
-    pub(crate) fn total_zone_volume(&self) -> JsonAccessResult<f64> {
+    #[cfg(feature = "fhs")]
+    pub fn total_zone_volume(&self) -> JsonAccessResult<f64> {
         Ok(self
             .zone_node()?
             .values()
@@ -3428,7 +3433,8 @@ impl InputForProcessing {
             .sum::<f64>())
     }
 
-    pub(crate) fn area_for_zone(&self, zone: &str) -> anyhow::Result<f64> {
+    #[cfg(feature = "fhs")]
+    pub fn area_for_zone(&self, zone: &str) -> anyhow::Result<f64> {
         Ok(self
             .zone_node()?
             .get(zone)
@@ -3466,7 +3472,8 @@ impl InputForProcessing {
         Ok(result)
     }
 
-    pub(crate) fn number_of_bedrooms(&self) -> JsonAccessResult<Option<usize>> {
+    #[cfg(feature = "fhs")]
+    pub fn number_of_bedrooms(&self) -> JsonAccessResult<Option<usize>> {
         match self.input.get("NumberOfBedrooms") {
             None => Ok(None),
             Some(JsonValue::Number(n)) => Ok(Some(
@@ -3494,7 +3501,8 @@ impl InputForProcessing {
         self.root_object_entry_mut("InternalGains")
     }
 
-    pub(crate) fn set_metabolic_gains(
+    #[cfg(feature = "fhs")]
+    pub fn set_metabolic_gains(
         &mut self,
         start_day: u32,
         time_series_step: f64,
@@ -3512,7 +3520,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_evaporative_losses(
+    #[cfg(feature = "fhs")]
+    pub fn set_evaporative_losses(
         &mut self,
         start_day: u32,
         time_series_step: f64,
@@ -3530,7 +3539,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_cold_water_losses(
+    #[cfg(feature = "fhs")]
+    pub fn set_cold_water_losses(
         &mut self,
         start_day: u32,
         time_series_step: f64,
@@ -3548,7 +3558,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn heating_control_type(&self) -> JsonAccessResult<Option<HeatingControlType>> {
+    #[cfg(feature = "fhs")]
+    pub fn heating_control_type(&self) -> JsonAccessResult<Option<HeatingControlType>> {
         self.root()?
             .get("HeatingControlType")
             .map(
@@ -3562,7 +3573,8 @@ impl InputForProcessing {
             .transpose()
     }
 
-    pub(crate) fn set_heating_control_type(
+    #[cfg(feature = "fhs")]
+    pub fn set_heating_control_type(
         &mut self,
         heating_control_type_value: JsonValue,
     ) -> anyhow::Result<&mut Self> {
@@ -3570,7 +3582,8 @@ impl InputForProcessing {
             .map_err(Into::into)
     }
 
-    pub(crate) fn add_control(
+    #[cfg(feature = "fhs")]
+    pub fn add_control(
         &mut self,
         control_key: &str,
         control_json: JsonValue,
@@ -3581,7 +3594,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn remove_all_smart_appliance_controls(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_all_smart_appliance_controls(&mut self) -> JsonAccessResult<&mut Self> {
         self.set_on_root_key("SmartApplianceControls", json!({}))
     }
 
@@ -3591,7 +3605,8 @@ impl InputForProcessing {
         self.root_object_entry_mut("SmartApplianceControls")
     }
 
-    pub(crate) fn add_smart_appliance_control(
+    #[cfg(feature = "fhs")]
+    pub fn add_smart_appliance_control(
         &mut self,
         smart_control_name: &str,
         control: JsonValue,
@@ -3602,7 +3617,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(super) fn set_non_appliance_demand_24hr_on_smart_appliance_control(
+    #[cfg(feature = "fhs")]
+    pub fn set_non_appliance_demand_24hr_on_smart_appliance_control(
         &mut self,
         smart_control_name: &str,
         non_appliance_demand_24hr_input: IndexMap<String, Vec<f64>>,
@@ -3621,7 +3637,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(super) fn set_battery24hr_on_smart_appliance_control(
+    #[cfg(feature = "fhs")]
+    pub fn set_battery24hr_on_smart_appliance_control(
         &mut self,
         smart_control_name: &str,
         battery24hr_input: SmartApplianceBattery,
@@ -3637,7 +3654,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn zone_keys(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn zone_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self.zone_node()?.keys().map(String::from).collect())
     }
 
@@ -3650,7 +3668,8 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn set_init_temp_setpoint_for_zone(
+    #[cfg(feature = "fhs")]
+    pub fn set_init_temp_setpoint_for_zone(
         &mut self,
         zone: &str,
         temperature: f64,
@@ -3660,7 +3679,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn space_heat_control_for_zone(&self, zone: &str) -> anyhow::Result<Option<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn space_heat_control_for_zone(&self, zone: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .specific_zone(zone)?
             .get("SpaceHeatControl")
@@ -3668,7 +3688,8 @@ impl InputForProcessing {
             .map(String::from))
     }
 
-    pub(crate) fn space_heat_system_for_zone(&self, zone: &str) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn space_heat_system_for_zone(&self, zone: &str) -> JsonAccessResult<Vec<String>> {
         Ok(match self.specific_zone(zone)?.get("SpaceHeatSystem") {
             Some(JsonValue::String(system)) => vec![String::from(system)],
             Some(JsonValue::Array(systems)) => systems
@@ -3683,7 +3704,8 @@ impl InputForProcessing {
         })
     }
 
-    pub(crate) fn set_space_heat_system_for_zone(
+    #[cfg(feature = "fhs")]
+    pub fn set_space_heat_system_for_zone(
         &mut self,
         zone: &str,
         system_name: &str,
@@ -3694,7 +3716,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn space_cool_system_for_zone(&self, zone: &str) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn space_cool_system_for_zone(&self, zone: &str) -> JsonAccessResult<Vec<String>> {
         Ok(match self.specific_zone(zone)?.get("SpaceCoolSystem") {
             Some(JsonValue::String(system)) => vec![String::from(system)],
             Some(JsonValue::Array(systems)) => systems
@@ -3709,7 +3732,8 @@ impl InputForProcessing {
         })
     }
 
-    pub(crate) fn set_space_cool_system_for_zone(
+    #[cfg(feature = "fhs")]
+    pub fn set_space_cool_system_for_zone(
         &mut self,
         zone: &str,
         system_name: &str,
@@ -3730,7 +3754,8 @@ impl InputForProcessing {
             .and_then(|efficacy| efficacy.as_f64()))
     }
 
-    pub(crate) fn set_lighting_efficacy_for_all_zones(
+    #[cfg(feature = "fhs")]
+    pub fn set_lighting_efficacy_for_all_zones(
         &mut self,
         efficacy: f64,
     ) -> JsonAccessResult<&Self> {
@@ -3745,7 +3770,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn all_zones_have_bulbs(&self) -> JsonAccessResult<bool> {
+    #[cfg(feature = "fhs")]
+    pub fn all_zones_have_bulbs(&self) -> JsonAccessResult<bool> {
         Ok(self.zone_node()?.values().all(|zone| {
             zone.get("Lighting")
                 .and_then(|l| l.as_object())
@@ -3754,7 +3780,8 @@ impl InputForProcessing {
         }))
     }
 
-    pub(crate) fn light_bulbs_for_each_zone(
+    #[cfg(feature = "fhs")]
+    pub fn light_bulbs_for_each_zone(
         &self,
     ) -> JsonAccessResult<IndexMap<String, Map<std::string::String, JsonValue>>> {
         Ok(self
@@ -3784,7 +3811,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_control_string_for_space_heat_system(
+    #[cfg(feature = "fhs")]
+    pub fn set_control_string_for_space_heat_system(
         &mut self,
         space_heat_system: &str,
         control_string: &str,
@@ -3801,7 +3829,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_control_string_for_space_cool_system(
+    #[cfg(feature = "fhs")]
+    pub fn set_control_string_for_space_cool_system(
         &mut self,
         space_cool_system: &str,
         control_string: &str,
@@ -3818,7 +3847,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn has_named_smart_appliance_control(&self, name: &str) -> JsonAccessResult<bool> {
+    #[cfg(feature = "fhs")]
+    pub fn has_named_smart_appliance_control(&self, name: &str) -> JsonAccessResult<bool> {
         Ok(self
             .optional_root_object("SmartApplianceControls")?
             .is_some_and(|controls| controls.contains_key(name)))
@@ -3874,7 +3904,8 @@ impl InputForProcessing {
         })
     }
 
-    pub(crate) fn temperature_setback_for_space_heat_system(
+    #[cfg(feature = "fhs")]
+    pub fn temperature_setback_for_space_heat_system(
         &self,
         space_heat_system: &str,
     ) -> JsonAccessResult<Option<f64>> {
@@ -3894,7 +3925,8 @@ impl InputForProcessing {
         }))
     }
 
-    pub(crate) fn temperature_setback_for_space_cool_system(
+    #[cfg(feature = "fhs")]
+    pub fn temperature_setback_for_space_cool_system(
         &self,
         space_cool_system: &str,
     ) -> JsonAccessResult<Option<f64>> {
@@ -3914,7 +3946,8 @@ impl InputForProcessing {
         }))
     }
 
-    pub(crate) fn advanced_start_for_space_cool_system(
+    #[cfg(feature = "fhs")]
+    pub fn advanced_start_for_space_cool_system(
         &self,
         space_cool_system: &str,
     ) -> JsonAccessResult<Option<f64>> {
@@ -3935,7 +3968,7 @@ impl InputForProcessing {
     }
 
     #[cfg(feature = "fhs")]
-    pub(crate) fn advanced_start_for_space_heat_system(
+    pub fn advanced_start_for_space_heat_system(
         &self,
         space_heat_system: &str,
     ) -> JsonAccessResult<Option<f64>> {
@@ -4025,19 +4058,19 @@ impl InputForProcessing {
         self.set_on_root_key("HotWaterSource", hot_water_source)
     }
 
-    pub(crate) fn hot_water_source(
-        &self,
-    ) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
+    pub fn hot_water_source(&self) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {
         self.root_object("HotWaterSource")
     }
 
-    pub(crate) fn hot_water_source_mut(
+    #[cfg(feature = "fhs")]
+    pub fn hot_water_source_mut(
         &mut self,
     ) -> JsonAccessResult<&mut Map<std::string::String, JsonValue>> {
         self.root_object_mut("HotWaterSource")
     }
 
-    pub(crate) fn names_of_energy_supplies_with_diverters(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn names_of_energy_supplies_with_diverters(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self
             .root_object("EnergySupply")?
             .iter()
@@ -4051,7 +4084,8 @@ impl InputForProcessing {
             .collect_vec())
     }
 
-    pub(crate) fn set_control_max_name_for_energy_supply_diverter(
+    #[cfg(feature = "fhs")]
+    pub fn set_control_max_name_for_energy_supply_diverter(
         &mut self,
         energy_supply_name: &str,
         control_max_name: &str,
@@ -4072,18 +4106,17 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_lighting_gains(
-        &mut self,
-        gains_details: JsonValue,
-    ) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_lighting_gains(&mut self, gains_details: JsonValue) -> JsonAccessResult<&Self> {
         self.set_gains_for_field("lighting", gains_details)
     }
 
-    pub(crate) fn set_topup_gains(&mut self, gains_details: JsonValue) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_topup_gains(&mut self, gains_details: JsonValue) -> JsonAccessResult<&Self> {
         self.set_gains_for_field("topup", gains_details)
     }
 
-    pub(crate) fn set_gains_for_field(
+    pub fn set_gains_for_field(
         &mut self,
         field: impl Into<std::string::String>,
         gains_details: JsonValue,
@@ -4094,10 +4127,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn energy_supply_type_for_appliance_gains_field(
-        &self,
-        field: &str,
-    ) -> Option<String> {
+    #[cfg(feature = "fhs")]
+    pub fn energy_supply_type_for_appliance_gains_field(&self, field: &str) -> Option<String> {
         self.root_object("ApplianceGains")
             .ok()
             .and_then(|appliance_gains| appliance_gains.get(field))
@@ -4109,11 +4140,13 @@ impl InputForProcessing {
             })
     }
 
-    pub(crate) fn clear_appliance_gains(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn clear_appliance_gains(&mut self) -> JsonAccessResult<&mut Self> {
         self.set_on_root_key("ApplianceGains", json!({}))
     }
 
-    pub(crate) fn set_priority_for_gains_appliance(
+    #[cfg(feature = "fhs")]
+    pub fn set_priority_for_gains_appliance(
         &mut self,
         priority: isize,
         appliance: &str,
@@ -4128,10 +4161,8 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn fuel_type_for_energy_supply_reference(
-        &self,
-        reference: &str,
-    ) -> anyhow::Result<String> {
+    #[cfg(feature = "fhs")]
+    pub fn fuel_type_for_energy_supply_reference(&self, reference: &str) -> anyhow::Result<String> {
         Ok(self
             .root_object("EnergySupply")?
             .get(reference)
@@ -4147,7 +4178,8 @@ impl InputForProcessing {
             .into())
     }
 
-    pub(crate) fn shower_flowrates(&self) -> JsonAccessResult<IndexMap<String, f64>> {
+    #[cfg(feature = "fhs")]
+    pub fn shower_flowrates(&self) -> JsonAccessResult<IndexMap<String, f64>> {
         let showers = match self
             .hot_water_demand()?
             .get("Shower")
@@ -4168,7 +4200,8 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn reset_water_heating_events(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn reset_water_heating_events(&mut self) -> JsonAccessResult<&mut Self> {
         self.set_on_root_key("Events", json!({}))
     }
 
@@ -4183,7 +4216,8 @@ impl InputForProcessing {
             .transpose()
     }
 
-    pub(crate) fn shower_keys(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn shower_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self
             .hot_water_demand()?
             .get("Shower")
@@ -4193,7 +4227,8 @@ impl InputForProcessing {
             }))
     }
 
-    pub(crate) fn shower_name_refers_to_instant_electric(&self, name: &str) -> bool {
+    #[cfg(feature = "fhs")]
+    pub fn shower_name_refers_to_instant_electric(&self, name: &str) -> bool {
         self.hot_water_demand()
             .ok()
             .and_then(|demand| demand.get("Shower"))
@@ -4229,7 +4264,8 @@ impl InputForProcessing {
             .and_then(|baths| baths.as_object()))
     }
 
-    pub(crate) fn bath_keys(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn bath_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self
             .hot_water_demand()?
             .get("Bath")
@@ -4239,7 +4275,8 @@ impl InputForProcessing {
             }))
     }
 
-    pub(crate) fn size_for_bath_field(&self, field: &str) -> JsonAccessResult<Option<f64>> {
+    #[cfg(feature = "fhs")]
+    pub fn size_for_bath_field(&self, field: &str) -> JsonAccessResult<Option<f64>> {
         Ok(self
             .hot_water_demand()?
             .get("Bath")
@@ -4249,7 +4286,8 @@ impl InputForProcessing {
             .and_then(|size| size.as_f64()))
     }
 
-    pub(crate) fn flowrate_for_bath_field(&self, field: &str) -> JsonAccessResult<Option<f64>> {
+    #[cfg(feature = "fhs")]
+    pub fn flowrate_for_bath_field(&self, field: &str) -> JsonAccessResult<Option<f64>> {
         Ok(self
             .hot_water_demand()?
             .get("Bath")
@@ -4268,14 +4306,16 @@ impl InputForProcessing {
             .and_then(|other| other.as_object()))
     }
 
-    pub(crate) fn other_water_use_keys(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn other_water_use_keys(&self) -> JsonAccessResult<Vec<String>> {
         Ok(self
             .other_water_uses()?
             .map(|other| other.keys().map(String::from).collect())
             .unwrap_or(vec![]))
     }
 
-    pub(crate) fn flow_rate_for_other_water_use_field(
+    #[cfg(feature = "fhs")]
+    pub fn flow_rate_for_other_water_use_field(
         &self,
         field: &str,
     ) -> JsonAccessResult<Option<f64>> {
@@ -4288,7 +4328,8 @@ impl InputForProcessing {
             .and_then(|flowrate| flowrate.as_f64()))
     }
 
-    pub(crate) fn set_other_water_use_details(
+    #[cfg(feature = "fhs")]
+    pub fn set_other_water_use_details(
         &mut self,
         cold_water_source_type: &str,
         flowrate: f64,
@@ -4318,10 +4359,8 @@ impl InputForProcessing {
     }
 
     /// Override all the vol_hw_daily_average values on the heat pump hot water only heat sources.
-    pub(crate) fn override_vol_hw_daily_average_on_heat_pumps(
-        &mut self,
-        vol_hw_daily_average: f64,
-    ) {
+    #[cfg(feature = "fhs")]
+    pub fn override_vol_hw_daily_average_on_heat_pumps(&mut self, vol_hw_daily_average: f64) {
         let heat_sources = match self
             .root_object_mut("HotWaterSource")
             .ok()
@@ -4349,7 +4388,8 @@ impl InputForProcessing {
         }
     }
 
-    pub(crate) fn part_g_compliance(&self) -> JsonAccessResult<Option<bool>> {
+    #[cfg(feature = "fhs")]
+    pub fn part_g_compliance(&self) -> JsonAccessResult<Option<bool>> {
         self.root()?
             .get("PartGcompliance")
             .map(|node| {
@@ -4359,14 +4399,16 @@ impl InputForProcessing {
             .transpose()
     }
 
-    pub(crate) fn set_part_g_compliance(&mut self, is_compliant: bool) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_part_g_compliance(&mut self, is_compliant: bool) -> JsonAccessResult<&Self> {
         self.root_mut()?
             .insert("PartGcompliance".into(), is_compliant.into());
 
         Ok(self)
     }
 
-    pub(crate) fn add_water_heating_event(
+    #[cfg(feature = "fhs")]
+    pub fn add_water_heating_event(
         &mut self,
         event_type: &str,
         subtype_name: &str,
@@ -4390,7 +4432,7 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn water_heating_events_of_types(
+    pub fn water_heating_events_of_types(
         &self,
         event_types: &[&str],
     ) -> JsonAccessResult<Vec<JsonValue>> {
@@ -4413,13 +4455,15 @@ impl InputForProcessing {
             .collect_vec())
     }
 
-    pub(crate) fn cold_water_source_has_header_tank(&self) -> JsonAccessResult<bool> {
+    #[cfg(feature = "fhs")]
+    pub fn cold_water_source_has_header_tank(&self) -> JsonAccessResult<bool> {
         Ok(self
             .root_object("ColdWaterSource")?
             .contains_key("header tank"))
     }
 
-    pub(crate) fn set_cold_water_source_by_key(
+    #[cfg(feature = "fhs")]
+    pub fn set_cold_water_source_by_key(
         &mut self,
         key: &str,
         source_details: JsonValue,
@@ -4430,10 +4474,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_hot_water_cylinder(
-        &mut self,
-        source_value: JsonValue,
-    ) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_hot_water_cylinder(&mut self, source_value: JsonValue) -> JsonAccessResult<&Self> {
         let hot_water_source = self.root_object_mut("HotWaterSource")?;
         hot_water_source.insert("hw cylinder".into(), source_value);
 
@@ -4450,7 +4492,8 @@ impl InputForProcessing {
         self.root_object_mut("HotWaterDemand")
     }
 
-    pub(crate) fn set_water_distribution(
+    #[cfg(feature = "fhs")]
+    pub fn set_water_distribution(
         &mut self,
         distribution_value: JsonValue,
     ) -> JsonAccessResult<&Self> {
@@ -4460,21 +4503,24 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_shower(&mut self, shower_value: JsonValue) -> anyhow::Result<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_shower(&mut self, shower_value: JsonValue) -> anyhow::Result<&Self> {
         self.hot_water_demand_mut()?
             .insert("Shower".into(), shower_value);
 
         Ok(self)
     }
 
-    pub(crate) fn set_bath(&mut self, bath_value: JsonValue) -> anyhow::Result<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn set_bath(&mut self, bath_value: JsonValue) -> anyhow::Result<&Self> {
         self.hot_water_demand_mut()?
             .insert("Bath".into(), bath_value);
 
         Ok(self)
     }
 
-    pub(crate) fn set_other_water_use(
+    #[cfg(feature = "fhs")]
+    pub fn set_other_water_use(
         &mut self,
         other_water_use_value: JsonValue,
     ) -> anyhow::Result<&Self> {
@@ -4484,7 +4530,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn remove_wwhrs(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_wwhrs(&mut self) -> JsonAccessResult<&mut Self> {
         self.remove_root_key("WWHRS")
     }
 
@@ -4503,7 +4550,8 @@ impl InputForProcessing {
         self.set_on_root_key("WWHRS", wwhrs)
     }
 
-    pub(crate) fn remove_space_heat_systems(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_space_heat_systems(&mut self) -> JsonAccessResult<&mut Self> {
         self.remove_root_key("SpaceHeatSystem")
     }
 
@@ -4515,7 +4563,8 @@ impl InputForProcessing {
         Ok(self.root_object("SpaceHeatSystem")?.get(key))
     }
 
-    pub(crate) fn set_space_heat_system_for_key(
+    #[cfg(feature = "fhs")]
+    pub fn set_space_heat_system_for_key(
         &mut self,
         key: &str,
         space_heat_system_value: JsonValue,
@@ -4525,11 +4574,13 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn remove_space_cool_systems(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_space_cool_systems(&mut self) -> JsonAccessResult<&mut Self> {
         self.remove_root_key("SpaceCoolSystem")
     }
 
-    pub(crate) fn set_space_cool_system_for_key(
+    #[cfg(feature = "fhs")]
+    pub fn set_space_cool_system_for_key(
         &mut self,
         key: &str,
         space_cool_system_value: JsonValue,
@@ -4546,7 +4597,8 @@ impl InputForProcessing {
         self.set_on_root_key("OnSiteGeneration", on_site_generation)
     }
 
-    pub(crate) fn remove_on_site_generation(&mut self) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_on_site_generation(&mut self) -> JsonAccessResult<&mut Self> {
         self.remove_root_key("OnSiteGeneration")
     }
 
@@ -4557,9 +4609,8 @@ impl InputForProcessing {
         self.optional_root_object("OnSiteGeneration")
     }
 
-    pub(crate) fn remove_all_diverters_from_energy_supplies(
-        &mut self,
-    ) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_all_diverters_from_energy_supplies(&mut self) -> JsonAccessResult<&mut Self> {
         self.root_object_entry_mut("EnergySupply")?
             .values_mut()
             .filter_map(|value| value.as_object_mut())
@@ -4624,9 +4675,8 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn remove_all_batteries_from_energy_supplies(
-        &mut self,
-    ) -> JsonAccessResult<&mut Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_all_batteries_from_energy_supplies(&mut self) -> JsonAccessResult<&mut Self> {
         for energy_supply in self
             .root_object_mut("EnergySupply")?
             .values_mut()
@@ -4637,7 +4687,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn external_conditions(&self) -> anyhow::Result<ExternalConditionsInput> {
+    #[cfg(feature = "fhs")]
+    pub fn external_conditions(&self) -> anyhow::Result<ExternalConditionsInput> {
         serde_json::from_value(
             self.root()?
                 .get("ExternalConditions")
@@ -4669,7 +4720,8 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn all_transparent_building_elements_mut(
+    #[cfg(feature = "fhs")]
+    pub fn all_transparent_building_elements_mut(
         &mut self,
     ) -> JsonAccessResult<Vec<&mut Map<std::string::String, JsonValue>>> {
         self.all_building_elements_mut_of_types(&["BuildingElementTransparent"])
@@ -4722,9 +4774,8 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn all_building_elements(
-        &self,
-    ) -> anyhow::Result<IndexMap<String, BuildingElement>> {
+    #[cfg(feature = "fhs")]
+    pub fn all_building_elements(&self) -> anyhow::Result<IndexMap<String, BuildingElement>> {
         self.zone_node()?
             .values()
             .filter_map(|zone| zone.get("BuildingElement").and_then(|el| el.as_object()))
@@ -4754,7 +4805,8 @@ impl InputForProcessing {
             ))
     }
 
-    pub(crate) fn all_energy_supply_fuel_types(&self) -> JsonAccessResult<HashSet<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn all_energy_supply_fuel_types(&self) -> JsonAccessResult<HashSet<String>> {
         let mut fuel_types = HashSet::new();
         for fuel in self
             .root_object("EnergySupply")?
@@ -4768,11 +4820,13 @@ impl InputForProcessing {
         Ok(fuel_types)
     }
 
-    pub(crate) fn has_appliances(&self) -> JsonAccessResult<bool> {
+    #[cfg(feature = "fhs")]
+    pub fn has_appliances(&self) -> JsonAccessResult<bool> {
         Ok(self.root()?.contains_key("Appliances"))
     }
 
-    pub(crate) fn merge_in_appliances(
+    #[cfg(feature = "fhs")]
+    pub fn merge_in_appliances(
         &mut self,
         appliances: &IndexMap<&str, JsonValue>,
     ) -> anyhow::Result<()> {
@@ -4786,20 +4840,23 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn remove_appliance(&mut self, appliance_key: &str) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn remove_appliance(&mut self, appliance_key: &str) -> JsonAccessResult<&Self> {
         self.root_object_entry_mut("Appliances")?
             .remove(appliance_key);
 
         Ok(self)
     }
 
-    pub(crate) fn appliances_contain_key(&self, name: &str) -> bool {
+    #[cfg(feature = "fhs")]
+    pub fn appliances_contain_key(&self, name: &str) -> bool {
         self.root_object("Appliances")
             .ok()
             .is_some_and(|appliances| appliances.contains_key(name))
     }
 
-    pub(crate) fn appliance_key_has_reference(
+    #[cfg(feature = "fhs")]
+    pub fn appliance_key_has_reference(
         &self,
         key: &str,
         reference: &str,
@@ -4813,7 +4870,8 @@ impl InputForProcessing {
             .is_some_and(|appliance_reference| appliance_reference == reference))
     }
 
-    pub(crate) fn appliance_keys(&self) -> JsonAccessResult<Vec<String>> {
+    #[cfg(feature = "fhs")]
+    pub fn appliance_keys(&self) -> JsonAccessResult<Vec<String>> {
         let empty_map = Map::new();
         Ok(self
             .root_object("Appliances")
@@ -4823,7 +4881,8 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn appliance_with_key(&self, key: &str) -> JsonAccessResult<Option<&JsonValue>> {
+    #[cfg(feature = "fhs")]
+    pub fn appliance_with_key(&self, key: &str) -> JsonAccessResult<Option<&JsonValue>> {
         Ok(match self.root_object("Appliances") {
             Err(_) => return Ok(None),
             Ok(appliances) => appliances.get(key),
@@ -4837,13 +4896,15 @@ impl InputForProcessing {
         Ok(self.root_object_entry_mut("Appliances")?.get_mut(key))
     }
 
-    pub(crate) fn clone_appliances(&self) -> Map<std::string::String, JsonValue> {
+    #[cfg(feature = "fhs")]
+    pub fn clone_appliances(&self) -> Map<std::string::String, JsonValue> {
         self.root_object("Appliances")
             .cloned()
             .unwrap_or(Map::new())
     }
 
-    pub(crate) fn tariff_schedule(&self) -> anyhow::Result<Option<NumericSchedule>> {
+    #[cfg(feature = "fhs")]
+    pub fn tariff_schedule(&self) -> anyhow::Result<Option<NumericSchedule>> {
         self.root_object("Tariff")
             .ok()
             .cloned()
@@ -4853,7 +4914,8 @@ impl InputForProcessing {
             .map_err(|err| anyhow!(err))
     }
 
-    pub(crate) fn energy_supply_for_appliance(&self, key: &str) -> anyhow::Result<&str> {
+    #[cfg(feature = "fhs")]
+    pub fn energy_supply_for_appliance(&self, key: &str) -> anyhow::Result<&str> {
         let appliances = self.root_object("Appliances")?;
 
         appliances
@@ -4865,7 +4927,8 @@ impl InputForProcessing {
             .ok_or_else(|| anyhow!("No energy supply for appliance '{key}'"))
     }
 
-    pub(crate) fn loadshifting_for_appliance(
+    #[cfg(feature = "fhs")]
+    pub fn loadshifting_for_appliance(
         &self,
         appliance_key: &str,
     ) -> JsonAccessResult<Option<Map<std::string::String, JsonValue>>> {
@@ -4877,7 +4940,8 @@ impl InputForProcessing {
             .cloned())
     }
 
-    pub(crate) fn set_loadshifting_for_appliance(
+    #[cfg(feature = "fhs")]
+    pub fn set_loadshifting_for_appliance(
         &mut self,
         appliance_key: &str,
         new_load_shifting: JsonValue,
@@ -4899,7 +4963,8 @@ impl InputForProcessing {
         self.root_object_mut("InfiltrationVentilation")
     }
 
-    pub(crate) fn mechanical_ventilations_for_processing(
+    #[cfg(feature = "fhs")]
+    pub fn mechanical_ventilations_for_processing(
         &mut self,
     ) -> JsonAccessResult<Vec<&mut Map<std::string::String, JsonValue>>> {
         let mech_vents = match self
@@ -4916,7 +4981,8 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn keyed_mechanical_ventilations_for_processing(
+    #[cfg(feature = "fhs")]
+    pub fn keyed_mechanical_ventilations_for_processing(
         &mut self,
     ) -> JsonAccessResult<IndexMap<String, &mut Map<std::string::String, JsonValue>>> {
         let mech_vents = match self
@@ -4939,19 +5005,22 @@ impl InputForProcessing {
             .collect())
     }
 
-    pub(crate) fn has_mechanical_ventilation(&self) -> bool {
+    #[cfg(feature = "fhs")]
+    pub fn has_mechanical_ventilation(&self) -> bool {
         self.root_object("InfiltrationVentilation")
             .ok()
             .is_some_and(|node| node.contains_key("MechanicalVentilation"))
     }
 
-    pub(crate) fn reset_mechanical_ventilation(&mut self) -> JsonAccessResult<&Self> {
+    #[cfg(feature = "fhs")]
+    pub fn reset_mechanical_ventilation(&mut self) -> JsonAccessResult<&Self> {
         self.root_object_entry_mut("InfiltrationVentilation")?
             .remove("MechanicalVentilation");
         Ok(self)
     }
 
-    pub(crate) fn add_mechanical_ventilation(
+    #[cfg(feature = "fhs")]
+    pub fn add_mechanical_ventilation(
         &mut self,
         vent_name: &str,
         mech_vent: JsonValue,
@@ -4972,7 +5041,8 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn appliance_gains_events(
+    #[cfg(feature = "fhs")]
+    pub fn appliance_gains_events(
         &self,
     ) -> anyhow::Result<IndexMap<String, Vec<ApplianceGainsEvent>>> {
         let appliance_gains = match self.root_object("ApplianceGains") {
@@ -4997,7 +5067,8 @@ impl InputForProcessing {
             .collect::<anyhow::Result<_>>()
     }
 
-    pub(crate) fn set_window_adjust_control_for_infiltration_ventilation(
+    #[cfg(feature = "fhs")]
+    pub fn set_window_adjust_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
     ) -> JsonAccessResult<&Self> {
@@ -5006,7 +5077,7 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_vent_adjust_min_control_for_infiltration_ventilation(
+    pub fn set_vent_adjust_min_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
     ) -> JsonAccessResult<&Self> {
@@ -5015,7 +5086,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn set_vent_adjust_max_control_for_infiltration_ventilation(
+    #[cfg(feature = "fhs")]
+    pub fn set_vent_adjust_max_control_for_infiltration_ventilation(
         &mut self,
         control: &str,
     ) -> JsonAccessResult<&Self> {
@@ -5024,7 +5096,8 @@ impl InputForProcessing {
         Ok(self)
     }
 
-    pub(crate) fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
+    #[cfg(feature = "fhs")]
+    pub fn infiltration_ventilation_is_noise_nuisance(&self) -> bool {
         self.root_object("InfiltrationVentilation")
             .ok()
             .and_then(|infiltration| infiltration.get("noise_nuisance"))
@@ -5159,8 +5232,8 @@ impl InputForProcessing {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_part_o_active_cooling_required(
+    #[cfg(all(test, feature = "fhs"))]
+    pub fn set_part_o_active_cooling_required(
         &mut self,
         required: bool,
     ) -> JsonAccessResult<&mut Self> {

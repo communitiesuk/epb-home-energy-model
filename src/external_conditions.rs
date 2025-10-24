@@ -58,7 +58,7 @@ pub(crate) struct ShadingObject {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
-pub(crate) enum WindowShadingObject {
+pub enum WindowShadingObject {
     Obstacle {
         height: f64,
         distance: f64,
@@ -144,7 +144,7 @@ pub struct ExternalConditions {
 /// * `shading_segments` - data splitting the ground plane into segments (8-36) and giving height
 ///                        and distance to shading objects surrounding the building
 impl ExternalConditions {
-    pub(crate) fn new(
+    pub fn new(
         simulation_time: &SimulationTimeIterator,
         air_temps: Vec<f64>,
         wind_speeds: Vec<f64>,
@@ -922,7 +922,7 @@ impl ExternalConditions {
     ///                   inclined surface normal, -180 to 180, in degrees;
     /// * `window_shading` - data on overhangs and side fins associated to this building element
     ///                   includes the shading object type, depth, anf distance from element
-    pub(crate) fn direct_shading_reduction_factor(
+    pub fn direct_shading_reduction_factor(
         &self,
         base_height: f64,
         height: f64,
@@ -1752,7 +1752,8 @@ impl ExternalConditions {
         Ok(i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
     }
 
-    pub(crate) fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
+    #[cfg(feature = "fhs")]
+    pub fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
         let solar_angle = self.solar_angle_of_incidence(0., 0., &simtime);
         solar_angle < 90.
     }
@@ -1900,7 +1901,7 @@ impl RelativeEq for DiffuseBreakdown {
     }
 }
 
-pub(crate) fn create_external_conditions(
+pub fn create_external_conditions(
     input: ExternalConditionsInput,
     simulation_time: &SimulationTimeIterator,
 ) -> anyhow::Result<ExternalConditions> {

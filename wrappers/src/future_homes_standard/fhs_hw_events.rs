@@ -1,4 +1,4 @@
-use crate::future_homes_standard::HourlyHotWaterEvent;
+use crate::future_homes_standard::future_homes_standard::HourlyHotWaterEvent;
 use anyhow::{anyhow, bail};
 use csv::Reader;
 use hem::core::water_heat_demand::misc::frac_hot_water;
