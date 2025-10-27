@@ -3362,7 +3362,7 @@ impl InputForProcessing {
     }
 
     pub(crate) fn reset_internal_gains(&mut self) -> JsonAccessResult<&Self> {
-        *(self.root_object_mut("InternalGains")?) = Map::new();
+        self.root_mut()?.insert("InternalGains".into(), json!({}));
 
         Ok(self)
     }
@@ -5436,5 +5436,23 @@ mod accessors_tests {
             }),
         ];
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_reset_internal_gains() {
+        let base_input = json!({
+            "InternalGains": {
+                "metabolic gains": {
+                    "start_day": 0,
+                    "time_series_step": 1,
+                    "schedule": {
+                        "main": [1305.6, 1876.8, 2978.4, 2121.6, 3631.2, 2284.8, 4161.6, 3304.8]
+                    }
+                }
+            }
+        });
+        let mut input = InputForProcessing { input: base_input };
+        input.reset_internal_gains().unwrap();
+        assert_eq!(input.input, json!({"InternalGains": {}}));
     }
 }
