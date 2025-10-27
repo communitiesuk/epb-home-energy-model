@@ -4787,8 +4787,10 @@ impl InputForProcessing {
     }
 
     pub(crate) fn remove_appliance(&mut self, appliance_key: &str) -> JsonAccessResult<&Self> {
+        // we use .shift_remove instead of remove here
+        // to preserve the relative order of the appliances
         self.root_object_entry_mut("Appliances")?
-            .remove(appliance_key);
+            .shift_remove(appliance_key);
 
         Ok(self)
     }
