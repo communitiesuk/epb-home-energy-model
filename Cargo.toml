@@ -11,7 +11,7 @@ arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 arc-swap = "1.7.1"
 argmin = "0.11.0"
 atomic_float = "1.1.0"
-bitflags = "2.9.4"
+bitflags = "2.10.0"
 bounded-vec-deque = "0.1.1"
 chrono = "0.4.42"
 clap = { version = "4.5.50", features = ["derive"], optional = true }
