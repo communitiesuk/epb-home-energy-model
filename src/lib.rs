@@ -8,9 +8,9 @@ mod external_conditions;
 pub mod input;
 pub mod output;
 pub mod read_weather_file;
-mod simulation_time;
 mod statistics;
 mod wrappers;
+mod hem_core;
 
 #[macro_use]
 extern crate is_close;
@@ -59,6 +59,7 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
+use hem_core::simulation_time;
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";
