@@ -3124,6 +3124,7 @@ dependencies = [
  "hem",
  "indexmap",
  "itertools",
+ "jsonschema",
  "parking_lot",
  "partial_application",
  "rand 0.10.0-rc.0",
@@ -3138,6 +3139,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]

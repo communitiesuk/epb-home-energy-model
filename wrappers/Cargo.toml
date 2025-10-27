@@ -24,4 +24,6 @@ strum = "0.27.2"
 strum_macros = "0.27.0"
 itertools = "0.14.0"
 hem = { path = "..", features = ["fhs"] }
+jsonschema = "0.33.0"
+walkdir = "2.5.0"
 

@@ -2,10 +2,11 @@ use crate::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
 use crate::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
+use crate::future_homes_standard::input::InputForProcessing;
 use crate::{HemResponse, HemWrapper, PassthroughHemWrapper};
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
-use hem::input::{Input, InputForProcessing};
+use hem::input::Input;
 use hem::output::Output;
 use hem::{
     CalculationContext, CalculationKey, CalculationResultsWithContext, ProjectFlags, RunResults,
@@ -21,6 +22,7 @@ mod fhs_hw_events;
 pub mod future_homes_standard;
 pub(crate) mod future_homes_standard_fee;
 pub(crate) mod future_homes_standard_notional;
+pub mod input;
 
 /// A HEM wrapper for all single calculations using the FHS wrapper.
 pub struct FhsSingleCalcWrapper;

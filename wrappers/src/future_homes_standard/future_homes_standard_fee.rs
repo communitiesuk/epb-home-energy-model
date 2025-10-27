@@ -1,8 +1,9 @@
 use super::future_homes_standard::{apply_fhs_preprocessing, calc_tfa, minimum_air_change_rate};
 use crate::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
+use crate::future_homes_standard::input::InputForProcessing;
 use anyhow::anyhow;
 use csv::WriterBuilder;
-use hem::{input::InputForProcessing, output::Output};
+use hem::output::Output;
 use serde_json::json;
 
 /// This module provides functions to implement pre- and post-processing

@@ -41,9 +41,11 @@ use chrono::prelude::*;
 use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
+use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
+use serde::{Serialize, Serializer};
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -54,10 +56,6 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
-pub use wrappers::HemResponse;
-use wrappers::{ChosenWrapper, HemWrapper, PassthroughHemWrapper};
-#[cfg(feature = "fhs")]
-use wrappers::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";
@@ -65,6 +63,24 @@ pub const HEM_VERSION_DATE: &str = "2025-06-03";
 pub const FHS_VERSION: &str = "0.27";
 #[cfg(feature = "fhs")]
 pub const FHS_VERSION_DATE: &str = "2025-06-03";
+
+#[derive(Serialize)]
+pub struct HemResponse {
+    #[serde(flatten)]
+    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
+}
+
+impl HemResponse {
+    pub(crate) fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
+        Self {
+            payload: Box::new(payload),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.payload.serialize(serializer)
+    }
+}
 
 #[instrument(skip_all)]
 pub fn run_project(
@@ -108,23 +124,6 @@ pub fn run_project(
             ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref(), &choose_schema_reference(flags))?;
 
         fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
-            #[cfg(feature = "fhs")]
-            {
-                if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-                    ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
-                } else if flags.intersects(
-                    ProjectFlags::FHS_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-                ) {
-                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
-                } else {
-                    ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-                }
-            }
             #[cfg(not(feature = "fhs"))]
             {
                 ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
@@ -434,15 +433,15 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct CalculationContext<'a> {
-    input: &'a Input,
-    corpus: &'a Corpus,
+pub struct CalculationContext<'a> {
+    pub input: &'a Input,
+    pub corpus: &'a Corpus,
 }
 
 #[derive(Clone, Copy)]
 pub struct CalculationResultsWithContext<'a> {
-    results: &'a RunResults,
-    context: CalculationContext<'a>,
+    pub results: &'a RunResults,
+    pub context: CalculationContext<'a>,
 }
 
 impl<'a> CalculationResultsWithContext<'a> {
@@ -1401,7 +1400,7 @@ enum EnergySupplyStatKey {
     StorageEff,
 }
 
-fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
+pub fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     let SummaryDataArgs {
         timestep_array,
         input,
@@ -1557,7 +1556,7 @@ fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
     }
 }
 
-struct SummaryData {
+pub struct SummaryData {
     delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
     stats: IndexMap<String, EnergySupplyStat>,
     peak_elec_consumption: f64,

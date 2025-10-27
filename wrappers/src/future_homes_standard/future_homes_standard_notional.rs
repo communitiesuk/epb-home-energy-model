@@ -5,6 +5,7 @@ use super::future_homes_standard::{
     minimum_air_change_rate, set_temp_internal_static_calcs,
 };
 use crate::future_homes_standard::fhs_hw_events::STANDARD_BATH_SIZE;
+use crate::future_homes_standard::input::InputForProcessing;
 use anyhow::{anyhow, bail};
 use hem::compare_floats::min_of_2;
 use hem::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
@@ -20,10 +21,9 @@ use hem::core::water_heat_demand::misc::water_demand_to_kwh;
 use hem::corpus::{ColdWaterSources, HtcHlpCalculation, calc_htc_hlp};
 use hem::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
-    HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
-    SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, WaterPipeContentsType, WaterPipework,
-    WaterPipeworkLocation,
+    HeatPumpSourceType, HeatSourceWetDetails, JsonAccessResult, SpaceHeatSystemHeatSource,
+    UValueEditableBuildingElement, UValueEditableBuildingElementJsonValue, WaterPipeContentsType,
+    WaterPipework, WaterPipeworkLocation,
 };
 use hem::simulation_time::SimulationTime;
 use hem::statistics::{np_interp, percentile};
@@ -864,7 +864,7 @@ fn edit_default_space_heating_distribution_system(
     let design_flow_temp = 45.;
     let design_flow_rate = 12.; // TODO (from Python) what value should this be?
     let n: f64 = 1.34;
-    let c_per_rad = 1.89 / (50_f64).powf(n);
+    let c_per_rad = 1.89 / 50_f64.powf(n);
     let power_output_per_rad = c_per_rad * (design_flow_temp - setpoint_for_sizing).powf(n);
 
     // thermal mass specified in kJ/K but required in kWh/K
@@ -1341,9 +1341,7 @@ fn edit_hot_water_distribution(
         updated_hot_water_distribution_inner_list.push(pipework_to_update);
     }
 
-    input.set_water_distribution(serde_json::Value::Array(
-        updated_hot_water_distribution_inner_list,
-    ))?;
+    input.set_water_distribution(Value::Array(updated_hot_water_distribution_inner_list))?;
 
     Ok(())
 }
@@ -1548,14 +1546,14 @@ fn round_by_precision(src: f64, precision: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class};
+    use hem::core::space_heat_demand::building_element::{HeatFlowDirection, pitch_class};
 
     use super::*;
-    use crate::input::{
+    use approx::assert_relative_eq;
+    use hem::input::{
         self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
     };
-    use crate::input::{HotWaterSource, WasteWaterHeatRecovery};
-    use approx::assert_relative_eq;
+    use hem::input::{HotWaterSource, WasteWaterHeatRecovery};
     use rstest::{fixture, rstest};
     use serde_json::json;
     use std::borrow::BorrowMut;
@@ -1617,8 +1615,8 @@ mod tests {
         // not using the building_element_by_key method here to closly match the Python test
 
         for building_element in test_input.all_building_elements().unwrap().values() {
-            if let input::BuildingElement::Opaque { .. }
-            | input::BuildingElement::AdjacentUnconditionedSpace { .. } = building_element
+            if let BuildingElement::Opaque { .. }
+            | BuildingElement::AdjacentUnconditionedSpace { .. } = building_element
             {
                 if let Some(u_value) = building_element.u_value() {
                     match pitch_class(building_element.pitch()) {
@@ -1630,7 +1628,7 @@ mod tests {
                             assert_eq!(u_value, 0.11);
                         }
                         HeatFlowDirection::Horizontal => {
-                            let expected_u_value = if let input::BuildingElement::Opaque {
+                            let expected_u_value = if let BuildingElement::Opaque {
                                 is_external_door: Some(true),
                                 ..
                             } = building_element

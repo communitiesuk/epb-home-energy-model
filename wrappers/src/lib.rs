@@ -1,12 +1,11 @@
+use crate::future_homes_standard::input::InputForProcessing;
 #[cfg(feature = "fhs")]
 pub use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-use erased_serde::Serialize as ErasedSerialize;
-use hem::input::{Input, InputForProcessing};
+
+use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
+use hem::input::Input;
 use hem::output::Output;
-use hem::{
-    CalculationKey, CalculationResultsWithContext, HemResponse, HemWrapper, PassthroughHemWrapper,
-    ProjectFlags,
-};
+use hem::{CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags};
 use std::collections::HashMap;
 
 pub mod future_homes_standard;
@@ -61,21 +60,22 @@ impl HemWrapper for PassthroughHemWrapper {
     }
 }
 
-#[derive(Serialize)]
-pub struct HemResponse {
-    #[serde(flatten)]
-    payload: Box<dyn ErasedSerialize + Send + Sync + 'static>,
-}
-
-impl HemResponse {
-    pub(crate) fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
-        Self {
-            payload: Box::new(payload),
+fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
+    {
+        if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+            ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
+        } else if flags.intersects(
+            ProjectFlags::FHS_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_ASSUMPTIONS
+                | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        ) {
+            ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
+        } else {
+            ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
         }
-    }
-
-    pub fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.payload.serialize(serializer)
     }
 }
 

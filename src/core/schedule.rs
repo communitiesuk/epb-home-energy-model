@@ -304,7 +304,7 @@ pub(crate) mod input {
     }
 
     pub(crate) type BooleanSchedule = Schedule<bool>;
-    pub(crate) type NumericSchedule = Schedule<f64>;
+    pub type NumericSchedule = Schedule<f64>;
 
     #[cfg(test)]
     mod schedule_test {
@@ -400,7 +400,7 @@ pub(crate) mod input {
 }
 
 pub(crate) use input::BooleanSchedule;
-pub(crate) use input::NumericSchedule;
+pub use input::NumericSchedule;
 
 #[cfg(test)]
 mod tests {
