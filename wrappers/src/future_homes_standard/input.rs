@@ -20,6 +20,10 @@ static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     jsonschema::validator_for(&schema).unwrap()
 });
 
+pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
+    InputForProcessing::init_with_json(json)
+}
+
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
     pub(crate) input: JsonValue,
@@ -31,10 +35,7 @@ pub struct InputForProcessing {
 /// If the full access is encapsulated within methods here, it becomes possible to update the
 /// underlying structure without breaking wrappers.
 impl InputForProcessing {
-    pub fn init_with_json(
-        json: impl Read,
-        schema_reference: &SchemaReference,
-    ) -> Result<Self, anyhow::Error> {
+    pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
         let input_for_processing = Self::init_with_json_skip_validation(json)?;
 
         let validator = &FHS_SCHEMA_VALIDATOR;

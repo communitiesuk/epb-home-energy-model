@@ -71,7 +71,7 @@ pub struct HemResponse {
 }
 
 impl HemResponse {
-    pub(crate) fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
+    pub fn new(payload: impl ErasedSerialize + Send + Sync + 'static) -> Self {
         Self {
             payload: Box::new(payload),
         }
@@ -84,102 +84,19 @@ impl HemResponse {
 
 #[instrument(skip_all)]
 pub fn run_project(
-    input: impl Read,
+    input: impl Read, // TODO review this type, should this be Input?
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     flags: &ProjectFlags,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
-        // 1. ingest/ parse input and enter preprocessing stage
-        #[instrument(skip_all)]
-        fn ingest_input_and_start_preprocessing(
-            input: impl Read,
-            external_conditions_data: Option<&ExternalConditionsFromFile>,
-            schema_reference: &SchemaReference,
-        ) -> anyhow::Result<InputForProcessing> {
-            let mut input_for_processing = ingest_for_processing(input, schema_reference)?;
 
-            input_for_processing
-                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
-            Ok(input_for_processing)
-        }
+        // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
 
-        fn choose_schema_reference(flags: &ProjectFlags) -> SchemaReference {
-            let mut schema_reference = SchemaReference::Core;
-            #[cfg(feature = "fhs")]
-            if flags.intersects(ProjectFlags::FHS_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS | ProjectFlags::FHS_COMPLIANCE) {
-                schema_reference = SchemaReference::Fhs;
-            }
-
-            schema_reference
-        }
-
-        let input_for_processing =
-            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref(), &choose_schema_reference(flags))?;
-
-        fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
-            #[cfg(not(feature = "fhs"))]
-            {
-                ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-            }
-        }
-
-        let wrapper = choose_wrapper(flags);
-
-        // 2. apply preprocessing from wrappers
-        #[instrument(skip_all)]
-        fn apply_preprocessing_from_wrappers(
-            input_for_processing: InputForProcessing,
-            wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
-        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-            wrapper.apply_preprocessing(input_for_processing, flags)
-        }
-
-        let input = match catch_unwind(AssertUnwindSafe(|| {
-            apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
-                .map_err(HemError::InvalidRequest)
-        })) {
-            Ok(result) => result?,
-            Err(panic) => {
-                return Err(HemError::PanicInWrapper(
-                    panic
-                        .downcast_ref::<&str>()
-                        .map_or("Error not captured", |v| v)
-                        .to_owned(),
-                ))
-            }
-        };
+        let mut schema_reference = SchemaReference::Core; // TODO validate Input against core schema
 
         let cloned_input = input.get(&CalculationKey::Primary).cloned();
-
-        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
-        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
-            if let Some(input) = input.get(&CalculationKey::Primary) {
-                write_preproc_file(input, &output, "preproc", "json")?;
-            } else {
-                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
-            }
-
-            return Ok(None);
-        }
-
-        #[instrument(skip_all)]
-        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
-            let writer = output.writer_for_location_key(location_key, file_extension)?;
-            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
-                error!("Could not write out preprocess file: {}", e);
-            }
-
-            Ok(())
-        }
-
 
         // 3. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
@@ -516,7 +433,7 @@ pub enum CalculationKey {
     FhsNotionalFee,
 }
 
-fn external_conditions_from_input(
+pub fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     simulation_time: SimulationTime,

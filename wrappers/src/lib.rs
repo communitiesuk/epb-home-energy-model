@@ -1,12 +1,24 @@
-use crate::future_homes_standard::input::InputForProcessing;
+use crate::future_homes_standard::input::{InputForProcessing, ingest_for_processing};
 #[cfg(feature = "fhs")]
 pub use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 
 use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
-use hem::input::Input;
+use anyhow::anyhow;
+use hem::corpus::{Corpus, HtcHlpCalculation, calc_htc_hlp};
+use hem::errors::{HemCoreError, HemError, PostprocessingError};
+use hem::external_conditions::ExternalConditions;
+use hem::input::{Input, SchemaReference};
 use hem::output::Output;
-use hem::{CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags};
+use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
+use hem::{
+    CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags, RunResults,
+    external_conditions_from_input,
+};
+use rayon::iter::IntoParallelRefIterator;
 use std::collections::HashMap;
+use std::io::Read;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use tracing::{error, instrument};
 
 pub mod future_homes_standard;
 
@@ -60,25 +72,6 @@ impl HemWrapper for PassthroughHemWrapper {
     }
 }
 
-fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
-    {
-        if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-            ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
-        } else if flags.intersects(
-            ProjectFlags::FHS_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-        ) {
-            ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
-        } else {
-            ChosenWrapper::Passthrough(PassthroughHemWrapper::new())
-        }
-    }
-}
-
 /// An enum to wrap the known wrappers that could be chosen for a given invocation.
 pub enum ChosenWrapper {
     Passthrough(PassthroughHemWrapper),
@@ -129,4 +122,145 @@ impl HemWrapper for ChosenWrapper {
             }
         }
     }
+}
+
+#[instrument(skip_all)]
+pub fn run_project(
+    input: impl Read,
+    output: impl Output,
+    external_conditions_data: Option<ExternalConditionsFromFile>,
+    tariff_data_file: Option<&str>,
+    flags: &ProjectFlags,
+) -> Result<Option<HemResponse>, HemError> {
+    catch_unwind(AssertUnwindSafe(|| {
+        // 1. ingest/ parse input and enter preprocessing stage
+        #[instrument(skip_all)]
+        fn ingest_input_and_start_preprocessing(
+            input: impl Read,
+            external_conditions_data: Option<&ExternalConditionsFromFile>,
+        ) -> anyhow::Result<InputForProcessing> {
+            let mut input_for_processing = ingest_for_processing(input)?;
+
+            input_for_processing
+                .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
+            Ok(input_for_processing)
+        }
+
+        let input_for_processing =
+            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
+
+        fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
+            {
+                if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                    ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
+                } else if flags.intersects(
+                    ProjectFlags::FHS_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+                ) {
+                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
+                } else {
+                    ChosenWrapper::Passthrough(PassthroughHemWrapper::new()) // TODO review
+                }
+            }
+        }
+
+        let wrapper = choose_wrapper(flags);
+
+        // 2. apply preprocessing from wrappers
+        #[instrument(skip_all)]
+        fn apply_preprocessing_from_wrappers(
+            input_for_processing: InputForProcessing,
+            wrapper: &impl HemWrapper,
+            flags: &ProjectFlags,
+        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+            wrapper.apply_preprocessing(input_for_processing, flags)
+        }
+
+        let input = match catch_unwind(AssertUnwindSafe(|| {
+            apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
+                .map_err(HemError::InvalidRequest)
+        })) {
+            Ok(result) => result?,
+            Err(panic) => {
+                return Err(HemError::PanicInWrapper(
+                    panic
+                        .downcast_ref::<&str>()
+                        .map_or("Error not captured", |v| v)
+                        .to_owned(),
+                ))
+            }
+        };
+
+        let cloned_input = input.get(&CalculationKey::Primary).cloned();
+
+        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
+        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
+            if let Some(input) = input.get(&CalculationKey::Primary) {
+                write_preproc_file(input, &output, "preproc", "json")?;
+            } else {
+                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
+            }
+
+            return Ok(None);
+        }
+
+        #[instrument(skip_all)]
+        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
+            let writer = output.writer_for_location_key(location_key, file_extension)?;
+            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
+                error!("Could not write out preprocess file: {}", e);
+            }
+
+            Ok(())
+        }
+
+
+        // 3. Determine external conditions to use for calculations.
+        #[instrument(skip_all)]
+        fn resolve_external_conditions(
+            input: &HashMap<CalculationKey, Input>,
+            external_conditions_data: Option<ExternalConditionsFromFile>,
+        ) -> HashMap<CalculationKey, ExternalConditions> {
+            input
+                .par_iter()
+                .map(|(key, input)| {
+                    (
+                        *key,
+                        external_conditions_from_input(
+                            input.external_conditions.clone(),
+                            external_conditions_data.clone(),
+                            input.simulation_time,
+                        ),
+                    )
+                })
+                .collect()
+        }
+
+        let external_conditions = resolve_external_conditions(&input, external_conditions_data);
+
+        // 7. Run wrapper post-processing and capture any output.
+        #[instrument(skip_all)]
+        fn run_wrapper_postprocessing(
+            output: &impl Output,
+            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+            wrapper: &impl HemWrapper,
+            flags: &ProjectFlags,
+        ) -> anyhow::Result<Option<HemResponse>> {
+            wrapper.apply_postprocessing(output, results, flags)
+        }
+
+        run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
+            .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
+    }))
+        .map_err(|e| {
+            HemError::GeneralPanic(
+                e.downcast_ref::<&str>()
+                    .map_or("Uncaught panic - could not capture more information; to debug further, try replicating in debug mode.", |v| v)
+                    .to_owned(),
+            )
+        })?
 }
