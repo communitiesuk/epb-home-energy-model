@@ -4,7 +4,6 @@ mod compare_floats;
 pub mod core;
 pub mod corpus;
 pub mod errors;
-mod external_conditions;
 pub mod input;
 pub mod output;
 pub mod read_weather_file;
@@ -60,6 +59,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
 use hem_core::simulation_time;
+use hem_core::external_conditions;
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";
