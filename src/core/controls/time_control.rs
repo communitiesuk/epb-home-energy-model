@@ -276,7 +276,7 @@ impl ChargeControl {
     ) -> anyhow::Result<f64> {
         // Calculate target charge nominal when unit is on
         let mut target_charge_nominal = if self.is_on(&simtime) {
-            self.charge_level[simtime.time_series_idx_days(self.start_day, self.time_series_step)]
+            self.charge_level[simtime.time_series_idx_days(self.start_day, self.time_series_step, Option::Some(21.))]
                 .unwrap_or_default()
         } else {
             // If unit is off send 0.0 for target charge
