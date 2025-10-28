@@ -143,11 +143,11 @@ impl SimulationTimeIteration {
         ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 
-    pub fn time_series_idx_days(&self, start_day: u32, step: f64) -> usize {
+    pub fn time_series_idx_days(&self, start_day: u32, step: f64, charge_calc_time: Option<f64>) -> usize {
+        let charge_calc_time = charge_calc_time.unwrap_or(21.);
         let current_day = self.time as u32 / HOURS_IN_DAY;
-        // TODO (from Python): (Potential) Decide from which hour of the day the system should be targeting next day charge level
-        // Currently 9pm
-        if self.time.floor() >= 21.0 {
+
+        if self.time.floor() >= charge_calc_time {
             ((current_day + 1 - start_day) as f64 / step) as usize
         } else {
             ((current_day - start_day) as f64 / step) as usize
