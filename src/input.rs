@@ -7,32 +7,22 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
-use itertools::Itertools;
-use jsonschema::{BasicOutput, Validator};
+use jsonschema::Validator;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_valid::json::ToJsonString;
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use smartstring::alias::String;
 #[cfg(feature = "fhs")]
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
-use std::io::{BufReader, Read};
 use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use thiserror::Error;
-
-pub fn ingest_for_processing(
-    json: impl Read,
-    schema_reference: &SchemaReference,
-) -> Result<InputForProcessing, anyhow::Error> {
-    InputForProcessing::init_with_json(json, schema_reference)
-}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SchemaReference {
@@ -3184,11 +3174,6 @@ impl InputForCalcHtcHlp for ReducedInputForCalcHtcHlp {
         self.temp_internal_air_static_calcs
     }
 }
-
-static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!("../schemas/input_fhs.schema.json")).unwrap();
-    jsonschema::validator_for(&schema).unwrap()
-});
 
 static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema = serde_json::from_str(include_str!("../schemas/input_core.schema.json")).unwrap();
