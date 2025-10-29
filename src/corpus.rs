@@ -460,14 +460,14 @@ pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<H
     }
 
     let controls = control_from_input(
-        &input.control(),
+        input.control(),
         external_conditions.clone(),
         &simtime.iter(),
     )?;
 
     let ventilation = InfiltrationVentilation::create(
-        &input.infiltration_ventilation(),
-        &input.zone(),
+        input.infiltration_ventilation(),
+        input.zone(),
         false,
         &energy_supplies,
         &controls,

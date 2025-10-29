@@ -4416,13 +4416,9 @@ impl InputForProcessing {
             .iter()
             .filter(|(event_type, _)| event_types.contains(&&***event_type))
             .flat_map(|(_, events)| {
-                events.as_object().map(|events| {
-                    events
-                        .values()
-                        .into_iter()
-                        .map(JsonValue::as_array)
-                        .flatten()
-                })
+                events
+                    .as_object()
+                    .map(|events| events.values().filter_map(JsonValue::as_array))
             })
             .flatten()
             .flatten()
@@ -5274,13 +5270,13 @@ mod tests {
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
-                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).expect(
-                    format!(
-                        "Failed deserializing {}",
-                        entry.file_name().to_str().unwrap()
-                    )
-                    .as_str(),
-                );
+                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap()))
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Failed deserializing {}",
+                            entry.file_name().to_str().unwrap()
+                        )
+                    });
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);
