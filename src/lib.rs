@@ -25,11 +25,10 @@ use crate::corpus::{
     HtcHlpCalculation, NumberOrDivisionByZero, ResultsAnnual, ResultsEndUser, ResultsPerTimestep,
     ZoneResultKey,
 };
-use crate::errors::{HemCoreError, HemError, NotImplementedError, PostprocessingError};
+use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ingest_for_processing, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
-    InputForProcessing, SchemaReference,
+    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
 };
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
@@ -51,11 +50,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
-use tracing::{debug, error, instrument};
+use tracing::{debug, instrument};
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";
@@ -83,18 +81,18 @@ impl HemResponse {
 }
 
 #[instrument(skip_all)]
-pub fn run_project(
-    input: impl Read, // TODO review this type, should this be Input?
+pub fn run_project<'a>(
+    input: HashMap<CalculationKey, Input>, // TODO change back to input: impl Read,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
-    tariff_data_file: Option<&str>,
-    flags: &ProjectFlags,
-) -> Result<Option<HemResponse>, HemError> {
+    tariff_data_file: Option<&'a str>,
+    flags: &'a ProjectFlags, // TODO: this can be owned
+) -> Result<HashMap<CalculationKey, CalculationResultsWithContext<'a>>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
 
         // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
 
-        let mut schema_reference = SchemaReference::Core; // TODO validate Input against core schema
+        let _schema_reference = SchemaReference::Core; // TODO validate Input against core schema
 
         let cloned_input = input.get(&CalculationKey::Primary).cloned();
 
@@ -312,25 +310,12 @@ pub fn run_project(
                     write_core_output_file_esh_detailed(output, esh_output_prefix, esh_output_dict)?;
                 }
             }
-
             Ok(())
         }
 
         write_core_output_files(cloned_input.as_ref(), &output, &contextualised_results, &corpora, flags)?;
 
-        // 7. Run wrapper post-processing and capture any output.
-        #[instrument(skip_all)]
-        fn run_wrapper_postprocessing(
-            output: &impl Output,
-            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-            wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
-        ) -> anyhow::Result<Option<HemResponse>> {
-            wrapper.apply_postprocessing(output, results, flags)
-        }
-
-        run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
-            .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
+        Ok(contextualised_results)
     }))
         .map_err(|e| {
             HemError::GeneralPanic(
@@ -364,8 +349,8 @@ pub struct CalculationResultsWithContext<'a> {
 impl<'a> CalculationResultsWithContext<'a> {
     fn new(
         input: &'a Input,
-        corpus: &'a Corpus,
-        results: &'a RunResults,
+        corpus: Corpus,
+        results: RunResults,
     ) -> CalculationResultsWithContext<'a> {
         Self {
             results,

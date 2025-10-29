@@ -125,7 +125,8 @@ impl HemWrapper for ChosenWrapper {
 }
 
 #[instrument(skip_all)]
-pub fn run_project(
+pub fn main(
+    // TODO: consider if this should move to main.rs
     input: impl Read,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
@@ -133,21 +134,19 @@ pub fn run_project(
     flags: &ProjectFlags,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
-        // 1. ingest/ parse input and enter preprocessing stage
         #[instrument(skip_all)]
         fn ingest_input_and_start_preprocessing(
             input: impl Read,
             external_conditions_data: Option<&ExternalConditionsFromFile>,
         ) -> anyhow::Result<InputForProcessing> {
             let mut input_for_processing = ingest_for_processing(input)?;
+            // pass as a read or stream to run_project or Enumeration (either it's a read of a json value)
+            // in corupus if read -> deserialize, if json value - or express it as a Read if possible
 
             input_for_processing
                 .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
             Ok(input_for_processing)
         }
-
-        let input_for_processing =
-            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
 
         fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
             {
@@ -168,9 +167,6 @@ pub fn run_project(
             }
         }
 
-        let wrapper = choose_wrapper(flags);
-
-        // 2. apply preprocessing from wrappers
         #[instrument(skip_all)]
         fn apply_preprocessing_from_wrappers(
             input_for_processing: InputForProcessing,
@@ -180,6 +176,22 @@ pub fn run_project(
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
 
+        #[instrument(skip_all)]
+        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
+            let writer = output.writer_for_location_key(location_key, file_extension)?;
+            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
+                error!("Could not write out preprocess file: {}", e);
+            }
+
+            Ok(())
+        }
+
+        // 1. ingest / parse input and enter preprocessing stage
+        let input_for_processing =
+            ingest_input_and_start_preprocessing(input, external_conditions_data.as_ref())?;
+
+        // 2. apply preprocessing from wrappers
+        let wrapper = choose_wrapper(flags);
         let input = match catch_unwind(AssertUnwindSafe(|| {
             apply_preprocessing_from_wrappers(input_for_processing, &wrapper, flags)
                 .map_err(HemError::InvalidRequest)
@@ -195,8 +207,6 @@ pub fn run_project(
             }
         };
 
-        let cloned_input = input.get(&CalculationKey::Primary).cloned();
-
         // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
         if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
             if let Some(input) = input.get(&CalculationKey::Primary) {
@@ -208,40 +218,8 @@ pub fn run_project(
             return Ok(None);
         }
 
-        #[instrument(skip_all)]
-        fn write_preproc_file(input: &Input, output: &impl Output, location_key: &str, file_extension: &str) -> anyhow::Result<()> {
-            let writer = output.writer_for_location_key(location_key, file_extension)?;
-            if let Err(e) = serde_json::to_writer_pretty(writer, input) {
-                error!("Could not write out preprocess file: {}", e);
-            }
-
-            Ok(())
-        }
-
-
-        // 3. Determine external conditions to use for calculations.
-        #[instrument(skip_all)]
-        fn resolve_external_conditions(
-            input: &HashMap<CalculationKey, Input>,
-            external_conditions_data: Option<ExternalConditionsFromFile>,
-        ) -> HashMap<CalculationKey, ExternalConditions> {
-            input
-                .par_iter()
-                .map(|(key, input)| {
-                    (
-                        *key,
-                        external_conditions_from_input(
-                            input.external_conditions.clone(),
-                            external_conditions_data.clone(),
-                            input.simulation_time,
-                        ),
-                    )
-                })
-                .collect()
-        }
-
-        let external_conditions = resolve_external_conditions(&input, external_conditions_data);
-
+        let contextualised_results = hem::run_project(input, output, external_conditions_data, tariff_data_file, flags);
+        // results: &HashMap<CalculationKey, CalculationResultsWithContext>
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
         fn run_wrapper_postprocessing(
