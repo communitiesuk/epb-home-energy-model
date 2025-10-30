@@ -2640,7 +2640,7 @@ impl ImmersionHeater {
 }
 
 /// Trait to represent a thing that can divert a surplus, like a PV diverter.
-pub(crate) trait SurplusDiverting: Send + Sync {
+pub trait SurplusDiverting: Send + Sync {
     fn divert_surplus(
         &self,
         supply_surplus: f64,
