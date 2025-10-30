@@ -154,16 +154,13 @@ pub fn run_project<'a>(
             }
         };
 
-        let contextualised_results =
-        CalculationResultsWithContext::new(&input, &corpus, &run_results);
-
         // 6. Write out to core output files.
         #[instrument(skip_all)]
         fn write_core_output_files(
             primary_input: Option<&Input>,
             output: &impl Output,
             results: &CalculationResultsWithContext,
-            corpus: &Corpus,
+            hour_per_step: f64,
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
             // continue here
@@ -227,7 +224,6 @@ pub fn run_project<'a>(
             )?;
 
             if flags.contains(ProjectFlags::HEAT_BALANCE) {
-                let hour_per_step = corpus.simulation_time.step_in_hours();
                 for (hb_name, hb_map) in heat_balance_dict.iter() {
                     let output_key = format!("results_heat_balance_{}", hb_name.to_string().to_case(Case::Snake)).into();
                     write_core_output_file_heat_balance(output, HeatBalanceOutputFileArgs {
@@ -259,7 +255,7 @@ pub fn run_project<'a>(
 
             write_core_output_file_summary(output, results.try_into()?)?;
 
-            let corpus = results.context.corpus;
+            let corpus = &results.context.corpus;
 
             let primary_input = primary_input.ok_or_else(|| anyhow!("Primary input should be available as there is a primary calculation."))?;
 
@@ -291,7 +287,10 @@ pub fn run_project<'a>(
             Ok(())
         }
 
-        write_core_output_files(Some(&cloned_input), &output, &contextualised_results, &corpus, flags)?;
+        let steps_in_hours = &corpus.simulation_time.step_in_hours();
+        let contextualised_results =
+            CalculationResultsWithContext::new(&input, corpus, &run_results);
+        write_core_output_files(Some(&cloned_input), &output, &contextualised_results, *steps_in_hours, flags)?;
         Ok(contextualised_results)
     }))
         .map_err(|e| {
@@ -311,13 +310,11 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
     None
 }
 
-#[derive(Clone, Copy)]
 pub struct CalculationContext<'a> {
     pub input: &'a Input,
-    pub corpus: &'a Corpus,
+    pub corpus: Corpus,
 }
 
-#[derive(Clone, Copy)]
 pub struct CalculationResultsWithContext<'a> {
     pub results: &'a RunResults,
     pub context: CalculationContext<'a>,
@@ -326,7 +323,7 @@ pub struct CalculationResultsWithContext<'a> {
 impl<'a> CalculationResultsWithContext<'a> {
     fn new(
         input: &'a Input,
-        corpus: &'a Corpus,
+        corpus: Corpus,
         results: &'a RunResults,
     ) -> CalculationResultsWithContext<'a> {
         Self {
