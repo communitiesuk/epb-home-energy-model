@@ -86,7 +86,7 @@ pub fn run_project<'a>(
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&'a str>,
     flags: &'a ProjectFlags, // TODO: this can be owned
-) -> Result<CalculationResultsWithContext<'a>, HemError> {
+) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
 
         // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
@@ -289,7 +289,7 @@ pub fn run_project<'a>(
 
         let steps_in_hours = &corpus.simulation_time.step_in_hours();
         let contextualised_results =
-            CalculationResultsWithContext::new(input, corpus, &run_results);
+            CalculationResultsWithContext::new(input, corpus, run_results);
         write_core_output_files(Some(&cloned_input), &output, &contextualised_results, *steps_in_hours, flags)?;
         Ok(contextualised_results)
     }))
@@ -315,17 +315,13 @@ pub struct CalculationContext {
     pub corpus: Corpus,
 }
 
-pub struct CalculationResultsWithContext<'a> {
-    pub results: &'a RunResults,
+pub struct CalculationResultsWithContext {
+    pub results: RunResults,
     pub context: CalculationContext,
 }
 
-impl<'a> CalculationResultsWithContext<'a> {
-    fn new(
-        input: Input,
-        corpus: Corpus,
-        results: &'a RunResults,
-    ) -> CalculationResultsWithContext<'a> {
+impl CalculationResultsWithContext {
+    fn new(input: Input, corpus: Corpus, results: RunResults) -> CalculationResultsWithContext {
         Self {
             results,
             context: CalculationContext { input, corpus },
@@ -333,7 +329,7 @@ impl<'a> CalculationResultsWithContext<'a> {
     }
 }
 
-impl CalculationResultsWithContext<'_> {
+impl CalculationResultsWithContext {
     fn daily_hw_demand_percentile(&self, percentage: usize) -> anyhow::Result<f64> {
         Ok(percentile(
             &convert_profile_to_daily(
@@ -817,24 +813,24 @@ fn write_core_output_file(output: &impl Output, args: OutputFileArgs) -> anyhow:
     Ok(())
 }
 
-struct SummaryOutputFileArgs<'a> {
+struct SummaryOutputFileArgs {
     output_key: String,
     input: SummaryInputDigest,
-    timestep_array: &'a [f64],
-    results_end_user: &'a IndexMap<String, IndexMap<String, Vec<f64>>>,
-    energy_generated_consumed: &'a IndexMap<String, Vec<f64>>,
-    energy_to_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_from_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_diverted: &'a IndexMap<String, Vec<f64>>,
-    energy_import: &'a IndexMap<String, Vec<f64>>,
-    energy_export: &'a IndexMap<String, Vec<f64>>,
-    storage_from_grid: &'a IndexMap<String, Vec<f64>>,
+    timestep_array: Vec<f64>,
+    results_end_user: IndexMap<String, IndexMap<String, Vec<f64>>>,
+    energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    energy_to_storage: IndexMap<String, Vec<f64>>,
+    energy_from_storage: IndexMap<String, Vec<f64>>,
+    energy_diverted: IndexMap<String, Vec<f64>>,
+    energy_import: IndexMap<String, Vec<f64>>,
+    energy_export: IndexMap<String, Vec<f64>>,
+    storage_from_grid: IndexMap<String, Vec<f64>>,
     space_heat_demand_total: f64,
     space_cool_demand_total: f64,
     total_floor_area: f64,
-    heat_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
-    cool_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
-    dhw_cop_dict: &'a IndexMap<String, NumberOrDivisionByZero>,
+    heat_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    cool_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
+    dhw_cop_dict: IndexMap<String, NumberOrDivisionByZero>,
     daily_hw_demand_75th_percentile: f64,
 }
 
@@ -884,75 +880,48 @@ impl From<&HotWaterSourceDetails> for SummaryInputHotWaterSourceDigest {
     }
 }
 
-impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'a> {
+impl<'a> TryFrom<&CalculationResultsWithContext> for SummaryOutputFileArgs {
     type Error = anyhow::Error;
 
-    fn try_from(value: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
-        let RunResults {
-            timestep_array,
-            results_end_user,
-            energy_import,
-            energy_export,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            heat_cop_dict,
-            cool_cop_dict,
-            dhw_cop_dict,
-            ..
-        } = value.results;
+    fn try_from(value: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryOutputFileArgs {
             output_key: "results_summary".into(),
             input: (&value.context.input).into(),
-            timestep_array,
-            results_end_user,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            energy_diverted,
-            energy_import,
-            energy_export,
-            storage_from_grid,
+            timestep_array: value.results.timestep_array.clone(),
+            results_end_user: value.results.results_end_user.clone(),
+            energy_generated_consumed: value.results.energy_generated_consumed.clone(),
+            energy_to_storage: value.results.energy_to_storage.clone(),
+            energy_from_storage: value.results.energy_from_storage.clone(),
+            energy_diverted: value.results.energy_diverted.clone(),
+            energy_import: value.results.energy_import.clone(),
+            energy_export: value.results.energy_export.clone(),
+            storage_from_grid: value.results.storage_from_grid.clone(),
             space_heat_demand_total: value.results.space_heat_demand_total(),
             space_cool_demand_total: value.results.space_cool_demand_total(),
             total_floor_area: value.context.corpus.total_floor_area,
-            heat_cop_dict,
-            cool_cop_dict,
-            dhw_cop_dict,
+            heat_cop_dict: value.results.heat_cop_dict.clone(),
+            cool_cop_dict: value.results.cool_cop_dict.clone(),
+            dhw_cop_dict: value.results.dhw_cop_dict.clone(),
             daily_hw_demand_75th_percentile: value.daily_hw_demand_percentile(75)?,
         })
     }
 }
 
-impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
+impl<'a> TryFrom<&CalculationResultsWithContext> for SummaryDataArgs {
     type Error = anyhow::Error;
 
-    fn try_from(results: &CalculationResultsWithContext<'a>) -> Result<Self, Self::Error> {
-        let RunResults {
-            timestep_array,
-            results_end_user,
-            energy_import,
-            energy_export,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            ..
-        } = results.results;
+    fn try_from(results: &CalculationResultsWithContext) -> Result<Self, Self::Error> {
         Ok(SummaryDataArgs {
-            timestep_array,
+            timestep_array: results.results.timestep_array.clone(),
             input: (&results.context.input).into(),
-            results_end_user,
-            energy_generated_consumed,
-            energy_to_storage,
-            energy_from_storage,
-            storage_from_grid,
-            energy_diverted,
-            energy_import,
-            energy_export,
+            results_end_user: results.results.results_end_user.clone(),
+            energy_generated_consumed: results.results.energy_generated_consumed.clone(),
+            energy_to_storage: results.results.energy_to_storage.clone(),
+            energy_from_storage: results.results.energy_from_storage.clone(),
+            storage_from_grid: results.results.storage_from_grid.clone(),
+            energy_diverted: results.results.energy_diverted.clone(),
+            energy_import: results.results.energy_import.clone(),
+            energy_export: results.results.energy_export.clone(),
         })
     }
 }
@@ -1213,17 +1182,17 @@ fn write_core_output_file_summary(
     Ok(())
 }
 
-struct SummaryDataArgs<'a> {
-    timestep_array: &'a [f64],
+pub struct SummaryDataArgs {
+    timestep_array: Vec<f64>,
     input: SummaryInputDigest,
-    results_end_user: &'a ResultsEndUser,
-    energy_generated_consumed: &'a IndexMap<String, Vec<f64>>,
-    energy_to_storage: &'a IndexMap<String, Vec<f64>>,
-    energy_from_storage: &'a IndexMap<String, Vec<f64>>,
-    storage_from_grid: &'a IndexMap<String, Vec<f64>>,
-    energy_diverted: &'a IndexMap<String, Vec<f64>>,
-    energy_import: &'a IndexMap<String, Vec<f64>>,
-    energy_export: &'a IndexMap<String, Vec<f64>>,
+    results_end_user: ResultsEndUser,
+    energy_generated_consumed: IndexMap<String, Vec<f64>>,
+    energy_to_storage: IndexMap<String, Vec<f64>>,
+    energy_from_storage: IndexMap<String, Vec<f64>>,
+    storage_from_grid: IndexMap<String, Vec<f64>>,
+    energy_diverted: IndexMap<String, Vec<f64>>,
+    energy_import: IndexMap<String, Vec<f64>>,
+    energy_export: IndexMap<String, Vec<f64>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1965,12 +1934,4 @@ impl From<&ExternalConditionsFromFile> for ExternalConditionsInput {
             ..Default::default()
         }
     }
-}
-
-/// Utility function for iterating multiple hashmaps with same keys.
-fn iterate_maps<'a: 'b, 'b, K: Eq + Hash, V, W>(
-    m1: &'a HashMap<K, V>,
-    m2: &'b HashMap<K, W>,
-) -> impl Iterator<Item = (&'a K, &'a V, &'b W)> {
-    m1.iter().map(move |(k, v1)| (k, v1, m2.get(k).unwrap()))
 }
