@@ -3135,6 +3135,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "serde_valid",
  "smartstring",
  "strum",
  "strum_macros",

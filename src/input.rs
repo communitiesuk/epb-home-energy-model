@@ -7,18 +7,18 @@ use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowSh
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
-use jsonschema::Validator;
+use jsonschema::{BasicOutput, Validator};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use serde_valid::json::ToJsonString;
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use smartstring::alias::String;
-#[cfg(feature = "fhs")]
-use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
+use std::io::{BufReader, Read};
 use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -1440,9 +1440,8 @@ pub(crate) struct WaterHeatingEvents {
     pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
     pub start: f64,
@@ -3190,9 +3189,38 @@ pub fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
 
 pub type JsonAccessResult<T> = Result<T, JsonAccessError>;
 
+pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
+    InputForProcessing::init_with_json(json)
+}
+
 #[derive(Clone, Debug)]
 pub struct InputForProcessing {
     pub(crate) input: JsonValue,
+}
+
+impl InputForProcessing {
+    pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
+        let input_for_processing = Self::init_with_json_skip_validation(json)?;
+
+        let validator = &CORE_SCHEMA_VALIDATOR;
+
+        if let BasicOutput::Invalid(errors) = validator.apply(&input_for_processing.input).basic() {
+            bail!(
+                "Invalid JSON against the FHS schema: {}",
+                serde_json::to_value(errors)?.to_json_string_pretty()?
+            ); // TODO build this handling logic out
+        }
+
+        Ok(input_for_processing)
+    }
+
+    pub(crate) fn init_with_json_skip_validation(json: impl Read) -> Result<Self, anyhow::Error> {
+        let reader = BufReader::new(json);
+
+        let input: JsonValue = serde_json::from_reader(reader)?;
+
+        Ok(Self { input })
+    }
 }
 
 impl TryFrom<&InputForProcessing> for Corpus {
@@ -3211,6 +3239,7 @@ impl TryFrom<&InputForProcessing> for Corpus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use rstest::*;
     use std::fs::File;
     use walkdir::{DirEntry, WalkDir};
@@ -3241,8 +3270,7 @@ mod tests {
     #[rstest]
     fn should_successfully_parse_all_core_demo_files(core_files: Vec<DirEntry>) {
         for entry in core_files {
-            let parsed =
-                ingest_for_processing(File::open(entry.path()).unwrap(), &SchemaReference::Core);
+            let parsed = ingest_for_processing(File::open(entry.path()).unwrap());
             assert!(
                 parsed.is_ok(),
                 "error was {:?} when parsing file {}",

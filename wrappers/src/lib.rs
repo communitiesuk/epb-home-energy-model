@@ -75,9 +75,7 @@ impl HemWrapper for PassthroughHemWrapper {
 /// An enum to wrap the known wrappers that could be chosen for a given invocation.
 pub enum ChosenWrapper {
     Passthrough(PassthroughHemWrapper),
-    #[cfg(feature = "fhs")]
     FhsSingleCalc(FhsSingleCalcWrapper),
-    #[cfg(feature = "fhs")]
     FhsCompliance(FhsComplianceWrapper),
 }
 
@@ -91,11 +89,9 @@ impl HemWrapper for ChosenWrapper {
             ChosenWrapper::Passthrough(wrapper) => {
                 <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
             }
-            #[cfg(feature = "fhs")]
             ChosenWrapper::FhsSingleCalc(wrapper) => {
                 <FhsSingleCalcWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
             }
-            #[cfg(feature = "fhs")]
             ChosenWrapper::FhsCompliance(wrapper) => {
                 <FhsComplianceWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
             }
@@ -112,11 +108,9 @@ impl HemWrapper for ChosenWrapper {
             ChosenWrapper::Passthrough(wrapper) => {
                 wrapper.apply_postprocessing(output, results, flags)
             }
-            #[cfg(feature = "fhs")]
             ChosenWrapper::FhsSingleCalc(wrapper) => {
                 wrapper.apply_postprocessing(output, results, flags)
             }
-            #[cfg(feature = "fhs")]
             ChosenWrapper::FhsCompliance(wrapper) => {
                 wrapper.apply_postprocessing(output, results, flags)
             }

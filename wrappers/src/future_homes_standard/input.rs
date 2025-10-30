@@ -11,12 +11,14 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{BasicOutput, Validator};
 use serde_json::{Map, Value as JsonValue, json};
+use serde_valid::json::ToJsonString;
 use std::collections::HashSet;
 use std::io::{BufReader, Read};
 use std::sync::LazyLock;
 
 static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-    let schema = serde_json::from_str(include_str!("../schemas/input_fhs.schema.json")).unwrap();
+    let schema =
+        serde_json::from_str(include_str!("../../../schemas/input_fhs.schema.json")).unwrap();
     jsonschema::validator_for(&schema).unwrap()
 });
 
@@ -2044,8 +2046,7 @@ mod tests {
     #[rstest]
     fn should_successfully_parse_all_fhs_demo_files(fhs_files: Vec<DirEntry>) {
         for entry in fhs_files {
-            let parsed =
-                ingest_for_processing(File::open(entry.path()).unwrap(), &SchemaReference::Fhs);
+            let parsed = ingest_for_processing(File::open(entry.path()).unwrap());
             assert!(
                 parsed.is_ok(),
                 "error was {:?} when parsing file {}",
