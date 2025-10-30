@@ -39,7 +39,7 @@ impl HemWrapper for FhsSingleCalcWrapper {
         &self,
         mut input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+    ) -> anyhow::Result<Input> {
         do_fhs_preprocessing(&mut input, flags)?;
 
         <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(
@@ -75,17 +75,11 @@ impl HemWrapper for FhsComplianceWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,
-        _flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        vec![input; FHS_COMPLIANCE_CALCULATIONS.len()]
-            .into_par_iter()
-            .enumerate()
-            .map(|(i, mut input)| {
-                let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
-                do_fhs_preprocessing(&mut input, flags)?;
-                Ok((*key, input.finalize()?))
-            })
-            .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>()
+        flags: &ProjectFlags,
+    ) -> anyhow::Result<Input> {
+        let mut cloned_input = input.clone();
+        do_fhs_preprocessing(&mut cloned_input, flags)?;
+        Ok(cloned_input.finalize()?)
     }
 
     fn apply_postprocessing(

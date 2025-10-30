@@ -31,7 +31,7 @@ pub trait HemWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>>;
+    ) -> anyhow::Result<Input>;
     fn apply_postprocessing(
         &self,
         output: &impl Output,
@@ -55,11 +55,8 @@ impl HemWrapper for PassthroughHemWrapper {
         &self,
         input: InputForProcessing,
         _flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        Ok(HashMap::from([(
-            CalculationKey::Primary,
-            input.finalize()?,
-        )]))
+    ) -> anyhow::Result<Input> {
+        Ok(input.finalize()?)
     }
 
     fn apply_postprocessing(
@@ -84,7 +81,7 @@ impl HemWrapper for ChosenWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+    ) -> anyhow::Result<Input> {
         match self {
             ChosenWrapper::Passthrough(wrapper) => {
                 <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
@@ -166,7 +163,7 @@ pub fn main(
             input_for_processing: InputForProcessing,
             wrapper: &impl HemWrapper,
             flags: &ProjectFlags,
-        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+        ) -> anyhow::Result<Input> {
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
 
@@ -201,24 +198,19 @@ pub fn main(
             }
         };
 
-        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
-        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
-            if let Some(input) = input.get(&CalculationKey::Primary) {
-                write_preproc_file(input, &output, "preproc", "json")?;
-            } else {
-                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
-            }
-
+        // 2b.(!) If preprocess-only flag is present and the fhs compliance flag is not present, write out preprocess file
+        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) && !flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+            write_preproc_file(&input, &output, "preproc", "json")?;
             return Ok(None);
         }
 
-        let contextualised_results = hem::run_project(input, output, external_conditions_data, tariff_data_file, flags);
-        // results: &HashMap<CalculationKey, CalculationResultsWithContext>
+        let contextualised_results = hem::run_project(input, output, external_conditions_data, tariff_data_file, flags)?;
+
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
         fn run_wrapper_postprocessing(
             output: &impl Output,
-            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+            results: &CalculationResultsWithContext,
             wrapper: &impl HemWrapper,
             flags: &ProjectFlags,
         ) -> anyhow::Result<Option<HemResponse>> {
