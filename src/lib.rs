@@ -289,7 +289,7 @@ pub fn run_project<'a>(
 
         let steps_in_hours = &corpus.simulation_time.step_in_hours();
         let contextualised_results =
-            CalculationResultsWithContext::new(&input, corpus, &run_results);
+            CalculationResultsWithContext::new(input, corpus, &run_results);
         write_core_output_files(Some(&cloned_input), &output, &contextualised_results, *steps_in_hours, flags)?;
         Ok(contextualised_results)
     }))
@@ -310,19 +310,19 @@ fn capture_specific_error_case(e: &anyhow::Error) -> Option<HemError> {
     None
 }
 
-pub struct CalculationContext<'a> {
-    pub input: &'a Input,
+pub struct CalculationContext {
+    pub input: Input,
     pub corpus: Corpus,
 }
 
 pub struct CalculationResultsWithContext<'a> {
     pub results: &'a RunResults,
-    pub context: CalculationContext<'a>,
+    pub context: CalculationContext,
 }
 
 impl<'a> CalculationResultsWithContext<'a> {
     fn new(
-        input: &'a Input,
+        input: Input,
         corpus: Corpus,
         results: &'a RunResults,
     ) -> CalculationResultsWithContext<'a> {
@@ -905,7 +905,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryOutputFileArgs<'
         } = value.results;
         Ok(SummaryOutputFileArgs {
             output_key: "results_summary".into(),
-            input: value.context.input.into(),
+            input: (&value.context.input).into(),
             timestep_array,
             results_end_user,
             energy_generated_consumed,
@@ -944,7 +944,7 @@ impl<'a> TryFrom<&CalculationResultsWithContext<'a>> for SummaryDataArgs<'a> {
         } = results.results;
         Ok(SummaryDataArgs {
             timestep_array,
-            input: results.context.input.into(),
+            input: (&results.context.input).into(),
             results_end_user,
             energy_generated_consumed,
             energy_to_storage,
