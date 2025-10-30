@@ -13,7 +13,6 @@ use hem::{
     RunResults,
 };
 use rayon::prelude::*;
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 mod fhs_appliance;
@@ -52,12 +51,9 @@ impl HemWrapper for FhsSingleCalcWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        results: &CalculationResultsWithContext,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
-        let results = results
-            .get(&CalculationKey::Primary)
-            .expect("A primary calculation was expected in the FHS single calc wrapper");
         do_fhs_postprocessing(output, results, flags)
     }
 }
@@ -85,16 +81,10 @@ impl HemWrapper for FhsComplianceWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        _flags: &ProjectFlags,
+        results: &CalculationResultsWithContext,
+        flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
-        FHS_COMPLIANCE_CALCULATIONS
-            .par_iter()
-            .map(|(key, flags)| {
-                do_fhs_postprocessing(output, &results[key], flags)?;
-                Ok(())
-            })
-            .collect::<anyhow::Result<()>>()?;
+        do_fhs_postprocessing(output, &results, flags)?;
 
         let compliance_result = CalculatedComplianceResult::try_from(results)?;
         let compliance_response = FhsComplianceResponse::build_from(&compliance_result)?;

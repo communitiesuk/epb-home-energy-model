@@ -35,7 +35,7 @@ pub trait HemWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        results: &CalculationResultsWithContext,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>>;
 }
@@ -62,7 +62,7 @@ impl HemWrapper for PassthroughHemWrapper {
     fn apply_postprocessing(
         &self,
         _output: &impl Output,
-        _results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        _results: &CalculationResultsWithContext,
         _flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         Ok(None)
@@ -98,7 +98,7 @@ impl HemWrapper for ChosenWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        results: &CalculationResultsWithContext,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         match self {
