@@ -122,7 +122,7 @@ impl TryFrom<EnergySupplyTariffInput> for EnergySupplyTariffInfo {
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub(crate) struct EnergySupply {
+pub struct EnergySupply {
     fuel_type: FuelType,
     tariff_info: Option<EnergySupplyTariffInfo>,
     simulation_timesteps: usize,
@@ -240,7 +240,7 @@ impl EnergySupply {
             .map(|battery| battery.get_state_of_charge() * battery.get_max_capacity())
     }
 
-    pub fn connection(
+    pub(crate) fn connection(
         energy_supply: Arc<RwLock<EnergySupply>>,
         end_user_name: &str,
     ) -> Result<EnergySupplyConnection, anyhow::Error> {

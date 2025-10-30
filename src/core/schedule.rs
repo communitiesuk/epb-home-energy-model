@@ -27,15 +27,15 @@ pub fn expand_numeric_schedule(schedule: &NumericSchedule) -> Vec<Option<f64>> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ScheduleEvent {
-    pub(crate) start: f64,
-    pub(crate) duration: Option<f64>,
-    pub(crate) volume: Option<f64>,
-    pub(crate) temperature: Option<f64>,
+pub struct ScheduleEvent {
+    pub start: f64,
+    pub duration: Option<f64>,
+    pub volume: Option<f64>,
+    pub temperature: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize_enum_str, PartialEq, Serialize_enum_str)]
-pub(crate) enum WaterScheduleEventType {
+pub enum WaterScheduleEventType {
     Shower,
     Bath,
     Other,
@@ -213,10 +213,10 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-    pub(crate) struct Schedule<T: Copy> {
-        pub(crate) main: Vec<ScheduleEntry<T>>,
+    pub struct Schedule<T: Copy> {
+        pub main: Vec<ScheduleEntry<T>>,
         #[serde(flatten)]
-        pub(crate) references: HashMap<String, ScheduleReferenceEntry<T>>,
+        pub references: HashMap<String, ScheduleReferenceEntry<T>>,
     }
 
     impl<T> Schedule<T>
@@ -265,7 +265,7 @@ pub(crate) mod input {
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleEntry<T: Copy> {
+    pub enum ScheduleEntry<T: Copy> {
         Null(()),
         Value(T),
         Repeater(ScheduleRepeater<T>),
@@ -275,7 +275,7 @@ pub(crate) mod input {
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[serde(untagged)]
-    pub(crate) enum ScheduleReferenceEntry<T: Copy> {
+    pub enum ScheduleReferenceEntry<T: Copy> {
         Multi(Vec<ScheduleEntry<T>>),
         Single(ScheduleEntry<T>),
     }

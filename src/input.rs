@@ -1396,7 +1396,7 @@ pub enum Shower {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Baths(pub IndexMap<String, BathDetails>);
+pub struct Baths(pub IndexMap<String, BathDetails>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1413,7 +1413,7 @@ pub(crate) struct BathDetails {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
+pub struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
