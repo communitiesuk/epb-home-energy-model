@@ -517,14 +517,14 @@ fn edit_glazing_for_glazing_limit(
             let wall_roof_area_total = same_orientation_indices
                 .iter()
                 .filter_map(|i| match walls_roofs.values().nth(*i).unwrap() {
-                    BuildingElement::Opaque { ref area, .. } => Some(*area),
+                    BuildingElement::Opaque { area, .. } => Some(*area),
                     _ => None,
                 })
                 .sum::<f64>();
 
             for i in same_orientation_indices.iter() {
                 let wall_roof = walls_roofs.values().nth(*i).unwrap();
-                if let BuildingElement::Opaque { ref area, .. } = wall_roof {
+                if let BuildingElement::Opaque { area, .. } = wall_roof {
                     let wall_roof_prop = *area / wall_roof_area_total;
 
                     let new_area = area + area_diff * wall_roof_prop;

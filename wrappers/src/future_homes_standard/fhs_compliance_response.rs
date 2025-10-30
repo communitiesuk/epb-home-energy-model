@@ -82,8 +82,8 @@ pub(super) struct EnergyDemand {
 
 impl<'a>
     From<(
-        &'a CalculationResultsWithContext<'a>,
-        &'a CalculationResultsWithContext<'a>,
+        &'a CalculationResultsWithContext,
+        &'a CalculationResultsWithContext,
         f64,
     )> for EnergyDemand
 {
@@ -223,7 +223,7 @@ impl FhsComplianceCalculationResult for CalculatedComplianceResult {
     }
 }
 
-impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
+impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext>>
     for CalculatedComplianceResult
 {
     type Error = anyhow::Error;
@@ -259,14 +259,14 @@ impl TryFrom<&HashMap<CalculationKey, CalculationResultsWithContext<'_>>>
 
         Ok(Self {
             dwelling_final_rates: calc_final_rates(
-                dwelling_fhs_results.context.input,
+                &dwelling_fhs_results.context.input,
                 &dwelling_fhs_results.results.energy_import,
                 &dwelling_fhs_results.results.energy_export,
                 &dwelling_fhs_results.results.results_end_user,
                 dwelling_fhs_results.results.timestep_array.len(),
             )?,
             target_final_rates: calc_final_rates(
-                notional_fhs_results.context.input,
+                &notional_fhs_results.context.input,
                 &notional_fhs_results.results.energy_import,
                 &notional_fhs_results.results.energy_export,
                 &notional_fhs_results.results.results_end_user,

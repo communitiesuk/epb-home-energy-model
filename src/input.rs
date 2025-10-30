@@ -907,7 +907,7 @@ pub trait HotWaterSourceDetailsForProcessing {
     ) -> anyhow::Result<()>;
 }
 
-pub struct HotWaterSourceDetailsJsonMap<'a>(pub(crate) &'a mut Map<std::string::String, JsonValue>);
+pub struct HotWaterSourceDetailsJsonMap<'a>(pub &'a mut Map<std::string::String, JsonValue>);
 
 impl HotWaterSourceDetailsForProcessing for HotWaterSourceDetailsJsonMap<'_> {
     fn is_storage_tank(&self) -> bool {
@@ -1922,7 +1922,7 @@ impl BuildingElement {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fhs")]
     pub fn u_value(&self) -> Option<f64> {
         match self {
             BuildingElement::Opaque { u_value, .. } => *u_value,
@@ -1948,9 +1948,7 @@ pub trait TransparentBuildingElement {
     fn treatment(&mut self) -> Option<Vec<&mut Map<std::string::String, JsonValue>>>;
 }
 
-pub struct TransparentBuildingElementJsonValue<'a>(
-    pub(crate) &'a mut Map<std::string::String, JsonValue>,
-);
+pub struct TransparentBuildingElementJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
 
 impl TransparentBuildingElement for TransparentBuildingElementJsonValue<'_> {
     fn set_window_openable_control(&mut self, control: &str) {
@@ -1979,9 +1977,7 @@ pub trait GroundBuildingElement {
     fn set_psi_wall_floor_junc(&mut self, new_psi_wall_floor_junc: f64);
 }
 
-pub struct GroundBuildingElementJsonValue<'a>(
-    pub(crate) &'a mut Map<std::string::String, JsonValue>,
-);
+pub struct GroundBuildingElementJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
 
 impl GroundBuildingElement for GroundBuildingElementJsonValue<'_> {
     fn set_u_value(&mut self, new_u_value: f64) {
@@ -2018,7 +2014,7 @@ pub trait UValueEditableBuildingElement {
 }
 
 pub struct UValueEditableBuildingElementJsonValue<'a>(
-    pub(crate) &'a mut Map<std::string::String, JsonValue>,
+    pub &'a mut Map<std::string::String, JsonValue>,
 );
 
 impl UValueEditableBuildingElement for UValueEditableBuildingElementJsonValue<'_> {
@@ -2794,9 +2790,7 @@ pub trait MechanicalVentilationForProcessing {
     fn set_control(&mut self, control: &str);
 }
 
-pub struct MechanicalVentilationJsonValue<'a>(
-    pub(crate) &'a mut Map<std::string::String, JsonValue>,
-);
+pub struct MechanicalVentilationJsonValue<'a>(pub &'a mut Map<std::string::String, JsonValue>);
 
 impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
     fn vent_is_type(&self, vent_type: &str) -> bool {

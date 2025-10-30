@@ -167,14 +167,14 @@ fn do_fhs_postprocessing(
     results: &CalculationResultsWithContext,
     flags: &ProjectFlags,
 ) -> anyhow::Result<Option<HemResponse>> {
-    let input = results.context.input;
+    let input = &results.context.input;
     let RunResults {
         timestep_array,
         results_end_user,
         energy_import,
         energy_export,
         ..
-    } = results.results;
+    } = &results.results;
 
     if flags.intersects(
         ProjectFlags::FHS_ASSUMPTIONS
@@ -184,12 +184,12 @@ fn do_fhs_postprocessing(
         let notional = flags
             .intersects(ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
         apply_fhs_postprocessing(
-            input,
+            &input,
             output,
-            energy_import,
-            energy_export,
-            results_end_user,
-            timestep_array,
+            &energy_import,
+            &energy_export,
+            &results_end_user,
+            &*timestep_array,
             notional,
         )?;
     } else if flags.intersects(
