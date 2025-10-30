@@ -82,7 +82,7 @@ impl HemResponse {
 
 #[instrument(skip_all)]
 pub fn run_project<'a>(
-    input: HashMap<CalculationKey, Input>, // TODO change back to input: impl Read,
+    input: Input, // TODO change back to input: impl Read,
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&'a str>,
@@ -94,46 +94,34 @@ pub fn run_project<'a>(
 
         let _schema_reference = SchemaReference::Core; // TODO validate Input against core schema
 
-        let cloned_input = input.get(&CalculationKey::Primary).cloned();
+        let cloned_input = input.clone();
 
         // 3. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
         fn resolve_external_conditions(
-            input: &HashMap<CalculationKey, Input>,
+            input: &Input,
             external_conditions_data: Option<ExternalConditionsFromFile>,
-        ) -> HashMap<CalculationKey, ExternalConditions> {
-            input
-                .par_iter()
-                .map(|(key, input)| {
-                    (
-                        *key,
-                        external_conditions_from_input(
+        ) -> ExternalConditions {
+            external_conditions_from_input(
                             input.external_conditions.clone(),
                             external_conditions_data.clone(),
                             input.simulation_time,
-                        ),
-                    )
-                })
-                .collect()
+                        )
         }
 
-        let corpora = {
+        let corpus = {
             let external_conditions = resolve_external_conditions(&input, external_conditions_data);
 
             // 4. Build corpus from input and external conditions.
             #[instrument(skip_all)]
             fn build_corpus(
-                input: &HashMap<CalculationKey, Input>,
-                external_conditions: &HashMap<CalculationKey, ExternalConditions>,
+                input: &Input,
+                external_conditions: &ExternalConditions,
                 tariff_data_file: Option<&str>,
                 flags: &ProjectFlags,
-            ) -> anyhow::Result<HashMap<CalculationKey, Corpus>> {
+            ) -> anyhow::Result<Corpus> {
                 let output_options = flags.into();
-                iterate_maps(input, external_conditions)
-                    .map(|(key, input, external_conditions)| {
-                        anyhow::Ok((*key, Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)?))
-                    })
-                    .collect()
+                Corpus::from_inputs(input, Some(external_conditions), tariff_data_file, &output_options)?
             }
 
             build_corpus(&input, &external_conditions, tariff_data_file, flags).map_err(|e| {
@@ -144,17 +132,14 @@ pub fn run_project<'a>(
         // 5. Run HEM calculation(s).
         #[instrument(skip_all)]
         fn run_hem_calculation(
-            corpora: &HashMap<CalculationKey, Corpus>,
-        ) -> anyhow::Result<HashMap<CalculationKey, RunResults>> {
-            corpora
-                .par_iter()
-                .map(|(key, corpus)| anyhow::Ok((*key, corpus.run()?)))
-                .collect()
+            corpus: &Corpus,
+        ) -> anyhow::Result<RunResults> {
+            Ok(corpus.run())?
         }
 
         // catch_unwind here catches any downstream panics so we can at least map to the right HemError variant
         let run_results = match catch_unwind(AssertUnwindSafe(|| {
-            run_hem_calculation(&corpora).map_err(|e| {
+            run_hem_calculation(&corpus).map_err(|e| {
                 capture_specific_error_case(&e)
                     .unwrap_or_else(|| HemError::FailureInCalculation(HemCoreError::new(e)))
             })
@@ -170,23 +155,16 @@ pub fn run_project<'a>(
             }
         };
 
-        let contextualised_results: HashMap<_, _> = run_results
-            .iter()
-            .map(|(key, results)| {
-                (
-                    *key,
-                    CalculationResultsWithContext::new(&input[key], &corpora[key], results),
-                )
-            })
-            .collect();
+        let contextualised_results: HashMap<_, _> =
+        CalculationResultsWithContext::new(&input, corpus, run_results);
 
         // 6. Write out to core output files.
         #[instrument(skip_all)]
         fn write_core_output_files(
             primary_input: Option<&Input>,
             output: &impl Output,
-            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-            corpora: &HashMap<CalculationKey, Corpus>,
+            results: &CalculationResultsWithContext,
+            corpus: &Corpus,
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
             if let Some(results) = results.get(&CalculationKey::Primary) {
