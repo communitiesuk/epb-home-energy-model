@@ -1401,7 +1401,7 @@ pub struct Baths(pub IndexMap<String, BathDetails>);
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct BathDetails {
+pub struct BathDetails {
     /// Volume held by bath (unit: litre)
     pub(crate) size: f64,
     #[serde(rename = "ColdWaterSource")]
@@ -1418,7 +1418,7 @@ pub struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OtherWaterUse {
+pub struct OtherWaterUse {
     /// Tap/outlet flow rate (unit: litre/minute)
     pub(crate) flowrate: f64,
     #[serde(rename = "ColdWaterSource")]
@@ -2083,7 +2083,7 @@ pub(crate) fn init_orientation(value: f64) -> f64 {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum MassDistributionClass {
+pub enum MassDistributionClass {
     D,
     E,
     I,
@@ -2094,14 +2094,14 @@ pub(crate) enum MassDistributionClass {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct WindowPart {
+pub struct WindowPart {
     pub(crate) mid_height_air_flow_path: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct WindowTreatment {
+pub struct WindowTreatment {
     #[serde(rename = "type")]
     pub(crate) treatment_type: WindowTreatmentType,
     pub(crate) controls: WindowTreatmentControl,
@@ -2170,7 +2170,7 @@ where
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
-pub(crate) enum FloorData {
+pub enum FloorData {
     #[serde(rename = "Slab_no_edge_insulation")]
     SlabNoEdgeInsulation,
     #[serde(rename = "Slab_edge_insulation")]
@@ -2459,7 +2459,7 @@ pub enum HeatPumpSourceType {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum HeatPumpSinkType {
+pub enum HeatPumpSinkType {
     Water,
     Air,
     Glycol25,
@@ -2467,7 +2467,7 @@ pub(crate) enum HeatPumpSinkType {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum HeatPumpBackupControlType {
+pub enum HeatPumpBackupControlType {
     None,
     TopUp,
     Substitute,
@@ -2486,7 +2486,7 @@ pub struct HeatPumpBufferTank {
 #[derive(Clone, Debug, Deserialize, PartialEq, Validate, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HeatPumpTestDatum {
+pub struct HeatPumpTestDatum {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) air_flow_rate: Option<f64>,
     pub(crate) test_letter: TestLetter,
@@ -2555,7 +2555,7 @@ pub type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct WasteWaterHeatRecoveryDetails {
+pub struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
     pub(crate) system_type: WasteWaterHeatRecoverySystemType,
     #[serde(rename = "ColdWaterSource")]
@@ -3175,7 +3175,7 @@ static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
 
 #[derive(Debug, Error)]
 #[error("Error accessing JSON during FHS preprocessing: {0}")]
-pub(crate) struct JsonAccessError(String);
+pub struct JsonAccessError(String);
 
 pub fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
     JsonAccessError(message.into())

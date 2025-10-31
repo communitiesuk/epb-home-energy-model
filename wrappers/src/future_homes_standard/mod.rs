@@ -12,7 +12,6 @@ use hem::{
     CalculationContext, CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags,
     RunResults,
 };
-use rayon::prelude::*;
 use std::sync::LazyLock;
 
 mod fhs_appliance;

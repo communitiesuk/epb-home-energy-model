@@ -1406,7 +1406,7 @@ fn calc_design_capacity(
     // Calculate heat transfer coefficients and heat loss parameters
     set_temp_internal_static_calcs(&mut clone)?;
     let HtcHlpCalculation {
-        htc_map: htc_dict, ..
+        _htc_map: htc_dict, ..
     } = calc_htc_hlp(&clone.as_input_for_calc_htc_hlp()?)?;
 
     // Calculate design capacity
@@ -1551,7 +1551,7 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use hem::input::{
-        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
+        EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
     };
     use hem::input::{HotWaterSource, WasteWaterHeatRecovery};
     use rstest::{fixture, rstest};

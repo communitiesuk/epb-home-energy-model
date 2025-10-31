@@ -460,14 +460,14 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
     }
 
     let controls = control_from_input(
-        &input.control(),
+        input.control(),
         external_conditions.clone(),
         &simtime.iter(),
     )?;
 
     let ventilation = InfiltrationVentilation::create(
-        &input.infiltration_ventilation(),
-        &input.zone(),
+        input.infiltration_ventilation(),
+        input.zone(),
         false,
         &energy_supplies,
         &controls,
@@ -612,7 +612,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
     Ok(HtcHlpCalculation {
         total_htc,
         total_hlp,
-        htc_map,
+        _htc_map: htc_map,
         _hlp_map: hlp_map,
     })
 }
@@ -620,7 +620,7 @@ pub fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<HtcHlpCa
 pub struct HtcHlpCalculation {
     pub(crate) total_htc: f64,
     pub(crate) total_hlp: f64,
-    pub(crate) htc_map: IndexMap<String, f64>,
+    pub(crate) _htc_map: IndexMap<String, f64>,
     pub(crate) _hlp_map: IndexMap<String, f64>,
 }
 

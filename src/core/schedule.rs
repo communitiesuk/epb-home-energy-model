@@ -290,7 +290,7 @@ pub(crate) mod input {
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-    pub(crate) struct ScheduleRepeater<T: Copy> {
+    pub struct ScheduleRepeater<T: Copy> {
         pub(crate) value: ScheduleRepeaterValue<T>,
         pub(crate) repeat: usize,
     }

@@ -3,8 +3,8 @@ use hem::core::schedule::NumericSchedule;
 use hem::input::{
     ApplianceGainsEvent, BuildingElement, ColdWaterSourceInput, ExternalConditionsInput,
     HeatSourceWetDetails, HeatingControlType, Input, JsonAccessResult, ReducedInputForCalcHtcHlp,
-    SchemaReference, SmartApplianceBattery, SpaceHeatSystemHeatSource, WasteWaterHeatRecovery,
-    WaterDistribution, WaterHeatingEvent, WaterPipework, json_error,
+    SmartApplianceBattery, SpaceHeatSystemHeatSource, WasteWaterHeatRecovery, WaterDistribution,
+    WaterHeatingEvent, WaterPipework, json_error,
 };
 use hem::simulation_time::SimulationTime;
 use indexmap::IndexMap;
@@ -1150,7 +1150,6 @@ impl InputForProcessing {
     }
 
     /// Override all the vol_hw_daily_average values on the heat pump hot water only heat sources.
-
     pub fn override_vol_hw_daily_average_on_heat_pumps(&mut self, vol_hw_daily_average: f64) {
         let heat_sources = match self
             .root_object_mut("HotWaterSource")
@@ -2014,7 +2013,7 @@ impl InputForProcessing {
 
 #[cfg(test)]
 mod tests {
-    use hem::input::{SchemaReference, ingest_for_processing};
+    use hem::input::ingest_for_processing;
     use itertools::Itertools;
     use rstest::{fixture, rstest};
     use std::fs::File;
