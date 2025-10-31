@@ -1402,7 +1402,7 @@ pub fn build_summary_data(args: SummaryDataArgs) -> SummaryData {
 }
 
 pub struct SummaryData {
-    delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
+    pub delivered_energy_map: IndexMap<String, IndexMap<String, f64>>,
     stats: IndexMap<String, EnergySupplyStat>,
     peak_elec_consumption: f64,
     index_peak_elec_consumption: usize,

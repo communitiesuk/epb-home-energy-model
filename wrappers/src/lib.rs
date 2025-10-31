@@ -1,10 +1,12 @@
 use crate::future_homes_standard::input::{InputForProcessing, ingest_for_processing};
 use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
+use anyhow::anyhow;
 use hem::errors::{HemError, PostprocessingError};
 use hem::input::Input;
 use hem::output::Output;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
+use hem::{CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags};
+use std::collections::HashMap;
 use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use tracing::{error, instrument};
@@ -20,11 +22,11 @@ pub trait HemWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<Input>;
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>>;
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &CalculationResultsWithContext,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>>;
 }
@@ -44,14 +46,17 @@ impl HemWrapper for PassthroughHemWrapper {
         &self,
         input: InputForProcessing,
         _flags: &ProjectFlags,
-    ) -> anyhow::Result<Input> {
-        Ok(input.finalize()?)
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+        Ok(HashMap::from([(
+            CalculationKey::Primary,
+            input.finalize()?,
+        )]))
     }
 
     fn apply_postprocessing(
         &self,
         _output: &impl Output,
-        _results: &CalculationResultsWithContext,
+        _results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         _flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         Ok(None)
@@ -70,7 +75,7 @@ impl HemWrapper for ChosenWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<Input> {
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         match self {
             ChosenWrapper::Passthrough(wrapper) => {
                 <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
@@ -87,7 +92,7 @@ impl HemWrapper for ChosenWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &CalculationResultsWithContext,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         match self {
@@ -152,7 +157,7 @@ pub fn main(
             input_for_processing: InputForProcessing,
             wrapper: &impl HemWrapper,
             flags: &ProjectFlags,
-        ) -> anyhow::Result<Input> {
+        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
 
@@ -187,26 +192,46 @@ pub fn main(
             }
         };
 
-        // 2b.(!) If preprocess-only flag is present and the fhs compliance flag is not present, write out preprocess file
-        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) && !flags.contains(ProjectFlags::FHS_COMPLIANCE) {
-            write_preproc_file(&input, &output, "preproc", "json")?;
+        // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
+        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
+            if let Some(input) = input.get(&CalculationKey::Primary) {
+                write_preproc_file(input, &output, "preproc", "json")?;
+            } else {
+                error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
+            }
+
             return Ok(None);
         }
 
-        let contextualised_results = hem::run_project(input, &output, external_conditions_data, tariff_data_file, flags)?;
+        // TODO review below
+        let contextualised_results: Result<HashMap<CalculationKey, CalculationResultsWithContext>, HemError> = match wrapper {
+            ChosenWrapper::FhsCompliance(_) => {
+                input.into_iter().map(|(key, input_value)| {
+                    hem::run_project(input_value, &output, external_conditions_data.clone(), tariff_data_file, flags)
+                        .map(|result_value| (key, result_value))
+                }).collect()
+            }
+            _ => {
+                let input_value = input
+                    .get(&CalculationKey::Primary)
+                    .ok_or(anyhow!("Primary key missing"))?;
+                let calculation_result = hem::run_project(input_value.clone(), &output, external_conditions_data, tariff_data_file, flags)?;
+                Ok(HashMap::from_iter(vec![(CalculationKey::Primary, calculation_result)]))
+            }
+        };
 
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
         fn run_wrapper_postprocessing(
             output: &impl Output,
-            results: &CalculationResultsWithContext,
+            results: &HashMap<CalculationKey, CalculationResultsWithContext>,
             wrapper: &impl HemWrapper,
             flags: &ProjectFlags,
         ) -> anyhow::Result<Option<HemResponse>> {
             wrapper.apply_postprocessing(output, results, flags)
         }
 
-        run_wrapper_postprocessing(&output, &contextualised_results, &wrapper, flags)
+        run_wrapper_postprocessing(&output, &contextualised_results?, &wrapper, flags)
             .map_err(|e| HemError::ErrorInPostprocessing(PostprocessingError::new(e)))
     }))
         .map_err(|e| {

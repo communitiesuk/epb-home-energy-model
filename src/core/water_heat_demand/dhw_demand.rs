@@ -375,7 +375,7 @@ impl DomesticHotWaterDemand {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DomesticHotWaterDemandData {
-    pub(crate) hw_demand_vol: f64,
+    pub hw_demand_vol: f64,
     pub(crate) hw_demand_vol_target: IndexMap<DemandVolTargetKey, VolumeReference>,
     pub(crate) hw_vol_at_tapping_points: f64,
     pub(crate) hw_duration: f64,

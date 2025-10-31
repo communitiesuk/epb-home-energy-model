@@ -12,6 +12,8 @@ use hem::{
     CalculationContext, CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags,
     RunResults,
 };
+use rayon::prelude::*;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 mod fhs_appliance;
@@ -37,7 +39,7 @@ impl HemWrapper for FhsSingleCalcWrapper {
         &self,
         mut input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<Input> {
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         do_fhs_preprocessing(&mut input, flags)?;
 
         <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(
@@ -50,9 +52,12 @@ impl HemWrapper for FhsSingleCalcWrapper {
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &CalculationResultsWithContext,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
+        let results = results
+            .get(&CalculationKey::Primary)
+            .expect("A primary calculation was expected in the FHS single calc wrapper");
         do_fhs_postprocessing(output, results, flags)
     }
 }
@@ -70,20 +75,32 @@ impl HemWrapper for FhsComplianceWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,
-        flags: &ProjectFlags,
-    ) -> anyhow::Result<Input> {
-        let mut cloned_input = input.clone();
-        do_fhs_preprocessing(&mut cloned_input, flags)?;
-        Ok(cloned_input.finalize()?)
+        _flags: &ProjectFlags,
+    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+        vec![input; FHS_COMPLIANCE_CALCULATIONS.len()]
+            .into_par_iter()
+            .enumerate()
+            .map(|(i, mut input)| {
+                let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
+                do_fhs_preprocessing(&mut input, flags)?;
+                Ok((*key, input.finalize()?))
+            })
+            .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>()
     }
 
     fn apply_postprocessing(
         &self,
         output: &impl Output,
-        results: &CalculationResultsWithContext,
-        flags: &ProjectFlags,
+        results: &HashMap<CalculationKey, CalculationResultsWithContext>,
+        _flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
-        do_fhs_postprocessing(output, &results, flags)?;
+        FHS_COMPLIANCE_CALCULATIONS
+            .par_iter()
+            .map(|(key, flags)| {
+                do_fhs_postprocessing(output, &results[key], flags)?;
+                Ok(())
+            })
+            .collect::<anyhow::Result<()>>()?;
 
         let compliance_result = CalculatedComplianceResult::try_from(results)?;
         let compliance_response = FhsComplianceResponse::build_from(&compliance_result)?;
@@ -167,12 +184,12 @@ fn do_fhs_postprocessing(
         let notional = flags
             .intersects(ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
         apply_fhs_postprocessing(
-            &input,
+            input,
             output,
-            &energy_import,
-            &energy_export,
-            &results_end_user,
-            &*timestep_array,
+            energy_import,
+            energy_export,
+            results_end_user,
+            timestep_array,
             notional,
         )?;
     } else if flags.intersects(

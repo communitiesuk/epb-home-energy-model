@@ -71,7 +71,7 @@ pub(crate) struct SimSettings {
 
 const SMART_APPLIANCE_CONTROL_NAME: &str = "SmartApplianceControl";
 
-pub fn apply_fhs_preprocessing(
+pub(crate) fn apply_fhs_preprocessing(
     input: &mut InputForProcessing,
     is_fee: Option<bool>,
     sim_settings: Option<SimSettings>,
