@@ -1246,7 +1246,7 @@ impl MechanicalVentilation {
                 // with that in mind
                 (0., -self.qv_oda_req_design)
             }
-            MechVentType::Piv => (self.qv_oda_req_design, 0.),
+            MechVentType::PositiveInputVentilation => (self.qv_oda_req_design, 0.),
         }
     }
 
@@ -1299,6 +1299,7 @@ impl MechanicalVentilation {
 
                 (qv_sup_dis_req, qv_eta_dis_req)
             }
+            SupplyAirFlowRateControlType::Load => unimplemented!(), // TODO: complete as part of migration to 1.0.0a1
         };
 
         // Calculate effective flow rate of external air
@@ -1358,7 +1359,7 @@ impl MechanicalVentilation {
                 // Balanced, therefore split power between extract and supply fans
                 (fan_energy_use_kwh / 2., fan_energy_use_kwh / 2.)
             }
-            MechVentType::Piv => {
+            MechVentType::PositiveInputVentilation => {
                 // Positive input, supply fans only
                 (fan_energy_use_kwh, 0.)
             }
@@ -2339,17 +2340,27 @@ impl InfiltrationVentilation {
             let energy_supply_connection =
                 EnergySupply::connection(energy_supply.clone(), mech_vents_name)?;
 
-            mechanical_ventilations.push(
-                Arc::new(MechanicalVentilation::new(mech_vents_data.supply_air_flow_rate_control, mech_vents_data.supply_air_temperature_control_type, 0., 0., mech_vents_data.vent_type, mech_vents_data.sfp, mech_vents_data.design_outdoor_air_flow_rate, energy_supply_connection, total_volume, input.altitude, ctrl_intermittent_mev, match mech_vents_data.vent_type {
+            mechanical_ventilations.push(Arc::new(MechanicalVentilation::new(
+                mech_vents_data.supply_air_flow_rate_control,
+                mech_vents_data.supply_air_temperature_control_type,
+                0.,
+                0.,
+                mech_vents_data.vent_type,
+                mech_vents_data.sfp,
+                mech_vents_data.design_outdoor_air_flow_rate,
+                energy_supply_connection,
+                total_volume,
+                input.altitude,
+                ctrl_intermittent_mev,
+                match mech_vents_data.vent_type {
                     MechVentType::Mvhr => mech_vents_data.mvhr_efficiency,
                     MechVentType::IntermittentMev
                     | MechVentType::CentralisedContinuousMev
-                    | MechVentType::DecentralisedContinuousMev => {
-                        None
-                    }
-                    MechVentType::Piv => bail!("PIV vent type is not currently recognised when building up mechanical ventilation values for calculation"),
-                }, None)),
-            );
+                    | MechVentType::DecentralisedContinuousMev => None,
+                    MechVentType::PositiveInputVentilation => unimplemented!(), // TODO: presumably to be completed during migration to 1.0.0a1
+                },
+                None,
+            )));
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
             if mech_vents_data.vent_type == MechVentType::Mvhr {

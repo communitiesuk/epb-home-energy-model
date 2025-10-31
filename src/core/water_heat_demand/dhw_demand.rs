@@ -10,9 +10,9 @@ use crate::core::water_heat_demand::shower::Shower;
 use crate::core::water_heat_demand::shower::{InstantElectricShower, MixerShower};
 use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
-    BathDetails, Baths as BathInput, OtherWaterUse, OtherWaterUses as OtherWaterUseInput,
-    Shower as ShowerInput, Showers as ShowersInput, WaterDistribution as WaterDistributionInput,
-    WaterPipeContentsType, WaterPipeworkSimple,
+    BathDetails, Baths as BathInput, MixerShowerWwhrsConfiguration, OtherWaterUse,
+    OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput,
+    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
@@ -395,8 +395,13 @@ fn shower_from_input(
     Ok(match input {
         ShowerInput::MixerShower {
             cold_water_source,
-            waste_water_heat_recovery_system: waste_water_heat_recovery,
+            wwhrs_config:
+                MixerShowerWwhrsConfiguration {
+                    waste_water_heat_recovery_system: waste_water_heat_recovery,
+                    ..
+                },
             flowrate,
+            ..
         } => {
             let cold_water_source = cold_water_sources.get(cold_water_source).unwrap().clone();
             let wwhrs_instance: Option<Arc<Mutex<Wwhrs>>> = waste_water_heat_recovery
@@ -465,7 +470,7 @@ fn input_to_water_distribution_pipework(
         input.location.into(),
         input.internal_diameter_mm / MILLIMETRES_IN_METRE as f64,
         length_average,
-        WaterPipeContentsType::Water,
+        PipeworkContents::Water,
     )
     .map_err(anyhow::Error::msg)
 }

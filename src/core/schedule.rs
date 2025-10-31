@@ -209,6 +209,7 @@ impl From<&WaterHeatingEvent> for ScheduleEvent {
 pub(crate) mod input {
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
+    use serde_valid::Validate;
     use std::collections::HashMap;
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -288,10 +289,30 @@ pub(crate) mod input {
         Value(T),
     }
 
-    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    /// Defines a repeating pattern for schedule values.
+    ///
+    ///    Examples (boolean):
+    ///        # Repeat 'true' 24 times (once per hour)
+    ///        {"repeat": 24, "value": true}
+    ///
+    ///        # Reference another schedule, repeat 7 times (once per day)
+    ///        {"repeat": 7, "value": "weekday_schedule"}
+    ///
+    ///    Examples (float):
+    ///        # Repeat temperature setpoint 21.5°C 24 times (once per hour)
+    ///        {"repeat": 24, "value": 21.5}
+    ///
+    ///        # Reference another schedule, repeat 7 times (once per day)
+    ///        {"repeat": 7, "value": "weekday_temp_schedule"}
+    ///
+    ///        # Repeat power level 2.5 kW for 8 hours
+    ///        {"repeat": 8, "value": 2.5}
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub(crate) struct ScheduleRepeater<T: Copy> {
+        /// Value to repeat or schedule reference
         pub(crate) value: ScheduleRepeaterValue<T>,
+        /// Number of times to repeat the value
         pub(crate) repeat: usize,
     }
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 
 pub const HOURS_IN_DAY: u32 = 24;
 
@@ -9,13 +10,19 @@ const MONTH_START_END_HOURS: [u32; 13] = [
     0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016, 8760,
 ];
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SimulationTime {
+    /// The start time of the simulation, in hours from the start of the year
     #[serde(rename = "start")]
+    #[validate(minimum = 0.)]
     start_time: f64,
+    /// The end time of the simulation, in hours from the start of the year
     #[serde(rename = "end")]
+    #[validate(exclusive_minimum = 0.)]
     end_time: f64,
+    /// The time increment for each step of the calculation, in hours
+    #[validate(exclusive_minimum = 0.)]
     pub step: f64,
 }
 
@@ -143,7 +150,12 @@ impl SimulationTimeIteration {
         ((self.time - (start_day * HOURS_IN_DAY) as f64) / step) as usize
     }
 
-    pub fn time_series_idx_days(&self, start_day: u32, step: f64, charge_calc_time: Option<f64>) -> usize {
+    pub fn time_series_idx_days(
+        &self,
+        start_day: u32,
+        step: f64,
+        charge_calc_time: Option<f64>,
+    ) -> usize {
         let charge_calc_time = charge_calc_time.unwrap_or(21.);
         let current_day = self.time as u32 / HOURS_IN_DAY;
 

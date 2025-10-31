@@ -1,6 +1,6 @@
 use crate::core::material_properties::{MaterialProperties, GLYCOL25, WATER};
 use crate::core::units::{LITRES_PER_CUBIC_METRE, MILLIMETRES_IN_METRE};
-use crate::input::{WaterPipeContentsType, WaterPipework, WaterPipeworkLocation};
+use crate::input::{PipeworkContents, WaterPipework, WaterPipeworkLocation};
 use std::f64::consts::PI;
 use thiserror::Error;
 
@@ -57,7 +57,7 @@ impl PipeworkSimple {
         location: PipeworkLocation,
         internal_diameter: f64,
         length: f64,
-        contents: WaterPipeContentsType,
+        contents: PipeworkContents,
     ) -> Result<Self, InvalidPipeworkInput> {
         let volume_litres = PI
             * (internal_diameter / 2.)
@@ -65,8 +65,8 @@ impl PipeworkSimple {
             * length
             * LITRES_PER_CUBIC_METRE as f64;
         let contents_properties = match contents {
-            WaterPipeContentsType::Water => *WATER,
-            WaterPipeContentsType::Glycol25 => *GLYCOL25,
+            PipeworkContents::Water => *WATER,
+            PipeworkContents::Glycol25 => *GLYCOL25,
         };
         Ok(Self {
             location,
@@ -149,7 +149,7 @@ impl Pipework {
         k_insulation: f64,
         thickness_insulation: f64,
         reflective: bool,
-        contents: WaterPipeContentsType,
+        contents: PipeworkContents,
     ) -> Result<Self, InvalidPipeworkInput> {
         if external_diameter_in_m <= internal_diameter_in_m {
             return Err(InvalidPipeworkInput::ExternalNotMoreThanInternal {
@@ -163,8 +163,8 @@ impl Pipework {
 
         // Set the heat transfer coefficient inside the pipe, in W / m^2 K
         let internal_htc = match contents {
-            WaterPipeContentsType::Water => INTERNAL_HTC_WATER,
-            WaterPipeContentsType::Glycol25 => INTERNAL_HTC_GLYCOL25,
+            PipeworkContents::Water => INTERNAL_HTC_WATER,
+            PipeworkContents::Glycol25 => INTERNAL_HTC_GLYCOL25,
         };
 
         // Set the heat transfer coefficient at the outer surface, in W / m^2 K
@@ -272,7 +272,7 @@ mod tests {
             0.035,
             0.038,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap()
     }
@@ -355,7 +355,7 @@ mod tests {
             PipeworkLocation::Internal,
             0.025,
             2.5,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap()
     }
@@ -366,7 +366,7 @@ mod tests {
             PipeworkLocation::External,
             0.05,
             7.,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap()
     }
@@ -377,7 +377,7 @@ mod tests {
             PipeworkLocation::Internal,
             0.05,
             7.,
-            WaterPipeContentsType::Glycol25,
+            PipeworkContents::Glycol25,
         )
         .unwrap();
 
@@ -440,7 +440,7 @@ mod tests {
             0.035,
             0.038,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .is_err());
     }
@@ -455,7 +455,7 @@ mod tests {
             1.,
             1.,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap();
 
@@ -472,7 +472,7 @@ mod tests {
             1.,
             1.,
             false,
-            WaterPipeContentsType::Glycol25,
+            PipeworkContents::Glycol25,
         )
         .unwrap();
 
@@ -492,7 +492,7 @@ mod tests {
             1.,
             1.,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap();
 
@@ -509,7 +509,7 @@ mod tests {
             1.,
             1.,
             true,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap();
 

@@ -202,13 +202,19 @@ pub(crate) struct ApplianceGainsDetails {
     pub(crate) priority: Option<isize>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ApplianceGainsEvent {
+    /// Hours from start of simulation to when the appliance event begins (unit: hours)
+    #[validate(minimum = 0.)]
     pub start: f64,
+    /// Duration of the appliance event (unit: hours)
+    #[validate(minimum = 0.)]
     pub duration: f64,
+    /// Electrical power consumption during the appliance event (unit: W)
     #[serde(rename = "demand_W")]
+    #[validate(minimum = 0.)]
     pub demand_w: f64,
 }
 
@@ -435,18 +441,32 @@ impl DiverterHeatSourceType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct ElectricBattery {
+    /// The maximum capacity of the battery (unit: kWh)
+    #[validate(minimum = 0.)]
     pub capacity: f64,
+    /// Charge/discharge round trip efficiency of battery system (greater than 0, up to 1)
+    #[validate(exclusive_minimum = 0.)]
+    #[validate(maximum = 1.)]
     pub charge_discharge_efficiency_round_trip: f64,
+    /// The starting age of the battery (in years)
+    #[validate(minimum = 0.)]
     pub battery_age: f64,
+    /// The maximum charge rate one way trip the battery allows (unit: kW)
+    #[validate(minimum = 0.)]
     pub minimum_charge_rate_one_way_trip: f64,
+    /// The maximum discharge rate one way trip the battery allows (unit: kW)
+    #[validate(minimum = 0.)]
     pub maximum_charge_rate_one_way_trip: f64,
+    /// The minimum charge rate one way trip the battery allows (unit: kW)
+    #[validate(minimum = 0.)]
     pub maximum_discharge_rate_one_way_trip: f64,
+    /// The location of the battery (inside/outside)
     pub battery_location: BatteryLocation,
-    // #[serde(skip_serializing_if = "Option::is_none")]
+    /// Is charging from the grid possible?
     pub grid_charging_possible: bool,
 }
 
@@ -483,7 +503,9 @@ pub struct ColdWaterSourceDetails {
     pub(crate) start_day: u32,
     /// List of cold water temperatures, one entry per hour (unit: ˚C)
     pub(crate) temperatures: Vec<f64>,
-    /// Timestep of the time series data (unit: hours)
+    /// Duration in hours (must be within 24-hour period)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
     pub(crate) time_series_step: f64,
 }
 
@@ -604,11 +626,16 @@ pub(crate) struct ExternalSensor {
     pub(crate) correlation: Vec<ExternalSensorCorrelation>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExternalSensorCorrelation {
+    /// External temperature data point for the corresponding maximum charge level (unit: Celsius)
+    #[validate(minimum = -273.15)]
     pub(crate) temperature: f64,
+    /// Maximum charge level permitted by the control for a given external temperature
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     pub(crate) max_charge: f64,
 }
 
@@ -685,17 +712,48 @@ pub(crate) enum ControlCombinationOperation {
     Mean,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SmartApplianceBattery {
+    /// Dictionary of lists containing the battery state of charge for each timestep for each energy supply
+    #[validate(custom = validate_battery_state_fractions)]
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) battery_state_of_charge: IndexMap<String, Vec<f64>>,
+    /// Dictionary of lists containing energy sent to the battery from generation for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_into_battery_from_generation: IndexMap<String, Vec<f64>>,
+    /// Dictionary of lists containing energy sent to the battery from the grid for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_into_battery_from_grid: IndexMap<String, Vec<f64>>,
+    /// Dictionary of lists containing energy drawn from the battery for each timestep for each energy supply (unit: kWh)
     #[serde(default)]
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceBattery"))]
     pub(crate) energy_out_of_battery: IndexMap<String, Vec<f64>>,
+}
+
+fn validate_battery_state_fractions(
+    data: &IndexMap<String, Vec<f64>>,
+) -> Result<(), serde_valid::validation::Error> {
+    data
+        .values()
+        .flatten()
+        .all(|&fraction| fraction >= 0. && fraction <= 1.)
+        .then_some(())
+        .ok_or_else(|| serde_valid::validation::Error::Custom("battery_state_of_charge of SmartApplianceBattery was provided with numbers that were invalid fractions.".to_string()))
+}
+
+fn validate_all_sublists_non_empty(
+    data: &IndexMap<String, Vec<f64>>,
+    struct_type: &str,
+) -> Result<(), serde_valid::validation::Error> {
+    data
+        .values()
+        .all(|sublist| !sublist.is_empty())
+        .then_some(())
+        .ok_or_else(|| serde_valid::validation::Error::Custom(format!("A {struct_type} value had an empty list of numbers provided. Lists must not be empty.")))
 }
 
 impl ControlDetails {
@@ -749,17 +807,35 @@ pub(crate) enum ControlLogicType {
     HeatBattery,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SmartApplianceControlDetails {
+    /// List of names of all appliance objects in the simulation
     #[serde(rename = "Appliances")]
     pub(crate) appliances: Vec<ApplianceKey>,
     #[serde(rename = "battery24hr")]
     pub(crate) battery_24hr: SmartApplianceBattery,
+    /// Dictionary of lists containing demand per end user for each timestep for each energy supply (unit: W)
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
     pub(crate) non_appliance_demand_24hr: IndexMap<String, Vec<f64>>,
+    /// Dictionary of lists containing expected power for appliances for each energy supply, for the entire length of the simulation (unit: W)
+    #[validate(custom = |v| validate_all_sublists_non_empty(v, "SmartApplianceControlDetails"))]
+    #[validate(custom = |v| validate_map_non_empty(v, "SmartApplianceControlDetails"))]
     pub(crate) power_timeseries: IndexMap<String, Vec<f64>>,
+    /// Timestep of the power time series (unit: hours)
     pub(crate) time_series_step: f64,
+}
+
+fn validate_map_non_empty<T>(
+    data: &IndexMap<String, T>,
+    struct_type: &str,
+) -> Result<(), serde_valid::validation::Error> {
+    (!data.is_empty()).then_some(()).ok_or_else(|| {
+        serde_valid::validation::Error::Custom(format!(
+            "A {struct_type} value contained a field of a map (object) type that was empty."
+        ))
+    })
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -820,17 +896,28 @@ pub(crate) enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
+        /// Type of separate domestic hot water test performed on the combi boiler (M&L, M&S, M_only, or No_additional_tests)
         #[serde(rename = "separate_DHW_tests")]
         separate_dhw_tests: BoilerHotWaterTest,
+        /// Rejected energy factor 1 for combi boiler efficiency calculations (unit: kWh)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
         rejected_energy_1: Option<f64>,
+        /// Storage loss factor 2 for combi boiler efficiency calculations (dimensionless)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
         storage_loss_factor_2: Option<f64>,
+        /// Rejected energy factor 3 for combi boiler efficiency calculations (dimensionless)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
         rejected_factor_3: Option<f64>,
+        /// Temperature setpoint for the combi boiler hot water output (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
         setpoint_temp: Option<f64>,
+        /// Daily hot water usage for the combi boiler system (unit: litre/day)
         #[serde(rename = "daily_HW_usage")]
+        #[validate(minimum = 0.)]
         daily_hw_usage: f64,
     },
     #[serde(rename = "HIU")]
@@ -839,15 +926,22 @@ pub(crate) enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: HeatSourceWetType,
+        /// Temperature setpoint for the HIU hot water output (unit: ˚C)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
         setpoint_temp: Option<f64>,
     },
     PointOfUse {
-        efficiency: f64,
+        /// Thermal efficiency of the point-of-use water heater (dimensionless, 0-1)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        efficiency: Option<f64>,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
+        /// Temperature setpoint for the point-of-use water heater output (unit: ˚C)
+        #[validate(minimum = -273.15)]
         setpoint_temp: f64,
     },
     SmartHotWaterTank {
@@ -874,6 +968,9 @@ pub(crate) enum HotWaterSourceDetails {
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "HeatSourceWet")]
         heat_source_wet: String,
+        /// Temperature setpoint for the heat battery hot water output (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        setpoint_temp: f64,
     },
 }
 
@@ -1249,32 +1346,41 @@ pub(crate) struct HeatPumpHotWaterTestData {
     pub(crate) m: HeatPumpHotWaterOnlyTestDatum,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HeatPumpHotWaterOnlyTestDatum {
     /// CoP measured during EN 16147 test
+    #[validate(minimum = 0.)]
     pub(crate) cop_dhw: f64,
     /// daily energy requirement (kWh/day) for tapping profile used for test
+    #[validate(minimum = 0.)]
     pub(crate) hw_tapping_prof_daily_total: f64,
     /// electrical input energy (kWh) measured in EN 16147 test over 24 hrs
+    #[validate(minimum = 0.)]
     pub(crate) energy_input_measured: f64,
     /// standby power (W) measured in EN 16147 test
+    #[validate(minimum = 0.)]
     pub(crate) power_standby: f64,
     /// daily hot water vessel heat loss
     /// (kWh/day) for a 45 K temperature difference between vessel
     /// and surroundings, tested in accordance with BS 1566 or
     /// EN 12897 or any equivalent standard. Vessel must be same
-    /// as that used during EN 16147 test
+    /// as that used during EN 16147 test (unit: kWh/day)
+    #[validate(minimum = 0.)]
     pub(crate) hw_vessel_loss_daily: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipeworkSimple {
     pub location: WaterPipeworkLocation,
+    /// (unit: mm)
+    #[validate(exclusive_minimum = 0.)]
     pub internal_diameter_mm: f64,
+    /// (unit: m)
+    #[validate(exclusive_minimum = 0.)]
     pub length: f64,
     // remainder of fields are not in the input definition for Python HEM 0.36 but storage tank logic seems to need them for now
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1286,21 +1392,33 @@ pub struct WaterPipeworkSimple {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surface_reflectivity: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pipe_contents: Option<WaterPipeContentsType>,
+    pub pipe_contents: Option<PipeworkContents>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterPipework {
+    /// Location of the pipework (internal or external)
     pub location: WaterPipeworkLocation,
+    /// (unit: mm)
+    #[validate(exclusive_minimum = 0.)]
     pub internal_diameter_mm: f64,
+    /// (unit: mm)
+    #[validate(exclusive_minimum = 0.)]
     pub external_diameter_mm: f64,
+    /// (unit: m)
+    #[validate(minimum = 0.)]
     pub length: f64,
+    /// Thermal conductivity of the insulation (unit: W / m K)
+    #[validate(exclusive_minimum = 0.)]
     pub insulation_thermal_conductivity: f64,
+    /// (unit: mm)
+    #[validate(minimum = 0.)]
     pub insulation_thickness_mm: f64,
     pub surface_reflectivity: bool,
-    pub pipe_contents: WaterPipeContentsType,
+    /// Contents of the pipework (water or glycol25)
+    pub pipe_contents: PipeworkContents,
 }
 
 impl TryFrom<WaterPipeworkSimple> for WaterPipework {
@@ -1341,7 +1459,7 @@ pub enum WaterPipeworkLocation {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum WaterPipeContentsType {
+pub enum PipeworkContents {
     #[serde(rename = "water")]
     Water,
     #[serde(rename = "glycol25")]
@@ -1380,27 +1498,63 @@ impl Showers {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, tag = "type")]
 pub enum Shower {
     MixerShower {
         /// Shower flow rate (unit: litre/minute)
+        #[validate(minimum = 0.)]
         flowrate: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
-        /// Reference to a key in Input.WWHRS
-        #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
-        waste_water_heat_recovery_system: Option<String>,
+        /// Reference to HotWaterSource object that provides hot water to this shower. If only one HotWaterSource is defined, then this will be assumed by default
+        #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+        hot_water_source: Option<String>,
+        #[serde(flatten)]
+        wwhrs_config: MixerShowerWwhrsConfiguration,
     },
     #[serde(rename = "InstantElecShower")]
     InstantElectricShower {
+        /// Shower's rated electrical power (unit: kW)
+        #[validate(minimum = 0.)]
         rated_power: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct MixerShowerWwhrsConfiguration {
+    /// Reference to a key in Input.WWHRS
+    #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
+    pub(crate) waste_water_heat_recovery_system: Option<String>,
+    /// WWHRS system configuration for this shower connection
+    #[serde(
+        rename = "WWHRS_configuration",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) wwhrs_configuration: Option<WwhrsConfiguration>,
+}
+
+/// WWHRS system configuration
+///
+///    A - Both shower and water heating system get pre-heated water
+///    B - Only shower gets pre-heated water
+///    C - Only water heating system gets pre-heated water
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) enum WwhrsConfiguration {
+    #[serde(rename = "A")]
+    #[default]
+    ShowerAndWaterHeatingSystem,
+    #[serde(rename = "B")]
+    Shower,
+    #[serde(rename = "C")]
+    WaterHeatingSystem,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -1420,19 +1574,23 @@ pub(crate) struct BathDetails {
     pub(crate) flowrate: f64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OtherWaterUse {
     /// Tap/outlet flow rate (unit: litre/minute)
+    #[validate(minimum = 0.)]
     pub(crate) flowrate: f64,
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: ColdWaterSourceType,
+    /// Reference to HotWaterSource object that provides hot water to this tapping point. If only one HotWaterSource is defined, then this will be assumed by default
+    #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+    pub(crate) hot_water_source: Option<String>,
 }
 
 pub(crate) type WaterDistribution = Vec<WaterPipeworkSimple>;
@@ -1442,24 +1600,35 @@ pub(crate) type WaterDistribution = Vec<WaterPipeworkSimple>;
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct WaterHeatingEvents {
+    /// Dictionary of shower water heating events, where keys are shower names and values are lists of events
     #[serde(default)]
     pub(crate) shower: IndexMap<String, Vec<WaterHeatingEvent>>,
+    /// Dictionary of bath water heating events, where keys are bath names and values are lists of events
     #[serde(default)]
     pub(crate) bath: IndexMap<String, Vec<WaterHeatingEvent>>,
+    /// Dictionary of other water heating events (e.g., taps, sinks), where keys are event names and values are lists of events
     #[serde(default)]
     pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
+    /// Hours from start of simulation to when the water heating event begins (unit: hours)
+    #[validate(minimum = 0.)]
     pub start: f64,
+    /// Duration of the water heating event (unit: minutes)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub duration: Option<f64>,
+    /// Volume of water for the event (unit: litre)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub volume: Option<f64>,
+    /// Target temperature for the water heating event (unit: ˚C)
+    #[validate(minimum = -273.15)]
     pub temperature: f64,
 }
 
@@ -1553,7 +1722,7 @@ pub(crate) enum SpaceHeatSystemDetails {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(
     deny_unknown_fields,
@@ -1562,50 +1731,154 @@ pub(crate) enum SpaceHeatSystemDetails {
 )]
 pub(crate) enum WetEmitter {
     Radiator {
-        c: f64,
-        n: f64,
+        #[serde(flatten)]
+        constant_data: RadiatorConstantData,
+        /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
+        #[serde(rename = "n")]
+        #[validate(exclusive_minimum = 0.)]
+        exponent: f64,
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
     },
     Ufh {
+        /// Equivalent thermal mass per m² of floor area for under-floor heating systems (unit: kJ/m²K)
+        #[validate(exclusive_minimum = 0.)]
         equivalent_specific_thermal_mass: f64,
+        /// Heat output per m² of floor area for under-floor heating systems (unit: W/m²K)
+        #[validate(exclusive_minimum = 0.)]
         system_performance_factor: f64,
+        /// (unit: m²)
+        #[validate(minimum = 0.)]
         emitter_floor_area: f64,
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
     },
     Fancoil {
+        /// Number of units of this specification of fancoil in Zone
         #[serde(default = "default_n_units")]
+        #[validate(exclusive_minimum = 0)]
         n_units: usize,
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
+        /// Manufacturer's data for fancoil unit
         fancoil_test_data: FancoilTestData,
     },
+}
+
+/// Enum encapsulating rule for radiators that either the `c` field should be provided, or `c_per_m` and `length` should be
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[serde(untagged, deny_unknown_fields)]
+pub(crate) enum RadiatorConstantData {
+    Constant {
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
+        #[serde(rename = "c")]
+        #[validate(exclusive_minimum = 0.)]
+        constant: f64,
+    },
+    ConstantUsingLength {
+        /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests) per the length of the emitter
+        #[serde(rename = "c_per_m")]
+        #[validate(exclusive_minimum = 0.)]
+        constant_per_m: f64,
+        /// The length of the emitter (unit: m)
+        #[validate(exclusive_minimum = 0.)]
+        length: f64,
+    },
+}
+
+impl RadiatorConstantData {
+    pub(crate) fn constant(&self) -> f64 {
+        match self {
+            Self::Constant { constant } => *constant,
+            Self::ConstantUsingLength {
+                constant_per_m,
+                length,
+            } => *constant_per_m * *length,
+        }
+    }
 }
 
 const fn default_n_units() -> usize {
     1
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[validate(custom = validate_fancoil_test_data)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FancoilTestData {
     pub(crate) fan_speed_data: Vec<FanSpeedData>,
+    /// A list of fan powers for which heat output data is provided (unit: W)
     #[serde(rename = "fan_power_W")]
+    #[validate(custom = validate_all_items_non_negative)]
     pub(crate) fan_power_w: Vec<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+fn validate_fancoil_test_data(
+    data: &FancoilTestData,
+) -> Result<(), serde_valid::validation::Error> {
+    // Check all the fan speed lists are of the same length
+    if !data
+        .fan_speed_data
+        .iter()
+        .map(|entry| entry.power_output.len())
+        .all_equal()
+    {
+        return Err(serde_valid::validation::Error::Custom(
+            "Fan speed lists of fancoil manufacturer data differ in length".to_string(),
+        ));
+    }
+
+    if data
+        .fan_speed_data
+        .first()
+        .is_none_or(|entry| entry.power_output.len() != data.fan_power_w.len())
+    {
+        return Err(serde_valid::validation::Error::Custom(
+            "Fan power data length does not match the length of fan speed data".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FanSpeedData {
+    /// Difference in temperature between the hot water supplied to the fan coil and the air in the room (unit: Kelvin)
+    #[validate(minimum = 0.)]
     pub(crate) temperature_diff: f64,
+    /// Heat output for a specific test temperature difference (unit: kW)
+    #[validate(custom = validate_all_items_non_negative)]
     pub(crate) power_output: Vec<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+fn validate_all_items_non_negative(items: &[f64]) -> Result<(), serde_valid::validation::Error> {
+    items
+        .iter()
+        .all(|item| item >= &0.)
+        .then(|| Ok(()))
+        .unwrap_or_else(|| {
+            Err(serde_valid::validation::Error::Custom(
+                "All items must be non-negative".to_string(),
+            ))
+        })
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct SpaceHeatSystemHeatSource {
-    pub name: String,
+pub(crate) struct SpaceHeatSystemHeatSource {
+    pub(crate) name: String,
+    /// Upper operating limit for temperature (unit: deg C)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub temp_flow_limit_upper: Option<f64>,
+    #[validate(minimum = 0.)]
+    pub(crate) temp_flow_limit_upper: Option<f64>,
 }
 
 // it is unclear whether this struct should be used - see reference to the struct above
@@ -1774,7 +2047,7 @@ pub enum ZoneTemperatureControlBasis {
     Operative,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
@@ -1796,6 +2069,8 @@ pub(crate) enum BuildingElement {
         mass_distribution_class: MassDistributionClass,
         is_external_door: Option<bool>,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 180.)]
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -1824,6 +2099,8 @@ pub(crate) enum BuildingElement {
         #[serde(skip_serializing_if = "Option::is_none")]
         thermal_resistance_construction: Option<f64>,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 180.)]
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -1856,6 +2133,8 @@ pub(crate) enum BuildingElement {
         /// Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m²)
         total_area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 180.)]
         pitch: f64,
         /// Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)
         u_value: f64,
@@ -1878,6 +2157,8 @@ pub(crate) enum BuildingElement {
     AdjacentConditionedSpace {
         area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 180.)]
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
@@ -1892,6 +2173,8 @@ pub(crate) enum BuildingElement {
         /// Area of this building element (unit: m²)
         area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 180.)]
         pitch: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         u_value: Option<f64>,
@@ -2163,6 +2446,16 @@ pub enum WindowTreatmentControl {
     CombinedLightBlindHvac,
 }
 
+impl WindowTreatmentControl {
+    fn is_manual(&self) -> bool {
+        matches!(self, Self::Manual | Self::ManualMotorised)
+    }
+
+    fn is_automatic(&self) -> bool {
+        matches!(self, Self::AutoMotorised | Self::CombinedLightBlindHvac)
+    }
+}
+
 pub(crate) fn deserialize_possible_string_for_boolean<'de, D>(
     deserializer: D,
 ) -> Result<Option<bool>, D::Error>
@@ -2242,18 +2535,26 @@ pub enum WindShieldLocation {
     Exposed,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
 pub enum EdgeInsulation {
     #[serde(rename = "horizontal")]
     Horizontal {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         width: f64,
+        /// Thermal resistance of floor edge insulation (unit: m²K/W)
+        #[validate(exclusive_minimum = 0.)]
         edge_thermal_resistance: f64,
     },
     #[serde(rename = "vertical")]
     Vertical {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         depth: f64,
+        /// Thermal resistance of floor edge insulation (unit: m²K/W)
+        #[validate(exclusive_minimum = 0.)]
         edge_thermal_resistance: f64,
     },
 }
@@ -2267,18 +2568,24 @@ pub enum ThermalBridging {
     Number(f64),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
 pub enum ThermalBridgingDetails {
     #[serde(rename = "ThermalBridgeLinear")]
     Linear {
+        /// Linear thermal transmittance of the thermal bridge. (Unit: W/m.K)
+        // NB. this can be positive or negative, so no validation of zero bounds necessary.
         linear_thermal_transmittance: f64,
+        /// Length of the thermal bridge over which the linear thermal transmittance applies. (Unit: m)
+        #[validate(exclusive_minimum = 0.)]
         length: f64,
     },
     #[serde(rename = "ThermalBridgePoint")]
     Point {
+        /// Heat transfer coefficient of the thermal bridge. (Unit: W/K)
+        // NB. this can be positive or negative. SAP 2012, Appendix K has negative point thermal bridges.
         #[serde(rename = "heat_transfer_coeff")]
         heat_transfer_coefficient: f64,
     },
@@ -2383,61 +2690,61 @@ pub(crate) enum HeatSourceWetDetails {
     Boiler {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// References a key in $.EnergySupply for auxiliary electrical power
         #[serde(rename = "EnergySupply_aux")]
         energy_supply_aux: String,
         rated_power: f64,
+        /// Boiler efficiency at full load (dimensionless, 0-1)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         efficiency_full_load: f64,
+        /// Boiler efficiency at part load (dimensionless, 0-1)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         efficiency_part_load: f64,
+        /// Location of the boiler (internal or external to the building)
         boiler_location: HeatSourceLocation,
+        /// Modulation load ratio (dimensionless, 0-1)
+        #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         modulation_load: f64,
+        /// Electrical power consumption of circulation pump (unit: kW)
+        #[validate(minimum = 0.)]
         electricity_circ_pump: f64,
+        /// Electrical power consumption at part load (unit: kW)
+        #[validate(minimum = 0.)]
         electricity_part_load: f64,
+        /// Electrical power consumption at full load (unit: kW)
+        #[validate(minimum = 0.)]
         electricity_full_load: f64,
+        /// Electrical power consumption in standby mode (unit: kW)
+        #[validate(minimum = 0.)]
         electricity_standby: f64,
     },
     HeatBattery {
-        #[serde(rename = "EnergySupply")]
-        energy_supply: String,
-        heat_battery_location: Option<HeatSourceLocation>,
-        electricity_circ_pump: f64,
-        electricity_standby: f64,
-        // in kW (Charging)
-        rated_charge_power: f64,
-        // in kW (Losses to internal or external)
-        max_rated_losses: f64,
-        // number of units installed in zone
-        number_of_units: usize,
-        simultaneous_charging_and_discharging: bool,
-        #[serde(rename = "ControlCharge")]
-        control_charge: String,
-        #[serde(rename = "heat_storage_zone_material_kJ_per_K_above_Phase_transition")]
-        heat_storage_zone_material_k_j_per_k_above_phase_transition: f64,
-        #[serde(rename = "heat_storage_zone_material_kJ_per_K_below_Phase_transition")]
-        heat_storage_zone_material_k_j_per_k_below_phase_transition: f64,
-        #[serde(rename = "heat_storage_zone_material_kJ_per_K_during_Phase_transition")]
-        heat_storage_zone_material_k_j_per_k_during_phase_transition: f64,
-        phase_transition_temperature_upper: f64,
-        phase_transition_temperature_lower: f64,
-        max_temperature: f64,
-        #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
-        velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
-        capillary_diameter_m: f64,
-        #[serde(rename = "A")]
-        a: f64,
-        #[serde(rename = "B")]
-        b: f64,
-        heat_exchanger_surface_area_m2: f64,
-        flow_rate_l_per_min: f64,
+        #[serde(flatten)]
+        battery: HeatBattery,
     },
     #[serde(rename = "HIU")]
     Hiu {
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// Maximum power output of the HIU (unit: kW)
+        #[validate(exclusive_minimum = 0.)]
         power_max: f64,
+        /// Daily heat losses from the HIU (unit: kWh/day)
         #[serde(rename = "HIU_daily_loss")]
+        #[validate(minimum = 0.)]
         hiu_daily_loss: f64,
+        /// Heat losses from building-level distribution pipework (unit: W)
+        #[validate(minimum = 0.)]
         building_level_distribution_losses: f64,
+        /// Power consumption of heating circulation pump (unit: kW)
+        #[validate(minimum = 0.)]
+        power_circ_pump: Option<f64>,
+        /// Power consumption of auxiliary electrical usage (unit: kW)
+        #[validate(minimum = 0.)]
+        power_aux: Option<f64>,
     },
 }
 
@@ -2488,13 +2795,21 @@ pub(crate) enum HeatPumpBackupControlType {
     Substitute,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct HeatPumpBufferTank {
+    /// Standing heat loss (unit: kWh/day)
+    #[validate(minimum = 0.)]
     pub daily_losses: f64,
+    /// Volume of the buffer tank (unit: litre)
+    #[validate(minimum = 0.)]
     pub volume: f64,
+    /// Flow rate of the buffer tank - emitters loop (unit: l/min)
+    #[validate(minimum = 0.)]
     pub pump_fixed_flow_rate: f64,
+    /// Pump power of the buffer tank - emitters loop (unit: W)
+    #[validate(minimum = 0.)]
     pub pump_power_at_flow_rate: f64,
 }
 
@@ -2528,16 +2843,37 @@ pub(crate) struct HeatPumpTestDatum {
 pub struct HeatPumpBoiler {
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: String,
+    /// References a key in $.EnergySupply for auxiliary electrical power
     #[serde(rename = "EnergySupply_aux")]
     pub(crate) energy_supply_aux: String,
+    /// Rated power output of the boiler (unit: kW)
+    #[validate(minimum = 0.)]
     rated_power: f64,
+    /// Boiler efficiency at full load (dimensionless, 0-1)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     efficiency_full_load: f64,
+    /// Boiler efficiency at part load (dimensionless, 0-1)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     efficiency_part_load: f64,
+    /// Location of the boiler (internal or external to the building)
     boiler_location: HeatSourceLocation,
+    /// Modulation load ratio (dimensionless, 0-1)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     modulation_load: f64,
+    /// Electrical power consumption of circulation pump (unit: kW)
+    #[validate(minimum = 0.)]
     electricity_circ_pump: f64,
+    /// Electrical power consumption at part load (unit: kW)
+    #[validate(minimum = 0.)]
     electricity_part_load: f64,
+    /// Electrical power consumption at full load (unit: kW)
+    #[validate(minimum = 0.)]
     electricity_full_load: f64,
+    /// Electrical power consumption in standby mode (unit: kW)
+    #[validate(minimum = 0.)]
     electricity_standby: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate]
@@ -2563,6 +2899,105 @@ pub enum HeatSourceLocation {
     Internal,
     #[serde(rename = "external")]
     External,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(tag = "battery_type", deny_unknown_fields)]
+pub(crate) enum HeatBattery {
+    #[serde(rename = "pcm")]
+    Pcm {
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+        /// Initial temperature of the PCM heat battery at the start of simulation (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        temp_init: f64,
+        /// Electrical power consumption of circulation pump (unit: kW)
+        #[validate(minimum = 0.)]
+        electricity_circ_pump: f64,
+        /// Electrical power consumption in standby mode (unit: kW)
+        #[validate(minimum = 0.)]
+        electricity_standby: f64,
+        /// Rated charging power (unit: kW)
+        #[validate(exclusive_minimum = 0.)]
+        rated_charge_power: f64,
+        /// Maximum rated heat losses (unit: kW)
+        #[validate(minimum = 0.)]
+        max_rated_losses: f64,
+        /// Number of heat battery units
+        number_of_units: usize,
+        /// Whether the heat battery can charge and discharge simultaneously
+        simultaneous_charging_and_discharging: bool,
+        #[serde(rename = "ControlCharge")]
+        control_charge: String,
+        /// Heat capacity of storage above phase transition (unit: kJ/K)
+        #[serde(rename = "heat_storage_kJ_per_K_above_Phase_transition")]
+        #[validate(exclusive_minimum = 0.)]
+        heat_storage_k_j_per_k_above_phase_transition: f64,
+        /// Heat capacity of storage below phase transition (unit: kJ/K)
+        #[serde(rename = "heat_storage_kJ_per_K_below_Phase_transition")]
+        #[validate(exclusive_minimum = 0.)]
+        heat_storage_k_j_per_k_below_phase_transition: f64,
+        /// Heat capacity of storage during phase transition (unit: kJ/K)
+        #[serde(rename = "heat_storage_kJ_per_K_during_Phase_transition")]
+        #[validate(exclusive_minimum = 0.)]
+        heat_storage_k_j_per_k_during_phase_transition: f64,
+        /// Upper temperature limit for phase transition (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        phase_transition_temperature_upper: f64,
+        /// Lower temperature limit for phase transition (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        phase_transition_temperature_lower: f64,
+        /// Maximum operating temperature (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        max_temperature: f64,
+        /// Velocity in heat exchanger tube at 1 litre/minute flow rate (unit: m/s)
+        #[serde(rename = "velocity_in_HEX_tube_at_1_l_per_min_m_per_s")]
+        #[validate(exclusive_minimum = 0.)]
+        velocity_in_hex_tube_at_1_l_per_min_m_per_s: f64,
+        /// Diameter of capillary tubes (unit: m)
+        #[validate(minimum = 0.)]
+        capillary_diameter_m: f64,
+        /// Heat battery parameter A (dimensionless)
+        #[serde(rename = "A")]
+        a: f64,
+        /// Heat battery parameter B (dimensionless)
+        #[serde(rename = "B")]
+        b: f64,
+        /// Surface area of heat exchanger (unit: m²)
+        #[validate(exclusive_minimum = 0.)]
+        heat_exchanger_surface_area_m2: f64,
+        /// Flow rate through the heat battery (unit: litre/minute)
+        #[validate(exclusive_minimum = 0.)]
+        flow_rate_l_per_min: f64,
+    },
+    #[serde(rename = "dry_core")]
+    DryCore {
+        #[serde(rename = "ControlCharge")]
+        control_charge: String,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+        electricity_circ_pump: f64,
+        electricity_standby: f64,
+        /// Charging power (kW)
+        pwr_in: f64,
+        /// State of charge at initialisation of dry core heat storage (ratio)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        state_of_charge_init: f64,
+        /// Rated instantaneous power output (kW)
+        rated_power_instant: f64,
+        heat_storage_capacity: f64,
+        #[validate(minimum = 1)]
+        number_of_units: usize,
+        /// Lookup table for minimum output based on charge level
+        dry_core_min_output: (f64, f64),
+        /// Lookup table for maximum output based on charge level
+        dry_core_max_output: (f64, f64),
+        /// Fan power (W)
+        #[serde(rename = "fan_pwr")]
+        fan_power: f64,
+    },
 }
 
 pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
@@ -2593,7 +3028,7 @@ pub enum WasteWaterHeatRecoverySystemType {
 
 pub(crate) type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum OnSiteGenerationDetails {
@@ -2602,6 +3037,8 @@ pub(crate) enum OnSiteGenerationDetails {
         peak_power: f64,
         ventilation_strategy: PhotovoltaicVentilationStrategy,
         /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 90.)]
         pitch: f64,
         #[serde(
             rename = "orientation360",
@@ -2740,13 +3177,18 @@ pub enum TerrainClass {
     Urban,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct Vent {
+    /// Mid height of air flow path relative to ventilation zone (unit: m)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) mid_height_air_flow_path: f64,
+    /// Equivalent area of a vent (unit: cm2)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) area_cm2: f64,
     /// Reference pressure difference for an air terminal device (unit: Pa)
+    #[validate(minimum = 0.)]
     pub(crate) pressure_difference_ref: f64,
     #[serde(
         rename = "orientation360",
@@ -2755,20 +3197,27 @@ pub struct Vent {
     )]
     pub(crate) orientation: f64,
     /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 180.)]
     pub(crate) pitch: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub struct VentilationLeaks {
-    pub ventilation_zone_height: f64,
+pub(crate) struct VentilationLeaks {
+    /// Height of ventilation zone (unit: m)
+    #[validate(minimum = 0.)]
+    pub(crate) ventilation_zone_height: f64,
     /// Reference pressure difference (unit: Pa)
-    pub test_pressure: f64,
-    /// Flow rate through
-    pub test_result: f64,
+    #[validate(minimum = 0.)]
+    pub(crate) test_pressure: f64,
+    /// Flow rate through (unit: m³/h.m²)
+    #[validate(minimum = 0.)]
+    pub(crate) test_result: f64,
     /// Reference area of the envelope airtightness index
-    pub env_area: f64,
+    #[validate(minimum = 0.)]
+    pub(crate) env_area: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2841,6 +3290,8 @@ impl MechanicalVentilationForProcessing for MechanicalVentilationJsonValue<'_> {
 pub(crate) enum SupplyAirFlowRateControlType {
     #[serde(rename = "ODA")]
     Oda,
+    #[serde(rename = "LOAD")]
+    Load,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -2865,8 +3316,8 @@ pub(crate) enum MechVentType {
     DecentralisedContinuousMev,
     #[serde(rename = "MVHR")]
     Mvhr,
-    #[serde(rename = "PIV")]
-    Piv,
+    #[serde(rename = "Positive input ventilation")]
+    PositiveInputVentilation,
 }
 
 impl Display for MechVentType {
@@ -2879,19 +3330,75 @@ impl Display for MechVentType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+impl MechVentType {
+    /// Check if this ventilation type is a balanced system (both supply and extract).
+    fn is_balanced(&self) -> bool {
+        matches!(self, Self::Mvhr)
+    }
+
+    /// Check if this ventilation type is an extract-only system.
+    fn is_extract_only(&self) -> bool {
+        matches!(
+            self,
+            Self::IntermittentMev
+                | Self::CentralisedContinuousMev
+                | Self::DecentralisedContinuousMev
+        )
+    }
+
+    /// Check if this ventilation type is a supply-only system.
+    fn is_supply_only(&self) -> bool {
+        matches!(self, Self::PositiveInputVentilation)
+    }
+
+    /// Check if this ventilation type includes supply air.
+    fn has_supply(&self) -> bool {
+        self.is_balanced() || self.is_supply_only()
+    }
+
+    /// Check if this ventilation type includes extract air.
+    fn has_extract(&self) -> bool {
+        self.is_balanced() || self.is_extract_only()
+    }
+
+    /// Check if this ventilation type operates continuously.
+    fn is_continuous(&self) -> bool {
+        matches!(
+            self,
+            Self::CentralisedContinuousMev | Self::DecentralisedContinuousMev | Self::Mvhr
+        )
+    }
+
+    /// Check if this ventilation type operates intermittently.
+    fn is_intermittent(&self) -> bool {
+        matches!(self, Self::IntermittentMev)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct MechanicalVentilationDuctwork {
+    /// Whether the cross-section of duct is circular or rectangular (square)
     pub(crate) cross_section_shape: DuctShape,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Cross-sectional perimeter length of rectangular ductwork (unit: mm)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) duct_perimeter_mm: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) internal_diameter_mm: Option<f64>,
+    /// (unit: mm)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) external_diameter_mm: Option<f64>,
+    /// (unit: m)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) length: f64,
+    /// Thermal conductivity of the insulation (unit: W / m K)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) insulation_thermal_conductivity: f64,
+    /// (unit: mm)
+    #[validate(minimum = 0.)]
     pub(crate) insulation_thickness_mm: f64,
     pub(crate) reflective: bool,
     pub(crate) duct_type: DuctType,
@@ -2915,11 +3422,15 @@ pub enum DuctType {
     Exhaust,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct AirTerminalDevice {
+    /// Equivalent area of the air terminal device (unit: cm2)
+    #[validate(exclusive_minimum = 0.)]
     area_cm2: f64,
+    /// Reference pressure difference for an air terminal device (unit: Pa)
+    #[validate(minimum = 0.)]
     pressure_difference_ref: f64,
 }
 
@@ -3062,7 +3573,7 @@ pub struct Appliance {
     pub(crate) standard_use: Option<f64>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 // #[serde(deny_unknown_fields)] // TODO: possibly restore `deny_unknown_fields` declaration after 0.36
@@ -3071,8 +3582,28 @@ pub(crate) struct ApplianceLoadShifting {
     pub(crate) control: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<isize>,
+    /// Maximum time that an event may be shifted away from when it was originally intended to occur. This may be up to 24 hours. (unit: hours)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 24.)]
     pub(crate) max_shift_hrs: f64,
+    /// Value above which the sum demand multiplied by the
+    /// weight should not exceed. If a 7hr tariff were used for
+    /// the weight timeseries, then this would be a cost. If this value
+    /// is 0, then all events will be shifted to the optimal time
+    /// within the window, otherwise they will be shifted to the earliest
+    /// time at which the weighted demand goes below the limit.
+    /// (if there is no time in the window when the weighted demand is below
+    /// the limit, then the optimum is chosen.)
+    #[validate(minimum = 0.)]
     pub(crate) demand_limit_weighted: f64,
+    /// This may be, for example, the hourly cost per
+    /// kWh of a 7hr tariff, but could be any time series.
+    /// The sum of the other demand and the demand of the
+    /// appliance in question at any given time is multiplied
+    /// by the value of this timeseries to obtain a figure
+    /// that is used to determine whether to shift an event,
+    /// and when would be the most appropriate time to shift
+    /// the event to.
     pub(crate) weight_timeseries: Vec<f64>,
 }
 

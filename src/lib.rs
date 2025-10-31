@@ -4,12 +4,12 @@ mod compare_floats;
 pub mod core;
 pub mod corpus;
 pub mod errors;
+mod hem_core;
 pub mod input;
 pub mod output;
 pub mod read_weather_file;
 mod statistics;
 mod wrappers;
-mod hem_core;
 
 #[macro_use]
 extern crate is_close;
@@ -45,6 +45,8 @@ use chrono::prelude::*;
 use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
 use csv::WriterBuilder;
+use hem_core::external_conditions;
+use hem_core::simulation_time;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -58,8 +60,6 @@ use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
 use tracing::{debug, error, instrument};
-use hem_core::simulation_time;
-use hem_core::external_conditions;
 
 pub const HEM_VERSION: &str = "0.36";
 pub const HEM_VERSION_DATE: &str = "2025-06-03";

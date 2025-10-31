@@ -11,7 +11,7 @@ use crate::corpus::{
     ResultParamValue, ResultsAnnual as CorpusResultsAnnual,
     ResultsPerTimestep as CorpusResultsPerTimestep,
 };
-use crate::input::HeatSourceWetDetails;
+use crate::input::{HeatBattery as HeatBatteryInput, HeatSourceWetDetails};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::StringOrNumber;
 use anyhow::anyhow;
@@ -468,26 +468,28 @@ impl HeatBattery {
             flow_rate_l_per_min,
             ..,
         ) = if let HeatSourceWetDetails::HeatBattery {
-            rated_charge_power: pwr_in,
-            max_rated_losses,
-            electricity_circ_pump: power_circ_pump,
-            electricity_standby: power_standby,
-            number_of_units: n_units,
-            simultaneous_charging_and_discharging,
-            max_temperature,
-            heat_storage_zone_material_k_j_per_k_above_phase_transition: heat_storage_kj_per_k_above,
-            heat_storage_zone_material_k_j_per_k_below_phase_transition: heat_storage_kj_per_k_below,
-            heat_storage_zone_material_k_j_per_k_during_phase_transition:
-                heat_storage_kj_per_k_during,
-            phase_transition_temperature_upper,
-            phase_transition_temperature_lower,
-            velocity_in_hex_tube_at_1_l_per_min_m_per_s: velocity_in_hex_tube,
-            capillary_diameter_m,
-            a,
-            b,
-            heat_exchanger_surface_area_m2,
-            flow_rate_l_per_min,
-            ..
+            battery:
+                HeatBatteryInput::Pcm {
+                    rated_charge_power: pwr_in,
+                    max_rated_losses,
+                    electricity_circ_pump: power_circ_pump,
+                    electricity_standby: power_standby,
+                    number_of_units: n_units,
+                    simultaneous_charging_and_discharging,
+                    max_temperature,
+                    heat_storage_k_j_per_k_above_phase_transition: heat_storage_kj_per_k_above,
+                    heat_storage_k_j_per_k_below_phase_transition: heat_storage_kj_per_k_below,
+                    heat_storage_k_j_per_k_during_phase_transition: heat_storage_kj_per_k_during,
+                    phase_transition_temperature_upper,
+                    phase_transition_temperature_lower,
+                    velocity_in_hex_tube_at_1_l_per_min_m_per_s: velocity_in_hex_tube,
+                    capillary_diameter_m,
+                    a,
+                    b,
+                    heat_exchanger_surface_area_m2,
+                    flow_rate_l_per_min,
+                    ..
+                },
         } = heat_battery_details
         {
             (

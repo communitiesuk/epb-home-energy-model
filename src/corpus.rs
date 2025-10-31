@@ -63,16 +63,17 @@ use crate::input::{
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
     ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
-    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatPumpSourceType,
-    HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType,
-    HotWaterSourceDetails, InfiltrationVentilation as InfiltrationVentilationInput, Input,
-    InputForCalcHtcHlp, InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType,
-    OnSiteGeneration, OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput,
-    SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
-    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails,
-    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails,
-    WasteWaterHeatRecoverySystemType, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
-    ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatBattery as HeatBatteryInput,
+    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
+    HeatSourceWetType, HotWaterSourceDetails,
+    InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
+    InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType, OnSiteGeneration,
+    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
+    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentilationLeaks,
+    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WasteWaterHeatRecoverySystemType,
+    WaterHeatingEvent, WaterHeatingEvents, WaterPipework, ZoneDictionary, ZoneInput,
+    ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::{ProjectFlags, StringOrNumber};
@@ -4497,9 +4498,12 @@ fn heat_source_wet_from_input(
             )))))
         }
         HeatSourceWetDetails::HeatBattery {
-            control_charge,
-            energy_supply,
-            ..
+            battery:
+                HeatBatteryInput::Pcm {
+                    control_charge,
+                    energy_supply,
+                    ..
+                },
         } => {
             let energy_supply = energy_supplies
                 .get(energy_supply)
@@ -4534,6 +4538,9 @@ fn heat_source_wet_from_input(
             ))));
             Ok(heat_source)
         }
+        HeatSourceWetDetails::HeatBattery {
+            battery: HeatBatteryInput::DryCore { .. },
+        } => unimplemented!(), // TODO: presumably dry core batteries will be mapped during migration to 1.0.0a1
     }
 }
 
@@ -5180,7 +5187,7 @@ fn hot_water_source_from_input(
             let cold_water_source =
                 cold_water_source_for_type(cold_water_source_type, cold_water_sources)?;
             HotWaterSource::PointOfUse(PointOfUse::new(
-                *efficiency,
+                efficiency.ok_or_else(|| anyhow!("An efficiency value was expected on a point of use hot water source input."))?, // TODO: review as part of migration to 1.0.0a1 as efficiency may now be optional
                 energy_supply_conn,
                 cold_water_source,
                 *setpoint_temp,
@@ -5228,6 +5235,7 @@ fn hot_water_source_from_input(
         HotWaterSourceDetails::HeatBattery {
             cold_water_source,
             heat_source_wet: heat_source_wet_name,
+            ..
         } => {
             let energy_supply_conn_name: String =
                 format!("{}_water_heating", heat_source_wet_name).into();

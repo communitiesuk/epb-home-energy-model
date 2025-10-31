@@ -328,13 +328,13 @@ impl Emitters {
         // 1. process radiators first
         for (i, emitter) in emitters.iter().enumerate() {
             if let WetEmitterInput::Radiator {
-                c,
-                n,
+                constant_data,
+                exponent: n,
                 frac_convective,
             } = emitter
             {
                 model_emitters[i].replace(Arc::new(WetEmitter::Radiator {
-                    c: *c,
+                    c: constant_data.constant(),
                     n: *n,
                     frac_convective: *frac_convective,
                 }));

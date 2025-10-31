@@ -13,9 +13,8 @@ use crate::corpus::{calc_htc_hlp, ColdWaterSources, HtcHlpCalculation};
 use crate::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
-    SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, WaterPipeContentsType, WaterPipework,
-    WaterPipeworkLocation,
+    PipeworkContents, SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
+    UValueEditableBuildingElementJsonValue, WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -1196,7 +1195,7 @@ fn edit_primary_pipework(
     let external_diameter_mm_min = 22.;
     let insulation_thickness_mm_min = 25.;
     let surface_reflectivity = false;
-    let pipe_contents = WaterPipeContentsType::Water;
+    let pipe_contents = PipeworkContents::Water;
     let insulation_thermal_conductivity = 0.035;
 
     let length_max = match input.build_type()?.as_str() {

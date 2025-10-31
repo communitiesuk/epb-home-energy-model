@@ -3032,7 +3032,7 @@ mod tests {
     use crate::external_conditions::{
         DaylightSavingsConfig, ShadingObject, ShadingObjectType, ShadingSegment,
     };
-    use crate::input::{FuelType, WaterPipeContentsType};
+    use crate::input::{FuelType, PipeworkContents};
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -3978,7 +3978,7 @@ mod tests {
             0.035,
             0.038,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
@@ -3996,7 +3996,7 @@ mod tests {
             0.035,
             0.038,
             false,
-            WaterPipeContentsType::Water,
+            PipeworkContents::Water,
         )
         .unwrap();
         for (t_idx, t_it) in simulation_time_for_storage_tank.iter().enumerate() {
@@ -4445,7 +4445,7 @@ mod tests {
                 0.035,
                 0.04,
                 false,
-                WaterPipeContentsType::Water,
+                PipeworkContents::Water,
             )
             .unwrap(),
             Pipework::new(
@@ -4456,7 +4456,7 @@ mod tests {
                 0.035,
                 0.038,
                 false,
-                WaterPipeContentsType::Water,
+                PipeworkContents::Water,
             )
             .unwrap(),
         ];
