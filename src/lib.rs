@@ -82,7 +82,7 @@ impl HemResponse {
 #[instrument(skip_all)]
 pub fn run_project<'a>(
     input: Input, // TODO change back to input: impl Read,
-    output: impl Output,
+    output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&'a str>,
     flags: &'a ProjectFlags, // TODO: this can be owned
@@ -290,7 +290,7 @@ pub fn run_project<'a>(
         let steps_in_hours = &corpus.simulation_time.step_in_hours();
         let contextualised_results =
             CalculationResultsWithContext::new(input, corpus, run_results);
-        write_core_output_files(Some(&cloned_input), &output, &contextualised_results, *steps_in_hours, flags)?;
+        write_core_output_files(Some(&cloned_input), output, &contextualised_results, *steps_in_hours, flags)?;
         Ok(contextualised_results)
     }))
         .map_err(|e| {

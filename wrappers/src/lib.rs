@@ -193,7 +193,7 @@ pub fn main(
             return Ok(None);
         }
 
-        let contextualised_results = hem::run_project(input, output, external_conditions_data, tariff_data_file, flags)?;
+        let contextualised_results = hem::run_project(input, &output, external_conditions_data, tariff_data_file, flags)?;
 
         // 7. Run wrapper post-processing and capture any output.
         #[instrument(skip_all)]
