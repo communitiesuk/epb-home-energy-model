@@ -2057,7 +2057,7 @@ impl UValueEditableBuildingElement for UValueEditableBuildingElementJsonValue<'_
     }
 
     fn remove_thermal_resistance_construction(&mut self) {
-        self.0.remove("thermal_resistance_construction");
+        self.0.shift_remove("thermal_resistance_construction");
     }
 
     fn height(&self) -> Option<f64> {
@@ -3295,7 +3295,7 @@ impl InputForProcessing {
     }
 
     fn remove_root_key(&mut self, root_key: &str) -> JsonAccessResult<&mut Self> {
-        self.root_mut()?.remove(root_key);
+        self.root_mut()?.shift_remove(root_key);
 
         Ok(self)
     }
@@ -4416,13 +4416,9 @@ impl InputForProcessing {
             .iter()
             .filter(|(event_type, _)| event_types.contains(&&***event_type))
             .flat_map(|(_, events)| {
-                events.as_object().map(|events| {
-                    events
-                        .values()
-                        .into_iter()
-                        .map(JsonValue::as_array)
-                        .flatten()
-                })
+                events
+                    .as_object()
+                    .map(|events| events.values().filter_map(JsonValue::as_array))
             })
             .flatten()
             .flatten()
@@ -4581,7 +4577,7 @@ impl InputForProcessing {
             .values_mut()
             .filter_map(|value| value.as_object_mut())
             .for_each(|energy_supply| {
-                energy_supply.remove("diverter");
+                energy_supply.shift_remove("diverter");
             });
         Ok(self)
     }
@@ -4649,7 +4645,7 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|v| v.as_object_mut())
         {
-            energy_supply.remove("ElectricBattery");
+            energy_supply.shift_remove("ElectricBattery");
         }
         Ok(self)
     }
@@ -4966,7 +4962,7 @@ impl InputForProcessing {
 
     pub(crate) fn reset_mechanical_ventilation(&mut self) -> JsonAccessResult<&Self> {
         self.root_object_entry_mut("InfiltrationVentilation")?
-            .remove("MechanicalVentilation");
+            .shift_remove("MechanicalVentilation");
         Ok(self)
     }
 
@@ -5274,13 +5270,13 @@ mod tests {
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
-                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).expect(
-                    format!(
-                        "Failed deserializing {}",
-                        entry.file_name().to_str().unwrap()
-                    )
-                    .as_str(),
-                );
+                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap()))
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Failed deserializing {}",
+                            entry.file_name().to_str().unwrap()
+                        )
+                    });
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);

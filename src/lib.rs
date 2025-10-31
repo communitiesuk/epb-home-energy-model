@@ -1798,7 +1798,7 @@ fn write_core_output_file_heat_source_wet_summary(
                 name.0.as_bytes(),
                 name.1.as_ref().map(|x| x.as_bytes()).unwrap_or_default(),
                 value
-                    .into_iter()
+                    .iter()
                     .map(String::from)
                     .collect_vec()
                     .join(", ")
