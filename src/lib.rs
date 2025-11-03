@@ -80,12 +80,12 @@ impl HemResponse {
 }
 
 #[instrument(skip_all)]
-pub fn run_project<'a>(
+pub fn run_project(
     input: Input, // TODO change back to input: impl Read,
     output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
-    tariff_data_file: Option<&'a str>,
-    flags: &'a ProjectFlags, // TODO: this can be owned
+    tariff_data_file: Option<&str>,
+    flags: &ProjectFlags, // TODO: this can be owned
 ) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
 
