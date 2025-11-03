@@ -41,6 +41,10 @@ impl HemWrapper for FhsSingleCalcWrapper {
         flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         do_fhs_preprocessing(&mut input, flags)?;
+        Ok(HashMap::from([(
+            CalculationKey::Primary,
+            input.finalize()?,
+        )]))
     }
 
     fn apply_postprocessing(
