@@ -1,9 +1,9 @@
+use crate::HemWrapper;
 use crate::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
 use crate::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
 use crate::future_homes_standard::input::InputForProcessing;
-use crate::{HemWrapper, PassthroughHemWrapper};
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
 use hem::input::Input;
@@ -41,12 +41,6 @@ impl HemWrapper for FhsSingleCalcWrapper {
         flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         do_fhs_preprocessing(&mut input, flags)?;
-
-        <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(
-            &PassthroughHemWrapper::new(),
-            input,
-            flags,
-        )
     }
 
     fn apply_postprocessing(

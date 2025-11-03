@@ -31,41 +31,8 @@ pub trait HemWrapper {
     ) -> anyhow::Result<Option<HemResponse>>;
 }
 
-/// A HEM wrapper that does nothing, so can be used in cases when the input for core HEM
-/// should be passed directly without mutation.
-pub struct PassthroughHemWrapper;
-
-impl PassthroughHemWrapper {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl HemWrapper for PassthroughHemWrapper {
-    fn apply_preprocessing(
-        &self,
-        input: InputForProcessing,
-        _flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
-        Ok(HashMap::from([(
-            CalculationKey::Primary,
-            input.finalize()?,
-        )]))
-    }
-
-    fn apply_postprocessing(
-        &self,
-        _output: &impl Output,
-        _results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        _flags: &ProjectFlags,
-    ) -> anyhow::Result<Option<HemResponse>> {
-        Ok(None)
-    }
-}
-
 /// An enum to wrap the known wrappers that could be chosen for a given invocation.
 pub enum ChosenWrapper {
-    Passthrough(PassthroughHemWrapper),
     FhsSingleCalc(FhsSingleCalcWrapper),
     FhsCompliance(FhsComplianceWrapper),
 }
@@ -77,9 +44,6 @@ impl HemWrapper for ChosenWrapper {
         flags: &ProjectFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
         match self {
-            ChosenWrapper::Passthrough(wrapper) => {
-                <PassthroughHemWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
-            }
             ChosenWrapper::FhsSingleCalc(wrapper) => {
                 <FhsSingleCalcWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
             }
@@ -96,9 +60,6 @@ impl HemWrapper for ChosenWrapper {
         flags: &ProjectFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         match self {
-            ChosenWrapper::Passthrough(wrapper) => {
-                wrapper.apply_postprocessing(output, results, flags)
-            }
             ChosenWrapper::FhsSingleCalc(wrapper) => {
                 wrapper.apply_postprocessing(output, results, flags)
             }
@@ -137,17 +98,8 @@ pub fn main(
             {
                 if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
                     ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
-                } else if flags.intersects(
-                    ProjectFlags::FHS_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-                        | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
-                ) {
-                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
                 } else {
-                    ChosenWrapper::Passthrough(PassthroughHemWrapper::new()) // TODO review
+                    ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
                 }
             }
         }
