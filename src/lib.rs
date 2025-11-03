@@ -375,19 +375,6 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum CalculationKey {
-    Primary,
-    #[cfg(feature = "fhs")]
-    Fhs,
-    #[cfg(feature = "fhs")]
-    FhsFee,
-    #[cfg(feature = "fhs")]
-    FhsNotional,
-    #[cfg(feature = "fhs")]
-    FhsNotionalFee,
-}
-
 pub fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
     external_conditions_data: Option<ExternalConditionsFromFile>,

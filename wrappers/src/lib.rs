@@ -5,7 +5,7 @@ use hem::errors::{HemError, PostprocessingError};
 use hem::input::Input;
 use hem::output::Output;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-use hem::{CalculationKey, CalculationResultsWithContext, HemResponse, ProjectFlags};
+use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
 use std::collections::HashMap;
 use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -35,6 +35,15 @@ pub trait HemWrapper {
 pub enum ChosenWrapper {
     FhsSingleCalc(FhsSingleCalcWrapper),
     FhsCompliance(FhsComplianceWrapper),
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CalculationKey {
+    Primary,
+    Fhs,
+    FhsFee,
+    FhsNotional,
+    FhsNotionalFee,
 }
 
 impl HemWrapper for ChosenWrapper {
