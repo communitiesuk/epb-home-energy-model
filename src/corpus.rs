@@ -3367,6 +3367,7 @@ fn shareable_fn(num: &Arc<RwLock<f64>>) -> TempInternalAirFn {
 }
 
 /// A struct definition to encapsulate results from a corpus run.
+#[derive(Debug)]
 pub struct RunResults {
     pub timestep_array: Vec<f64>,
     pub(crate) results_totals: IndexMap<String, Vec<f64>>,

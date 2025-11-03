@@ -107,6 +107,7 @@ pub struct StorageTank {
     total_volume_drawoff: AtomicF64, // In Python this is created from inside extract_hot_water()
 }
 
+#[derive(Debug)]
 pub(crate) struct StorageTankDetailedResult {} // TODO implement detailed results for StorageTank
 
 impl StorageTank {

@@ -44,11 +44,13 @@ use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
+use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, LazyLock};
@@ -81,18 +83,24 @@ impl HemResponse {
 
 #[instrument(skip_all)]
 pub fn run_project(
-    input: Input, // TODO change back to input: impl Read,
+    input: impl Read,
     output: &impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     flags: &ProjectFlags, // TODO: this can be owned
 ) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
-
         // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
 
-        let _schema_reference = SchemaReference::Core; // TODO validate Input against core schema
+        #[instrument(skip_all)]
+        fn finalize(input: impl Read) -> Result<Input, serde_json::Error> {
+            let input: JsonValue = serde_json::from_reader(input)?;
+            let _schema_reference = SchemaReference::Core;
+            // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
+            serde_json::from_value(input)
+        }
 
+        let input = finalize(input)?;
         let cloned_input = input.clone();
 
         // 3. Determine external conditions to use for calculations.
