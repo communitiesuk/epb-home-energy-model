@@ -1,18 +1,16 @@
+use crate::CalculationKey;
 use crate::HemWrapper;
 use crate::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
 use crate::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
 use crate::future_homes_standard::input::InputForProcessing;
-use crate::CalculationKey;
 
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
-use hem::input::Input;
 use hem::output::Output;
 use hem::{
-    CalculationContext, CalculationResultsWithContext, HemResponse, ProjectFlags,
-    RunResults,
+    CalculationContext, CalculationResultsWithContext, HemResponse, ProjectFlags, RunResults,
 };
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -41,12 +39,9 @@ impl HemWrapper for FhsSingleCalcWrapper {
         &self,
         mut input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+    ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         do_fhs_preprocessing(&mut input, flags)?;
-        Ok(HashMap::from([(
-            CalculationKey::Primary,
-            input.finalize()?,
-        )]))
+        Ok(HashMap::from([(CalculationKey::Primary, input)]))
     }
 
     fn apply_postprocessing(
@@ -76,16 +71,16 @@ impl HemWrapper for FhsComplianceWrapper {
         &self,
         input: InputForProcessing,
         _flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+    ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         vec![input; FHS_COMPLIANCE_CALCULATIONS.len()]
             .into_par_iter()
             .enumerate()
             .map(|(i, mut input)| {
                 let (key, flags) = &FHS_COMPLIANCE_CALCULATIONS[i];
                 do_fhs_preprocessing(&mut input, flags)?;
-                Ok((*key, input.finalize()?))
+                Ok((*key, input))
             })
-            .collect::<anyhow::Result<HashMap<CalculationKey, Input>>>()
+            .collect::<anyhow::Result<HashMap<CalculationKey, InputForProcessing>>>()
     }
 
     fn apply_postprocessing(

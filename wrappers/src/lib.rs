@@ -7,7 +7,7 @@ use hem::output::Output;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufReader, Cursor, Read};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use tracing::{error, instrument};
 
@@ -22,7 +22,7 @@ pub trait HemWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>>;
+    ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>>;
     fn apply_postprocessing(
         &self,
         output: &impl Output,
@@ -51,7 +51,7 @@ impl HemWrapper for ChosenWrapper {
         &self,
         input: InputForProcessing,
         flags: &ProjectFlags,
-    ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+    ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         match self {
             ChosenWrapper::FhsSingleCalc(wrapper) => {
                 <FhsSingleCalcWrapper as HemWrapper>::apply_preprocessing(wrapper, input, flags)
@@ -118,7 +118,7 @@ pub fn main(
             input_for_processing: InputForProcessing,
             wrapper: &impl HemWrapper,
             flags: &ProjectFlags,
-        ) -> anyhow::Result<HashMap<CalculationKey, Input>> {
+        ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
 
@@ -156,7 +156,7 @@ pub fn main(
         // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
         if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
             if let Some(input) = input.get(&CalculationKey::Primary) {
-                write_preproc_file(input, &output, "preproc", "json")?;
+                write_preproc_file(&input.clone().finalize()?, &output, "preproc", "json")?;
             } else {
                 error!("Preprocess-only flag only set up to work with a calculation using a primary calculation key (i.e. not FHS compliance)");
             }
@@ -168,7 +168,8 @@ pub fn main(
         let contextualised_results: Result<HashMap<CalculationKey, CalculationResultsWithContext>, HemError> = match wrapper {
             ChosenWrapper::FhsCompliance(_) => {
                 input.into_iter().map(|(key, input_value)| {
-                    hem::run_project(input_value, &output, external_conditions_data.clone(), tariff_data_file, flags)
+                    let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
+                    hem::run_project(input_reader, &output, external_conditions_data.clone(), tariff_data_file, flags)
                         .map(|result_value| (key, result_value))
                 }).collect()
             }
@@ -176,7 +177,8 @@ pub fn main(
                 let input_value = input
                     .get(&CalculationKey::Primary)
                     .ok_or(anyhow!("Primary key missing"))?;
-                let calculation_result = hem::run_project(input_value.clone(), &output, external_conditions_data, tariff_data_file, flags)?;
+                let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
+                let calculation_result = hem::run_project(input_reader, &output, external_conditions_data, tariff_data_file, flags)?;
                 Ok(HashMap::from_iter(vec![(CalculationKey::Primary, calculation_result)]))
             }
         };
