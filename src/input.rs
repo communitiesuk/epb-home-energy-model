@@ -220,13 +220,15 @@ pub struct ApplianceGainsEvent {
 
 pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct EnergySupplyDetails {
+    /// Type of combustion fuel
     pub(crate) fuel: FuelType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) diverter: Option<EnergyDiverter>,
+    /// Indicates that an electric battery is present
     #[serde(rename = "ElectricBattery", skip_serializing_if = "Option::is_none")]
     pub(crate) electric_battery: Option<ElectricBattery>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -234,14 +236,29 @@ pub struct EnergySupplyDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) priority: Option<Vec<EnergySupplyPriorityEntry>>,
     /// Denotes that this energy supply can export its surplus supply
+    pub(crate) is_export_capable: bool,
+    /// Level of battery charge above which grid prohibited from charging battery (monthly values) (0 - 1)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) is_export_capable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_charges: Option<[f64; 12]>,
+    /// Grid price below which battery is permitted to charge from grid (monthly values) (unit: p/kWh)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_threshold_value_fractions)]
     pub(crate) threshold_prices: Option<[f64; 12]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tariff: Option<EnergySupplyTariff>,
+}
+
+fn validate_threshold_value_fractions(
+    values: &Option<[f64; 12]>,
+) -> Result<(), serde_valid::validation::Error> {
+    if let Some(values) = values {
+        if !values.iter().all(|&v| v >= 0. && v <= 1.) {
+            return Err(serde_valid::validation::Error::Custom("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.".to_string()));
+        }
+    }
+
+    Ok(())
 }
 
 impl EnergySupplyDetails {
@@ -252,7 +269,7 @@ impl EnergySupplyDetails {
             electric_battery: None,
             factor: None,
             priority: None,
-            is_export_capable: None,
+            is_export_capable: false,
             threshold_charges: None,
             threshold_prices: None,
             tariff: None,
@@ -396,17 +413,9 @@ impl From<EnergySupplyType> for String {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnergyDiverter {
     pub(crate) heat_source: DiverterHeatSourceType,
-    #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
-    pub(crate) control_max: Option<String>,
-}
-
-impl Default for EnergyDiverter {
-    fn default() -> Self {
-        Self {
-            heat_source: DiverterHeatSourceType::Immersion,
-            control_max: None,
-        }
-    }
+    /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
+    #[serde(rename = "Controlmax")]
+    pub(crate) control_max: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1188,6 +1197,8 @@ pub(crate) enum HeatSourceControlType {
 #[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` annotation after 0.36
 pub(crate) enum HeatSource {
     ImmersionHeater {
+        /// (unit: kW)
+        #[validate(minimum = 0.)]
         power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -1197,25 +1208,56 @@ pub(crate) enum HeatSource {
         /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         heater_position: f64,
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
     },
     SolarThermalSystem {
+        /// Location of the main part of the collector loop piping
         #[serde(rename = "sol_loc")]
         solar_cell_location: SolarCollectorLoopLocation,
+        /// Collector module reference area (unit: m2)
+        #[validate(minimum = 0.)]
         area_module: f64,
+        /// Number of collector modules installed
         #[validate(minimum = 1)]
         modules: usize,
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         peak_collector_efficiency: f64,
+        /// Hemispherical incidence angle modifier
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         incidence_angle_modifier: f64,
+        /// First order heat loss coefficient
+        #[validate(minimum = 0.)]
         first_order_hlc: f64,
+        /// Second order heat loss coefficient
+        #[validate(minimum = 0.)]
         second_order_hlc: f64,
+        /// Mass flow rate solar loop (unit: kg/s)
+        #[validate(minimum = 0.)]
         collector_mass_flow_rate: f64,
+        /// Power of collector pump (unit: W)
+        #[validate(minimum = 0.)]
         power_pump: f64,
+        /// Power of collector pump controller (unit: W)
+        #[validate(minimum = 0.)]
         power_pump_control: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
+        /// Tilt angle (inclination) of the PV panel from horizontal,
+        /// measured upwards facing, 0 to 90, in degrees.
+        /// 0=horizontal surface, 90=vertical surface.
+        /// Needed to calculate solar irradiation at the panel surface.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 90.)]
         tilt: f64,
         #[serde(
             rename = "orientation360",
@@ -1223,19 +1265,29 @@ pub(crate) enum HeatSource {
             serialize_with = "serialize_orientation"
         )]
         orientation: f64,
+        /// Heat loss coefficient of the collector loop piping (unit: W/K)
+        #[validate(minimum = 0.)]
         solar_loop_piping_hlc: f64,
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         heater_position: f64,
-        /// Required for StorageTank but not for SmartHotWaterTank
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         #[serde(skip_serializing_if = "Option::is_none")]
         thermostat_position: Option<f64>,
-        /// Reference to a control schedule of maximum temperature setpoints
+        /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmax")]
         control_max: String,
     },
     #[serde(rename = "HeatSourceWet")]
     ServiceWaterRegular {
+        /// User-defined name for this heat source.
         name: String,
+        /// Upper operating limit for flow temperature (unit: °C). Optional.
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
         temp_flow_limit_upper: Option<f64>,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
@@ -1245,29 +1297,53 @@ pub(crate) enum HeatSource {
         /// Reference to a control schedule of maximum temperature setpoints
         #[serde(rename = "Controlmax", skip_serializing_if = "Option::is_none")]
         control_max: Option<String>,
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         heater_position: f64,
-        /// Required for StorageTank but not for SmartHotWaterTank
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         thermostat_position: Option<f64>,
     },
     #[serde(rename = "HeatPump_HWOnly")]
     HeatPumpHotWaterOnly {
+        /// (unit: kW)
+        #[validate(minimum = 0.)]
         power_max: f64,
+        /// Annual average hot water use for the dwelling (unit: litres/day)
+        #[validate(exclusive_minimum = 0.)]
         vol_hw_daily_average: f64,
+        /// Tank volume stored in the database (unit: litres)
+        #[validate(exclusive_minimum = 0.)]
         tank_volume_declared: f64,
+        /// Surface area of heat exchanger stored in the database (unit: m2)
+        #[validate(minimum = 0.)]
         heat_exchanger_surface_area_declared: f64,
+        /// Standing heat loss (unit: kWh/day)
+        #[validate(minimum = 0.)]
         daily_losses_declared: f64,
+        /// In use factor to be applied to heat pump efficiency
+        #[validate(minimum = 0.)]
         in_use_factor_mismatch: f64,
+        /// Dictionary with keys denoting tapping profile letter (M or L)
         test_data: HeatPumpHotWaterTestData,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        /// Reference to a control schedule of minimum temperature setpoints
+        /// Reference to a control schedule of minimum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmin")]
         control_min: String,
-        /// Reference to a control schedule of maximum temperature setpoints
+        /// Reference to a control schedule of maximum temperature setpoints. References a key in $.Control.
         #[serde(rename = "Controlmax")]
         control_max: String,
+        /// Vertical position of the heater within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         heater_position: f64,
+        /// Vertical position of the thermostat within the tank, as a fraction of the tank height (0 = bottom, 1 = top). Dimensionless. Required for StorageTank but not for SmartHotWaterTank.
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         thermostat_position: f64,
     },
 }
@@ -1893,10 +1969,13 @@ pub(crate) struct SpaceHeatSystemHeatSource {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EcoDesignController {
     pub(crate) ecodesign_control_class: EcoDesignControllerClass,
+    /// Minimum outdoor temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) min_outdoor_temp: Option<f64>,
+    /// Maximum outdoor temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) max_outdoor_temp: Option<f64>,
+    /// Minimum flow temperature (unit: Celsius)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) min_flow_temp: Option<f64>,
 }
@@ -2984,20 +3063,34 @@ pub struct HeatPumpBufferTank {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HeatPumpTestDatum {
+    /// Air flow rate through the heat pump for the test condition (unit: m³/h)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub(crate) air_flow_rate: Option<f64>,
     pub(crate) test_letter: TestLetter,
+    /// Heat output capacity at this test condition (unit: kW)
+    #[validate(minimum = 0.)]
     pub(crate) capacity: f64,
+    /// Coefficient of performance at this test condition (dimensionless)
+    #[validate(minimum = 0.)]
     pub(crate) cop: f64,
     #[serde(rename = "degradation_coeff")]
     pub(crate) degradation_coefficient: f64,
+    /// Design flow temperature for the heating system (unit: Celsius)
     pub(crate) design_flow_temp: f64,
+    /// Heat pump outlet temperature for the test condition (unit: Celsius)
     #[validate(minimum = -273.15)]
     pub(crate) temp_outlet: f64,
+    /// Heat pump source temperature for the test condition (unit: Celsius)
     #[validate(minimum = -273.15)]
     pub(crate) temp_source: f64,
+    /// Ambient air temperature for the test condition (unit: Celsius)
+    #[validate(minimum = -273.15)]
     pub(crate) temp_test: f64,
+    /// Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
     // // following is not defined in Python input, but
     // #[serde(skip)]

@@ -8,11 +8,11 @@ use crate::external_conditions::{
     create_external_conditions, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    json_error, BuildingElementHeightWidthInput, EnergySupplyDetails, EnergySupplyType, FuelType,
-    HeatingControlType, HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input,
-    InputForProcessing, JsonAccessResult, MechanicalVentilationForProcessing,
-    MechanicalVentilationJsonValue, SmartApplianceBattery, TransparentBuildingElement,
-    TransparentBuildingElementJsonValue, WaterHeatingEventType,
+    json_error, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
+    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
+    JsonAccessResult, MechanicalVentilationForProcessing, MechanicalVentilationJsonValue,
+    SmartApplianceBattery, TransparentBuildingElement, TransparentBuildingElementJsonValue,
+    WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;

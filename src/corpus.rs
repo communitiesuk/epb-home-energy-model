@@ -36,9 +36,9 @@ use crate::core::schedule::{
 };
 use crate::core::space_heat_demand::building_element::{
     convert_uvalue_to_resistance, BuildingElement, BuildingElementAdjacentConditionedSpace,
-    BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, BuildingElementOpaque,
-    BuildingElementTransparent, WindowTreatment, H_CE, H_RE, PITCH_LIMIT_HORIZ_CEILING,
-    PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL, R_SI_UPWARDS,
+    BuildingElementAdjacentUnconditionedSpaceSimple, BuildingElementGround, H_CE, H_RE,
+    PITCH_LIMIT_HORIZ_CEILING, PITCH_LIMIT_HORIZ_FLOOR, R_SI_DOWNWARDS, R_SI_HORIZONTAL,
+    R_SI_UPWARDS,
 };
 use crate::core::space_heat_demand::internal_gains::{
     ApplianceGains, EventApplianceGains, Gains, InternalGains,
@@ -60,12 +60,12 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, BuildingElementAreaOrHeightWidthInput, ChargeLevel,
-    ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType,
-    Control as ControlInput, ControlCombinations, ControlDetails, DuctType, EnergyDiverter,
-    EnergySupplyDetails, EnergySupplyInput, ExternalConditionsInput, FuelType,
-    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
-    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
+    BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
+    ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
+    ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
+    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatBattery as HeatBatteryInput,
+    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
+    HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
@@ -3105,9 +3105,7 @@ fn energy_supply_from_input(
         if let Some(priority) = input.priority.as_ref() {
             builder = builder.with_priority(priority.clone());
         }
-        if let Some(is_export_capable) = input.is_export_capable {
-            builder = builder.with_export_capable(is_export_capable);
-        }
+        builder = builder.with_export_capable(input.is_export_capable);
 
         if input
             .electric_battery
@@ -4966,10 +4964,7 @@ fn hot_water_source_from_input(
                         .as_immersion_heater();
 
                     if let Some(im) = immersion_heater {
-                        let control_max = diverter
-                            .control_max
-                            .as_ref()
-                            .and_then(|control_max| controls.get_with_string(control_max));
+                        let control_max = controls.get_with_string(&diverter.control_max);
                         let pv_diverter = PVDiverter::new(
                             &pre_heated_tank,
                             im,
