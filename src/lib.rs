@@ -171,6 +171,10 @@ pub fn run_project(
             hour_per_step: f64,
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
+            #[cfg(feature = "fhs")]
+            if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                return Ok(());
+            }
             if output.is_noop() {
                 return Ok(());
             }
