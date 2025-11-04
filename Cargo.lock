@@ -3120,6 +3120,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "approx",
+ "clap",
  "csv",
  "hem",
  "indexmap",
@@ -3140,6 +3141,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 

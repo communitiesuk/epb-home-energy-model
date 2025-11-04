@@ -171,7 +171,6 @@ pub fn run_project(
             hour_per_step: f64,
             flags: &ProjectFlags,
         ) -> anyhow::Result<()> {
-            // continue here
             if output.is_noop() {
                 return Ok(());
             }

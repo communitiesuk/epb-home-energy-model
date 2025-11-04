@@ -80,7 +80,7 @@ impl HemWrapper for ChosenWrapper {
 }
 
 #[instrument(skip_all)]
-pub fn main(
+pub fn run_wrappers(
     // TODO: consider if this should move to main.rs
     input: impl Read,
     output: impl Output,
