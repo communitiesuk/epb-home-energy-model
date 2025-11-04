@@ -2,6 +2,7 @@
 
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
+use crate::core::units::calculate_thermal_resistance_of_virtual_layer;
 use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
@@ -9,7 +10,6 @@ use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{BasicOutput, Validator};
-use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
@@ -1562,15 +1562,20 @@ pub(crate) enum WwhrsConfiguration {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Baths(pub IndexMap<String, BathDetails>);
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BathDetails {
     /// Volume held by bath (unit: litre)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) size: f64,
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: ColdWaterSourceType,
+    /// Reference to HotWaterSource object that provides hot water to this bath. If only one HotWaterSource is defined, then this will be assumed by default
+    #[serde(rename = "HotWaterSource", skip_serializing_if = "Option::is_none")]
+    pub(crate) hot_water_source: Option<String>,
     /// Tap/outlet flow rate (unit: litre/minute)
+    #[validate(minimum = 0.)]
     pub(crate) flowrate: f64,
 }
 
@@ -2051,6 +2056,7 @@ pub enum ZoneTemperatureControlBasis {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")]
+#[validate(custom = validate_u_value_and_thermal_resistance_floor_construction)]
 pub(crate) enum BuildingElement {
     #[serde(rename = "BuildingElementOpaque")]
     Opaque {
@@ -2058,12 +2064,10 @@ pub(crate) enum BuildingElement {
         is_unheated_pitched_roof: Option<bool>,
         /// Solar absorption coefficient at the external surface (dimensionless)
         solar_absorption_coeff: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        u_value: Option<f64>,
-        /// Thermal resistance (unit: m².K/W)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thermal_resistance_construction: Option<f64>,
+        #[serde(flatten)]
+        u_value_input: UValueInput,
         /// Areal heat capacity (unit: J/m².K)
+        #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,
         /// Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)
         mass_distribution_class: MassDistributionClass,
@@ -2079,25 +2083,24 @@ pub(crate) enum BuildingElement {
         )]
         orientation: f64,
         /// The distance between the ground and the lowest edge of the element (unit: m)
+        #[validate(minimum = 0.)]
         base_height: f64,
-        /// The height of the building element (unit: m)
-        height: f64,
-        /// The width of the building element (unit: m)
-        width: f64,
-        /// Net area of the opaque building element (i.e. minus any windows / doors / etc.) (unit: m²)
-        area: f64,
+        #[serde(flatten)]
+        area_input: BuildingElementAreaOrHeightWidthInput,
     },
     #[serde(rename = "BuildingElementTransparent")]
     Transparent {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        u_value: Option<f64>,
+        #[serde(flatten)]
+        u_value_input: UValueInput,
+        /// Areal heat capacity (J/m².K)
+        #[validate(exclusive_minimum = 0.)]
+        #[serde(default = "default_areal_heat_capacity_for_windows")]
+        areal_heat_capacity: f64,
         #[serde(
             rename = "Control_WindowOpenable",
             skip_serializing_if = "Option::is_none"
         )]
         window_openable_control: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thermal_resistance_construction: Option<f64>,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
         #[validate(minimum = 0.)]
         #[validate(maximum = 180.)]
@@ -2109,84 +2112,205 @@ pub(crate) enum BuildingElement {
         )]
         orientation: f64,
         /// Total solar energy transmittance of the transparent part of the window
+        #[validate(minimum = 0.)]
         g_value: f64,
         /// The frame area fraction of window, ratio of the projected frame area to the overall projected area of the glazed element of the window
         frame_area_fraction: f64,
         /// The distance between the ground and the lowest edge of the element (unit: m)
+        #[validate(minimum = 0.)]
         base_height: f64,
-        /// The height of the building element (unit: m)
-        height: f64,
-        /// The width of the building element (unit: m)
-        width: f64,
+        #[serde(flatten)]
+        area_input: BuildingElementAreaOrHeightWidthInput,
+        /// Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)
+        #[validate(minimum = 0.)]
         free_area_height: f64,
+        /// Height of the mid-point of the window, relative to its base (unit: m)
+        #[validate(exclusive_minimum = 0.)]
         mid_height: f64,
+        /// Openable area of the window ignoring the obstructing affect of the frame of the openable part
+        #[validate(minimum = 0.)]
         max_window_open_area: f64,
         window_part_list: Vec<WindowPart>,
         shading: Vec<WindowShadingObject>,
         #[serde(default)]
-        treatment: Option<Vec<WindowTreatment>>,
+        treatment: Vec<WindowTreatment>,
     },
     #[serde(rename = "BuildingElementGround")]
     Ground {
         /// Area of this building element within the zone (unit: m²)
+        #[validate(exclusive_minimum = 0.)]
         area: f64,
         /// Total area of the building element across entire dwelling; if the Floor is divided among several zones, this is the total area across all zones (unit: m²)
+        #[validate(exclusive_minimum = 0.)]
         total_area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
         #[validate(maximum = 180.)]
         pitch: f64,
         /// Steady-state thermal transmittance of floor, including the effect of the ground (calculated for the entire ground floor, even if it is distributed among several zones) (unit: W/m2.K)
+        #[validate(exclusive_minimum = 0.)]
         u_value: f64,
         /// Total thermal resistance of all layers in the floor construction (unit: m².K/W)
         thermal_resistance_floor_construction: f64,
+        #[validate(exclusive_minimum = 0.)]
         /// Areal heat capacity of the ground floor element (unit: J/m2.K)
+        #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,
         /// Mass distribution class of the building element, one of: evenly distributed (D); concentrated on external side (E); concentrated on internal side (I); concentrated on internal and external sides (IE); concentrated in middle (M)
         mass_distribution_class: MassDistributionClass,
         /// Perimeter of the floor; calculated for the entire ground floor, even if it is distributed among several zones (unit: m)
+        #[validate(exclusive_minimum = 0.)]
         perimeter: f64,
         /// Linear thermal transmittance of the junction between the floor and the walls (unit: W/m.K)
         psi_wall_floor_junc: f64,
         /// Thickness of the walls (unit: m)
+        #[validate(exclusive_minimum = 0.)]
         thickness_walls: f64,
+        /// Height of the floor upper surface (unit: m) - average value is used if h varies
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(exclusive_minimum = 0.)]
+        height_upper_surface: Option<f64>,
+        /// Wind shielding factor
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shield_fact_location: Option<WindShieldLocation>,
         #[serde(flatten)]
         floor_data: FloorData,
     },
     #[serde(rename = "BuildingElementAdjacentConditionedSpace")]
     AdjacentConditionedSpace {
+        #[validate(exclusive_minimum = 0.)]
         area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
         #[validate(maximum = 180.)]
         pitch: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        u_value: Option<f64>,
-        /// Thermal resistance (unit: m².K/W)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thermal_resistance_construction: Option<f64>,
+        #[serde(flatten)]
+        u_value_input: UValueInput,
+        /// Areal heat capacity (J/m².K)
+        #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
     },
     #[serde(rename = "BuildingElementAdjacentUnconditionedSpace_Simple")]
     AdjacentUnconditionedSpace {
         /// Area of this building element (unit: m²)
+        #[validate(exclusive_minimum = 0.)]
         area: f64,
         /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚)
         #[validate(minimum = 0.)]
         #[validate(maximum = 180.)]
         pitch: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        u_value: Option<f64>,
-        /// Thermal resistance (unit: m2.K/W)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thermal_resistance_construction: Option<f64>,
+        #[serde(flatten)]
+        u_value_input: UValueInput,
         /// Effective thermal resistance of unheated space (unit: m².K/W)
         thermal_resistance_unconditioned_space: f64,
         /// Areal heat capacity (unit: J/m2.K)
+        #[validate(exclusive_minimum = 0.)]
         areal_heat_capacity: f64,
         mass_distribution_class: MassDistributionClass,
     },
+}
+
+const fn default_areal_heat_capacity_for_windows() -> f64 {
+    // Windows have much lower thermal mass than walls
+    1_000. // J/m².K for typical glazing
+}
+
+/// Enum to encapsulate when either u_value or thermal_resistance_construction should be provided, but not both
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum UValueInput {
+    UValue {
+        /// U-value (W/m²·K)
+        #[validate(exclusive_minimum = 0.)]
+        u_value: f64,
+    },
+    ThermalResistanceConstruction {
+        /// Thermal resistance (m².K/W)
+        #[validate(exclusive_minimum = 0.)]
+        thermal_resistance_construction: f64,
+    },
+}
+
+/// Enum to encapsulate when height and width can be provided, or area (or both though they need to match)
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[validate(custom = validate_area_height_width)]
+pub(crate) struct BuildingElementAreaOrHeightWidthInput {
+    /// Area of the building element (m²)
+    #[validate(exclusive_minimum = 0.)]
+    area: Option<f64>,
+    #[serde(flatten)]
+    pub(crate) height_and_width: Option<BuildingElementHeightWidthInput>,
+}
+
+impl BuildingElementAreaOrHeightWidthInput {
+    pub(crate) fn area(&self) -> f64 {
+        self.area.unwrap_or(self.height_and_width.unwrap_or_else(|| panic!("Building element area/ height and width code has a logic error and could not proceed.")).area())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) struct BuildingElementHeightWidthInput {
+    /// Height of the building element (m)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) height: f64,
+    /// Width of the building element (m)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) width: f64,
+}
+
+impl BuildingElementHeightWidthInput {
+    fn area(&self) -> f64 {
+        self.height * self.width
+    }
+}
+
+#[allow(dead_code)]
+fn validate_area_height_width(
+    data: &BuildingElementAreaOrHeightWidthInput,
+) -> Result<(), serde_valid::validation::Error> {
+    match data {
+        BuildingElementAreaOrHeightWidthInput {
+            area: None,
+            height_and_width: None,
+        } => Err(serde_valid::validation::Error::Custom("Building element input needed to specify an area value if a height and width pair of values was not provided.".to_string())),
+        BuildingElementAreaOrHeightWidthInput {
+            area: Some(area),
+            height_and_width: Some(height_and_width),
+        } if *area != height_and_width.area() => Err(
+            serde_valid::validation::Error::Custom(
+                format!(
+                    "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
+                    height_and_width.height,
+                    height_and_width.width,
+                    height_and_width.area()
+                )
+            )
+        ),
+        _ => Ok(())
+    }
+}
+
+fn validate_u_value_and_thermal_resistance_floor_construction(
+    data: &BuildingElement,
+) -> Result<(), serde_valid::validation::Error> {
+    // this validation only applies for ground building elements
+    if let BuildingElement::Ground {
+        u_value,
+        thermal_resistance_floor_construction,
+        ..
+    } = data
+    {
+        return match calculate_thermal_resistance_of_virtual_layer(*u_value, *thermal_resistance_floor_construction) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(serde_valid::validation::Error::Custom(format!("Ground building element provided with u_value {u_value} and thermal_resistance_floor_construction {thermal_resistance_floor_construction} values that were not compatible with each other.")))
+        };
+    }
+
+    Ok(())
 }
 
 impl BuildingElement {
@@ -2200,30 +2324,54 @@ impl BuildingElement {
         }
     }
 
-    pub(crate) fn height(&self) -> Option<f64> {
-        match self {
-            BuildingElement::Opaque { height, .. } => Some(*height),
-            BuildingElement::Transparent { height, .. } => Some(*height),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn width(&self) -> Option<f64> {
-        match self {
-            BuildingElement::Opaque { width, .. } => Some(*width),
-            BuildingElement::Transparent { width, .. } => Some(*width),
-            _ => None,
-        }
-    }
+    // pub(crate) fn height(&self) -> Option<f64> {
+    //     match self {
+    //         BuildingElement::Opaque { height, .. } => Some(*height),
+    //         BuildingElement::Transparent { height, .. } => Some(*height),
+    //         _ => None,
+    //     }
+    // }
+    //
+    // pub(crate) fn width(&self) -> Option<f64> {
+    //     match self {
+    //         BuildingElement::Opaque { width, .. } => Some(*width),
+    //         BuildingElement::Transparent { width, .. } => Some(*width),
+    //         _ => None,
+    //     }
+    // }
 
     #[cfg(test)]
     pub(crate) fn u_value(&self) -> Option<f64> {
         match self {
-            BuildingElement::Opaque { u_value, .. } => *u_value,
-            BuildingElement::Transparent { u_value, .. } => *u_value,
+            BuildingElement::Opaque { u_value_input, .. } => {
+                if let UValueInput::UValue { u_value } = u_value_input {
+                    Some(*u_value)
+                } else {
+                    None
+                }
+            }
+            BuildingElement::Transparent { u_value_input, .. } => {
+                if let UValueInput::UValue { u_value } = u_value_input {
+                    Some(*u_value)
+                } else {
+                    None
+                }
+            }
             BuildingElement::Ground { u_value, .. } => Some(*u_value),
-            BuildingElement::AdjacentConditionedSpace { u_value, .. } => *u_value,
-            BuildingElement::AdjacentUnconditionedSpace { u_value, .. } => *u_value,
+            BuildingElement::AdjacentConditionedSpace { u_value_input, .. } => {
+                if let UValueInput::UValue { u_value } = u_value_input {
+                    Some(*u_value)
+                } else {
+                    None
+                }
+            }
+            BuildingElement::AdjacentUnconditionedSpace { u_value_input, .. } => {
+                if let UValueInput::UValue { u_value } = u_value_input {
+                    Some(*u_value)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -2389,40 +2537,47 @@ pub(crate) enum MassDistributionClass {
     M,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WindowPart {
+    /// (unit: m)
+    #[validate(exclusive_minimum = 0.)]
     pub(crate) mid_height_air_flow_path: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WindowTreatment {
     #[serde(rename = "type")]
     pub(crate) treatment_type: WindowTreatmentType,
     pub(crate) controls: WindowTreatmentControl,
+    /// Additional thermal resistance provided by a window treatment (unit: m²K/W)
     pub(crate) delta_r: f64,
+    /// Dimensionless factor describing the reduction in the amount of transmitted radiation due to a window treatment
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
     pub(crate) trans_red: f64,
+    /// Irradiation level above which the window treatment is assumed to be closed (unit: W/m²). References a key in $.Control.
     #[serde(
         rename = "Control_closing_irrad",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) closing_irradiance_control: Option<String>,
+    /// Irradiation level below which a window treatment is assumed to be open (unit: W/m²). References a key in $.Control.
     #[serde(
         rename = "Control_opening_irrad",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) opening_irradiance_control: Option<String>,
+    /// Reference to a time control object containing a schedule of booleans describing when a window treatment is open. References a key in $.Control.
     #[serde(rename = "Control_open", skip_serializing_if = "Option::is_none")]
     pub(crate) open_control: Option<String>,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_possible_string_for_boolean",
-        default
-    )]
+    /// A boolean describing the state of the window treatment
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub(crate) is_open: Option<bool>,
+    /// Time delay enforced before a window treatment may be opened after the conditions for its opening are met (unit: hours)
     #[serde(default)]
     pub(crate) opening_delay_hrs: f64,
 }
@@ -2456,25 +2611,6 @@ impl WindowTreatmentControl {
     }
 }
 
-pub(crate) fn deserialize_possible_string_for_boolean<'de, D>(
-    deserializer: D,
-) -> Result<Option<bool>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let json_value: JsonValue = Deserialize::deserialize(deserializer)?;
-    Ok(match json_value {
-        JsonValue::Null => None,
-        JsonValue::Bool(x) => Some(x),
-        JsonValue::String(_) => None,
-        _ => {
-            return Err(Error::custom(
-                "expected boolean (expected) or string (ignored)",
-            ))
-        }
-    })
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "floor_type")]
@@ -2491,38 +2627,69 @@ pub(crate) enum FloorData {
     SuspendedFloor {
         height_upper_surface: f64,
         /// Thermal transmittance of walls above ground (unit: W/m².K)
-        #[serde(rename = "thermal_transm_walls")]
-        thermal_transmission_walls: f64,
+        #[serde(
+            rename = "thermal_transm_walls",
+            skip_serializing_if = "Option::is_none"
+        )]
+        thermal_transmission_walls: Option<f64>,
         /// Area of ventilation openings per perimeter (unit: m²/m)
+        #[validate(exclusive_minimum = 0.)]
         area_per_perimeter_vent: f64,
         /// Wind shielding factor
         shield_fact_location: WindShieldLocation,
         /// Thermal resistance of insulation on base of underfloor space (unit: m².K/W)
-        #[serde(rename = "thermal_resist_insul")]
-        thermal_resistance_of_insulation: f64,
+        #[serde(
+            rename = "thermal_resist_insul",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[validate(exclusive_minimum = 0.)]
+        thermal_resistance_of_insulation: Option<f64>,
     },
     #[serde(rename = "Heated_basement")]
     HeatedBasement {
         /// Depth of basement floor below ground level (unit: m)
+        #[validate(minimum = 0.)]
         depth_basement_floor: f64,
         /// Thermal resistance of walls of the basement (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
+        #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
+        /// Thermal transmittance of walls above ground (unit: W/m².K)
+        #[serde(
+            rename = "thermal_transm_walls",
+            skip_serializing_if = "Option::is_none"
+        )]
+        thermal_transmission_walls: Option<f64>,
+        /// Height of the basement walls above ground level (unit: m)
+        #[validate(exclusive_minimum = 0.)]
+        height_basement_walls: Option<f64>,
+        /// Thermal transmittance of floor above basement (unit: W/m².K)
+        #[serde(
+            rename = "thermal_transm_envi_base",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[validate(exclusive_minimum = 0.)]
+        thermal_transmittance_of_floor_above_basement: Option<f64>,
     },
     #[serde(rename = "Unheated_basement")]
     UnheatedBasement {
         /// Thermal transmittance of floor above basement (unit: W/m².K)
         #[serde(rename = "thermal_transm_envi_base")]
+        #[validate(exclusive_minimum = 0.)]
         thermal_transmittance_of_floor_above_basement: f64,
         /// Thermal transmittance of walls above ground (unit: W/m².K)
         #[serde(rename = "thermal_transm_walls")]
+        #[validate(exclusive_minimum = 0.)]
         thermal_transmission_walls: f64,
         /// Depth of basement floor below ground level (unit: m)
+        #[validate(minimum = 0.)]
         depth_basement_floor: f64,
         /// Height of the basement walls above ground level (unit: m)
+        #[validate(exclusive_minimum = 0.)]
         height_basement_walls: f64,
         /// Thermal resistance of walls of the basement (unit: m².K/W)
         #[serde(rename = "thermal_resist_walls_base")]
+        #[validate(exclusive_minimum = 0.)]
         thermal_resistance_of_basement_walls: f64,
     },
 }

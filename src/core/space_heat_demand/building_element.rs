@@ -907,14 +907,19 @@ pub(crate) trait HeatTransferOtherSideGround: HeatTransferOtherSide {
                         thermal_resistance_of_insulation,
                     } => init_suspended_floor(
                         *height_upper_surface,
-                        *thermal_transmission_walls,
+                        thermal_transmission_walls.ok_or_else(|| {
+                            anyhow!("thermal_transmission_walls value expected to be set")
+                        })?,
                         *area_per_perimeter_vent,
                         *shield_fact_location,
-                        *thermal_resistance_of_insulation,
+                        thermal_resistance_of_insulation.ok_or_else(|| {
+                            anyhow!("thermal_resistance_of_insulation value expected to be set")
+                        })?,
                     )?,
                     FloorData::HeatedBasement {
                         depth_basement_floor,
                         thermal_resistance_of_basement_walls,
+                        ..
                     } => init_heated_basement(
                         *depth_basement_floor,
                         *thermal_resistance_of_basement_walls,

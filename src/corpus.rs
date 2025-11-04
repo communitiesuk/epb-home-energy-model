@@ -60,17 +60,17 @@ use crate::core::water_heat_demand::misc::water_demand_to_kwh;
 use crate::external_conditions::{create_external_conditions, ExternalConditions};
 use crate::input::{
     ApplianceGains as ApplianceGainsInput, ApplianceGainsDetails,
-    BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
-    ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
-    ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
-    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatBattery as HeatBatteryInput,
-    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails,
+    BuildingElement as BuildingElementInput, BuildingElementAreaOrHeightWidthInput, ChargeLevel,
+    ColdWaterSourceDetails, ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType,
+    Control as ControlInput, ControlCombinations, ControlDetails, DuctType, EnergyDiverter,
+    EnergySupplyDetails, EnergySupplyInput, ExternalConditionsInput, FuelType,
+    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, VentilationLeaks,
+    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
     WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WasteWaterHeatRecoverySystemType,
     WaterHeatingEvent, WaterHeatingEvents, WaterPipework, ZoneDictionary, ZoneInput,
     ZoneTemperatureControlBasis, MAIN_REFERENCE,
@@ -402,36 +402,58 @@ fn init_resistance_or_uvalue_from_data(
     )
 }
 
+fn init_resistance_or_uvalue_from_input_struct(
+    data: &UValueInput,
+    pitch: f64,
+) -> anyhow::Result<f64> {
+    let (thermal_resistance_construction, u_value) = match data {
+        UValueInput::UValue { u_value, .. } => (None, Some(*u_value)),
+        UValueInput::ThermalResistanceConstruction {
+            thermal_resistance_construction,
+        } => (Some(*thermal_resistance_construction), None),
+    };
+    init_resistance_or_uvalue_from_data(thermal_resistance_construction, u_value, pitch)
+}
+
 /// Return thermal resistance of construction (thermal_resistance_construction) based on alternative inputs
 ///
 /// User will either provide thermal_resistance_construction directly or provide u_value which needs to be converted
 fn init_resistance_or_uvalue(element: &BuildingElementInput) -> anyhow::Result<f64> {
+    fn params_from_u_value_input_and_pitch(
+        u_value_input: &UValueInput,
+        pitch: f64,
+    ) -> (Option<f64>, Option<f64>, f64) {
+        let (thermal_resistance_construction, u_value) = match u_value_input {
+            UValueInput::UValue { u_value, .. } => (None, Some(*u_value)),
+            UValueInput::ThermalResistanceConstruction {
+                thermal_resistance_construction,
+            } => (Some(*thermal_resistance_construction), None),
+        };
+        (thermal_resistance_construction, u_value, pitch)
+    }
+
     let (thermal_resistance_construction, u_value, pitch) = match element {
         BuildingElementInput::Opaque {
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             pitch,
             ..
-        } => (*thermal_resistance_construction, *u_value, *pitch),
+        } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
         BuildingElementInput::Transparent {
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             pitch,
             ..
-        } => (*thermal_resistance_construction, *u_value, *pitch),
+        } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
         BuildingElementInput::Ground { pitch, u_value, .. } => (None, Some(*u_value), *pitch),
         BuildingElementInput::AdjacentConditionedSpace {
             pitch,
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             ..
-        } => (*thermal_resistance_construction, *u_value, *pitch),
+        } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
         BuildingElementInput::AdjacentUnconditionedSpace {
             pitch,
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             ..
-        } => (*thermal_resistance_construction, *u_value, *pitch),
+        } => params_from_u_value_input_and_pitch(u_value_input, *pitch),
     };
     init_resistance_or_uvalue_from_data(thermal_resistance_construction, u_value, pitch)
 }
@@ -486,15 +508,15 @@ pub(super) fn calc_htc_hlp<T: InputForCalcHtcHlp>(input: &T) -> anyhow::Result<H
         let r_se = 1. / (H_CE + H_RE);
 
         Ok(match data {
-            BuildingElementInput::Opaque { area, .. } => {
+            BuildingElementInput::Opaque { area_input, .. } => {
                 let u_value = 1.0 / (thermal_resistance_construction + r_se + r_si);
-                *area * u_value
+                area_input.area() * u_value
             }
-            BuildingElementInput::Transparent { height, width, .. } => {
+            BuildingElementInput::Transparent { area_input, .. } => {
                 let r_curtains_blinds = 0.04;
                 let u_value =
                     1.0 / (thermal_resistance_construction + r_se + r_si + r_curtains_blinds);
-                let area = *height * *width;
+                let area = area_input.area();
                 area * u_value
             }
             BuildingElementInput::Ground { area, u_value, .. } => *area * *u_value,
@@ -3777,89 +3799,74 @@ fn building_element_from_input(
     Ok(Arc::from(match input {
         BuildingElementInput::Opaque {
             is_unheated_pitched_roof,
-            area,
+            area_input,
             pitch,
             solar_absorption_coeff,
-            thermal_resistance_construction,
+            u_value_input,
             areal_heat_capacity,
             mass_distribution_class,
             orientation,
             base_height,
-            height,
-            width,
-            u_value,
             ..
         } => {
-            let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
-                is_unheated_pitched_roof
-                    .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
-            } else {
-                false
-            };
-
-            BuildingElement::Opaque(BuildingElementOpaque::new(
-                *area,
-                is_unheated_pitched_roof,
-                *pitch,
-                *solar_absorption_coeff,
-                init_resistance_or_uvalue_from_data(
-                    *thermal_resistance_construction,
-                    *u_value,
-                    *pitch,
-                )?,
-                *areal_heat_capacity,
-                *mass_distribution_class,
-                *orientation,
-                *base_height,
-                *height,
-                *width,
-                external_conditions,
-            ))
+            todo!("BuildingElementInput::Opaque cannot yet be built from input in 0.40");
+            // let is_unheated_pitched_roof = if *pitch < PITCH_LIMIT_HORIZ_CEILING {
+            //     is_unheated_pitched_roof
+            //         .ok_or_else(|| anyhow!("Pitch of opaque building element was {pitch} degrees, so it is necessary for this element to indicate whether this is an unheated pitched roof."))?
+            // } else {
+            //     false
+            // };
+            //
+            // BuildingElement::Opaque(BuildingElementOpaque::new(
+            //     *area,
+            //     is_unheated_pitched_roof,
+            //     *pitch,
+            //     *solar_absorption_coeff,
+            //     init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+            //     *areal_heat_capacity,
+            //     *mass_distribution_class,
+            //     *orientation,
+            //     *base_height,
+            //     *height,
+            //     *width,
+            //     external_conditions,
+            // ))
         }
         BuildingElementInput::Transparent {
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             pitch,
             orientation,
             g_value,
             frame_area_fraction,
             base_height,
-            height,
-            width,
             shading,
             treatment,
             ..
-        } => BuildingElement::Transparent(BuildingElementTransparent::new(
-            *pitch,
-            init_resistance_or_uvalue_from_data(
-                *thermal_resistance_construction,
-                *u_value,
-                *pitch,
-            )?,
-            *orientation,
-            *g_value,
-            *frame_area_fraction,
-            *base_height,
-            *height,
-            *width,
-            Some(shading.clone()),
-            treatment
-                .as_ref()
-                .map(|treatments| {
-                    treatments
-                        .iter()
-                        .map(|t| {
-                            WindowTreatment::from_input(
-                                t,
-                                controls,
-                                simulation_time_iterator.current_hour(),
-                            )
-                        })
-                        .collect_vec()
-                })
-                .unwrap_or_default(),
-            external_conditions,
-        )),
+        } => {
+            todo!("Transparent building elements are not yet supported in this 0.40 version");
+            // BuildingElement::Transparent(BuildingElementTransparent::new(
+            //     *pitch,
+            //     init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
+            //     *orientation,
+            //     *g_value,
+            //     *frame_area_fraction,
+            //     *base_height,
+            //     *height,
+            //     *width,
+            //     Some(shading.clone()),
+            //     treatment
+            //         .iter()
+            //         .map(|t| {
+            //             WindowTreatment::from_input(
+            //                 t,
+            //                 controls,
+            //                 simulation_time_iterator.current_hour(),
+            //             )
+            //         })
+            //         .collect_vec(),
+            //     external_conditions,
+            // ))
+        }
         BuildingElementInput::Ground {
             area,
             total_area,
@@ -3872,6 +3879,7 @@ fn building_element_from_input(
             thickness_walls,
             perimeter,
             psi_wall_floor_junc,
+            ..
         } => BuildingElement::Ground(BuildingElementGround::new(
             *total_area,
             *area,
@@ -3889,19 +3897,14 @@ fn building_element_from_input(
         BuildingElementInput::AdjacentConditionedSpace {
             area,
             pitch,
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             areal_heat_capacity,
             mass_distribution_class,
         } => {
             BuildingElement::AdjacentConditionedSpace(BuildingElementAdjacentConditionedSpace::new(
                 *area,
                 *pitch,
-                init_resistance_or_uvalue_from_data(
-                    *thermal_resistance_construction,
-                    *u_value,
-                    *pitch,
-                )?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *areal_heat_capacity,
                 *mass_distribution_class,
                 external_conditions,
@@ -3910,8 +3913,7 @@ fn building_element_from_input(
         BuildingElementInput::AdjacentUnconditionedSpace {
             area,
             pitch,
-            u_value,
-            thermal_resistance_construction,
+            u_value_input,
             thermal_resistance_unconditioned_space,
             areal_heat_capacity,
             mass_distribution_class,
@@ -3919,11 +3921,7 @@ fn building_element_from_input(
             BuildingElementAdjacentUnconditionedSpaceSimple::new(
                 *area,
                 *pitch,
-                init_resistance_or_uvalue_from_data(
-                    *thermal_resistance_construction,
-                    *u_value,
-                    *pitch,
-                )?,
+                init_resistance_or_uvalue_from_input_struct(u_value_input, *pitch)?,
                 *thermal_resistance_unconditioned_space,
                 *areal_heat_capacity,
                 *mass_distribution_class,

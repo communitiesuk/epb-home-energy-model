@@ -14,7 +14,7 @@ use crate::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
     PipeworkContents, SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, WaterPipework, WaterPipeworkLocation,
+    UValueEditableBuildingElementJsonValue, UValueInput, WaterPipework, WaterPipeworkLocation,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -371,28 +371,29 @@ fn calculate_area_diff_and_adjust_glazing_area(
     window_rooflight_element: &BuildingElement,
     building_element_reference: &str,
 ) -> anyhow::Result<f64> {
-    if let BuildingElement::Transparent { height, width, .. } = window_rooflight_element {
-        let old_area = height * width;
-        let new_height = height * linear_reduction_factor;
-        let new_width = width * linear_reduction_factor;
-
-        input.set_numeric_field_for_building_element(
-            building_element_reference,
-            "height",
-            new_height,
-        )?;
-        input.set_numeric_field_for_building_element(
-            building_element_reference,
-            "width",
-            new_width,
-        )?;
-
-        let new_area = new_height * new_width;
-
-        Ok(old_area - new_area)
-    } else {
-        panic!("This function expects to be called for a Transparent BuildingElement only.")
-    }
+    todo!("stop here as FHS to be removed from core");
+    // if let BuildingElement::Transparent { height, width, .. } = window_rooflight_element {
+    //     let old_area = height * width;
+    //     let new_height = height * linear_reduction_factor;
+    //     let new_width = width * linear_reduction_factor;
+    //
+    //     input.set_numeric_field_for_building_element(
+    //         building_element_reference,
+    //         "height",
+    //         new_height,
+    //     )?;
+    //     input.set_numeric_field_for_building_element(
+    //         building_element_reference,
+    //         "width",
+    //         new_width,
+    //     )?;
+    //
+    //     let new_area = new_height * new_width;
+    //
+    //     Ok(old_area - new_area)
+    // } else {
+    //     panic!("This function expects to be called for a Transparent BuildingElement only.")
+    // }
 }
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
@@ -443,14 +444,12 @@ fn calc_max_glazing_area_fraction(
         }
 
         if let BuildingElement::Transparent {
-            height,
-            width,
-            u_value,
+            area_input,
+            u_value_input: UValueInput::UValue { u_value },
             ..
         } = element
         {
-            let u_value = u_value.ok_or_else(|| anyhow!("FHS notional wrapper needs transparent building elements to have u values set."))?;
-            let rooflight_area = height * width;
+            let rooflight_area = area_input.area();
 
             total_rooflight_area += rooflight_area;
             sum_uval_times_area += rooflight_area * u_value;
@@ -470,68 +469,71 @@ fn calc_max_glazing_area_fraction(
 
 /// Resize window/rooflight and wall/roofs to meet glazing limits
 fn edit_glazing_for_glazing_limit(
-    input: &mut InputForProcessing,
-    total_floor_area: f64,
+    _input: &mut InputForProcessing,
+    _total_floor_area: f64,
 ) -> anyhow::Result<()> {
-    let total_glazing_area: f64 = input
-        .all_building_elements()?
-        .values()
-        .filter_map(|el| match el {
-            BuildingElement::Transparent { .. } => Some(el.height().unwrap() * el.width().unwrap()),
-            _ => None,
-        })
-        .sum();
-
-    let max_glazing_area_fraction = calc_max_glazing_area_fraction(input, total_floor_area)?;
-    let max_glazing_area = max_glazing_area_fraction * total_floor_area;
-
-    let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input)?;
-
-    if total_glazing_area > max_glazing_area {
-        let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
-        // TODO: deal with case where linear_reduction_factor is NaN (sqrt() is NaN if called on a
-        //       negative number, max_glazing_area could come back as a negative number from calc_max_glazing_area_fraction
-        //       To do this, we may need to capture a sample input that induces this to happen in the Python, and request
-        //       upstream for how to deal with this.
-
-        for (building_element_reference, window_rooflight_element) in windows_rooflight {
-            let area_diff = calculate_area_diff_and_adjust_glazing_area(
-                input,
-                linear_reduction_factor,
-                &window_rooflight_element,
-                &building_element_reference,
-            )?;
-
-            let same_orientation_indices = find_walls_roofs_with_same_orientation_and_pitch(
-                &walls_roofs.values().collect::<Vec<_>>(),
-                &window_rooflight_element,
-            )?;
-
-            let wall_roof_area_total = same_orientation_indices
-                .iter()
-                .filter_map(|i| match walls_roofs.values().nth(*i).unwrap() {
-                    BuildingElement::Opaque { ref area, .. } => Some(*area),
-                    _ => None,
-                })
-                .sum::<f64>();
-
-            for i in same_orientation_indices.iter() {
-                let wall_roof = walls_roofs.values().nth(*i).unwrap();
-                if let BuildingElement::Opaque { ref area, .. } = wall_roof {
-                    let wall_roof_prop = *area / wall_roof_area_total;
-
-                    let new_area = area + area_diff * wall_roof_prop;
-
-                    input.set_numeric_field_for_building_element(
-                        &building_element_reference,
-                        "area",
-                        new_area,
-                    )?;
-                }
-            }
-        }
-    }
-    Ok(())
+    todo!("stop here as FHS to be removed from core");
+    // let total_glazing_area: f64 = input
+    //     .all_building_elements()?
+    //     .values()
+    //     .filter_map(|el| match el {
+    //         BuildingElement::Transparent { .. } => Some(el.height().unwrap() * el.width().unwrap()),
+    //         _ => None,
+    //     })
+    //     .sum();
+    //
+    // let max_glazing_area_fraction = calc_max_glazing_area_fraction(input, total_floor_area)?;
+    // let max_glazing_area = max_glazing_area_fraction * total_floor_area;
+    //
+    // let (windows_rooflight, walls_roofs) = split_glazing_and_walls(input)?;
+    //
+    // if total_glazing_area > max_glazing_area {
+    //     let linear_reduction_factor = (max_glazing_area / total_glazing_area).sqrt();
+    //     // TODO: deal with case where linear_reduction_factor is NaN (sqrt() is NaN if called on a
+    //     //       negative number, max_glazing_area could come back as a negative number from calc_max_glazing_area_fraction
+    //     //       To do this, we may need to capture a sample input that induces this to happen in the Python, and request
+    //     //       upstream for how to deal with this.
+    //
+    //     for (building_element_reference, window_rooflight_element) in windows_rooflight {
+    //         let area_diff = calculate_area_diff_and_adjust_glazing_area(
+    //             input,
+    //             linear_reduction_factor,
+    //             &window_rooflight_element,
+    //             &building_element_reference,
+    //         )?;
+    //
+    //         let same_orientation_indices = find_walls_roofs_with_same_orientation_and_pitch(
+    //             &walls_roofs.values().collect::<Vec<_>>(),
+    //             &window_rooflight_element,
+    //         )?;
+    //
+    //         todo!("stop here as FHS to be removed from core");
+    //
+    //         // let wall_roof_area_total = same_orientation_indices
+    //         //     .iter()
+    //         //     .filter_map(|i| match walls_roofs.values().nth(*i).unwrap() {
+    //         //         BuildingElement::Opaque { ref area, .. } => Some(*area),
+    //         //         _ => None,
+    //         //     })
+    //         //     .sum::<f64>();
+    //         //
+    //         // for i in same_orientation_indices.iter() {
+    //         //     let wall_roof = walls_roofs.values().nth(*i).unwrap();
+    //         //     if let BuildingElement::Opaque { ref area, .. } = wall_roof {
+    //         //         let wall_roof_prop = *area / wall_roof_area_total;
+    //         //
+    //         //         let new_area = area + area_diff * wall_roof_prop;
+    //         //
+    //         //         input.set_numeric_field_for_building_element(
+    //         //             &building_element_reference,
+    //         //             "area",
+    //         //             new_area,
+    //         //         )?;
+    //         //     }
+    //         // }
+    //     }
+    // }
+    // Ok(())
 }
 
 /// Apply notional building ground specifications

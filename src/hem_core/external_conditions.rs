@@ -10,6 +10,7 @@ use anyhow::{anyhow, bail};
 use approx::{AbsDiffEq, RelativeEq};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -55,29 +56,51 @@ pub(crate) struct ShadingObject {
     pub(crate) distance: f64,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
 pub(crate) enum WindowShadingObject {
     Obstacle {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         height: f64,
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         distance: f64,
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         transparency: f64,
     },
     Overhang {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         depth: f64,
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         distance: f64,
     },
     SideFinRight {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         depth: f64,
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         distance: f64,
     },
     SideFinLeft {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         depth: f64,
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         distance: f64,
     },
     Reveal {
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         depth: f64,
+        /// (unit: m)
+        #[validate(minimum = 0.)]
         distance: f64,
     },
 }

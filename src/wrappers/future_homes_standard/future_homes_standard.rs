@@ -8,11 +8,11 @@ use crate::external_conditions::{
     create_external_conditions, ExternalConditions, WindowShadingObject,
 };
 use crate::input::{
-    json_error, EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, InputForProcessing,
-    JsonAccessResult, MechanicalVentilationForProcessing, MechanicalVentilationJsonValue,
-    SmartApplianceBattery, TransparentBuildingElement, TransparentBuildingElementJsonValue,
-    WaterHeatingEventType,
+    json_error, BuildingElementHeightWidthInput, EnergySupplyDetails, EnergySupplyType, FuelType,
+    HeatingControlType, HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input,
+    InputForProcessing, JsonAccessResult, MechanicalVentilationForProcessing,
+    MechanicalVentilationJsonValue, SmartApplianceBattery, TransparentBuildingElement,
+    TransparentBuildingElementJsonValue, WaterHeatingEventType,
 };
 use crate::output::Output;
 use crate::simulation_time::SimulationTime;
@@ -3631,63 +3631,69 @@ pub(super) fn create_cold_water_feed_temps(
     Ok(output_feed_temp)
 }
 
-fn daylight_factor(input: &InputForProcessing, total_floor_area: f64) -> anyhow::Result<Vec<f64>> {
-    let mut total_area = vec![0.; simtime().total_steps()];
-
-    let data: Vec<Vec<f64>> = input
-        .all_building_elements()?
-        .values()
-        .filter_map(|el| match el {
-            crate::input::BuildingElement::Transparent {
-                orientation,
-                g_value,
-                frame_area_fraction,
-                base_height,
-                height,
-                width,
-                shading,
-                ..
-            } => {
-                let ff = *frame_area_fraction;
-                let g_val = *g_value;
-                let width = *width;
-                let height = *height;
-                let base_height = *base_height;
-                let orientation = *orientation;
-                let w_area = width * height;
-                // retrieve half-hourly shading factor
-                let direct_result =
-                    shading_factor(input, base_height, height, width, orientation, shading);
-
-                let area = 0.9 * w_area * (1. - ff) * g_val;
-
-                match direct_result {
-                    Ok(direct) => Some(Ok(direct.iter().map(|factor| factor * area).collect())),
-                    Err(err) => Some(Err(err)),
-                }
-            }
-            _ => None,
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    for idx in data {
-        for (t, gl) in idx.into_iter().enumerate() {
-            total_area[t] += gl;
-        }
-    }
-
-    // calculate Gl for each half hourly timestep
-    Ok((0..(total_area.len()))
-        .map(|i| {
-            let gl = total_area[i] / total_floor_area;
-
-            if gl > 0.095 {
-                0.96
-            } else {
-                52.2 * gl.powi(2) - 9.94 * gl + 1.433
-            }
-        })
-        .collect())
+fn daylight_factor(
+    _input: &InputForProcessing,
+    _total_floor_area: f64,
+) -> anyhow::Result<Vec<f64>> {
+    todo!("FHS is being removed from core");
+    // let mut total_area = vec![0.; simtime().total_steps()];
+    //
+    // let data: Vec<Vec<f64>> = input
+    //     .all_building_elements()?
+    //     .values()
+    //     .filter_map(|el| match el {
+    //         crate::input::BuildingElement::Transparent {
+    //             orientation,
+    //             g_value,
+    //             frame_area_fraction,
+    //             base_height,
+    //             area_input,
+    //             shading,
+    //             ..
+    //         } => {
+    //             todo!("we don't know how FHS will change here, so just mark as a todo for now");
+    //             #[allow(unreachable_code)]
+    //             let ff = *frame_area_fraction;
+    //             let g_val = *g_value;
+    //             let BuildingElementHeightWidthInput { width, height } = area_input.height_and_width.ok_or_else(|| anyhow!("FHS expected transparent building element to have explicit width and height."))?;
+    //             // let width = *width;
+    //             // let height = *height;
+    //             let base_height = *base_height;
+    //             let orientation = *orientation;
+    //             let w_area = area_input.area();
+    //             // retrieve half-hourly shading factor
+    //             let direct_result =
+    //                 shading_factor(input, base_height, height, width, orientation, shading);
+    //
+    //             let area = 0.9 * w_area * (1. - ff) * g_val;
+    //
+    //             match direct_result {
+    //                 Ok(direct) => Some(Ok(direct.iter().map(|factor| factor * area).collect())),
+    //                 Err(err) => Some(Err(err)),
+    //             }
+    //         }
+    //         _ => None,
+    //     })
+    //     .collect::<anyhow::Result<Vec<_>>>()?;
+    //
+    // for idx in data {
+    //     for (t, gl) in idx.into_iter().enumerate() {
+    //         total_area[t] += gl;
+    //     }
+    // }
+    //
+    // // calculate Gl for each half hourly timestep
+    // Ok((0..(total_area.len()))
+    //     .map(|i| {
+    //         let gl = total_area[i] / total_floor_area;
+    //
+    //         if gl > 0.095 {
+    //             0.96
+    //         } else {
+    //             52.2 * gl.powi(2) - 9.94 * gl + 1.433
+    //         }
+    //     })
+    //     .collect())
 }
 
 fn shading_factor(
