@@ -1440,7 +1440,7 @@ pub(crate) struct WaterHeatingEvents {
     pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub struct WaterHeatingEvent {
@@ -2042,7 +2042,7 @@ impl UValueEditableBuildingElement for UValueEditableBuildingElementJsonValue<'_
     }
 
     fn remove_thermal_resistance_construction(&mut self) {
-        self.0.remove("thermal_resistance_construction");
+        self.0.shift_remove("thermal_resistance_construction");
     }
 
     fn height(&self) -> Option<f64> {
@@ -3173,6 +3173,15 @@ static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     jsonschema::validator_for(&schema).unwrap()
 });
 
+#[expect(unused)]
+static CORE_INCLUDING_FHS_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+    let schema = serde_json::from_str(include_str!(
+        "../schemas/input_core_allowing_fhs.schema.json"
+    ))
+    .unwrap();
+    jsonschema::validator_for(&schema).unwrap()
+});
+
 #[derive(Debug, Error)]
 #[error("Error accessing JSON during FHS preprocessing: {0}")]
 pub struct JsonAccessError(String);
@@ -3278,13 +3287,13 @@ mod tests {
     fn test_all_demo_files_deserialize_and_serialize(core_files: Vec<DirEntry>) {
         for entry in core_files {
             let input: Input =
-                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap())).expect(
-                    format!(
-                        "Failed deserializing {}",
-                        entry.file_name().to_str().unwrap()
-                    )
-                    .as_str(),
-                );
+                serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap()))
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Failed deserializing {}",
+                            entry.file_name().to_str().unwrap()
+                        )
+                    });
             let json = serde_json::to_string_pretty(&input.clone()).unwrap();
             let recreated_input: Input = serde_json::from_str(&json).unwrap();
             assert_eq!(input, recreated_input,);

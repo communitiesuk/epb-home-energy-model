@@ -180,9 +180,6 @@ fn edit_infiltration_ventilation(
     }
 
     // all openings set to 0
-    // delete all combustion appliances Cowls and PDUs.
-    infiltration_ventilation.insert("PDUs".into(), json!({}));
-    infiltration_ventilation.insert("Cowls".into(), json!({}));
     infiltration_ventilation.insert("CombustionAppliances".into(), json!({}));
 
     if is_notional_a {

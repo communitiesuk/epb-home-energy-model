@@ -1057,8 +1057,7 @@ mod tests {
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        let test_cases = vec![
-            (
+        let test_cases = [(
                 vec![(0.0, 0.0), (0.5, 0.02), (0.3, 0.02), (1.0, 0.05)],
                 vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
                 "shouldn't allow esh_min_output values in non-increasing order",
@@ -1097,8 +1096,7 @@ mod tests {
                 vec![(0.0, 0.0), (1.0, 1.0)],
                 vec![(0.0, 0.0), (0.5, 0.4), (1.0, 1.0)],
                 "shouldn't allow any power_max values below power_min",
-            ),
-        ];
+            )];
 
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
