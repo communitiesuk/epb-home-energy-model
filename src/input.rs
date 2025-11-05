@@ -10,6 +10,7 @@ use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jsonschema::{BasicOutput, Validator};
+use monostate::MustBe;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
@@ -3312,41 +3313,104 @@ pub enum WasteWaterHeatRecoverySystemType {
     SystemC,
 }
 
-pub(crate) type OnSiteGeneration = IndexMap<String, OnSiteGenerationDetails>;
+pub(crate) type OnSiteGeneration = IndexMap<String, PhotovoltaicSystem>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type", deny_unknown_fields)]
-pub(crate) enum OnSiteGenerationDetails {
-    PhotovoltaicSystem {
-        /// Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees) (unit: kW)
-        peak_power: f64,
-        ventilation_strategy: PhotovoltaicVentilationStrategy,
-        /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
-        #[validate(minimum = 0.)]
-        #[validate(maximum = 90.)]
-        pitch: f64,
-        #[serde(
-            rename = "orientation360",
-            deserialize_with = "deserialize_orientation",
-            serialize_with = "serialize_orientation"
-        )]
-        orientation: f64,
-        /// The distance between the ground and the lowest edge of the PV array (unit: m)
-        base_height: f64,
-        /// Height of the PV array (unit: m)
-        height: f64,
-        /// Width of the PV panel (unit: m)
-        width: f64,
-        #[serde(rename = "EnergySupply")]
-        energy_supply: String,
-        shading: Vec<WindowShadingObject>,
-        inverter_peak_power_ac: f64,
-        inverter_peak_power_dc: f64,
-        /// Whether the inverter is considered inside the building
-        inverter_is_inside: bool,
-        inverter_type: InverterType,
-    },
+#[serde(untagged)]
+pub(crate) enum PhotovoltaicInputs {
+    DeprecatedStyle(PhotovoltaicSystem),
+    WithPanels(PhotovoltaicSystemWithPanels),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) struct PhotovoltaicPanel {
+    /// Peak power; represents the electrical power of a photovoltaic system
+    /// with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees)
+    /// (unit: kW)
+    #[validate(minimum = 0.)]
+    peak_power: f64,
+    ventilation_strategy: PhotovoltaicVentilationStrategy,
+    /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 90.)]
+    pitch: f64,
+    #[serde(
+        rename = "orientation360",
+        deserialize_with = "deserialize_orientation",
+        serialize_with = "serialize_orientation"
+    )]
+    orientation: f64,
+    /// The distance between the ground and the lowest edge of the PV array (unit: m)
+    #[validate(minimum = 0.)]
+    base_height: f64,
+    /// Height of the PV array (unit: m)
+    height: f64,
+    /// Width of the PV panel (unit: m)
+    #[validate(exclusive_minimum = 0.)]
+    width: f64,
+    shading: Vec<WindowShadingObject>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub(crate) struct PhotovoltaicSystemWithPanels {
+    #[serde(rename = "type")]
+    _type: MustBe!("PhotovoltaicSystem"),
+    #[serde(rename = "EnergySupply")]
+    energy_supply: String,
+    /// Whether the inverter is considered inside the building
+    inverter_is_inside: bool,
+    /// Peak power; represents the peak electrical AC power output from the inverter (unit: kW)
+    #[validate(minimum = 0.)]
+    inverter_peak_power_ac: f64,
+    /// Peak power; represents the peak electrical DC power input to the inverter (unit: kW)
+    #[validate(minimum = 0.)]
+    inverter_peak_power_dc: f64,
+    #[validate(min_items = 1)]
+    panels: Vec<PhotovoltaicPanel>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PhotovoltaicSystem {
+    #[serde(rename = "type")]
+    _type: MustBe!("PhotovoltaicSystem"),
+    /// Peak power; represents the electrical power of a photovoltaic system with a given area for a solar irradiance of 1 kW/m² on this surface (at 25 degrees) (unit: kW)
+    #[validate(minimum = 0.)]
+    pub(crate) peak_power: f64,
+    pub(crate) ventilation_strategy: PhotovoltaicVentilationStrategy,
+    /// The tilt angle (inclination) of the PV panel from horizontal, measured upwards facing, 0 to 90 (unit: ˚)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 90.)]
+    pub(crate) pitch: f64,
+    #[serde(
+        rename = "orientation360",
+        deserialize_with = "deserialize_orientation",
+        serialize_with = "serialize_orientation"
+    )]
+    pub(crate) orientation: f64,
+    /// The distance between the ground and the lowest edge of the PV array (unit: m)
+    #[validate(minimum = 0.)]
+    pub(crate) base_height: f64,
+    /// Height of the PV array (unit: m)
+    pub(crate) height: f64,
+    /// Width of the PV panel (unit: m)
+    pub(crate) width: f64,
+    #[serde(rename = "EnergySupply")]
+    pub(crate) energy_supply: String,
+    pub(crate) shading: Vec<WindowShadingObject>,
+    /// Peak power; represents the peak electrical AC power output from the inverter (unit: kW)
+    #[validate(minimum = 0.)]
+    pub(crate) inverter_peak_power_ac: f64,
+    /// Peak power; represents the peak electrical DC power input to the inverter (unit: kW)
+    #[validate(minimum = 0.)]
+    pub(crate) inverter_peak_power_dc: f64,
+    /// Whether the inverter is considered inside the building
+    pub(crate) inverter_is_inside: bool,
+    pub(crate) inverter_type: InverterType,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]

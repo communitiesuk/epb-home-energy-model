@@ -68,12 +68,12 @@ use crate::input::{
     HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
-    OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
-    SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
-    ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
-    WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WasteWaterHeatRecoverySystemType,
-    WaterHeatingEvent, WaterHeatingEvents, WaterPipework, ZoneDictionary, ZoneInput,
-    ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    PhotovoltaicSystem as PhotovoltaicSystemInput, SpaceCoolSystem as SpaceCoolSystemInput,
+    SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
+    SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails,
+    WasteWaterHeatRecoverySystemType, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
+    ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::{ProjectFlags, StringOrNumber};
@@ -5494,7 +5494,7 @@ fn on_site_generation_from_input(
         .iter()
         .map(|(name, generation_details)| {
             Ok(((*name).clone(), {
-                let OnSiteGenerationDetails::PhotovoltaicSystem {
+                let PhotovoltaicSystemInput {
                     peak_power,
                     ventilation_strategy,
                     pitch,
