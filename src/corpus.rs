@@ -734,16 +734,12 @@ impl Corpus {
         )?;
 
         let domestic_hot_water_demand = DomesticHotWaterDemand::new(
-            input.hot_water_demand.shower.clone().unwrap_or_default(),
-            input.hot_water_demand.bath.clone().unwrap_or_default(),
-            input
-                .hot_water_demand
-                .other_water_use
-                .clone()
-                .unwrap_or_default(),
+            input.hot_water_demand.shower.clone(),
+            input.hot_water_demand.bath.clone(),
+            input.hot_water_demand.other_water_use.clone(),
             match &input.hot_water_source.hot_water_cylinder {
                 HotWaterSourceDetails::PointOfUse { .. } => None,
-                _ => input.hot_water_demand.water_distribution.clone(),
+                _ => Some(input.hot_water_demand.water_distribution.clone()),
             },
             &cold_water_sources,
             &wwhrs,

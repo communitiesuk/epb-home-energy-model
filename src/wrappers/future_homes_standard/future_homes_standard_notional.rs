@@ -1,4 +1,3 @@
-use crate::compare_floats::min_of_2;
 use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
 use crate::core::units::{
@@ -14,7 +13,7 @@ use crate::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
     PipeworkContents, SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, UValueInput, WaterPipework, WaterPipeworkLocation,
+    UValueEditableBuildingElementJsonValue, UValueInput, WaterPipework,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -1265,77 +1264,78 @@ fn edit_hot_water_distribution(
     input: &mut InputForProcessing,
     total_floor_area: f64,
 ) -> anyhow::Result<()> {
-    // hot water dictionary
-    let mut hot_water_distribution_inner_list = vec![];
-
-    for item in input.water_distribution()?.into_iter().flatten() {
-        // only include internal pipework in notional buildings
-        if item.location == WaterPipeworkLocation::Internal {
-            hot_water_distribution_inner_list.push(item);
-        }
-    }
-
-    // Create an empty list to store updated dictionaries
-    let mut updated_hot_water_distribution_inner_list = vec![];
-
-    // Defaults
-    let internal_diameter_mm_min = 13.;
-    let external_diameter_mm_min = 15.;
-    let insulation_thickness_mm = 20.;
-
-    let length_max = match input.build_type()?.as_str() {
-        "flat" => 0.2 * total_floor_area,
-        "house" => {
-            0.2 * input
-                .ground_floor_area()?
-                .ok_or_else(|| anyhow!("Notional wrapper expected a ground floor area to be set"))?
-        }
-        unknown_type => bail!("Encountered unexpected building type '{unknown_type}'"),
-    };
-
-    // Iterate over hot_water_distribution_inner_list
-    for hot_water_distribution_inner in hot_water_distribution_inner_list {
-        // hot water distribution (inner) length should not be greater than maximum length
-
-        let length_actual = hot_water_distribution_inner.length;
-        let length = min_of_2(length_actual, length_max);
-
-        // Update internal diameter to minimum if not present and should not be lower than the minimum
-        let internal_diameter_mm = hot_water_distribution_inner.internal_diameter_mm;
-        let internal_diameter_mm = internal_diameter_mm.max(internal_diameter_mm_min);
-
-        // Update external diameter to minimum if not present and should not be lower than the minimum
-        let external_diameter_mm = hot_water_distribution_inner
-            .external_diameter_mm
-            .unwrap_or(external_diameter_mm_min);
-        let external_diameter_mm = external_diameter_mm.max(external_diameter_mm_min);
-
-        // Update insulation thickness based on internal diameter
-        let adjusted_insulation_thickness_mm = if internal_diameter_mm > 25. {
-            24.
-        } else {
-            insulation_thickness_mm
-        };
-
-        let pipework_to_update = json!({
-            "location": "internal",
-            "external_diameter_mm": external_diameter_mm,
-            "insulation_thermal_conductivity": 0.035,
-            "insulation_thickness_mm": adjusted_insulation_thickness_mm,
-            "internal_diameter_mm": internal_diameter_mm,
-            "length": length,
-            "pipe_contents": "water",
-            "surface_reflectivity": false
-        });
-
-        updated_hot_water_distribution_inner_list.push(pipework_to_update);
-    }
-
-    input.set_water_distribution(serde_json::Value::Array(
-        updated_hot_water_distribution_inner_list,
-    ))?;
-
-    Ok(())
+    todo!("FHS is being separated out from HEM");
+    // // hot water dictionary
+    // let mut hot_water_distribution_inner_list = vec![];
+    //
+    // for item in input.water_distribution()?.into_iter().flatten() {
+    //     // only include internal pipework in notional buildings
+    //     if item.location == WaterPipeworkLocation::Internal {
+    //         hot_water_distribution_inner_list.push(item);
+    //     }
+    // }
+    //
+    // // Create an empty list to store updated dictionaries
+    // let mut updated_hot_water_distribution_inner_list = vec![];
+    //
+    // // Defaults
+    // let internal_diameter_mm_min = 13.;
+    // let external_diameter_mm_min = 15.;
+    // let insulation_thickness_mm = 20.;
+    //
+    // let length_max = match input.build_type()?.as_str() {
+    //     "flat" => 0.2 * total_floor_area,
+    //     "house" => {
+    //         0.2 * input
+    //             .ground_floor_area()?
+    //             .ok_or_else(|| anyhow!("Notional wrapper expected a ground floor area to be set"))?
+    //     }
+    //     unknown_type => bail!("Encountered unexpected building type '{unknown_type}'"),
+    // };
+    //
+    // // Iterate over hot_water_distribution_inner_list
+    // for hot_water_distribution_inner in hot_water_distribution_inner_list {
+    //     // hot water distribution (inner) length should not be greater than maximum length
+    //
+    //     let length_actual = hot_water_distribution_inner.length;
+    //     let length = min_of_2(length_actual, length_max);
+    //
+    //     // Update internal diameter to minimum if not present and should not be lower than the minimum
+    //     let internal_diameter_mm = hot_water_distribution_inner.internal_diameter_mm;
+    //     let internal_diameter_mm = internal_diameter_mm.max(internal_diameter_mm_min);
+    //
+    //     // Update external diameter to minimum if not present and should not be lower than the minimum
+    //     let external_diameter_mm = hot_water_distribution_inner
+    //         .external_diameter_mm
+    //         .unwrap_or(external_diameter_mm_min);
+    //     let external_diameter_mm = external_diameter_mm.max(external_diameter_mm_min);
+    //
+    //     // Update insulation thickness based on internal diameter
+    //     let adjusted_insulation_thickness_mm = if internal_diameter_mm > 25. {
+    //         24.
+    //     } else {
+    //         insulation_thickness_mm
+    //     };
+    //
+    //     let pipework_to_update = json!({
+    //         "location": "internal",
+    //         "external_diameter_mm": external_diameter_mm,
+    //         "insulation_thermal_conductivity": 0.035,
+    //         "insulation_thickness_mm": adjusted_insulation_thickness_mm,
+    //         "internal_diameter_mm": internal_diameter_mm,
+    //         "length": length,
+    //         "pipe_contents": "water",
+    //         "surface_reflectivity": false
+    //     });
+    //
+    //     updated_hot_water_distribution_inner_list.push(pipework_to_update);
+    // }
+    //
+    // input.set_water_distribution(serde_json::Value::Array(
+    //     updated_hot_water_distribution_inner_list,
+    // ))?;
+    //
+    // Ok(())
 }
 
 fn remove_pv_diverter_if_present(

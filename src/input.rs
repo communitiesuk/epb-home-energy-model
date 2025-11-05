@@ -954,21 +954,35 @@ pub(crate) enum HotWaterSourceDetails {
         setpoint_temp: f64,
     },
     SmartHotWaterTank {
+        /// Total volume of tank (unit: litre)
+        #[validate(minimum = 0.)]
         volume: f64,
+        /// Electrical power consumption of the pump (unit: kW)
         #[serde(rename = "power_pump_kW")]
+        #[validate(minimum = 0.)]
         power_pump_kw: f64,
+        /// Maximum flow rate of the pump (unit: litre/minute)
+        #[validate(minimum = 0.)]
         max_flow_rate_pump_l_per_min: f64,
+        /// Temperature below which water is considered unusable (unit: ˚C)
+        #[validate(minimum = -273.15)]
         temp_usable: f64,
         /// Reference to a control schedule of maximum state of charge values
         temp_setpnt_max: String,
+        /// Daily standby losses due to tank insulation at standardised conditions (unit: kWh/24h)
+        #[validate(minimum = 0.)]
         daily_losses: f64,
+        /// Initial temperature of the smart hot water tank at the start of simulation (unit: ˚C)
+        #[validate(minimum = -273.15)]
         init_temp: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceType,
         #[serde(rename = "EnergySupply_pump")]
         energy_supply_pump: String,
+        /// Dictionary of heating systems connected to the smart hot water tank
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
+        /// List of primary pipework components connected to the smart hot water tank
         #[serde(skip_serializing_if = "Option::is_none")]
         primary_pipework: Option<Vec<WaterPipeworkSimple>>,
     },
@@ -1547,14 +1561,14 @@ pub enum PipeworkContents {
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HotWaterDemand {
-    #[serde(rename = "Shower", skip_serializing_if = "Option::is_none")]
-    pub(crate) shower: Option<Showers>,
-    #[serde(rename = "Bath", skip_serializing_if = "Option::is_none")]
-    pub(crate) bath: Option<Baths>,
-    #[serde(rename = "Other", skip_serializing_if = "Option::is_none")]
-    pub(crate) other_water_use: Option<OtherWaterUses>,
-    #[serde(rename = "Distribution", skip_serializing_if = "Option::is_none")]
-    pub(crate) water_distribution: Option<WaterDistribution>,
+    #[serde(default, rename = "Shower")]
+    pub(crate) shower: Showers,
+    #[serde(default, rename = "Bath")]
+    pub(crate) bath: Baths,
+    #[serde(default, rename = "Other")]
+    pub(crate) other_water_use: OtherWaterUses,
+    #[serde(default, rename = "Distribution")]
+    pub(crate) water_distribution: WaterDistribution,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -1674,7 +1688,19 @@ pub(crate) struct OtherWaterUse {
     pub(crate) hot_water_source: Option<String>,
 }
 
-pub(crate) type WaterDistribution = Vec<WaterPipeworkSimple>;
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum WaterDistribution {
+    List(Vec<WaterPipeworkSimple>),
+    Map(IndexMap<String, Vec<WaterPipeworkSimple>>),
+}
+
+impl Default for WaterDistribution {
+    fn default() -> Self {
+        Self::Map(Default::default())
+    }
+}
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

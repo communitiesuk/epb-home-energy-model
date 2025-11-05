@@ -12,11 +12,13 @@ use crate::corpus::{ColdWaterSources, EventSchedule};
 use crate::input::{
     BathDetails, Baths as BathInput, MixerShowerWwhrsConfiguration, OtherWaterUse,
     OtherWaterUses as OtherWaterUseInput, PipeworkContents, Shower as ShowerInput,
-    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterPipeworkSimple,
+    Showers as ShowersInput, WaterDistribution as WaterDistributionInput, WaterDistribution,
+    WaterPipeworkSimple,
 };
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use smartstring::alias::String;
@@ -101,9 +103,21 @@ impl DomesticHotWaterDemand {
         let hot_water_distribution_pipework = water_distribution_input
             .iter()
             .flat_map(|input| {
-                input.iter().map(|input| {
-                    input_to_water_distribution_pipework(input, total_number_tapping_points)
-                })
+                // TODO: revise this to reflect upstream logic - below is just to make compiler happy for now after changing input for 1.0.0a1
+                let simple_pipework = match input {
+                    WaterDistribution::List(simple_pipework) => simple_pipework.clone(),
+                    WaterDistribution::Map(map_of_simple_pipework) => map_of_simple_pipework
+                        .values()
+                        .flatten()
+                        .cloned()
+                        .collect_vec(),
+                };
+                simple_pipework
+                    .iter()
+                    .map(|input| {
+                        input_to_water_distribution_pipework(input, total_number_tapping_points)
+                    })
+                    .collect_vec()
             })
             .collect::<anyhow::Result<Vec<PipeworkSimple>>>()?;
 
