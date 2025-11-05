@@ -68,9 +68,17 @@ impl InputForProcessing {
         serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
     }
 
-    pub fn finalize(self) -> Result<Input, serde_json::Error> {
+    pub fn finalize(self) -> anyhow::Result<Input> {
         // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
-        serde_json::from_value(self.input)
+        // if let BasicOutput::Invalid(errors) =
+        //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
+        // {
+        //     bail!(
+        //         "Wrapper formed invalid JSON for the core schema: {}",
+        //         serde_json::to_value(errors)?.to_json_string_pretty()?
+        //     );
+        // }
+        serde_json::from_value(self.input).map_err(|err| anyhow!(err))
     }
 
     fn root(&self) -> JsonAccessResult<&Map<std::string::String, JsonValue>> {

@@ -93,11 +93,19 @@ pub fn run_project(
         // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
 
         #[instrument(skip_all)]
-        fn finalize(input: impl Read) -> Result<Input, serde_json::Error> {
+        fn finalize(input: impl Read) -> anyhow::Result<Input> {
             let input: JsonValue = serde_json::from_reader(input)?;
             let _schema_reference = SchemaReference::Core;
             // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
-            serde_json::from_value(input)
+            // if let BasicOutput::Invalid(errors) =
+            //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
+            // {
+            //     bail!(
+            //         "Wrapper formed invalid JSON for the core schema: {}",
+            //         serde_json::to_value(errors)?.to_json_string_pretty()?
+            //     );
+            // }
+            serde_json::from_value(input).map_err(|err| anyhow!(err))
         }
 
         let input = finalize(input)?;
