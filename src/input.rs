@@ -3506,30 +3506,186 @@ pub(crate) struct VentilationLeaks {
     pub(crate) env_area: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-// #[serde(deny_unknown_fields)] // TODO: possibly restore `deny_unknown_fields` declaration after 0.36
+#[serde(deny_unknown_fields)]
+#[validate(custom = validate_supply_air_temp_ctrl)]
 pub struct MechanicalVentilation {
+    /// Supply air flow rate control
     #[serde(rename = "sup_air_flw_ctrl")]
     pub(crate) supply_air_flow_rate_control: SupplyAirFlowRateControlType,
+    /// Supply air temperature control
     #[serde(rename = "sup_air_temp_ctrl")]
     pub(crate) supply_air_temperature_control_type: SupplyAirTemperatureControlType,
-    pub(crate) vent_type: MechVentType,
+    /// MVHR efficiency
     #[serde(rename = "mvhr_eff", skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
     pub(crate) mvhr_efficiency: Option<f64>,
+    /// Location of the MVHR unit (inside or outside the thermal envelope)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mvhr_location: Option<MVHRLocation>,
     #[serde(rename = "Control", skip_serializing_if = "Option::is_none")]
     pub(crate) control: Option<String>,
     /// Specific fan power, inclusive of any in use factors (unit: W/l/s)
     #[serde(rename = "SFP")]
+    #[validate(minimum = 0.)]
     pub(crate) sfp: f64,
+    /// Adjustment factor to be applied to SFP to account for e.g. type of ducting. Typical range 1 - 2.5
+    #[serde(default = "default_sfp_in_use_factor", rename = "SFP_in_use_factor")]
+    #[validate(minimum = 1.)]
+    pub(crate) sfp_in_use_factor: f64,
     #[serde(rename = "EnergySupply")]
     pub(crate) energy_supply: String,
-    /// unit: m³/hour
+    /// (unit: m³/hour)
+    #[validate(minimum = 0.)]
     pub(crate) design_outdoor_air_flow_rate: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ductwork: Option<Vec<MechanicalVentilationDuctwork>>,
+    /// List of ductworks installed in this ventilation system
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) ductwork: Vec<MechanicalVentilationDuctwork>,
+    #[serde(flatten)]
+    pub(crate) vent_data: MechVentData,
+}
+
+const fn default_sfp_in_use_factor() -> f64 {
+    1.
+}
+
+/// Validate that only implemented supply air temperature control types are used.
+fn validate_supply_air_temp_ctrl(
+    data: &MechanicalVentilation,
+) -> Result<(), serde_valid::validation::Error> {
+    match data.supply_air_temperature_control_type {
+        SupplyAirTemperatureControlType::NoControl => Ok(()),
+        _ => Err(
+            serde_valid::validation::Error::Custom(
+                format!(
+                    "Supply air temperature control type {} is not currently implemented. Only NO_CTRL is supported. Other values would be silently overwritten by the ventilation engine.",
+                    serde_json::to_value(data.supply_air_temperature_control_type).unwrap().as_str().unwrap()
+                )
+            )
+        ),
+    }
+}
+
+/// Enum to encapsulate the data provided with the different types of vent.
+// NB. This type replaces the upstream MechVentType, which is reflected in the variants here.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(tag = "vent_type", deny_unknown_fields)]
+pub enum MechVentData {
+    #[serde(rename = "MVHR")]
+    Mvhr {
+        position_intake: MechanicalVentilationPosition,
+        position_exhaust: MechanicalVentilationPosition,
+    },
+    #[serde(rename = "Intermittent MEV")]
+    IntermittentMev {
+        #[serde(flatten)]
+        position_exhaust: PositionExhaustData,
+    },
+    #[serde(rename = "Centralised continuous MEV")]
+    CentralisedContinuousMev {
+        #[serde(flatten)]
+        position_exhaust: PositionExhaustData,
+    },
+    #[serde(rename = "Decentralised continuous MEV")]
+    DecentralisedContinuousMev {
+        #[serde(flatten)]
+        position_exhaust: PositionExhaustData,
+    },
+    #[serde(rename = "Positive input ventilation")]
+    PositiveInputVentilation {
+        #[serde(flatten)]
+        position_exhaust: PositionExhaustData,
+    },
+}
+
+impl MechVentData {
+    /// Check if this ventilation type is a balanced system (both supply and extract).
+    fn is_balanced(&self) -> bool {
+        matches!(self, Self::Mvhr { .. })
+    }
+
+    /// Check if this ventilation type is an extract-only system.
+    fn is_extract_only(&self) -> bool {
+        matches!(
+            self,
+            Self::IntermittentMev { .. }
+                | Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+        )
+    }
+
+    /// Check if this ventilation type is a supply-only system.
+    fn is_supply_only(&self) -> bool {
+        matches!(self, Self::PositiveInputVentilation { .. })
+    }
+
+    /// Check if this ventilation type includes supply air.
+    fn has_supply(&self) -> bool {
+        self.is_balanced() || self.is_supply_only()
+    }
+
+    /// Check if this ventilation type includes extract air.
+    fn has_extract(&self) -> bool {
+        self.is_balanced() || self.is_extract_only()
+    }
+
+    /// Check if this ventilation type operates continuously.
+    fn is_continuous(&self) -> bool {
+        matches!(
+            self,
+            Self::CentralisedContinuousMev { .. }
+                | Self::DecentralisedContinuousMev { .. }
+                | Self::Mvhr { .. }
+        )
+    }
+
+    /// Check if this ventilation type operates intermittently.
+    fn is_intermittent(&self) -> bool {
+        matches!(self, Self::IntermittentMev { .. })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct MechanicalVentilationPosition {
+    #[serde(
+        rename = "orientation360",
+        deserialize_with = "deserialize_orientation",
+        serialize_with = "serialize_orientation"
+    )]
+    orientation: f64,
+    /// Tilt angle of the surface from horizontal, between 0 and 180, where 0 means the external surface is facing up, 90 means the external surface is vertical and 180 means the external surface is facing down (unit: ˚
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 180.)]
+    pub(crate) pitch: f64,
+    /// Mid height of air flow path relative to ventilation zone (unit: m)
+    #[validate(exclusive_minimum = 0.)]
+    mid_height_air_flow_path: f64,
+}
+
+/// enum to reflect the fact, for non-MVHR ventilation systems, the position_exhaust fields can either be provided in a separate object in JSON, or inlined to the root level.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub enum PositionExhaustData {
+    Inline {
+        #[serde(flatten)]
+        position_exhaust: MechanicalVentilationPosition,
+    },
+    PositionExhaustStruct {
+        position_exhaust: MechanicalVentilationPosition,
+    },
+}
+
+impl PositionExhaustData {
+    pub(crate) fn data(&self) -> MechanicalVentilationPosition {
+        match self {
+            Self::Inline { position_exhaust } => *position_exhaust,
+            Self::PositionExhaustStruct { position_exhaust } => *position_exhaust,
+        }
+    }
 }
 
 pub(crate) trait MechanicalVentilationForProcessing {
@@ -3589,76 +3745,6 @@ pub(crate) enum SupplyAirTemperatureControlType {
     NoControl,
     #[serde(rename = "LOAD_COM")]
     LoadCom,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) enum MechVentType {
-    #[serde(rename = "Intermittent MEV")]
-    IntermittentMev,
-    #[serde(rename = "Centralised continuous MEV")]
-    CentralisedContinuousMev,
-    #[serde(rename = "Decentralised continuous MEV")]
-    DecentralisedContinuousMev,
-    #[serde(rename = "MVHR")]
-    Mvhr,
-    #[serde(rename = "Positive input ventilation")]
-    PositiveInputVentilation,
-}
-
-impl Display for MechVentType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            serde_json::to_value(self).unwrap().as_str().unwrap()
-        )
-    }
-}
-
-impl MechVentType {
-    /// Check if this ventilation type is a balanced system (both supply and extract).
-    fn is_balanced(&self) -> bool {
-        matches!(self, Self::Mvhr)
-    }
-
-    /// Check if this ventilation type is an extract-only system.
-    fn is_extract_only(&self) -> bool {
-        matches!(
-            self,
-            Self::IntermittentMev
-                | Self::CentralisedContinuousMev
-                | Self::DecentralisedContinuousMev
-        )
-    }
-
-    /// Check if this ventilation type is a supply-only system.
-    fn is_supply_only(&self) -> bool {
-        matches!(self, Self::PositiveInputVentilation)
-    }
-
-    /// Check if this ventilation type includes supply air.
-    fn has_supply(&self) -> bool {
-        self.is_balanced() || self.is_supply_only()
-    }
-
-    /// Check if this ventilation type includes extract air.
-    fn has_extract(&self) -> bool {
-        self.is_balanced() || self.is_extract_only()
-    }
-
-    /// Check if this ventilation type operates continuously.
-    fn is_continuous(&self) -> bool {
-        matches!(
-            self,
-            Self::CentralisedContinuousMev | Self::DecentralisedContinuousMev | Self::Mvhr
-        )
-    }
-
-    /// Check if this ventilation type operates intermittently.
-    fn is_intermittent(&self) -> bool {
-        matches!(self, Self::IntermittentMev)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]

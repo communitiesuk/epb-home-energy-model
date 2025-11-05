@@ -17,7 +17,7 @@ use crate::errors::NotImplementedError;
 use crate::input::{
     init_orientation, BuildingElement, CombustionAirSupplySituation, CombustionApplianceType,
     CombustionFuelType, DuctShape, FlueGasExhaustSituation,
-    InfiltrationVentilation as InfiltrationVentilationInput, MechVentType,
+    InfiltrationVentilation as InfiltrationVentilationInput, MechVentData,
     SupplyAirFlowRateControlType, SupplyAirTemperatureControlType, TerrainClass,
     VentilationShieldClass, WindowPart as WindowPartInput, ZoneDictionary,
 };
@@ -30,7 +30,9 @@ use argmin::{
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use serde::Serialize;
 use smartstring::alias::String;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -426,6 +428,42 @@ fn sign(value: f64) -> i8 {
         0
     } else {
         1
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub(crate) enum MechVentType {
+    #[serde(rename = "Intermittent MEV")]
+    IntermittentMev,
+    #[serde(rename = "Centralised continuous MEV")]
+    CentralisedContinuousMev,
+    #[serde(rename = "Decentralised continuous MEV")]
+    DecentralisedContinuousMev,
+    #[serde(rename = "MVHR")]
+    Mvhr,
+    #[serde(rename = "Positive input ventilation")]
+    PositiveInputVentilation,
+}
+
+impl Display for MechVentType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_value(self).unwrap().as_str().unwrap()
+        )
+    }
+}
+
+impl From<MechVentData> for MechVentType {
+    fn from(value: MechVentData) -> Self {
+        match value {
+            MechVentData::Mvhr { .. } => Self::Mvhr,
+            MechVentData::IntermittentMev { .. } => Self::IntermittentMev,
+            MechVentData::CentralisedContinuousMev { .. } => Self::CentralisedContinuousMev,
+            MechVentData::DecentralisedContinuousMev { .. } => Self::DecentralisedContinuousMev,
+            MechVentData::PositiveInputVentilation { .. } => Self::PositiveInputVentilation,
+        }
     }
 }
 
@@ -2345,42 +2383,39 @@ impl InfiltrationVentilation {
                 mech_vents_data.supply_air_temperature_control_type,
                 0.,
                 0.,
-                mech_vents_data.vent_type,
+                mech_vents_data.vent_data.into(),
                 mech_vents_data.sfp,
                 mech_vents_data.design_outdoor_air_flow_rate,
                 energy_supply_connection,
                 total_volume,
                 input.altitude,
                 ctrl_intermittent_mev,
-                match mech_vents_data.vent_type {
-                    MechVentType::Mvhr => mech_vents_data.mvhr_efficiency,
-                    MechVentType::IntermittentMev
-                    | MechVentType::CentralisedContinuousMev
-                    | MechVentType::DecentralisedContinuousMev => None,
-                    MechVentType::PositiveInputVentilation => unimplemented!(), // TODO: presumably to be completed during migration to 1.0.0a1
+                match mech_vents_data.vent_data {
+                    MechVentData::Mvhr { .. } => mech_vents_data.mvhr_efficiency,
+                    MechVentData::IntermittentMev { .. }
+                    | MechVentData::CentralisedContinuousMev { .. }
+                    | MechVentData::DecentralisedContinuousMev { .. } => None,
+                    MechVentData::PositiveInputVentilation { .. } => unimplemented!(), // TODO: presumably to be completed during migration to 1.0.0a1
                 },
                 None,
             )));
 
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
-            if mech_vents_data.vent_type == MechVentType::Mvhr {
+            if matches!(mech_vents_data.vent_data, MechVentData::Mvhr { .. }) {
                 space_heating_ductwork.insert(
                     mech_vents_name.to_owned(),
                     mech_vents_data
                         .ductwork
-                        .as_ref()
                         .iter()
-                        .flat_map(|ductworks| {
-                            ductworks.iter().map(|ductwork| -> anyhow::Result<Ductwork> {
-                                let (duct_perimeter, internal_diameter, external_diameter) =
-                                    match ductwork.cross_section_shape {
-                                        DuctShape::Circular => (None, Some(ductwork.internal_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64), Some(ductwork.external_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64)),
-                                        DuctShape::Rectangular => (Some(ductwork.duct_perimeter_mm.ok_or_else(|| anyhow!("Expected a duct perimeter value for ductwork with a rectangular cross-section."))? / MILLIMETRES_IN_METRE as f64), None, None),
-                                    };
-                                let thickness_insulation = ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64;
+                        .map(|ductwork| -> anyhow::Result<Ductwork> {
+                            let (duct_perimeter, internal_diameter, external_diameter) =
+                                match ductwork.cross_section_shape {
+                                    DuctShape::Circular => (None, Some(ductwork.internal_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64), Some(ductwork.external_diameter_mm.ok_or_else(|| anyhow!("Expected an internal diameter value for ductwork with a circular cross-section."))? / MILLIMETRES_IN_METRE as f64)),
+                                    DuctShape::Rectangular => (Some(ductwork.duct_perimeter_mm.ok_or_else(|| anyhow!("Expected a duct perimeter value for ductwork with a rectangular cross-section."))? / MILLIMETRES_IN_METRE as f64), None, None),
+                                };
+                            let thickness_insulation = ductwork.insulation_thickness_mm / MILLIMETRES_IN_METRE as f64;
 
-                                Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
-                            })
+                            Ductwork::new(ductwork.cross_section_shape, duct_perimeter, internal_diameter, external_diameter, ductwork.length, ductwork.insulation_thermal_conductivity, thickness_insulation, ductwork.reflective, ductwork.duct_type, mech_vents_data.mvhr_location.ok_or_else(|| anyhow!("An MVHR location was expected for mechanical ventilation with an MVHR vent type."))?, mech_vents_data.mvhr_efficiency.ok_or_else(|| anyhow!("An MVHR efficiency value was expected for mechanical ventilation with an MVHR vent type."))?)
                         })
                         .collect::<anyhow::Result<Vec<Ductwork>>>()?,
                 );

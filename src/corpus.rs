@@ -45,7 +45,7 @@ use crate::core::space_heat_demand::internal_gains::{
 };
 use crate::core::space_heat_demand::thermal_bridge::{ThermalBridge, ThermalBridging};
 use crate::core::space_heat_demand::ventilation::{
-    InfiltrationVentilation, MechanicalVentilation, VentilationDetailedResult,
+    InfiltrationVentilation, MechVentType, MechanicalVentilation, VentilationDetailedResult,
 };
 use crate::core::space_heat_demand::zone::{
     calc_vent_heat_transfer_coeff, AirChangesPerHourArgument, HeatBalance, HeatBalanceFieldName,
@@ -67,7 +67,7 @@ use crate::input::{
     HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
     HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
-    InternalGains as InternalGainsInput, InternalGainsDetails, MechVentType, OnSiteGeneration,
+    InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     OnSiteGenerationDetails, SpaceCoolSystem as SpaceCoolSystemInput, SpaceCoolSystemDetails,
     SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails, SystemReference,
     ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput, VentilationLeaks,
