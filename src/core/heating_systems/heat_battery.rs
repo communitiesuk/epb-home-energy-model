@@ -2013,7 +2013,7 @@ mod tests {
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
     use crate::input::{
         ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
-        HeatSourceLocation, HeatSourceWetDetails,
+        HeatSourceWetDetails,
     };
     use crate::simulation_time::SimulationTimeIteration;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};

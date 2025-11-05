@@ -5850,12 +5850,12 @@ mod tests {
             ShadingSegment {
                 start: 180.,
                 end: 135.,
-                shading_objects: None,
+                ..Default::default()
             },
             ShadingSegment {
                 start: 135.,
                 end: 90.,
-                shading_objects: None,
+                ..Default::default()
             },
         ]
         .into();

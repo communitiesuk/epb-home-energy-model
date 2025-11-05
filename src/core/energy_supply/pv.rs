@@ -373,11 +373,11 @@ mod tests {
                 ShadingSegment {
                     start: 135.,
                     end: 90.,
-                    shading_objects: Some(vec![ShadingObject {
+                    shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Overhang,
                         height: 2.2,
                         distance: 6.,
-                    }]),
+                    }],
                 },
                 ShadingSegment {
                     start: 90.,
@@ -387,7 +387,7 @@ mod tests {
                 ShadingSegment {
                     start: 45.,
                     end: 0.,
-                    shading_objects: Some(vec![
+                    shading_objects: vec![
                         ShadingObject {
                             object_type: ShadingObjectType::Obstacle,
                             height: 40.,
@@ -398,16 +398,16 @@ mod tests {
                             height: 3.,
                             distance: 7.,
                         },
-                    ]),
+                    ],
                 },
                 ShadingSegment {
                     start: 0.,
                     end: -45.,
-                    shading_objects: Some(vec![ShadingObject {
+                    shading_objects: vec![ShadingObject {
                         object_type: ShadingObjectType::Obstacle,
                         height: 3.,
                         distance: 8.,
-                    }]),
+                    }],
                 },
                 ShadingSegment {
                     start: -45.,
