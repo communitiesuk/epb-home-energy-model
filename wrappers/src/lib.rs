@@ -6,6 +6,8 @@ use hem::input::Input;
 use hem::output::Output;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
+use itertools::Itertools;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -167,10 +169,13 @@ pub fn run_wrappers(
         // TODO review below
         let contextualised_results: Result<HashMap<CalculationKey, CalculationResultsWithContext>, HemError> = match wrapper {
             ChosenWrapper::FhsCompliance(_) => {
-                input.into_iter().map(|(key, input_value)| {
+                input.iter()
+                    .collect_vec()
+                    .into_par_iter()
+                    .map(|(key, input_value)| {
                     let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
                     hem::run_project(input_reader, &output, external_conditions_data.clone(), tariff_data_file, flags)
-                        .map(|result_value| (key, result_value))
+                        .map(|result_value| (*key, result_value))
                 }).collect()
             }
             _ => {
