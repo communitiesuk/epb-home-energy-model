@@ -28,7 +28,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
+    json_error, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
 };
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
@@ -44,7 +44,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -90,8 +90,6 @@ pub fn run_project(
     flags: &ProjectFlags, // TODO: this can be owned
 ) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
-        // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
-
         #[instrument(skip_all)]
         fn finalize(input: impl Read) -> anyhow::Result<Input> {
             let input: JsonValue = serde_json::from_reader(input)?;
@@ -111,6 +109,22 @@ pub fn run_project(
         let input = finalize(input)?;
         let cloned_input = input.clone();
 
+        fn merge_external_conditions_data(
+            mut input: Input,
+            external_conditions_data: Option<ExternalConditionsInput>,
+        ) -> anyhow::Result<()> {
+            if let Some(external_conditions) = external_conditions_data {
+                let shading_segments = &input.external_conditions.shading_segments;
+                let mut new_external_conditions = external_conditions.clone();
+                new_external_conditions.shading_segments = shading_segments.clone();
+                input.external_conditions = Arc::from(new_external_conditions);
+            }
+
+            Ok(())
+        }
+        // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
+        // merge_external_conditions_data(input, external_conditions_data.map(|x| x.into()));
+
         // 3. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
         fn resolve_external_conditions(
@@ -118,10 +132,10 @@ pub fn run_project(
             external_conditions_data: Option<ExternalConditionsFromFile>,
         ) -> ExternalConditions {
             external_conditions_from_input(
-                            input.external_conditions.clone(),
-                            external_conditions_data.clone(),
-                            input.simulation_time,
-                        )
+                input.external_conditions.clone(),
+                external_conditions_data.clone(),
+                input.simulation_time,
+            )
         }
 
         let corpus = {
