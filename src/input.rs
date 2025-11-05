@@ -3744,6 +3744,7 @@ pub enum PositionExhaustData {
 }
 
 impl PositionExhaustData {
+    #[expect(unused)]
     pub(crate) fn data(&self) -> MechanicalVentilationPosition {
         match self {
             Self::Inline { position_exhaust } => *position_exhaust,

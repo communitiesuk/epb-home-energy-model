@@ -337,7 +337,7 @@ fn edit_transparent_element(input: &mut InputForProcessing) -> anyhow::Result<()
 }
 
 ///Split windows/rooflights and walls/roofs into dictionaries.
-fn split_glazing_and_walls(
+fn _split_glazing_and_walls(
     input: &mut InputForProcessing,
 ) -> anyhow::Result<(
     IndexMap<String, BuildingElement>,
@@ -364,11 +364,11 @@ fn split_glazing_and_walls(
 }
 
 ///Calculate difference between old  and new glazing area and adjust the glazing areas
-fn calculate_area_diff_and_adjust_glazing_area(
-    input: &mut InputForProcessing,
-    linear_reduction_factor: f64,
-    window_rooflight_element: &BuildingElement,
-    building_element_reference: &str,
+fn _calculate_area_diff_and_adjust_glazing_area(
+    _input: &mut InputForProcessing,
+    _linear_reduction_factor: f64,
+    _window_rooflight_element: &BuildingElement,
+    _building_element_reference: &str,
 ) -> anyhow::Result<f64> {
     todo!("stop here as FHS to be removed from core");
     // if let BuildingElement::Transparent { height, width, .. } = window_rooflight_element {
@@ -396,7 +396,7 @@ fn calculate_area_diff_and_adjust_glazing_area(
 }
 
 ///Find all walls/roofs with same orientation and pitch as this window/rooflight.
-fn find_walls_roofs_with_same_orientation_and_pitch(
+fn _find_walls_roofs_with_same_orientation_and_pitch(
     wall_roofs: &[&BuildingElement],
     window_rooflight_element: &BuildingElement,
 ) -> anyhow::Result<Vec<usize>> {
@@ -430,7 +430,7 @@ fn find_walls_roofs_with_same_orientation_and_pitch(
 }
 
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
-fn calc_max_glazing_area_fraction(
+fn _calc_max_glazing_area_fraction(
     input: &InputForProcessing,
     total_floor_area: f64,
 ) -> anyhow::Result<f64> {
@@ -1261,8 +1261,8 @@ fn edit_primary_pipework(
 }
 
 fn edit_hot_water_distribution(
-    input: &mut InputForProcessing,
-    total_floor_area: f64,
+    _input: &mut InputForProcessing,
+    _total_floor_area: f64,
 ) -> anyhow::Result<()> {
     todo!("FHS is being separated out from HEM");
     // // hot water dictionary

@@ -3696,7 +3696,7 @@ fn daylight_factor(
     //     .collect())
 }
 
-fn shading_factor(
+fn _shading_factor(
     input: &InputForProcessing,
     base_height: f64,
     height: f64,

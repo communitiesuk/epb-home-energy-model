@@ -3827,14 +3827,14 @@ fn building_element_from_input(
             // ))
         }
         BuildingElementInput::Transparent {
-            u_value_input,
-            pitch,
-            orientation,
-            g_value,
-            frame_area_fraction,
-            base_height,
-            shading,
-            treatment,
+            // u_value_input,
+            // pitch,
+            // orientation,
+            // g_value,
+            // frame_area_fraction,
+            // base_height,
+            // shading,
+            // treatment,
             ..
         } => {
             todo!("Transparent building elements are not yet supported in this 0.40 version");
