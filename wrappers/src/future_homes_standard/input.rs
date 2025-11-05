@@ -100,7 +100,7 @@ impl InputForProcessing {
     }
 
     fn remove_root_key(&mut self, root_key: &str) -> JsonAccessResult<&mut Self> {
-        self.root_mut()?.remove(root_key);
+        self.root_mut()?.shift_remove(root_key);
 
         Ok(self)
     }
@@ -1236,13 +1236,9 @@ impl InputForProcessing {
             .iter()
             .filter(|(event_type, _)| event_types.contains(&&***event_type))
             .flat_map(|(_, events)| {
-                events.as_object().map(|events| {
-                    events
-                        .values()
-                        .into_iter()
-                        .map(JsonValue::as_array)
-                        .flatten()
-                })
+                events
+                    .as_object()
+                    .map(|events| events.values().filter_map(JsonValue::as_array))
             })
             .flatten()
             .flatten()
@@ -1396,7 +1392,7 @@ impl InputForProcessing {
             .values_mut()
             .filter_map(|value| value.as_object_mut())
             .for_each(|energy_supply| {
-                energy_supply.remove("diverter");
+                energy_supply.shift_remove("diverter");
             });
         Ok(self)
     }
@@ -1462,7 +1458,7 @@ impl InputForProcessing {
             .values_mut()
             .flat_map(|v| v.as_object_mut())
         {
-            energy_supply.remove("ElectricBattery");
+            energy_supply.shift_remove("ElectricBattery");
         }
         Ok(self)
     }
@@ -1624,8 +1620,10 @@ impl InputForProcessing {
     }
 
     pub fn remove_appliance(&mut self, appliance_key: &str) -> JsonAccessResult<&Self> {
+        // we use .shift_remove instead of remove here
+        // to preserve the relative order of the appliances
         self.root_object_entry_mut("Appliances")?
-            .remove(appliance_key);
+            .shift_remove(appliance_key);
 
         Ok(self)
     }
@@ -1786,7 +1784,7 @@ impl InputForProcessing {
 
     pub fn reset_mechanical_ventilation(&mut self) -> JsonAccessResult<&Self> {
         self.root_object_entry_mut("InfiltrationVentilation")?
-            .remove("MechanicalVentilation");
+            .shift_remove("MechanicalVentilation");
         Ok(self)
     }
 

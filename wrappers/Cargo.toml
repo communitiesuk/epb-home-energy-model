@@ -7,7 +7,7 @@ edition = "2024"
 serde = { version = "1.0.228", features = ["derive"] }
 anyhow = "1.0.100"
 rayon = "1.11.0"
-serde_json = "1.0.145"
+serde_json = { version = "1.0.145", features = ["preserve_order"] }
 indexmap = "2.12.0"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 smartstring = "1.0.1"
@@ -27,7 +27,7 @@ hem = { path = "..", features = ["fhs"] }
 jsonschema = "0.33.0"
 walkdir = "2.5.0"
 serde_valid = "2.0.0"
-clap = { version = "4.5.49", features = ["derive"], optional = true }
+clap = { version = "4.5.51", features = ["derive"], optional = true }
 tracing-subscriber = "0.3.20"
 
 [[bin]]
