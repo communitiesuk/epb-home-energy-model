@@ -3146,6 +3146,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wrappers-lambda"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lambda_http",
+ "parking_lot",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "wrappers",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

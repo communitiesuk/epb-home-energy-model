@@ -65,7 +65,7 @@ opt-level = 3
 lto = true
 
 [workspace]
-members = ["hem-lambda", "wrappers"]
+members = ["hem-lambda", "wrappers", "wrappers-lambda"]
 
 [features]
 fhs = []
