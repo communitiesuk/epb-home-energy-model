@@ -156,7 +156,7 @@ pub fn run_project(
             })?
         };
 
-        // 5. Run HEM calculation(s).
+        // 5. Run HEM calculation.
         #[instrument(skip_all)]
         fn run_hem_calculation(
             corpus: &Corpus,
