@@ -3122,59 +3122,135 @@ pub(crate) type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
 #[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum HeatSourceWetDetails {
     HeatPump {
+        /// Optional buffer tank configuration for the heat pump system
+        #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
+        buffer_tank: Option<Box<HeatPumpBufferTank>>,
+
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
-        source_type: HeatPumpSourceType,
+
+        /// References a key in $.EnergySupply for heat network energy supply
         #[serde(
             rename = "EnergySupply_heat_network",
             skip_serializing_if = "Option::is_none"
         )]
         energy_supply_heat_network: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_distribution_heat_network: Option<f64>,
-        sink_type: HeatPumpSinkType,
-        #[serde(rename = "backup_ctrl_type")]
-        backup_control_type: HeatPumpBackupControlType,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        time_delay_backup: Option<f64>,
-        modulating_control: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_modulation_rate_20: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_modulation_rate_35: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_modulation_rate_55: Option<f64>,
-        time_constant_onoff_operation: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_return_feed_max: Option<f64>,
-        temp_lower_operating_limit: f64,
-        min_temp_diff_flow_return_for_hp_to_operate: f64,
-        var_flow_temp_ctrl_during_test: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        power_heating_warm_air_fan: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        power_heating_circ_pump: Option<f64>,
-        power_source_circ_pump: f64,
-        power_standby: f64,
-        power_crankcase_heater: f64,
-        power_off: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        power_max_backup: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        eahp_mixed_max_temp: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        eahp_mixed_min_temp: Option<f64>,
+
+        /// References a key in $.MechanicalVentilation
         #[serde(
             rename = "MechanicalVentilation",
             skip_serializing_if = "Option::is_none"
         )]
         mechanical_ventilation: Option<String>,
-        #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
-        buffer_tank: Option<Box<HeatPumpBufferTank>>,
+
+        /// Type of backup control for the heat pump system
+        #[serde(rename = "backup_ctrl_type")]
+        backup_control_type: HeatPumpBackupControlType,
+
+        /// Optional boiler configuration used as backup for the heat pump
+        #[serde(skip_serializing_if = "Option::is_none")]
+        boiler: Option<Box<HeatPumpBoiler>>,
+
+        /// Maximum temperature for exhaust air heat pump mixed operation (unit: ˚C)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
+        eahp_mixed_max_temp: Option<f64>,
+
+        /// Minimum temperature for exhaust air heat pump mixed operation (unit: ˚C)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
+        eahp_mixed_min_temp: Option<f64>,
+
+        /// Minimum modulation rate at 20°C flow temperature (dimensionless, 0-1)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        min_modulation_rate_20: Option<f64>,
+
+        /// Minimum modulation rate at 35°C flow temperature (dimensionless, 0-1)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        min_modulation_rate_35: Option<f64>,
+
+        /// Minimum modulation rate at 55°C flow temperature (dimensionless, 0-1)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        min_modulation_rate_55: Option<f64>,
+
+        /// Minimum temperature difference between flow and return for heat pump operation (unit: K)
+        min_temp_diff_flow_return_for_hp_to_operate: f64,
+
+        /// Whether the heat pump uses modulating control
+        modulating_control: bool,
+
+        /// Power consumption of crankcase heater (unit: kW)
+        #[validate(minimum = 0.)]
+        power_crankcase_heater: f64,
+
+        /// Power consumption of heating circuit pump (unit: kW)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        power_heating_circ_pump: Option<f64>,
+
+        /// Power consumption of warm air fan (unit: kW)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        power_heating_warm_air_fan: Option<f64>,
+
+        /// Maximum backup power (unit: kW)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        power_max_backup: Option<f64>,
+
+        /// Power consumption when heat pump is off (unit: kW)
+        #[validate(minimum = 0.)]
+        power_off: f64,
+
+        /// Power consumption of source circuit pump (unit: kW)
+        #[validate(minimum = 0.)]
+        power_source_circ_pump: f64,
+
+        /// Power consumption in standby mode (unit: kW)
+        #[validate(minimum = 0.)]
+        power_standby: f64,
+
+        /// Type of heat sink for the heat pump
+        sink_type: HeatPumpSinkType,
+
+        /// Type of heat source for the heat pump
+        source_type: HeatPumpSourceType,
+
+        /// Distribution temperature for heat network (unit: ˚C)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
+        temp_distribution_heat_network: Option<f64>,
+
+        /// Lower temperature limit for heat pump operation (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        temp_lower_operating_limit: f64,
+
+        /// Maximum return feed temperature (unit: ˚C)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = -273.15)]
+        temp_return_feed_max: Option<f64>,
+
         #[serde(rename = "test_data_EN14825")]
         #[validate]
-        test_data: Vec<HeatPumpTestDatum>,
-        boiler: Option<Box<HeatPumpBoiler>>,
+        test_data_en14825: Vec<HeatPumpTestDatum>,
+
+        /// Time constant for on/off operation (unit: hours)
+        #[validate(minimum = 0.)]
+        time_constant_onoff_operation: f64,
+
+        /// Time delay before backup operation (unit: hours)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        time_delay_backup: Option<f64>,
+
+        /// Whether variable flow temperature control was used during testing
+        var_flow_temp_ctrl_during_test: bool,
     },
     Boiler {
         #[serde(rename = "EnergySupply")]

@@ -2082,7 +2082,7 @@ impl HeatPump {
                 power_off,
                 power_max_backup,
                 temp_distribution_heat_network,
-                test_data,
+                test_data_en14825: test_data,
                 min_modulation_rate_20,
                 min_modulation_rate_35,
                 min_modulation_rate_55,
