@@ -3834,49 +3834,65 @@ pub enum BuildType {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 // #[serde(deny_unknown_fields)] // TODO: restore `deny_unknown_fields` declaration after 0.36
 pub struct InfiltrationVentilation {
-    pub(crate) cross_vent_possible: bool,
-    /// Indicates the exposure to wind of an air flow path on a facade (can can be open, normal and shielded)
-    pub(crate) shield_class: VentilationShieldClass,
-    pub(crate) terrain_class: TerrainClass,
-    /// Altitude of dwelling above sea level (unit: m)
-    pub(crate) altitude: f64,
-    /// Minimum ACH (Air Changes per Hour) limit
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
-    pub(crate) ach_min_static_calcs: Option<f64>,
-    /// Maximum ACH (Air Changes per Hour) limit
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
-    pub(crate) ach_max_static_calcs: Option<f64>,
-    #[serde(
-        rename = "Control_VentAdjustMin",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) control_vent_adjust_min: Option<String>,
     #[serde(
         rename = "Control_VentAdjustMax",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) control_vent_adjust_max: Option<String>,
-    /// Initial vent position, 0 = vents closed and 1 = vents fully open
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) vent_opening_ratio_init: Option<f64>,
+
+    #[serde(
+        rename = "Control_VentAdjustMin",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) control_vent_adjust_min: Option<String>,
+
     #[serde(
         rename = "Control_WindowAdjust",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) control_window_adjust: Option<String>,
-    /// Provides details about available non-mechanical ventilation systems
-    #[serde(rename = "Vents")]
-    pub(crate) vents: IndexMap<String, Vent>,
+
     /// List of the required inputs for Leaks
     #[serde(rename = "Leaks")]
     pub(crate) leaks: VentilationLeaks,
+
     /// Provides details about available mechanical ventilation systems
     #[serde(rename = "MechanicalVentilation", default)]
     pub(crate) mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
+
+    /// Provides details about available non-mechanical ventilation systems
+    #[serde(rename = "Vents")]
+    pub(crate) vents: IndexMap<String, Vent>,
+
+    /// Maximum ACH (Air Changes per Hour) limit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    pub(crate) ach_max_static_calcs: Option<f64>,
+
+    /// Minimum ACH (Air Changes per Hour) limit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    pub(crate) ach_min_static_calcs: Option<f64>,
+
+    /// Altitude of dwelling above sea level (unit: m)
+    pub(crate) altitude: f64,
+
+    pub(crate) cross_vent_possible: bool,
+
+    /// Indicates the exposure to wind of an air flow path on a facade (can can be open, normal and shielded)
+    pub(crate) shield_class: VentilationShieldClass,
+
+    pub(crate) terrain_class: TerrainClass,
+
     /// Base height of the ventilation zone relative to ground (m)
+    #[validate(minimum = 0.)]
     pub(crate) ventilation_zone_base_height: f64,
+
+    /// Initial vent position, 0 = vents closed and 1 = vents fully open
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) vent_opening_ratio_init: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
