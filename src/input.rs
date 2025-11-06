@@ -998,26 +998,33 @@ pub enum BoilerHotWaterTest {
 #[serde(tag = "type", deny_unknown_fields)]
 pub(crate) enum HotWaterSourceDetails {
     StorageTank {
-        /// Total volume of tank (unit: litre)
-        #[validate(minimum = 0.0)]
-        volume: f64,
-        /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
-        daily_losses: f64,
-        /// Surface area of the heat exchanger within the storage tank (unit: m²)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        heat_exchanger_surface_area: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_temp: Option<f64>,
-        /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
-        init_temp: f64,
         #[serde(rename = "ColdWaterSource")]
         cold_water_source: ColdWaterSourceReference,
+
         /// Map of heating systems connected to the storage tank
         #[serde(rename = "HeatSource")]
         heat_source: IndexMap<String, HeatSource>,
+
+        /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
+        #[validate(minimum = 0.)]
+        daily_losses: f64,
+
+        /// Surface area of the heat exchanger within the storage tank (unit: m²)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
+        heat_exchanger_surface_area: Option<f64>,
+
+        /// Initial temperature of the storage tank at the start of simulation (unit: ˚C)
+        #[validate(minimum = -273.15)]
+        init_temp: f64,
+
         /// List of primary pipework components connected to the storage tank
         #[serde(skip_serializing_if = "Option::is_none")]
         primary_pipework: Option<Vec<WaterPipework>>,
+
+        /// Total volume of tank (unit: litre)
+        #[validate(minimum = 0.)]
+        volume: f64,
     },
     CombiBoiler {
         #[serde(rename = "ColdWaterSource")]
