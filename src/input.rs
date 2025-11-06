@@ -178,29 +178,36 @@ pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-// #[serde(deny_unknown_fields)] // TODO: add back in for versions after 0.36
+#[serde(deny_unknown_fields)]
 pub(crate) struct ApplianceGainsDetails {
+    /// List of appliance usage events
+    #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
+    pub(crate) events: Option<Vec<ApplianceGainsEvent>>,
+    /// Appliance power consumption when not in use (unit: W)
+    #[serde(rename = "Standby", skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    pub(crate) standby: Option<f64>,
+    #[serde(rename = "EnergySupply")]
+    pub(crate) energy_supply: String,
+    /// Proportion of appliance demand turned into heat gains (dimensionless, 0-1)
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) gains_fraction: f64,
+    /// Load shifting configuration for smart appliance control
+    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
+    pub(crate) load_shifting: Option<ApplianceLoadShifting>,
+    /// Priority level for load shifting (lower numbers = higher priority)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) priority: Option<isize>,
+    /// Power consumption schedule (one entry per hour)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) schedule: Option<NumericSchedule>,
     /// First day of the time series, day of the year, 0 to 365
     #[validate(minimum = 0)]
     #[validate(maximum = 365)]
     pub(crate) start_day: u32,
     /// Timestep of the time series data (unit: hours)
     pub(crate) time_series_step: f64,
-    /// Proportion of appliance demand turned into heat gains (no unit)
-    pub(crate) gains_fraction: f64,
-    #[serde(rename = "EnergySupply")]
-    pub(crate) energy_supply: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) schedule: Option<NumericSchedule>,
-    /// Appliance power consumption when not in use (unit: W)
-    #[serde(rename = "Standby", skip_serializing_if = "Option::is_none")]
-    pub(crate) standby: Option<f64>,
-    #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
-    pub(crate) events: Option<Vec<ApplianceGainsEvent>>,
-    #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
-    pub(crate) load_shifting: Option<ApplianceLoadShifting>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) priority: Option<isize>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -3269,12 +3276,16 @@ pub struct HeatPumpBoiler {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BoilerCostScheduleHybrid {
+    /// Cost data for the fuel used by the hybrid's heat pump (can be any units, typically p/kWh)
+    pub(crate) cost_schedule_boiler: NumericSchedule,
+    /// Cost data for the fuel used by the hybrid's boiler (can be any units, typically p/kWh)
+    pub(crate) cost_schedule_hp: NumericSchedule,
+    /// Day on which the cost data series begins
     #[validate(minimum = 0)]
     #[validate(maximum = 365)]
-    pub cost_schedule_start_day: u32,
-    pub cost_schedule_time_series_step: f64,
-    pub cost_schedule_hp: NumericSchedule,
-    pub cost_schedule_boiler: NumericSchedule,
+    pub(crate) cost_schedule_start_day: u32,
+    /// Time step of the cost data series
+    pub(crate) cost_schedule_time_series_step: f64,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]

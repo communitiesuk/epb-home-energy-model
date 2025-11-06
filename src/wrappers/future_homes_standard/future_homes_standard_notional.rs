@@ -13,7 +13,7 @@ use crate::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
     PipeworkContents, SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, WaterPipework,
+    UValueEditableBuildingElementJsonValue, UValueInput, WaterPipework,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -1543,9 +1543,7 @@ mod tests {
     use crate::core::space_heat_demand::building_element::{pitch_class, HeatFlowDirection};
 
     use super::*;
-    use crate::input::{
-        self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails, WaterPipeworkSimple,
-    };
+    use crate::input::{self, EnergySupplyDetails, HeatSourceWet, HeatSourceWetDetails};
     use crate::input::{HotWaterSource, WasteWaterHeatRecovery};
     use approx::assert_relative_eq;
     use rstest::{fixture, rstest};
