@@ -3656,9 +3656,7 @@ fn zone_from_input(
         thermal_bridging_from_input(&input.thermal_bridging),
         infiltration_ventilation,
         external_conditions.air_temp(&simulation_time_iterator.current_iteration()),
-        input
-            .temp_setpnt_init
-            .ok_or_else(|| anyhow!("Missing temp_setpnt_init value in core zone"))?,
+        input.temp_setpnt_init,
         temp_setpnt_basis,
         window_adjust_control,
         print_heat_balance,

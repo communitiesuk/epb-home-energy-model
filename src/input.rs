@@ -2268,15 +2268,13 @@ pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-// #[serde(deny_unknown_fields)] // TODO: restore after 0.36 if possible
+#[serde(deny_unknown_fields)]
+#[validate(custom = validate_system_list_no_duplicates)]
 pub struct ZoneInput {
-    /// Heating system details of the zone. References a key in $.SpaceHeatSystem
-    #[serde(
-        rename = "SpaceHeatSystem",
-        skip_serializing_if = "SystemReference::is_none",
-        default
-    )]
-    pub(crate) space_heat_system: SystemReference,
+    /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
+    #[serde(rename = "BuildingElement")]
+    pub(crate) building_elements: IndexMap<String, BuildingElement>,
+
     /// Cooling system details of the zone. References a key in $.SpaceCoolSystem
     #[serde(
         rename = "SpaceCoolSystem",
@@ -2284,23 +2282,49 @@ pub struct ZoneInput {
         default
     )]
     pub(crate) space_cool_system: SystemReference,
-    /// Useful floor area of the zone. (Unit: m²)
-    #[validate(minimum = 0.)]
-    pub(crate) area: f64,
-    /// Total volume of the zone. (Unit: m³)
-    #[validate(minimum = 0.)]
-    pub(crate) volume: f64,
-    /// Basis for zone temperature control.
-    #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
-    pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
-    /// Setpoint temperature to use during initialisation (unit: ˚C)
-    pub(crate) temp_setpnt_init: Option<f64>, // restore as non `Option` after 0.36
-    /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
-    #[serde(rename = "BuildingElement")]
-    pub(crate) building_elements: IndexMap<String, BuildingElement>,
+
+    /// Heating system details of the zone. References a key in $.SpaceHeatSystem
+    #[serde(
+        rename = "SpaceHeatSystem",
+        skip_serializing_if = "SystemReference::is_none",
+        default
+    )]
+    pub(crate) space_heat_system: SystemReference,
+
     /// Overall heat transfer coefficient of the thermal bridge (in W/K), or dictionary of linear thermal transmittance details of the thermal bridges in the zone.
     #[serde(rename = "ThermalBridging")]
     pub(crate) thermal_bridging: ThermalBridging,
+
+    /// Useful floor area of the zone. (Unit: m²)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) area: f64,
+
+    /// Basis for zone temperature control.
+    #[serde(rename = "temp_setpnt_basis", skip_serializing_if = "Option::is_none")]
+    pub(crate) temp_setpnt_basis: Option<ZoneTemperatureControlBasis>,
+
+    /// Setpoint temperature to use during initialisation (unit: ˚C)
+    #[validate(minimum = -273.15)]
+    pub(crate) temp_setpnt_init: f64,
+
+    /// Total volume of the zone. (Unit: m³)
+    #[validate(exclusive_minimum = 0.)]
+    pub(crate) volume: f64,
+}
+
+fn validate_system_list_no_duplicates(
+    zone: &ZoneInput,
+) -> Result<(), serde_valid::validation::Error> {
+    if zone
+        .space_heat_system
+        .has_intersecting_entries_with(&zone.space_cool_system)
+    {
+        return custom_validation_error(
+            "Space heat and space cool systems cannot have overlapping entries".into(),
+        );
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -2316,6 +2340,14 @@ pub(crate) enum SystemReference {
 impl SystemReference {
     fn is_none(&self) -> bool {
         matches!(self, Self::None(_))
+    }
+
+    fn has_intersecting_entries_with(&self, other: &Self) -> bool {
+        if let (Self::Multiple(a), Self::Multiple(b)) = (self, other) {
+            a.iter().any(|a_entry| b.contains(a_entry))
+        } else {
+            false
+        }
     }
 }
 
