@@ -2,8 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum HemError {
-    #[error("Error parsing input: {0}")]
-    InputParsing(#[from] serde_json::Error),
     #[error("Request was considered invalid due to error: {0}")]
     InvalidRequest(#[from] anyhow::Error),
     #[error("Uncaught error during wrapper preprocessing: {0}")]

@@ -6,7 +6,6 @@ use hem::input::Input;
 use hem::output::Output;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
@@ -163,25 +162,24 @@ pub fn run_wrappers(
             return Ok(None);
         }
 
-        // TODO review below
         let contextualised_results: Result<HashMap<CalculationKey, CalculationResultsWithContext>, HemError> = match wrapper {
             ChosenWrapper::FhsCompliance(_) => {
-                input.iter()
-                    .collect_vec()
-                    .into_par_iter()
+                input.par_iter()
                     .map(|(key, input_value)| {
-                    let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
-                    hem::run_project(input_reader, &output, None, tariff_data_file, flags)
-                        .map(|result_value| (*key, result_value))
-                }).collect()
+                        let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
+                        let input_reader = BufReader::new(Cursor::new(serialized_data));
+                        hem::run_project(input_reader, &output, None, tariff_data_file, flags)
+                            .map(|result_value| (*key, result_value))
+                    }).collect()
             }
             _ => {
                 let input_value = input
                     .get(&CalculationKey::Primary)
-                    .ok_or(anyhow!("Primary key missing"))?;
-                let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
+                    .ok_or_else(|| anyhow!("Primary key missing"))?;
+                let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
+                let input_reader = BufReader::new(Cursor::new(serialized_data));
                 let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, flags)?;
-                Ok(HashMap::from_iter(vec![(CalculationKey::Primary, calculation_result)]))
+                Ok(HashMap::from([(CalculationKey::Primary, calculation_result)]))
             }
         };
 

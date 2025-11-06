@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use crate::CalculationKey;
 use crate::future_homes_standard::future_homes_standard::{FinalRates, calc_final_rates};
 use crate::future_homes_standard::future_homes_standard_fee::calc_fabric_energy_efficiency;
-use crate::CalculationKey;
 use anyhow::anyhow;
 use hem::{CalculationResultsWithContext, SummaryData, build_summary_data};
 use indexmap::IndexMap;

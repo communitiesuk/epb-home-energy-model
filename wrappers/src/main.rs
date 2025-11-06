@@ -1,7 +1,7 @@
 use clap::{Args, Parser};
+use hem::ProjectFlags;
 use hem::output::FileOutput;
-use hem::read_weather_file::{weather_data_to_vec, ExternalConditions};
-use hem::{ProjectFlags};
+use hem::read_weather_file::{ExternalConditions, weather_data_to_vec};
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
