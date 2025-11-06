@@ -91,7 +91,22 @@ pub fn run_project(
 ) -> Result<CalculationResultsWithContext, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
-        fn finalize(input: impl Read) -> anyhow::Result<Input> {
+        fn merge_external_conditions_data(
+            mut input: Input,
+            external_conditions_data: Option<ExternalConditionsInput>,
+        ) -> anyhow::Result<Input> {
+            if let Some(external_conditions) = external_conditions_data {
+                let shading_segments = &input.external_conditions.shading_segments;
+                let mut new_external_conditions = external_conditions.clone();
+                new_external_conditions.shading_segments = shading_segments.clone();
+                input.external_conditions = Arc::from(new_external_conditions);
+            }
+
+            Ok(input)
+        }
+
+        #[instrument(skip_all)]
+        fn finalize(input: impl Read, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
             let input: JsonValue = serde_json::from_reader(input)?;
             let _schema_reference = SchemaReference::Core;
             // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
@@ -103,27 +118,12 @@ pub fn run_project(
             //         serde_json::to_value(errors)?.to_json_string_pretty()?
             //     );
             // }
-            serde_json::from_value(input).map_err(|err| anyhow!(err))
+            let input = serde_json::from_value(input).map_err(|err| anyhow!(err))?;
+            merge_external_conditions_data(input, external_conditions_data.map(|x| x.into()))
         }
 
-        let input = finalize(input)?;
+        let input = finalize(input, external_conditions_data.as_ref())?;
         let cloned_input = input.clone();
-
-        fn merge_external_conditions_data(
-            mut input: Input,
-            external_conditions_data: Option<ExternalConditionsInput>,
-        ) -> anyhow::Result<()> {
-            if let Some(external_conditions) = external_conditions_data {
-                let shading_segments = &input.external_conditions.shading_segments;
-                let mut new_external_conditions = external_conditions.clone();
-                new_external_conditions.shading_segments = shading_segments.clone();
-                input.external_conditions = Arc::from(new_external_conditions);
-            }
-
-            Ok(())
-        }
-        // TODO input.merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
-        // merge_external_conditions_data(input, external_conditions_data.map(|x| x.into()));
 
         // 3. Determine external conditions to use for calculations.
         #[instrument(skip_all)]
