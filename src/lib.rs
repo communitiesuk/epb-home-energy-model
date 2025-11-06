@@ -129,17 +129,15 @@ pub fn run_project(
         #[instrument(skip_all)]
         fn resolve_external_conditions(
             input: &Input,
-            external_conditions_data: Option<ExternalConditionsFromFile>,
         ) -> ExternalConditions {
             external_conditions_from_input(
                 input.external_conditions.clone(),
-                external_conditions_data.clone(),
                 input.simulation_time,
             )
         }
 
         let corpus = {
-            let external_conditions = resolve_external_conditions(&input, external_conditions_data);
+            let external_conditions = resolve_external_conditions(&input);
 
             // 4. Build corpus from input and external conditions.
             #[instrument(skip_all)]
@@ -410,57 +408,34 @@ bitflags! {
 
 pub fn external_conditions_from_input(
     input: Arc<ExternalConditionsInput>,
-    external_conditions_data: Option<ExternalConditionsFromFile>,
     simulation_time: SimulationTime,
 ) -> ExternalConditions {
-    match external_conditions_data {
-        Some(ec) => ExternalConditions::new(
-            &simulation_time.iter(),
-            ec.air_temperatures,
-            ec.wind_speeds,
-            ec.wind_directions,
-            ec.diffuse_horizontal_radiation,
-            ec.direct_beam_radiation,
-            ec.solar_reflectivity_of_ground,
-            ec.latitude,
-            ec.longitude,
-            0,
-            0,
-            Some(365),
-            1.0,
-            None,
-            None,
-            false,
-            ec.direct_beam_conversion_needed,
-            input.shading_segments.clone(),
-        ),
-        None => ExternalConditions::new(
-            &simulation_time.iter(),
-            input.air_temperatures.clone().unwrap_or_default(),
-            input.wind_speeds.clone().unwrap_or_default(),
-            input.wind_directions.clone().unwrap_or_default(),
-            input
-                .diffuse_horizontal_radiation
-                .clone()
-                .unwrap_or_default(),
-            input.direct_beam_radiation.clone().unwrap_or_default(),
-            input
-                .solar_reflectivity_of_ground
-                .clone()
-                .unwrap_or_default(),
-            input.latitude.unwrap_or(55.0),
-            input.longitude.unwrap_or(0.0),
-            0,
-            0,
-            Some(365),
-            1.0,
-            None,
-            None,
-            false,
-            input.direct_beam_conversion_needed.unwrap_or(false),
-            input.shading_segments.clone(),
-        ),
-    }
+    ExternalConditions::new(
+        &simulation_time.iter(),
+        input.air_temperatures.clone().unwrap_or_default(),
+        input.wind_speeds.clone().unwrap_or_default(),
+        input.wind_directions.clone().unwrap_or_default(),
+        input
+            .diffuse_horizontal_radiation
+            .clone()
+            .unwrap_or_default(),
+        input.direct_beam_radiation.clone().unwrap_or_default(),
+        input
+            .solar_reflectivity_of_ground
+            .clone()
+            .unwrap_or_default(),
+        input.latitude.unwrap_or(55.0),
+        input.longitude.unwrap_or(0.0),
+        0,
+        0,
+        Some(365),
+        1.0,
+        None,
+        None,
+        false,
+        input.direct_beam_conversion_needed.unwrap_or(false),
+        input.shading_segments.clone(),
+    )
 }
 
 pub static UNITS_MAP: LazyLock<IndexMap<&'static str, &'static str>> = LazyLock::new(|| {

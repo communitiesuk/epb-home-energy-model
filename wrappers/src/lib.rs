@@ -97,9 +97,6 @@ pub fn run_wrappers(
             external_conditions_data: Option<&ExternalConditionsFromFile>,
         ) -> anyhow::Result<InputForProcessing> {
             let mut input_for_processing = ingest_for_processing(input)?;
-            // pass as a read or stream to run_project or Enumeration (either it's a read of a json value)
-            // in corupus if read -> deserialize, if json value - or express it as a Read if possible
-
             input_for_processing
                 .merge_external_conditions_data(external_conditions_data.map(|x| x.into()))?;
             Ok(input_for_processing)
@@ -174,7 +171,7 @@ pub fn run_wrappers(
                     .into_par_iter()
                     .map(|(key, input_value)| {
                     let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
-                    hem::run_project(input_reader, &output, external_conditions_data.clone(), tariff_data_file, flags)
+                    hem::run_project(input_reader, &output, None, tariff_data_file, flags)
                         .map(|result_value| (*key, result_value))
                 }).collect()
             }
@@ -183,7 +180,7 @@ pub fn run_wrappers(
                     .get(&CalculationKey::Primary)
                     .ok_or(anyhow!("Primary key missing"))?;
                 let input_reader = BufReader::new(Cursor::new(input_value.input.to_string().into_bytes()));
-                let calculation_result = hem::run_project(input_reader, &output, external_conditions_data, tariff_data_file, flags)?;
+                let calculation_result = hem::run_project(input_reader, &output, None, tariff_data_file, flags)?;
                 Ok(HashMap::from_iter(vec![(CalculationKey::Primary, calculation_result)]))
             }
         };
