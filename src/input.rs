@@ -89,55 +89,80 @@ fn validate_only_storage_tanks(
         .ok_or_else(|| serde_valid::validation::Error::Custom("PreHeatedWaterSource input can only contain HotWaterSource data of the type StorageTank".to_owned()))
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalConditionsInput {
     /// List of external air temperatures, one entry per hour (unit: ˚C)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_air_temperatures)]
     pub(crate) air_temperatures: Option<Vec<f64>>,
-    /// List of wind speeds, one entry per hour (unit: m/s)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) wind_speeds: Option<Vec<f64>>,
-    /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) wind_directions: Option<Vec<f64>>,
     /// List of diffuse horizontal radiation values, one entry per hour (unit: W/m²)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_all_items_in_option_non_negative)]
     pub(crate) diffuse_horizontal_radiation: Option<Vec<f64>>,
-    /// List of direct beam radiation values, one entry per hour (unit: W/m²)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) direct_beam_radiation: Option<Vec<f64>>,
-    /// List of ground reflectivity values, 0 to 1, one entry per hour
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
-    /// Latitude of weather station, angle from south (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) latitude: Option<f64>,
-    /// Longitude of weather station, easterly +ve westerly -ve (unit: ˚)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) longitude: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) timezone: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) start_day: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) end_day: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) time_series_step: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) january_first: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) daylight_savings: Option<DaylightSavingsConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) leap_day_included: Option<bool>,
     /// A flag to indicate whether direct beam radiation from climate data needs to be converted from horizontal to normal incidence; if normal direct beam radiation values are provided then no conversion is needed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) direct_beam_conversion_needed: Option<bool>,
+    /// List of direct beam radiation values, one entry per hour (unit: W/m²)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    pub(crate) direct_beam_radiation: Option<Vec<f64>>,
+    /// Latitude of weather station, angle from south (unit: ˚)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = -90.)]
+    #[validate(maximum = 90.)]
+    pub(crate) latitude: Option<f64>,
+    /// Longitude of weather station, easterly +ve westerly -ve (unit: ˚)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = -180.)]
+    #[validate(maximum = 180.)]
+    pub(crate) longitude: Option<f64>,
     /// Data splitting the ground plane into segments (8-36) and giving height and distance to shading objects surrounding the building
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) shading_segments: Option<Vec<ShadingSegment>>,
+    /// List of ground reflectivity values, 0 to 1, one entry per hour
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) solar_reflectivity_of_ground: Option<Vec<f64>>,
+    /// List of wind directions in degrees where North=0, East=90, South=180, West=270. Values range: 0 to 360. Wind direction is reported by the direction from which it originates, e.g. a southerly (180 degree) wind blows from the south to the north. (unit: ˚)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) wind_directions: Option<Vec<f64>>,
+    /// List of wind speeds, one entry per hour (unit: m/s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    pub(crate) wind_speeds: Option<Vec<f64>>,
+}
+
+impl ExternalConditionsInput {
+    pub(crate) fn are_all_fields_set(&self) -> bool {
+        [
+            self.air_temperatures.is_some(),
+            self.diffuse_horizontal_radiation.is_some(),
+            self.direct_beam_conversion_needed.is_some(),
+            self.direct_beam_radiation.is_some(),
+            self.latitude.is_some(),
+            self.longitude.is_some(),
+            self.shading_segments.is_some(),
+            self.solar_reflectivity_of_ground.is_some(),
+            self.wind_directions.is_some(),
+            self.wind_speeds.is_some(),
+        ]
+        .iter()
+        .all(|whether| *whether)
+    }
+}
+
+fn validate_air_temperatures(
+    air_temps: &Option<Vec<f64>>,
+) -> Result<(), serde_valid::validation::Error> {
+    if air_temps.iter().flatten().all(|&v| v >= -273.15) {
+        Ok(())
+    } else {
+        custom_validation_error(
+            "Some air temperatures contained values that were below -273.15˚C.".to_string(),
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]

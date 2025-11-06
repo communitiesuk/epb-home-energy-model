@@ -684,10 +684,10 @@ impl Corpus {
 
         let external_conditions = Arc::new(match external_conditions {
             Some(external_conditions) => external_conditions.clone(),
-            None => external_conditions_from_input(
-                input.external_conditions.clone(),
+            None => create_external_conditions(
+                input.external_conditions.as_ref().to_owned(),
                 &simulation_time_iterator,
-            ),
+            )?,
         });
 
         let diverter_types: DiverterTypes = input
@@ -2975,38 +2975,6 @@ impl SpaceHeatCoolSystems<'_> {
             SpaceHeatCoolSystems::Cool(cool) => cool[system_name].in_required_period(&simtime),
         }
     }
-}
-
-fn external_conditions_from_input(
-    input: Arc<ExternalConditionsInput>,
-    simulation_time: &SimulationTimeIterator,
-) -> ExternalConditions {
-    ExternalConditions::new(
-        simulation_time,
-        input.air_temperatures.clone().unwrap_or_default(),
-        input.wind_speeds.clone().unwrap_or_default(),
-        input.wind_directions.clone().unwrap_or_default(),
-        input
-            .diffuse_horizontal_radiation
-            .clone()
-            .unwrap_or_default(),
-        input.direct_beam_radiation.clone().unwrap_or_default(),
-        input
-            .solar_reflectivity_of_ground
-            .clone()
-            .unwrap_or_default(),
-        input.latitude.unwrap_or(51.5), // default to London (though we expect this to be set!)
-        input.longitude.unwrap_or(-0.13), // default to London (though we expect this to be set!)
-        input.timezone.unwrap_or(0),    // default to GMT/ UTC
-        input.start_day.unwrap_or(0),
-        input.end_day,
-        input.time_series_step.unwrap_or(1.0),
-        input.january_first,
-        input.daylight_savings,
-        input.leap_day_included.unwrap_or(false),
-        input.direct_beam_conversion_needed.unwrap_or(false),
-        input.shading_segments.clone(),
-    )
 }
 
 pub(crate) type ColdWaterSources = IndexMap<ColdWaterSourceType, Arc<ColdWaterSource>>;
