@@ -1617,7 +1617,7 @@ pub enum Shower {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MixerShowerWwhrsConfiguration {
     /// Reference to a key in Input.WWHRS
@@ -1832,15 +1832,9 @@ pub(crate) enum SpaceHeatSystemDetails {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(
-    deny_unknown_fields,
-    tag = "wet_emitter_type",
-    rename_all = "lowercase"
-)]
+#[serde(tag = "wet_emitter_type", rename_all = "lowercase")]
 pub(crate) enum WetEmitter {
     Radiator {
-        #[serde(flatten)]
-        constant_data: RadiatorConstantData,
         /// Exponent from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
         #[serde(rename = "n")]
         #[validate(exclusive_minimum = 0.)]
@@ -1849,6 +1843,8 @@ pub(crate) enum WetEmitter {
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
         frac_convective: f64,
+        #[serde(flatten)]
+        constant_data: RadiatorConstantData,
     },
     Ufh {
         /// Equivalent thermal mass per m² of floor area for under-floor heating systems (unit: kJ/m²K)
@@ -1881,7 +1877,7 @@ pub(crate) enum WetEmitter {
 
 /// Enum encapsulating rule for radiators that either the `c` field should be provided, or `c_per_m` and `length` should be
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 pub(crate) enum RadiatorConstantData {
     Constant {
         /// Constant from characteristic equation of emitters (e.g. derived from BS EN 442 tests)
@@ -5294,12 +5290,13 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn water_distribution(&self) -> anyhow::Result<Option<WaterDistribution>> {
+    pub(crate) fn water_distribution(&self) -> anyhow::Result<WaterDistribution> {
         Ok(self
             .root_object("HotWaterDemand")?
             .get("Distribution")
             .map(|node| serde_json::from_value::<WaterDistribution>(node.to_owned()))
-            .transpose()?)
+            .transpose()?
+            .unwrap_or_default())
     }
 
     /// Override all the vol_hw_daily_average values on the heat pump hot water only heat sources.

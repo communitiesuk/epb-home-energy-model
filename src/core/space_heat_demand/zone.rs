@@ -1920,10 +1920,10 @@ mod tests {
         );
         let be_ground_floor_data = FloorData::SuspendedFloor {
             height_upper_surface: 0.5,
-            thermal_transmission_walls: 0.5,
+            thermal_transmission_walls: Some(0.5),
             area_per_perimeter_vent: 0.01,
             shield_fact_location: WindShieldLocation::Sheltered,
-            thermal_resistance_of_insulation: 7.,
+            thermal_resistance_of_insulation: Some(7.),
         };
         let be_ground = BuildingElement::Ground(
             BuildingElementGround::new(

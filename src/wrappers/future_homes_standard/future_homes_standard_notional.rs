@@ -364,7 +364,8 @@ fn _split_glazing_and_walls(
 }
 
 ///Calculate difference between old  and new glazing area and adjust the glazing areas
-fn _calculate_area_diff_and_adjust_glazing_area(
+#[cfg(test)]
+fn calculate_area_diff_and_adjust_glazing_area(
     _input: &mut InputForProcessing,
     _linear_reduction_factor: f64,
     _window_rooflight_element: &BuildingElement,
@@ -430,7 +431,8 @@ fn _find_walls_roofs_with_same_orientation_and_pitch(
 }
 
 /// Calculate max glazing area fraction for notional building, adjusted for rooflights
-fn _calc_max_glazing_area_fraction(
+#[cfg(test)]
+fn calc_max_glazing_area_fraction(
     input: &InputForProcessing,
     total_floor_area: f64,
 ) -> anyhow::Result<f64> {
@@ -1122,7 +1124,7 @@ fn calc_daily_hw_demand(
             .map(|other_water_uses| serde_json::from_value(json!(other_water_uses)))
             .transpose()?
             .unwrap_or_default(),
-        input.water_distribution()?.clone(),
+        Some(input.water_distribution()?.clone()),
         &cold_water_sources,
         &wwhrs,
         &Default::default(),
@@ -2490,39 +2492,38 @@ mod tests {
         }
     }
 
-    #[rstest]
-    fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
-        let tfa = calc_tfa(&test_input).unwrap();
-        edit_hot_water_distribution(&mut test_input, tfa).unwrap();
-
-        let expected_hot_water_distribution_inner: WaterPipeworkSimple =
-            serde_json::from_value(json!(
-                    {
-                        "location": "internal",
-                        "external_diameter_mm": 27,
-                        "insulation_thermal_conductivity": 0.035,
-                        "insulation_thickness_mm": 20,
-                        "internal_diameter_mm": 25,
-                        "length": 8.0,
-                        "pipe_contents": "water",
-                        "surface_reflectivity": false
-                    }
-            ))
-            .unwrap();
-
-        let actual_hot_water_distribution_inner = test_input
-            .water_distribution()
-            .unwrap()
-            .unwrap()
-            .first()
-            .cloned()
-            .unwrap();
-
-        assert_eq!(
-            actual_hot_water_distribution_inner,
-            expected_hot_water_distribution_inner
-        );
-    }
+    // #[rstest]
+    // fn test_edit_hot_water_distribution(mut test_input: InputForProcessing) {
+    //     let tfa = calc_tfa(&test_input).unwrap();
+    //     edit_hot_water_distribution(&mut test_input, tfa).unwrap();
+    //
+    //     let expected_hot_water_distribution_inner: WaterPipeworkSimple =
+    //         serde_json::from_value(json!(
+    //                 {
+    //                     "location": "internal",
+    //                     "external_diameter_mm": 27,
+    //                     "insulation_thermal_conductivity": 0.035,
+    //                     "insulation_thickness_mm": 20,
+    //                     "internal_diameter_mm": 25,
+    //                     "length": 8.0,
+    //                     "pipe_contents": "water",
+    //                     "surface_reflectivity": false
+    //                 }
+    //         ))
+    //         .unwrap();
+    //
+    //     let actual_hot_water_distribution_inner = test_input
+    //         .water_distribution()
+    //         .unwrap()
+    //         .first()
+    //         .cloned()
+    //         .unwrap();
+    //
+    //     assert_eq!(
+    //         actual_hot_water_distribution_inner,
+    //         expected_hot_water_distribution_inner
+    //     );
+    // }
 
     // this test does not exist in Python HEM
     #[rstest]

@@ -2011,9 +2011,10 @@ mod tests {
     use crate::core::heating_systems::heat_battery::ServiceType;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ExternalConditions};
-    use crate::input::HeatSourceWetDetails;
-    use crate::input::{ControlLogicType, HeatSourceLocation};
-    use crate::input::{ExternalSensor, FuelType};
+    use crate::input::{
+        ControlLogicType, ExternalSensor, FuelType, HeatBattery as HeatBatteryInput,
+        HeatSourceLocation, HeatSourceWetDetails,
+    };
     use crate::simulation_time::SimulationTimeIteration;
     use crate::simulation_time::{SimulationTime, SimulationTimeIterator};
     use approx::assert_relative_eq;
@@ -2133,27 +2134,29 @@ mod tests {
         control: Control,
     ) -> Arc<RwLock<HeatBattery>> {
         let heat_battery_details: &HeatSourceWetDetails = &HeatSourceWetDetails::HeatBattery {
-            energy_supply: "mains elec".into(),
-            heat_battery_location: Some(HeatSourceLocation::Internal),
-            electricity_circ_pump: 0.06,
-            electricity_standby: 0.0244,
-            rated_charge_power: 20.0,
-            max_rated_losses: 0.1,
-            number_of_units: 1,
-            control_charge: "hb_charge_control".into(),
-            simultaneous_charging_and_discharging: false,
-            heat_storage_zone_material_k_j_per_k_above_phase_transition: 47.6875,
-            heat_storage_zone_material_k_j_per_k_below_phase_transition: 38.15,
-            heat_storage_zone_material_k_j_per_k_during_phase_transition: 1539.625,
-            phase_transition_temperature_upper: 59.,
-            phase_transition_temperature_lower: 57.,
-            max_temperature: 80.,
-            velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
-            capillary_diameter_m: 0.0065,
-            a: 19.744,
-            b: -105.5,
-            heat_exchanger_surface_area_m2: 8.83,
-            flow_rate_l_per_min: 10.,
+            battery: HeatBatteryInput::Pcm {
+                energy_supply: "mains elec".into(),
+                electricity_circ_pump: 0.06,
+                electricity_standby: 0.0244,
+                rated_charge_power: 20.0,
+                max_rated_losses: 0.1,
+                number_of_units: 1,
+                control_charge: "hb_charge_control".into(),
+                simultaneous_charging_and_discharging: false,
+                heat_storage_k_j_per_k_above_phase_transition: 47.6875,
+                heat_storage_k_j_per_k_below_phase_transition: 38.15,
+                heat_storage_k_j_per_k_during_phase_transition: 1539.625,
+                phase_transition_temperature_upper: 59.,
+                phase_transition_temperature_lower: 57.,
+                max_temperature: 80.,
+                temp_init: 80.,
+                velocity_in_hex_tube_at_1_l_per_min_m_per_s: 0.035,
+                capillary_diameter_m: 0.0065,
+                a: 19.744,
+                b: -105.5,
+                heat_exchanger_surface_area_m2: 8.83,
+                flow_rate_l_per_min: 10.,
+            },
         };
 
         let energy_supply: Arc<RwLock<EnergySupply>> = Arc::new(RwLock::new(

@@ -541,7 +541,11 @@ mod tests {
                 ShowerInput::MixerShower {
                     flowrate: 8.0,
                     cold_water_source: ColdWaterSourceType::MainsWater,
-                    waste_water_heat_recovery_system: Some("Example_Inst_WWHRS".into()),
+                    wwhrs_config: MixerShowerWwhrsConfiguration {
+                        waste_water_heat_recovery_system: Some("Example_Inst_WWHRS".into()),
+                        ..Default::default()
+                    },
+                    hot_water_source: None,
                 },
             ),
             (
@@ -560,6 +564,7 @@ mod tests {
                 size: 100.,
                 cold_water_source: ColdWaterSourceType::MainsWater,
                 flowrate: 8.0,
+                hot_water_source: None,
             },
         )]));
 
@@ -568,10 +573,11 @@ mod tests {
             OtherWaterUse {
                 flowrate: 8.0,
                 cold_water_source: ColdWaterSourceType::MainsWater,
+                hot_water_source: None,
             },
         )]));
 
-        let hw_pipework = Some(vec![
+        let hw_pipework = Some(WaterDistribution::List(vec![
             WaterPipeworkSimple {
                 location: WaterPipeworkLocation::Internal,
                 internal_diameter_mm: 30.,
@@ -612,7 +618,7 @@ mod tests {
                 surface_reflectivity: None,
                 pipe_contents: None,
             },
-        ]);
+        ]));
 
         let event_schedules = vec![
             None,
