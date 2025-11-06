@@ -12,22 +12,12 @@ use crate::input::{
 use crate::simulation_time::SimulationTimeIteration;
 use anyhow::{anyhow, bail};
 use atomic_float::AtomicF64;
-use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // Difference between external air temperature and sky temperature
 // (default value for intermediate climatic region from BS EN ISO 52016-1:2017, Table B.19)
 const TEMP_DIFF_SKY: f64 = 11.0; // Kelvin
-
-/// Calculate longwave sky view factor from pitch in degrees
-pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
-    // TODO (from Python) account for shading
-    // TODO (from Python) check longwave is correct
-    let pitch_rads = pitch * PI / 180.0;
-
-    0.5 * (1.0 + pitch_rads.cos())
-}
 
 /// calc the vertically projected height of a surface from
 /// the actual height and tilt of the surface
@@ -1079,7 +1069,7 @@ pub(crate) trait HeatTransferOtherSideUnconditionedSpace: HeatTransferOtherSide 
 
 pub(crate) trait HeatTransferOtherSideOutside: HeatTransferOtherSide {
     fn init_heat_transfer_other_side_outside(&mut self, pitch: f64) {
-        let f_sky = sky_view_factor(&pitch);
+        let f_sky = ExternalConditions::sky_view_factor(&pitch);
 
         self.init_super(Some(f_sky));
     }

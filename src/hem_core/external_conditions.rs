@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 use crate::compare_floats::{max_of_2, min_of_2};
-use crate::core::space_heat_demand::building_element::sky_view_factor;
 use crate::core::units::HOURS_PER_DAY;
 use crate::input::{deserialize_orientation, serialize_orientation, ExternalConditionsInput};
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
@@ -11,6 +10,7 @@ use approx::{AbsDiffEq, RelativeEq};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
+use std::f64::consts::PI;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -638,15 +638,16 @@ impl ExternalConditions {
         // """
 
         // #first set up parameters needed for the calculation
-        let gsol_d = self.diffuse_horizontal_radiation(simulation_time.index);
+        let diffuse_horizontal_radiation = self.diffuse_horizontal_radiation(simulation_time.index);
         let f1 = self.f1_circumsolar_brightness_coefficients[simulation_time.index];
         let f2 = self.f2_horizontal_brightness_coefficients[simulation_time.index];
 
         // # Calculate components of diffuse radiation
-        let diffuse_irr_sky = gsol_d * (1.0 - f1) * ((1.0 + tilt.to_radians().cos()) / 2.0);
+        let diffuse_irr_sky =
+            diffuse_horizontal_radiation * (1.0 - f1) * ((1.0 + tilt.to_radians().cos()) / 2.0);
         let diffuse_irr_circumsolar =
             self.circumsolar_irradiance(tilt, orientation, simulation_time);
-        let diffuse_irr_horiz = gsol_d * f2 * tilt.to_radians().sin();
+        let diffuse_irr_horiz = diffuse_horizontal_radiation * f2 * tilt.to_radians().sin();
 
         DiffuseIrradiance(
             diffuse_irr_sky + diffuse_irr_circumsolar + diffuse_irr_horiz,
@@ -858,7 +859,7 @@ impl ExternalConditions {
             for segment in shading_segments {
                 if let Some(previous_segment_end) = previous_segment_end {
                     if previous_segment_end != segment.start {
-                        return Err(anyhow!("No gaps between shading segments allowed"));
+                        return Err(anyhow!("Gaps between segments not allowed."));
                     }
                 }
                 previous_segment_end = Some(segment.end);
@@ -873,16 +874,14 @@ impl ExternalConditions {
             }
         }
 
-        Err(anyhow!(
-            "Solar segment was not found - this is an unexpected error"
-        ))
+        Err(anyhow!("Solar segment not found. Check shading inputs."))
     }
 
     fn obstacle_shading_height(
         &self,
-        base_height_of_k: f64,
-        height_of_obstacle: f64,
-        horiz_distance_from_surface_to_obstacle: f64,
+        base_height: f64,
+        shading_obstacle_height: f64,
+        surface_obstacle_distance: f64,
         simulation_time: &SimulationTimeIteration,
     ) -> f64 {
         // """ calculates the height of the shading on the shaded surface (k),
@@ -890,14 +889,13 @@ impl ExternalConditions {
         // has a specific meaning in ISO 52016 Annex F
         //
         // Arguments:
-        // base_height_of_k - Hkbase        -- is the base height of the shaded surface k, in m
-        // height_of_obstacle - Hobst         -- is the height of the shading obstacle, p, in segment i, in m
-        // horiz_distance_from_surface_to_obstacle - Lkobst        -- is the horizontal distance between the shaded surface k, in m
-        //                  and the shading obstacle p in segment i, in m
+        // base_height               -- is the base height of the shaded surface k, in m
+        // shading_obstacle_height   -- is the height of the shading obstacle, p, in segment i, in m
+        // surface_obstacle_distance -- is the horizontal distance between the shaded surface k, in m
         // """
-        let hshade = height_of_obstacle
-            - base_height_of_k
-            - horiz_distance_from_surface_to_obstacle
+        let hshade = shading_obstacle_height
+            - base_height
+            - surface_obstacle_distance
                 * self.solar_altitudes[simulation_time.current_hour() as usize]
                     .to_radians()
                     .tan();
@@ -914,23 +912,22 @@ impl ExternalConditions {
     /// has a specific meaning in ISO 52016 Annex F
     ///
     /// Arguments:
-    /// * `shaded_surface_height` - is the height of the shaded surface, k, in m (referred to as Hk in the Python)
-    /// * `base_shaded_surface_height` - is the base height of the shaded surface k, in m (referred to as Hkbase in the Python)
-    /// * `lowest_height_of_overhang` - is the lowest height of the overhang q, in segment i, in m (referred to as Hovh in the Python)
-    /// * `horiz_distance_from_surface_to_overhang` - is the horizontal distance between the shaded surface k
-    ///                                               and the shading overhang, q, in segment i, in m (referred to as Lkovh in the Python)
+    /// shaded_surface_height     -- is the height of the shaded surface, k, in m
+    /// base_height               -- is the base height of the shaded surface k, in m
+    ///  overhang_lowest_height    -- is the lowest height of the overhang q, in segment i, in m
+    ///  surface_overhang_distance -- is the horizontal distance between the shaded surface k
     fn overhang_shading_height(
         &self,
         shaded_surface_height: f64,
-        base_shaded_surface_height: f64,
-        lowest_height_of_overhang: f64,
-        horiz_distance_from_surface_to_overhang: f64,
+        base_height: f64,
+        overhang_lowest_height: f64,
+        surface_overhang_distance: f64,
         simulation_time: SimulationTimeIteration,
     ) -> f64 {
         let current_hour = simulation_time.current_hour();
         0.0f64.max(
-            shaded_surface_height + base_shaded_surface_height - lowest_height_of_overhang
-                + horiz_distance_from_surface_to_overhang
+            shaded_surface_height + base_height - overhang_lowest_height
+                + surface_overhang_distance
                     * self.solar_altitudes[current_hour as usize]
                         .to_radians()
                         .tan(),
@@ -941,9 +938,9 @@ impl ExternalConditions {
     /// shading objects
     ///
     /// Arguments:
+    /// * `base_height` - is the base height of the shaded surface k, in m
     /// * `height` - is the height of the shaded surface (if surface is tilted then
     ///                   this must be the vertical projection of the height), in m
-    /// * `base_height` - is the base height of the shaded surface k, in m
     /// * `width` - is the width of the shaded surface, in m
     /// * `orientation` - is the orientation angle of the inclined surface, expressed as the
     ///                   geographical azimuth angle of the horizontal projection of the
@@ -1063,7 +1060,7 @@ impl ExternalConditions {
 
         // And then the direct shading reduction factor of the shaded surface for
         // obstacles, overhangs and side fins
-        let mut fdir = (hk_sun * wk_sun) / (height * width);
+        let mut direct_shading_reduction_factor = (hk_sun * wk_sun) / (height * width);
 
         if let Some(window_shading) = window_shading {
             for shade_obj in window_shading {
@@ -1087,12 +1084,13 @@ impl ExternalConditions {
                     let hk_sun = 0.0f64.max(height - (hk_obst + hk_ovh))
                         + (hk_obst.min(height - hk_ovh) * new_shade_trans);
 
-                    fdir = fdir.min((hk_sun * wk_sun) / (height * width));
+                    direct_shading_reduction_factor =
+                        direct_shading_reduction_factor.min((hk_sun * wk_sun) / (height * width));
                 }
             }
         }
 
-        Ok(fdir)
+        Ok(direct_shading_reduction_factor)
     }
 
     /// calculates the shading factor of diffuse radiation due to external shading objects
@@ -1128,6 +1126,12 @@ impl ExternalConditions {
         let diffuse_irr_ref = diffuse_breakdown.ground_refl;
         let diffuse_irr_total = diffuse_irr_sky + diffuse_irr_hor + diffuse_irr_ref;
 
+        if diffuse_irr_total == 0. {
+            return Err(anyhow!(
+                "Zero diffuse radiation with non-zero direct radiation."
+            ));
+        };
+
         // PD CEN ISO/TR 52016-2:2017 Section F.6.2 is not clearly defined and has been ignored.
         // Calculation for remote obstacles uses a similar method to the simple facade object
         // and self-shading corrections in F6.3. Equation F.7 is now assumed to include a
@@ -1149,52 +1153,60 @@ impl ExternalConditions {
 
         /// Returns angle ranges included in element shaded arc with 0/360 crossover
         /// split if required plus total angle of arc
-        fn arc_angle(arc_srt: f64, arc_fsh: f64) -> ArcAngle {
-            let (arc1, arc2, deg_arc, rarc1, rarc2) = if arc_srt < arc_fsh {
+        fn arc_angle_ranges(arc_start: f64, arc_end: f64) -> ArcAngle {
+            let (arc1, arc2, deg_arc, rarc1, rarc2) = if arc_start < arc_end {
                 // Define front arc as single arc and split rear arc either side of 0/360 boundary
                 (
-                    (arc_srt, arc_fsh),
+                    (arc_start, arc_end),
                     (0., 0.),
-                    arc_fsh - arc_srt,
-                    (arc_fsh, 360.),
-                    (0., arc_srt),
+                    arc_end - arc_start,
+                    (arc_end, 360.),
+                    (0., arc_start),
                 )
             } else {
                 // Define rear arc as single arc and split front arc either side of 0/360 boundary
                 (
-                    (arc_srt, 360.),
-                    (0., arc_fsh),
-                    (360. - arc_srt) + arc_fsh,
-                    (arc_fsh, arc_srt),
+                    (arc_start, 360.),
+                    (0., arc_end),
+                    (360. - arc_start) + arc_end,
+                    (arc_end, arc_start),
                     (0., 0.),
                 )
             };
 
-            let arc_ang = (arc1, arc2);
-            let rarc_ang = (rarc1, rarc2);
+            let arc_angle = (arc1, arc2);
+            let rear_arc_angle = (rarc1, rarc2);
 
-            (arc_ang, rarc_ang, deg_arc)
+            (arc_angle, rear_arc_angle, deg_arc)
         }
 
         /// Returns angle ranges included in shading segment with 0/360 crossover
         /// split if required plus total angle of segment
-        fn seg_angle(seg_srt: f64, seg_fsh: f64) -> SegAngle {
-            let (seg1, seg2, deg_seg) = if seg_srt < seg_fsh {
-                ((seg_srt, seg_fsh), (0., 0.), seg_fsh - seg_srt)
+        fn segment_angle_range(segment_start: f64, segment_end: f64) -> SegAngle {
+            let (seg1, seg2, deg_seg) = if segment_start < segment_end {
+                (
+                    (segment_start, segment_end),
+                    (0., 0.),
+                    segment_end - segment_start,
+                )
             } else {
                 // Treat as separate segments either side of 0/360 boundary
-                ((seg_srt, 360.), (0., seg_fsh), (360. - seg_srt) + seg_fsh)
+                (
+                    (segment_start, 360.),
+                    (0., segment_end),
+                    (360. - segment_start) + segment_end,
+                )
             };
 
-            let seg_ang = (seg1, seg2);
+            let segment_angle = (seg1, seg2);
 
-            (seg_ang, deg_seg)
+            (segment_angle, deg_seg)
         }
 
         // Determine start and end orientations for potential forward shading arc by remote obstacles
         // 180deg arc assumed unless horizontal
 
-        let (arc_srt, arc_fsh) = if tilt > 0. {
+        let (arc_start, arc_end) = if tilt > 0. {
             let orient360 = self.orientation360(orientation);
             if (90. ..=270.).contains(&orient360) {
                 (orient360 - 90., orient360 + 90.)
@@ -1208,52 +1220,52 @@ impl ExternalConditions {
         };
 
         // Define arcs to the front and rear of element
-        let (arc_ang, rarc_ang, deg_arc) = arc_angle(arc_srt, arc_fsh);
+        let (arc_angle, rear_arc_angle, deg_arc) = arc_angle_ranges(arc_start, arc_end);
 
         let mut f_sky_new = 0.;
 
         if let Some(shading_segments) = self.shading_segments.as_ref() {
             for segment in shading_segments {
-                let seg_srt = 180. - segment.start; // Segment start angle (clockwise)
-                let seg_fsh = 180. - segment.end; // Segment end angle (clockwise)
+                let segment_start = 180. - segment.start; // Segment start angle (clockwise)
+                let segment_end = 180. - segment.end; // Segment end angle (clockwise)
 
                 // Define segment
-                let (seg_ang, deg_seg) = seg_angle(seg_srt, seg_fsh);
+                let (segment_angle, deg_seg) = segment_angle_range(segment_start, segment_end);
 
                 // Compare sub-arcs and sub-segments for overlap - front
-                let ap00 = interval_intersect(arc_ang.0, seg_ang.0);
-                let ap11 = interval_intersect(arc_ang.1, seg_ang.1);
-                let ap01 = interval_intersect(arc_ang.0, seg_ang.1);
-                let ap10 = interval_intersect(arc_ang.1, seg_ang.0);
+                let ap00 = interval_intersect(arc_angle.0, segment_angle.0);
+                let ap11 = interval_intersect(arc_angle.1, segment_angle.1);
+                let ap01 = interval_intersect(arc_angle.0, segment_angle.1);
+                let ap10 = interval_intersect(arc_angle.1, segment_angle.0);
 
                 // Proportion of front arc shaded by segment
-                let arc_prop = (ap00 + ap11 + ap01 + ap10) / deg_arc;
+                let front_arc_proportion = (ap00 + ap11 + ap01 + ap10) / deg_arc;
 
                 // Compare sub-arcs and sub-segments for overlap - rear
-                let rap00 = interval_intersect(rarc_ang.0, seg_ang.0);
-                let rap11 = interval_intersect(rarc_ang.1, seg_ang.1);
-                let rap01 = interval_intersect(rarc_ang.0, seg_ang.1);
-                let rap10 = interval_intersect(rarc_ang.1, seg_ang.0);
+                let rap00 = interval_intersect(rear_arc_angle.0, segment_angle.0);
+                let rap11 = interval_intersect(rear_arc_angle.1, segment_angle.1);
+                let rap01 = interval_intersect(rear_arc_angle.0, segment_angle.1);
+                let rap10 = interval_intersect(rear_arc_angle.1, segment_angle.0);
 
                 // Proportion of rearward arc within segment
-                let rarc_prop = (rap00 + rap11 + rap01 + rap10) / deg_arc;
+                let rear_arc_proportion = (rap00 + rap11 + rap01 + rap10) / deg_arc;
 
                 // Segment f_sky contribution in forward direction
                 let f_sky_seg_front = if tilt == 0. {
                     f_sky * (deg_seg / 360.)
                 } else {
-                    arc_prop * 0.5f64.min(f_sky)
+                    front_arc_proportion * 0.5f64.min(f_sky)
                 };
 
                 // For tilted surface, segment f_sky contribution in rear direction
                 let f_sky_seg_rear = if tilt > 0. && tilt < 90. {
-                    rarc_prop * 0.0f64.max(f_sky - 0.5)
+                    rear_arc_proportion * 0.0f64.max(f_sky - 0.5)
                 } else {
                     0.
                 };
 
-                let mut f_sky_ft = f_sky_seg_front;
-                let mut f_sky_rr = f_sky_seg_rear;
+                let mut f_sky_front = f_sky_seg_front;
+                let mut f_sky_rear = f_sky_seg_rear;
 
                 for shade_obj in segment.shading_objects.iter() {
                     match shade_obj {
@@ -1271,8 +1283,8 @@ impl ExternalConditions {
 
                             if f_sky == 1. {
                                 let alpha_obst = (h_shade / *distance).atan().to_degrees();
-                                f_sky_ft =
-                                    f_sky_ft.min(f_sky_seg_front * alpha_obst.to_radians().cos());
+                                f_sky_front =
+                                    f_sky_front.min(f_sky_seg_front * alpha_obst.to_radians().cos());
                             } else if f_sky > 0. {
                                 if f_sky_seg_front > 0. {
                                     // height element is above obstacle (zero if not)
@@ -1285,10 +1297,10 @@ impl ExternalConditions {
                                         .atan()
                                         .to_degrees();
                                     // Determine if obstacle gives largest reduction to the segment f_sky contribution
-                                    f_sky_ft = f_sky_ft.min(0.0f64.max(
+                                    f_sky_front = f_sky_front.min(0.0f64.max(
                                         f_sky_seg_front
                                             - 0.5
-                                                * arc_prop
+                                                * front_arc_proportion
                                                 * (1. - alpha_obst.to_radians().cos())
                                                 * (1. - p_above),
                                     ));
@@ -1303,8 +1315,8 @@ impl ExternalConditions {
                                         let alpha_obst = (h_shade / *distance).atan().to_degrees();
                                         // Determine new rear sky view factor directly from shading angle (alpha_obst) using standard 0.5 x cos(angle) method
                                         // as shading is now determined by this angle not the tilt angle which is smaller
-                                        f_sky_rr = f_sky_rr
-                                            .min(rarc_prop * 0.5 * alpha_obst.to_radians().cos());
+                                        f_sky_rear = f_sky_rear
+                                            .min(rear_arc_proportion * 0.5 * alpha_obst.to_radians().cos());
                                     }
                                 }
                             }
@@ -1318,7 +1330,7 @@ impl ExternalConditions {
 
                             if f_sky == 1. {
                                 let alpha_ovh = (h_shade / *distance).atan().to_degrees();
-                                f_sky_ft = f_sky_ft
+                                f_sky_front = f_sky_front
                                     .min(f_sky_seg_front * (1. - alpha_ovh.to_radians().cos()));
                             } else if f_sky > 0. {
                                 if f_sky_seg_front > 0. {
@@ -1331,8 +1343,8 @@ impl ExternalConditions {
                                         .atan()
                                         .to_degrees();
                                     // determine if overhang gives largest reduction to the segment f_sky contribution
-                                    f_sky_ft = f_sky_ft.min(
-                                        0.5 * arc_prop
+                                    f_sky_front = f_sky_front.min(
+                                        0.5 * front_arc_proportion
                                             * (1. - alpha_ovh.to_radians().cos())
                                             * p_below,
                                     );
@@ -1345,12 +1357,12 @@ impl ExternalConditions {
                                     if h_eff < h_shade {
                                         // angle from element midpoint to top of obstacle
                                         let alpha_ovh = (h_shade / *distance).atan().to_degrees();
-                                        f_sky_rr = f_sky_rr.min(
-                                            rarc_prop * 0.5 * tilt.to_radians().cos()
+                                        f_sky_rear = f_sky_rear.min(
+                                            rear_arc_proportion * 0.5 * tilt.to_radians().cos()
                                                 - alpha_ovh.to_radians().cos(),
                                         );
                                     } else {
-                                        f_sky_rr = 0.;
+                                        f_sky_rear = 0.;
                                     }
                                 }
                             }
@@ -1358,7 +1370,7 @@ impl ExternalConditions {
                     }
                 }
 
-                f_sky_new += f_sky_ft + f_sky_rr;
+                f_sky_new += f_sky_front + f_sky_rear;
             }
         }
 
@@ -1372,7 +1384,7 @@ impl ExternalConditions {
 
         // Assumes for remote objects that the reduction in sky view factor is
         // matched by an equivalent increase in ground reflected irradiance.
-        let fdiff_ro = if f_sky != 1. {
+        let remote_obstacles_diffuse_factor = if f_sky != 1. {
             let f_sh_ref_rem = (1. - f_sky_new) / (1. - f_sky);
             (f_sh_dif_rem * (diffuse_irr_sky + diffuse_irr_hor) + f_sh_ref_rem * diffuse_irr_ref)
                 / diffuse_irr_total
@@ -1409,35 +1421,39 @@ impl ExternalConditions {
         //      F_w_sky when alpha = 0
         let beta = tilt.to_radians();
 
-        let fdiff_list = if window_shading.is_some() {
+        let diffuse_factors = if window_shading.is_some() {
             // create lists of diffuse shading factors to keep the largest one
             // in case there are multiple shading objects
-            let mut fdiff_list: Vec<f64> = vec![];
+            let mut diffuse_factors: Vec<f64> = vec![];
 
             // # Unpack window shading details
-            let mut ovh_D_L_ls = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut finR_D_L_ls = vec![vec![0.0, 1.0]]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut finL_D_L_ls = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
-            let mut obs_H_L_ls = vec![vec![0.0, 1.0, 0.0]]; // [H,L,Trans]
+            let mut overhang_depths_distances = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut right_sidefin_depths_distances = vec![vec![0.0, 1.0]]; //# [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut left_sidefin_depths_distances = vec![vec![0.0, 1.0]]; // # [D,L] - L cannot be zero as this leads to divide-by-zero later on
+            let mut obstacle_heights_distances = vec![vec![0.0, 1.0, 0.0]]; // [H,L,Trans]
 
             if let Some(shading_objects) = window_shading {
                 for shading_object in shading_objects.iter() {
                     match shading_object {
                         WindowShadingObject::Overhang { depth, distance } => {
-                            ovh_D_L_ls.push(vec![*depth, *distance]);
+                            overhang_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::SideFinLeft { depth, distance } => {
-                            finR_D_L_ls.push(vec![*depth, *distance]);
+                            right_sidefin_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::SideFinRight { depth, distance } => {
-                            finL_D_L_ls.push(vec![*depth, *distance]);
+                            left_sidefin_depths_distances.push(vec![*depth, *distance]);
                         }
                         WindowShadingObject::Obstacle {
                             height,
                             distance,
                             transparency,
                         } => {
-                            obs_H_L_ls.push(vec![*height, *distance, *transparency]);
+                            obstacle_heights_distances.push(vec![
+                                *height,
+                                *distance,
+                                *transparency,
+                            ]);
                         }
                         WindowShadingObject::Reveal { .. } => {
                             bail!("shading object type 'reveal' not allowed in context of calculating diffuse shading reduction factor")
@@ -1447,42 +1463,52 @@ impl ExternalConditions {
             }
 
             // #the default values should not be used if shading is specified
-            if ovh_D_L_ls.len() >= 2 {
-                ovh_D_L_ls.remove(0);
+            if overhang_depths_distances.len() >= 2 {
+                overhang_depths_distances.remove(0);
             }
-            if finR_D_L_ls.len() >= 2 {
-                finR_D_L_ls.remove(0);
+            if right_sidefin_depths_distances.len() >= 2 {
+                right_sidefin_depths_distances.remove(0);
             }
-            if finL_D_L_ls.len() >= 2 {
-                finL_D_L_ls.remove(0);
+            if left_sidefin_depths_distances.len() >= 2 {
+                left_sidefin_depths_distances.remove(0);
             }
-            if obs_H_L_ls.len() >= 2 {
-                obs_H_L_ls.remove(0);
+            if obstacle_heights_distances.len() >= 2 {
+                obstacle_heights_distances.remove(0);
             }
 
             let mut f_sh_dif: f64 = Default::default();
             let mut f_sh_ref: f64 = Default::default();
 
             // #perform the diff shading calculation for each combination of overhangs and fins
-            for iteration_vec in [ovh_D_L_ls, finR_D_L_ls, finL_D_L_ls, obs_H_L_ls]
-                .iter()
-                .multi_cartesian_product()
+            for iteration_vec in [
+                overhang_depths_distances,
+                right_sidefin_depths_distances,
+                left_sidefin_depths_distances,
+                obstacle_heights_distances,
+            ]
+            .iter()
+            .multi_cartesian_product()
             {
-                let (ovh_D_L, finR_D_L, finL_D_L, obs_H_L) = (
+                let (
+                    overhang_depth_distance,
+                    right_sidefin_depth_distance,
+                    left_sidefin_depth_distance,
+                    obstacle_height_distance,
+                ) = (
                     iteration_vec[0],
                     iteration_vec[1],
                     iteration_vec[2],
                     iteration_vec[3],
                 );
-                let d_ovh = ovh_D_L[0];
-                let l_ovh = ovh_D_L[1];
-                let d_finL = finL_D_L[0];
-                let l_finL = finL_D_L[1];
-                let d_finR = finR_D_L[0];
-                let l_finR = finR_D_L[1];
-                let h_obs = obs_H_L[0];
-                let l_obs = obs_H_L[1];
-                let t_obs = obs_H_L[2];
+                let overhang_depth = overhang_depth_distance[0];
+                let overhang_distance = overhang_depth_distance[1];
+                let left_sidefin_depth = left_sidefin_depth_distance[0];
+                let left_sidefin_distance = left_sidefin_depth_distance[1];
+                let right_sidefin_depth = right_sidefin_depth_distance[0];
+                let right_sidefin_distance = right_sidefin_depth_distance[1];
+                let obstacle_heigh = obstacle_height_distance[0];
+                let obstacle_distance = obstacle_height_distance[1];
+                let obstacle_transparency = obstacle_height_distance[2];
                 // # Calculate required geometric ratios
                 // # Note: PD CEN ISO/TR 52016-2:2017 Section F.6.3 refers to ISO 52016-1:2017
                 // #       Section F.5.5.1.6 for the definition of P1 and P2. However, this
@@ -1491,12 +1517,12 @@ impl ExternalConditions {
                 // #       in PD CEN ISO/TR 52016-2:2017. These sources define P1 and P2
                 // #       differently for fins and for overhangs so it is assumed that
                 // #       should also apply here.
-                let p1_ovh = d_ovh / height;
-                let p2_ovh = l_ovh / height;
-                let p1_finL = d_finL / width;
-                let p2_finL = l_finL / width;
-                let p1_finR = d_finR / width;
-                let p2_finR = l_finR / width;
+                let p1_overhang = overhang_depth / height;
+                let p2_overhang = overhang_distance / height;
+                let p1_left_sidefin = left_sidefin_depth / width;
+                let p2_left_sidefin = left_sidefin_distance / width;
+                let p1_right_sidefin = right_sidefin_depth / width;
+                let p2_right_sidefin = right_sidefin_distance / width;
 
                 // # Calculate view factors (eqns F.15 to F.18) required for eqns F.9 to F.14
                 // # Note: The equations in the standard refer to P1 and P2, but as per the
@@ -1515,10 +1541,10 @@ impl ExternalConditions {
                 // #       average of this view factor calculated with the dimensions of
                 // #       each fin.
                 let f_w_s = (0.6514
-                    * (1.0 - (p2_finL / (p1_finL.powi(2) + p2_finL.powi(2)).sqrt()))
-                    + 0.6514 * (1.0 - (p2_finR / (p1_finR.powi(2) + p2_finR.powi(2)).sqrt())))
+                    * (1.0 - (p2_left_sidefin / (p1_left_sidefin.powi(2) + p2_left_sidefin.powi(2)).sqrt()))
+                    + 0.6514 * (1.0 - (p2_right_sidefin / (p1_right_sidefin.powi(2) + p2_right_sidefin.powi(2)).sqrt())))
                     / 2.0;
-                let f_w_o = 0.3282 * (1.0 - (p2_ovh / (p1_ovh.powi(2) + p2_ovh.powi(2)).sqrt()));
+                let f_w_o = 0.3282 * (1.0 - (p2_overhang / (p1_overhang.powi(2) + p2_overhang.powi(2)).sqrt()));
                 let f_w_sky = (1.0 - (alpha + beta - 90.0f64.to_radians()).sin()) / 2.0;
 
                 // # Calculate denominators of eqns F.9 to F.14
@@ -1580,7 +1606,7 @@ impl ExternalConditions {
                 // covered by 52016-1 or -2, therefore derived from first principles and general
                 // method basis.
 
-                let net_shade_height = h_obs - base_height;
+                let net_shade_height = obstacle_heigh - base_height;
                 let f_sh_dif_obs = if view_factor_sky_no_obstacles == 0. || net_shade_height <= 0. {
                     // Shading makes no difference if sky not visible (avoid divide-by-zero)
                     1.0
@@ -1590,12 +1616,12 @@ impl ExternalConditions {
                     // proportion of element above obstacle
                     let prop_above_obstacle = height_above_obstacle / height;
                     // angle between midpoint of shaded section and top of obstacle
-                    let angle_obst = ((net_shade_height / 2.) / l_obs).atan().to_degrees();
+                    let angle_obst = ((net_shade_height / 2.) / obstacle_distance).atan().to_degrees();
                     // Sky view factor reduction
                     let f_w_ob = view_factor_sky_no_obstacles
                         .min((1. - (90. - angle_obst).to_radians().sin()) * 0.5)
                         * (1. - prop_above_obstacle)
-                        * (1. - t_obs);
+                        * (1. - obstacle_transparency);
                     (view_factor_sky_no_obstacles - f_w_ob) / view_factor_sky_no_obstacles
                 };
 
@@ -1632,18 +1658,18 @@ impl ExternalConditions {
             if diffuse_irr_total == 0. {
                 bail!("Zero diffuse radiation with non-zero direct radiation.");
             }
-            let fdiff = (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor)
+            let diffuse_factor = (f_sh_dif * (diffuse_irr_sky + diffuse_irr_hor)
                 + f_sh_ref * diffuse_irr_ref)
                 / diffuse_irr_total;
-            fdiff_list.push(fdiff);
+            diffuse_factors.push(diffuse_factor);
 
-            fdiff_list
+            diffuse_factors
         } else {
             vec![1.]
         };
 
-        let fdiff = fdiff_list.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("Diffuse shading reduction factor could not be calculated as fdiff_list was empty."))?;
-        Ok(fdiff.min(fdiff_ro))
+        let diffuse_factor = diffuse_factors.iter().min_by(|a, b| a.total_cmp(b)).ok_or_else(|| anyhow!("Diffuse shading reduction factor could not be calculated as fdiff_list was empty."))?;
+        Ok(diffuse_factor.min(remote_obstacles_diffuse_factor))
     }
 
     pub(crate) fn shading_reduction_factor_direct_diffuse(
@@ -1660,9 +1686,9 @@ impl ExternalConditions {
         // shading objects
         //
         // Arguments:
+        // base_height    -- is the base height of the shaded surface k, in m
         // height         -- is the height of the shaded surface (if surface is tilted then
         //                   this must be the vertical projection of the height), in m
-        // base_height    -- is the base height of the shaded surface k, in m
         // width          -- is the width of the shaded surface, in m
         // orientation    -- is the orientation angle of the inclined surface, expressed as the
         //                   geographical azimuth angle of the horizontal projection of the
@@ -1678,6 +1704,11 @@ impl ExternalConditions {
         // # then shading is irrelevant and we can skip the whole calculation
         let CalculatedDirectDiffuseTotalIrradiance(direct, diffuse, _, diffuse_breakdown) = self
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
+
+        if diffuse_breakdown.is_none() {
+            return Err(anyhow!("diffuse_breakdown not calculated by calculated_direct_diffuse_total_irradiance"))
+        }
+
         if direct + diffuse == 0.0 {
             return Ok((0.0, 0.0));
         }
@@ -1719,7 +1750,7 @@ impl ExternalConditions {
         //                       significantly pitched would have to be relatively tall and/or
         //                       very close to cast a shadow on the surface in question anyway),
         //                       so that results in the unshaded case will be correct.
-        let fdir = if self.outside_solar_beam(tilt, orientation, &simulation_time) {
+        let direct_shading_reduction_factor = if self.outside_solar_beam(tilt, orientation, &simulation_time) {
             1.0
         } else {
             self.direct_shading_reduction_factor(
@@ -1732,8 +1763,8 @@ impl ExternalConditions {
             )?
         };
 
-        let f_sky = sky_view_factor(&tilt);
-        let fdiff = self.diffuse_shading_reduction_factor(
+        let f_sky = Self::sky_view_factor(&tilt);
+        let diffuse_shading_factor = self.diffuse_shading_reduction_factor(
             diffuse_breakdown.expect("expected diffuse breakdown to be available"),
             tilt,
             height,
@@ -1745,7 +1776,7 @@ impl ExternalConditions {
             simulation_time,
         )?;
 
-        Ok((fdir, fdiff))
+        Ok((direct_shading_reduction_factor, diffuse_shading_factor))
     }
 
     pub(crate) fn surface_irradiance(
@@ -1760,7 +1791,7 @@ impl ExternalConditions {
     ) -> anyhow::Result<f64> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, false, &simulation_time);
-        let (f_sh_dir, f_sh_dif) = self.shading_reduction_factor_direct_diffuse(
+        let (direct_shading_factor, diffuse_shading_factor) = self.shading_reduction_factor_direct_diffuse(
             base_height,
             projected_height,
             width,
@@ -1770,12 +1801,21 @@ impl ExternalConditions {
             simulation_time,
         )?;
 
-        Ok(i_sol_dif * f_sh_dif + i_sol_dir * f_sh_dir)
+        Ok(i_sol_dif * diffuse_shading_factor + i_sol_dir * direct_shading_factor)
     }
 
     pub(crate) fn sun_above_horizon(&self, simtime: SimulationTimeIteration) -> bool {
         let solar_angle = self.solar_angle_of_incidence(0., 0., &simtime);
         solar_angle < 90.
+    }
+
+    /// Calculate longwave sky view factor from pitch in degrees
+    pub(crate) fn sky_view_factor(pitch: &f64) -> f64 {
+        // TODO (from Python) account for shading
+        // TODO (from Python) check longwave is correct
+        let pitch_rads = pitch * PI / 180.0;
+
+        0.5 * (1.0 + pitch_rads.cos())
     }
 }
 
@@ -2096,7 +2136,7 @@ fn init_solar_altitude(latitude: f64, solar_declination: f64, solar_hour_angle: 
     //      would allowing solar_time to be a decimal be all that is needed?
     //
     // """
-    // asol is the solar altitude angle, the angle between the solar beam
+    // The solare altitude is the angle between the solar beam
     // and the horizontal surface, in degrees;
     // """
 
@@ -2105,16 +2145,16 @@ fn init_solar_altitude(latitude: f64, solar_declination: f64, solar_hour_angle: 
     let solar_declination = solar_declination.to_radians();
     let solar_hour_angle = solar_hour_angle.to_radians();
 
-    let asol = (solar_declination.sin() * latitude.sin()
+    let solar_altitude_angle = (solar_declination.sin() * latitude.sin()
         + solar_declination.cos() * latitude.cos() * solar_hour_angle.cos())
     .asin()
     .to_degrees();
 
-    if asol < 0.0001 {
+    if solar_altitude_angle < 0.0001 {
         return 0.;
     }
 
-    asol
+    solar_altitude_angle
 }
 
 fn init_solar_zenith_angle(solar_altitude: f64) -> f64 {
@@ -2271,34 +2311,37 @@ static BRIGHTNESS_COEFFICIENTS: [BrightnessCoefficientsRow; 8] = [
     },
 ];
 
-fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> f64 {
+fn brightness_coefficient(
+    clearness_parameter: f64,
+    brightness_coefficient: BrightnessCoefficientName,
+) -> f64 {
     // """ returns brightness coefficient as a look up from Table 8 in ISO 52010
     //
     // Arguments:
-    // e    -- dimensionless clearness parameter
-    // fij  -- the coefficient to be returned. e.g. f12 or f23
+    // clearness_parameter, E    -- dimensionless clearness parameter
+    // brightness_coefficient, Fij  -- the coefficient to be returned. e.g. f12 or f23
     // """
     //
     // TODO (from Python) I've not had a need for the clearness index parameters contained in this table yet,
     //      if they are needed as input or output later then this function can be reworked
-    let row = &BRIGHTNESS_COEFFICIENTS[if e < 1.065 {
+    let row = &BRIGHTNESS_COEFFICIENTS[if clearness_parameter < 1.065 {
         0usize
-    } else if e < 1.23 {
+    } else if clearness_parameter < 1.23 {
         1usize
-    } else if e < 1.5 {
+    } else if clearness_parameter < 1.5 {
         2usize
-    } else if e < 1.95 {
+    } else if clearness_parameter < 1.95 {
         3usize
-    } else if e < 2.8 {
+    } else if clearness_parameter < 2.8 {
         4usize
-    } else if e < 4.5 {
+    } else if clearness_parameter < 4.5 {
         5usize
-    } else if e < 6.2 {
+    } else if clearness_parameter < 6.2 {
         6usize
     } else {
         7usize
     }];
-    match fij {
+    match brightness_coefficient {
         BrightnessCoefficientName::F11 => row.f11,
         BrightnessCoefficientName::F12 => row.f12,
         BrightnessCoefficientName::F13 => row.f13,
@@ -2308,17 +2351,21 @@ fn brightness_coefficient(e: f64, fij: BrightnessCoefficientName) -> f64 {
     }
 }
 
-fn init_f1_circumsolar_brightness_coefficient(e: f64, delta: f64, solar_zenith_angle: f64) -> f64 {
+fn init_f1_circumsolar_brightness_coefficient(
+    clearness_parameter: f64,
+    delta: f64,
+    solar_zenith_angle: f64,
+) -> f64 {
     // """ returns the circumsolar brightness coefficient, F1
     //
     // Arguments:
-    // E -- dimensionless clearness parameter for the current timestep
+    // clearness_parameter, E -- dimensionless clearness parameter for the current timestep
     // delta -- dimensionless sky brightness parameter for the current timestep
     // solar_zenith_angle -- solar zenith angle for the current hour
     // """
-    let f1: f64 = brightness_coefficient(e, BrightnessCoefficientName::F11)
-        + brightness_coefficient(e, BrightnessCoefficientName::F12) * delta
-        + brightness_coefficient(e, BrightnessCoefficientName::F13)
+    let f1: f64 = brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F11)
+        + brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F12) * delta
+        + brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F13)
             * (std::f64::consts::PI * solar_zenith_angle / 180.0);
     if f1 < 0.0 {
         0.0
@@ -2327,17 +2374,21 @@ fn init_f1_circumsolar_brightness_coefficient(e: f64, delta: f64, solar_zenith_a
     }
 }
 
-fn init_f2_horizontal_brightness_coefficient(e: f64, delta: f64, solar_zenith_angle: f64) -> f64 {
+fn init_f2_horizontal_brightness_coefficient(
+    clearness_parameter: f64,
+    delta: f64,
+    solar_zenith_angle: f64,
+) -> f64 {
     // """ returns the horizontal brightness coefficient, F2
     //
     // Arguments:
-    // E -- dimensionless clearness parameter
+    // clearness_parameter, E -- dimensionless clearness parameter
     // delta -- dimensionless sky brightness parameter
     // solar_zenith_angle -- solar zenith angle for the current hour
     // """
-    brightness_coefficient(e, BrightnessCoefficientName::F21)
-        + brightness_coefficient(e, BrightnessCoefficientName::F22) * delta
-        + brightness_coefficient(e, BrightnessCoefficientName::F23)
+    brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F21)
+        + brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F22) * delta
+        + brightness_coefficient(clearness_parameter, BrightnessCoefficientName::F23)
             * (std::f64::consts::PI * solar_zenith_angle / 180.0)
 }
 
