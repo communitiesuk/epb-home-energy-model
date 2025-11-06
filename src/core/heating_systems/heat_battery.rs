@@ -2187,10 +2187,14 @@ mod tests {
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
-                .unwrap(),
-        )
+        Control::SetpointTime(SetpointTimeControl::new(
+            schedule,
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        ))
     }
 
     fn get_service_names_from_results(heat_battery: Arc<RwLock<HeatBattery>>) -> Vec<String> {

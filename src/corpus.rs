@@ -184,24 +184,17 @@ fn single_control_from_details(
             start_day,
             time_series_step,
             advanced_start,
-            setpoint_min,
-            setpoint_max,
-            default_to_max,
+            setpoint_bounds,
             schedule,
             ..
-        } => Control::SetpointTime(
-            SetpointTimeControl::new(
-                expand_numeric_schedule(schedule),
-                *start_day,
-                *time_series_step,
-                *setpoint_min,
-                *setpoint_max,
-                *default_to_max,
-                advanced_start.unwrap_or(0.),
-                simulation_time_iterator.step_in_hours(),
-            )
-            .unwrap(),
-        )
+        } => Control::SetpointTime(SetpointTimeControl::new(
+            expand_numeric_schedule(schedule),
+            *start_day,
+            *time_series_step,
+            *setpoint_bounds,
+            advanced_start.unwrap_or(0.),
+            simulation_time_iterator.step_in_hours(),
+        ))
         .into(),
         ControlDetails::ChargeTarget {
             charge_level,

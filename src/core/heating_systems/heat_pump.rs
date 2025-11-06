@@ -6468,10 +6468,14 @@ mod tests {
     }
 
     fn create_setpoint_time_control(schedule: Vec<Option<f64>>) -> Control {
-        Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
-                .unwrap(),
-        )
+        Control::SetpointTime(SetpointTimeControl::new(
+            schedule,
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        ))
     }
 
     #[rstest]
@@ -6965,19 +6969,14 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let control = Arc::from(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.), Some(22.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                simulation_time_for_heat_pump.step,
-            )
-            .unwrap(),
-        ));
+        let control = Arc::from(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.), Some(22.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            simulation_time_for_heat_pump.step,
+        )));
 
         let boiler_service_space =
             Boiler::create_service_space_heating(boiler.clone(), "service_boilerspace", control);
@@ -7517,13 +7516,10 @@ mod tests {
             vec![Some(21.), Some(22.)],
             0,
             1.0,
-            None,
-            None,
-            None,
+            Default::default(),
             Default::default(),
             1.0,
-        )
-        .unwrap();
+        );
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
             "service_boilerspace",
@@ -8001,19 +7997,14 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.0), Some(22.0)],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        );
+        let ctrl = Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(22.0)],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        ));
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),
@@ -8310,19 +8301,14 @@ mod tests {
             energy_supply_conn_name_auxiliary,
         )));
 
-        let ctrl = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.0), Some(22.0)],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        );
+        let ctrl = Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(22.0)],
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        ));
 
         let boiler_service_space = Arc::new(Mutex::new(Boiler::create_service_space_heating(
             boiler.clone(),

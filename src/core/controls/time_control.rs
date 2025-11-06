@@ -4,8 +4,8 @@ use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
-    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SmartApplianceBattery,
-    MAIN_REFERENCE,
+    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBounds,
+    SmartApplianceBattery, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
 use anyhow::{anyhow, bail};
@@ -552,13 +552,7 @@ pub struct SetpointTimeControl {
     start_day: u32,
     /// timestep of the time series data, in hours
     time_series_step: f64,
-    /// min setpoint allowed
-    setpoint_min: Option<f64>,
-    /// max setpoint allowed
-    setpoint_max: Option<f64>,
-    /// if both min and max limits are set but setpoint isn't,
-    /// whether to default to min (false) or max (true)
-    default_to_max: bool,
+    setpoint_bounds: SetpointBounds,
     /// how long before heating period the system
     /// should switch on, in hours
     timesteps_advstart: u32,
@@ -573,27 +567,17 @@ impl SetpointTimeControl {
         schedule: Vec<Option<f64>>,
         start_day: u32,
         time_series_step: f64,
-        setpoint_min: Option<f64>,
-        setpoint_max: Option<f64>,
-        default_to_max: Option<bool>,
+        setpoint_bounds: SetpointBounds,
         duration_advanced_start: f64,
         timestep: f64,
-    ) -> Result<Self, &'static str> {
-        if setpoint_min.is_some() && setpoint_max.is_some() && default_to_max.is_none() {
-            return Err(
-                "default_to_max should be set when both setpoint_min and setpoint_max are set",
-            );
-        }
-
-        Ok(SetpointTimeControl {
+    ) -> Self {
+        Self {
             schedule,
             start_day,
             time_series_step,
-            setpoint_min,
-            setpoint_max,
-            default_to_max: default_to_max.unwrap_or(false),
+            setpoint_bounds,
             timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
-        })
+        }
     }
 
     pub fn is_on(&self, timestep: &SimulationTimeIteration) -> bool {
@@ -617,7 +601,7 @@ impl SetpointTimeControl {
             }
         }
 
-        !(setpnt.is_none() && self.setpoint_min.is_none() && self.setpoint_max.is_none())
+        !(setpnt.is_none() && matches!(self.setpoint_bounds, SetpointBounds::NoSetpoints))
     }
 }
 
@@ -650,28 +634,38 @@ impl ControlBehaviour for SetpointTimeControl {
             }
         }
 
-        match (setpnt, self.setpoint_min, self.setpoint_max) {
-            (None, None, None) => None,
-            (None, None, Some(max)) => Some(max),
-            (None, Some(min), None) => Some(min),
-            (None, Some(min), Some(max)) => match self.default_to_max {
-                true => Some(max),
-                false => Some(min),
+        match (setpnt, self.setpoint_bounds) {
+            (None, SetpointBounds::NoSetpoints) => None,
+            (None, SetpointBounds::MaxOnly { setpoint_max }) => Some(setpoint_max),
+            (None, SetpointBounds::MinOnly { setpoint_min }) => Some(setpoint_min),
+            (
+                None,
+                SetpointBounds::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                },
+            ) => match default_to_max {
+                true => Some(setpoint_max),
+                false => Some(setpoint_min),
             },
-            (Some(_s), _, _) => {
-                if self.setpoint_max.is_some() {
-                    setpnt = match self.setpoint_max < setpnt {
-                        true => self.setpoint_max,
+            (Some(s), _) => {
+                let mut setpnt = s;
+
+                if let Some(setpoint_max) = self.setpoint_bounds.setpoint_max() {
+                    setpnt = match setpoint_max < setpnt {
+                        true => setpoint_max,
                         false => setpnt,
                     }
                 }
-                if self.setpoint_min.is_some() {
-                    setpnt = match self.setpoint_min > setpnt {
-                        true => self.setpoint_min,
+                if let Some(setpoint_min) = self.setpoint_bounds.setpoint_min() {
+                    setpnt = match setpoint_min > setpnt {
+                        true => setpoint_min,
                         false => setpnt,
                     }
                 }
-                setpnt
+
+                Some(setpnt)
             }
         }
     }
@@ -1478,13 +1472,10 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            None,
-            None,
-            None,
+            SetpointBounds::NoSetpoints,
             Default::default(),
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -1496,13 +1487,10 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            Some(16.0),
-            None,
-            None,
+            SetpointBounds::MinOnly { setpoint_min: 16.0 },
             Default::default(),
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -1514,13 +1502,10 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            None,
-            Some(24.0),
-            None,
+            SetpointBounds::MaxOnly { setpoint_max: 24.0 },
             0.0,
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -1532,13 +1517,14 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            Some(16.0),
-            Some(24.0),
-            Some(false),
+            SetpointBounds::MinAndMax {
+                setpoint_min: 16.0,
+                setpoint_max: 24.0,
+                default_to_max: false,
+            },
             Default::default(),
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -1550,13 +1536,10 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            None,
-            None,
-            Some(false),
+            SetpointBounds::NoSetpoints,
             1.0,
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[fixture]
@@ -1568,13 +1551,14 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            Some(16.0),
-            Some(24.0),
-            Some(false),
+            SetpointBounds::MinAndMax {
+                setpoint_min: 16.0,
+                setpoint_max: 24.0,
+                default_to_max: false,
+            },
             1.0,
             simulation_time.step_in_hours(),
         )
-        .unwrap()
     }
 
     #[rstest]
@@ -2105,42 +2089,32 @@ mod tests {
             ),
             (
                 "ctrl4".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                Control::SetpointTime(SetpointTimeControl::new(
+                    [45.0, 47.0, 50.0, 48.0, 48.0, 48.0, 48.0, 48.0]
+                        .into_iter()
+                        .map(Some)
+                        .collect_vec(),
+                    0,
+                    1.,
+                    SetpointBounds::NoSetpoints,
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             (
                 "ctrl5".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
-                            .into_iter()
-                            .map(Some)
-                            .collect_vec(),
-                        0,
-                        1.,
-                        None,
-                        None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                Control::SetpointTime(SetpointTimeControl::new(
+                    [52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0]
+                        .into_iter()
+                        .map(Some)
+                        .collect_vec(),
+                    0,
+                    1.,
+                    SetpointBounds::NoSetpoints,
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             (
@@ -2181,28 +2155,23 @@ mod tests {
             ),
             (
                 "ctrl9".into(),
-                Control::SetpointTime(
-                    SetpointTimeControl::new(
-                        vec![
-                            Some(45.0),
-                            None,
-                            Some(50.0),
-                            Some(48.0),
-                            Some(48.0),
-                            None,
-                            Some(48.0),
-                            Some(48.0),
-                        ],
-                        0,
-                        1.,
+                Control::SetpointTime(SetpointTimeControl::new(
+                    vec![
+                        Some(45.0),
                         None,
+                        Some(50.0),
+                        Some(48.0),
+                        Some(48.0),
                         None,
-                        None,
-                        Default::default(),
-                        1.,
-                    )
-                    .unwrap(),
-                )
+                        Some(48.0),
+                        Some(48.0),
+                    ],
+                    0,
+                    1.,
+                    SetpointBounds::NoSetpoints,
+                    Default::default(),
+                    1.,
+                ))
                 .into(),
             ),
             ("ctrl10".into(), cost_minimising_control.into()),

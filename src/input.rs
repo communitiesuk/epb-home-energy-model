@@ -528,6 +528,7 @@ pub struct ColdWaterSourceDetails {
 
 pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
 
+/// Control schedule configuration for heating and energy systems.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
@@ -553,7 +554,8 @@ impl Control {
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")]
+#[validate(custom = validate_logic_type_for_charge_target)]
 pub(crate) enum ControlDetails {
     #[serde(rename = "OnOffTimeControl")]
     OnOffTimer {
@@ -564,6 +566,7 @@ pub(crate) enum ControlDetails {
         #[validate(maximum = 365)]
         start_day: u32,
         time_series_step: f64,
+        /// List of boolean values where true means on, one entry per hour
         schedule: BooleanSchedule,
     },
     #[serde(rename = "OnOffCostMinimisingTimeControl")]
@@ -575,7 +578,10 @@ pub(crate) enum ControlDetails {
         /// Timestep of the time series data (unit: hours)
         time_series_step: f64,
         /// Number of 'on' hours to be set per day
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
         time_on_daily: f64,
+        /// List of cost values (one entry per time_series_step)
         schedule: NumericSchedule,
     },
     #[serde(rename = "SetpointTimeControl")]
@@ -588,42 +594,122 @@ pub(crate) enum ControlDetails {
         time_series_step: f64,
         /// How long before heating period the system should switch on (unit: hours)
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(minimum = 0.)]
         advanced_start: Option<f64>,
-        /// Minimum setpoint allowed
-        #[serde(skip_serializing_if = "Option::is_none")]
-        setpoint_min: Option<f64>,
-        /// Maximum setpoint allowed
-        #[serde(skip_serializing_if = "Option::is_none")]
-        setpoint_max: Option<f64>,
-        /// If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        default_to_max: Option<bool>,
         /// list of float values (one entry per hour)
         schedule: NumericSchedule,
+        #[serde(flatten)]
+        setpoint_bounds: SetpointBounds,
     },
     #[serde(rename = "ChargeControl")]
     ChargeTarget {
-        /// First day of the time series, day of the year, 0 to 365
-        #[validate(minimum = 0)]
-        #[validate(maximum = 365)]
-        start_day: u32,
-        time_series_step: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        logic_type: Option<ControlLogicType>,
         /// Proportion of the charge targeted for each day
         #[serde(skip_serializing_if = "Option::is_none")]
         charge_level: Option<ChargeLevel>,
         #[serde(skip_serializing_if = "Option::is_none")]
         external_sensor: Option<ExternalSensor>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        temp_charge_cut: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_charge_cut_delta: Option<NumericSchedule>,
+        logic_type: Option<ControlLogicType>,
         /// List of boolean values where true means 'on' (one entry per hour)
         schedule: BooleanSchedule,
+        /// Temperature at which charging should stop
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_charge_cut: Option<f64>,
+        /// Temperature delta schedule for charge cut-off adjustment (unit: ˚C)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temp_charge_cut_delta: Option<NumericSchedule>,
+        /// Indicates from which hour of the day the system starts to target the charge level for the next day rather than the current day
+        #[serde(default = "default_charge_calc_time")]
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 24.)]
+        charge_calc_time: f64,
+        /// First day of the time series, day of the year, 0 to 365
+        #[validate(minimum = 0)]
+        #[validate(maximum = 365)]
+        start_day: u32,
+        time_series_step: f64,
     },
     #[serde(rename = "CombinationTimeControl")]
     CombinationTime { combination: ControlCombinations },
+}
+
+const fn default_charge_calc_time() -> f64 {
+    21.
+}
+
+fn validate_logic_type_for_charge_target(
+    data: &ControlDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    if let ControlDetails::ChargeTarget {
+        logic_type:
+            Some(ControlLogicType::Automatic | ControlLogicType::Celect | ControlLogicType::Hhrsh),
+        temp_charge_cut: None,
+        ..
+    } = data
+    {
+        custom_validation_error(
+            "logic types 'automatic', 'celect' and 'hhrsh' requires temp_charge_cut to be set"
+                .into(),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+/// Enum to encapsulate possible combinations of setpoint data
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum SetpointBounds {
+    MinAndMax {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+        /// If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)
+        default_to_max: bool,
+    },
+    MinOnly {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+    },
+    MaxOnly {
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+    },
+    #[default]
+    NoSetpoints,
+}
+
+impl SetpointBounds {
+    pub(crate) fn setpoint_max(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_max, .. } => Some(*setpoint_max),
+            Self::MaxOnly { setpoint_max } => Some(*setpoint_max),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn setpoint_min(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_min, .. } => Some(*setpoint_min),
+            Self::MinOnly { setpoint_min } => Some(*setpoint_min),
+            _ => None,
+        }
+    }
+}
+
+fn validate_setpoint_bounds(bounds: &SetpointBounds) -> Result<(), serde_valid::validation::Error> {
+    match bounds {
+        SetpointBounds::MinAndMax {
+            setpoint_min,
+            setpoint_max,
+            ..
+        } if setpoint_max <= setpoint_min => {
+            custom_validation_error("setpoint_max must be greater than setpoint_min".into())
+        }
+        _ => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

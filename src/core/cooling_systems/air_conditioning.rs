@@ -106,13 +106,10 @@ mod tests {
             vec![Some(21.0), Some(21.0), None, Some(21.0)],
             0,
             1.0,
-            None,
-            None,
-            None,
+            Default::default(),
             Default::default(),
             1.0,
-        )
-        .unwrap();
+        );
         let energy_supply = Arc::new(RwLock::new(
             EnergySupplyBuilder::new(FuelType::Electricity, simulation_time.total_steps()).build(),
         ));

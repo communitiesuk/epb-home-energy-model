@@ -3164,25 +3164,19 @@ mod tests {
             control_min_schedule,
             0,
             1.,
-            None,
-            None,
-            None,
+            Default::default(),
             Default::default(),
             simulation_timestep,
-        )
-        .unwrap();
+        );
 
         let control_max = SetpointTimeControl::new(
             control_max_schedule,
             0,
             1.,
-            None,
-            None,
-            None,
+            Default::default(),
             Default::default(),
             simulation_timestep,
-        )
-        .unwrap();
+        );
         let immersion_heater = ImmersionHeater::new(
             rated_power,
             energy_supply_connection.clone(),
@@ -3471,19 +3465,14 @@ mod tests {
 
     #[fixture]
     fn diverter_control() -> Arc<Control> {
-        Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.,
-            )
-            .unwrap(),
-        )
+        Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            1.,
+        ))
         .into()
     }
 
@@ -3693,9 +3682,7 @@ mod tests {
             ],
             212,
             1.,
-            None,
-            None,
-            None,
+            Default::default(),
             Default::default(),
             simulation_time_for_solar_thermal.step,
         );
@@ -3718,7 +3705,7 @@ mod tests {
             external_conditions_for_solar_thermal.clone(),
             temp_internal_air_fn.clone(),
             simulation_time_for_solar_thermal.step,
-            Arc::new(Control::SetpointTime(control_max.unwrap())),
+            Arc::new(Control::SetpointTime(control_max)),
             *WATER,
             None,
         )));
@@ -4516,33 +4503,23 @@ mod tests {
             EnergySupply::connection(Arc::new(RwLock::new(energy_supply)), "shower").unwrap();
         let timestep = simulation_time_for_immersion_heater.step;
 
-        let control_min = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(52.), Some(52.), None, Some(52.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                timestep,
-            )
-            .unwrap(),
-        ));
+        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(52.), Some(52.), None, Some(52.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            timestep,
+        )));
 
-        let control_max = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.), Some(60.), Some(60.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                timestep,
-            )
-            .unwrap(),
-        ));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.), Some(60.), Some(60.)],
+            0,
+            1.,
+            Default::default(),
+            Default::default(),
+            timestep,
+        )));
 
         ImmersionHeater::new(
             rated_power,
@@ -5047,28 +5024,23 @@ mod tests {
         let power_pump_kw = 5.;
         let max_flow_rate_pump_l_per_min = 1000.;
         let temp_usable = 40.;
-        let temp_setpnt_max = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(50.0),
-                    Some(40.0),
-                    Some(30.0),
-                    Some(20.0),
-                    Some(50.0),
-                    Some(50.0),
-                    Some(50.0),
-                    Some(50.0),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                0.,
-                1.,
-            )
-            .unwrap(),
-        ));
+        let temp_setpnt_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![
+                Some(50.0),
+                Some(40.0),
+                Some(30.0),
+                Some(20.0),
+                Some(50.0),
+                Some(50.0),
+                Some(50.0),
+                Some(50.0),
+            ],
+            0,
+            1.,
+            Default::default(),
+            0.,
+            1.,
+        )));
         let cold_water_temps = vec![10.0, 10.1, 10.2, 10.5, 10.6, 11.0, 11.5, 12.1];
         let cold_feed = WaterSourceWithTemperature::ColdWaterSource(Arc::new(
             ColdWaterSource::new(cold_water_temps, 0, 1.),
@@ -5078,50 +5050,40 @@ mod tests {
             heat_source_name,
         )
         .unwrap();
-        let control_min = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(0.5),
-                    None,
-                    None,
-                    None,
-                    Some(0.5),
-                    Some(0.5),
-                    Some(0.5),
-                    Some(0.5),
-                ],
-                0,
-                1.,
+        let control_min = Control::SetpointTime(SetpointTimeControl::new(
+            vec![
+                Some(0.5),
                 None,
                 None,
                 None,
-                0.,
-                1.,
-            )
-            .unwrap(),
-        );
-        let control_max = Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![
-                    Some(1.0),
-                    Some(1.0),
-                    Some(0.9),
-                    Some(0.8),
-                    Some(0.7),
-                    Some(1.0),
-                    Some(0.9),
-                    Some(0.8),
-                ],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                0.,
-                1.,
-            )
-            .unwrap(),
-        );
+                Some(0.5),
+                Some(0.5),
+                Some(0.5),
+                Some(0.5),
+            ],
+            0,
+            1.,
+            Default::default(),
+            0.,
+            1.,
+        ));
+        let control_max = Control::SetpointTime(SetpointTimeControl::new(
+            vec![
+                Some(1.0),
+                Some(1.0),
+                Some(0.9),
+                Some(0.8),
+                Some(0.7),
+                Some(1.0),
+                Some(0.9),
+                Some(0.8),
+            ],
+            0,
+            1.,
+            Default::default(),
+            0.,
+            1.,
+        ));
         let immersion_heater = ImmersionHeater::new(
             5.,
             energy_supply_connection,

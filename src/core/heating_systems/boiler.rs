@@ -1092,7 +1092,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType};
+    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType, SetpointBounds};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
     use itertools::Itertools;
@@ -1427,36 +1427,26 @@ mod tests {
 
     #[fixture]
     fn control_min() -> Arc<Control> {
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(52.), Some(52.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.,
-            )
-            .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(52.), Some(52.)],
+            0,
+            1.,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.,
+        )))
     }
 
     #[fixture]
     fn control_max() -> Arc<Control> {
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(60.), Some(60.)],
-                0,
-                1.,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.,
-            )
-            .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(60.), Some(60.)],
+            0,
+            1.,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.,
+        )))
     }
 
     #[fixture]
@@ -1570,19 +1560,14 @@ mod tests {
 
     #[fixture]
     fn control_for_service_space() -> Control {
-        Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(21.0), Some(21.0), None],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        )
+        Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(21.0), Some(21.0), None],
+            0,
+            1.0,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.0,
+        ))
     }
 
     #[fixture]
@@ -1677,32 +1662,22 @@ mod tests {
         #[from(boiler)] (boiler, _): (Boiler, Arc<RwLock<EnergySupply>>),
     ) {
         let service_name = "service_hot_water_regular";
-        let control_min = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![None, None],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ));
-        let control_max = Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![None, None],
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ));
+        let control_min = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![None, None],
+            0,
+            1.0,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.0,
+        )));
+        let control_max = Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![None, None],
+            0,
+            1.0,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.0,
+        )));
 
         let boiler = Arc::new(RwLock::new(boiler));
 
@@ -1724,19 +1699,14 @@ mod tests {
         let boiler_service_space_heating = Boiler::create_service_space_heating(
             boiler,
             "BoilerServiceSpace",
-            Arc::new(Control::SetpointTime(
-                SetpointTimeControl::new(
-                    vec![None, None],
-                    0,
-                    1.0,
-                    None,
-                    None,
-                    None,
-                    Default::default(),
-                    1.0,
-                )
-                .unwrap(),
-            )),
+            Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+                vec![None, None],
+                0,
+                1.0,
+                SetpointBounds::NoSetpoints,
+                Default::default(),
+                1.0,
+            ))),
         );
         assert_eq!(
             type_of(boiler_service_space_heating),

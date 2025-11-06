@@ -826,6 +826,7 @@ impl ElecStorageHeater {
 mod tests {
     #![allow(clippy::excessive_precision)]
     use super::*;
+    use crate::input::SetpointBounds;
     use crate::{
         core::{
             controls::time_control::{ChargeControl, SetpointTimeControl},
@@ -963,10 +964,14 @@ mod tests {
         let mut schedule = vec![Some(21.), Some(21.), None, Some(21.)];
         schedule.extend(vec![None; 20]);
 
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(schedule, 0, 1., None, None, None, Default::default(), 1.)
-                .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            schedule,
+            0,
+            1.,
+            SetpointBounds::NoSetpoints,
+            Default::default(),
+            1.,
+        )))
     }
 
     fn create_elec_storage_heater(

@@ -4670,19 +4670,14 @@ mod tests {
     }
 
     fn create_setpoint_time_control(setpnt: f64) -> Arc<Control> {
-        Arc::new(Control::SetpointTime(
-            SetpointTimeControl::new(
-                vec![Some(setpnt)], // causes control.setpnt() to return specified value
-                0,
-                1.0,
-                None,
-                None,
-                None,
-                Default::default(),
-                1.0,
-            )
-            .unwrap(),
-        ))
+        Arc::new(Control::SetpointTime(SetpointTimeControl::new(
+            vec![Some(setpnt)], // causes control.setpnt() to return specified value
+            0,
+            1.0,
+            Default::default(),
+            Default::default(),
+            1.0,
+        )))
     }
 
     #[rstest]
