@@ -3370,7 +3370,7 @@ fn shareable_fn(num: &Arc<RwLock<f64>>) -> TempInternalAirFn {
 #[derive(Debug)]
 pub struct RunResults {
     pub timestep_array: Vec<f64>,
-    pub(crate) results_totals: IndexMap<String, Vec<f64>>,
+    pub results_totals: IndexMap<String, Vec<f64>>,
     pub results_end_user: ResultsEndUser,
     pub energy_import: IndexMap<String, Vec<f64>>,
     pub energy_export: IndexMap<String, Vec<f64>>,

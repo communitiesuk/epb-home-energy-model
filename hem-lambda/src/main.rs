@@ -1,6 +1,6 @@
 use hem::output::Output;
 use hem::read_weather_file::weather_data_to_vec;
-use hem::{run_project, ProjectFlags};
+use hem::{run_project, CalculationResultsWithContext, ProjectFlags};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -27,16 +27,13 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     .ok();
 
     let resp = match run_project(input, &output, external_conditions, None, &ProjectFlags::empty()) {
-        Ok(Some(resp)) => Response::builder()
+        Ok(CalculationResultsWithContext { .. }) => {
+            Response::builder()
             .status(200)
             .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&json!({"data": resp}))?))
-            .map_err(Box::new)?,
-        Ok(None) => Response::builder()
-            .status(200)
-            .header("content-type", "text/plain")
-            .body(Body::from(output))
-            .map_err(Box::new)?,
+            .body(Body::from("data: TBC")) // TODO: update response body
+            .map_err(Box::new)?
+        },
         Err(e) => Response::builder()
             .status(422)
             .header("Content-Type", "application/json")
