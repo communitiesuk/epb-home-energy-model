@@ -168,22 +168,25 @@ fn validate_air_temperatures(
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
-#[serde(deny_unknown_fields)]
 pub(crate) struct InternalGains {
     #[serde(
         alias = "total internal gains",
         skip_serializing_if = "Option::is_none"
     )]
     #[validate]
-    pub total_internal_gains: Option<InternalGainsDetails>,
+    pub(crate) total_internal_gains: Option<InternalGainsDetails>,
+
     #[serde(rename = "metabolic gains", skip_serializing_if = "Option::is_none")]
-    pub metabolic_gains: Option<InternalGainsDetails>,
+    pub(crate) metabolic_gains: Option<InternalGainsDetails>,
+
     #[serde(rename = "EvaporativeLosses", skip_serializing_if = "Option::is_none")]
-    pub evaporative_losses: Option<InternalGainsDetails>,
+    pub(crate) evaporative_losses: Option<InternalGainsDetails>,
+
     #[serde(rename = "ColdWaterLosses", skip_serializing_if = "Option::is_none")]
-    pub cold_water_losses: Option<InternalGainsDetails>,
+    pub(crate) cold_water_losses: Option<InternalGainsDetails>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub other: Option<InternalGainsDetails>,
+    pub(crate) other: Option<InternalGainsDetails>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
