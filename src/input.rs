@@ -1752,81 +1752,171 @@ pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` annotation after 0.36
+#[serde(tag = "type")]
 pub(crate) enum SpaceHeatSystemDetails {
     #[serde(rename = "InstantElecHeater")]
     InstantElectricHeater {
+        //// Rated power of the instant electric heater. (Unit: kW)
+        #[validate(minimum = 0.)]
         rated_power: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,
         #[serde(rename = "Control")]
         control: String,
         /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
     },
     #[serde(rename = "ElecStorageHeater")]
     ElectricStorageHeater {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        advanced_start: Option<f64>,
-        pwr_in: f64,
-        /// (instant backup) (unit: kW)
-        rated_power_instant: f64,
-        storage_capacity: f64,
-        air_flow_type: ElectricStorageHeaterAirFlowType,
-        frac_convective: f64,
-        /// Fan power (unit: W)
-        fan_pwr: f64,
-        n_units: u32,
-        #[serde(rename = "EnergySupply")]
-        energy_supply: String,
-        #[serde(rename = "Control")]
-        control: String,
         #[serde(rename = "ControlCharger")]
         control_charger: String,
+        /// Maximum output of the electric storage heater. (Unit: kW)
+        /// Data from test showing the output from the storage heater when it is actively
+        /// outputting heat, e.g. damper open / fan running.
+        #[validate(custom = |v| validate_dry_core_output(v, "dry_core_max_output"))]
+        dry_core_max_output: Vec<[f64; 2]>,
+        /// Minimum output of the electric storage heater. (Unit: kW)
+        /// Data from test showing the output from the storage heater when not actively
+        /// outputting heat, i.e. case losses only
+        #[validate(custom = |v| validate_dry_core_output(v, "dry_core_min_output"))]
+        dry_core_min_output: Vec<[f64; 2]>,
+        #[serde(rename = "EnergySupply")]
+        energy_supply: String,
+        air_flow_type: ElectricStorageHeaterAirFlowType,
+        #[serde(rename = "Control")]
+        control: String,
+        /// Fan power (unit: W)
+        #[validate(minimum = 0.)]
+        fan_pwr: f64,
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        frac_convective: f64,
+        /// Number of units installed in the zone.
+        #[validate(exclusive_minimum = 0)]
+        n_units: u32,
+        /// The rated power of the heating element which charges the storage medium with heat (unit: kW)
+        #[validate(minimum = 0.)]
+        pwr_in: f64,
+        /// State of charge at initialisation of dry core heat storage (ratio)
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
+        state_of_charge_init: f64,
+        /// The rated power output of the instantaneous backup heater (unit: kW)
+        #[validate(minimum = 0.)]
+        rated_power_instant: f64,
+        /// Storage capacity of the electric storage heater. (Unit: kWh)
+        #[validate(exclusive_minimum = 0.)]
+        storage_capacity: f64,
         /// The zone where the unit(s) is/are installed
         #[serde(rename = "Zone")]
         zone: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        temp_setback: Option<f64>,
-        #[serde(rename = "ESH_min_output")]
-        esh_min_output: Vec<(f64, f64)>,
-        #[serde(rename = "ESH_max_output")]
-        esh_max_output: Vec<(f64, f64)>,
     },
     WetDistribution {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thermal_mass: Option<f64>,
-        #[serde(default)]
-        emitters: Vec<WetEmitter>,
-        #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
-        energy_supply: Option<String>,
-        temp_diff_emit_dsgn: f64,
-        variable_flow: Option<bool>, // TODO: restore as non-Option after 0.36 if possible
-        #[serde(skip_serializing_if = "Option::is_none")]
-        design_flow_rate: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        min_flow_rate: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        max_flow_rate: Option<f64>,
+        #[serde(rename = "HeatSource")]
+        heat_source: SpaceHeatSystemHeatSource,
+        /// Fraction of return back into flow water
         #[serde(skip_serializing_if = "Option::is_none")]
         #[validate(minimum = 0.)]
         #[validate(maximum = 1.)]
-        bypass_percentage_recirculated: Option<f64>,
-        #[serde(rename = "HeatSource")]
-        heat_source: SpaceHeatSystemHeatSource,
+        bypass_fraction_recirculated: Option<f64>,
+        /// Design flow temperature. (Unit: ˚C)
+        #[validate(exclusive_minimum = 0)]
+        design_flow_temp: i32,
+        /// Wet emitter details of the heating system.
+        #[validate(min_items = 1)]
+        emitters: Vec<WetEmitter>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pipework: Vec<WaterPipework>,
+        ecodesign_controller: EcoDesignController,
+        /// Design temperature difference across the emitters. (Unit: deg C or K)
+        #[validate(minimum = 0.)]
+        temp_diff_emit_dsgn: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        /// Thermal mass of the emitters. (Unit: kWh/K)
+        #[validate(minimum = 0.)]
+        thermal_mass: Option<f64>,
         #[serde(rename = "Control")]
         control: String,
-        ecodesign_controller: EcoDesignController,
-        design_flow_temp: i32,
+        #[serde(rename = "EnergySupply", skip_serializing_if = "Option::is_none")]
+        energy_supply: Option<String>,
+        /// Zone in which the emitters are located. References a key in $.Zone
         #[serde(rename = "Zone")]
         zone: String,
+        #[serde(flatten)]
+        flow_data: FlowData,
     },
     WarmAir {
+        /// Convective fraction for heating
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
         #[serde(rename = "HeatSource")]
         heat_source: SpaceHeatSystemHeatSource,
         #[serde(rename = "Control")]
         control: String,
+    },
+}
+
+fn validate_dry_core_output(
+    output_data: &[[f64; 2]],
+    field: &str,
+) -> Result<(), serde_valid::validation::Error> {
+    //ensure body of data has at least 2 pairs
+    if output_data.len() < 2 {
+        return Err(serde_valid::validation::Error::Custom(format!(
+            "The field {field} for an electric storage heater must have at least 2 pairs of data."
+        )));
+    }
+
+    // Convert ESH_***_output to NumPy arrays without sorting
+    let soc_values = output_data.iter().map(|f| f[0]).collect_vec();
+
+    // Validate that SOC array is in strictly increasing order
+    if !soc_values.iter().tuple_windows().all(|(a, b)| a <= b) {
+        return Err(serde_valid::validation::Error::Custom(format!(
+            "{field} SOC values must be in increasing order (from 0.0 to 1.0)."
+        )));
+    }
+
+    // Validate that both SOC arrays start at 0.0 and end at 1.0
+    if !is_close!(*soc_values.first().unwrap(), 0.) {
+        return Err(serde_valid::validation::Error::Custom(format!(
+            "The first SOC value in {field} must be 0.0 (fully discharged)."
+        )));
+    }
+
+    if !is_close!(*soc_values.last().unwrap(), 1.) {
+        return Err(serde_valid::validation::Error::Custom(format!(
+            "The last SOC value in {field} must be 1.0 (fully charged)."
+        )));
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(untagged)]
+pub(crate) enum FlowData {
+    Variable {
+        #[serde(rename = "variable_flow")]
+        _variable_flow: MustBe!(true),
+        /// Maximum flow rate allowed (unit: litres/min)
+        #[validate(minimum = 0.)]
+        max_flow_rate: f64,
+        /// Minimum flow rate allowed (unit: litres/min)
+        #[validate(minimum = 0.)]
+        min_flow_rate: f64,
+    },
+    Design {
+        #[serde(rename = "variable_flow")]
+        _variable_flow: MustBe!(false),
+        /// Constant flow rate if the heat source can't modulate flow rate (unit: l/s)
+        #[validate(minimum = 0.)]
+        design_flow_rate: f64,
     },
 }
 
@@ -2871,14 +2961,21 @@ pub enum HeatingControlType {
 
 pub(crate) type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(tag = "type")] // TODO: possibly restore `deny_unknown_fields` serde annotation after 0.36 (once FHS is extracted)
 pub(crate) enum SpaceCoolSystemDetails {
     AirConditioning {
+        /// Maximum cooling capacity of the system (unit: kW)
+        #[validate(minimum = 0.)]
         cooling_capacity: f64,
+        /// Efficiency of the air conditioning system. SEER (Seasonal energy efficiency ratio)
+        #[validate(minimum = 0.)]
         efficiency: f64,
+        /// Convective fraction for cooling
+        #[validate(minimum = 0.)]
+        #[validate(maximum = 1.)]
         frac_convective: f64,
         #[serde(rename = "EnergySupply")]
         energy_supply: String,

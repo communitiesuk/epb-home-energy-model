@@ -63,9 +63,9 @@ use crate::input::{
     BuildingElement as BuildingElementInput, ChargeLevel, ColdWaterSourceDetails,
     ColdWaterSourceInput, ColdWaterSourceReference, ColdWaterSourceType, Control as ControlInput,
     ControlCombinations, ControlDetails, DuctType, EnergyDiverter, EnergySupplyDetails,
-    EnergySupplyInput, ExternalConditionsInput, FuelType, HeatBattery as HeatBatteryInput,
-    HeatPumpSourceType, HeatSource as HeatSourceInput, HeatSourceControlType, HeatSourceWetDetails,
-    HeatSourceWetType, HotWaterSourceDetails,
+    EnergySupplyInput, ExternalConditionsInput, FlowData, FuelType,
+    HeatBattery as HeatBatteryInput, HeatPumpSourceType, HeatSource as HeatSourceInput,
+    HeatSourceControlType, HeatSourceWetDetails, HeatSourceWetType, HotWaterSourceDetails,
     InfiltrationVentilation as InfiltrationVentilationInput, Input, InputForCalcHtcHlp,
     InternalGains as InternalGainsInput, InternalGainsDetails, OnSiteGeneration,
     PhotovoltaicSystem as PhotovoltaicSystemInput, SpaceCoolSystem as SpaceCoolSystemInput,
@@ -5306,7 +5306,7 @@ fn space_heat_systems_from_input(
                             controls.get_with_string(control),
                         ))
                     }
-                    SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, esh_min_output, esh_max_output, .. } => {
+                    SpaceHeatSystemDetails::ElectricStorageHeater { pwr_in, rated_power_instant, storage_capacity, air_flow_type, frac_convective, fan_pwr, n_units, energy_supply, zone, control, control_charger, dry_core_min_output, dry_core_max_output, .. } => {
                         let energy_supply = energy_supplies.get(energy_supply).ok_or_else(|| anyhow!("Space heat system references an undeclared energy supply '{energy_supply}'."))?.clone();
                         let energy_supply_conn_name = system_name;
                         energy_conn_names_for_systems.insert(system_name.clone(), energy_supply_conn_name.clone());
@@ -5316,9 +5316,9 @@ fn space_heat_systems_from_input(
                         let zone_setpoint_init = zone.setpnt_init();
                         let control = controls.get_with_string(control).ok_or_else(|| anyhow!("A control object was expected for an electric storage heater"))?;
                         let charge_control = controls.get_with_string(control_charger).ok_or_else(|| anyhow!("Space heat system references an invalid charge control name '{control_charger}'"))?;
-                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, esh_min_output.clone(), esh_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
+                        SpaceHeatSystem::ElecStorage(ElecStorageHeater::new(*pwr_in, *rated_power_instant, *storage_capacity, *air_flow_type, *frac_convective, *fan_pwr, *n_units, zone_setpoint_init, ZoneTempInternalAir(zone).as_fn(), energy_supply_conn, simulation_time, control, charge_control, dry_core_min_output.clone(), dry_core_max_output.clone(), external_conditions.clone(), Some(detailed_output_heating_cooling))?)
                     }
-                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, variable_flow, design_flow_rate, min_flow_rate, max_flow_rate, bypass_percentage_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, .. } => {
+                    SpaceHeatSystemDetails::WetDistribution { emitters, energy_supply, flow_data, bypass_fraction_recirculated, heat_source, temp_diff_emit_dsgn, control, thermal_mass, ecodesign_controller, design_flow_temp, zone, .. } => {
                         let heat_source_name = &heat_source.name;
                         let temp_flow_limit_upper = &heat_source.temp_flow_limit_upper;
 
@@ -5384,11 +5384,23 @@ fn space_heat_systems_from_input(
                             *thermal_mass,
                             emitters,
                             *temp_diff_emit_dsgn,
-                            variable_flow.unwrap_or(false),
-                            *design_flow_rate,
-                            *min_flow_rate,
-                            *max_flow_rate,
-                            *bypass_percentage_recirculated,
+                            matches!(flow_data, FlowData::Variable {..}),
+                            if let FlowData::Design {design_flow_rate, ..} = flow_data {
+                                Some(*design_flow_rate)
+                            } else {
+                                None
+                            },
+                            if let FlowData::Variable {min_flow_rate, ..} = flow_data {
+                                Some(*min_flow_rate)
+                            } else {
+                                None
+                            },
+                            if let FlowData::Variable {max_flow_rate, ..} = flow_data {
+                                Some(*max_flow_rate)
+                            } else {
+                                None
+                            },
+                            *bypass_fraction_recirculated,
                             Arc::new(RwLock::new(heat_source_service)),
                             zones.get(zone).ok_or_else(|| anyhow!("Space heat system wet distribution had reference to undeclared zone with name '{zone}'"))?.clone(),
                             // zone area

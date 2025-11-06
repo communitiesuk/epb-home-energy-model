@@ -237,8 +237,8 @@ impl ElecStorageHeater {
         simulation_time: &SimulationTimeIterator,
         control: Arc<Control>,
         charge_control: Arc<Control>,
-        esh_min_output: Vec<(f64, f64)>,
-        esh_max_output: Vec<(f64, f64)>,
+        esh_min_output: Vec<[f64; 2]>,
+        esh_max_output: Vec<[f64; 2]>,
         external_conditions: Arc<ExternalConditions>,
         output_detailed_results: Option<bool>,
     ) -> anyhow::Result<Self> {
@@ -251,12 +251,12 @@ impl ElecStorageHeater {
         let temp_air = zone_internal_air_func();
 
         // Convert ESH_max_output to NumPy arrays without sorting
-        let soc_max_array = esh_max_output.iter().map(|f| f.0).collect_vec();
-        let power_max_array = esh_max_output.iter().map(|f| f.1).collect_vec();
+        let soc_max_array = esh_max_output.iter().map(|f| f[0]).collect_vec();
+        let power_max_array = esh_max_output.iter().map(|f| f[1]).collect_vec();
 
         // Convert ESH_min_output to NumPy arrays without sorting
-        let soc_min_array = esh_min_output.iter().map(|f| f.0).collect_vec();
-        let power_min_array = esh_min_output.iter().map(|f| f.1).collect_vec();
+        let soc_min_array = esh_min_output.iter().map(|f| f[0]).collect_vec();
+        let power_min_array = esh_min_output.iter().map(|f| f[1]).collect_vec();
 
         // Validate that both SOC arrays are in strictly increasing order
         if !soc_max_array
@@ -841,8 +841,8 @@ mod tests {
     use serde_json::json;
 
     const EIGHT_DECIMAL_PLACES: f64 = 1e-7;
-    const ESH_MIN_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 0.02), (1.0, 0.05)];
-    const ESH_MAX_OUTPUT: [(f64, f64); 3] = [(0.0, 0.0), (0.5, 1.5), (1.0, 3.0)];
+    const ESH_MIN_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 0.02], [1.0, 0.05]];
+    const ESH_MAX_OUTPUT: [[f64; 2]; 3] = [[0.0, 0.0], [0.5, 1.5], [1.0, 3.0]];
 
     #[fixture]
     fn simulation_time() -> SimulationTime {
@@ -974,8 +974,8 @@ mod tests {
         charge_control: Arc<Control>,
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
-        esh_min_output: Vec<(f64, f64)>,
-        esh_max_output: Vec<(f64, f64)>,
+        esh_min_output: Vec<[f64; 2]>,
+        esh_max_output: Vec<[f64; 2]>,
         output_detailed_results: Option<bool>,
     ) -> ElecStorageHeater {
         let energy_supply = Arc::new(RwLock::new(
@@ -1059,43 +1059,43 @@ mod tests {
     ) {
         let test_cases = [
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.3, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.3, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_min_output values in non-increasing order",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.3, 0.02), (1.0, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.3, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_max_output values in non-increasing order",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (0.9, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [0.9, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.]],
                 "shouldn't allow esh_min_output values not ending in 1.0",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (0.9, 3.)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [0.9, 3.]],
                 "shouldn't allow esh_max_output values not ending in 1.0",
             ),
             (
-                vec![(0.2, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.0, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                vec![[0.2, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.0, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.0]],
                 "shouldn't allow esh_min_output values not starting at 1.0",
             ),
             (
-                vec![(0.0, 0.0), (0.5, 0.02), (0.7, 0.02), (1.0, 0.05)],
-                vec![(0.2, 0.0), (0.5, 1.5), (0.7, 0.02), (1.0, 3.0)],
+                vec![[0.0, 0.0], [0.5, 0.02], [0.7, 0.02], [1.0, 0.05]],
+                vec![[0.2, 0.0], [0.5, 1.5], [0.7, 0.02], [1.0, 3.0]],
                 "shouldn't allow esh_max_output values not starting at 1.0",
             ),
             (
-                vec![(0.0, 0.0), (1.0, 1.0)],
-                vec![(0.0, 0.0), (1.0, 0.5)],
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[0.0, 0.0], [1.0, 0.5]],
                 "shouldn't allow any power_max values below power_min",
             ),
             (
-                vec![(0.0, 0.0), (1.0, 1.0)],
-                vec![(0.0, 0.0), (0.5, 0.4), (1.0, 1.0)],
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[0.0, 0.0], [0.5, 0.4], [1.0, 1.0]],
                 "shouldn't allow any power_max values below power_min",
             ),
         ];
@@ -1141,7 +1141,7 @@ mod tests {
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
+        let esh_max_output = vec![[0.0, 0.0], [0.5, 30.0], [1.0, 50.0]];
         let heater_with_detailed_results = create_elec_storage_heater(
             simulation_time,
             charge_control.clone(),
@@ -1324,7 +1324,7 @@ mod tests {
         control: Arc<Control>,
         external_conditions: Arc<ExternalConditions>,
     ) {
-        let esh_max_output = vec![(0.0, 0.0), (0.5, 30.0), (1.0, 50.0)];
+        let esh_max_output = vec![[0.0, 0.0], [0.5, 30.0], [1.0, 50.0]];
         let elec_storage_heater = create_elec_storage_heater(
             simulation_time,
             charge_control,
