@@ -790,7 +790,6 @@ dependencies = [
  "parking_lot",
  "polyfit-rs",
  "pretty_assertions",
- "rayon",
  "roots",
  "rstest",
  "serde",

@@ -28,7 +28,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    json_error, ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
+    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
 };
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
@@ -44,7 +44,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
