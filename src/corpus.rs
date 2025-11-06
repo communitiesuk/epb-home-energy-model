@@ -26,9 +26,7 @@ use crate::core::heating_systems::storage_tank::{
     PositionedHeatSource, SmartHotWaterTank, SolarThermalSystem, StorageTank,
     StorageTankDetailedResult,
 };
-use crate::core::heating_systems::wwhrs::{
-    WWHRSInstantaneousSystemA, WWHRSInstantaneousSystemB, WWHRSInstantaneousSystemC, Wwhrs,
-};
+use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::material_properties::WATER;
 use crate::core::schedule::{
     expand_boolean_schedule, expand_events, expand_numeric_schedule, reject_nones, reject_nulls,
@@ -71,9 +69,9 @@ use crate::input::{
     PhotovoltaicSystem as PhotovoltaicSystemInput, SpaceCoolSystem as SpaceCoolSystemInput,
     SpaceCoolSystemDetails, SpaceHeatSystem as SpaceHeatSystemInput, SpaceHeatSystemDetails,
     SystemReference, ThermalBridging as ThermalBridgingInput, ThermalBridgingDetails, UValueInput,
-    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails,
-    WasteWaterHeatRecoverySystemType, WaterHeatingEvent, WaterHeatingEvents, WaterPipework,
-    ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis, MAIN_REFERENCE,
+    VentilationLeaks, WasteWaterHeatRecovery, WasteWaterHeatRecoveryDetails, WaterHeatingEvent,
+    WaterHeatingEvents, WaterPipework, ZoneDictionary, ZoneInput, ZoneTemperatureControlBasis,
+    MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator};
 use crate::{ProjectFlags, StringOrNumber};
@@ -3296,56 +3294,57 @@ fn wwhrs_from_input(
 }
 
 fn wwhr_system_from_details(
-    system: WasteWaterHeatRecoveryDetails,
-    cold_water_sources: &ColdWaterSources,
-    initial_simtime: SimulationTimeIteration,
+    _system: WasteWaterHeatRecoveryDetails,
+    _cold_water_sources: &ColdWaterSources,
+    _initial_simtime: SimulationTimeIteration,
 ) -> anyhow::Result<Wwhrs> {
-    Ok(match system.system_type {
-        WasteWaterHeatRecoverySystemType::SystemA => {
-            Wwhrs::WWHRSInstantaneousSystemA(WWHRSInstantaneousSystemA::new(
-                system.flow_rates,
-                system.efficiencies,
-                get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Could not find cold water source '{:?}'",
-                            system.cold_water_source
-                        )
-                    })?,
-                system.utilisation_factor,
-                initial_simtime,
-            ))
-        }
-        WasteWaterHeatRecoverySystemType::SystemB => {
-            Wwhrs::WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB::new(
-                get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Could not find cold water source '{:?}'",
-                            system.cold_water_source
-                        )
-                    })?,
-                system.flow_rates,
-                system.efficiencies,
-                system.utilisation_factor,
-            ))
-        }
-        WasteWaterHeatRecoverySystemType::SystemC => {
-            Wwhrs::WWHRSInstantaneousSystemC(WWHRSInstantaneousSystemC::new(
-                system.flow_rates,
-                system.efficiencies,
-                get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Could not find cold water source '{:?}'",
-                            system.cold_water_source
-                        )
-                    })?,
-                system.utilisation_factor,
-                initial_simtime,
-            ))
-        }
-    })
+    todo!();
+    // Ok(match system.system_type {
+    //     WasteWaterHeatRecoverySystemType::SystemA => {
+    //         Wwhrs::WWHRSInstantaneousSystemA(WWHRSInstantaneousSystemA::new(
+    //             system.flow_rates,
+    //             system.efficiencies,
+    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
+    //                 .ok_or_else(|| {
+    //                     anyhow!(
+    //                         "Could not find cold water source '{:?}'",
+    //                         system.cold_water_source
+    //                     )
+    //                 })?,
+    //             system.utilisation_factor,
+    //             initial_simtime,
+    //         ))
+    //     }
+    //     WasteWaterHeatRecoverySystemType::SystemB => {
+    //         Wwhrs::WWHRSInstantaneousSystemB(WWHRSInstantaneousSystemB::new(
+    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
+    //                 .ok_or_else(|| {
+    //                     anyhow!(
+    //                         "Could not find cold water source '{:?}'",
+    //                         system.cold_water_source
+    //                     )
+    //                 })?,
+    //             system.flow_rates,
+    //             system.efficiencies,
+    //             system.utilisation_factor,
+    //         ))
+    //     }
+    //     WasteWaterHeatRecoverySystemType::SystemC => {
+    //         Wwhrs::WWHRSInstantaneousSystemC(WWHRSInstantaneousSystemC::new(
+    //             system.flow_rates,
+    //             system.efficiencies,
+    //             get_cold_water_source_ref_for_type(system.cold_water_source, cold_water_sources)
+    //                 .ok_or_else(|| {
+    //                     anyhow!(
+    //                         "Could not find cold water source '{:?}'",
+    //                         system.cold_water_source
+    //                     )
+    //                 })?,
+    //             system.utilisation_factor,
+    //             initial_simtime,
+    //         ))
+    //     }
+    // })
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

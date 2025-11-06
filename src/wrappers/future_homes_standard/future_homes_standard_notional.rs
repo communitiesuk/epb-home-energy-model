@@ -1,4 +1,4 @@
-use crate::core::heating_systems::wwhrs::{WWHRSInstantaneousSystemB, Wwhrs};
+use crate::core::heating_systems::wwhrs::Wwhrs;
 use crate::core::schedule::{expand_events, TypedScheduleEvent};
 use crate::core::units::{
     convert_profile_to_daily, JOULES_PER_KILOJOULE, JOULES_PER_KILOWATT_HOUR, WATTS_PER_KILOWATT,
@@ -13,7 +13,7 @@ use crate::input::{
     BuildingElement, ColdWaterSourceType, GroundBuildingElement, GroundBuildingElementJsonValue,
     HeatPumpSourceType, HeatSourceWetDetails, InputForProcessing, JsonAccessResult,
     PipeworkContents, SpaceHeatSystemHeatSource, UValueEditableBuildingElement,
-    UValueEditableBuildingElementJsonValue, UValueInput, WaterPipework,
+    UValueEditableBuildingElementJsonValue, WaterPipework,
 };
 use crate::simulation_time::SimulationTime;
 use crate::statistics::{np_interp, percentile};
@@ -1053,33 +1053,33 @@ fn calc_daily_hw_demand(
         })
         .collect();
 
-    let wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>> = if let Some(waste_water_heat_recovery) =
-        input.wwhrs()?
-    {
-        let notional_wwhrs = waste_water_heat_recovery.get(NOTIONAL_WWHRS).ok_or_else(|| anyhow!("A {} entry for WWHRS was expected to have been set in the FHS Notional wrapper.", NOTIONAL_WWHRS))?;
-        [(
-            String::from(NOTIONAL_WWHRS),
-            Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
-                WWHRSInstantaneousSystemB::new(
-                    cold_water_sources
-                        .get(&notional_wwhrs.cold_water_source)
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "A cold water source could not be found with the type '{:?}'.",
-                                notional_wwhrs.cold_water_source
-                            )
-                        })?
-                        .clone(),
-                    notional_wwhrs.flow_rates.clone(),
-                    notional_wwhrs.efficiencies.clone(),
-                    notional_wwhrs.utilisation_factor,
-                ),
-            ))),
-        )]
-        .into()
-    } else {
-        Default::default()
-    };
+    let wwhrs: IndexMap<String, Arc<Mutex<Wwhrs>>> =
+        if let Some(waste_water_heat_recovery) = input.wwhrs()? {
+            todo!("FHS being removed from core and this logic is changing");
+            // let notional_wwhrs = waste_water_heat_recovery.get(NOTIONAL_WWHRS).ok_or_else(|| anyhow!("A {} entry for WWHRS was expected to have been set in the FHS Notional wrapper.", NOTIONAL_WWHRS))?;
+            // [(
+            //     String::from(NOTIONAL_WWHRS),
+            //     Arc::new(Mutex::new(Wwhrs::WWHRSInstantaneousSystemB(
+            //         WWHRSInstantaneousSystemB::new(
+            //             cold_water_sources
+            //                 .get(&notional_wwhrs.cold_water_source)
+            //                 .ok_or_else(|| {
+            //                     anyhow!(
+            //                         "A cold water source could not be found with the type '{:?}'.",
+            //                         notional_wwhrs.cold_water_source
+            //                     )
+            //                 })?
+            //                 .clone(),
+            //             notional_wwhrs.flow_rates.clone(),
+            //             notional_wwhrs.efficiencies.clone(),
+            //             notional_wwhrs.utilisation_factor,
+            //         ),
+            //     ))),
+            // )]
+            // .into()
+        } else {
+            Default::default()
+        };
 
     let nbeds = calc_nbeds(input)?;
     let number_of_occupants = calc_n_occupants(total_floor_area, nbeds)?;

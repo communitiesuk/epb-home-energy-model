@@ -255,7 +255,7 @@ fn validate_threshold_value_fractions(
 ) -> Result<(), serde_valid::validation::Error> {
     if let Some(values) = values {
         if !values.iter().all(|&v| v >= 0. && v <= 1.) {
-            return Err(serde_valid::validation::Error::Custom("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.".to_string()));
+            return custom_validation_error("Some threshold values for an energy supply contained numbers that were not fractions between 0 and 1 inclusive.".to_string());
         }
     }
 
@@ -1866,9 +1866,9 @@ fn validate_dry_core_output(
 ) -> Result<(), serde_valid::validation::Error> {
     //ensure body of data has at least 2 pairs
     if output_data.len() < 2 {
-        return Err(serde_valid::validation::Error::Custom(format!(
+        return custom_validation_error(format!(
             "The field {field} for an electric storage heater must have at least 2 pairs of data."
-        )));
+        ));
     }
 
     // Convert ESH_***_output to NumPy arrays without sorting
@@ -1876,22 +1876,22 @@ fn validate_dry_core_output(
 
     // Validate that SOC array is in strictly increasing order
     if !soc_values.iter().tuple_windows().all(|(a, b)| a <= b) {
-        return Err(serde_valid::validation::Error::Custom(format!(
+        return custom_validation_error(format!(
             "{field} SOC values must be in increasing order (from 0.0 to 1.0)."
-        )));
+        ));
     }
 
     // Validate that both SOC arrays start at 0.0 and end at 1.0
     if !is_close!(*soc_values.first().unwrap(), 0.) {
-        return Err(serde_valid::validation::Error::Custom(format!(
+        return custom_validation_error(format!(
             "The first SOC value in {field} must be 0.0 (fully discharged)."
-        )));
+        ));
     }
 
     if !is_close!(*soc_values.last().unwrap(), 1.) {
-        return Err(serde_valid::validation::Error::Custom(format!(
+        return custom_validation_error(format!(
             "The last SOC value in {field} must be 1.0 (fully charged)."
-        )));
+        ));
     }
 
     Ok(())
@@ -2023,9 +2023,9 @@ fn validate_fancoil_test_data(
         .map(|entry| entry.power_output.len())
         .all_equal()
     {
-        return Err(serde_valid::validation::Error::Custom(
+        return custom_validation_error(
             "Fan speed lists of fancoil manufacturer data differ in length".to_string(),
-        ));
+        );
     }
 
     if data
@@ -2033,9 +2033,9 @@ fn validate_fancoil_test_data(
         .first()
         .is_none_or(|entry| entry.power_output.len() != data.fan_power_w.len())
     {
-        return Err(serde_valid::validation::Error::Custom(
+        return custom_validation_error(
             "Fan power data length does not match the length of fan speed data".to_string(),
-        ));
+        );
     }
 
     Ok(())
@@ -2057,11 +2057,18 @@ fn validate_all_items_non_negative(items: &[f64]) -> Result<(), serde_valid::val
         .iter()
         .all(|item| item >= &0.)
         .then(|| Ok(()))
-        .unwrap_or_else(|| {
-            Err(serde_valid::validation::Error::Custom(
-                "All items must be non-negative".to_string(),
-            ))
-        })
+        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
+}
+
+fn validate_all_items_in_option_non_negative(
+    items: &Option<Vec<f64>>,
+) -> Result<(), serde_valid::validation::Error> {
+    items
+        .iter()
+        .flatten()
+        .all(|item| item >= &0.)
+        .then(|| Ok(()))
+        .unwrap_or_else(|| custom_validation_error("All items must be non-negative".to_string()))
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -2468,18 +2475,16 @@ fn validate_area_height_width(
         BuildingElementAreaOrHeightWidthInput {
             area: None,
             height_and_width: None,
-        } => Err(serde_valid::validation::Error::Custom("Building element input needed to specify an area value if a height and width pair of values was not provided.".to_string())),
+        } => custom_validation_error("Building element input needed to specify an area value if a height and width pair of values was not provided.".into()),
         BuildingElementAreaOrHeightWidthInput {
             area: Some(area),
             height_and_width: Some(height_and_width),
-        } if *area != height_and_width.area() => Err(
-            serde_valid::validation::Error::Custom(
-                format!(
-                    "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
-                    height_and_width.height,
-                    height_and_width.width,
-                    height_and_width.area()
-                )
+        } if *area != height_and_width.area() => custom_validation_error(
+            format!(
+                "Building element specified an area of {area} but a height and width pair of {} and {} making an area {} was also provided. These areas need to align.",
+                height_and_width.height,
+                height_and_width.width,
+                height_and_width.area()
             )
         ),
         _ => Ok(())
@@ -2498,7 +2503,7 @@ fn validate_u_value_and_thermal_resistance_floor_construction(
     {
         return match calculate_thermal_resistance_of_virtual_layer(*u_value, *thermal_resistance_floor_construction) {
             Ok(_) => Ok(()),
-            Err(_) => Err(serde_valid::validation::Error::Custom(format!("Ground building element provided with u_value {u_value} and thermal_resistance_floor_construction {thermal_resistance_floor_construction} values that were not compatible with each other.")))
+            Err(_) => custom_validation_error(format!("Ground building element provided with u_value {u_value} and thermal_resistance_floor_construction {thermal_resistance_floor_construction} values that were not compatible with each other."))
         };
     }
 
@@ -3382,28 +3387,101 @@ pub(crate) enum HeatBattery {
 
 pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
+#[validate(custom = validate_flow_rates_and_efficiencies_length)]
 pub(crate) struct WasteWaterHeatRecoveryDetails {
     #[serde(rename = "type")]
-    pub(crate) system_type: WasteWaterHeatRecoverySystemType,
+    _type: MustBe!("WWHRS_Instantaneous"),
     #[serde(rename = "ColdWaterSource")]
     pub(crate) cold_water_source: ColdWaterSourceType,
+    /// Test flow rates in litres per minute (e.g., [5., 7., 9., 11., 13.])
+    #[validate(custom = validate_all_items_non_negative)]
     pub(crate) flow_rates: Vec<f64>,
-    pub(crate) efficiencies: Vec<f64>,
-    pub(crate) utilisation_factor: f64,
+    /// Measured efficiencies for System A at the test flow rates
+    #[validate(custom = validate_all_items_non_negative)]
+    pub(crate) system_a_efficiencies: Vec<f64>,
+    /// Utilisation factor for System A
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) system_a_utilisation_factor: Option<f64>,
+    /// Measured efficiencies for System B (optional, uses system_b_efficiency_factor if not provided)
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    pub(crate) system_b_efficiencies: Option<Vec<f64>>,
+    /// Utilisation factor for System B. Required when using either system_b_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System B (used with system_b_efficiency_factor).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) system_b_utilisation_factor: Option<f64>,
+    /// Measured efficiencies for System C (optional, uses system_c_efficiency_factor if not provided)
+    #[validate(custom = validate_all_items_in_option_non_negative)]
+    pub(crate) system_c_efficiencies: Option<Vec<f64>>,
+    /// Utilisation factor for System C. Required when using either system_c_efficiencies (pre-corrected data) or when converting system_a_efficiencies to System C (used with system_c_efficiency_factor).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) system_c_utilisation_factor: Option<f64>,
+    /// Reduction factor for converting System A efficiency data to System B (default 0.81). Only used when system_b_efficiencies is not provided.
+    #[serde(default = "default_system_b_efficiency_factor")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) system_b_efficiency_factor: f64,
+    /// Reduction factor for converting System A efficiency data to System C (default 0.88). Only used when system_c_efficiencies is not provided.
+    #[serde(default = "default_system_c_efficiency_factor")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) system_c_efficiency_factor: f64,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum WasteWaterHeatRecoverySystemType {
-    #[serde(rename = "WWHRS_InstantaneousSystemA")]
-    SystemA,
-    #[serde(rename = "WWHRS_InstantaneousSystemB")]
-    SystemB,
-    #[serde(rename = "WWHRS_InstantaneousSystemC")]
-    SystemC,
+const fn default_system_b_efficiency_factor() -> f64 {
+    0.81
+}
+
+const fn default_system_c_efficiency_factor() -> f64 {
+    0.88
+}
+
+fn validate_flow_rates_and_efficiencies_length(
+    data: &WasteWaterHeatRecoveryDetails,
+) -> Result<(), serde_valid::validation::Error> {
+    // Validate system A (always required)
+    if data.flow_rates.len() != data.system_a_efficiencies.len() {
+        return custom_validation_error(
+            "flow_rates and system_a_efficiencies must have the same length".into(),
+        );
+    }
+
+    // Validate system B if provided
+    if data
+        .system_b_efficiencies
+        .as_ref()
+        .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
+    {
+        return custom_validation_error(
+            "flow_rates and system_b_efficiencies must have the same length".into(),
+        );
+    }
+
+    // Validate system C if provided
+    if data
+        .system_c_efficiencies
+        .as_ref()
+        .is_some_and(|efficiencies| data.flow_rates.len() != efficiencies.len())
+    {
+        return custom_validation_error(
+            "flow_rates and system_c_efficiencies must have the same length".into(),
+        );
+    }
+
+    Ok(())
+}
+
+fn custom_validation_error(
+    message: std::string::String,
+) -> Result<(), serde_valid::validation::Error> {
+    Err(serde_valid::validation::Error::Custom(message))
 }
 
 pub(crate) type OnSiteGeneration = IndexMap<String, PhotovoltaicSystem>;
@@ -3713,12 +3791,10 @@ fn validate_supply_air_temp_ctrl(
 ) -> Result<(), serde_valid::validation::Error> {
     match data.supply_air_temperature_control_type {
         SupplyAirTemperatureControlType::NoControl => Ok(()),
-        _ => Err(
-            serde_valid::validation::Error::Custom(
-                format!(
-                    "Supply air temperature control type {} is not currently implemented. Only NO_CTRL is supported. Other values would be silently overwritten by the ventilation engine.",
-                    serde_json::to_value(data.supply_air_temperature_control_type).unwrap().as_str().unwrap()
-                )
+        _ => custom_validation_error(
+            format!(
+                "Supply air temperature control type {} is not currently implemented. Only NO_CTRL is supported. Other values would be silently overwritten by the ventilation engine.",
+                serde_json::to_value(data.supply_air_temperature_control_type).unwrap().as_str().unwrap()
             )
         ),
     }
