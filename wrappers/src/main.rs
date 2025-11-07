@@ -155,6 +155,7 @@ fn main() -> anyhow::Result<()> {
         external_conditions,
         args.tariff_file.as_ref().map(|f| f.as_str()),
         &project_flags,
+        args.preprocess_only,
     )?;
 
     if let Some(response) = response {
@@ -188,9 +189,6 @@ fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
 impl From<&WrappersArgs> for ProjectFlags {
     fn from(args: &WrappersArgs) -> Self {
         let mut flags = ProjectFlags::empty();
-        if args.preprocess_only {
-            flags.insert(ProjectFlags::PRE_PROCESS_ONLY);
-        }
         if args.heat_balance {
             flags.insert(ProjectFlags::HEAT_BALANCE);
         }

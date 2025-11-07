@@ -26,7 +26,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    let resp = match run_wrappers(input, &output, external_conditions, None, &ProjectFlags::FHS_COMPLIANCE) {
+    let resp = match run_wrappers(input, &output, external_conditions, None, &ProjectFlags::FHS_COMPLIANCE, false) {
         Ok(Some(resp)) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")

@@ -381,7 +381,6 @@ impl CalculationResultsWithContext {
 
 bitflags! {
     pub struct ProjectFlags: u32 {
-        const PRE_PROCESS_ONLY = 0b1;
         const HEAT_BALANCE = 0b10;
         const DETAILED_OUTPUT_HEATING_COOLING = 0b100;
         // start FHS flags from 2^8

@@ -90,6 +90,7 @@ pub fn run_wrappers(
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
     flags: &ProjectFlags,
+    preprocess_only: bool,
 ) -> Result<Option<HemResponse>, HemError> {
     catch_unwind(AssertUnwindSafe(|| {
         #[instrument(skip_all)]
@@ -154,7 +155,7 @@ pub fn run_wrappers(
         };
 
         // 2b.(!) If preprocess-only flag is present and there is a primary calculation key, write out preprocess file
-        if flags.contains(ProjectFlags::PRE_PROCESS_ONLY) {
+        if preprocess_only {
             if let Some(input) = input.get(&CalculationKey::Primary) {
                 write_preproc_file(&input.clone().finalize()?, &output, "preproc", "json")?;
             } else {
