@@ -74,7 +74,7 @@ impl DomesticHotWaterDemand {
             .iter()
             .map(|(name, shower)| {
                 Ok((
-                    name.clone(),
+                    name.into(),
                     shower_from_input(name, shower, cold_water_sources, energy_supplies, wwhrs)?,
                 ))
             })
@@ -82,14 +82,14 @@ impl DomesticHotWaterDemand {
         let baths: HashMap<String, Bath> = bath_input
             .0
             .iter()
-            .map(|(name, bath)| (name.clone(), input_to_bath(bath, cold_water_sources)))
+            .map(|(name, bath)| (name.into(), input_to_bath(bath, cold_water_sources)))
             .collect();
         let other: HashMap<String, OtherHotWater> = other_hot_water_input
             .0
             .iter()
             .map(|(name, other)| {
                 (
-                    name.clone(),
+                    name.into(),
                     input_to_other_water_events(other, cold_water_sources),
                 )
             })

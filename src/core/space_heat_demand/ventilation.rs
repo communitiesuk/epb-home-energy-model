@@ -2403,7 +2403,7 @@ impl InfiltrationVentilation {
             // TODO (from Python) not all dwellings have mech vents - update to make mech vents optional
             if matches!(mech_vents_data.vent_data, MechVentData::Mvhr { .. }) {
                 space_heating_ductwork.insert(
-                    mech_vents_name.to_owned(),
+                    mech_vents_name.into(),
                     mech_vents_data
                         .ductwork
                         .iter()

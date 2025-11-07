@@ -1283,8 +1283,8 @@ impl ExternalConditions {
 
                             if f_sky == 1. {
                                 let alpha_obst = (h_shade / *distance).atan().to_degrees();
-                                f_sky_front =
-                                    f_sky_front.min(f_sky_seg_front * alpha_obst.to_radians().cos());
+                                f_sky_front = f_sky_front
+                                    .min(f_sky_seg_front * alpha_obst.to_radians().cos());
                             } else if f_sky > 0. {
                                 if f_sky_seg_front > 0. {
                                     // height element is above obstacle (zero if not)
@@ -1315,8 +1315,11 @@ impl ExternalConditions {
                                         let alpha_obst = (h_shade / *distance).atan().to_degrees();
                                         // Determine new rear sky view factor directly from shading angle (alpha_obst) using standard 0.5 x cos(angle) method
                                         // as shading is now determined by this angle not the tilt angle which is smaller
-                                        f_sky_rear = f_sky_rear
-                                            .min(rear_arc_proportion * 0.5 * alpha_obst.to_radians().cos());
+                                        f_sky_rear = f_sky_rear.min(
+                                            rear_arc_proportion
+                                                * 0.5
+                                                * alpha_obst.to_radians().cos(),
+                                        );
                                     }
                                 }
                             }
@@ -1541,10 +1544,16 @@ impl ExternalConditions {
                 // #       average of this view factor calculated with the dimensions of
                 // #       each fin.
                 let f_w_s = (0.6514
-                    * (1.0 - (p2_left_sidefin / (p1_left_sidefin.powi(2) + p2_left_sidefin.powi(2)).sqrt()))
-                    + 0.6514 * (1.0 - (p2_right_sidefin / (p1_right_sidefin.powi(2) + p2_right_sidefin.powi(2)).sqrt())))
+                    * (1.0
+                        - (p2_left_sidefin
+                            / (p1_left_sidefin.powi(2) + p2_left_sidefin.powi(2)).sqrt()))
+                    + 0.6514
+                        * (1.0
+                            - (p2_right_sidefin
+                                / (p1_right_sidefin.powi(2) + p2_right_sidefin.powi(2)).sqrt())))
                     / 2.0;
-                let f_w_o = 0.3282 * (1.0 - (p2_overhang / (p1_overhang.powi(2) + p2_overhang.powi(2)).sqrt()));
+                let f_w_o = 0.3282
+                    * (1.0 - (p2_overhang / (p1_overhang.powi(2) + p2_overhang.powi(2)).sqrt()));
                 let f_w_sky = (1.0 - (alpha + beta - 90.0f64.to_radians()).sin()) / 2.0;
 
                 // # Calculate denominators of eqns F.9 to F.14
@@ -1616,7 +1625,9 @@ impl ExternalConditions {
                     // proportion of element above obstacle
                     let prop_above_obstacle = height_above_obstacle / height;
                     // angle between midpoint of shaded section and top of obstacle
-                    let angle_obst = ((net_shade_height / 2.) / obstacle_distance).atan().to_degrees();
+                    let angle_obst = ((net_shade_height / 2.) / obstacle_distance)
+                        .atan()
+                        .to_degrees();
                     // Sky view factor reduction
                     let f_w_ob = view_factor_sky_no_obstacles
                         .min((1. - (90. - angle_obst).to_radians().sin()) * 0.5)
@@ -1706,7 +1717,9 @@ impl ExternalConditions {
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, true, &simulation_time);
 
         if diffuse_breakdown.is_none() {
-            return Err(anyhow!("diffuse_breakdown not calculated by calculated_direct_diffuse_total_irradiance"))
+            return Err(anyhow!(
+                "diffuse_breakdown not calculated by calculated_direct_diffuse_total_irradiance"
+            ));
         }
 
         if direct + diffuse == 0.0 {
@@ -1750,18 +1763,19 @@ impl ExternalConditions {
         //                       significantly pitched would have to be relatively tall and/or
         //                       very close to cast a shadow on the surface in question anyway),
         //                       so that results in the unshaded case will be correct.
-        let direct_shading_reduction_factor = if self.outside_solar_beam(tilt, orientation, &simulation_time) {
-            1.0
-        } else {
-            self.direct_shading_reduction_factor(
-                base_height,
-                height,
-                width,
-                orientation,
-                Some(&window_shading_expanded),
-                simulation_time,
-            )?
-        };
+        let direct_shading_reduction_factor =
+            if self.outside_solar_beam(tilt, orientation, &simulation_time) {
+                1.0
+            } else {
+                self.direct_shading_reduction_factor(
+                    base_height,
+                    height,
+                    width,
+                    orientation,
+                    Some(&window_shading_expanded),
+                    simulation_time,
+                )?
+            };
 
         let f_sky = Self::sky_view_factor(&tilt);
         let diffuse_shading_factor = self.diffuse_shading_reduction_factor(
@@ -1791,15 +1805,16 @@ impl ExternalConditions {
     ) -> anyhow::Result<f64> {
         let CalculatedDirectDiffuseTotalIrradiance(i_sol_dir, i_sol_dif, _, _) = self
             .calculated_direct_diffuse_total_irradiance(tilt, orientation, false, &simulation_time);
-        let (direct_shading_factor, diffuse_shading_factor) = self.shading_reduction_factor_direct_diffuse(
-            base_height,
-            projected_height,
-            width,
-            tilt,
-            orientation,
-            window_shading,
-            simulation_time,
-        )?;
+        let (direct_shading_factor, diffuse_shading_factor) = self
+            .shading_reduction_factor_direct_diffuse(
+                base_height,
+                projected_height,
+                width,
+                tilt,
+                orientation,
+                window_shading,
+                simulation_time,
+            )?;
 
         Ok(i_sol_dif * diffuse_shading_factor + i_sol_dir * direct_shading_factor)
     }

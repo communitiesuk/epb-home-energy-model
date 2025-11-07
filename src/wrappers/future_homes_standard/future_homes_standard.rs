@@ -333,11 +333,12 @@ pub(super) fn calc_final_rates(
             .into_iter(),
         )
     {
-        let supply_emis_result = emis_results.entry(energy_supply_key.clone()).or_default();
+        let energy_supply_key = energy_supply_key.as_str();
+        let supply_emis_result = emis_results.entry(energy_supply_key.into()).or_default();
         let supply_emis_oos_result = emis_oos_results
-            .entry(energy_supply_key.clone())
+            .entry(energy_supply_key.into())
             .or_default();
-        let supply_pe_result = pe_results.entry(energy_supply_key.clone()).or_default();
+        let supply_pe_result = pe_results.entry(energy_supply_key.into()).or_default();
 
         let fuel_code = energy_supply_details.fuel;
 
@@ -388,27 +389,27 @@ pub(super) fn calc_final_rates(
         // Calculate energy imported and associated emissions/PE
         if fuel_code == FuelType::Electricity {
             supply_emis_result.import = apply_energy_factor_series(
-                &energy_import[&energy_supply_key],
+                &energy_import[energy_supply_key],
                 &emis_factor_import_export,
             )?;
             supply_emis_oos_result.import = apply_energy_factor_series(
-                &energy_import[&energy_supply_key],
+                &energy_import[energy_supply_key],
                 &emis_oos_factor_import_export,
             )?;
             supply_pe_result.import = apply_energy_factor_series(
-                &energy_import[&energy_supply_key],
+                &energy_import[energy_supply_key],
                 &pe_factor_import_export,
             )?;
         } else {
-            supply_emis_result.import = energy_import[&energy_supply_key]
+            supply_emis_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * emis_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_emis_oos_result.import = energy_import[&energy_supply_key]
+            supply_emis_oos_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * emis_oos_factor_import_export[0])
                 .collect::<Vec<_>>();
-            supply_pe_result.import = energy_import[&energy_supply_key]
+            supply_pe_result.import = energy_import[energy_supply_key]
                 .iter()
                 .map(|x| x * pe_factor_import_export[0])
                 .collect::<Vec<_>>();
@@ -420,32 +421,32 @@ pub(super) fn calc_final_rates(
             supply_emis_result.export,
             supply_emis_oos_result.export,
             supply_pe_result.export,
-        ) = if energy_export[&energy_supply_key].iter().sum::<f64>() < 0. {
+        ) = if energy_export[energy_supply_key].iter().sum::<f64>() < 0. {
             match fuel_code {
                 FuelType::Electricity => (
                     apply_energy_factor_series(
-                        &energy_export[&energy_supply_key],
+                        &energy_export[energy_supply_key],
                         &emis_factor_import_export,
                     )?,
                     apply_energy_factor_series(
-                        &energy_export[&energy_supply_key],
+                        &energy_export[energy_supply_key],
                         &emis_oos_factor_import_export,
                     )?,
                     apply_energy_factor_series(
-                        &energy_export[&energy_supply_key],
+                        &energy_export[energy_supply_key],
                         &pe_factor_import_export,
                     )?,
                 ),
                 _ => (
-                    energy_export[&energy_supply_key]
+                    energy_export[energy_supply_key]
                         .iter()
                         .map(|x| x * emis_factor_import_export[0])
                         .collect::<Vec<_>>(),
-                    energy_export[&energy_supply_key]
+                    energy_export[energy_supply_key]
                         .iter()
                         .map(|x| x * emis_oos_factor_import_export[0])
                         .collect::<Vec<_>>(),
-                    energy_export[&energy_supply_key]
+                    energy_export[energy_supply_key]
                         .iter()
                         .map(|x| x * pe_factor_import_export[0])
                         .collect::<Vec<_>>(),
@@ -461,7 +462,7 @@ pub(super) fn calc_final_rates(
 
         // Calculate energy generated and associated emissions/PE
         let mut energy_generated = vec![0.; number_of_timesteps];
-        for end_user_energy in results_end_user[&energy_supply_key].values() {
+        for end_user_energy in results_end_user[energy_supply_key].values() {
             if end_user_energy.iter().sum::<f64>() < 0. {
                 for (t_idx, energy_generated_value) in energy_generated.iter_mut().enumerate() {
                     *energy_generated_value -= end_user_energy[t_idx];
@@ -508,7 +509,7 @@ pub(super) fn calc_final_rates(
 
         // Calculate unregulated energy demand and associated emissions/PE
         let mut energy_unregulated = vec![0.; number_of_timesteps];
-        for (end_user_name, end_user_energy) in results_end_user[&energy_supply_key].iter() {
+        for (end_user_name, end_user_energy) in results_end_user[energy_supply_key].iter() {
             if [APPL_OBJ_NAME, ELEC_COOK_OBJ_NAME, GAS_COOK_OBJ_NAME]
                 .contains(&end_user_name.as_str())
             {

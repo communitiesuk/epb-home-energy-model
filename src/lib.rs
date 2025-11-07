@@ -985,7 +985,7 @@ impl From<&Input> for SummaryInputDigest {
                 .filter(|&(_, energy_supply_details)| {
                     energy_supply_details.fuel == FuelType::Electricity
                 })
-                .map(|(key, _)| key.clone())
+                .map(|(key, _)| key.into())
                 .collect(),
         }
     }

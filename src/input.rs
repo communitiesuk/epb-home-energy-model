@@ -4,7 +4,7 @@ use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
 use crate::core::units::calculate_thermal_resistance_of_virtual_layer;
 use crate::corpus::Corpus;
-use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
+use crate::external_conditions::{ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
@@ -55,52 +55,72 @@ pub struct Input {
     metadata: InputMetadata,
 
     #[serde(default)]
+    #[validate]
     pub(crate) appliance_gains: ApplianceGains,
 
+    #[validate]
     pub(crate) cold_water_source: ColdWaterSourceInput,
 
+    #[validate]
     pub(crate) control: Control,
 
+    #[validate]
     pub(crate) energy_supply: EnergySupplyInput,
 
     #[serde(rename = "Events")]
+    #[validate]
     pub(crate) water_heating_events: WaterHeatingEvents,
 
+    #[validate]
     pub(crate) external_conditions: Arc<ExternalConditionsInput>,
 
     /// Dictionary of available wet heat sources, keyed by user-defined names (e.g., 'boiler', 'hp', 'HeatNetwork', 'hb1'). Other models reference these keys via their heat_source_wet fields.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) heat_source_wet: Option<HeatSourceWet>,
 
+    #[validate]
     pub(crate) hot_water_demand: HotWaterDemand,
 
+    #[validate]
     pub(crate) hot_water_source: HotWaterSource,
 
+    #[validate]
     pub(crate) infiltration_ventilation: InfiltrationVentilation,
 
+    #[validate]
     pub(crate) internal_gains: InternalGains,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) on_site_generation: Option<OnSiteGeneration>,
 
     #[serde(default)]
     #[validate(custom = validate_only_storage_tanks)]
-    pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
+    #[validate]
+    pub(crate) pre_heated_water_source: IndexMap<std::string::String, HotWaterSourceDetails>,
 
+    #[validate]
     pub(crate) simulation_time: SimulationTime,
 
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub(crate) smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
+    #[validate]
+    pub(crate) smart_appliance_controls:
+        IndexMap<std::string::String, SmartApplianceControlDetails>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) space_cool_system: Option<SpaceCoolSystem>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) space_heat_system: Option<SpaceHeatSystem>,
 
     #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
 
+    #[validate]
     pub(crate) zone: ZoneDictionary,
 
     #[serde(rename = "temp_internal_air_static_calcs")]
@@ -172,7 +192,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             .filter_map(|(name, source)| {
                 if let HeatSourceWetDetails::HeatPump { source_type, .. } = source {
                     if exhaust_air_source_types.contains(&source_type) {
-                        Some((name.clone(), source_type.clone()))
+                        Some((name.into(), source_type.clone()))
                     } else {
                         None
                     }
@@ -192,7 +212,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
             .iter()
             .filter_map(|(vent_name, vent_data)| {
                 vent_is_incompatible(&vent_data.vent_data)
-                    .then_some((vent_name.clone(), vent_data.vent_data.vent_type()))
+                    .then_some((vent_name.into(), vent_data.vent_data.vent_type()))
             })
             .collect();
 
@@ -218,7 +238,7 @@ fn validate_exhaust_air_heat_pump_ventilation_compatibility(
 }
 
 fn validate_only_storage_tanks(
-    sources: &IndexMap<String, HotWaterSourceDetails>,
+    sources: &IndexMap<std::string::String, HotWaterSourceDetails>,
 ) -> Result<(), serde_valid::validation::Error> {
     sources.values()
         .all(|details| matches!(details, HotWaterSourceDetails::StorageTank { .. }))
@@ -323,15 +343,19 @@ pub(crate) struct InternalGains {
     pub(crate) total_internal_gains: Option<InternalGainsDetails>,
 
     #[serde(rename = "metabolic gains", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) metabolic_gains: Option<InternalGainsDetails>,
 
     #[serde(rename = "EvaporativeLosses", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) evaporative_losses: Option<InternalGainsDetails>,
 
     #[serde(rename = "ColdWaterLosses", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) cold_water_losses: Option<InternalGainsDetails>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) other: Option<InternalGainsDetails>,
 }
 
@@ -347,7 +371,7 @@ pub(crate) struct InternalGainsDetails {
     pub(crate) schedule: NumericSchedule,
 }
 
-pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
+pub(crate) type ApplianceGains = IndexMap<std::string::String, ApplianceGainsDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -356,6 +380,7 @@ pub(crate) type ApplianceGains = IndexMap<String, ApplianceGainsDetails>;
 pub(crate) struct ApplianceGainsDetails {
     /// List of appliance usage events
     #[serde(rename = "Events", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) events: Option<Vec<ApplianceGainsEvent>>,
 
     /// Appliance power consumption when not in use (unit: W)
@@ -373,6 +398,7 @@ pub(crate) struct ApplianceGainsDetails {
 
     /// Load shifting configuration for smart appliance control
     #[serde(rename = "loadshifting", skip_serializing_if = "Option::is_none")]
+    #[validate]
     pub(crate) load_shifting: Option<ApplianceLoadShifting>,
 
     /// Priority level for load shifting (lower numbers = higher priority)
@@ -410,7 +436,7 @@ pub struct ApplianceGainsEvent {
     pub demand_w: f64,
 }
 
-pub(crate) type EnergySupplyInput = IndexMap<String, EnergySupplyDetails>;
+pub(crate) type EnergySupplyInput = IndexMap<std::string::String, EnergySupplyDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -748,20 +774,23 @@ pub struct ColdWaterSourceDetails {
     pub(crate) time_series_step: f64,
 }
 
-pub(crate) type ExtraControls = IndexMap<String, ControlDetails>;
+pub(crate) type ExtraControls = IndexMap<std::string::String, ControlDetails>;
 
 /// Control schedule configuration for heating and energy systems.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Control {
     #[serde(skip_serializing_if = "Option::is_none", rename = "hw timer")]
+    #[validate]
     pub(crate) hot_water_timer: Option<ControlDetails>,
 
     #[serde(skip_serializing_if = "Option::is_none", rename = "window opening")]
+    #[validate]
     pub(crate) window_opening: Option<ControlDetails>,
 
     #[serde(flatten)]
+    #[validate]
     pub(crate) extra: ExtraControls,
 }
 
@@ -842,6 +871,7 @@ pub(crate) enum ControlDetails {
         charge_level: Option<ChargeLevel>,
 
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate]
         external_sensor: Option<ExternalSensor>,
 
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -966,10 +996,11 @@ pub(crate) enum ChargeLevel {
     Schedule(NumericSchedule),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExternalSensor {
+    #[validate]
     pub(crate) correlation: Vec<ExternalSensorCorrelation>,
 }
 
@@ -1169,6 +1200,7 @@ pub(crate) struct SmartApplianceControlDetails {
     pub(crate) appliances: Vec<ApplianceKey>,
 
     #[serde(rename = "battery24hr")]
+    #[validate]
     pub(crate) battery_24hr: SmartApplianceBattery,
 
     /// Dictionary of lists containing demand per end user for each timestep for each energy supply (unit: W)
@@ -1195,11 +1227,12 @@ fn validate_map_non_empty<T>(
     })
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HotWaterSource {
     #[serde(rename = "hw cylinder")]
+    #[validate]
     pub(crate) hot_water_cylinder: HotWaterSourceDetails,
 }
 
@@ -1232,7 +1265,8 @@ pub(crate) enum HotWaterSourceDetails {
 
         /// Map of heating systems connected to the storage tank
         #[serde(rename = "HeatSource")]
-        heat_source: IndexMap<String, HeatSource>,
+        #[validate]
+        heat_source: IndexMap<std::string::String, HeatSource>,
 
         /// Measured standby losses due to cylinder insulation at standardised conditions (unit: kWh/24h)
         #[validate(minimum = 0.)]
@@ -1249,6 +1283,7 @@ pub(crate) enum HotWaterSourceDetails {
 
         /// List of primary pipework components connected to the storage tank
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate]
         primary_pipework: Option<Vec<WaterPipework>>,
 
         /// Total volume of tank (unit: litre)
@@ -1357,10 +1392,12 @@ pub(crate) enum HotWaterSourceDetails {
 
         /// Dictionary of heating systems connected to the smart hot water tank
         #[serde(rename = "HeatSource")]
-        heat_source: IndexMap<String, HeatSource>,
+        #[validate]
+        heat_source: IndexMap<std::string::String, HeatSource>,
 
         /// List of primary pipework components connected to the smart hot water tank
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate]
         primary_pipework: Option<Vec<WaterPipeworkSimple>>,
     },
     HeatBattery {
@@ -1548,6 +1585,15 @@ pub enum ColdWaterSourceType {
 
     #[serde(rename = "header tank")]
     HeaderTank,
+}
+
+impl Into<std::string::String> for &ColdWaterSourceType {
+    fn into(self) -> std::string::String {
+        match self {
+            ColdWaterSourceType::MainsWater => "mains water".into(),
+            ColdWaterSourceType::HeaderTank => "header tank".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -2001,32 +2047,37 @@ pub enum PipeworkContents {
     Glycol25,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HotWaterDemand {
     #[serde(default, rename = "Shower")]
+    #[validate]
     pub(crate) shower: Showers,
 
     #[serde(default, rename = "Bath")]
+    #[validate]
     pub(crate) bath: Baths,
 
     #[serde(default, rename = "Other")]
+    #[validate]
     pub(crate) other_water_use: OtherWaterUses,
 
     #[serde(default, rename = "Distribution")]
+    #[validate]
     pub(crate) water_distribution: WaterDistribution,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Showers(pub IndexMap<String, Shower>);
+#[validate]
+pub struct Showers(#[validate] pub IndexMap<std::string::String, Shower>);
 
 impl Showers {
     /// Provide shower field names as strings.
     pub fn keys(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
+        self.0.keys().map(Into::into).collect()
     }
 
     pub fn name_refers_to_instant_electric_shower(&self, name: &str) -> bool {
@@ -2103,10 +2154,9 @@ pub(crate) enum WwhrsConfiguration {
     WaterHeatingSystem,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Baths(pub IndexMap<String, BathDetails>);
+pub(crate) struct Baths(#[validate] pub IndexMap<std::string::String, BathDetails>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2131,7 +2181,7 @@ pub(crate) struct BathDetails {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OtherWaterUses(pub IndexMap<String, OtherWaterUse>);
+pub(crate) struct OtherWaterUses(#[validate] pub IndexMap<std::string::String, OtherWaterUse>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2149,12 +2199,12 @@ pub(crate) struct OtherWaterUse {
     pub(crate) hot_water_source: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
 pub(crate) enum WaterDistribution {
-    List(Vec<WaterPipeworkSimple>),
-    Map(IndexMap<String, Vec<WaterPipeworkSimple>>),
+    List(#[validate] Vec<WaterPipeworkSimple>),
+    Map(#[validate] IndexMap<std::string::String, Vec<WaterPipeworkSimple>>),
 }
 
 impl Default for WaterDistribution {
@@ -2163,22 +2213,25 @@ impl Default for WaterDistribution {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct WaterHeatingEvents {
     /// Dictionary of shower water heating events, where keys are shower names and values are lists of events
     #[serde(default)]
-    pub(crate) shower: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[validate]
+    pub(crate) shower: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
 
     /// Dictionary of bath water heating events, where keys are bath names and values are lists of events
     #[serde(default)]
-    pub(crate) bath: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[validate]
+    pub(crate) bath: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
 
     /// Dictionary of other water heating events (e.g., taps, sinks), where keys are event names and values are lists of events
     #[serde(default)]
-    pub(crate) other: IndexMap<String, Vec<WaterHeatingEvent>>,
+    #[validate]
+    pub(crate) other: IndexMap<std::string::String, Vec<WaterHeatingEvent>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Validate)]
@@ -2213,7 +2266,7 @@ pub enum WaterHeatingEventType {
     Other,
 }
 
-pub(crate) type SpaceHeatSystem = IndexMap<String, SpaceHeatSystemDetails>;
+pub(crate) type SpaceHeatSystem = IndexMap<std::string::String, SpaceHeatSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2297,6 +2350,7 @@ pub(crate) enum SpaceHeatSystemDetails {
     },
     WetDistribution {
         #[serde(rename = "HeatSource")]
+        #[validate]
         heat_source: SpaceHeatSystemHeatSource,
 
         /// Fraction of return back into flow water
@@ -2311,9 +2365,11 @@ pub(crate) enum SpaceHeatSystemDetails {
 
         /// Wet emitter details of the heating system.
         #[validate(min_items = 1)]
+        #[validate]
         emitters: Vec<WetEmitter>,
 
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[validate]
         pipework: Vec<WaterPipework>,
 
         ecodesign_controller: EcoDesignController,
@@ -2338,6 +2394,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         zone: String,
 
         #[serde(flatten)]
+        #[validate]
         flow_data: FlowData,
     },
     WarmAir {
@@ -2347,6 +2404,7 @@ pub(crate) enum SpaceHeatSystemDetails {
         frac_convective: f64,
 
         #[serde(rename = "HeatSource")]
+        #[validate]
         heat_source: SpaceHeatSystemHeatSource,
 
         #[serde(rename = "Control")]
@@ -2433,6 +2491,7 @@ pub(crate) enum WetEmitter {
         frac_convective: f64,
 
         #[serde(flatten)]
+        #[validate]
         constant_data: RadiatorConstantData,
     },
     Ufh {
@@ -2465,6 +2524,7 @@ pub(crate) enum WetEmitter {
         frac_convective: f64,
 
         /// Manufacturer's data for fancoil unit
+        #[validate]
         fancoil_test_data: FancoilTestData,
     },
 }
@@ -2511,6 +2571,7 @@ const fn default_n_units() -> usize {
 #[validate(custom = validate_fancoil_test_data)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FancoilTestData {
+    #[validate]
     pub(crate) fan_speed_data: Vec<FanSpeedData>,
 
     /// A list of fan powers for which heat output data is provided (unit: W)
@@ -2656,7 +2717,7 @@ pub(crate) enum ElectricStorageHeaterAirFlowType {
     DamperOnly,
 }
 
-pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
+pub(crate) type ZoneDictionary = IndexMap<std::string::String, ZoneInput>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -2666,7 +2727,8 @@ pub(crate) type ZoneDictionary = IndexMap<String, ZoneInput>;
 pub struct ZoneInput {
     /// Map of building elements present in the zone (e.g. walls, floors, windows, etc.).
     #[serde(rename = "BuildingElement")]
-    pub(crate) building_elements: IndexMap<String, BuildingElement>,
+    #[validate]
+    pub(crate) building_elements: IndexMap<std::string::String, BuildingElement>,
 
     /// Cooling system details of the zone. References a key in $.SpaceCoolSystem
     #[serde(
@@ -2674,6 +2736,7 @@ pub struct ZoneInput {
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
+    #[validate]
     pub(crate) space_cool_system: SystemReference,
 
     /// Heating system details of the zone. References a key in $.SpaceHeatSystem
@@ -2682,10 +2745,12 @@ pub struct ZoneInput {
         skip_serializing_if = "SystemReference::is_none",
         default
     )]
+    #[validate]
     pub(crate) space_heat_system: SystemReference,
 
     /// Overall heat transfer coefficient of the thermal bridge (in W/K), or dictionary of linear thermal transmittance details of the thermal bridges in the zone.
     #[serde(rename = "ThermalBridging")]
+    #[validate]
     pub(crate) thermal_bridging: ThermalBridging,
 
     /// Useful floor area of the zone. (Unit: m²)
@@ -2818,6 +2883,7 @@ pub(crate) enum BuildingElement {
         solar_absorption_coeff: f64,
 
         #[serde(flatten)]
+        #[validate]
         u_value_input: UValueInput,
 
         /// Areal heat capacity (unit: J/m².K)
@@ -2846,12 +2912,14 @@ pub(crate) enum BuildingElement {
         base_height: f64,
 
         #[serde(flatten)]
+        #[validate]
         area_input: BuildingElementAreaOrHeightWidthInput,
     },
 
     #[serde(rename = "BuildingElementTransparent")]
     Transparent {
         #[serde(flatten)]
+        #[validate]
         u_value_input: UValueInput,
 
         /// Areal heat capacity (J/m².K)
@@ -2889,6 +2957,7 @@ pub(crate) enum BuildingElement {
         base_height: f64,
 
         #[serde(flatten)]
+        #[validate]
         area_input: BuildingElementAreaOrHeightWidthInput,
 
         /// Height of the openable area, corrected for obstruction due to the window frame of the openable section (unit: m)
@@ -2903,11 +2972,14 @@ pub(crate) enum BuildingElement {
         #[validate(minimum = 0.)]
         max_window_open_area: f64,
 
+        #[validate]
         window_part_list: Vec<WindowPart>,
 
+        #[validate]
         shading: Vec<WindowShadingObject>,
 
         #[serde(default)]
+        #[validate]
         treatment: Vec<WindowTreatment>,
     },
 
@@ -2963,6 +3035,7 @@ pub(crate) enum BuildingElement {
 
         /// Data specific to types of floors
         #[serde(flatten)]
+        #[validate]
         floor_data: FloorData,
     },
 
@@ -2977,6 +3050,7 @@ pub(crate) enum BuildingElement {
         pitch: f64,
 
         #[serde(flatten)]
+        #[validate]
         u_value_input: UValueInput,
 
         /// Areal heat capacity (J/m².K)
@@ -2998,6 +3072,7 @@ pub(crate) enum BuildingElement {
         pitch: f64,
 
         #[serde(flatten)]
+        #[validate]
         u_value_input: UValueInput,
 
         /// Effective thermal resistance of unheated space (unit: m².K/W)
@@ -3432,6 +3507,7 @@ pub(crate) enum FloorData {
     #[serde(rename = "Slab_edge_insulation")]
     SlabEdgeInsulation {
         #[validate(min_items = 1)]
+        #[validate]
         edge_insulation: Vec<EdgeInsulation>,
     },
 
@@ -3555,12 +3631,12 @@ pub enum EdgeInsulation {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(untagged)]
 pub enum ThermalBridging {
-    Elements(IndexMap<String, ThermalBridgingDetails>),
+    Elements(#[validate] IndexMap<std::string::String, ThermalBridgingDetails>),
     Number(f64),
 }
 
@@ -3597,7 +3673,7 @@ pub enum HeatingControlType {
     SeparateTemperatureControl,
 }
 
-pub(crate) type SpaceCoolSystem = IndexMap<String, SpaceCoolSystemDetails>;
+pub(crate) type SpaceCoolSystem = IndexMap<std::string::String, SpaceCoolSystemDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -3633,7 +3709,7 @@ pub enum WaterHeatingSchedule {
     HeatingHours,
 }
 
-pub(crate) type HeatSourceWet = IndexMap<String, HeatSourceWetDetails>;
+pub(crate) type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -3643,6 +3719,7 @@ pub(crate) enum HeatSourceWetDetails {
     HeatPump {
         /// Optional buffer tank configuration for the heat pump system
         #[serde(rename = "BufferTank", skip_serializing_if = "Option::is_none")]
+        #[validate(custom = validate_boxed_in_option)]
         buffer_tank: Option<Box<HeatPumpBufferTank>>,
 
         #[serde(rename = "EnergySupply")]
@@ -3668,6 +3745,7 @@ pub(crate) enum HeatSourceWetDetails {
 
         /// Optional boiler configuration used as backup for the heat pump
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[validate(custom = validate_boxed_in_option)]
         boiler: Option<Box<HeatPumpBoiler>>,
 
         /// Maximum temperature for exhaust air heat pump mixed operation (unit: ˚C)
@@ -3817,6 +3895,7 @@ pub(crate) enum HeatSourceWetDetails {
     },
     HeatBattery {
         #[serde(flatten)]
+        #[validate]
         battery: HeatBattery,
     },
     #[serde(rename = "HIU")]
@@ -3845,6 +3924,18 @@ pub(crate) enum HeatSourceWetDetails {
         #[validate(minimum = 0.)]
         power_aux: Option<f64>,
     },
+}
+
+fn validate_boxed_in_option<T: Validate>(
+    value: &Option<Box<T>>,
+) -> Result<(), serde_valid::validation::Error> {
+    if let Some(boxed) = value.as_ref().map(|v| v.as_ref()) {
+        boxed
+            .validate()
+            .map_err(|e| serde_valid::validation::Error::Custom(format!("Validation error: {e}")))
+    } else {
+        Ok(())
+    }
 }
 
 impl From<&HeatPumpBoiler> for HeatSourceWetDetails {
@@ -4174,7 +4265,8 @@ pub(crate) enum HeatBattery {
     },
 }
 
-pub(crate) type WasteWaterHeatRecovery = IndexMap<String, WasteWaterHeatRecoveryDetails>;
+pub(crate) type WasteWaterHeatRecovery =
+    IndexMap<std::string::String, WasteWaterHeatRecoveryDetails>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -4283,14 +4375,14 @@ fn custom_validation_error(
     Err(serde_valid::validation::Error::Custom(message))
 }
 
-pub(crate) type OnSiteGeneration = IndexMap<String, PhotovoltaicSystem>;
+pub(crate) type OnSiteGeneration = IndexMap<std::string::String, PhotovoltaicInputs>;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
 pub(crate) enum PhotovoltaicInputs {
-    DeprecatedStyle(PhotovoltaicSystem),
-    WithPanels(PhotovoltaicSystemWithPanels),
+    DeprecatedStyle(#[validate] PhotovoltaicSystem),
+    WithPanels(#[validate] PhotovoltaicSystemWithPanels),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -4327,6 +4419,7 @@ pub(crate) struct PhotovoltaicPanel {
     #[validate(exclusive_minimum = 0.)]
     width: f64,
 
+    #[validate]
     shading: Vec<WindowShadingObject>,
 }
 
@@ -4490,11 +4583,13 @@ pub struct InfiltrationVentilation {
 
     /// Provides details about available mechanical ventilation systems
     #[serde(rename = "MechanicalVentilation", default)]
-    pub(crate) mechanical_ventilation: IndexMap<String, MechanicalVentilation>,
+    #[validate]
+    pub(crate) mechanical_ventilation: IndexMap<std::string::String, MechanicalVentilation>,
 
     /// Provides details about available non-mechanical ventilation systems
     #[serde(rename = "Vents")]
-    pub(crate) vents: IndexMap<String, Vent>,
+    #[validate]
+    pub(crate) vents: IndexMap<std::string::String, Vent>,
 
     /// Maximum ACH (Air Changes per Hour) limit
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7113,13 +7208,15 @@ impl InputForProcessing {
         Ok(())
     }
 
-    pub(crate) fn heat_source_wet(&self) -> anyhow::Result<IndexMap<String, HeatSourceWetDetails>> {
+    pub(crate) fn heat_source_wet(
+        &self,
+    ) -> anyhow::Result<IndexMap<std::string::String, HeatSourceWetDetails>> {
         self.root()?
             .get("HeatSourceWet")
             .and_then(|value| value.as_object())
             .into_iter()
             .flatten()
-            .map(|(name, source)| Ok((String::from(name), serde_json::from_value(source.clone())?)))
+            .map(|(name, source)| Ok((name.to_owned(), serde_json::from_value(source.clone())?)))
             .collect::<anyhow::Result<_, _>>()
     }
 
