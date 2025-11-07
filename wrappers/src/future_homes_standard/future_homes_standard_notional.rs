@@ -540,9 +540,9 @@ fn edit_glazing_for_glazing_limit(
 
 /// Apply notional building ground specifications
 ///
-///     u-value = 0.13 W/m2.K
-///     thermal resistance of the floor construction,excluding the ground, r_f = 6.12 m2.K/W
-///     linear thermal transmittance, psi_wall_floor_junc = 0.16 W/m.K
+///    u-value = 0.13 W/m2.K
+///    thermal resistance of the floor construction,excluding the ground, r_f = 6.12 m2.K/W
+///    linear thermal transmittance, psi_wall_floor_junc = 0.16 W/m.K
 pub(crate) fn edit_ground_floors(input: &mut InputForProcessing) -> anyhow::Result<()> {
     // TODO (from Python) waiting from MHCLG/DESNZ for clarification if basement floors and basement walls are treated the same
 
