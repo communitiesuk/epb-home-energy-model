@@ -78,4 +78,3 @@ members = ["hem-lambda"]
 
 [features]
 fhs = []
-default = ["fhs"]
