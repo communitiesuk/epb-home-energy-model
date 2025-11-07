@@ -2,27 +2,23 @@
 
 use crate::core::heating_systems::heat_pump::TestLetter;
 use crate::core::schedule::{BooleanSchedule, NumericSchedule};
-use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
-use jsonschema::{BasicOutput, Validator};
+use jsonschema::Validator;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_enum_str::{Deserialize_enum_str, Serialize_enum_str};
 use serde_json::{json, Map, Value as JsonValue};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_valid::json::ToJsonString;
 use serde_valid::validation::error::{Format, Message};
 use serde_valid::{MinimumError, Validate};
 use smartstring::alias::String;
 use std::fmt::{Display, Formatter};
-use std::io::{BufReader, Read};
 use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use thiserror::Error;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SchemaReference {
@@ -2002,62 +1998,6 @@ impl GroundBuildingElement for GroundBuildingElementJsonValue<'_> {
     }
 }
 
-pub trait UValueEditableBuildingElement {
-    fn set_u_value(&mut self, new_u_value: f64);
-    fn pitch(&self) -> JsonAccessResult<f64>;
-    fn is_opaque(&self) -> bool;
-    fn is_external_door(&self) -> Option<bool>;
-    fn remove_thermal_resistance_construction(&mut self);
-    fn height(&self) -> Option<f64>;
-    fn width(&self) -> Option<f64>;
-    fn u_value(&self) -> Option<f64>;
-}
-
-pub struct UValueEditableBuildingElementJsonValue<'a>(
-    pub &'a mut Map<std::string::String, JsonValue>,
-);
-
-impl UValueEditableBuildingElement for UValueEditableBuildingElementJsonValue<'_> {
-    fn set_u_value(&mut self, new_u_value: f64) {
-        self.0.insert("u_value".to_string(), json!(new_u_value));
-    }
-
-    fn pitch(&self) -> JsonAccessResult<f64> {
-        self.0
-            .get("pitch")
-            .ok_or(json_error("Pitch field not provided"))?
-            .as_f64()
-            .ok_or(json_error("Pitch field did not provide number"))
-    }
-
-    fn is_opaque(&self) -> bool {
-        self.0
-            .get("type")
-            .and_then(|v| v.as_str())
-            .is_some_and(|building_type| building_type == "BuildingElementOpaque")
-    }
-
-    fn is_external_door(&self) -> Option<bool> {
-        self.0.get("is_external_door").and_then(|v| v.as_bool())
-    }
-
-    fn remove_thermal_resistance_construction(&mut self) {
-        self.0.shift_remove("thermal_resistance_construction");
-    }
-
-    fn height(&self) -> Option<f64> {
-        self.0.get("height").and_then(|v| v.as_f64())
-    }
-
-    fn width(&self) -> Option<f64> {
-        self.0.get("width").and_then(|v| v.as_f64())
-    }
-
-    fn u_value(&self) -> Option<f64> {
-        self.0.get("u_value").and_then(|v| v.as_f64())
-    }
-}
-
 // special deserialization logic so that orientations are normalized correctly on the way in
 pub(crate) fn deserialize_orientation<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
@@ -3168,6 +3108,7 @@ impl InputForCalcHtcHlp for ReducedInputForCalcHtcHlp {
     }
 }
 
+#[expect(unused)]
 static CORE_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema = serde_json::from_str(include_str!("../schemas/input_core.schema.json")).unwrap();
     jsonschema::validator_for(&schema).unwrap()
@@ -3182,69 +3123,13 @@ static CORE_INCLUDING_FHS_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     jsonschema::validator_for(&schema).unwrap()
 });
 
-#[derive(Debug, Error)]
-#[error("Error accessing JSON during FHS preprocessing: {0}")]
-pub struct JsonAccessError(String);
-
-pub fn json_error<T: Into<String>>(message: T) -> JsonAccessError {
-    JsonAccessError(message.into())
-}
-
-pub type JsonAccessResult<T> = Result<T, JsonAccessError>;
-
-pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
-    InputForProcessing::init_with_json(json)
-}
-
-#[derive(Clone, Debug)]
-pub struct InputForProcessing {
-    pub(crate) input: JsonValue,
-}
-
-impl InputForProcessing {
-    pub fn init_with_json(json: impl Read) -> Result<Self, anyhow::Error> {
-        let input_for_processing = Self::init_with_json_skip_validation(json)?;
-
-        let validator = &CORE_SCHEMA_VALIDATOR;
-
-        if let BasicOutput::Invalid(errors) = validator.apply(&input_for_processing.input).basic() {
-            bail!(
-                "Invalid JSON against the FHS schema: {}",
-                serde_json::to_value(errors)?.to_json_string_pretty()?
-            ); // TODO build this handling logic out
-        }
-
-        Ok(input_for_processing)
-    }
-
-    pub(crate) fn init_with_json_skip_validation(json: impl Read) -> Result<Self, anyhow::Error> {
-        let reader = BufReader::new(json);
-
-        let input: JsonValue = serde_json::from_reader(reader)?;
-
-        Ok(Self { input })
-    }
-}
-
-impl TryFrom<&InputForProcessing> for Corpus {
-    type Error = anyhow::Error;
-
-    fn try_from(input: &InputForProcessing) -> Result<Self, Self::Error> {
-        Corpus::from_inputs(
-            &serde_json::from_value(input.input.to_owned())?,
-            None,
-            None,
-            &Default::default(),
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use itertools::Itertools;
     use rstest::*;
     use std::fs::File;
+    use std::io::BufReader;
     use walkdir::{DirEntry, WalkDir};
 
     #[fixture]
@@ -3268,19 +3153,6 @@ mod tests {
                         .ends_with("results") // don't test against files in results output directories
             })
             .collect_vec()
-    }
-
-    #[rstest]
-    fn should_successfully_parse_all_core_demo_files(core_files: Vec<DirEntry>) {
-        for entry in core_files {
-            let parsed = ingest_for_processing(File::open(entry.path()).unwrap());
-            assert!(
-                parsed.is_ok(),
-                "error was {:?} when parsing file {}",
-                parsed.err().unwrap(),
-                entry.file_name().to_str().unwrap()
-            );
-        }
     }
 
     #[rstest]

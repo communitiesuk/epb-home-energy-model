@@ -19,7 +19,7 @@ pub mod future_homes_standard;
 /// produce inputs for the HEM core for a particular purpose, and in its postprocessing stage is
 /// able to output data as a side effect as well as returning a JSON-serializable response that can
 /// be consumed or sent out from an API.
-pub trait HemWrapper {
+pub(crate) trait HemWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,

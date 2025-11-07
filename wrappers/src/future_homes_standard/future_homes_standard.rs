@@ -2,7 +2,7 @@ use crate::future_homes_standard::fhs_appliance::FhsAppliance;
 use crate::future_homes_standard::fhs_hw_events::{
     HotWaterEventGenerator, reset_events_and_provide_drawoff_generator,
 };
-use crate::future_homes_standard::input::InputForProcessing;
+use crate::future_homes_standard::input::{InputForProcessing, JsonAccessResult, json_error};
 use anyhow::{anyhow, bail};
 use csv::{Reader, WriterBuilder};
 use hem::core::schedule::{expand_numeric_schedule, reject_nulls};
@@ -16,10 +16,9 @@ use hem::external_conditions::{
 };
 use hem::input::{
     EnergySupplyDetails, EnergySupplyType, FuelType, HeatingControlType,
-    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input, JsonAccessResult,
+    HotWaterSourceDetailsForProcessing, HotWaterSourceDetailsJsonMap, Input,
     MechanicalVentilationForProcessing, MechanicalVentilationJsonValue, SmartApplianceBattery,
     TransparentBuildingElement, TransparentBuildingElementJsonValue, WaterHeatingEventType,
-    json_error,
 };
 use hem::output::Output;
 use hem::simulation_time::SimulationTime;
@@ -691,7 +690,7 @@ fn write_postproc_summary_file(
     Ok(())
 }
 
-pub fn calc_tfa(input: &InputForProcessing) -> JsonAccessResult<f64> {
+pub(crate) fn calc_tfa(input: &InputForProcessing) -> JsonAccessResult<f64> {
     input.total_zone_area()
 }
 

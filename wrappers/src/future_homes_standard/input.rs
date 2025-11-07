@@ -2,9 +2,9 @@ use anyhow::{anyhow, bail};
 use hem::core::schedule::NumericSchedule;
 use hem::input::{
     ApplianceGainsEvent, BuildingElement, ColdWaterSourceInput, ExternalConditionsInput,
-    HeatSourceWetDetails, HeatingControlType, Input, JsonAccessResult, ReducedInputForCalcHtcHlp,
+    HeatSourceWetDetails, HeatingControlType, Input, ReducedInputForCalcHtcHlp,
     SmartApplianceBattery, SpaceHeatSystemHeatSource, WasteWaterHeatRecovery, WaterDistribution,
-    WaterHeatingEvent, WaterPipework, json_error,
+    WaterHeatingEvent, WaterPipework,
 };
 use hem::simulation_time::SimulationTime;
 use indexmap::IndexMap;
@@ -15,6 +15,7 @@ use serde_valid::json::ToJsonString;
 use std::collections::HashSet;
 use std::io::{BufReader, Read};
 use std::sync::LazyLock;
+use thiserror::Error;
 
 static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema =
@@ -22,12 +23,12 @@ static FHS_SCHEMA_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     jsonschema::validator_for(&schema).unwrap()
 });
 
-pub fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
+pub(crate) fn ingest_for_processing(json: impl Read) -> Result<InputForProcessing, anyhow::Error> {
     InputForProcessing::init_with_json(json)
 }
 
 #[derive(Clone, Debug)]
-pub struct InputForProcessing {
+pub(crate) struct InputForProcessing {
     pub(crate) input: JsonValue,
 }
 
@@ -60,7 +61,7 @@ impl InputForProcessing {
         Ok(Self { input })
     }
 
-    pub fn as_input(&self) -> anyhow::Result<Input> {
+    pub(crate) fn as_input(&self) -> anyhow::Result<Input> {
         serde_json::from_value(self.input.to_owned()).map_err(|err| anyhow!(err))
     }
 
@@ -609,6 +610,7 @@ impl InputForProcessing {
             .collect())
     }
 
+    #[expect(unused)]
     pub fn set_control_window_opening_for_zone(
         &mut self,
         zone: &str,
@@ -2017,9 +2019,75 @@ impl InputForProcessing {
     }
 }
 
+pub trait UValueEditableBuildingElement {
+    fn set_u_value(&mut self, new_u_value: f64);
+    fn pitch(&self) -> JsonAccessResult<f64>;
+    fn is_opaque(&self) -> bool;
+    fn is_external_door(&self) -> Option<bool>;
+    fn remove_thermal_resistance_construction(&mut self);
+    fn height(&self) -> Option<f64>;
+    fn width(&self) -> Option<f64>;
+    fn u_value(&self) -> Option<f64>;
+}
+
+pub struct UValueEditableBuildingElementJsonValue<'a>(
+    pub &'a mut Map<std::string::String, JsonValue>,
+);
+
+impl UValueEditableBuildingElement for UValueEditableBuildingElementJsonValue<'_> {
+    fn set_u_value(&mut self, new_u_value: f64) {
+        self.0.insert("u_value".to_string(), json!(new_u_value));
+    }
+
+    fn pitch(&self) -> JsonAccessResult<f64> {
+        self.0
+            .get("pitch")
+            .ok_or(json_error("Pitch field not provided"))?
+            .as_f64()
+            .ok_or(json_error("Pitch field did not provide number"))
+    }
+
+    fn is_opaque(&self) -> bool {
+        self.0
+            .get("type")
+            .and_then(|v| v.as_str())
+            .is_some_and(|building_type| building_type == "BuildingElementOpaque")
+    }
+
+    fn is_external_door(&self) -> Option<bool> {
+        self.0.get("is_external_door").and_then(|v| v.as_bool())
+    }
+
+    fn remove_thermal_resistance_construction(&mut self) {
+        self.0.shift_remove("thermal_resistance_construction");
+    }
+
+    fn height(&self) -> Option<f64> {
+        self.0.get("height").and_then(|v| v.as_f64())
+    }
+
+    fn width(&self) -> Option<f64> {
+        self.0.get("width").and_then(|v| v.as_f64())
+    }
+
+    fn u_value(&self) -> Option<f64> {
+        self.0.get("u_value").and_then(|v| v.as_f64())
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Error accessing JSON during FHS preprocessing: {0}")]
+pub struct JsonAccessError(smartstring::alias::String);
+
+pub fn json_error<T: Into<smartstring::alias::String>>(message: T) -> JsonAccessError {
+    JsonAccessError(message.into())
+}
+
+pub type JsonAccessResult<T> = Result<T, JsonAccessError>;
+
 #[cfg(test)]
 mod tests {
-    use hem::input::ingest_for_processing;
+    use super::*;
     use itertools::Itertools;
     use rstest::{fixture, rstest};
     use std::fs::File;
