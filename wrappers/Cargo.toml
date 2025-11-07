@@ -36,3 +36,7 @@ name = "wrappers"
 path = "src/main.rs"
 doc = false
 required-features = ["clap"]
+
+[features]
+default = []
+indicatif = ["hem/indicatif"]
