@@ -6,6 +6,7 @@ use crate::core::units::calculate_thermal_resistance_of_virtual_layer;
 use crate::corpus::Corpus;
 use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment, WindowShadingObject};
 use crate::simulation_time::SimulationTime;
+use crate::HEM_VERSION;
 use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -45,39 +46,175 @@ pub enum SchemaReference {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]
 #[serde(rename_all = "PascalCase")] // TODO: add `deny_unknown_fields` declaration back in for versions newer than 0.36
+#[validate(custom = validate_shower_waste_water_heat_recovery_systems)]
+#[validate(custom = validate_exhaust_air_heat_pump_ventilation_compatibility)]
 pub struct Input {
-    #[serde(rename = "temp_internal_air_static_calcs")]
-    pub(crate) temp_internal_air_static_calcs: f64,
-    pub(crate) simulation_time: SimulationTime,
-    pub(crate) external_conditions: Arc<ExternalConditionsInput>,
-    pub(crate) internal_gains: InternalGains,
+    /// Metadata for the input file
+    #[serde(rename = "metadata")]
+    #[validate]
+    metadata: InputMetadata,
+
     #[serde(default)]
     pub(crate) appliance_gains: ApplianceGains,
+
     pub(crate) cold_water_source: ColdWaterSourceInput,
+
+    pub(crate) control: Control,
+
+    pub(crate) energy_supply: EnergySupplyInput,
+
+    #[serde(rename = "Events")]
+    pub(crate) water_heating_events: WaterHeatingEvents,
+
+    pub(crate) external_conditions: Arc<ExternalConditionsInput>,
+
+    /// Dictionary of available wet heat sources, keyed by user-defined names (e.g., 'boiler', 'hp', 'HeatNetwork', 'hb1'). Other models reference these keys via their heat_source_wet fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) heat_source_wet: Option<HeatSourceWet>,
+
+    pub(crate) hot_water_demand: HotWaterDemand,
+
+    pub(crate) hot_water_source: HotWaterSource,
+
+    pub(crate) infiltration_ventilation: InfiltrationVentilation,
+
+    pub(crate) internal_gains: InternalGains,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) on_site_generation: Option<OnSiteGeneration>,
+
     #[serde(default)]
     #[validate(custom = validate_only_storage_tanks)]
     pub(crate) pre_heated_water_source: IndexMap<String, HotWaterSourceDetails>,
-    pub(crate) energy_supply: EnergySupplyInput,
-    pub(crate) control: Control,
+
+    pub(crate) simulation_time: SimulationTime,
+
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub(crate) smart_appliance_controls: IndexMap<String, SmartApplianceControlDetails>,
-    pub(crate) hot_water_source: HotWaterSource,
-    pub(crate) hot_water_demand: HotWaterDemand,
-    #[serde(rename = "Events")]
-    pub(crate) water_heating_events: WaterHeatingEvents,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) space_heat_system: Option<SpaceHeatSystem>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) space_cool_system: Option<SpaceCoolSystem>,
-    pub(crate) zone: ZoneDictionary,
-    // following fields marked as possibly dead code are likely to be used by wrappers, but worth checking when compiling input schema
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) heat_source_wet: Option<HeatSourceWet>,
+    pub(crate) space_heat_system: Option<SpaceHeatSystem>,
+
     #[serde(rename = "WWHRS", skip_serializing_if = "Option::is_none")]
     pub(crate) waste_water_heat_recovery: Option<WasteWaterHeatRecovery>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) on_site_generation: Option<OnSiteGeneration>,
-    pub(crate) infiltration_ventilation: InfiltrationVentilation,
+
+    pub(crate) zone: ZoneDictionary,
+
+    #[serde(rename = "temp_internal_air_static_calcs")]
+    pub(crate) temp_internal_air_static_calcs: f64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, Validate)]
+pub(crate) struct InputMetadata {
+    #[validate(custom = validate_hem_core_version)]
+    hem_core_version: String,
+}
+
+fn validate_hem_core_version(hem_core_version: &str) -> Result<(), serde_valid::validation::Error> {
+    (hem_core_version == HEM_VERSION)
+        .then_some(())
+        .ok_or_else(|| serde_valid::validation::Error::Custom(
+            format!("hem_core_version was expected to be '{HEM_VERSION}' but was provided as '{hem_core_version}'")
+        ))
+}
+
+fn validate_shower_waste_water_heat_recovery_systems(
+    input: &Input,
+) -> Result<(), serde_valid::validation::Error> {
+    for (shower_name, shower) in input.hot_water_demand.shower.0.iter() {
+        if let (
+            Shower::MixerShower {
+                wwhrs_config:
+                    MixerShowerWwhrsConfiguration {
+                        waste_water_heat_recovery_system: Some(wwhrs),
+                        ..
+                    },
+                ..
+            },
+            Some(wwhrs_systems),
+        ) = (shower, input.waste_water_heat_recovery.as_ref())
+        {
+            if !wwhrs_systems.contains_key(wwhrs.as_str()) {
+                return custom_validation_error(
+                    format!("WWHRS value '{wwhrs}' not found in Input.WWHRS (from Input.HotWaterDemand.Shower['{shower_name}'].WWHRS)")
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate that exhaust air heat pumps are compatible with ventilation systems.
+fn validate_exhaust_air_heat_pump_ventilation_compatibility(
+    input: &Input,
+) -> Result<(), serde_valid::validation::Error> {
+    if let Some(heat_source_wet) = input.heat_source_wet.as_ref() {
+        fn vent_is_incompatible(vent: &MechVentData) -> bool {
+            matches!(
+                vent,
+                MechVentData::IntermittentMev { .. }
+                    | MechVentData::DecentralisedContinuousMev { .. }
+            )
+        }
+
+        let exhaust_air_source_types = [
+            HeatPumpSourceType::ExhaustAirMEV,
+            HeatPumpSourceType::ExhaustAirMVHR,
+            HeatPumpSourceType::ExhaustAirMixed,
+        ];
+
+        let exhaust_air_heat_pumps: IndexMap<String, HeatPumpSourceType> = heat_source_wet
+            .iter()
+            .filter_map(|(name, source)| {
+                if let HeatSourceWetDetails::HeatPump { source_type, .. } = source {
+                    if exhaust_air_source_types.contains(&source_type) {
+                        Some((name.clone(), source_type.clone()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if exhaust_air_heat_pumps.is_empty() {
+            return Ok(());
+        }
+
+        let incompatible_vents: IndexMap<String, &'static str> = input
+            .infiltration_ventilation
+            .mechanical_ventilation
+            .iter()
+            .filter_map(|(vent_name, vent_data)| {
+                vent_is_incompatible(&vent_data.vent_data)
+                    .then_some((vent_name.clone(), vent_data.vent_data.vent_type()))
+            })
+            .collect();
+
+        if !incompatible_vents.is_empty() {
+            let mut incompatibilities: Vec<String> = Default::default();
+            for (vent_name, vent_type) in incompatible_vents.iter() {
+                for (heat_source_name, heat_source_type) in exhaust_air_heat_pumps.iter() {
+                    incompatibilities
+                        .push(format!("Exhaust air heat pump '{heat_source_name}' is incompatible with ventilation system '{vent_name}' (vent type: {vent_type})").into());
+                }
+            }
+
+            return custom_validation_error(
+                format!(
+                    "System incompatibilities found: {}. Exhaust air heat pumps do not work with Intermittent MEV or Decentralised continuous MEV.",
+                    incompatibilities.join("; ")
+                )
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_only_storage_tanks(
@@ -4133,6 +4270,16 @@ impl MechVentData {
     /// Check if this ventilation type operates intermittently.
     fn is_intermittent(&self) -> bool {
         matches!(self, Self::IntermittentMev { .. })
+    }
+
+    fn vent_type(&self) -> &'static str {
+        match self {
+            Self::Mvhr { .. } => "MVHR",
+            Self::IntermittentMev { .. } => "Intermittent MEV",
+            Self::CentralisedContinuousMev { .. } => "Centralised continuous MEV",
+            Self::DecentralisedContinuousMev { .. } => "Decentralised continuous MEV",
+            Self::PositiveInputVentilation { .. } => "Positive input ventilation",
+        }
     }
 }
 
