@@ -27,11 +27,11 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     .ok();
 
     let resp = match run_project(input, &output, external_conditions, None, &ProjectFlags::empty()) {
-        Ok(CalculationResultsWithContext { .. }) => {
+        Ok(CalculationResultsWithContext { results, .. }) => {
             Response::builder()
             .status(200)
             .header("Content-Type", "application/json")
-            .body(Body::from("data: TBC")) // TODO: update response body
+            .body(Body::from(format!("{:#?}", results)))
             .map_err(Box::new)?
         },
         Err(e) => Response::builder()
