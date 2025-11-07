@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use hem::errors::{HemError, PostprocessingError};
 use hem::input::Input;
 pub use hem::output::Output;
+use hem::output::SinkOutput;
 pub use hem::read_weather_file;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 pub use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
@@ -169,7 +170,7 @@ pub fn run_wrappers(
                     .map(|(key, input_value)| {
                         let serialized_data = serde_json::to_vec(&input_value.input).map_err(|err| anyhow!(err))?;
                         let input_reader = BufReader::new(Cursor::new(serialized_data));
-                        hem::run_project(input_reader, &output, None, tariff_data_file, flags)
+                        hem::run_project(input_reader, &SinkOutput::default(), None, tariff_data_file, flags)
                             .map(|result_value| (*key, result_value))
                     }).collect()
             }
