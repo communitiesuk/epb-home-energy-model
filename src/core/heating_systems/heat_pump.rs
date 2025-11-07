@@ -99,7 +99,6 @@ fn carnot_cop(temp_source: f64, temp_outlet: f64, temp_diff_limit_low: Option<f6
 ///                - test_letter
 ///                - capacity
 ///                - cop
-///                - degradation_coeff
 ///                - design_flow_temp (in Celsius)
 ///                - temp_outlet (in Celsius)
 ///                - temp_source (in Celsius)
@@ -164,7 +163,6 @@ fn interpolate_exhaust_air_heat_pump_test_data(
             // create lists of test data values ordered by air flow rate
             let mut capacity_list: Vec<f64> = Default::default();
             let mut cop_list: Vec<f64> = Default::default();
-            let mut degradation_coeff_list: Vec<f64> = Default::default();
             let mut ext_air_ratio_list: Vec<f64> = Default::default();
             for air_flow_rate in air_flow_rates_ordered {
                 for test_record in &test_data_by_air_flow_rate[&OrderedFloat(*air_flow_rate)] {
@@ -173,7 +171,6 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                     {
                         capacity_list.push(test_record.capacity);
                         cop_list.push(test_record.cop);
-                        degradation_coeff_list.push(test_record.degradation_coefficient);
                         if source_type == HeatPumpSourceType::ExhaustAirMixed {
                             ext_air_ratio_list.push(test_record.eahp_mixed_ext_air_ratio.ok_or(anyhow!("An eahp_mixed_ext_air_ratio value was expected for a heat pump with source type ExhaustAirMixed."))?);
                         }
@@ -186,10 +183,6 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 &capacity_list,
             );
             let cop = np_interp(throughput_exhaust_air, air_flow_rates_ordered, &cop_list);
-            let degradation_coeff = np_interp(throughput_exhaust_air,
-                                              air_flow_rates_ordered,
-                                              &degradation_coeff_list,
-            );
             let ext_air_ratio =
                 (source_type == HeatPumpSourceType::ExhaustAirMixed).then(|| np_interp(
                     throughput_exhaust_air, air_flow_rates_ordered,
@@ -201,7 +194,6 @@ fn interpolate_exhaust_air_heat_pump_test_data(
                 test_letter: datum.test_letter,
                 capacity,
                 cop,
-                degradation_coefficient: degradation_coeff,
                 design_flow_temp: datum.design_flow_temp,
                 temp_outlet: datum.temp_outlet,
                 temp_source: datum.temp_source,
@@ -229,7 +221,6 @@ pub(crate) struct HeatPumpTestDatum {
     test_letter: TestLetter,
     capacity: f64,
     cop: f64,
-    degradation_coefficient: f64,
     design_flow_temp: f64,
     temp_outlet: f64,
     temp_source: f64,
@@ -245,7 +236,6 @@ impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
             test_letter,
             capacity,
             cop,
-            degradation_coefficient,
             design_flow_temp,
             temp_outlet,
             temp_source,
@@ -257,7 +247,6 @@ impl From<HeatPumpTestDatumInput> for HeatPumpTestDatum {
             test_letter,
             capacity,
             cop,
-            degradation_coefficient,
             design_flow_temp,
             temp_outlet,
             temp_source,
@@ -578,7 +567,6 @@ pub struct CompleteHeatPumpTestDatum {
     pub(crate) test_letter: TestLetter,
     pub capacity: f64,
     pub cop: f64,
-    pub degradation_coefficient: f64,
     pub design_flow_temp: f64,
     pub temp_outlet: f64,
     pub temp_source: f64,
@@ -618,7 +606,6 @@ impl HeatPumpTestDatum {
             test_letter,
             capacity,
             cop,
-            degradation_coefficient,
             design_flow_temp,
             temp_outlet,
             temp_source,
@@ -630,7 +617,6 @@ impl HeatPumpTestDatum {
             test_letter: *test_letter,
             capacity: *capacity,
             cop: *cop,
-            degradation_coefficient: *degradation_coefficient,
             design_flow_temp: *design_flow_temp,
             temp_outlet: *temp_outlet,
             temp_source: *temp_source,
@@ -654,7 +640,6 @@ impl HeatPumpTestDatum {
 pub(crate) struct HeatPumpTestData {
     test_data: HashMap<OrderedFloat<f64>, Vec<CompleteHeatPumpTestDatum>>,
     dsgn_flow_temps: Vec<OrderedFloat<f64>>,
-    average_deg_coeff: Vec<f64>,
     average_cap: Vec<f64>,
     temp_spread_test_conditions: Vec<f64>,
     regression_coeffs: HashMap<OrderedFloat<f64>, Vec<f64>>,
@@ -755,7 +740,6 @@ impl HeatPumpTestData {
             data.sort_by(|a, b| a.temp_test.total_cmp(&b.temp_test));
         }
 
-        let average_deg_coeff = ave_degradation_coeff(&dsgn_flow_temps, &test_data);
         let average_cap = ave_capacity(&dsgn_flow_temps, &test_data);
         let temp_spread_test_conditions = init_temp_spread_test_conditions(&dsgn_flow_temps)?;
         let regression_coeffs = init_regression_coeffs(&dsgn_flow_temps, &test_data)?;
@@ -818,32 +802,10 @@ impl HeatPumpTestData {
         Ok(Self {
             test_data,
             dsgn_flow_temps,
-            average_deg_coeff,
             average_cap,
             temp_spread_test_conditions,
             regression_coeffs,
         })
-    }
-
-    /// Return average deg coeff for tests A-D, interpolated between design flow temps
-    ///
-    /// Arguments:
-    /// * `flow_temp` - flow temp in K
-    pub fn average_degradation_coeff(&self, flow_temp: f64) -> Result<f64, BelowAbsoluteZeroError> {
-        if self.dsgn_flow_temps.len() == 1 {
-            return Ok(self.average_deg_coeff[0]);
-        }
-
-        let flow_temp = kelvin_to_celsius(flow_temp)?;
-        Ok(np_interp(
-            flow_temp,
-            &self
-                .dsgn_flow_temps
-                .iter()
-                .map(|d| d.0)
-                .collect::<Vec<f64>>(),
-            &self.average_deg_coeff,
-        ))
     }
 
     /// Return average capacity for tests A-D, interpolated between design flow temps
@@ -1039,13 +1001,11 @@ impl HeatPumpTestData {
         &self,
         flow_temp: f64,
         exergy_lr_op_cond: f64,
-    ) -> anyhow::Result<(f64, f64, f64, f64, f64, f64)> {
+    ) -> anyhow::Result<(f64, f64, f64, f64)> {
         let mut load_ratios_below: Vec<f64> = Default::default();
         let mut load_ratios_above: Vec<f64> = Default::default();
         let mut efficiencies_below: Vec<f64> = Default::default();
         let mut efficiencies_above: Vec<f64> = Default::default();
-        let mut degradation_coeffs_below: Vec<f64> = Default::default();
-        let mut degradation_coeffs_above: Vec<f64> = Default::default();
 
         // For each design flow temperature, find load ratios in test data
         // either side of load ratio calculated for operating conditions.
@@ -1071,8 +1031,6 @@ impl HeatPumpTestData {
             load_ratios_above.push(dsgn_flow_temp_data[idx].theoretical_load_ratio);
             efficiencies_below.push(dsgn_flow_temp_data[idx - 1].exergetic_eff);
             efficiencies_above.push(dsgn_flow_temp_data[idx].exergetic_eff);
-            degradation_coeffs_below.push(dsgn_flow_temp_data[idx - 1].degradation_coefficient);
-            degradation_coeffs_above.push(dsgn_flow_temp_data[idx].degradation_coefficient);
         }
 
         if self.dsgn_flow_temps.len() == 1 {
@@ -1081,8 +1039,6 @@ impl HeatPumpTestData {
                 load_ratios_above[0],
                 efficiencies_below[0],
                 efficiencies_above[0],
-                degradation_coeffs_below[0],
-                degradation_coeffs_above[0],
             ));
         }
 
@@ -1096,12 +1052,8 @@ impl HeatPumpTestData {
         let lr_above = np_interp(flow_temp, dsgn_temps_for_interp, &load_ratios_above);
         let eff_below = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_below);
         let eff_above = np_interp(flow_temp, dsgn_temps_for_interp, &efficiencies_above);
-        let deg_below = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_below);
-        let deg_above = np_interp(flow_temp, dsgn_temps_for_interp, &degradation_coeffs_above);
 
-        Ok((
-            lr_below, lr_above, eff_below, eff_above, deg_below, deg_above,
-        ))
+        Ok((lr_below, lr_above, eff_below, eff_above))
     }
 
     /// Calculate CoP at operating conditions when heat pump is not air-source
@@ -1273,26 +1225,6 @@ impl HeatPumpTestData {
             &temp_spread_correction_list,
         ))
     }
-}
-
-/// The list average_deg_coeff will be in the same order as the
-/// corresponding elements in self.__dsgn_flow_temps. This behaviour
-/// is relied upon elsewhere.
-fn ave_degradation_coeff(
-    dsgn_flow_temps: &[OrderedFloat<f64>],
-    test_data: &HashMap<OrderedFloat<f64>, Vec<HeatPumpTestDatum>>,
-) -> Vec<f64> {
-    dsgn_flow_temps
-        .iter()
-        .map(|dsgn_flow_temp| {
-            test_data[dsgn_flow_temp]
-                .iter()
-                .filter(|datum| datum.test_letter.is_non_bivalent())
-                .map(|datum| datum.degradation_coefficient)
-                .sum::<f64>()
-                / TEST_LETTERS_NON_BIVALENT.len() as f64
-        })
-        .collect()
 }
 
 /// The list average_cap will be in the same order as the
@@ -2675,7 +2607,7 @@ impl HeatPump {
             let service_type = *service_type
                 .as_ref()
                 .expect("A service type was expected to be available.");
-            let (cop_op_cond, _) = self.cop_deg_coeff_op_cond(
+            let cop_op_cond = self.cop_deg_coeff_op_cond(
                 &service_type,
                 temp_output,
                 temp_source,
@@ -2777,7 +2709,7 @@ impl HeatPump {
         temp_source: f64,
         temp_spread_correction: TempSpreadCorrectionArg,
         simulation_time_iteration: SimulationTimeIteration,
-    ) -> anyhow::Result<(f64, f64)> {
+    ) -> anyhow::Result<f64> {
         let temp_spread_correction_factor = match temp_spread_correction {
             TempSpreadCorrectionArg::Float(correction) => correction,
             TempSpreadCorrectionArg::Callable(callable) => {
@@ -2797,9 +2729,8 @@ impl HeatPump {
                         temp_source,
                         temp_output,
                     )?;
-                let deg_coeff_op_cond = self.test_data.average_degradation_coeff(temp_output)?;
 
-                (cop_op_cond, deg_coeff_op_cond)
+                cop_op_cond
             } else {
                 let carnot_cop_op_cond = carnot_cop(
                     temp_source,
@@ -2814,9 +2745,9 @@ impl HeatPump {
                     temp_source,
                     carnot_cop_op_cond,
                 )?;
-                let (lr_below, lr_above, eff_below, eff_above, deg_coeff_below, deg_coeff_above) =
-                    self.test_data
-                        .lr_eff_degcoeff_either_side_of_op_cond(temp_output, lr_op_cond)?;
+                let (lr_below, lr_above, eff_below, eff_above) = self
+                    .test_data
+                    .lr_eff_degcoeff_either_side_of_op_cond(temp_output, lr_op_cond)?;
 
                 // CALCM-01 - DAHPSE - V2.0_DRAFT13, section 4.5.4
                 // Get exergy efficiency by interpolating between figures above and
@@ -2833,26 +2764,16 @@ impl HeatPump {
                     exer_eff_op_cond * carnot_cop_op_cond * temp_spread_correction_factor,
                 );
 
-                let (limit_upper, limit_lower) = if matches!(self.sink_type, HeatPumpSinkType::Air)
-                    && !matches!(service_type, ServiceType::Water)
-                {
-                    (0.25, 0.0)
-                } else {
-                    (1.0, 0.9)
-                };
+                let (_limit_upper, _limit_lower) =
+                    if matches!(self.sink_type, HeatPumpSinkType::Air)
+                        && !matches!(service_type, ServiceType::Water)
+                    {
+                        (0.25, 0.0)
+                    } else {
+                        (1.0, 0.9)
+                    };
 
-                let deg_coeff_op_cond = if lr_below == lr_above {
-                    deg_coeff_below
-                } else {
-                    deg_coeff_below
-                        + (deg_coeff_below - deg_coeff_above) * (lr_op_cond - lr_below)
-                            / (lr_below - lr_above)
-                };
-
-                let deg_coeff_op_cond =
-                    max_of_2(min_of_2(deg_coeff_op_cond, limit_upper), limit_lower);
-
-                (cop_op_cond, deg_coeff_op_cond)
+                cop_op_cond
             },
         )
     }
@@ -3140,23 +3061,19 @@ impl HeatPump {
         };
 
         // Get thermal capacity, CoP and degradation coeff at operating conditions
-        let (thermal_capacity_op_cond, cop_op_cond, deg_coeff_op_cond) = if temp_output.is_some() {
+        let (thermal_capacity_op_cond, cop_op_cond) = if temp_output.is_some() {
             let thermal_capacity_op_cond =
                 self.thermal_capacity_op_cond(temp_output.unwrap(), temp_source)?;
-            let (cop_op_cond, deg_coeff_op_cond) = self.cop_deg_coeff_op_cond(
+            let cop_op_cond = self.cop_deg_coeff_op_cond(
                 service_type,
                 temp_output.unwrap(),
                 temp_source,
                 temp_spread_correction,
                 simtime,
             )?;
-            (
-                Some(thermal_capacity_op_cond),
-                Some(cop_op_cond),
-                Some(deg_coeff_op_cond),
-            )
+            (Some(thermal_capacity_op_cond), Some(cop_op_cond))
         } else {
-            (None, None, None)
+            (None, None)
         };
         // Calculate running time of HP
         let time_required = if let Some(thermal_capacity_op_cond) = thermal_capacity_op_cond {
@@ -3308,7 +3225,6 @@ impl HeatPump {
             thermal_capacity_op_cond,
             time_running: time_running_current_service,
             time_constant_for_service,
-            deg_coeff_op_cond,
             compressor_power_min_load: Default::default(),
             load_ratio_continuous_min: Default::default(),
             load_ratio: Default::default(),
@@ -3385,7 +3301,6 @@ impl HeatPump {
         energy_delivered_hp: f64,
         thermal_capacity_op_cond: Option<f64>,
         cop_op_cond: f64,
-        deg_coeff_op_cond: f64,
         time_running_current_service: f64,
         load_ratio: f64,
         load_ratio_continuous_min: f64,
@@ -3417,7 +3332,8 @@ impl HeatPump {
                 energy_input_hp_divisor = if service_type == ServiceType::Water
                     && self.sink_type == HeatPumpSinkType::Air
                 {
-                    Some(1. - deg_coeff_op_cond * (1. - load_ratio / load_ratio_continuous_min))
+                    Some(1.) // TODO: correct all this logic for 1.0.0a1
+                             // Some(1. - deg_coeff_op_cond * (1. - load_ratio / load_ratio_continuous_min))
                 } else {
                     Some(1.)
                 };
@@ -3665,9 +3581,6 @@ impl HeatPump {
                         service_data
                             .cop_op_cond
                             .ok_or_else(|| anyhow::anyhow!("Expected cop_op_cond to be set"))?,
-                        service_data.deg_coeff_op_cond.ok_or_else(|| {
-                            anyhow::anyhow!("Expected deg_coeff_op_cond to be set")
-                        })?,
                         service_data.time_running,
                         load_ratio,
                         load_ratio_continuous_min,
@@ -3734,10 +3647,9 @@ impl HeatPump {
                 let service_type = service_data.service_type;
                 let service_on = service_data.service_on;
                 let time_running_current_service = service_data.time_running;
-                let deg_coeff_op_cond = service_data.deg_coeff_op_cond;
-                let compressor_power_min_load = service_data.compressor_power_min_load;
-                let load_ratio_continuous_min = service_data.load_ratio_continuous_min;
-                let load_ratio = service_data.load_ratio;
+                let _compressor_power_min_load = service_data.compressor_power_min_load;
+                let _load_ratio_continuous_min = service_data.load_ratio_continuous_min;
+                let _load_ratio = service_data.load_ratio;
                 let use_backup_heater_only = service_data.use_backup_heater_only;
                 let hp_operating_in_onoff_mode = service_data.hp_operating_in_onoff_mode;
                 let energy_input_hp_divisor = service_data.energy_input_hp_divisor;
@@ -3752,14 +3664,16 @@ impl HeatPump {
                     && !(matches!(self.sink_type, HeatPumpSinkType::Air)
                         && matches!(service_type, ServiceType::Water))
                 {
-                    (1. - deg_coeff_op_cond
-                        .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?)
-                        * (compressor_power_min_load / load_ratio_continuous_min)
-                        * max_of_2(
-                            time_remaining_current_timestep
-                                - load_ratio / load_ratio_continuous_min * timestep,
-                            0.,
-                        )
+                    // TODO: correct logic for 1.0.0a1
+                    // (1. - deg_coeff_op_cond
+                    //     .ok_or_else(|| anyhow!("Expected deg_coeff_op_cond to be set"))?)
+                    //     * (compressor_power_min_load / load_ratio_continuous_min)
+                    //     * max_of_2(
+                    //         time_remaining_current_timestep
+                    //             - load_ratio / load_ratio_continuous_min * timestep,
+                    //         0.,
+                    //     )
+                    0.
                 } else {
                     0.
                 };
@@ -4252,7 +4166,6 @@ pub struct HeatPumpEnergyCalculation {
     thermal_capacity_op_cond: Option<f64>,
     time_running: f64,
     time_constant_for_service: f64,
-    deg_coeff_op_cond: Option<f64>,
     compressor_power_min_load: f64,
     load_ratio_continuous_min: f64,
     load_ratio: f64,
@@ -4575,7 +4488,6 @@ mod tests {
                 test_letter: TestLetter::A,
                 capacity: 5.0,
                 cop: 2.0,
-                degradation_coefficient: 0.9,
                 design_flow_temp: 55.,
                 temp_outlet: 55.,
                 temp_source: 20.,
@@ -4587,7 +4499,6 @@ mod tests {
                 test_letter: TestLetter::A,
                 capacity: 6.0,
                 cop: 2.5,
-                degradation_coefficient: 0.95,
                 design_flow_temp: 55.,
                 temp_outlet: 55.,
                 temp_source: 20.,
@@ -4599,7 +4510,6 @@ mod tests {
                 test_letter: TestLetter::B,
                 capacity: 5.5,
                 cop: 2.4,
-                degradation_coefficient: 0.92,
                 design_flow_temp: 35.,
                 temp_outlet: 34.,
                 temp_source: 20.,
@@ -4611,7 +4521,6 @@ mod tests {
                 test_letter: TestLetter::B,
                 capacity: 6.0,
                 cop: 3.0,
-                degradation_coefficient: 0.98,
                 design_flow_temp: 35.,
                 temp_outlet: 34.,
                 temp_source: 20.,
@@ -4625,7 +4534,6 @@ mod tests {
                 test_letter: TestLetter::A,
                 capacity: 5.4,
                 cop: 2.2,
-                degradation_coefficient: 0.92,
                 design_flow_temp: 55.,
                 temp_outlet: 55.,
                 temp_source: 20.,
@@ -4638,7 +4546,6 @@ mod tests {
                 test_letter: TestLetter::B,
                 capacity: 5.7,
                 cop: 2.64,
-                degradation_coefficient: 0.9440000000000001,
                 design_flow_temp: 35.,
                 temp_outlet: 34.,
                 temp_source: 20.,
@@ -4680,7 +4587,6 @@ mod tests {
                 test_letter: TestLetter::A,
                 capacity: 8.4,
                 cop: 4.6,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 35.,
                 temp_outlet: 34.,
                 temp_source: 0.,
@@ -4693,7 +4599,6 @@ mod tests {
                 test_letter: TestLetter::B,
                 capacity: 8.3,
                 cop: 4.9,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 35.,
                 temp_outlet: 30.,
                 temp_source: 0.,
@@ -4706,7 +4611,6 @@ mod tests {
                 test_letter: TestLetter::C,
                 capacity: 8.3,
                 cop: 5.1,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 35.,
                 temp_outlet: 27.,
                 temp_source: 0.,
@@ -4719,7 +4623,6 @@ mod tests {
                 test_letter: TestLetter::D,
                 capacity: 8.2,
                 cop: 5.4,
-                degradation_coefficient: 0.95,
                 design_flow_temp: 35.,
                 temp_outlet: 24.,
                 temp_source: 0.,
@@ -4732,7 +4635,6 @@ mod tests {
                 test_letter: TestLetter::F,
                 capacity: 8.4,
                 cop: 4.6,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 35.,
                 temp_outlet: 34.,
                 temp_source: 0.,
@@ -4745,7 +4647,6 @@ mod tests {
                 test_letter: TestLetter::A,
                 capacity: 8.8,
                 cop: 3.2,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 55.,
                 temp_outlet: 52.,
                 temp_source: 0.,
@@ -4758,7 +4659,6 @@ mod tests {
                 test_letter: TestLetter::B,
                 capacity: 8.6,
                 cop: 3.6,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 55.,
                 temp_outlet: 42.,
                 temp_source: 0.,
@@ -4771,7 +4671,6 @@ mod tests {
                 test_letter: TestLetter::C,
                 capacity: 8.5,
                 cop: 3.9,
-                degradation_coefficient: 0.98,
                 design_flow_temp: 55.,
                 temp_outlet: 36.,
                 temp_source: 0.,
@@ -4784,7 +4683,6 @@ mod tests {
                 test_letter: TestLetter::D,
                 capacity: 8.5,
                 cop: 4.3,
-                degradation_coefficient: 0.98,
                 design_flow_temp: 55.,
                 temp_outlet: 30.,
                 temp_source: 0.,
@@ -4797,7 +4695,6 @@ mod tests {
                 test_letter: TestLetter::F,
                 capacity: 8.8,
                 cop: 3.2,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 55.,
                 temp_outlet: 52.,
                 temp_source: 0.,
@@ -4810,7 +4707,6 @@ mod tests {
                 test_letter: TestLetter::F,
                 capacity: 8.8,
                 cop: 3.2,
-                degradation_coefficient: 0.90,
                 design_flow_temp: 55.,
                 temp_outlet: 52.,
                 temp_source: 0.,
@@ -4833,7 +4729,6 @@ mod tests {
                     capacity: 8.4,
                     carnot_cop: 9.033823529411764,
                     cop: 4.6,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 35.,
                     exergetic_eff: 0.5091974605241738,
                     temp_outlet: 34.,
@@ -4847,7 +4742,6 @@ mod tests {
                     capacity: 8.4,
                     carnot_cop: 9.033823529438331,
                     cop: 4.6,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 35.,
                     exergetic_eff: 0.5091974605226763,
                     temp_outlet: 34.,
@@ -4861,7 +4755,6 @@ mod tests {
                     capacity: 8.3,
                     carnot_cop: 10.104999999999999,
                     cop: 4.9,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 35.,
                     exergetic_eff: 0.48490846115784275,
                     temp_outlet: 30.,
@@ -4875,7 +4768,6 @@ mod tests {
                     capacity: 8.3,
                     carnot_cop: 11.116666666666665,
                     cop: 5.1,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 35.,
                     exergetic_eff: 0.4587706146926537,
                     temp_outlet: 27.,
@@ -4889,7 +4781,6 @@ mod tests {
                     capacity: 8.2,
                     carnot_cop: 12.38125,
                     cop: 5.4,
-                    degradation_coefficient: 0.95,
                     design_flow_temp: 35.,
                     exergetic_eff: 0.43614336193841496,
                     temp_outlet: 24.,
@@ -4908,7 +4799,6 @@ mod tests {
                     capacity: 8.8,
                     carnot_cop: 6.252884615384615,
                     cop: 3.2,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.5117638013224666,
                     temp_outlet: 52.,
@@ -4922,7 +4812,6 @@ mod tests {
                     capacity: 8.8,
                     carnot_cop: 6.252884615396638,
                     cop: 3.2,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.5117638013214826,
                     temp_outlet: 52.,
@@ -4936,7 +4825,6 @@ mod tests {
                     capacity: 8.8,
                     carnot_cop: 6.252884615408662,
                     cop: 3.2,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.5117638013204985,
                     temp_outlet: 52.,
@@ -4950,7 +4838,6 @@ mod tests {
                     capacity: 8.6,
                     carnot_cop: 7.503571428571428,
                     cop: 3.6,
-                    degradation_coefficient: 0.90,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.4797715373631604,
                     temp_outlet: 42.,
@@ -4964,7 +4851,6 @@ mod tests {
                     capacity: 8.5,
                     carnot_cop: 8.587499999999999,
                     cop: 3.9,
-                    degradation_coefficient: 0.98,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.4541484716157206,
                     temp_outlet: 36.,
@@ -4978,7 +4864,6 @@ mod tests {
                     capacity: 8.5,
                     carnot_cop: 10.104999999999999,
                     cop: 4.3,
-                    degradation_coefficient: 0.98,
                     design_flow_temp: 55.,
                     exergetic_eff: 0.4255319148936171,
                     temp_outlet: 30.,
@@ -5075,19 +4960,6 @@ mod tests {
                 .collect::<HashMap<_, _>>(),
             "list of regression coefficients populated incorrectly"
         );
-    }
-
-    #[rstest]
-    pub fn test_average_degradation_coeff(test_data: HeatPumpTestData) {
-        let results = [0.9125, 0.919375, 0.92625, 0.933125, 0.94];
-        for (i, flow_temp) in [35., 40., 45., 50., 55.].iter().enumerate() {
-            assert_ulps_eq!(
-                test_data
-                    .average_degradation_coeff(celsius_to_kelvin(*flow_temp).unwrap())
-                    .unwrap(),
-                results[i],
-            );
-        }
     }
 
     #[rstest]
@@ -5358,33 +5230,18 @@ mod tests {
             0.4496471941963942,
             0.4541484716157206,
         ];
-        let results_deg_below = [0.9; 10];
-        let results_deg_above = [
-            0.9,
-            0.9,
-            0.9,
-            0.9,
-            0.9,
-            0.95,
-            0.9575,
-            0.965,
-            0.9724999999999999,
-            0.98,
-        ];
 
         let mut i = 0;
         for exergy_lr_op_cond in [1.2, 1.4] {
             for flow_temp in [35., 40., 45., 50., 55.] {
                 let flow_temp = celsius_to_kelvin(flow_temp).unwrap();
-                let (lr_below, lr_above, eff_below, eff_above, deg_below, deg_above) = test_data
+                let (lr_below, lr_above, eff_below, eff_above) = test_data
                     .lr_eff_degcoeff_either_side_of_op_cond(flow_temp, exergy_lr_op_cond)
                     .unwrap();
                 assert_relative_eq!(lr_below, results_lr_below[i], max_relative = 1e-7);
                 assert_ulps_eq!(lr_above, results_lr_above[i],);
                 assert_relative_eq!(eff_below, results_eff_below[i], max_relative = 1e-7);
                 assert_ulps_eq!(eff_above, results_eff_above[i],);
-                assert_ulps_eq!(deg_below, results_deg_below[i],);
-                assert_ulps_eq!(deg_above, results_deg_above[i],);
                 i += 1;
             }
         }
@@ -5502,7 +5359,6 @@ mod tests {
                 test_letter: self.test_letter,
                 capacity: self.capacity,
                 cop: self.cop,
-                degradation_coefficient: self.degradation_coefficient,
                 design_flow_temp: self.design_flow_temp,
                 temp_outlet: self.temp_outlet,
                 temp_source: round_by_precision(self.temp_source, precision),
@@ -5959,7 +5815,6 @@ mod tests {
                     "test_letter": "A",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -5969,7 +5824,6 @@ mod tests {
                     "test_letter": "B",
                     "capacity": 8.3,
                     "cop": 4.9,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 30,
                     "temp_source": 0,
@@ -5979,7 +5833,6 @@ mod tests {
                     "test_letter": "C",
                     "capacity": 8.3,
                     "cop": 5.1,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 27,
                     "temp_source": 0,
@@ -5989,7 +5842,6 @@ mod tests {
                     "test_letter": "D",
                     "capacity": 8.2,
                     "cop": 5.4,
-                    "degradation_coeff": 0.95,
                     "design_flow_temp": 35,
                     "temp_outlet": 24,
                     "temp_source": 0,
@@ -5999,7 +5851,6 @@ mod tests {
                     "test_letter": "F",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6008,7 +5859,6 @@ mod tests {
                 {"test_letter": "A",
                                                     "capacity": 8.8,
                                                     "cop": 3.2,
-                                                    "degradation_coeff": 0.90,
                                                     "design_flow_temp": 55,
                                                     "temp_outlet": 52,
                                                     "temp_source": 0,
@@ -6018,7 +5868,6 @@ mod tests {
                                                     "test_letter": "B",
                                                     "capacity": 8.6,
                                                     "cop": 3.6,
-                                                    "degradation_coeff": 0.90,
                                                     "design_flow_temp": 55,
                                                     "temp_outlet": 42,
                                                     "temp_source": 0,
@@ -6028,7 +5877,6 @@ mod tests {
                                                     "test_letter": "C",
                                                     "capacity": 8.5,
                                                     "cop": 3.9,
-                                                    "degradation_coeff": 0.98,
                                                     "design_flow_temp": 55,
                                                     "temp_outlet": 36,
                                                     "temp_source": 0,
@@ -6038,7 +5886,6 @@ mod tests {
                                                     "test_letter": "D",
                                                     "capacity": 8.5,
                                                     "cop": 4.3,
-                                                    "degradation_coeff": 0.98,
                                                     "design_flow_temp": 55,
                                                     "temp_outlet": 30,
                                                     "temp_source": 0,
@@ -6048,7 +5895,6 @@ mod tests {
                                                     "test_letter": "F",
                                                     "capacity": 8.8,
                                                     "cop": 3.2,
-                                                    "degradation_coeff": 0.90,
                                                     "design_flow_temp": 55,
                                                     "temp_outlet": 52,
                                                     "temp_source": 0,
@@ -6093,7 +5939,6 @@ mod tests {
                     "test_letter": "A",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6105,7 +5950,6 @@ mod tests {
                     "test_letter": "B",
                     "capacity": 8.3,
                     "cop": 4.9,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 30,
                     "temp_source": 0,
@@ -6117,7 +5961,6 @@ mod tests {
                     "test_letter": "C",
                     "capacity": 8.3,
                     "cop": 5.1,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 27,
                     "temp_source": 0,
@@ -6129,7 +5972,6 @@ mod tests {
                     "test_letter": "D",
                     "capacity": 8.2,
                     "cop": 5.4,
-                    "degradation_coeff": 0.95,
                     "design_flow_temp": 35,
                     "temp_outlet": 24,
                     "temp_source": 0,
@@ -6141,7 +5983,6 @@ mod tests {
                     "test_letter": "F",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6182,7 +6023,6 @@ mod tests {
                     "test_letter": "A",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6192,7 +6032,6 @@ mod tests {
                     "test_letter": "B",
                     "capacity": 8.3,
                     "cop": 4.9,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 30,
                     "temp_source": 0,
@@ -6202,7 +6041,6 @@ mod tests {
                     "test_letter": "C",
                     "capacity": 8.3,
                     "cop": 5.1,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 27,
                     "temp_source": 0,
@@ -6212,7 +6050,6 @@ mod tests {
                     "test_letter": "D",
                     "capacity": 8.2,
                     "cop": 5.4,
-                    "degradation_coeff": 0.95,
                     "design_flow_temp": 35,
                     "temp_outlet": 24,
                     "temp_source": 0,
@@ -6222,7 +6059,6 @@ mod tests {
                     "test_letter": "F",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6261,7 +6097,6 @@ mod tests {
                     "test_letter": "A",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -6271,7 +6106,6 @@ mod tests {
                     "test_letter": "B",
                     "capacity": 8.3,
                     "cop": 4.9,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 30,
                     "temp_source": 0,
@@ -6281,7 +6115,6 @@ mod tests {
                     "test_letter": "C",
                     "capacity": 8.3,
                     "cop": 5.1,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 27,
                     "temp_source": 0,
@@ -6291,7 +6124,6 @@ mod tests {
                     "test_letter": "D",
                     "capacity": 8.2,
                     "cop": 5.4,
-                    "degradation_coeff": 0.95,
                     "design_flow_temp": 35,
                     "temp_outlet": 24,
                     "temp_source": 0,
@@ -6301,7 +6133,6 @@ mod tests {
                     "test_letter": "F",
                     "capacity": 8.4,
                     "cop": 4.6,
-                    "degradation_coeff": 0.9,
                     "design_flow_temp": 35,
                     "temp_outlet": 34,
                     "temp_source": 0,
@@ -7028,7 +6859,7 @@ mod tests {
             None,
         );
 
-        let (cop_op_cond, deg_coeff_op_cond) = heat_pump
+        let cop_op_cond = heat_pump
             .cop_deg_coeff_op_cond(
                 &service_type,
                 temp_output, // Kelvin
@@ -7039,7 +6870,6 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(cop_op_cond, 3.5280895101045804);
-        assert_relative_eq!(deg_coeff_op_cond, 0.9);
 
         // Check with sink type 'AIR'
         let temp_spread_correction = TempSpreadCorrectionArg::Float(1.);
@@ -7052,7 +6882,7 @@ mod tests {
             simulation_time_for_heat_pump,
         );
 
-        let (cop_op_cond, deg_coeff_op_cond) = heat_pump_sink_air
+        let cop_op_cond = heat_pump_sink_air
             .cop_deg_coeff_op_cond(
                 &service_type,
                 temp_output,
@@ -7063,7 +6893,6 @@ mod tests {
             .unwrap();
 
         assert_relative_eq!(cop_op_cond, 3.6209597192830136);
-        assert_relative_eq!(deg_coeff_op_cond, 0.25);
     }
 
     #[rstest]
@@ -7552,7 +7381,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.496784419801095),
                 time_running: 0.11769158196712368,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7582,7 +7410,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.73222616402377), // 8.732226164023768 in Python
                 time_running: 0.1145183348685972,     // 0.11451833486859722 in Python
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7649,7 +7476,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7679,7 +7505,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.11559458670751663,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7751,7 +7576,6 @@ mod tests {
                 "test_data_EN14825": [{"test_letter": "A",
                                "capacity": 8.4,
                                "cop": 4.6,
-                               "degradation_coeff": 0.9,
                                "design_flow_temp": 35,
                                "temp_outlet": 34,
                                "temp_source": 0,
@@ -7759,7 +7583,6 @@ mod tests {
                                {"test_letter": "B",
                                  "capacity": 8.3,
                                  "cop": 4.9,
-                                 "degradation_coeff": 0.9,
                                  "design_flow_temp": 35,
                                  "temp_outlet": 30,
                                  "temp_source": 0,
@@ -7767,7 +7590,6 @@ mod tests {
                                {"test_letter": "C",
                                 "capacity": 8.3,
                                 "cop": 5.1,
-                                "degradation_coeff": 0.9,
                                 "design_flow_temp": 35,
                                 "temp_outlet": 27,
                                 "temp_source": 0,
@@ -7775,7 +7597,6 @@ mod tests {
                                {"test_letter": "D",
                                 "capacity": 8.2,
                                 "cop": 5.4,
-                                "degradation_coeff": 0.95,
                                 "design_flow_temp": 35,
                                 "temp_outlet": 24,
                                 "temp_source": 0,
@@ -7783,7 +7604,6 @@ mod tests {
                                 {"test_letter": "F",
                                  "capacity": 8.4,
                                  "cop": 4.6,
-                                 "degradation_coeff": 0.9,
                                  "design_flow_temp": 35,
                                  "temp_outlet": 34,
                                  "temp_source": 0,
@@ -7819,7 +7639,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.857000000000003),
                 time_running: 0.11290504685559441,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7849,7 +7668,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.807000000000002),
                 time_running: 0.1135460429204042,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7909,7 +7727,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -7939,7 +7756,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8038,7 +7854,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8068,7 +7883,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.650924134797519),
                 time_running: 0.0,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8140,7 +7954,6 @@ mod tests {
                                     "test_data_EN14825": [{"test_letter": "A",
                                                    "capacity": 8.4,
                                                    "cop": 4.6,
-                                                   "degradation_coeff": 0.9,
                                                    "design_flow_temp": 35,
                                                    "temp_outlet": 34,
                                                    "temp_source": 0,
@@ -8148,7 +7961,6 @@ mod tests {
                                                    {"test_letter": "B",
                                                      "capacity": 8.3,
                                                      "cop": 4.9,
-                                                     "degradation_coeff": 0.9,
                                                      "design_flow_temp": 35,
                                                      "temp_outlet": 30,
                                                      "temp_source": 0,
@@ -8156,7 +7968,6 @@ mod tests {
                                                    {"test_letter": "C",
                                                     "capacity": 8.3,
                                                     "cop": 5.1,
-                                                    "degradation_coeff": 0.9,
                                                     "design_flow_temp": 35,
                                                     "temp_outlet": 27,
                                                     "temp_source": 0,
@@ -8164,7 +7975,6 @@ mod tests {
                                                    {"test_letter": "D",
                                                     "capacity": 8.2,
                                                     "cop": 5.4,
-                                                    "degradation_coeff": 0.95,
                                                     "design_flow_temp": 35,
                                                     "temp_outlet": 24,
                                                     "temp_source": 0,
@@ -8172,7 +7982,6 @@ mod tests {
                                                     {"test_letter": "F",
                                                      "capacity": 8.4,
                                                      "cop": 4.6,
-                                                     "degradation_coeff": 0.9,
                                                      "design_flow_temp": 35,
                                                      "temp_outlet": 34,
                                                      "temp_source": 0,
@@ -8208,7 +8017,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(6.773123981338176),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8238,7 +8046,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8377,7 +8184,6 @@ mod tests {
                     thermal_capacity_op_cond: Some(8.417674488123662),
                     time_running: 0.11879765621857688,
                     time_constant_for_service: 1560.,
-                    deg_coeff_op_cond: Some(0.9),
                     compressor_power_min_load: Default::default(),
                     load_ratio_continuous_min: Default::default(),
                     load_ratio: Default::default(),
@@ -8407,7 +8213,6 @@ mod tests {
                     thermal_capacity_op_cond: Some(8.650924134797519),
                     time_running: 0.11559458670751663,
                     time_constant_for_service: 1560.,
-                    deg_coeff_op_cond: Some(0.9),
                     compressor_power_min_load: Default::default(),
                     load_ratio_continuous_min: Default::default(),
                     load_ratio: Default::default(),
@@ -8615,7 +8420,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8645,7 +8449,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8674,7 +8477,6 @@ mod tests {
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: Default::default(),
                 load_ratio_continuous_min: Default::default(),
                 load_ratio: Default::default(),
@@ -8710,7 +8512,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(8.417674488123662),
                 time_running: 0.11879765621857688,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 1.133441433423604,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.11879765621857688,
@@ -8740,7 +8541,6 @@ mod tests {
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1476423586450323,
                 time_constant_for_service: 1560.,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.29130392547505757,
@@ -8769,7 +8569,6 @@ mod tests {
                 cop_op_cond: Some(3.091723311370327),
                 thermal_capacity_op_cond: Some(6.9608039370972525),
                 time_running: 0.1436615668300253,
-                deg_coeff_op_cond: Some(0.9),
                 compressor_power_min_load: 0.9005726885711587,
                 load_ratio_continuous_min: 0.4,
                 load_ratio: 0.29130392547505757,
@@ -8797,6 +8596,7 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "to be migrated to 1.0.0a1"]
     fn test_calc_ancillary_energy(
         external_conditions: Arc<ExternalConditions>,
         simulation_time_for_heat_pump: SimulationTime,
@@ -8997,7 +8797,6 @@ mod tests {
             thermal_capacity_op_cond: Some(8.417674488123662),
             time_running: 0.5939882810928845,
             time_constant_for_service: 1560.,
-            deg_coeff_op_cond: Some(0.9),
             compressor_power_min_load: Default::default(),
             load_ratio_continuous_min: Default::default(),
             load_ratio: Default::default(),

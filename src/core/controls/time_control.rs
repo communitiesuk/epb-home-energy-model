@@ -4,7 +4,7 @@ use crate::core::units::{HOURS_PER_DAY, WATTS_PER_KILOWATT};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
     ControlCombination, ControlCombinationOperation, ControlCombinations, ControlLogicType,
-    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBounds,
+    ExternalSensor, ExternalSensorCorrelation, HeatSourceControlType, SetpointBoundsInput,
     SmartApplianceBattery, MAIN_REFERENCE,
 };
 use crate::simulation_time::{SimulationTimeIteration, SimulationTimeIterator, HOURS_IN_DAY};
@@ -567,7 +567,7 @@ impl SetpointTimeControl {
         schedule: Vec<Option<f64>>,
         start_day: u32,
         time_series_step: f64,
-        setpoint_bounds: SetpointBounds,
+        setpoint_bounds: Option<SetpointBoundsInput>,
         duration_advanced_start: f64,
         timestep: f64,
     ) -> Self {
@@ -575,7 +575,7 @@ impl SetpointTimeControl {
             schedule,
             start_day,
             time_series_step,
-            setpoint_bounds,
+            setpoint_bounds: setpoint_bounds.into(),
             timesteps_advstart: (duration_advanced_start / timestep).round() as u32,
         }
     }
@@ -602,6 +602,68 @@ impl SetpointTimeControl {
         }
 
         !(setpnt.is_none() && matches!(self.setpoint_bounds, SetpointBounds::NoSetpoints))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum SetpointBounds {
+    MinAndMax {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+
+        /// If both min and max limits are set but setpoint is not, whether to default to min (false) or max (true)
+        default_to_max: bool,
+    },
+    MinOnly {
+        /// Minimum setpoint allowed
+        setpoint_min: f64,
+    },
+    MaxOnly {
+        /// Maximum setpoint allowed
+        setpoint_max: f64,
+    },
+    NoSetpoints,
+}
+
+impl SetpointBounds {
+    fn setpoint_max(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_max, .. } => Some(*setpoint_max),
+            Self::MaxOnly { setpoint_max } => Some(*setpoint_max),
+            _ => None,
+        }
+    }
+
+    fn setpoint_min(&self) -> Option<f64> {
+        match self {
+            Self::MinAndMax { setpoint_min, .. } => Some(*setpoint_min),
+            Self::MinOnly { setpoint_min } => Some(*setpoint_min),
+            _ => None,
+        }
+    }
+}
+
+impl From<Option<SetpointBoundsInput>> for SetpointBounds {
+    fn from(value: Option<SetpointBoundsInput>) -> Self {
+        match value {
+            Some(input) => match input {
+                SetpointBoundsInput::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                } => Self::MinAndMax {
+                    setpoint_min,
+                    setpoint_max,
+                    default_to_max,
+                },
+                SetpointBoundsInput::MinOnly { setpoint_min } => Self::MinOnly { setpoint_min },
+                SetpointBoundsInput::MaxOnly { setpoint_max } => Self::MaxOnly { setpoint_max },
+            },
+            None => Self::NoSetpoints,
+        }
     }
 }
 
@@ -1472,7 +1534,7 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             simulation_time.step_in_hours(),
         )
@@ -1487,7 +1549,7 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::MinOnly { setpoint_min: 16.0 },
+            SetpointBoundsInput::MinOnly { setpoint_min: 16.0 }.into(),
             Default::default(),
             simulation_time.step_in_hours(),
         )
@@ -1502,7 +1564,7 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::MaxOnly { setpoint_max: 24.0 },
+            SetpointBoundsInput::MaxOnly { setpoint_max: 24.0 }.into(),
             0.0,
             simulation_time.step_in_hours(),
         )
@@ -1517,11 +1579,12 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::MinAndMax {
+            SetpointBoundsInput::MinAndMax {
                 setpoint_min: 16.0,
                 setpoint_max: 24.0,
                 default_to_max: false,
-            },
+            }
+            .into(),
             Default::default(),
             simulation_time.step_in_hours(),
         )
@@ -1536,7 +1599,7 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             1.0,
             simulation_time.step_in_hours(),
         )
@@ -1551,11 +1614,12 @@ mod tests {
             setpoint_schedule,
             0,
             1.0,
-            SetpointBounds::MinAndMax {
+            SetpointBoundsInput::MinAndMax {
                 setpoint_min: 16.0,
                 setpoint_max: 24.0,
                 default_to_max: false,
-            },
+            }
+            .into(),
             1.0,
             simulation_time.step_in_hours(),
         )
@@ -2096,7 +2160,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                    SetpointBounds::NoSetpoints,
+                    Default::default(),
                     Default::default(),
                     1.,
                 ))
@@ -2111,7 +2175,7 @@ mod tests {
                         .collect_vec(),
                     0,
                     1.,
-                    SetpointBounds::NoSetpoints,
+                    Default::default(),
                     Default::default(),
                     1.,
                 ))
@@ -2168,7 +2232,7 @@ mod tests {
                     ],
                     0,
                     1.,
-                    SetpointBounds::NoSetpoints,
+                    Default::default(),
                     Default::default(),
                     1.,
                 ))

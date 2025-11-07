@@ -826,7 +826,6 @@ impl ElecStorageHeater {
 mod tests {
     #![allow(clippy::excessive_precision)]
     use super::*;
-    use crate::input::SetpointBounds;
     use crate::{
         core::{
             controls::time_control::{ChargeControl, SetpointTimeControl},
@@ -968,7 +967,7 @@ mod tests {
             schedule,
             0,
             1.,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.,
         )))

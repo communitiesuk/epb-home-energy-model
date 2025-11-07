@@ -862,7 +862,7 @@ pub(crate) enum ControlDetails {
         schedule: NumericSchedule,
 
         #[serde(flatten)]
-        setpoint_bounds: SetpointBounds,
+        setpoint_bounds: Option<SetpointBoundsInput>,
     },
     #[serde(rename = "ChargeControl")]
     ChargeTarget {
@@ -929,10 +929,10 @@ fn validate_logic_type_for_charge_target(
 }
 
 /// Enum to encapsulate possible combinations of setpoint data
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(untagged)]
-pub(crate) enum SetpointBounds {
+pub(crate) enum SetpointBoundsInput {
     MinAndMax {
         /// Minimum setpoint allowed
         setpoint_min: f64,
@@ -951,31 +951,13 @@ pub(crate) enum SetpointBounds {
         /// Maximum setpoint allowed
         setpoint_max: f64,
     },
-    #[default]
-    NoSetpoints,
 }
 
-impl SetpointBounds {
-    pub(crate) fn setpoint_max(&self) -> Option<f64> {
-        match self {
-            Self::MinAndMax { setpoint_max, .. } => Some(*setpoint_max),
-            Self::MaxOnly { setpoint_max } => Some(*setpoint_max),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn setpoint_min(&self) -> Option<f64> {
-        match self {
-            Self::MinAndMax { setpoint_min, .. } => Some(*setpoint_min),
-            Self::MinOnly { setpoint_min } => Some(*setpoint_min),
-            _ => None,
-        }
-    }
-}
-
-fn validate_setpoint_bounds(bounds: &SetpointBounds) -> Result<(), serde_valid::validation::Error> {
+fn validate_setpoint_bounds(
+    bounds: &SetpointBoundsInput,
+) -> Result<(), serde_valid::validation::Error> {
     match bounds {
-        SetpointBounds::MinAndMax {
+        SetpointBoundsInput::MinAndMax {
             setpoint_min,
             setpoint_max,
             ..
@@ -3701,7 +3683,7 @@ pub(crate) type HeatSourceWet = IndexMap<std::string::String, HeatSourceWetDetai
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(tag = "type")]
 pub(crate) enum HeatSourceWetDetails {
     HeatPump {
         /// Optional buffer tank configuration for the heat pump system
@@ -4002,8 +3984,6 @@ pub(crate) struct HeatPumpTestDatum {
     #[validate(minimum = 0.)]
     pub(crate) air_flow_rate: Option<f64>,
 
-    pub(crate) test_letter: TestLetter,
-
     /// Heat output capacity at this test condition (unit: kW)
     #[validate(minimum = 0.)]
     pub(crate) capacity: f64,
@@ -4012,11 +3992,14 @@ pub(crate) struct HeatPumpTestDatum {
     #[validate(minimum = 0.)]
     pub(crate) cop: f64,
 
-    #[serde(rename = "degradation_coeff")]
-    pub(crate) degradation_coefficient: f64,
-
     /// Design flow temperature for the heating system (unit: Celsius)
     pub(crate) design_flow_temp: f64,
+
+    /// Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(minimum = 0.)]
+    #[validate(maximum = 1.)]
+    pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
 
     /// Heat pump outlet temperature for the test condition (unit: Celsius)
     #[validate(minimum = -273.15)]
@@ -4030,14 +4013,7 @@ pub(crate) struct HeatPumpTestDatum {
     #[validate(minimum = -273.15)]
     pub(crate) temp_test: f64,
 
-    /// Ratio of external air to recirculated air for exhaust air heat pumps (dimensionless)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(minimum = 0.)]
-    #[validate(maximum = 1.)]
-    pub(crate) eahp_mixed_ext_air_ratio: Option<f64>,
-    // // following is not defined in Python input, but
-    // #[serde(skip)]
-    // pub(crate) ext_air_ratio: Option<f64>,
+    pub(crate) test_letter: TestLetter,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
@@ -4124,7 +4100,7 @@ pub enum HeatSourceLocation {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "battery_type", deny_unknown_fields)]
+#[serde(tag = "battery_type")]
 pub(crate) enum HeatBattery {
     #[serde(rename = "pcm")]
     Pcm {
@@ -4241,10 +4217,10 @@ pub(crate) enum HeatBattery {
         number_of_units: usize,
 
         /// Lookup table for minimum output based on charge level
-        dry_core_min_output: (f64, f64),
+        dry_core_min_output: Vec<[f64; 2]>,
 
         /// Lookup table for maximum output based on charge level
-        dry_core_max_output: (f64, f64),
+        dry_core_max_output: Vec<[f64; 2]>,
 
         /// Fan power (W)
         #[serde(rename = "fan_pwr")]
@@ -4678,7 +4654,6 @@ pub(crate) struct VentilationLeaks {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
 #[validate(custom = validate_supply_air_temp_ctrl)]
 pub struct MechanicalVentilation {
     /// Supply air flow rate control
@@ -4723,6 +4698,7 @@ pub struct MechanicalVentilation {
     pub(crate) ductwork: Vec<MechanicalVentilationDuctwork>,
 
     #[serde(flatten)]
+    #[validate]
     pub(crate) vent_data: MechVentData,
 }
 
@@ -4749,7 +4725,7 @@ fn validate_supply_air_temp_ctrl(
 // NB. This type replaces the upstream MechVentType, which is reflected in the variants here.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(tag = "vent_type", deny_unknown_fields)]
+#[serde(tag = "vent_type")]
 pub enum MechVentData {
     #[serde(rename = "MVHR")]
     Mvhr {
@@ -4759,25 +4735,29 @@ pub enum MechVentData {
     },
     #[serde(rename = "Intermittent MEV")]
     IntermittentMev {
-        #[serde(flatten)]
-        position_exhaust: PositionExhaustData,
+        #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
+        position_exhaust: MechanicalVentilationPosition,
     },
     #[serde(rename = "Centralised continuous MEV")]
     CentralisedContinuousMev {
-        #[serde(flatten)]
-        position_exhaust: PositionExhaustData,
+        #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
+        position_exhaust: MechanicalVentilationPosition,
     },
     #[serde(rename = "Decentralised continuous MEV")]
     DecentralisedContinuousMev {
-        #[serde(flatten)]
-        position_exhaust: PositionExhaustData,
+        #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
+        position_exhaust: MechanicalVentilationPosition,
     },
     #[serde(rename = "Positive input ventilation")]
     PositiveInputVentilation {
-        #[serde(flatten)]
-        position_exhaust: PositionExhaustData,
+        #[serde(flatten, deserialize_with = "deserialize_maybe_nested_position")]
+        position_exhaust: MechanicalVentilationPosition,
     },
 }
+
+// this macro allows for position_exhaust fields to either be nested under that field in the JSON,
+// or to be found at the root level, and to deserialise to an identical representation either way
+serde_with::flattened_maybe!(deserialize_maybe_nested_position, "position_exhaust");
 
 impl MechVentData {
     /// Check if this ventilation type is a balanced system (both supply and extract).
@@ -4854,30 +4834,6 @@ pub struct MechanicalVentilationPosition {
     /// Mid height of air flow path relative to ventilation zone (unit: m)
     #[validate(exclusive_minimum = 0.)]
     mid_height_air_flow_path: f64,
-}
-
-/// enum to reflect the fact, for non-MVHR ventilation systems, the position_exhaust fields can either be provided in a separate object in JSON, or inlined to the root level.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(untagged)]
-pub enum PositionExhaustData {
-    Inline {
-        #[serde(flatten)]
-        position_exhaust: MechanicalVentilationPosition,
-    },
-    PositionExhaustStruct {
-        position_exhaust: MechanicalVentilationPosition,
-    },
-}
-
-impl PositionExhaustData {
-    #[expect(unused)]
-    pub(crate) fn data(&self) -> MechanicalVentilationPosition {
-        match self {
-            Self::Inline { position_exhaust } => *position_exhaust,
-            Self::PositionExhaustStruct { position_exhaust } => *position_exhaust,
-        }
-    }
 }
 
 pub(crate) trait MechanicalVentilationForProcessing {
@@ -7380,22 +7336,15 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "fhs")]
-    #[fixture]
-    fn fhs_files() -> Vec<DirEntry> {
-        files_with_root("./examples/input/wrappers/future_homes_standard")
-    }
-
-    #[cfg(feature = "fhs")]
     #[rstest]
-    fn should_successfully_parse_all_fhs_demo_files(fhs_files: Vec<DirEntry>) {
-        for entry in fhs_files {
-            let parsed =
-                ingest_for_processing(File::open(entry.path()).unwrap(), &SchemaReference::Fhs);
+    fn should_successfully_deserialise_all_core_demo_files(core_files: Vec<DirEntry>) {
+        for entry in core_files {
+            let input: Result<Input, _> =
+                serde_json::from_reader(File::open(entry.path()).unwrap());
             assert!(
-                parsed.is_ok(),
+                input.is_ok(),
                 "error was {:?} when parsing file {}",
-                parsed.err().unwrap(),
+                input.err().unwrap(),
                 entry.file_name().to_str().unwrap()
             );
         }
@@ -7406,9 +7355,9 @@ mod tests {
         for entry in core_files {
             let input: Input =
                 serde_json::from_reader(BufReader::new(File::open(entry.path()).unwrap()))
-                    .unwrap_or_else(|_| {
+                    .unwrap_or_else(|e| {
                         panic!(
-                            "Failed deserializing {}",
+                            "Failed deserializing {} - {e:?}",
                             entry.file_name().to_str().unwrap()
                         )
                     });

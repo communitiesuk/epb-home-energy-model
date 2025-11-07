@@ -1092,7 +1092,7 @@ mod tests {
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
     use crate::external_conditions::{DaylightSavingsConfig, ShadingSegment};
-    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType, SetpointBounds};
+    use crate::input::{ColdWaterSourceType, FuelType, HeatSourceWetType};
     use crate::simulation_time::SimulationTime;
     use approx::{assert_relative_eq, assert_ulps_eq};
     use itertools::Itertools;
@@ -1431,7 +1431,7 @@ mod tests {
             vec![Some(52.), Some(52.)],
             0,
             1.,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.,
         )))
@@ -1443,7 +1443,7 @@ mod tests {
             vec![Some(60.), Some(60.)],
             0,
             1.,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.,
         )))
@@ -1564,7 +1564,7 @@ mod tests {
             vec![Some(21.0), Some(21.0), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.0,
         ))
@@ -1666,7 +1666,7 @@ mod tests {
             vec![None, None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.0,
         )));
@@ -1674,7 +1674,7 @@ mod tests {
             vec![None, None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             1.0,
         )));
@@ -1703,7 +1703,7 @@ mod tests {
                 vec![None, None],
                 0,
                 1.0,
-                SetpointBounds::NoSetpoints,
+                Default::default(),
                 Default::default(),
                 1.0,
             ))),

@@ -440,7 +440,7 @@ mod tests {
     use crate::core::controls::time_control::{OnOffTimeControl, SetpointTimeControl};
     use crate::core::energy_supply::energy_supply::EnergySupplyBuilder;
     use crate::core::water_heat_demand::cold_water_source::ColdWaterSource;
-    use crate::input::{FuelType, SetpointBounds};
+    use crate::input::FuelType;
     use crate::simulation_time::SimulationTime;
     use approx::assert_relative_eq;
     use pretty_assertions::assert_eq;
@@ -481,7 +481,7 @@ mod tests {
             vec![Some(21.0), Some(21.0), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             two_len_simulation_time.step,
         );
@@ -689,7 +689,7 @@ mod tests {
             vec![Some(52.), Some(52.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             two_len_simulation_time.step,
         );
@@ -698,7 +698,7 @@ mod tests {
             vec![Some(60.), Some(60.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             two_len_simulation_time.step,
         );
@@ -769,7 +769,7 @@ mod tests {
             vec![Some(60.), Some(60.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             two_len_simulation_time.step,
         )));
@@ -805,7 +805,7 @@ mod tests {
             vec![Some(60.), Some(60.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             two_len_simulation_time.step,
         )));
@@ -867,7 +867,7 @@ mod tests {
             vec![Some(21.0), Some(21.0), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             three_len_simulation_time.step,
         ));
@@ -1104,7 +1104,7 @@ mod tests {
                 vec![Some(21.0), Some(21.0), None],
                 0,
                 1.0,
-                SetpointBounds::NoSetpoints,
+                Default::default(),
                 Default::default(),
                 three_len_simulation_time.step,
             ))),
@@ -1131,7 +1131,7 @@ mod tests {
             vec![Some(52.), Some(52.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             three_len_simulation_time.step,
         )));
@@ -1140,7 +1140,7 @@ mod tests {
             vec![Some(60.), Some(60.), None],
             0,
             1.0,
-            SetpointBounds::NoSetpoints,
+            Default::default(),
             Default::default(),
             three_len_simulation_time.step,
         )));
