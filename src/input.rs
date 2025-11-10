@@ -20,13 +20,6 @@ use std::ops::Index;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum SchemaReference {
-    Core,
-    #[cfg(feature = "fhs")]
-    Fhs,
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize, Validate)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(test, derive(PartialEq))]

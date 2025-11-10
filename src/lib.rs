@@ -28,7 +28,7 @@ use crate::corpus::{
 use crate::errors::{HemCoreError, HemError, NotImplementedError};
 use crate::external_conditions::ExternalConditions;
 use crate::input::{
-    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input, SchemaReference,
+    ExternalConditionsInput, FuelType, HotWaterSourceDetails, Input,
 };
 use crate::output::Output;
 use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
@@ -100,7 +100,6 @@ pub fn run_project(
         #[instrument(skip_all)]
         fn finalize(input: impl Read, external_conditions_data: Option<&ExternalConditionsFromFile>) -> anyhow::Result<Input> {
             let input: JsonValue = serde_json::from_reader(input)?;
-            let _schema_reference = SchemaReference::Core;
             // NB. this _might_ in time be a good point to perform a validation against the core schema - or it might not
             // if let BasicOutput::Invalid(errors) =
             //     CORE_INCLUDING_FHS_VALIDATOR.apply(&self.input).basic()
