@@ -727,10 +727,11 @@ impl Corpus {
             input.hot_water_demand.shower.clone(),
             input.hot_water_demand.bath.clone(),
             input.hot_water_demand.other_water_use.clone(),
-            match &input.hot_water_source.hot_water_cylinder {
-                HotWaterSourceDetails::PointOfUse { .. } => None,
-                _ => Some(input.hot_water_demand.water_distribution.clone()),
-            },
+            // match &input.hot_water_source.hot_water_cylinder {
+            //     HotWaterSourceDetails::PointOfUse { .. } => None,
+            //     _ => Some(input.hot_water_demand.water_distribution.clone()),
+            // },
+            Default::default(), // TODO: migrate properly for 1.0.0a1
             &cold_water_sources,
             &wwhrs,
             &energy_supplies,
@@ -904,25 +905,27 @@ impl Corpus {
         }
 
         let mut hot_water_sources: IndexMap<String, HotWaterSource> = Default::default();
-        let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
-            "hw cylinder".into(),
-            &input.hot_water_source.hot_water_cylinder,
-            &cold_water_sources,
-            &pre_heated_water_sources,
-            &mut wet_heat_sources,
-            &wwhrs,
-            &controls,
-            &mut energy_supplies,
-            &diverter_types,
-            &mut diverters,
-            shareable_fn(&temp_internal_air_prev),
-            simulation_time_iterator.clone().as_ref(),
-            external_conditions.clone(),
-            output_options.detailed_output_heating_cooling,
-        )?;
-        hot_water_sources.insert("hw cylinder".into(), hot_water_source);
-        energy_supply_conn_names_for_hot_water_source
-            .insert("hw cylinder".into(), hw_cylinder_conn_names);
+        for (name, data) in input.hot_water_source.iter() {
+            let (hot_water_source, hw_cylinder_conn_names) = hot_water_source_from_input(
+                name.into(),
+                data,
+                &cold_water_sources,
+                &pre_heated_water_sources,
+                &mut wet_heat_sources,
+                &wwhrs,
+                &controls,
+                &mut energy_supplies,
+                &diverter_types,
+                &mut diverters,
+                shareable_fn(&temp_internal_air_prev),
+                simulation_time_iterator.clone().as_ref(),
+                external_conditions.clone(),
+                output_options.detailed_output_heating_cooling,
+            )?;
+            hot_water_sources.insert(name.into(), hot_water_source);
+            energy_supply_conn_names_for_hot_water_source
+                .insert(name.into(), hw_cylinder_conn_names);
+        }
 
         let mut heat_system_names_requiring_overvent: Vec<String> = Default::default();
 

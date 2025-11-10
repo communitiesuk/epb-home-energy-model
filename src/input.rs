@@ -1227,20 +1227,7 @@ fn validate_map_non_empty<T>(
     })
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Validate)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HotWaterSource {
-    #[serde(rename = "hw cylinder")]
-    #[validate]
-    pub(crate) hot_water_cylinder: HotWaterSourceDetails,
-}
-
-impl HotWaterSource {
-    pub(crate) fn as_index_map(&self) -> IndexMap<String, HotWaterSourceDetails> {
-        IndexMap::from([("hw cylinder".into(), self.hot_water_cylinder.clone())])
-    }
-}
+pub(crate) type HotWaterSource = IndexMap<std::string::String, HotWaterSourceDetails>;
 
 #[derive(Clone, Deserialize_enum_str, PartialEq, Debug, Serialize_enum_str)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

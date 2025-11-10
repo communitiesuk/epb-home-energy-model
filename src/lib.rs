@@ -975,9 +975,8 @@ impl From<&Input> for SummaryInputDigest {
             simulation_time: input.simulation_time,
             hot_water_source_digests: input
                 .hot_water_source
-                .as_index_map()
                 .iter()
-                .map(|(key, details)| (key.clone(), details.into()))
+                .map(|(key, details)| (key.into(), details.into()))
                 .collect::<IndexMap<_, _>>(),
             electricity_keys: input
                 .energy_supply
