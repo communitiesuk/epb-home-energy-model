@@ -17,6 +17,11 @@ use tracing::{error, instrument};
 
 pub mod future_homes_standard;
 
+pub const HEM_VERSION: &str = "0.36";
+pub const HEM_VERSION_DATE: &str = "2025-06-03";
+pub const FHS_VERSION: &str = "0.27";
+pub const FHS_VERSION_DATE: &str = "2025-06-03";
+
 bitflags! {
     pub struct FhsFlags: u32 {
         const FHS_ASSUMPTIONS = 0b100000000;
