@@ -1,5 +1,4 @@
 use clap::{Args, Parser};
-use hem::ProjectFlags;
 use hem::output::FileOutput;
 use hem::read_weather_file::{ExternalConditions, weather_data_to_vec};
 use std::ffi::OsStr;
@@ -9,6 +8,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 use tracing_subscriber::fmt::format::FmtSpan;
+use wrappers::FhsFlags;
 use wrappers::run_wrappers;
 
 #[derive(Parser, Default, Debug)]
@@ -188,31 +188,31 @@ fn output_type_from_wrapper_choice(wrapper_choice: &WrapperChoice) -> &str {
     }
 }
 
-impl From<&WrappersArgs> for ProjectFlags {
+impl From<&WrappersArgs> for FhsFlags {
     fn from(args: &WrappersArgs) -> Self {
-        let mut flags = ProjectFlags::empty();
+        let mut flags = FhsFlags::empty();
         {
             let fhs = args.wrapper_choice;
             if fhs.future_homes_standard {
-                flags.insert(ProjectFlags::FHS_ASSUMPTIONS);
+                flags.insert(FhsFlags::FHS_ASSUMPTIONS);
             }
             if fhs.future_homes_standard_fee {
-                flags.insert(ProjectFlags::FHS_FEE_ASSUMPTIONS);
+                flags.insert(FhsFlags::FHS_FEE_ASSUMPTIONS);
             }
             if fhs.future_homes_standard_not_a {
-                flags.insert(ProjectFlags::FHS_NOT_A_ASSUMPTIONS);
+                flags.insert(FhsFlags::FHS_NOT_A_ASSUMPTIONS);
             }
             if fhs.future_homes_standard_not_b {
-                flags.insert(ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
+                flags.insert(FhsFlags::FHS_NOT_B_ASSUMPTIONS);
             }
             if fhs.future_homes_standard_fee_not_a {
-                flags.insert(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS)
+                flags.insert(FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS)
             }
             if fhs.future_homes_standard_fee_not_b {
-                flags.insert(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS)
+                flags.insert(FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS)
             }
             if fhs.fhs_compliance {
-                flags.insert(ProjectFlags::FHS_COMPLIANCE);
+                flags.insert(FhsFlags::FHS_COMPLIANCE);
             }
         }
 

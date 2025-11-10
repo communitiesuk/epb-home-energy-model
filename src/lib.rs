@@ -35,7 +35,6 @@ use crate::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
 use crate::simulation_time::SimulationTime;
 use crate::statistics::percentile;
 use anyhow::anyhow;
-use bitflags::bitflags;
 use chrono::prelude::*;
 use chrono::{TimeDelta, Utc};
 use convert_case::{Case, Casing};
@@ -49,7 +48,6 @@ use smartstring::alias::String;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 use std::io::Read;
 use std::ops::AddAssign;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -379,26 +377,6 @@ impl CalculationResultsWithContext {
             ),
             percentage,
         ))
-    }
-}
-
-bitflags! {
-    pub struct ProjectFlags: u32 {
-        // start FHS flags from 2^8
-        #[cfg(feature = "fhs")]
-        const FHS_ASSUMPTIONS = 0b100000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_ASSUMPTIONS = 0b1000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_NOT_A_ASSUMPTIONS = 0b10000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_NOT_B_ASSUMPTIONS = 0b100000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
-        #[cfg(feature = "fhs")]
-        const FHS_COMPLIANCE = 0b100000000000000;
     }
 }
 

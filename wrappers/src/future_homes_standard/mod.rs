@@ -1,17 +1,15 @@
-use crate::CalculationKey;
 use crate::HemWrapper;
 use crate::future_homes_standard::fhs_compliance_response::{
     CalculatedComplianceResult, FhsComplianceResponse,
 };
 use crate::future_homes_standard::future_homes_standard_notional::apply_fhs_notional_preprocessing;
 use crate::future_homes_standard::input::InputForProcessing;
+use crate::{CalculationKey, FhsFlags};
 
 use future_homes_standard::{apply_fhs_postprocessing, apply_fhs_preprocessing};
 use future_homes_standard_fee::{apply_fhs_fee_postprocessing, apply_fhs_fee_preprocessing};
 use hem::output::Output;
-use hem::{
-    CalculationContext, CalculationResultsWithContext, HemResponse, ProjectFlags, RunResults,
-};
+use hem::{CalculationContext, CalculationResultsWithContext, HemResponse, RunResults};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -38,7 +36,7 @@ impl HemWrapper for FhsSingleCalcWrapper {
     fn apply_preprocessing(
         &self,
         mut input: InputForProcessing,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         do_fhs_preprocessing(&mut input, flags)?;
         Ok(HashMap::from([(CalculationKey::Primary, input)]))
@@ -48,7 +46,7 @@ impl HemWrapper for FhsSingleCalcWrapper {
         &self,
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         let results = results
             .get(&CalculationKey::Primary)
@@ -70,7 +68,7 @@ impl HemWrapper for FhsComplianceWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,
-        _flags: &ProjectFlags,
+        _flags: &FhsFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         vec![input; FHS_COMPLIANCE_CALCULATIONS.len()]
             .into_par_iter()
@@ -87,7 +85,7 @@ impl HemWrapper for FhsComplianceWrapper {
         &self,
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        _flags: &ProjectFlags,
+        _flags: &FhsFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         FHS_COMPLIANCE_CALCULATIONS
             .par_iter()
@@ -104,52 +102,52 @@ impl HemWrapper for FhsComplianceWrapper {
     }
 }
 
-static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, ProjectFlags); 4]> =
+static FHS_COMPLIANCE_CALCULATIONS: LazyLock<[(CalculationKey, FhsFlags); 4]> =
     LazyLock::new(|| {
         [
-            (CalculationKey::Fhs, ProjectFlags::FHS_ASSUMPTIONS),
-            (CalculationKey::FhsFee, ProjectFlags::FHS_FEE_ASSUMPTIONS),
+            (CalculationKey::Fhs, FhsFlags::FHS_ASSUMPTIONS),
+            (CalculationKey::FhsFee, FhsFlags::FHS_FEE_ASSUMPTIONS),
             (
                 CalculationKey::FhsNotional,
-                ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+                FhsFlags::FHS_NOT_A_ASSUMPTIONS | FhsFlags::FHS_NOT_B_ASSUMPTIONS,
             ),
             (
                 CalculationKey::FhsNotionalFee,
-                ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+                FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS | FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
             ),
         ]
     });
 
 fn do_fhs_preprocessing(
     input_for_processing: &mut InputForProcessing,
-    flags: &ProjectFlags,
+    flags: &FhsFlags,
 ) -> anyhow::Result<()> {
     // Apply required preprocessing steps, if any
     // TODO (from Python) Implement notional runs (the below treats them the same as the equivalent non-notional runs)
     if flags.intersects(
-        ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        FhsFlags::FHS_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_NOT_B_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
     ) {
         apply_fhs_notional_preprocessing(
             input_for_processing,
-            flags.contains(ProjectFlags::FHS_NOT_A_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_NOT_B_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
-            flags.contains(ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
+            flags.contains(FhsFlags::FHS_NOT_A_ASSUMPTIONS),
+            flags.contains(FhsFlags::FHS_NOT_B_ASSUMPTIONS),
+            flags.contains(FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS),
+            flags.contains(FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS),
         )?;
     }
     if flags.intersects(
-        ProjectFlags::FHS_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+        FhsFlags::FHS_ASSUMPTIONS
+            | FhsFlags::FHS_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_NOT_B_ASSUMPTIONS,
     ) {
         apply_fhs_preprocessing(input_for_processing, Some(false), None)?;
     } else if flags.intersects(
-        ProjectFlags::FHS_FEE_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        FhsFlags::FHS_FEE_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
     ) {
         apply_fhs_fee_preprocessing(input_for_processing)?;
     }
@@ -160,7 +158,7 @@ fn do_fhs_preprocessing(
 fn do_fhs_postprocessing(
     output: &impl Output,
     results: &CalculationResultsWithContext,
-    flags: &ProjectFlags,
+    flags: &FhsFlags,
 ) -> anyhow::Result<Option<HemResponse>> {
     let input = &results.context.input;
     let RunResults {
@@ -172,12 +170,12 @@ fn do_fhs_postprocessing(
     } = &results.results;
 
     if flags.intersects(
-        ProjectFlags::FHS_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_NOT_B_ASSUMPTIONS,
+        FhsFlags::FHS_ASSUMPTIONS
+            | FhsFlags::FHS_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_NOT_B_ASSUMPTIONS,
     ) {
-        let notional = flags
-            .intersects(ProjectFlags::FHS_NOT_A_ASSUMPTIONS | ProjectFlags::FHS_NOT_B_ASSUMPTIONS);
+        let notional =
+            flags.intersects(FhsFlags::FHS_NOT_A_ASSUMPTIONS | FhsFlags::FHS_NOT_B_ASSUMPTIONS);
         apply_fhs_postprocessing(
             input,
             output,
@@ -188,9 +186,9 @@ fn do_fhs_postprocessing(
             notional,
         )?;
     } else if flags.intersects(
-        ProjectFlags::FHS_FEE_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_A_ASSUMPTIONS
-            | ProjectFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
+        FhsFlags::FHS_FEE_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_A_ASSUMPTIONS
+            | FhsFlags::FHS_FEE_NOT_B_ASSUMPTIONS,
     ) {
         let CalculationResultsWithContext {
             results,

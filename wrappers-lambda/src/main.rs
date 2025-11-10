@@ -6,7 +6,7 @@ use std::io::{BufReader, Cursor, ErrorKind, Write};
 use std::str::from_utf8;
 use std::sync::Arc;
 use uuid::Uuid;
-use wrappers::ProjectFlags;
+use wrappers::FhsFlags;
 use wrappers::read_weather_file::weather_data_to_vec;
 use wrappers::{Output, run_wrappers};
 
@@ -26,7 +26,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     ))))
     .ok();
 
-    let resp = match run_wrappers(input, &output, external_conditions, None, &ProjectFlags::FHS_COMPLIANCE, false, false, false) {
+    let resp = match run_wrappers(input, &output, external_conditions, None, &FhsFlags::FHS_COMPLIANCE, false, false, false) {
         Ok(Some(resp)) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")

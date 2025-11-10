@@ -1,13 +1,14 @@
 use crate::future_homes_standard::input::{InputForProcessing, ingest_for_processing};
 use crate::future_homes_standard::{FhsComplianceWrapper, FhsSingleCalcWrapper};
 use anyhow::anyhow;
+use bitflags::bitflags;
 use hem::errors::{HemError, PostprocessingError};
 use hem::input::Input;
 pub use hem::output::Output;
 use hem::output::SinkOutput;
 pub use hem::read_weather_file;
 use hem::read_weather_file::ExternalConditions as ExternalConditionsFromFile;
-pub use hem::{CalculationResultsWithContext, HemResponse, ProjectFlags};
+pub use hem::{CalculationResultsWithContext, HemResponse};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read};
@@ -15,6 +16,18 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use tracing::{error, instrument};
 
 pub mod future_homes_standard;
+
+bitflags! {
+    pub struct FhsFlags: u32 {
+        const FHS_ASSUMPTIONS = 0b100000000;
+        const FHS_FEE_ASSUMPTIONS = 0b1000000000;
+        const FHS_NOT_A_ASSUMPTIONS = 0b10000000000;
+        const FHS_NOT_B_ASSUMPTIONS = 0b100000000000;
+        const FHS_FEE_NOT_A_ASSUMPTIONS = 0b1000000000000;
+        const FHS_FEE_NOT_B_ASSUMPTIONS = 0b10000000000000;
+        const FHS_COMPLIANCE = 0b100000000000000;
+    }
+}
 
 /// Common trait for a wrapper of the HEM methodology, which in its preprocessing stage is able to
 /// produce inputs for the HEM core for a particular purpose, and in its postprocessing stage is
@@ -24,13 +37,13 @@ pub(crate) trait HemWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>>;
     fn apply_postprocessing(
         &self,
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<Option<HemResponse>>;
 }
 
@@ -53,7 +66,7 @@ impl HemWrapper for ChosenWrapper {
     fn apply_preprocessing(
         &self,
         input: InputForProcessing,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
         match self {
             ChosenWrapper::FhsSingleCalc(wrapper) => {
@@ -69,7 +82,7 @@ impl HemWrapper for ChosenWrapper {
         &self,
         output: &impl Output,
         results: &HashMap<CalculationKey, CalculationResultsWithContext>,
-        flags: &ProjectFlags,
+        flags: &FhsFlags,
     ) -> anyhow::Result<Option<HemResponse>> {
         match self {
             ChosenWrapper::FhsSingleCalc(wrapper) => {
@@ -89,7 +102,7 @@ pub fn run_wrappers(
     output: impl Output,
     external_conditions_data: Option<ExternalConditionsFromFile>,
     tariff_data_file: Option<&str>,
-    flags: &ProjectFlags,
+    flags: &FhsFlags,
     preprocess_only: bool,
     heat_balance: bool,
     detailed_output_heating_cooling: bool,
@@ -106,9 +119,9 @@ pub fn run_wrappers(
             Ok(input_for_processing)
         }
 
-        fn choose_wrapper(flags: &ProjectFlags) -> ChosenWrapper {
+        fn choose_wrapper(flags: &FhsFlags) -> ChosenWrapper {
             {
-                if flags.contains(ProjectFlags::FHS_COMPLIANCE) {
+                if flags.contains(FhsFlags::FHS_COMPLIANCE) {
                     ChosenWrapper::FhsCompliance(FhsComplianceWrapper::new())
                 } else {
                     ChosenWrapper::FhsSingleCalc(FhsSingleCalcWrapper::new())
@@ -120,7 +133,7 @@ pub fn run_wrappers(
         fn apply_preprocessing_from_wrappers(
             input_for_processing: InputForProcessing,
             wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
+            flags: &FhsFlags,
         ) -> anyhow::Result<HashMap<CalculationKey, InputForProcessing>> {
             wrapper.apply_preprocessing(input_for_processing, flags)
         }
@@ -194,7 +207,7 @@ pub fn run_wrappers(
             output: &impl Output,
             results: &HashMap<CalculationKey, CalculationResultsWithContext>,
             wrapper: &impl HemWrapper,
-            flags: &ProjectFlags,
+            flags: &FhsFlags,
         ) -> anyhow::Result<Option<HemResponse>> {
             wrapper.apply_postprocessing(output, results, flags)
         }
